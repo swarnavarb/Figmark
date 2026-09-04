@@ -84,9 +84,16 @@ credentials were present. These steps need a machine that can reach Azure:
    falls back to a constant development secret, and anyone who reads this
    repository can mint a valid session token.
 
-6. **Push to `main`.** The workflow builds, runs the smoke tests, and deploys.
-   Then visit the site — the status page should show Database and Storage as
-   Cosmos DB and Blob Storage rather than in-memory fallbacks.
+6. **Push to the default branch.** The workflow builds, runs the smoke tests,
+   and deploys. Then visit the site — the status page should show Database and
+   Storage as Cosmos DB and Blob Storage rather than in-memory fallbacks.
+
+   Note: the repository was empty before this scaffold, so GitHub made
+   `claude/new-session-13ackt` the default branch. If you want `main` to be the
+   production branch, create it from this one and set it as default in the
+   repository settings — the workflow follows whatever the default branch is, so
+   nothing needs editing. Check that the Static Web App's own production branch
+   setting in Azure matches.
 
 ## Preferring managed identity over keys
 
@@ -103,8 +110,8 @@ the identity instead — no change required.
 - **Build and verify** runs on every push and pull request: installs, builds
   both sides, runs the smoke tests, prunes the API's dev dependencies, and
   uploads the artifact.
-- **Deploy** runs only for `main` and manual dispatch. Feature branches are
-  built and verified but never published.
+- **Deploy** runs only for the repository's default branch and for manual
+  dispatch. Other branches are built and verified but never published.
 - **Close preview** tears down the preview environment when a PR closes.
 
 Both halves are pre-built in CI and uploaded with `skip_app_build` and

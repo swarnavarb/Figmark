@@ -1,12 +1,12 @@
 name: Build and deploy
 
 on:
+  # Every branch is built and verified; only the default branch deploys (see the
+  # deploy job's condition). Keying off the repository's actual default branch
+  # rather than a hardcoded name means this keeps working if it is renamed.
   push:
-    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    branches: [main]
-  # Any other branch still gets built and verified, just not deployed.
   workflow_dispatch:
 
 permissions:
@@ -65,9 +65,12 @@ jobs:
   deploy:
     name: Deploy to Static Web Apps
     needs: build
-    # Only the production branch and manual runs deploy; feature branches are
-    # built and verified above but never published.
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    # Only the default branch and manual runs deploy; feature branches are built
+    # and verified above but never published.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       github.ref_name == github.event.repository.default_branch)
     runs-on: ubuntu-latest
     environment:
       name: production
