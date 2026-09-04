@@ -1,9 +1,8 @@
 name: Build and deploy
 
 on:
-  # Every branch is built and verified; only the default branch deploys (see the
-  # deploy job's condition). Keying off the repository's actual default branch
-  # rather than a hardcoded name means this keeps working if it is renamed.
+  # Every branch is built and verified; only main deploys (see the deploy job's
+  # condition below).
   push:
   pull_request:
     types: [opened, synchronize, reopened, closed]
@@ -65,12 +64,13 @@ jobs:
   deploy:
     name: Deploy to Static Web Apps
     needs: build
-    # Only the default branch and manual runs deploy; feature branches are built
-    # and verified above but never published.
+    # main is the production branch: only it and manual runs deploy. Other
+    # branches are built and verified above but never published. Compared
+    # against github.ref rather than ref_name so a tag named "main" cannot
+    # trigger a production deploy.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' &&
-       github.ref_name == github.event.repository.default_branch)
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -88,11 +88,9 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
-          # Until AZURE_STATIC_WEB_APPS_API_TOKEN exists, skip the upload with a
-          # warning rather than failing the run - a permanently red pipeline
-          # trains people to ignore it. Deployment starts the moment the secret
-          # is added, with no change here.
-          skip_deploy_on_missing_secrets: true
+          # Deliberately no skip_deploy_on_missing_secrets: the token now exists,
+          # and skipping on a missing secret would turn a failed deployment into
+          # a green run that published nothing.
           # Pre-built above, so Oryx must not try to build either side again.
           app_location: app/dist
           api_location: api
