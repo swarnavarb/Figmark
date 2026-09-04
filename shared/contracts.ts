@@ -22,7 +22,6 @@ import type {
  */
 export interface AuthUser {
   id: string;
-  username: string;
   displayName: string;
   email: string;
   phone: string | null;
@@ -42,7 +41,15 @@ export interface AuthUser {
 }
 
 export interface LoginRequest {
-  username: string;
+  /** Email or phone; the server normalises and resolves either. */
+  identifier: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  displayName: string;
+  email: string;
+  phone: string;
   password: string;
 }
 
@@ -89,9 +96,9 @@ export interface HealthResponse {
   };
 }
 
-/** A seeded sign-in hint. `label` describes the account, not a role. */
+/** A seeded sign-in hint, shown only while the mock provider is active. */
 export interface DemoAccount {
-  username: string;
+  identifier: string;
   label: string;
 }
 

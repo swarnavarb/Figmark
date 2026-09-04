@@ -18,15 +18,33 @@ const staticRoot = join(root, 'app', 'dist');
 const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
-const { loginRoute, logoutRoute, meRoute } = await import(new URL('auth-routes.js', apiRoot));
+const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
 const { listLotsRoute, lotManifestRoute } = await import(new URL('lot-routes.js', apiRoot));
+const {
+  feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
+  addCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, forwardersRoute,
+} = await import(new URL('catalog-routes.js', apiRoot));
 
-/** [method, path pattern, handler]. `:name` segments become route params. */
+/**
+ * [method, path pattern, handler]. `:name` segments become route params.
+ * Mirrors the routes registered with app.http() in the API.
+ */
 const routes = [
   ['GET', '/api/health', healthRoute],
   ['GET', '/api/auth/me', meRoute],
   ['POST', '/api/auth/login', loginRoute],
+  ['POST', '/api/auth/signup', signupRoute],
   ['POST', '/api/auth/logout', logoutRoute],
+  ['GET', '/api/feed', feedRoute],
+  ['GET', '/api/forwarders', forwardersRoute],
+  ['GET', '/api/me/activity', myActivityRoute],
+  ['POST', '/api/orders', createOrderRoute],
+  ['POST', '/api/listings', createListingRoute],
+  ['GET', '/api/listings/:id', listingDetailRoute],
+  ['POST', '/api/listings/:id/like', toggleLikeRoute],
+  ['POST', '/api/listings/:id/bump', bumpListingRoute],
+  ['POST', '/api/listings/:id/comments', addCommentRoute],
+  ['POST', '/api/sellers/:id/follow', toggleFollowRoute],
   ['GET', '/api/lots', listLotsRoute],
   ['GET', '/api/lots/:sellerId/:lotId/manifest', lotManifestRoute],
 ];

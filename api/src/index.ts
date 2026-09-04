@@ -7,3 +7,4 @@
 import './functions/health.js';
 import './functions/auth-routes.js';
 import './functions/lot-routes.js';
+import './functions/catalog-routes.js';

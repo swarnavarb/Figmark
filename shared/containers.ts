@@ -37,7 +37,7 @@ export const CONTAINERS = {
     name: 'users',
     partitionKeyPath: '/id',
     rationale:
-      'Point reads by user id dominate. Note the absence of a unique key on /username: Cosmos enforces unique keys within a logical partition, and with /id as the partition key every user is alone in its own partition, so such a constraint would guarantee nothing. Global uniqueness is enforced by the `usernames` reservation container instead.',
+      'Point reads by user id dominate. Note the absence of a unique key on the identifier fields: Cosmos enforces unique keys within a logical partition, and with /id as the partition key every user is alone in its own partition, so such a constraint would guarantee nothing. Global uniqueness is enforced by the `identifiers` reservation container instead.',
     compositeIndexes: [
       [
         { path: '/role', order: 'ascending' },
@@ -45,11 +45,11 @@ export const CONTAINERS = {
       ],
     ],
   },
-  usernames: {
-    name: 'usernames',
+  identifiers: {
+    name: 'identifiers',
     partitionKeyPath: '/id',
     rationale:
-      'Reservation records that make usernames globally unique: the document id is the lowercased username, so a create either succeeds or conflicts (409). Written before the user document and deleted with it. Also makes sign-in two point reads rather than a cross-partition query.',
+      'Reservation records making sign-in identifiers globally unique. The document id is the normalised identifier (lowercased email, or E.164 phone), so a create either succeeds or conflicts (409). One row per identifier means an account with both an email and a phone reserves both, and sign-in by either is a point read rather than a cross-partition query.',
   },
   listings: {
     name: 'listings',
@@ -108,6 +108,25 @@ export const CONTAINERS = {
         { path: '/createdAt', order: 'descending' },
       ],
     ],
+  },
+  comments: {
+    name: 'comments',
+    partitionKeyPath: '/listingId',
+    rationale: 'A listing page renders every comment on that listing, which is exactly one partition.',
+  },
+  likes: {
+    name: 'likes',
+    partitionKeyPath: '/userId',
+    rationale:
+      "Partitioned by the liker so \"my bookmarks\" is a single-partition read. Per-listing counts live denormalised on the listing itself rather than being counted here.",
+    uniqueKeyPaths: [['/listingId']],
+  },
+  follows: {
+    name: 'follows',
+    partitionKeyPath: '/followerId',
+    rationale:
+      'The personalised feed asks "who does this user follow?", which is one partition. Follower counts are denormalised onto the seller profile.',
+    uniqueKeyPaths: [['/sellerId']],
   },
   disputes: {
     name: 'disputes',

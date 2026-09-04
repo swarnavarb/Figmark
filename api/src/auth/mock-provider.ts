@@ -8,10 +8,12 @@ import type {
 } from '../../../shared/contracts.js';
 import type { Capability } from '../../../shared/enums.js';
 import { deriveCapabilities, hasAnyCapability } from '../../../shared/capabilities.js';
-import type { User } from '../../../shared/models.js';
+import { randomUUID } from 'node:crypto';
+import type { SignupRequest } from '../../../shared/contracts.js';
+import type { User, VerificationState } from '../../../shared/models.js';
 import type { Repository } from '../data/repository.js';
 import { AuthError } from './errors.js';
-import { verifyPassword } from './passwords.js';
+import { hashPassword, verifyPassword } from './passwords.js';
 import {
   SESSION_COOKIE_NAME,
   buildClearedSessionCookie,
@@ -72,10 +74,10 @@ export class MockAuthProvider implements AuthService {
   }
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
-    const username = credentials.username?.trim().toLowerCase();
-    if (!username || !credentials.password) throw AuthError.invalidCredentials();
+    const identifier = credentials.identifier?.trim();
+    if (!identifier || !credentials.password) throw AuthError.invalidCredentials();
 
-    const user = await this.repository.getUserByUsername(username);
+    const user = await this.repository.getUserByIdentifier(identifier);
     // Compare regardless of whether the user exists so a missing account and a
     // wrong password take the same time to answer.
     const ok = verifyPassword(credentials.password, user?.passwordHash ?? null);
@@ -98,6 +100,74 @@ export class MockAuthProvider implements AuthService {
     // Tokens are stateless, so an explicit logout is recorded until the token
     // would have expired anyway.
     await this.repository.revokeSession(token, new Date(payload.exp * 1000));
+  }
+
+  /**
+   * Creates an account and signs it straight in.
+   *
+   * Only the mock provider implements this: a real identity provider owns
+   * registration, so `AuthService` does not require it.
+   */
+  async signup(request: SignupRequest): Promise<LoginResponse> {
+    const displayName = request.displayName?.trim();
+    const email = request.email?.trim().toLowerCase();
+    const phone = request.phone?.trim();
+
+    if (!displayName) throw new AuthError(400, 'invalid_signup', 'Please enter your name.');
+    if (!email || !email.includes('@')) {
+      throw new AuthError(400, 'invalid_signup', 'Please enter a valid email address.');
+    }
+    if (!phone || phone.replace(/\D/g, '').length < 10) {
+      throw new AuthError(400, 'invalid_signup', 'Please enter a valid phone number.');
+    }
+    if (!request.password || request.password.length < 8) {
+      throw new AuthError(400, 'invalid_signup', 'Password must be at least 8 characters.');
+    }
+
+    const now = new Date().toISOString();
+    const blank: VerificationState = {
+      // Signup collects the minimum. Phone and email are treated as verified
+      // here because the mock has no way to send a code; a real provider marks
+      // them pending until the code round-trips.
+      phone: 'verified',
+      email: 'verified',
+      governmentId: 'unverified',
+      address: 'unverified',
+      paymentMethod: 'unverified',
+      bankAccountMatch: 'unverified',
+      businessRegistration: 'unverified',
+      lastReviewedAt: null,
+      lastReviewedBy: null,
+    };
+
+    let created: User;
+    try {
+      created = await this.repository.createUser({
+        id: `usr_${randomUUID().slice(0, 12)}`,
+        email,
+        phone,
+        displayName,
+        isAdmin: false,
+        passwordHash: hashPassword(request.password),
+        verification: blank,
+        buyerTrust: { score: 0, completedTransactions: 0, disputesLost: 0, computedAt: null },
+        sellerTrust: {
+          score: 0, completedTransactions: 0, disputesLost: 0, computedAt: null,
+          onTimeDispatchRate: null, repeatCustomerRate: null,
+        },
+        // No storefront yet: it appears the first time they list something.
+        sellerProfile: null,
+        forwarderProfile: null,
+        suspended: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (error) {
+      throw new AuthError(409, 'identifier_taken', error instanceof Error ? error.message : 'That account already exists.');
+    }
+
+    const { token, expiresAt } = createSessionToken(created.id, this.sessionSecret, this.sessionTtlSeconds);
+    return { user: toAuthUser(created), token, expiresAt: expiresAt.toISOString() };
   }
 
   listDemoAccounts(): DemoAccount[] {
@@ -137,7 +207,6 @@ function readToken(request: HttpRequest): string | null {
 export function toAuthUser(user: User): AuthUser {
   return {
     id: user.id,
-    username: user.username,
     displayName: user.displayName,
     email: user.email,
     phone: user.phone,

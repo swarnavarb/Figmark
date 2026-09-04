@@ -13,7 +13,7 @@ start from here.
 ```bash
 npm run install:all     # install api/ and app/ dependencies
 npm run build           # build both
-npm test                # 30 checks over the auth seam and HTTP contract
+npm test                # 57 checks over the auth seam and HTTP contract
 npm run serve           # http://127.0.0.1:5173
 ```
 
@@ -22,8 +22,8 @@ so the whole stack runs with no cloud resources and no Functions Core Tools. For
 frontend work with live reload, run `npm run dev` (Vite on :5173, proxying
 `/api` to :7071) alongside `cd api && npm start` (Functions Core Tools).
 
-Signing in uses the seeded mock accounts — `admin`, `kaiju` (seller), `ravi`,
-`meera` (buyers), all with password `figmark-dev`.
+Sign in with the one seeded account — `demo@figmark.in` (or its phone,
+`+919812345678`) and password `figmark123`. The auth page offers to fill it in.
 
 ## Layout
 
@@ -59,11 +59,19 @@ than quietly wrong.
 - [docs/AUTH.md](docs/AUTH.md) — the auth seam and how to swap in a real provider
 - [docs/DATA-MODEL.md](docs/DATA-MODEL.md) — containers, partition keys, and why
 
-## Status
+## What's built
 
-Built and verified: the domain model, the auth seam with role-based access
-control, the repository layer with both backends, the API routes, the frontend,
-and the GitHub Actions pipeline.
+Sign-in and sign-up, a searchable unified catalog with filters, listing detail
+with group-buy lots and their stage timeline, a one-screen sell flow, the
+freight forwarder directory, and a combined profile covering listings,
+purchases and follows. Social signals — bookmarks, follows, public comments and
+rate-limited bumps — are wired end to end.
+
+Not built yet: direct buyer-seller messaging, photo upload (listings use a
+generated placeholder until blob storage is connected), and reverse-image
+search.
+
+## Status
 
 Not yet verified against live Azure: the session that produced this scaffold had
 no network route to `*.documents.azure.com`, `*.blob.core.windows.net`, or the

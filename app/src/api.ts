@@ -1,17 +1,16 @@
 import type {
   ApiError,
   AuthUser,
+  DemoAccount,
   HealthResponse,
   LoginResponse,
   MeResponse,
 } from '@shared/contracts';
-import type { Lot, Order } from '@shared/models';
+import type { ForwarderProfile, Listing, ListingComment, Lot, Order } from '@shared/models';
 
 /**
- * Typed client for the Functions API.
- *
- * Every response type is imported from the shared contracts, so a change to a
- * server response that this code does not handle fails the build.
+ * Typed client for the Functions API. Response types come from the shared
+ * contracts, so a server change this code does not handle fails the build.
  */
 
 export class ApiRequestError extends Error {
@@ -29,14 +28,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
-      // The session cookie is HttpOnly, so it must be sent explicitly.
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
       ...init,
     });
-  } catch (cause) {
-    // A network-level failure usually means the Functions host is not running,
-    // which is worth saying plainly rather than surfacing "Failed to fetch".
+  } catch {
     throw new ApiRequestError(0, 'network_error', `Could not reach the API at /api${path}.`);
   }
 
@@ -48,36 +44,98 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body?.message ?? `Request failed with status ${response.status}.`,
     );
   }
-
   return (await response.json()) as T;
+}
+
+const post = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+
+export interface SellerCard {
+  id: string;
+  displayName: string;
+  storefrontName: string;
+  storefrontSlug: string | null;
+  tier: string;
+  dispatchRegion: string | null;
+  followerCount: number;
+  trustScore: number;
+  onTimeDispatchRate: number | null;
+}
+
+export interface FeedListing extends Listing {
+  liked: boolean;
+  seller: SellerCard | null;
+  lot: Lot | null;
+}
+
+export interface FeedResponse {
+  listings: FeedListing[];
+  categories: string[];
+  followedSellerIds: string[];
+}
+
+export interface ListingDetail {
+  listing: Listing;
+  seller: SellerCard | null;
+  lot: Lot | null;
+  comments: ListingComment[];
+  liked: boolean;
+  following: boolean;
+  isOwn: boolean;
+}
+
+export interface ActivityResponse {
+  listings: Listing[];
+  orders: Order[];
+  likedListingIds: string[];
+  following: SellerCard[];
+}
+
+export type DirectoryForwarder = ForwarderProfile & { id: string };
+
+export interface NewListing {
+  title: string;
+  description: string;
+  category: string;
+  condition: string;
+  priceMinor: number;
+  quantityAvailable: number;
+  lotMode: boolean;
+  tags: string[];
 }
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
-
   me: () => request<MeResponse>('/auth/me'),
 
-  login: (username: string, password: string) =>
-    request<LoginResponse>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    }),
+  login: (identifier: string, password: string) =>
+    post<LoginResponse>('/auth/login', { identifier, password }),
 
-  logout: () => request<{ ok: true }>('/auth/logout', { method: 'POST' }),
+  signup: (body: { displayName: string; email: string; phone: string; password: string }) =>
+    post<LoginResponse>('/auth/signup', body),
 
-  lots: () => request<{ lots: Lot[] }>('/lots'),
+  logout: () => post<{ ok: true }>('/auth/logout'),
 
-  manifest: (sellerId: string, lotId: string) =>
-    request<{ lot: Lot; orders: Order[]; totals: ManifestTotals }>(
-      `/lots/${encodeURIComponent(sellerId)}/${encodeURIComponent(lotId)}/manifest`,
-    ),
+  feed: (params: Record<string, string | undefined>) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) if (value) query.set(key, value);
+    const suffix = query.toString();
+    return request<FeedResponse>(`/feed${suffix ? `?${suffix}` : ''}`);
+  },
+
+  listing: (id: string) => request<ListingDetail>(`/listings/${encodeURIComponent(id)}`),
+  createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
+  like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
+  bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
+  comment: (id: string, body: string, replyToId?: string) =>
+    post<{ comment: ListingComment }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
+  follow: (sellerId: string) =>
+    post<{ following: boolean }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
+  order: (listingId: string, quantity = 1) => post<{ order: Order }>('/orders', { listingId, quantity }),
+
+  activity: () => request<ActivityResponse>('/me/activity'),
+  forwarders: (route?: string) =>
+    request<{ forwarders: DirectoryForwarder[] }>(`/forwarders${route ? `?route=${encodeURIComponent(route)}` : ''}`),
 };
 
-export interface ManifestTotals {
-  lines: number;
-  units: number;
-  weightGrams: number;
-  valueMinor: number;
-}
-
-export type { AuthUser };
+export type { AuthUser, DemoAccount, Listing, Lot, Order, ListingComment };

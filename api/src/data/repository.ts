@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import type { Listing, Lot, Order, User } from '../../../shared/models.js';
+import type { Listing, ListingComment, Lot, Order, User } from '../../../shared/models.js';
 
 export interface BackendStatus {
   connected: boolean;
@@ -12,6 +12,15 @@ export interface BackendStatus {
 export interface CatalogQuery {
   sellerId?: string;
   limit?: number;
+  /** Free-text match over title, description and tags. */
+  search?: string;
+  category?: string;
+  condition?: string;
+  /** 'lot' for open group-buys, 'in_stock' for stock on hand. */
+  kind?: string;
+  maxPriceMinor?: number;
+  /** Ranks listings from followed sellers first. */
+  followedSellerIds?: readonly string[];
 }
 
 /**
@@ -30,7 +39,11 @@ export interface Repository {
   status(): BackendStatus;
 
   getUserById(id: string): Promise<User | null>;
-  getUserByUsername(username: string): Promise<User | null>;
+  /** Resolves an email or phone to its account. */
+  getUserByIdentifier(identifier: string): Promise<User | null>;
+
+  /** Creates an account, reserving both identifiers. Throws on a duplicate. */
+  createUser(user: User): Promise<User>;
 
   /** Sign-in hints for the mock provider; empty once real auth is in use. */
   listDemoAccounts(): DemoAccount[];
@@ -38,13 +51,37 @@ export interface Repository {
   revokeSession(token: string, expiresAt: Date): Promise<void>;
   isSessionRevoked(token: string): Promise<boolean>;
 
+  listUsersByIds(ids: readonly string[]): Promise<User[]>;
+  listForwarders(): Promise<User[]>;
+
   listLots(query?: CatalogQuery): Promise<Lot[]>;
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;
   listListings(query?: CatalogQuery): Promise<Listing[]>;
 
+  getListing(id: string): Promise<Listing | null>;
+  createListing(listing: Listing): Promise<Listing>;
+  /** Pushes a listing back up the feed. Returns false when rate-limited. */
+  bumpListing(sellerId: string, listingId: string): Promise<boolean>;
+
   /** The lot manifest: every order line in one lot. */
   listOrdersForLot(lotId: string): Promise<Order[]>;
+  listOrdersForBuyer(buyerId: string): Promise<Order[]>;
+  createOrder(order: Order): Promise<Order>;
+
+  listComments(listingId: string): Promise<ListingComment[]>;
+  addComment(comment: ListingComment): Promise<ListingComment>;
+
+  /** Toggles a bookmark. Returns the resulting state. */
+  toggleLike(userId: string, listingId: string): Promise<boolean>;
+  listLikedListingIds(userId: string): Promise<string[]>;
+
+  /** Toggles a follow. Returns the resulting state. */
+  toggleFollow(followerId: string, sellerId: string): Promise<boolean>;
+  listFollowedSellerIds(followerId: string): Promise<string[]>;
 }
+
+/** How long a seller must wait between bumps on the same listing. */
+export const BUMP_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Session tokens are stored as digests, never verbatim - a revocation list is

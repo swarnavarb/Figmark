@@ -88,10 +88,9 @@ export interface SellerTrustSignals extends TrustSignals {
  * genuine assigned role.
  */
 export interface User extends BaseDocument {
-  /** Login handle for the mock auth provider; unique, lowercase. */
-  username: string;
+  /** Unique, lowercased. One of the two sign-in identifiers. */
   email: string;
-  /** E.164 where known. Becomes the primary identifier once auth is decided. */
+  /** E.164, unique where present. The other sign-in identifier. */
   phone: string | null;
   displayName: string;
   /**
@@ -136,6 +135,7 @@ export interface SellerProfile {
   /** Refundable deposit held for the Pro tier, in minor units (paise). */
   depositHeldMinor: number;
   dispatchRegion: string;
+  followerCount: number;
 }
 
 /** One China-origin to India-destination lane a forwarder claims to serve. */
@@ -203,6 +203,39 @@ export interface Listing extends BaseDocument {
   photos: ListingPhoto[];
   /** Free-text search terms, denormalised for query simplicity. */
   tags: string[];
+  /** Bookmark count. Cheap signal, feeds the relevance ranking later. */
+  likeCount: number;
+  viewCount: number;
+  /**
+   * Last time the seller pushed this back up the feed. Rate-limited server-side
+   * so bumping cannot be used to camp the top of the catalog.
+   */
+  bumpedAt: string | null;
+}
+
+/** Public Q&A on a listing, visible to everyone - distinct from private chat. */
+export interface ListingComment extends BaseDocument {
+  /** Partition key. */
+  listingId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  /** Set when the seller answers, so replies can be grouped under a question. */
+  replyToId: string | null;
+}
+
+/** A viewer's bookmark. Kept separate so listings stay cheap to write. */
+export interface Like extends BaseDocument {
+  /** Partition key: the user doing the liking. */
+  userId: string;
+  listingId: string;
+}
+
+/** A follow edge, powering the personalised feed. */
+export interface Follow extends BaseDocument {
+  /** Partition key: the follower. */
+  followerId: string;
+  sellerId: string;
 }
 
 /* -------------------------------------------------------------------------- */
