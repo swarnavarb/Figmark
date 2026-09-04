@@ -1,0 +1,17 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "",
+
+    "AUTH_MODE": "mock",
+    "AUTH_SESSION_SECRET": "dev-only-change-me",
+
+    "COSMOS_ENDPOINT": "https://cosmos-figuremarket-dev.documents.azure.com:443/",
+    "COSMOS_KEY": "<primary key from: az cosmosdb keys list -n cosmos-figuremarket-dev -g rg-figuremarket-dev>",
+    "COSMOS_DATABASE": "figmark",
+
+    "STORAGE_ACCOUNT": "stfiguremarketdev",
+    "STORAGE_KEY": "<key from: az storage account keys list -n stfiguremarketdev -g rg-figuremarket-dev>"
+  }
+}

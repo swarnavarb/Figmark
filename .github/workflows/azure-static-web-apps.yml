@@ -1,0 +1,104 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main]
+  # Any other branch still gets built and verified, just not deployed.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build and verify
+    if: github.event_name != 'pull_request' || github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the apiRuntime pinned in staticwebapp.config.json.
+          node-version: '20'
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Build API
+        working-directory: api
+        run: npm run build
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build app
+        working-directory: app
+        run: npm run build
+
+      - name: Verify auth seam and HTTP contract
+        run: |
+          node scripts/smoke-auth.mjs
+          node scripts/smoke-api.mjs
+
+      # Static Web Apps deploys the api folder as-is, so it must carry its
+      # production dependencies and none of its build-time ones.
+      - name: Prune API dev dependencies
+        working-directory: api
+        run: npm prune --omit=dev
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: figmark-build
+          path: |
+            app/dist
+            api
+          retention-days: 5
+
+  deploy:
+    name: Deploy to Static Web Apps
+    needs: build
+    # Only the production branch and manual runs deploy; feature branches are
+    # built and verified above but never published.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://icy-stone-0498a9900.6.azurestaticapps.net
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: figmark-build
+
+      - name: Deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          # Pre-built above, so Oryx must not try to build either side again.
+          app_location: app/dist
+          api_location: api
+          output_location: ''
+          skip_app_build: true
+          skip_api_build: true
+
+  close_preview:
+    name: Close pull request preview
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: close

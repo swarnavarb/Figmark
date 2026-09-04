@@ -1,0 +1,4 @@
+*.js.map
+src
+tsconfig.json
+local.settings.json

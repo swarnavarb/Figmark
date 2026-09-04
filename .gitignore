@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+app/dist/
+api/dist/
+
+# azure functions local
+api/local.settings.json
+bin/
+obj/
+.azure/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+
+# editors / os
+.DS_Store
+.vscode/
+.idea/
