@@ -10,7 +10,7 @@ import { useSession } from './session';
  * where listing something is never more than one tap away.
  */
 export function AppShell() {
-  const { user, signOut } = useSession();
+  const { user, warning, signOut } = useSession();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [term, setTerm] = useState(params.get('q') ?? '');
@@ -60,6 +60,12 @@ export function AppShell() {
           </button>
         </nav>
       </header>
+
+      {warning && (
+        <div className="page" style={{ paddingBottom: 0 }}>
+          <p className="notice notice--info">{warning}</p>
+        </div>
+      )}
 
       <Outlet />
     </div>

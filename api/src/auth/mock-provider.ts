@@ -30,8 +30,21 @@ import type { AuthService } from './types.js';
  * identity provider is chosen. It must not reach production with real users -
  * see docs/AUTH.md for the swap-in procedure.
  */
+/** Failed sign-ins tolerated per identifier before a cool-off. */
+const MAX_ATTEMPTS = 8;
+const LOCKOUT_MS = 10 * 60 * 1000;
+
 export class MockAuthProvider implements AuthService {
   readonly mode: AuthMode = 'mock';
+
+  /**
+   * Failed attempts per identifier.
+   *
+   * Per-instance and in memory, so it is a speed bump rather than a guarantee -
+   * but an unthrottled password endpoint is worth closing even approximately,
+   * and a real provider brings its own throttling when it replaces this.
+   */
+  private readonly attempts = new Map<string, { count: number; until: number }>();
 
   constructor(
     private readonly repository: Repository,
@@ -56,8 +69,17 @@ export class MockAuthProvider implements AuthService {
 
   async requireAuth(request: HttpRequest): Promise<AuthUser> {
     const user = await this.getCurrentUser(request);
-    if (!user) throw AuthError.unauthenticated();
-    return user;
+    if (user) return user;
+
+    // Separate "you are not signed in" from "you were, and the account behind
+    // that session is gone" - the second is what an ephemeral store produces
+    // after a restart, and it needs saying rather than looking like a logout.
+    const token = readToken(request);
+    const payload = token ? verifySessionToken(token, this.sessionSecret) : null;
+    if (payload && !(await this.repository.getUserById(payload.sub))) {
+      throw AuthError.accountMissing();
+    }
+    throw AuthError.unauthenticated();
   }
 
   async requireCapability(
@@ -77,12 +99,29 @@ export class MockAuthProvider implements AuthService {
     const identifier = credentials.identifier?.trim();
     if (!identifier || !credentials.password) throw AuthError.invalidCredentials();
 
+    const key = identifier.toLowerCase();
+    const locked = this.attempts.get(key);
+    if (locked && locked.count >= MAX_ATTEMPTS && locked.until > Date.now()) {
+      throw new AuthError(
+        429,
+        'too_many_attempts',
+        'Too many failed sign-in attempts. Try again in a few minutes.',
+      );
+    }
+
     const user = await this.repository.getUserByIdentifier(identifier);
     // Compare regardless of whether the user exists so a missing account and a
     // wrong password take the same time to answer.
     const ok = verifyPassword(credentials.password, user?.passwordHash ?? null);
-    if (!user || !ok) throw AuthError.invalidCredentials();
+    if (!user || !ok) {
+      const previous = locked && locked.until > Date.now() ? locked.count : 0;
+      this.attempts.set(key, { count: previous + 1, until: Date.now() + LOCKOUT_MS });
+      throw AuthError.invalidCredentials();
+    }
     if (user.suspended) throw AuthError.suspended();
+    // A good password clears the record, so a legitimate user who mistyped
+    // twice is not held back by it.
+    this.attempts.delete(key);
 
     const { token, expiresAt } = createSessionToken(
       user.id,
@@ -167,7 +206,19 @@ export class MockAuthProvider implements AuthService {
     }
 
     const { token, expiresAt } = createSessionToken(created.id, this.sessionSecret, this.sessionTtlSeconds);
-    return { user: toAuthUser(created), token, expiresAt: expiresAt.toISOString() };
+    return {
+      user: toAuthUser(created),
+      token,
+      expiresAt: expiresAt.toISOString(),
+      // Told at the moment it matters, rather than discovered later when the
+      // account has silently gone.
+      ...(this.repository.backend === 'memory'
+        ? {
+            warning:
+              'This server keeps accounts in memory, so this one will be lost when it restarts. The demo account is re-created each time.',
+          }
+        : {}),
+    };
   }
 
   listDemoAccounts(): DemoAccount[] {

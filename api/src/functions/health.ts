@@ -24,13 +24,20 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
 
   const body: HealthResponse = {
     // Degraded means "running, but not on the intended backing services".
-    status: data.connected && storage.connected && data.database !== null ? 'ok' : 'degraded',
+    status:
+      data.connected && storage.connected && data.database !== null && config.sessionSecretSource !== 'development'
+        ? 'ok'
+        : 'degraded',
     service: 'figmark-api',
     version: config.version,
     time: new Date().toISOString(),
     auth: {
       mode: auth.mode,
       demoAccounts: auth.listDemoAccounts(),
+      sessionSecretSource: config.sessionSecretSource,
+      // Accounts created at runtime only survive if something durable is behind
+      // the repository; the in-memory store loses them on every restart.
+      accountsDurable: repository.backend === 'cosmos',
     },
     data: {
       backend: repository.backend,

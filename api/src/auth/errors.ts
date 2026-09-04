@@ -25,6 +25,21 @@ export class AuthError extends Error {
     return new AuthError(401, 'invalid_credentials', 'Username or password is incorrect.');
   }
 
+  /**
+   * The token is valid but the account behind it is gone.
+   *
+   * Worth its own code: on an ephemeral store this is the difference between
+   * "you typed the wrong password" - which sends people round in circles
+   * retyping a correct one - and "this server no longer has your account".
+   */
+  static accountMissing(): AuthError {
+    return new AuthError(
+      401,
+      'account_unavailable',
+      'Your account is no longer available on this server. Accounts are not durable until a database is configured.',
+    );
+  }
+
   static suspended(): AuthError {
     return new AuthError(403, 'account_suspended', 'This account is suspended.');
   }

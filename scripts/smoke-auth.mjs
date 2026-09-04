@@ -159,6 +159,59 @@ await expectAuthError('refuses a short password', 'invalid_signup', () =>
   auth.signup({ displayName: 'X', email: 'x@figmark.example', phone: '+919777000333', password: 'short' }),
 );
 
+console.log('\nsecurity');
+
+await check('a valid session for a vanished account says so, not "wrong password"', async () => {
+  // What a restart looks like: the token still verifies, the account is gone.
+  const created = await auth.signup({
+    displayName: 'Ghost', email: 'ghost@figmark.example', phone: '+919777000444', password: 'longenough1',
+  });
+  const fresh = new MemoryRepository();
+  await fresh.init();
+  const other = new MockAuthProvider(fresh, 'test-secret', 3600);
+  const carried = requestWith({ authorization: `Bearer ${created.token}` });
+
+  assert.equal(await other.getCurrentUser(carried), null);
+  try {
+    await other.requireAuth(carried);
+    assert.fail('expected requireAuth to throw');
+  } catch (err) {
+    assert.equal(err.code, 'account_unavailable', 'must not look like a plain logout');
+  }
+});
+
+await check('sign-up warns when the store will not keep the account', async () => {
+  const created = await auth.signup({
+    displayName: 'Warned', email: 'warned@figmark.example', phone: '+919777000555', password: 'longenough1',
+  });
+  assert.match(created.warning ?? '', /memory/i);
+});
+
+await check('repeated wrong passwords are rate-limited', async () => {
+  const target = 'ratelimit@figmark.example';
+  await auth.signup({ displayName: 'RL', email: target, phone: '+919777000666', password: 'longenough1' });
+  let limited = false;
+  for (let i = 0; i < 12; i += 1) {
+    try {
+      await auth.login({ identifier: target, password: 'wrong' });
+    } catch (err) {
+      if (err.code === 'too_many_attempts') { limited = true; break; }
+    }
+  }
+  assert.ok(limited, 'expected a lockout after repeated failures');
+});
+
+await check('a correct password clears the failed-attempt record', async () => {
+  const target = 'clears@figmark.example';
+  await auth.signup({ displayName: 'CL', email: target, phone: '+919777000777', password: 'longenough1' });
+  for (let i = 0; i < 3; i += 1) {
+    await auth.login({ identifier: target, password: 'wrong' }).catch(() => {});
+  }
+  // A legitimate user who mistyped a few times must still get in.
+  const ok = await auth.login({ identifier: target, password: 'longenough1' });
+  assert.equal(ok.user.email, target);
+});
+
 console.log('\ndata layer');
 
 await check('search matches title, tags and description', async () => {

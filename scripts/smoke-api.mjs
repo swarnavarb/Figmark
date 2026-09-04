@@ -46,6 +46,15 @@ const check = async (name, fn) => {
 /* ── auth ──────────────────────────────────────────────────────────────── */
 console.log('auth');
 
+await check('health reports the session-key source and account durability', async () => {
+  const body = (await health(req(), ctx)).jsonBody;
+  // No database configured here, so both must read as the unsafe case.
+  assert.equal(body.auth.sessionSecretSource, 'development');
+  assert.equal(body.auth.accountsDurable, false);
+  // ...and that alone is enough to keep the deployment out of "ok".
+  assert.equal(body.status, 'degraded');
+});
+
 await check('health advertises exactly one sign-in account', async () => {
   const body = (await health(req(), ctx)).jsonBody;
   assert.equal(body.auth.demoAccounts.length, 1);

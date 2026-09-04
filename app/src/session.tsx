@@ -11,6 +11,8 @@ import { api } from './api';
 interface SessionValue {
   user: AuthUser | null;
   loading: boolean;
+  /** Non-null when the signed-in account is not durably stored. */
+  warning: string | null;
   signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (body: { displayName: string; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -21,6 +23,8 @@ const SessionContext = createContext<SessionValue | null>(null);
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Set when sign-up succeeded on a store that will not keep the account. */
+  const [warning, setWarning] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,21 +39,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (identifier: string, password: string) => {
+    // The warning belongs to the account it was raised for, so signing in as
+    // someone else must clear it.
+    setWarning(null);
     setUser((await api.login(identifier, password)).user);
   }, []);
 
   const signUp = useCallback(async (body: Parameters<SessionValue['signUp']>[0]) => {
-    setUser((await api.signup(body)).user);
+    const result = await api.signup(body);
+    setWarning(result.warning ?? null);
+    setUser(result.user);
   }, []);
 
   const signOut = useCallback(async () => {
     await api.logout();
     setUser(null);
+    setWarning(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, signIn, signUp, signOut }),
-    [user, loading, signIn, signUp, signOut],
+    () => ({ user, loading, warning, signIn, signUp, signOut }),
+    [user, loading, warning, signIn, signUp, signOut],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

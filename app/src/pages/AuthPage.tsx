@@ -19,6 +19,7 @@ export function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demo, setDemo] = useState<DemoAccount | null>(null);
+  const [durable, setDurable] = useState(true);
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -35,6 +36,7 @@ export function AuthPage() {
         if (cancelled) return;
         const account = health.auth.demoAccounts[0];
         if (health.auth.mode === 'mock' && account) setDemo(account);
+        setDurable(health.auth.accountsDurable);
       })
       .catch(() => undefined);
     return () => {
@@ -133,6 +135,13 @@ export function AuthPage() {
             </label>
 
             {error && <ErrorNotice message={error} />}
+
+            {mode === 'signup' && !durable && (
+              <p className="notice notice--info">
+                This server keeps accounts in memory. An account you create here works now but is lost when the
+                server restarts — sign in with the demo account below for something that always works.
+              </p>
+            )}
 
             <button type="submit" className="btn btn--lg btn--block" disabled={busy}>
               {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}

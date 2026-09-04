@@ -55,6 +55,8 @@ export interface SignupRequest {
 
 export interface LoginResponse {
   user: AuthUser;
+  /** Set when the account was created on a store that will not keep it. */
+  warning?: string;
   /** Bearer token, for clients that cannot use the session cookie. */
   token: string;
   expiresAt: string;
@@ -81,6 +83,14 @@ export interface HealthResponse {
     mode: AuthMode;
     /** Seeded logins, exposed only while the mock provider is active. */
     demoAccounts: DemoAccount[];
+    /**
+     * Where the session signing key came from. 'development' means the constant
+     * published in this repository - sessions are forgeable and this must never
+     * be the value in a real deployment.
+     */
+    sessionSecretSource: 'configured' | 'ephemeral' | 'development';
+    /** False when accounts are held in memory and will not survive a restart. */
+    accountsDurable: boolean;
   };
   data: {
     backend: BackendKind;
