@@ -78,8 +78,8 @@ export function FeedPage() {
 
       <div className="stack" style={{ marginBottom: 22 }}>
         <div className="chips">
-          <button className={`chip${kind === 'lot_slot' ? ' is-on' : ''}`} onClick={() => toggle('kind', 'lot_slot')}>
-            Open lots
+          <button className={`chip${kind === 'pre_order' ? ' is-on' : ''}`} onClick={() => toggle('kind', 'pre_order')}>
+            Pre-order
           </button>
           <button className={`chip${kind === 'in_stock' ? ' is-on' : ''}`} onClick={() => toggle('kind', 'in_stock')}>
             In stock
@@ -152,8 +152,6 @@ function ListingCard({ listing }: { listing: FeedListing }) {
     }
   }
 
-  const lot = listing.lot;
-
   return (
     <Link to={`/listing/${listing.id}`} className="card card--link">
       <Thumb seed={listing.id} label={listing.title}>
@@ -165,7 +163,7 @@ function ListingCard({ listing }: { listing: FeedListing }) {
         )}
         <div className="thumb__badges">
           <span className="badge badge--solid">{listing.condition}</span>
-          {lot && <span className="badge badge--accent">Group buy</span>}
+          {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
         </div>
       </Thumb>
 
@@ -173,11 +171,12 @@ function ListingCard({ listing }: { listing: FeedListing }) {
         <span className="listing__title">{listing.title}</span>
         <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
 
-        {lot && (
+        {listing.preOrder && (
           <>
-            <LotMeter filled={lot.filledCount} threshold={lot.fillThreshold} />
+            <LotMeter filled={listing.preOrder.filledCount} threshold={listing.preOrder.fillThreshold} />
             <span className="faint">
-              {lot.filledCount}/{lot.fillThreshold} filled · closes in {daysUntil(lot.cutoffAt)}d
+              {listing.preOrder.filledCount}/{listing.preOrder.fillThreshold} booked · closes in{' '}
+              {daysUntil(listing.preOrder.cutoffAt)}d
             </span>
           </>
         )}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { labelFor } from '@shared/fulfilment';
 import { api, type ActivityResponse } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
@@ -130,15 +131,19 @@ export function ProfilePage() {
           <div className="card table-scroll">
             <table className="table">
               <thead>
-                <tr><th>Item</th><th>Qty</th><th>Total</th><th>Status</th><th>Payment</th><th>Escrow</th><th>Ordered</th></tr>
+                <tr><th>Item</th><th>Qty</th><th>Total</th><th>Tracking</th><th>Payment</th><th>Escrow</th><th>Ordered</th></tr>
               </thead>
               <tbody>
                 {data.orders.map((order) => (
                   <tr key={order.id}>
-                    <td>{order.itemName}</td>
+                    <td>
+                      <Link to={`/order/${order.id}`} style={{ color: 'var(--accent)', fontWeight: 550 }}>
+                        {order.itemName}
+                      </Link>
+                    </td>
                     <td>{order.quantity}</td>
                     <td>{formatMoney(order.unitPriceMinor * order.quantity, order.currency)}</td>
-                    <td><span className="badge">{order.status.replace(/_/g, ' ')}</span></td>
+                    <td><span className="badge">{labelFor(order.stage)}</span></td>
                     <td>
                       <span className={`badge badge--${order.paymentStatus === 'paid' ? 'ok' : 'warn'}`}>
                         {order.paymentStatus.replace(/_/g, ' ')}

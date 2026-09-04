@@ -6,6 +6,7 @@ import type {
   LoginResponse,
   MeResponse,
 } from '@shared/contracts';
+import type { FulfilmentStage } from '@shared/enums';
 import type { ForwarderProfile, Listing, ListingComment, Lot, Order } from '@shared/models';
 
 /**
@@ -65,7 +66,8 @@ export interface SellerCard {
 export interface FeedListing extends Listing {
   liked: boolean;
   seller: SellerCard | null;
-  lot: Lot | null;
+  /** Inherited from the item's shipment batch; the batch itself stays private. */
+  estimatedDispatchAt: string | null;
 }
 
 export interface FeedResponse {
@@ -77,7 +79,7 @@ export interface FeedResponse {
 export interface ListingDetail {
   listing: Listing;
   seller: SellerCard | null;
-  lot: Lot | null;
+  estimatedDispatchAt: string | null;
   comments: ListingComment[];
   liked: boolean;
   following: boolean;
@@ -93,6 +95,37 @@ export interface ActivityResponse {
 
 export type DirectoryForwarder = ForwarderProfile & { id: string };
 
+export interface LotSummary {
+  lot: Lot;
+  listingCount: number;
+  orderCount: number;
+  unitCount: number;
+  weightGrams: number;
+  valueMinor: number;
+}
+
+export interface LotsResponse {
+  lots: LotSummary[];
+  /** Listings not yet tagged into any batch. */
+  unassigned: Listing[];
+}
+
+export interface LotContents {
+  lot: Lot;
+  listings: Listing[];
+  orders: Order[];
+  totals: { lines: number; units: number; weightGrams: number; valueMinor: number };
+}
+
+export interface OrderTracking {
+  order: Order;
+  stages: FulfilmentStage[];
+  currentStage: FulfilmentStage;
+  sellerName: string;
+  trackingReference: string | null;
+  estimatedDispatchAt: string | null;
+}
+
 export interface NewListing {
   title: string;
   description: string;
@@ -100,7 +133,7 @@ export interface NewListing {
   condition: string;
   priceMinor: number;
   quantityAvailable: number;
-  lotMode: boolean;
+  preOrder: { fillThreshold: number; cutoffAt: string } | null;
   tags: string[];
 }
 
@@ -134,6 +167,19 @@ export const api = {
   order: (listingId: string, quantity = 1) => post<{ order: Order }>('/orders', { listingId, quantity }),
 
   activity: () => request<ActivityResponse>('/me/activity'),
+
+  myLots: () => request<LotsResponse>('/me/lots'),
+  createLot: (body: { name: string; description?: string; estimatedDispatchAt?: string; forwarderUserId?: string; forwarderName?: string; forwarderContact?: string }) =>
+    post<{ lot: Lot }>('/lots', body),
+  lotContents: (id: string) => request<LotContents>(`/lots/${encodeURIComponent(id)}/contents`),
+  assignToLot: (id: string, listingIds: string[], remove = false) =>
+    post<{ changed: number }>(`/lots/${encodeURIComponent(id)}/assign`, { listingIds, remove }),
+  advanceStage: (id: string, stage: string, note?: string) =>
+    post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/stage`, { stage, note }),
+  setTracking: (id: string, body: { trackingReference?: string; forwarderName?: string; forwarderContact?: string; forwarderUserId?: string }) =>
+    post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/tracking`, body),
+
+  orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   forwarders: (route?: string) =>
     request<{ forwarders: DirectoryForwarder[] }>(`/forwarders${route ? `?route=${encodeURIComponent(route)}` : ''}`),
 };

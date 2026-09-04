@@ -203,7 +203,8 @@ interface ListingSeed {
   description: string;
   category: string;
   condition: Listing['condition'];
-  kind: Listing['kind'];
+  /** Opt-in demand pooling, shown to buyers. */
+  preOrder?: { fillThreshold: number; filledCount: number; cutoffDays: number };
   priceMinor: number;
   quantity: number;
   lotId?: string;
@@ -217,56 +218,58 @@ const LISTINGS: ListingSeed[] = [
   {
     id: 'lst_dragon_knight', sellerId: 'usr_kaiju', title: '1/7 Scale Dragon Knight — resin statue',
     description: 'Factory sealed, sourced direct from the Guangzhou studio. Pre-book against the September lot; ships once the lot clears customs.',
-    category: 'Scale figures', condition: 'MISB', kind: 'lot_slot', priceMinor: 1_45_000,
+    category: 'Scale figures', condition: 'MISB', priceMinor: 1_45_000,
     quantity: 17, lotId: 'lot_gz_sep', tags: ['resin', 'scale', 'dragon', 'preorder'],
+    preOrder: { fillThreshold: 20, filledCount: 3, cutoffDays: 9 },
     likeCount: 34, viewCount: 412, ageDays: -6,
   },
   {
     id: 'lst_mecha_kit', sellerId: 'usr_kaiju', title: 'HG Mecha model kit — assorted wave 4',
     description: 'In stock in Bengaluru. Ships within 2 working days. Box fresh, unbuilt.',
-    category: 'Model kits', condition: 'MIB', kind: 'in_stock', priceMinor: 32_000,
+    category: 'Model kits', condition: 'MIB', priceMinor: 32_000,
     quantity: 6, tags: ['mecha', 'kit', 'gundam', 'in-stock'],
     likeCount: 12, viewCount: 188, ageDays: -12,
   },
   {
     id: 'lst_card_booster', sellerId: 'usr_tokyoline', title: 'TCG booster box — Japanese print',
     description: 'Sealed Japanese print run, not the English release. One box per buyer while stock lasts.',
-    category: 'Trading cards', condition: 'MISB', kind: 'in_stock', priceMinor: 78_000,
+    category: 'Trading cards', condition: 'MISB', priceMinor: 78_000,
     quantity: 4, tags: ['tcg', 'cards', 'sealed', 'japanese'],
     likeCount: 51, viewCount: 623, ageDays: -3,
   },
   {
     id: 'lst_anime_figure', sellerId: 'usr_tokyoline', title: 'Prize figure set — 3 piece',
     description: 'Complete set of three, opened for photos then re-boxed. No damage to the figures.',
-    category: 'Anime merch', condition: 'BIB', kind: 'in_stock', priceMinor: 24_500,
+    category: 'Anime merch', condition: 'BIB', priceMinor: 24_500,
     quantity: 2, tags: ['prize', 'figure', 'set'],
     likeCount: 8, viewCount: 97, ageDays: -18,
   },
   {
     id: 'lst_sneaker_retro', sellerId: 'usr_sneakervault', title: 'Retro high-top — UK 9, deadstock',
     description: 'Deadstock pair, authenticated in-house before dispatch. Original box included.',
-    category: 'Sneakers', condition: 'MIB', kind: 'in_stock', priceMinor: 2_15_000,
+    category: 'Sneakers', condition: 'MIB', priceMinor: 2_15_000,
     quantity: 1, tags: ['sneakers', 'deadstock', 'uk9'],
     likeCount: 73, viewCount: 1_204, ageDays: -1,
   },
   {
     id: 'lst_sneaker_runner', sellerId: 'usr_sneakervault', title: 'Runner — UK 8.5, worn twice',
     description: 'Worn twice indoors, soles clean. Selling because the fit was wrong for me.',
-    category: 'Sneakers', condition: 'LOOSE', kind: 'in_stock', priceMinor: 68_000,
+    category: 'Sneakers', condition: 'LOOSE', priceMinor: 68_000,
     quantity: 1, tags: ['sneakers', 'used', 'uk85'],
     likeCount: 5, viewCount: 71, ageDays: -9,
   },
   {
     id: 'lst_iem_audio', sellerId: 'usr_gadgetgrid', title: 'Planar IEM — Shenzhen direct',
     description: 'Group-buy slot against the October Shenzhen consolidation. Balanced cable included.',
-    category: 'Electronics', condition: 'MISB', kind: 'lot_slot', priceMinor: 54_000,
+    category: 'Electronics', condition: 'MISB', priceMinor: 54_000,
     quantity: 22, lotId: 'lot_sz_oct', tags: ['audio', 'iem', 'planar', 'preorder'],
+    preOrder: { fillThreshold: 30, filledCount: 8, cutoffDays: 16 },
     likeCount: 29, viewCount: 347, ageDays: -4,
   },
   {
     id: 'lst_handheld', sellerId: 'usr_gadgetgrid', title: 'Retro handheld console — 64GB',
     description: 'Preloaded, tested before shipping. Charger and case in the box.',
-    category: 'Electronics', condition: 'MIB', kind: 'in_stock', priceMinor: 89_000,
+    category: 'Electronics', condition: 'MIB', priceMinor: 89_000,
     quantity: 3, tags: ['handheld', 'retro', 'gaming'],
     likeCount: 41, viewCount: 512, ageDays: -7,
   },
@@ -274,14 +277,14 @@ const LISTINGS: ListingSeed[] = [
   {
     id: 'lst_my_statue', sellerId: 'usr_demo', title: 'Garage kit statue — built and painted',
     description: 'Built and painted by me over two months. Selling to make shelf space. Collection preferred in Mumbai.',
-    category: 'Collectibles', condition: 'LOOSE', kind: 'in_stock', priceMinor: 1_20_000,
-    quantity: 1, tags: ['garage-kit', 'painted', 'mumbai'],
+    category: 'Collectibles', condition: 'LOOSE', priceMinor: 1_20_000,
+    quantity: 1, lotId: 'lot_my_batch', tags: ['garage-kit', 'painted', 'mumbai'],
     likeCount: 3, viewCount: 44, ageDays: -5,
   },
   {
     id: 'lst_my_cards', sellerId: 'usr_demo', title: 'Card binder — 200+ commons and rares',
     description: 'Clearing out duplicates. Binder included. Happy to split if someone wants specific cards.',
-    category: 'Trading cards', condition: 'LOOSE', kind: 'in_stock', priceMinor: 18_000,
+    category: 'Trading cards', condition: 'LOOSE', priceMinor: 18_000,
     quantity: 1, tags: ['cards', 'bulk', 'binder'],
     likeCount: 1, viewCount: 22, ageDays: -14,
   },
@@ -295,11 +298,17 @@ export function seedListings(): Listing[] {
     description: entry.description,
     category: entry.category,
     condition: entry.condition,
-    kind: entry.kind,
     status: 'active',
     priceMinor: entry.priceMinor,
     currency: 'INR',
     quantityAvailable: entry.quantity,
+    preOrder: entry.preOrder
+      ? {
+          fillThreshold: entry.preOrder.fillThreshold,
+          filledCount: entry.preOrder.filledCount,
+          cutoffAt: iso(entry.preOrder.cutoffDays),
+        }
+      : null,
     lotId: entry.lotId ?? null,
     photos: [],
     tags: entry.tags,
@@ -319,7 +328,7 @@ export function seedLots(): Lot[] {
       description: 'Consolidated shipment closing end of month. Air freight, QC before repack.',
       status: 'open', stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Lot opened for pre-booking.', recordedBy: 'usr_kaiju' }],
-      fillThreshold: 20, filledCount: 3, cutoffAt: iso(9), estimatedDispatchAt: iso(24),
+      estimatedDispatchAt: iso(24),
       forwarder: { forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight', contact: 'ops@lotusfreight.example', trackingReference: null },
       costModel: { currency: 'INR', goodsCostMinor: 18_50_000, freightMinor: 2_40_000, customsDutyMinor: 3_10_000, packagingMinor: 45_000, localShippingMinor: 60_000, totalWeightGrams: 24_500 },
       createdAt: iso(-6), updatedAt: iso(-1),
@@ -330,10 +339,23 @@ export function seedLots(): Lot[] {
       description: 'Audio and small electronics. Sea freight to Chennai, then domestic dispatch.',
       status: 'open', stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-4), note: null, recordedBy: 'usr_gadgetgrid' }],
-      fillThreshold: 30, filledCount: 8, cutoffAt: iso(16), estimatedDispatchAt: iso(46),
+      estimatedDispatchAt: iso(46),
       forwarder: { forwarderUserId: 'usr_fwd_silkroute', name: 'Silk Route Cargo', contact: 'hello@silkroute.example', trackingReference: null },
       costModel: { currency: 'INR', goodsCostMinor: 12_80_000, freightMinor: 1_10_000, customsDutyMinor: 2_05_000, packagingMinor: 32_000, localShippingMinor: 48_000, totalWeightGrams: 16_200 },
       createdAt: iso(-4), updatedAt: iso(-1),
+    },
+    {
+      /* The demo account's own shipment batch, so the seller console has
+         something real in it the moment you sign in. */
+      id: 'lot_my_batch', sellerId: 'usr_demo',
+      name: 'Mumbai dispatch — week 36',
+      description: 'Items going out from my own shelf this week.',
+      status: 'open', stage: 'ordering',
+      stageHistory: [{ stage: 'ordering', enteredAt: iso(-3), note: 'Batch opened.', recordedBy: 'usr_demo' }],
+      estimatedDispatchAt: iso(4),
+      forwarder: null,
+      costModel: { currency: 'INR', goodsCostMinor: 0, freightMinor: 0, customsDutyMinor: 0, packagingMinor: 12_000, localShippingMinor: 18_000, totalWeightGrams: 1_800 },
+      createdAt: iso(-3), updatedAt: iso(-3),
     },
     {
       id: 'lot_gz_aug', sellerId: 'usr_kaiju',
@@ -346,7 +368,7 @@ export function seedLots(): Lot[] {
         { stage: 'dispatched_from_china', enteredAt: iso(-19), note: 'Air freight, AWB on file.', recordedBy: 'usr_kaiju' },
         { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
       ],
-      fillThreshold: 15, filledCount: 18, cutoffAt: iso(-28), estimatedDispatchAt: iso(3),
+      estimatedDispatchAt: iso(3),
       // The escape hatch: a forwarder the seller already works with, off-platform.
       forwarder: { forwarderUserId: null, name: 'Shenzhen Star Cargo', contact: 'wa: +8613800000000', trackingReference: 'SSC-2026-08-4471' },
       costModel: { currency: 'INR', goodsCostMinor: 14_20_000, freightMinor: 1_95_000, customsDutyMinor: 2_40_000, packagingMinor: 38_000, localShippingMinor: 52_000, totalWeightGrams: 19_800 },
@@ -363,6 +385,8 @@ export function seedOrders(): Order[] {
       listingId: 'lst_dragon_knight', itemName: '1/7 Scale Dragon Knight — resin statue',
       condition: 'MISB', quantity: 2, unitWeightGrams: 1_400, unitPriceMinor: 1_45_000, currency: 'INR',
       status: 'confirmed', paymentStatus: 'paid',
+      stage: 'ordering',
+      stageHistory: [{ stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_demo' }],
       escrow: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
       completedAt: null, createdAt: iso(-5), updatedAt: iso(-5),
     },
@@ -371,6 +395,13 @@ export function seedOrders(): Order[] {
       listingId: 'lst_mecha_kit', itemName: 'HG Mecha model kit — assorted wave 3',
       condition: 'MIB', quantity: 1, unitWeightGrams: 900, unitPriceMinor: 32_000, currency: 'INR',
       status: 'in_fulfilment', paymentStatus: 'paid',
+      stage: 'india_received',
+      stageHistory: [
+        { stage: 'ordering', enteredAt: iso(-30), note: 'Order placed.', recordedBy: 'usr_demo' },
+        { stage: 'china_wh_received', enteredAt: iso(-26), note: null, recordedBy: 'usr_kaiju' },
+        { stage: 'dispatched_from_china', enteredAt: iso(-19), note: 'Air freight, AWB on file.', recordedBy: 'usr_kaiju' },
+        { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
+      ],
       escrow: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
       completedAt: null, createdAt: iso(-30), updatedAt: iso(-4),
     },
@@ -379,6 +410,8 @@ export function seedOrders(): Order[] {
       listingId: 'lst_iem_audio', itemName: 'Planar IEM — Shenzhen direct',
       condition: 'MISB', quantity: 1, unitWeightGrams: 400, unitPriceMinor: 54_000, currency: 'INR',
       status: 'pending_payment', paymentStatus: 'unpaid',
+      stage: 'ordering',
+      stageHistory: [{ stage: 'ordering', enteredAt: iso(-2), note: 'Order placed.', recordedBy: 'usr_demo' }],
       escrow: { state: 'none', amountMinor: 54_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
       completedAt: null, createdAt: iso(-2), updatedAt: iso(-2),
     },

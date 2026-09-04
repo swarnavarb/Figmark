@@ -58,6 +58,17 @@ export interface Repository {
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;
   listListings(query?: CatalogQuery): Promise<Listing[]>;
 
+  /* Shipment batches (seller-side). */
+  createLot(lot: Lot): Promise<Lot>;
+  updateLot(lot: Lot): Promise<Lot>;
+  /** Every listing tagged into this lot. */
+  listListingsInLot(lotId: string): Promise<Listing[]>;
+  /** Tags listings into a lot, or clears the tag when lotId is null. */
+  assignListingsToLot(sellerId: string, listingIds: readonly string[], lotId: string | null): Promise<number>;
+
+  getOrder(id: string): Promise<Order | null>;
+  updateOrder(order: Order): Promise<Order>;
+
   getListing(id: string): Promise<Listing | null>;
   createListing(listing: Listing): Promise<Listing>;
   /** Pushes a listing back up the feed. Returns false when rate-limited. */

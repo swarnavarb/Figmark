@@ -3,9 +3,11 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { AuthPage } from './pages/AuthPage';
+import { BatchesPage } from './pages/BatchesPage';
 import { FeedPage } from './pages/FeedPage';
 import { ForwardersPage } from './pages/ForwardersPage';
 import { ListingPage } from './pages/ListingPage';
+import { OrderPage } from './pages/OrderPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SellPage } from './pages/SellPage';
 import { SessionProvider, useSession } from './session';
@@ -37,6 +39,8 @@ function App() {
         <Route path="/" element={<FeedPage />} />
         <Route path="/listing/:id" element={<ListingPage />} />
         <Route path="/sell" element={<SellPage />} />
+        <Route path="/batches" element={<BatchesPage />} />
+        <Route path="/order/:id" element={<OrderPage />} />
         <Route path="/forwarders" element={<ForwardersPage />} />
         <Route path="/me" element={<ProfilePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

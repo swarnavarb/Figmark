@@ -43,6 +43,9 @@ export function AppShell() {
         </form>
 
         <nav className="nav__links">
+          <NavLink to="/batches" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`}>
+            Batches
+          </NavLink>
           <NavLink to="/forwarders" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`}>
             Forwarders
           </NavLink>

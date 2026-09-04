@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { LOT_STAGES, LOT_STAGE_LABELS } from '@shared/enums';
-import type { Lot } from '@shared/models';
+import type { PreOrder } from '@shared/models';
 import { ApiRequestError, api, type ListingDetail } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, LotMeter, Thumb, TrustBadge } from '../components/ui';
 import { daysUntil, formatDate, formatMoney, timeAgo } from '../format';
@@ -32,7 +31,7 @@ export function ListingPage() {
   if (error) return <main className="page"><ErrorNotice message={error} /></main>;
   if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
 
-  const { listing, seller, lot, comments } = data;
+  const { listing, seller, comments } = data;
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true);
@@ -93,7 +92,7 @@ export function ListingPage() {
           <Thumb seed={listing.id} label={listing.title} className="thumb detail__hero">
             <div className="thumb__badges">
               <span className="badge badge--solid">{listing.condition}</span>
-              {lot && <span className="badge badge--accent">Group buy</span>}
+              {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
             </div>
           </Thumb>
 
@@ -115,7 +114,9 @@ export function ListingPage() {
             )}
           </div>
 
-          {lot && <LotPanel lot={lot} />}
+          {listing.preOrder && (
+            <PreOrderPanel preOrder={listing.preOrder} estimatedDispatchAt={data.estimatedDispatchAt} />
+          )}
 
           <section className="detail__section">
             <h2>Questions</h2>
@@ -178,7 +179,7 @@ export function ListingPage() {
               <>
                 <button className="btn btn--lg btn--block" onClick={() => void buy()}
                   disabled={busy || !user || listing.quantityAvailable === 0}>
-                  {lot ? 'Join this lot' : 'Buy now'}
+                  {listing.preOrder ? 'Pre-order' : 'Buy now'}
                 </button>
                 <button className={`btn btn--ghost btn--block${data.liked ? ' is-on' : ''}`}
                   onClick={() => void toggleLike()} disabled={busy || !user}
@@ -230,50 +231,48 @@ export function ListingPage() {
   );
 }
 
-/** The buyer-visible half of the lot workflow: fill, cutoff, stage, forwarder. */
-function LotPanel({ lot }: { lot: Lot }) {
-  const current = LOT_STAGES.indexOf(lot.stage);
+/**
+ * Demand pooling, as the buyer sees it.
+ *
+ * Says nothing about shipment batches: which consignment this rides in, who
+ * else is in it and where it currently sits are the seller's business. What a
+ * buyer needs is how close this is to going ahead, when booking closes, and
+ * roughly when it ships.
+ */
+function PreOrderPanel({
+  preOrder,
+  estimatedDispatchAt,
+}: {
+  preOrder: PreOrder;
+  estimatedDispatchAt: string | null;
+}) {
+  const closed = daysUntil(preOrder.cutoffAt) === 0;
+  const met = preOrder.filledCount >= preOrder.fillThreshold;
+
   return (
     <section className="detail__section">
-      <h2>{lot.name}</h2>
-      <p className="muted">{lot.description}</p>
-
-      <LotMeter filled={lot.filledCount} threshold={lot.fillThreshold} />
-      <div className="spread muted">
-        <span><strong style={{ color: 'var(--text)' }}>{lot.filledCount}/{lot.fillThreshold}</strong> units booked</span>
-        {lot.status === 'open' && <span>Closes in {daysUntil(lot.cutoffAt)} days</span>}
-        {lot.estimatedDispatchAt && <span>Est. dispatch {formatDate(lot.estimatedDispatchAt)}</span>}
+      <div className="row row--between">
+        <h2>Pre-order</h2>
+        <span className={`badge badge--${met ? 'ok' : closed ? 'danger' : 'warn'}`}>
+          {met ? 'Going ahead' : closed ? 'Booking closed' : 'Booking open'}
+        </span>
       </div>
+      <p className="muted">
+        The seller places the order once enough units are booked. You are charged now and held in
+        escrow; if it does not go ahead, you are refunded in full.
+      </p>
 
-      <ol className="track" style={{ marginTop: 8 }}>
-        {LOT_STAGES.map((stage, index) => (
-          <li key={stage} className={`track__step${index < current ? ' is-done' : ''}${index === current ? ' is-current' : ''}`}>
-            <span className="track__dot" aria-hidden="true" />
-            <span>{LOT_STAGE_LABELS[stage]}</span>
-          </li>
-        ))}
-      </ol>
-
-      {lot.forwarder && (
-        <div className="card card--pad" style={{ marginTop: 6 }}>
-          <div className="row row--between">
-            <div>
-              <span className="faint">Freight forwarder</span>
-              <div className="card__title">{lot.forwarder.name}</div>
-            </div>
-            {lot.forwarder.forwarderUserId ? (
-              <span className="badge badge--ok">On platform</span>
-            ) : (
-              <span className="badge">Seller's own</span>
-            )}
-          </div>
-          {lot.forwarder.trackingReference && (
-            <p className="muted" style={{ marginTop: 8 }}>
-              Tracking <span className="mono">{lot.forwarder.trackingReference}</span>
-            </p>
-          )}
-        </div>
-      )}
+      <LotMeter filled={preOrder.filledCount} threshold={preOrder.fillThreshold} />
+      <div className="spread muted">
+        <span>
+          <strong style={{ color: 'var(--text)' }}>
+            {preOrder.filledCount}/{preOrder.fillThreshold}
+          </strong>{' '}
+          units booked
+        </span>
+        {!closed && <span>Booking closes in {daysUntil(preOrder.cutoffAt)} days</span>}
+        {estimatedDispatchAt && <span>Ships around {formatDate(estimatedDispatchAt)}</span>}
+      </div>
     </section>
   );
 }

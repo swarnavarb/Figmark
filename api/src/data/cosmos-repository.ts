@@ -227,6 +227,67 @@ export class CosmosRepository implements Repository {
     }
   }
 
+  async createLot(lot: Lot): Promise<Lot> {
+    const { resource } = await this.container('lots').items.create(lot);
+    return resource ?? lot;
+  }
+
+  async updateLot(lot: Lot): Promise<Lot> {
+    const { resource } = await this.container('lots')
+      .item(lot.id, lot.sellerId)
+      .replace({ ...lot, updatedAt: new Date().toISOString() });
+    return (resource as Lot | undefined) ?? lot;
+  }
+
+  async listListingsInLot(lotId: string): Promise<Listing[]> {
+    const { resources } = await this.container('listings')
+      .items.query<Listing>({
+        query: 'SELECT * FROM c WHERE c.lotId = @lotId',
+        parameters: [{ name: '@lotId', value: lotId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async assignListingsToLot(
+    sellerId: string,
+    listingIds: readonly string[],
+    lotId: string | null,
+  ): Promise<number> {
+    let changed = 0;
+    for (const id of listingIds) {
+      try {
+        const { resource } = await this.container('listings').item(id, sellerId).read<Listing>();
+        if (!resource) continue;
+        await this.container('listings')
+          .item(id, sellerId)
+          .replace({ ...resource, lotId, updatedAt: new Date().toISOString() });
+        changed += 1;
+      } catch (error) {
+        // Not this seller's listing, or already gone: skip rather than fail.
+        if (!isNotFound(error)) throw error;
+      }
+    }
+    return changed;
+  }
+
+  async getOrder(id: string): Promise<Order | null> {
+    const { resources } = await this.container('orders')
+      .items.query<Order>({
+        query: 'SELECT * FROM c WHERE c.id = @id OFFSET 0 LIMIT 1',
+        parameters: [{ name: '@id', value: id }],
+      })
+      .fetchAll();
+    return resources[0] ?? null;
+  }
+
+  async updateOrder(order: Order): Promise<Order> {
+    const { resource } = await this.container('orders')
+      .item(order.id, order.lotId)
+      .replace({ ...order, updatedAt: new Date().toISOString() });
+    return (resource as Order | undefined) ?? order;
+  }
+
   async listOrdersForBuyer(buyerId: string): Promise<Order[]> {
     const { resources } = await this.container('orders')
       .items.query<Order>({

@@ -1,8 +1,8 @@
 import type {
   ConditionTag,
+  FulfilmentStage,
   DisputeStatus,
   EscrowState,
-  ListingKind,
   ListingStatus,
   LotStage,
   LotStatus,
@@ -192,13 +192,24 @@ export interface Listing extends BaseDocument {
   description: string;
   category: string;
   condition: ConditionTag;
-  kind: ListingKind;
   status: ListingStatus;
   /** Price in minor units (paise) to avoid float drift. */
   priceMinor: number;
   currency: string;
   quantityAvailable: number;
-  /** Set when `kind === 'lot_slot'`; ties the listing to its group-buy. */
+  /**
+   * Demand pooling, opt-in per listing.
+   *
+   * Lives here rather than on the lot because a shipment batch can carry five
+   * unrelated items, each with its own demand: "twenty people must want *this*
+   * figure before I commit the cash" is a fact about the item, not the crate.
+   * Null for an ordinary listing.
+   */
+  preOrder: PreOrder | null;
+  /**
+   * The shipment batch this item travels in. Seller-side bookkeeping: buyers
+   * never see the lot itself, only the tracking it produces.
+   */
   lotId: string | null;
   photos: ListingPhoto[];
   /** Free-text search terms, denormalised for query simplicity. */
@@ -211,6 +222,16 @@ export interface Listing extends BaseDocument {
    * so bumping cannot be used to camp the top of the catalog.
    */
   bumpedAt: string | null;
+}
+
+/** A buyer-facing pre-order campaign attached to one listing. */
+export interface PreOrder {
+  /** Units that must be booked before the seller places the order. */
+  fillThreshold: number;
+  /** Units booked so far. Denormalised from orders for cheap list reads. */
+  filledCount: number;
+  /** ISO-8601 after which no further pre-bookings are accepted. */
+  cutoffAt: string;
 }
 
 /** Public Q&A on a listing, visible to everyone - distinct from private chat. */
@@ -244,28 +265,32 @@ export interface Follow extends BaseDocument {
 
 /** One recorded stage transition, powering the buyer-visible timeline. */
 export interface StageEvent {
-  stage: LotStage;
+  stage: FulfilmentStage;
   enteredAt: string;
   note: string | null;
   /** User id that recorded the transition. */
   recordedBy: string;
 }
 
+/**
+ * A shipment batch: the items a seller is moving in one consignment.
+ *
+ * Purely seller-side bookkeeping. Buyers never see a lot, its name, or how many
+ * other people's items share the crate - they see the tracking it produces,
+ * attributed to their own order. A seller typically has several open at once
+ * (one per consolidation window, or per forwarder), and tags items into
+ * whichever one they will actually travel in.
+ */
 export interface Lot extends BaseDocument {
   /** Partition key. Keeps a seller's whole book in one partition. */
   sellerId: string;
+  /** Seller's own label, e.g. "Guangzhou run - September". Never shown to buyers. */
   name: string;
   description: string;
   status: LotStatus;
   stage: LotStage;
   stageHistory: StageEvent[];
-  /** Units needed before the lot is viable and the seller places the order. */
-  fillThreshold: number;
-  /** Units pre-booked so far. Denormalised from orders for cheap list reads. */
-  filledCount: number;
-  /** ISO-8601 after which no further pre-bookings are accepted. */
-  cutoffAt: string;
-  /** Seller's promised dispatch date, shown to buyers as an estimate. */
+  /** Promised dispatch date. The one lot fact buyers see, via their order. */
   estimatedDispatchAt: string | null;
   /** Per-lot cost model, feeding the landed-cost calculator. */
   costModel: LotCostModel;
@@ -319,7 +344,11 @@ export interface LotCostModel {
  * first-class document.
  */
 export interface Order extends BaseDocument {
-  /** Partition key. Generating a lot manifest is then a single-partition read. */
+  /**
+   * Partition key. Null once meant "impossible"; a direct domestic sale has no
+   * shipment batch, so it is stored under the sentinel below rather than left
+   * unpartitioned.
+   */
   lotId: string;
   sellerId: string;
   buyerId: string;
@@ -334,6 +363,17 @@ export interface Order extends BaseDocument {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   escrow: EscrowRecord;
+  /**
+   * The order's own fulfilment record, not a view onto the lot's.
+   *
+   * Advancing a lot appends an event to every order in it. Keeping the history
+   * here rather than deriving it means re-tagging an item into a later
+   * shipment appends "moved to a later consignment" instead of rewinding the
+   * buyer's timeline to the start - and lets one item diverge when it is held
+   * at customs while the rest of the crate clears.
+   */
+  stage: FulfilmentStage;
+  stageHistory: StageEvent[];
   /** Set once the order reaches `delivered`; unlocks reviews. */
   completedAt: string | null;
 }

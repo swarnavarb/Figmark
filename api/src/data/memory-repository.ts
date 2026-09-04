@@ -127,7 +127,9 @@ export class MemoryRepository implements Repository {
     if (query.sellerId) items = items.filter((l) => l.sellerId === query.sellerId);
     if (query.category) items = items.filter((l) => l.category === query.category);
     if (query.condition) items = items.filter((l) => l.condition === query.condition);
-    if (query.kind) items = items.filter((l) => l.kind === query.kind);
+    // "pre-order" and "in stock" are now derived, not a stored kind.
+    if (query.kind === 'pre_order') items = items.filter((l) => l.preOrder !== null);
+    if (query.kind === 'in_stock') items = items.filter((l) => l.preOrder === null);
     if (query.maxPriceMinor !== undefined) {
       items = items.filter((l) => l.priceMinor <= query.maxPriceMinor!);
     }
@@ -183,11 +185,52 @@ export class MemoryRepository implements Repository {
     if (listing) {
       listing.quantityAvailable = Math.max(0, listing.quantityAvailable - order.quantity);
       if (listing.quantityAvailable === 0) listing.status = 'sold_out';
+      // Pre-order fill is denormalised onto the listing, so it moves with the
+      // order rather than being counted at read time.
+      if (listing.preOrder) listing.preOrder.filledCount += order.quantity;
     }
-    // filledCount is denormalised onto the lot, so it moves with the order.
-    const lot = this.lots.get(order.lotId);
-    if (lot) lot.filledCount += order.quantity;
     return order;
+  }
+
+  async getOrder(id: string): Promise<Order | null> {
+    return this.orders.get(id) ?? null;
+  }
+
+  async updateOrder(order: Order): Promise<Order> {
+    this.orders.set(order.id, order);
+    return order;
+  }
+
+  async createLot(lot: Lot): Promise<Lot> {
+    this.lots.set(lot.id, lot);
+    return lot;
+  }
+
+  async updateLot(lot: Lot): Promise<Lot> {
+    this.lots.set(lot.id, lot);
+    return lot;
+  }
+
+  async listListingsInLot(lotId: string): Promise<Listing[]> {
+    return [...this.listings.values()].filter((listing) => listing.lotId === lotId);
+  }
+
+  async assignListingsToLot(
+    sellerId: string,
+    listingIds: readonly string[],
+    lotId: string | null,
+  ): Promise<number> {
+    let changed = 0;
+    for (const id of listingIds) {
+      const listing = this.listings.get(id);
+      // Silently skip anything the caller does not own, rather than failing the
+      // whole batch: the route has already checked the lot's owner.
+      if (!listing || listing.sellerId !== sellerId) continue;
+      listing.lotId = lotId;
+      listing.updatedAt = new Date().toISOString();
+      changed += 1;
+    }
+    return changed;
   }
 
   async listComments(listingId: string): Promise<ListingComment[]> {

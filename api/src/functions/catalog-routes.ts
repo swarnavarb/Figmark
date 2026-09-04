@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
+import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -48,14 +49,15 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     repository.listLots(),
   ]);
   const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
-  const lotById = new Map(lots.map((l) => [l.id, l]));
+  // The batch contributes exactly one buyer-visible fact: when it ships.
+  const dispatchByLot = new Map(lots.map((l) => [l.id, l.estimatedDispatchAt]));
 
   return json(200, {
     listings: listings.map((listing) => ({
       ...listing,
       liked: likedIds.has(listing.id),
       seller: sellerById.get(listing.sellerId) ?? null,
-      lot: listing.lotId ? (lotById.get(listing.lotId) ?? null) : null,
+      estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
     })),
     // Facets are derived from the live catalog so the filter chips can never
     // offer a category that has nothing behind it.
@@ -81,12 +83,15 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([]),
   ]);
 
+  // Deliberately not returning the lot: which consignment an item rides in,
+  // who else is in it and what stage it is at are the seller's business. The
+  // buyer gets the dispatch estimate, and their own order's tracking later.
   const lot = listing.lotId ? await repository.getLot(listing.sellerId, listing.lotId) : null;
 
   return json(200, {
     listing,
     seller: sellers[0] ? toSellerCard(sellers[0]) : null,
-    lot,
+    estimatedDispatchAt: lot?.estimatedDispatchAt ?? null,
     comments,
     liked: likedIds.includes(id),
     following: followed.includes(listing.sellerId),
@@ -100,7 +105,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
 
-  let body: Partial<Listing> & { lotMode?: boolean; fillThreshold?: number; cutoffAt?: string };
+  let body: Partial<Listing> & { preOrder?: { fillThreshold: number; cutoffAt: string } };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -121,11 +126,21 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     description: body.description?.trim() ?? '',
     category: body.category ?? 'Collectibles',
     condition: body.condition ?? 'LOOSE',
-    kind: body.lotMode ? 'lot_slot' : 'in_stock',
     status: 'active',
     priceMinor: Math.round(body.priceMinor),
     currency: 'INR',
     quantityAvailable: Math.max(1, Math.round(body.quantityAvailable ?? 1)),
+    // Pre-order and shipment batch are independent: a listing opts into demand
+    // pooling here, and gets tagged into a lot separately, from the seller's
+    // lot console.
+    preOrder:
+      body.preOrder && body.preOrder.fillThreshold > 0
+        ? {
+            fillThreshold: Math.round(body.preOrder.fillThreshold),
+            filledCount: 0,
+            cutoffAt: body.preOrder.cutoffAt,
+          }
+        : null,
     lotId: null,
     photos: [],
     tags: body.tags ?? [],
@@ -233,10 +248,12 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
 
   const now = new Date().toISOString();
   const amountMinor = listing.priceMinor * quantity;
+  const now2 = new Date().toISOString();
   const order: Order = {
     id: `ord_${randomUUID().slice(0, 12)}`,
-    // An in-stock purchase has no lot, so it is its own single-line manifest.
-    lotId: listing.lotId ?? `direct_${listing.id}`,
+    // Inherits the item's shipment batch if it has one; otherwise it is a
+    // direct domestic sale and tracks against the short vocabulary.
+    lotId: listing.lotId ?? DIRECT_LOT_ID,
     sellerId: listing.sellerId,
     buyerId: user.id,
     listingId: listing.id,
@@ -248,6 +265,10 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     currency: listing.currency,
     status: 'pending_payment',
     paymentStatus: 'unpaid',
+    stage: listing.lotId ? 'ordering' : 'preparing',
+    stageHistory: [
+      { stage: listing.lotId ? 'ordering' : 'preparing', enteredAt: now2, note: 'Order placed.', recordedBy: user.id },
+    ],
     escrow: {
       state: 'none',
       amountMinor,

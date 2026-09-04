@@ -28,7 +28,9 @@ export function SellPage() {
   const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [lotMode, setLotMode] = useState(false);
+  const [preOrderMode, setPreOrderMode] = useState(false);
+  const [fillThreshold, setFillThreshold] = useState('20');
+  const [cutoffDays, setCutoffDays] = useState('14');
   const [tags, setTags] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +50,12 @@ export function SellPage() {
         condition,
         priceMinor,
         quantityAvailable: Math.max(1, Number(quantity) || 1),
-        lotMode,
+        preOrder: preOrderMode
+          ? {
+              fillThreshold: Math.max(2, Number(fillThreshold) || 2),
+              cutoffAt: new Date(Date.now() + (Number(cutoffDays) || 14) * 86_400_000).toISOString(),
+            }
+          : null,
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
       });
       navigate(`/listing/${result.listing.id}`);
@@ -123,19 +130,37 @@ export function SellPage() {
             <span className="field__hint">Comma separated. Helps buyers find it in search.</span>
           </label>
 
-          <div className="card card--pad">
+          <div className="card card--pad stack">
             <label className="row" style={{ cursor: 'pointer' }}>
-              <input type="checkbox" checked={lotMode} onChange={(e) => setLotMode(e.target.checked)}
+              <input type="checkbox" checked={preOrderMode} onChange={(e) => setPreOrderMode(e.target.checked)}
                 style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
               <div>
-                <div style={{ fontWeight: 600 }}>Run this as a group buy</div>
+                <div style={{ fontWeight: 600 }}>Take pre-orders</div>
                 <span className="field__hint">
-                  Buyers pre-book, and you place the order once enough units are committed. You'll set the
-                  threshold, cutoff and forwarder on the lot afterwards.
+                  Buyers book ahead and you only commit the cash once enough units are spoken for. Nothing
+                  ships until you place the order.
                 </span>
               </div>
             </label>
+
+            {preOrderMode && (
+              <div className="field-row">
+                <label className="field">
+                  <span>Units needed</span>
+                  <input type="number" min="2" value={fillThreshold} onChange={(e) => setFillThreshold(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span>Booking window (days)</span>
+                  <input type="number" min="1" value={cutoffDays} onChange={(e) => setCutoffDays(e.target.value)} />
+                </label>
+              </div>
+            )}
           </div>
+
+          <p className="notice notice--info">
+            Shipping batches are separate: publish this first, then tag it into a batch from
+            <strong> My batches</strong> when you know which consignment it travels in.
+          </p>
 
           {error && <ErrorNotice message={error} />}
 
@@ -150,7 +175,7 @@ export function SellPage() {
             <Thumb seed={title || 'preview'} label={title || 'Your listing'}>
               <div className="thumb__badges">
                 <span className="badge badge--solid">{condition}</span>
-                {lotMode && <span className="badge badge--accent">Group buy</span>}
+                {preOrderMode && <span className="badge badge--accent">Pre-order</span>}
               </div>
             </Thumb>
             <div className="listing__body">

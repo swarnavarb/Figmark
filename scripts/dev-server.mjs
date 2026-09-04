@@ -24,6 +24,10 @@ const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, forwardersRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
+const {
+  myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
+  advanceStageRoute, setTrackingRoute, orderTrackingRoute,
+} = await import(new URL('fulfilment-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -45,6 +49,13 @@ const routes = [
   ['POST', '/api/listings/:id/bump', bumpListingRoute],
   ['POST', '/api/listings/:id/comments', addCommentRoute],
   ['POST', '/api/sellers/:id/follow', toggleFollowRoute],
+  ['GET', '/api/me/lots', myLotsRoute],
+  ['POST', '/api/lots', createLotRoute],
+  ['GET', '/api/lots/:id/contents', lotContentsRoute],
+  ['POST', '/api/lots/:id/assign', assignToLotRoute],
+  ['POST', '/api/lots/:id/stage', advanceStageRoute],
+  ['POST', '/api/lots/:id/tracking', setTrackingRoute],
+  ['GET', '/api/orders/:id', orderTrackingRoute],
   ['GET', '/api/lots', listLotsRoute],
   ['GET', '/api/lots/:sellerId/:lotId/manifest', lotManifestRoute],
 ];

@@ -54,6 +54,23 @@ export const LOT_STAGES = [
 ] as const;
 export type LotStage = (typeof LOT_STAGES)[number];
 
+/**
+ * Tracking for an item the seller ships themselves - no China leg, no
+ * consolidation. Most domestic resales take this path, and showing them the
+ * seven-stage import pipeline would be nonsense.
+ */
+export const DIRECT_STAGES = ['preparing', 'dispatched', 'delivered'] as const;
+export type DirectStage = (typeof DIRECT_STAGES)[number];
+
+export const DIRECT_STAGE_LABELS: Record<DirectStage, string> = {
+  preparing: 'Preparing',
+  dispatched: 'Dispatched',
+  delivered: 'Delivered',
+};
+
+/** Either vocabulary, as stored on an order's stage history. */
+export type FulfilmentStage = LotStage | DirectStage;
+
 export const LOT_STAGE_LABELS: Record<LotStage, string> = {
   ordering: 'Ordering',
   china_wh_received: 'China WH received',
@@ -70,10 +87,6 @@ export type LotStatus = (typeof LOT_STATUSES)[number];
 
 export const LISTING_STATUSES = ['draft', 'active', 'sold_out', 'archived'] as const;
 export type ListingStatus = (typeof LISTING_STATUSES)[number];
-
-/** Whether a listing is stock on hand or a slot in an open group-buy. */
-export const LISTING_KINDS = ['in_stock', 'lot_slot'] as const;
-export type ListingKind = (typeof LISTING_KINDS)[number];
 
 export const ORDER_STATUSES = [
   'pending_payment',
