@@ -137,8 +137,8 @@ compiled *into* the API by a `tsconfig` rooted above `api/` — Oryx running
 
 - Cosmos free tier covers the first 1000 RU/s and 25 GB, and only one account
   per subscription. Throughput is provisioned **on the database** rather than
-  per container so all seven containers share that single pool; a
-  shared-throughput database allows up to 25 containers.
+  per container, so every container shares that single pool; a
+  shared-throughput database allows up to 25 of them.
 - Static Web Apps Free tier includes managed functions with no SLA and
   100 GB/month bandwidth. Custom authentication providers (a custom OpenID
   Connect registration, which is what Entra External ID would need) require the

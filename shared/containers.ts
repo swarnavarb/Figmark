@@ -11,8 +11,8 @@ export const DATABASE_NAME = 'figmark';
 /**
  * The free tier grants 1000 RU/s. Provisioning it as *shared* database
  * throughput means every container draws from that one pool and we stay inside
- * the free allowance (a shared-throughput database allows up to 25 containers;
- * we define 7).
+ * the free allowance. A shared-throughput database allows up to 25 containers,
+ * which is the ceiling on what may be defined below.
  */
 export const SHARED_THROUGHPUT_RU = 1000;
 
