@@ -26,8 +26,16 @@ export function SignInPanel({
   onSignIn,
   onSignOut,
 }: Props) {
-  const [username, setUsername] = useState(demoAccounts[0]?.username ?? '');
-  const [password, setPassword] = useState(demoPassword);
+  // `null` means "the user has not picked yet", so the field follows the first
+  // seeded account once /api/health arrives. Seeding useState with
+  // `demoAccounts[0]` instead would freeze the empty value from the first
+  // render - the select would *display* the first account while the state
+  // behind it stayed empty, and sign-in would post a blank username.
+  const [chosenUsername, setChosenUsername] = useState<string | null>(null);
+  const [chosenPassword, setChosenPassword] = useState<string | null>(null);
+
+  const username = chosenUsername ?? demoAccounts[0]?.username ?? '';
+  const password = chosenPassword ?? demoPassword;
 
   if (user) {
     return (
@@ -96,7 +104,7 @@ export function SignInPanel({
         <label className="field">
           <span>Account</span>
           {demoAccounts.length > 0 ? (
-            <select value={username} onChange={(event) => setUsername(event.target.value)}>
+            <select value={username} onChange={(event) => setChosenUsername(event.target.value)}>
               {demoAccounts.map((account) => (
                 <option key={account.username} value={account.username}>
                   {account.username} ({account.role})
@@ -106,7 +114,7 @@ export function SignInPanel({
           ) : (
             <input
               value={username}
-              onChange={(event) => setUsername(event.target.value)}
+              onChange={(event) => setChosenUsername(event.target.value)}
               autoComplete="username"
             />
           )}
@@ -117,12 +125,12 @@ export function SignInPanel({
           <input
             type="password"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => setChosenPassword(event.target.value)}
             autoComplete="current-password"
           />
         </label>
 
-        <button type="submit" className="button" disabled={busy}>
+        <button type="submit" className="button" disabled={busy || !username || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
