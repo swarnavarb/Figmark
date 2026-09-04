@@ -88,6 +88,11 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
+          # Until AZURE_STATIC_WEB_APPS_API_TOKEN exists, skip the upload with a
+          # warning rather than failing the run - a permanently red pipeline
+          # trains people to ignore it. Deployment starts the moment the secret
+          # is added, with no change here.
+          skip_deploy_on_missing_secrets: true
           # Pre-built above, so Oryx must not try to build either side again.
           app_location: app/dist
           api_location: api

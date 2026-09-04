@@ -12,7 +12,8 @@ The shape extends AxisTwelve's Lot → Customer → Order model: `Lot` is the ba
 
 | Container | Partition key | Why |
 |---|---|---|
-| `users` | `/id` | Point reads by id dominate. Login resolves username → id via an indexed query; cheap at this scale. |
+| `users` | `/id` | Point reads by id dominate. |
+| `usernames` | `/id` | Reservation records making usernames globally unique; see below. |
 | `listings` | `/sellerId` | Storefronts and seller dashboards read one seller at a time. |
 | `lots` | `/sellerId` | Lots are always managed in the context of their seller. |
 | `orders` | `/lotId` | **Generating a lot manifest is the hot path** and becomes a single-partition read. |
@@ -35,6 +36,18 @@ container, which fits the Cosmos free tier exactly.
   partition; the catalog is the query that pays for it. It will need a search
   index (Azure AI Search) rather than a Cosmos query once filters and
   reverse-image search land.
+- **Usernames are unique via a reservation container, not a unique key.**
+  Cosmos enforces unique keys *within a logical partition*, and `users` is
+  partitioned by `/id` — so a unique key on `/username` would be vacuous, since
+  every user is alone in its partition. Instead, `usernames` holds one document
+  per name with the lowercased username as its `id`: creating it either succeeds
+  or returns 409, which is the constraint. Writing it before the user document
+  makes a claimed-but-unused name the only failure mode, and sign-in becomes two
+  point reads instead of a cross-partition query. Email needs the same treatment
+  when sign-up lands.
+
+  The unique key on `reviews` *is* meaningful: it is scoped to `/subjectId`, and
+  every review of one order in one direction shares that subject.
 - **`filledCount` on `Lot` is denormalised** from the orders in that lot, so
   listing lots does not require counting orders per lot. It must be updated in
   the same operation that creates or cancels an order.

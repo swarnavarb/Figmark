@@ -37,14 +37,19 @@ export const CONTAINERS = {
     name: 'users',
     partitionKeyPath: '/id',
     rationale:
-      'Point reads by user id dominate. Login resolves username -> id via an indexed cross-partition query, which is cheap at this scale.',
-    uniqueKeyPaths: [['/username'], ['/email']],
+      'Point reads by user id dominate. Note the absence of a unique key on /username: Cosmos enforces unique keys within a logical partition, and with /id as the partition key every user is alone in its own partition, so such a constraint would guarantee nothing. Global uniqueness is enforced by the `usernames` reservation container instead.',
     compositeIndexes: [
       [
         { path: '/role', order: 'ascending' },
         { path: '/createdAt', order: 'descending' },
       ],
     ],
+  },
+  usernames: {
+    name: 'usernames',
+    partitionKeyPath: '/id',
+    rationale:
+      'Reservation records that make usernames globally unique: the document id is the lowercased username, so a create either succeeds or conflicts (409). Written before the user document and deleted with it. Also makes sign-in two point reads rather than a cross-partition query.',
   },
   listings: {
     name: 'listings',

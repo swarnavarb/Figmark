@@ -54,6 +54,16 @@ credentials were present. These steps need a machine that can reach Azure:
    npm run azure:provision
    ```
 
+   Add `-- --seed` to also write the development fixtures, so the deployed
+   status page shows real data from Cosmos rather than an empty database:
+
+   ```bash
+   npm run azure:provision -- --seed
+   ```
+
+   Development environments only — it creates accounts whose password is
+   committed to this repository.
+
 4. **Confirm connectivity:**
 
    ```bash
@@ -111,7 +121,11 @@ the identity instead — no change required.
   both sides, runs the smoke tests, prunes the API's dev dependencies, and
   uploads the artifact.
 - **Deploy** runs only for the repository's default branch and for manual
-  dispatch. Other branches are built and verified but never published.
+  dispatch. Other branches are built and verified but never published. Until
+  `AZURE_STATIC_WEB_APPS_API_TOKEN` exists the upload is skipped with a warning
+  rather than failing the run (`skip_deploy_on_missing_secrets`), so the
+  pipeline is green while the token is outstanding and starts deploying the
+  moment it is added.
 - **Close preview** tears down the preview environment when a PR closes.
 
 Both halves are pre-built in CI and uploaded with `skip_app_build` and

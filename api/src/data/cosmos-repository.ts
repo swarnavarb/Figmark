@@ -72,19 +72,31 @@ export class CosmosRepository implements Repository {
   }
 
   async getUserById(id: string): Promise<User | null> {
-    // users is partitioned by /id, so this is a point read.
-    const { resource } = await this.container('users').item(id, id).read<User>();
-    return resource ?? null;
+    try {
+      // users is partitioned by /id, so this is a point read.
+      const { resource } = await this.container('users').item(id, id).read<User>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
   }
 
   async getUserByUsername(username: string): Promise<User | null> {
-    const { resources } = await this.container('users')
-      .items.query<User>({
-        query: 'SELECT * FROM c WHERE c.username = @username OFFSET 0 LIMIT 1',
-        parameters: [{ name: '@username', value: username.toLowerCase() }],
-      })
-      .fetchAll();
-    return resources[0] ?? null;
+    // Two point reads via the reservation record, rather than a cross-partition
+    // query: the same lookup that makes usernames unique also makes this cheap.
+    const key = username.toLowerCase();
+    let reservation: UsernameReservation | undefined;
+    try {
+      const result = await this.container('usernames')
+        .item(key, key)
+        .read<UsernameReservation>();
+      reservation = result.resource;
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+    }
+    if (!reservation) return null;
+    return this.getUserById(reservation.userId);
   }
 
   listDemoAccounts(): Array<{ username: string; role: UserRole }> {
@@ -167,6 +179,12 @@ export class CosmosRepository implements Repository {
       .fetchAll();
     return resources;
   }
+}
+
+/** A `usernames` document: the id is the lowercased username. */
+interface UsernameReservation {
+  id: string;
+  userId: string;
 }
 
 function isNotFound(error: unknown): boolean {

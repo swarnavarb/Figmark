@@ -3,6 +3,10 @@
  *
  *   npm run build:api && npm run azure:provision
  *
+ * Pass --seed to also write the development fixtures (four demo users, two
+ * lots, two listings, two orders). Development environments only - it creates
+ * accounts whose password is committed to this repository.
+ *
  * Idempotent: every create is a create-if-not-exists, so re-running it after
  * adding a container definition provisions only the new one. Container schema
  * comes from shared/containers.ts, so this script and the repository can never
@@ -138,6 +142,35 @@ if (!settings.STORAGE_ACCOUNT && !settings.STORAGE_CONNECTION_STRING) {
     console.log(
       `  container ${name.padEnd(18)} ${result.succeeded ? 'created' : 'already existed'}  access=${access ?? 'private'}`,
     );
+  }
+}
+
+/* Seed data ---------------------------------------------------------------- */
+
+if (process.argv.includes('--seed')) {
+  const seed = await import(new URL('../api/dist/api/src/data/seed.js', import.meta.url));
+
+  console.log('\nSeeding development fixtures');
+  console.log('  NOTE: these accounts share a password committed to this repository.');
+
+  const users = seed.seedUsers();
+  for (const user of users) {
+    await database.container('users').items.upsert(user);
+    // The reservation record is what makes the username globally unique; it
+    // must exist for sign-in to resolve the user.
+    await database
+      .container('usernames')
+      .items.upsert({ id: user.username.toLowerCase(), userId: user.id });
+  }
+  console.log(`  users      ${users.length} written (with username reservations)`);
+
+  for (const [name, items] of [
+    ['lots', seed.seedLots()],
+    ['listings', seed.seedListings()],
+    ['orders', seed.seedOrders()],
+  ]) {
+    for (const item of items) await database.container(name).items.upsert(item);
+    console.log(`  ${name.padEnd(10)} ${items.length} written`);
   }
 }
 
