@@ -16,7 +16,7 @@ const auth = await getAuthService();
 
 const user = await auth.getCurrentUser(request);            // AuthUser | null
 const user = await auth.requireAuth(request);               // throws 401
-const user = await auth.requireRole(request, ['seller']);   // throws 401 / 403
+const user = await auth.requireCapability(request, ['sell']); // throws 401 / 403
 ```
 
 `AuthUser` (in `shared/contracts.ts`) is provider-agnostic: the mock provider
@@ -24,9 +24,19 @@ builds it from a seeded user record, and a real provider builds the same shape
 from its own claims. Because it is shared with the frontend, both sides see the
 same identity type.
 
-Role is not authorisation on its own. `requireRole` answers "is this user a
-seller?" — it cannot answer "is this *their* lot?". Ownership is checked
-separately at the point of use; `lot-routes.ts` shows the pattern.
+**Capabilities, not roles.** Every account is both buyer and seller — selling is
+simply what happens when an account lists something — so a single mutually
+exclusive role cannot describe a real user. `canBuy`, `canSell` and `canForward`
+are *derived* from verification state by `deriveCapabilities` in
+`shared/capabilities.ts`, shared by both sides so the client never reimplements
+the rules. `isAdmin` is the exception: a genuine assigned role, stored on the
+record.
+
+Capability is not authorisation on its own — and less so than a role was.
+`requireCapability(request, ['sell'])` answers "may this account sell?", to which
+the answer is almost always yes; it says nothing about *whose* lot is being
+read. Ownership is a separate check at the point of use, and seller-scoped
+routes need both. `lot-routes.ts` shows the pattern.
 
 ## What exists now
 
@@ -53,8 +63,9 @@ provider will not do. Everything about it is expected to be deleted.
 Static Web Apps terminates the identity provider and injects the resulting
 principal as an `x-ms-client-principal` header. The provider decodes it, resolves
 `principal.userId` to the application's own user document, and prefers a
-platform-supplied role over the stored one so access can be revoked in the
-identity provider without a write to our store. Login and logout are refused,
+platform-supplied `admin` role over the stored flag, so administrator access can
+be revoked in the identity provider without a write to our store. The other
+capabilities stay derived from verification state, which is ours to decide. Login and logout are refused,
 because the platform owns them at `/.auth/login/<provider>` and `/.auth/logout`.
 
 ## Swapping in a real provider
@@ -78,11 +89,15 @@ in `api/src/auth/index.ts`. No handler changes either way.
 
 ## Verification fields
 
-Every `User` carries a full `VerificationState` and `TrustSignals` from day one,
-described in [DATA-MODEL.md](DATA-MODEL.md). None of it is populated or enforced
-yet: the verification flow needs a real identity provider behind it, and
-retrofitting these fields onto existing records later is worse than carrying
-them unused now.
+Every `User` carries a full `VerificationState` plus separate buyer and seller
+trust records from day one, described in [DATA-MODEL.md](DATA-MODEL.md). The
+seeded accounts have a verified phone so they can transact; everything heavier
+(ID, bank match, business registration) is unverified, which is what keeps the
+seller tier low and leaves the "become a verified seller" flow meaningful.
+
+The bar to transact is deliberately low — a verified phone — because the model is
+light friction at signup with the heavier checks deferred to where they matter:
+payouts, and high-value listings.
 
 ## Before this goes near real users
 

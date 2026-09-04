@@ -46,7 +46,9 @@ await check('reports the resolved backends', () => {
   assert.equal(body.data.backend, 'memory');
   assert.equal(body.storage.backend, 'memory');
   assert.equal(body.auth.mode, 'mock');
-  assert.equal(body.auth.demoAccounts.length, 4);
+  assert.equal(body.auth.demoAccounts.length, 5);
+  // Hints describe the account, not a role.
+  assert.ok(body.auth.demoAccounts.every((a) => typeof a.label === 'string'));
 });
 
 console.log('\nGET /api/lots');
@@ -58,7 +60,7 @@ await check('serves the catalog anonymously', async () => {
 });
 
 await check('filters the catalog by seller', async () => {
-  const response = await listLots(req({ query: { sellerId: 'usr_seller_kaiju' } }), ctx);
+  const response = await listLots(req({ query: { sellerId: 'usr_kaiju' } }), ctx);
   assert.equal(response.jsonBody.lots.length, 2);
   const empty = await listLots(req({ query: { sellerId: 'nobody' } }), ctx);
   assert.equal(empty.jsonBody.lots.length, 0);
@@ -89,7 +91,7 @@ const sellerLogin = await login(req({ body: { username: 'kaiju', password: 'figm
 
 await check('POST /api/auth/login sets an HttpOnly session cookie', () => {
   assert.equal(sellerLogin.status, 200);
-  assert.equal(sellerLogin.jsonBody.user.role, 'seller');
+  assert.equal(sellerLogin.jsonBody.user.capabilities.canSell, true);
   const [cookie] = sellerLogin.cookies;
   assert.equal(cookie.name, 'figmark_session');
   assert.equal(cookie.httpOnly, true);
@@ -110,23 +112,47 @@ console.log('\nGET /api/lots/{sellerId}/{lotId}/manifest');
 
 await check('refuses anonymous access with 401', async () => {
   const response = await lotManifest(
-    req({ params: { sellerId: 'usr_seller_kaiju', lotId: 'lot_gz_sep' } }),
+    req({ params: { sellerId: 'usr_kaiju', lotId: 'lot_gz_sep' } }),
     ctx,
   );
   assert.equal(response.status, 401);
 });
 
-await check('refuses a buyer with 403', async () => {
-  const buyer = await login(req({ body: { username: 'ravi', password: 'figmark-dev' } }), ctx);
+await check("refuses another account reading someone else's manifest", async () => {
+  // meera holds `sell` like everyone, so this proves ownership is checked
+  // separately from capability - the exact gap a role check would have missed.
+  const other = await login(req({ body: { username: 'meera', password: 'figmark-dev' } }), ctx);
+  assert.equal(other.jsonBody.user.capabilities.canSell, true);
   const response = await lotManifest(
     req({
-      headers: { authorization: `Bearer ${buyer.jsonBody.token}` },
-      params: { sellerId: 'usr_seller_kaiju', lotId: 'lot_gz_sep' },
+      headers: { authorization: `Bearer ${other.jsonBody.token}` },
+      params: { sellerId: 'usr_kaiju', lotId: 'lot_gz_sep' },
     }),
     ctx,
   );
   assert.equal(response.status, 403);
   assert.equal(response.jsonBody.error, 'forbidden');
+});
+
+await check('admin reads across owners', async () => {
+  const admin = await login(req({ body: { username: 'admin', password: 'figmark-dev' } }), ctx);
+  const response = await lotManifest(
+    req({
+      headers: { authorization: `Bearer ${admin.jsonBody.token}` },
+      params: { sellerId: 'usr_kaiju', lotId: 'lot_gz_sep' },
+    }),
+    ctx,
+  );
+  assert.equal(response.status, 200);
+});
+
+await check('lots carry a forwarder, from the directory or entered by hand', async () => {
+  const { lots } = (await listLots(req(), ctx)).jsonBody;
+  const fromDirectory = lots.find((l) => l.forwarder?.forwarderUserId !== null);
+  const offPlatform = lots.find((l) => l.forwarder?.forwarderUserId === null);
+  assert.ok(fromDirectory, 'expected a lot using a directory forwarder');
+  assert.ok(offPlatform, 'expected a lot using an off-platform forwarder');
+  assert.equal(offPlatform.forwarder.trackingReference, 'SSC-2026-08-4471');
 });
 
 await check("refuses a seller reading another seller's lot with 403", async () => {
@@ -139,7 +165,7 @@ await check("refuses a seller reading another seller's lot with 403", async () =
 
 await check('returns the manifest with totals for the owning seller', async () => {
   const response = await lotManifest(
-    req({ headers: sellerAuth, params: { sellerId: 'usr_seller_kaiju', lotId: 'lot_gz_sep' } }),
+    req({ headers: sellerAuth, params: { sellerId: 'usr_kaiju', lotId: 'lot_gz_sep' } }),
     ctx,
   );
   assert.equal(response.status, 200);
@@ -154,7 +180,7 @@ await check('returns the manifest with totals for the owning seller', async () =
 
 await check('404s an unknown lot', async () => {
   const response = await lotManifest(
-    req({ headers: sellerAuth, params: { sellerId: 'usr_seller_kaiju', lotId: 'lot_nope' } }),
+    req({ headers: sellerAuth, params: { sellerId: 'usr_kaiju', lotId: 'lot_nope' } }),
     ctx,
   );
   assert.equal(response.status, 404);

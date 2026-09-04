@@ -41,7 +41,8 @@ export function LotsPanel({
       <ul className="lots">
         {lots.map((lot) => {
           const fill = Math.min(100, Math.round((lot.filledCount / lot.fillThreshold) * 100));
-          const canOpen = user?.role === 'admin' || user?.id === lot.sellerId;
+          // Mirrors the server rule: the owner, or an admin reading across owners.
+          const canOpen = user?.capabilities.isAdmin === true || user?.id === lot.sellerId;
 
           return (
             <li key={lot.id} className="lot">
@@ -72,6 +73,14 @@ export function LotsPanel({
                 {formatWeight(lot.costModel.totalWeightGrams)}
                 {lot.estimatedDispatchAt && <> · est. dispatch {formatDate(lot.estimatedDispatchAt)}</>}
               </p>
+
+              {lot.forwarder && (
+                <p className="lot__meta muted">
+                  Forwarder {lot.forwarder.name}
+                  {lot.forwarder.forwarderUserId === null && ' (off-platform)'}
+                  {lot.forwarder.trackingReference && ` · ${lot.forwarder.trackingReference}`}
+                </p>
+              )}
 
               {canOpen && (
                 <button type="button" className="button button--ghost" onClick={() => onOpenManifest(lot)}>

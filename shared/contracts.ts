@@ -3,8 +3,14 @@
  * a change to a response shape breaks the typecheck on both sides at once.
  */
 
-import type { UserRole } from './enums.js';
-import type { SellerProfile, TrustSignals, VerificationState } from './models.js';
+import type { UserCapabilities } from './capabilities.js';
+import type {
+  ForwarderProfile,
+  SellerProfile,
+  SellerTrustSignals,
+  TrustSignals,
+  VerificationState,
+} from './models.js';
 
 /**
  * The authenticated principal, as every part of the app sees it.
@@ -19,10 +25,20 @@ export interface AuthUser {
   username: string;
   displayName: string;
   email: string;
-  role: UserRole;
+  phone: string | null;
+  /**
+   * Derived server-side and sent down, so the client never re-implements the
+   * rules. Authoritative checks still happen on the API - this is for deciding
+   * what to render, not what to permit.
+   */
+  capabilities: UserCapabilities;
   verification: VerificationState;
-  trust: TrustSignals;
+  buyerTrust: TrustSignals;
+  sellerTrust: SellerTrustSignals;
+  /** Non-null once the account has listed something. */
   sellerProfile: SellerProfile | null;
+  /** Non-null for accounts that also operate as freight forwarders. */
+  forwarderProfile: ForwarderProfile | null;
 }
 
 export interface LoginRequest {
@@ -57,7 +73,7 @@ export interface HealthResponse {
   auth: {
     mode: AuthMode;
     /** Seeded logins, exposed only while the mock provider is active. */
-    demoAccounts: Array<{ username: string; role: UserRole }>;
+    demoAccounts: DemoAccount[];
   };
   data: {
     backend: BackendKind;
@@ -71,6 +87,12 @@ export interface HealthResponse {
     account: string | null;
     detail: string;
   };
+}
+
+/** A seeded sign-in hint. `label` describes the account, not a role. */
+export interface DemoAccount {
+  username: string;
+  label: string;
 }
 
 export interface ApiError {

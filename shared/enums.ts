@@ -6,8 +6,17 @@
  * without duplicating literals or pulling in a runtime shim.
  */
 
-export const USER_ROLES = ['buyer', 'seller', 'admin'] as const;
-export type UserRole = (typeof USER_ROLES)[number];
+/**
+ * What an account may do.
+ *
+ * Deliberately not a role enum. Every account is both buyer and seller - a
+ * seller is just someone who has listed something - so a single mutually
+ * exclusive role cannot describe a real user. Capabilities are derived from
+ * verification state (see `deriveCapabilities`), except `admin`, which is a
+ * genuine assigned role stored on the record.
+ */
+export const CAPABILITIES = ['buy', 'sell', 'forward', 'admin'] as const;
+export type Capability = (typeof CAPABILITIES)[number];
 
 /**
  * Status of a single verification artefact (ID document, bank/UPI match, phone,
@@ -97,6 +106,16 @@ export const DISPUTE_STATUSES = [
 ] as const;
 export type DisputeStatus = (typeof DISPUTE_STATUSES)[number];
 
-/** Two-sided reviews: each completed order can produce one of each direction. */
-export const REVIEW_DIRECTIONS = ['buyer_to_seller', 'seller_to_buyer'] as const;
+/**
+ * Review directions, all gated on a completed transaction.
+ *
+ * Buyer and seller rate each other on an order; a seller rates a forwarder on a
+ * lot that forwarder actually shipped. Same rule throughout: no completed
+ * transaction, no review.
+ */
+export const REVIEW_DIRECTIONS = [
+  'buyer_to_seller',
+  'seller_to_buyer',
+  'seller_to_forwarder',
+] as const;
 export type ReviewDirection = (typeof REVIEW_DIRECTIONS)[number];

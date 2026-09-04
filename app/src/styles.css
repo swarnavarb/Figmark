@@ -243,9 +243,13 @@ h3 {
   color: var(--warn);
 }
 
-.badge--role-admin,
-.badge--role-seller,
-.badge--role-buyer {
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.badge--capability {
   background: var(--accent-soft);
   color: var(--accent);
 }

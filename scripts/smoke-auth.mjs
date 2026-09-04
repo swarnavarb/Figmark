@@ -43,10 +43,54 @@ console.log('auth seam');
 
 const session = await auth.login({ username: 'kaiju', password: DEMO_PASSWORD });
 
-await check('signs in a seeded seller with a role and a token', () => {
-  assert.equal(session.user.role, 'seller');
+await check('signs in a seeded account with capabilities and a token', () => {
+  assert.deepEqual(session.user.capabilities, {
+    canBuy: true,
+    canSell: true,
+    canForward: false,
+    isAdmin: false,
+  });
   assert.ok(session.token.includes('.'));
   assert.ok(Date.parse(session.expiresAt) > Date.now());
+});
+
+await check('every account can both buy and sell', async () => {
+  // The unified model: no account is buyer-only or seller-only.
+  for (const { username } of repository.listDemoAccounts()) {
+    const { user } = await auth.login({ username, password: DEMO_PASSWORD });
+    assert.equal(user.capabilities.canBuy, true, `${username} should be able to buy`);
+    assert.equal(user.capabilities.canSell, true, `${username} should be able to sell`);
+  }
+});
+
+await check('admin is a real assigned role, not a derived capability', async () => {
+  const { user: admin } = await auth.login({ username: 'admin', password: DEMO_PASSWORD });
+  assert.equal(admin.capabilities.isAdmin, true);
+  const { user: seller } = await auth.login({ username: 'kaiju', password: DEMO_PASSWORD });
+  assert.equal(seller.capabilities.isAdmin, false);
+});
+
+await check('forwarding is gated on having a forwarder profile', async () => {
+  const { user: fwd } = await auth.login({ username: 'lotus', password: DEMO_PASSWORD });
+  assert.equal(fwd.capabilities.canForward, true);
+  assert.ok(fwd.forwarderProfile);
+  assert.equal(fwd.forwarderProfile.routes.length, 2);
+  const { user: other } = await auth.login({ username: 'meera', password: DEMO_PASSWORD });
+  assert.equal(other.capabilities.canForward, false);
+  assert.equal(other.forwarderProfile, null);
+});
+
+await check('buyer and seller trust are separate numbers', () => {
+  assert.ok('buyerTrust' in session.user && 'sellerTrust' in session.user);
+  assert.ok(!('trust' in session.user), 'the single combined trust score is gone');
+  assert.equal(typeof session.user.sellerTrust.onTimeDispatchRate, 'object');
+});
+
+await check('an account that has never listed still has no storefront', async () => {
+  const { user } = await auth.login({ username: 'meera', password: DEMO_PASSWORD });
+  assert.equal(user.sellerProfile, null);
+  // ...but is still permitted to sell; the profile appears on first listing.
+  assert.equal(user.capabilities.canSell, true);
 });
 
 await check('login response carries no credential material', () => {
@@ -90,13 +134,13 @@ await check('rejects a tampered token', async () => {
   assert.equal(await auth.getCurrentUser(requestWith({ authorization: `Bearer ${payload}.bad` })), null);
 });
 
-await check('accepts a matching role', async () => {
-  const user = await auth.requireRole(bearer, ['seller', 'admin']);
-  assert.equal(user.role, 'seller');
+await check('accepts a held capability', async () => {
+  const user = await auth.requireCapability(bearer, ['sell', 'admin']);
+  assert.equal(user.username, 'kaiju');
 });
 
-await expectAuthError('refuses a non-matching role', 'forbidden', () =>
-  auth.requireRole(bearer, ['admin']),
+await expectAuthError('refuses a capability not held', 'forbidden', () =>
+  auth.requireCapability(bearer, ['admin']),
 );
 
 await expectAuthError('refuses an anonymous request', 'unauthenticated', () =>
@@ -117,8 +161,8 @@ await check('lists lots newest first', async () => {
 });
 
 await check('scopes a lot read to its seller partition', async () => {
-  assert.ok(await repository.getLot('usr_seller_kaiju', 'lot_gz_sep'));
-  assert.equal(await repository.getLot('usr_buyer_ravi', 'lot_gz_sep'), null);
+  assert.ok(await repository.getLot('usr_kaiju', 'lot_gz_sep'));
+  assert.equal(await repository.getLot('usr_ravi', 'lot_gz_sep'), null);
 });
 
 await check('builds a lot manifest', async () => {

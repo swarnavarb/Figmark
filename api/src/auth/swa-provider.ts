@@ -1,7 +1,13 @@
 import type { HttpRequest } from '@azure/functions';
-import type { AuthMode, AuthUser, LoginRequest, LoginResponse } from '../../../shared/contracts.js';
-import type { UserRole } from '../../../shared/enums.js';
-import { USER_ROLES } from '../../../shared/enums.js';
+import type {
+  AuthMode,
+  AuthUser,
+  DemoAccount,
+  LoginRequest,
+  LoginResponse,
+} from '../../../shared/contracts.js';
+import type { Capability } from '../../../shared/enums.js';
+import { hasAnyCapability } from '../../../shared/capabilities.js';
 import type { Repository } from '../data/repository.js';
 import { AuthError } from './errors.js';
 import { toAuthUser } from './mock-provider.js';
@@ -34,13 +40,15 @@ export class StaticWebAppsAuthProvider implements AuthService {
     const user = await this.repository.getUserById(principal.userId);
     if (!user || user.suspended) return null;
 
-    // Platform roles are authoritative when present, so access can be revoked
-    // in the identity provider without a write to our store.
-    const platformRole = principal.userRoles?.find((role): role is UserRole =>
-      (USER_ROLES as readonly string[]).includes(role),
-    );
+    // Admin is the one capability the identity provider can grant directly, so
+    // it can be revoked there without a write to our store. The rest are
+    // derived from verification state and are ours to decide.
+    const authUser = toAuthUser(user);
+    const platformAdmin = principal.userRoles?.includes('admin') ?? false;
 
-    return { ...toAuthUser(user), role: platformRole ?? user.role };
+    return platformAdmin
+      ? { ...authUser, capabilities: { ...authUser.capabilities, isAdmin: true } }
+      : authUser;
   }
 
   async requireAuth(request: HttpRequest): Promise<AuthUser> {
@@ -49,11 +57,14 @@ export class StaticWebAppsAuthProvider implements AuthService {
     return user;
   }
 
-  async requireRole(request: HttpRequest, roles: readonly UserRole[]): Promise<AuthUser> {
+  async requireCapability(
+    request: HttpRequest,
+    capabilities: readonly Capability[],
+  ): Promise<AuthUser> {
     const user = await this.requireAuth(request);
-    if (!roles.includes(user.role)) {
+    if (!hasAnyCapability(user.capabilities, capabilities)) {
       throw AuthError.forbidden(
-        `This action requires one of: ${roles.join(', ')}. Your role is ${user.role}.`,
+        `This action requires one of: ${capabilities.join(', ')}.`,
       );
     }
     return user;
@@ -69,7 +80,7 @@ export class StaticWebAppsAuthProvider implements AuthService {
     // The platform clears its own session at /.auth/logout; nothing to do here.
   }
 
-  listDemoAccounts(): Array<{ username: string; role: UserRole }> {
+  listDemoAccounts(): DemoAccount[] {
     return [];
   }
 

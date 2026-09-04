@@ -1,8 +1,7 @@
 import { CosmosClient, type Container, type Database } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
-import type { BackendKind } from '../../../shared/contracts.js';
+import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINERS } from '../../../shared/containers.js';
-import type { UserRole } from '../../../shared/enums.js';
 import type { Listing, Lot, Order, User } from '../../../shared/models.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
@@ -99,7 +98,7 @@ export class CosmosRepository implements Repository {
     return this.getUserById(reservation.userId);
   }
 
-  listDemoAccounts(): Array<{ username: string; role: UserRole }> {
+  listDemoAccounts(): DemoAccount[] {
     // Never advertise sign-in hints against a real database.
     return [];
   }

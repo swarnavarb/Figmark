@@ -12,7 +12,7 @@ The shape extends AxisTwelve's Lot → Customer → Order model: `Lot` is the ba
 
 | Container | Partition key | Why |
 |---|---|---|
-| `users` | `/id` | Point reads by id dominate. |
+| `users` | `/id` | Point reads by id dominate. One record per account, covering buyer, seller and forwarder facets. |
 | `usernames` | `/id` | Reservation records making usernames globally unique; see below. |
 | `listings` | `/sellerId` | Storefronts and seller dashboards read one seller at a time. |
 | `lots` | `/sellerId` | Lots are always managed in the context of their seller. |
@@ -75,6 +75,39 @@ the time-in-stage analytics will read.
 `LotStatus` (`draft`/`open`/`filled`/`closed`/`cancelled`) is deliberately
 separate: it describes the group-buy's commercial lifecycle, which moves
 independently of where the physical goods are.
+
+## One account, both sides
+
+There is no buyer account and no seller account. A single `User` record carries
+everything, and what it may do is derived rather than declared:
+
+- **`sellerProfile`** is `null` until the account lists something. Its presence
+  is what makes an account a seller — not a role, not a second signup.
+- **`forwarderProfile`** is the same idea for freight forwarders, who share the
+  account base rather than living in a separate system.
+- **`isAdmin`** is the one genuine assigned role, so it is stored.
+- Everything else (`canBuy`, `canSell`, `canForward`) is computed by
+  `deriveCapabilities` from verification state, in `shared/capabilities.ts`.
+
+Buyer and seller trust are **separate records** (`buyerTrust`, `sellerTrust`),
+because they genuinely diverge: a long-standing reliable buyer can be brand new
+at selling, and one combined number would lend unearned credibility to a first
+listing. Only `sellerTrust` carries the dispatch and repeat-customer stats.
+
+## Forwarders
+
+Forwarders self-list; nothing about them is admin-entered. `ForwarderProfile`
+holds the company, the China→India routes with claimed rates and turnaround, and
+a trust record fed by ratings from sellers whose lots they actually shipped —
+the same completed-transaction gate as buyer and seller reviews, so a rating
+cannot exist without a shipment behind it.
+
+`Lot.forwarder` deliberately does **not** require a directory pick. A seller
+already working with someone off-platform types in the name, contact and
+tracking reference, and the lot behaves identically (`forwarderUserId` is then
+`null`). Directory adoption grows because sellers find it useful, not because
+the schema forces it. Tracking is the reference as entered — there is no live
+carrier API pull yet.
 
 ## Trust, reviews and escrow
 

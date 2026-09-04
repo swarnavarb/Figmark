@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import type { AuthUser } from '@shared/contracts';
-import type { UserRole } from '@shared/enums';
+import type { AuthUser, DemoAccount } from '@shared/contracts';
 
 interface Props {
   user: AuthUser | null;
-  demoAccounts: Array<{ username: string; role: UserRole }>;
+  demoAccounts: DemoAccount[];
   demoPassword: string;
   busy: boolean;
   error: string | null;
@@ -42,7 +41,7 @@ export function SignInPanel({
       <section className="panel">
         <div className="panel__head">
           <h2>Session</h2>
-          <span className={`badge badge--role-${user.role}`}>{user.role}</span>
+          <CapabilityBadges capabilities={user.capabilities} />
         </div>
 
         <p className="lead">
@@ -55,9 +54,10 @@ export function SignInPanel({
             <dd className="mono">{user.id}</dd>
           </div>
           <div>
-            <dt>Trust score</dt>
+            <dt>Trust</dt>
             <dd>
-              {user.trust.score} <span className="muted">· not yet computed</span>
+              buyer {user.buyerTrust.score} · seller {user.sellerTrust.score}{' '}
+              <span className="muted">· not yet computed</span>
             </dd>
           </div>
           <div>
@@ -68,12 +68,26 @@ export function SignInPanel({
               </span>
             </dd>
           </div>
-          {user.sellerProfile && (
+          {user.sellerProfile ? (
             <div>
               <dt>Storefront</dt>
               <dd>
                 {user.sellerProfile.storefrontName}{' '}
                 <span className="muted">· {user.sellerProfile.tier} tier</span>
+              </dd>
+            </div>
+          ) : (
+            <div>
+              <dt>Storefront</dt>
+              <dd className="muted">None yet · created on first listing</dd>
+            </div>
+          )}
+          {user.forwarderProfile && (
+            <div>
+              <dt>Forwarder</dt>
+              <dd>
+                {user.forwarderProfile.companyName}{' '}
+                <span className="muted">· {user.forwarderProfile.routes.length} routes</span>
               </dd>
             </div>
           )}
@@ -90,8 +104,8 @@ export function SignInPanel({
     <section className="panel">
       <h2>Session</h2>
       <p className="muted">
-        The mock provider accepts the seeded accounts below. Signing in as a seller unlocks the lot
-        manifest, which is a role-gated route.
+        The mock provider accepts the seeded accounts below. Every account can both buy and sell -
+        the lot manifest is gated on the <code>sell</code> capability plus ownership, not on a role.
       </p>
 
       <form
@@ -107,7 +121,7 @@ export function SignInPanel({
             <select value={username} onChange={(event) => setChosenUsername(event.target.value)}>
               {demoAccounts.map((account) => (
                 <option key={account.username} value={account.username}>
-                  {account.username} ({account.role})
+                  {account.username} ({account.label})
                 </option>
               ))}
             </select>
@@ -137,5 +151,27 @@ export function SignInPanel({
 
       {error && <p className="status status--bad">{error}</p>}
     </section>
+  );
+}
+
+/** Shows what the account may do, rather than what it "is". */
+function CapabilityBadges({ capabilities }: { capabilities: AuthUser['capabilities'] }) {
+  const held = [
+    capabilities.isAdmin && 'admin',
+    capabilities.canBuy && 'buy',
+    capabilities.canSell && 'sell',
+    capabilities.canForward && 'forward',
+  ].filter((entry): entry is string => typeof entry === 'string');
+
+  if (held.length === 0) return <span className="badge">no capabilities</span>;
+
+  return (
+    <span className="badges">
+      {held.map((capability) => (
+        <span key={capability} className="badge badge--capability">
+          {capability}
+        </span>
+      ))}
+    </span>
   );
 }

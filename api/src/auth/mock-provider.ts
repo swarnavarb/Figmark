@@ -1,6 +1,13 @@
 import type { HttpRequest } from '@azure/functions';
-import type { AuthMode, AuthUser, LoginRequest, LoginResponse } from '../../../shared/contracts.js';
-import type { UserRole } from '../../../shared/enums.js';
+import type {
+  AuthMode,
+  AuthUser,
+  DemoAccount,
+  LoginRequest,
+  LoginResponse,
+} from '../../../shared/contracts.js';
+import type { Capability } from '../../../shared/enums.js';
+import { deriveCapabilities, hasAnyCapability } from '../../../shared/capabilities.js';
 import type { User } from '../../../shared/models.js';
 import type { Repository } from '../data/repository.js';
 import { AuthError } from './errors.js';
@@ -51,11 +58,14 @@ export class MockAuthProvider implements AuthService {
     return user;
   }
 
-  async requireRole(request: HttpRequest, roles: readonly UserRole[]): Promise<AuthUser> {
+  async requireCapability(
+    request: HttpRequest,
+    capabilities: readonly Capability[],
+  ): Promise<AuthUser> {
     const user = await this.requireAuth(request);
-    if (!roles.includes(user.role)) {
+    if (!hasAnyCapability(user.capabilities, capabilities)) {
       throw AuthError.forbidden(
-        `This action requires one of: ${roles.join(', ')}. Your role is ${user.role}.`,
+        `This action requires one of: ${capabilities.join(', ')}.`,
       );
     }
     return user;
@@ -90,7 +100,7 @@ export class MockAuthProvider implements AuthService {
     await this.repository.revokeSession(token, new Date(payload.exp * 1000));
   }
 
-  listDemoAccounts(): Array<{ username: string; role: UserRole }> {
+  listDemoAccounts(): DemoAccount[] {
     return this.repository.listDemoAccounts();
   }
 
@@ -130,9 +140,12 @@ export function toAuthUser(user: User): AuthUser {
     username: user.username,
     displayName: user.displayName,
     email: user.email,
-    role: user.role,
+    phone: user.phone,
+    capabilities: deriveCapabilities(user),
     verification: user.verification,
-    trust: user.trust,
+    buyerTrust: user.buyerTrust,
+    sellerTrust: user.sellerTrust,
     sellerProfile: user.sellerProfile,
+    forwarderProfile: user.forwarderProfile,
   };
 }

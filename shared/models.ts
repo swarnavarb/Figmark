@@ -10,7 +10,6 @@ import type {
   PaymentStatus,
   ReviewDirection,
   SellerTier,
-  UserRole,
   VerificationStatus,
 } from './enums.js';
 
@@ -62,24 +61,45 @@ export interface TrustSignals {
   completedTransactions: number;
   /** Disputes resolved against this user. */
   disputesLost: number;
-  /** Seller-side public stat: fraction of lots dispatched by promised date. */
-  onTimeDispatchRate: number | null;
-  /** Fraction of buyers who ordered more than once. */
-  repeatCustomerRate: number | null;
   /** ISO-8601 of last recompute, or null if never computed. */
   computedAt: string | null;
 }
 
+/**
+ * Seller-side trust, kept separate from buyer-side because the two genuinely
+ * diverge: a long-standing reliable buyer can be brand new at selling, and
+ * collapsing them into one number would lend unearned credibility to a first
+ * listing.
+ */
+export interface SellerTrustSignals extends TrustSignals {
+  /** Public stat: fraction of lots dispatched by the promised date. */
+  onTimeDispatchRate: number | null;
+  /** Fraction of buyers who ordered more than once. */
+  repeatCustomerRate: number | null;
+}
+
+/**
+ * One account, both sides of the trade.
+ *
+ * There is no buyer account and no seller account: everyone can browse and buy,
+ * and "seller" is simply what an account becomes the moment it lists something.
+ * What an account may do is derived from its verification state by
+ * `deriveCapabilities`, never read off a role field. `isAdmin` is the one
+ * genuine assigned role.
+ */
 export interface User extends BaseDocument {
   /** Login handle for the mock auth provider; unique, lowercase. */
   username: string;
   email: string;
+  /** E.164 where known. Becomes the primary identifier once auth is decided. */
+  phone: string | null;
   displayName: string;
   /**
-   * Authorisation role. Present from day one because trust tiers, review
-   * gating and the admin console all branch on it; retrofitting is painful.
+   * Platform administration: verification queue, dispute console, payouts.
+   * A real assigned role, not a capability derived from verification, so it is
+   * stored rather than computed.
    */
-  role: UserRole;
+  isAdmin: boolean;
   /**
    * scrypt hash of the mock password, `<saltHex>:<hashHex>`.
    * Only ever set by the mock auth provider - the real provider owns
@@ -87,9 +107,20 @@ export interface User extends BaseDocument {
    */
   passwordHash: string | null;
   verification: VerificationState;
-  trust: TrustSignals;
-  /** Seller-only. `null` for buyers and admins. */
+  /** Trust as a buyer. Independent of the seller score below. */
+  buyerTrust: TrustSignals;
+  /** Trust as a seller. Independent of the buyer score above. */
+  sellerTrust: SellerTrustSignals;
+  /**
+   * Populated the first time the account lists something. Its presence is what
+   * makes an account a seller - not a role, not a separate signup.
+   */
   sellerProfile: SellerProfile | null;
+  /**
+   * Freight forwarders share the same account base rather than living in a
+   * separate system; this extension is what puts one in the directory.
+   */
+  forwarderProfile: ForwarderProfile | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
 }
@@ -105,6 +136,41 @@ export interface SellerProfile {
   /** Refundable deposit held for the Pro tier, in minor units (paise). */
   depositHeldMinor: number;
   dispatchRegion: string;
+}
+
+/** One China-origin to India-destination lane a forwarder claims to serve. */
+export interface ForwarderRoute {
+  originCity: string;
+  destinationCity: string;
+  /** Door-to-door turnaround the forwarder claims. Unverified. */
+  claimedTurnaroundDays: number;
+  /** Indicative rate in minor units per kilogram. */
+  ratePerKgMinor: number;
+  currency: string;
+}
+
+/**
+ * A freight forwarder's directory entry. Forwarders sign themselves up and
+ * sellers choose them; nothing here is admin-entered.
+ */
+export interface ForwarderProfile {
+  companyName: string;
+  /** URL slug for the public directory entry. */
+  directorySlug: string;
+  description: string;
+  routes: ForwarderRoute[];
+  contactEmail: string;
+  contactPhone: string;
+  /** Monthly volume in kg the forwarder claims to handle. Unverified. */
+  claimedMonthlyCapacityKg: number | null;
+  /**
+   * Ratings from sellers, gated on lots this forwarder actually shipped - the
+   * same completed-transaction rule as buyer and seller reviews, so a rating
+   * cannot exist without a shipment behind it.
+   */
+  trust: TrustSignals;
+  /** Withdrawn entries keep their history but stop appearing in search. */
+  listedInDirectory: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -170,6 +236,29 @@ export interface Lot extends BaseDocument {
   estimatedDispatchAt: string | null;
   /** Per-lot cost model, feeding the landed-cost calculator. */
   costModel: LotCostModel;
+  /** Null until the seller picks a forwarder or enters one manually. */
+  forwarder: LotForwarder | null;
+}
+
+/**
+ * The forwarder moving a lot.
+ *
+ * Picking from the directory is optional by design: a seller already working
+ * with someone off-platform types their details in instead, and the lot behaves
+ * identically. Directory adoption then grows because sellers find it useful,
+ * not because the schema forces it.
+ */
+export interface LotForwarder {
+  /** Set when chosen from the directory; null when typed in manually. */
+  forwarderUserId: string | null;
+  /** Display name, whether it came from the directory or was entered by hand. */
+  name: string;
+  contact: string | null;
+  /**
+   * Entered by the seller and shown on the buyer-facing stage timeline. There
+   * is no live carrier API pull yet; this is the tracking reference as given.
+   */
+  trackingReference: string | null;
 }
 
 /** Inputs to the landed-cost / profit calculator. All amounts in minor units. */

@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { BackendKind } from '../../../shared/contracts.js';
-import type { UserRole } from '../../../shared/enums.js';
+import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type { Listing, Lot, Order, User } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -34,7 +33,7 @@ export interface Repository {
   getUserByUsername(username: string): Promise<User | null>;
 
   /** Sign-in hints for the mock provider; empty once real auth is in use. */
-  listDemoAccounts(): Array<{ username: string; role: UserRole }>;
+  listDemoAccounts(): DemoAccount[];
 
   revokeSession(token: string, expiresAt: Date): Promise<void>;
   isSessionRevoked(token: string): Promise<boolean>;

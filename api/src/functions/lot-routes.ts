@@ -21,12 +21,13 @@ async function listLots(request: HttpRequest, _context: InvocationContext) {
  * GET /api/lots/{sellerId}/{lotId}/manifest - the order manifest for one lot.
  *
  * Sellers see their own lots; admins see any. This is the first route to go
- * through `requireRole`, and it exercises the ownership check that every
- * seller-scoped route will need.
+ * through `requireCapability`, and it exercises the ownership check that every
+ * seller-scoped route will need - capability and ownership are separate
+ * questions, and a seller-scoped route needs both.
  */
 async function lotManifest(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  const user = await auth.requireRole(request, ['seller', 'admin']);
+  const user = await auth.requireCapability(request, ['sell', 'admin']);
 
   const sellerId = request.params.sellerId;
   const lotId = request.params.lotId;
@@ -34,8 +35,10 @@ async function lotManifest(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_request', 'Both sellerId and lotId are required.');
   }
 
-  // Role alone is not authorisation: a seller may only read their own lots.
-  if (user.role === 'seller' && user.id !== sellerId) {
+  // Capability alone is not authorisation: anyone may sell, so "can sell" says
+  // nothing about whose lot this is. Admins are the only accounts that read
+  // across owners.
+  if (!user.capabilities.isAdmin && user.id !== sellerId) {
     throw AuthError.forbidden('You can only view manifests for your own lots.');
   }
 

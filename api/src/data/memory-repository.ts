@@ -1,5 +1,4 @@
-import type { BackendKind } from '../../../shared/contracts.js';
-import type { UserRole } from '../../../shared/enums.js';
+import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type { Listing, Lot, Order, User } from '../../../shared/models.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { sessionDigest } from './repository.js';
@@ -21,11 +20,13 @@ export class MemoryRepository implements Repository {
   private readonly listings = new Map<string, Listing>();
   private readonly orders = new Map<string, Order>();
   private readonly revokedSessions = new Map<string, number>();
+  private demoAccounts: DemoAccount[] = [];
 
   async init(): Promise<void> {
-    for (const user of seedUsers()) {
+    for (const { label, ...user } of seedUsers()) {
       this.users.set(user.id, user);
       this.usersByUsername.set(user.username, user);
+      this.demoAccounts.push({ username: user.username, label });
     }
     for (const lot of seedLots()) this.lots.set(lot.id, lot);
     for (const listing of seedListings()) this.listings.set(listing.id, listing);
@@ -48,8 +49,8 @@ export class MemoryRepository implements Repository {
     return this.usersByUsername.get(username.toLowerCase()) ?? null;
   }
 
-  listDemoAccounts(): Array<{ username: string; role: UserRole }> {
-    return [...this.users.values()].map((user) => ({ username: user.username, role: user.role }));
+  listDemoAccounts(): DemoAccount[] {
+    return this.demoAccounts;
   }
 
   async revokeSession(token: string, expiresAt: Date): Promise<void> {
