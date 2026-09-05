@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AuthUser } from '@shared/contracts';
-import { api } from './api';
+import { api, setSessionRejectedHandler } from './api';
 
 /**
  * The signed-in user, resolved once and shared.
@@ -36,6 +36,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Any authenticated call the server rejects drops us back to sign-in, rather
+  // than leaving a stale user object and an unusable page behind it.
+  useEffect(() => {
+    setSessionRejectedHandler(() => {
+      setUser(null);
+      setWarning(null);
+    });
+    return () => setSessionRejectedHandler(null);
   }, []);
 
   const signIn = useCallback(async (identifier: string, password: string) => {

@@ -25,6 +25,22 @@ export class ApiRequestError extends Error {
   }
 }
 
+/**
+ * Called when the server rejects our session on any authenticated call.
+ *
+ * A token the server will not accept is not an error to display on the page -
+ * it means we are not signed in and did not notice. Left unhandled it strands
+ * the user on a screen repeating "Authentication required" with no way out.
+ */
+let onSessionRejected: (() => void) | null = null;
+
+export function setSessionRejectedHandler(handler: (() => void) | null): void {
+  onSessionRejected = handler;
+}
+
+/** Endpoints where a 401 is a normal answer rather than a lost session. */
+const EXPECTS_401 = ['/auth/me', '/auth/login', '/auth/signup'];
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -39,6 +55,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as ApiError | null;
+    if (response.status === 401 && !EXPECTS_401.some((prefix) => path.startsWith(prefix))) {
+      onSessionRejected?.();
+    }
     throw new ApiRequestError(
       response.status,
       body?.error ?? 'http_error',

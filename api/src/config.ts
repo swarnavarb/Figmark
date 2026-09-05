@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import type { AuthMode } from '../../shared/contracts.js';
 import { DATABASE_NAME } from '../../shared/containers.js';
 
@@ -79,16 +79,41 @@ function resolveAuthMode(): AuthMode {
  *
  * `/api/health` reports which of the three cases is in force.
  */
-export type SessionSecretSource = 'configured' | 'ephemeral' | 'development';
+export type SessionSecretSource = 'configured' | 'derived' | 'ephemeral' | 'development';
 
 const DEV_SESSION_SECRET = 'figmark-dev-insecure-session-secret';
 
+/**
+ * A per-instance random key is NOT a safe default here.
+ *
+ * The host runs more than one worker, and requests are spread across them
+ * arbitrarily. A key that differs per instance means sign-in succeeds on one
+ * worker and every subsequent call to another is rejected - sessions do not
+ * degrade, they simply stop working. So the fallback has to be both secret and
+ * *stable across instances*.
+ *
+ * Deriving one from a credential the deployment already holds gives exactly
+ * that: identical on every worker, never published in this repository, and
+ * rotated only when that credential is. Random-per-instance survives as a last
+ * resort for a deployment holding no key material at all (managed identity),
+ * where signing people out is still better than signing tokens with a value
+ * anyone can read here.
+ */
 function resolveSessionSecret(hasRealBackend: boolean): {
   secret: string;
   source: SessionSecretSource;
 } {
   const configured = env('AUTH_SESSION_SECRET');
   if (configured) return { secret: configured, source: 'configured' };
+
+  const material = env('COSMOS_KEY') ?? env('STORAGE_KEY') ?? env('STORAGE_CONNECTION_STRING');
+  if (material) {
+    return {
+      secret: createHmac('sha256', material).update('figmark-session-v1').digest('hex'),
+      source: 'derived',
+    };
+  }
+
   if (hasRealBackend) return { secret: randomBytes(32).toString('hex'), source: 'ephemeral' };
   return { secret: DEV_SESSION_SECRET, source: 'development' };
 }

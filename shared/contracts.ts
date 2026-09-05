@@ -88,7 +88,7 @@ export interface HealthResponse {
      * published in this repository - sessions are forgeable and this must never
      * be the value in a real deployment.
      */
-    sessionSecretSource: 'configured' | 'ephemeral' | 'development';
+    sessionSecretSource: 'configured' | 'derived' | 'ephemeral' | 'development';
     /** False when accounts are held in memory and will not survive a restart. */
     accountsDurable: boolean;
   };

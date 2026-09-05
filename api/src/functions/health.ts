@@ -25,7 +25,11 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
   const body: HealthResponse = {
     // Degraded means "running, but not on the intended backing services".
     status:
-      data.connected && storage.connected && data.database !== null && config.sessionSecretSource !== 'development'
+      data.connected &&
+      storage.connected &&
+      data.database !== null &&
+      // 'ephemeral' differs per worker, so sessions break across instances.
+      (config.sessionSecretSource === 'configured' || config.sessionSecretSource === 'derived')
         ? 'ok'
         : 'degraded',
     service: 'figmark-api',

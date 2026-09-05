@@ -180,6 +180,13 @@ await check('a valid session for a vanished account says so, not "wrong password
   }
 });
 
+await check('a token signed by another instance is rejected, not silently trusted', async () => {
+  // The shape of a multi-worker host: two providers, different keys.
+  const other = new MockAuthProvider(repository, 'a-different-instance-key', 3600);
+  const carried = requestWith({ authorization: `Bearer ${session.token}` });
+  assert.equal(await other.getCurrentUser(carried), null);
+});
+
 await check('sign-up warns when the store will not keep the account', async () => {
   const created = await auth.signup({
     displayName: 'Warned', email: 'warned@figmark.example', phone: '+919777000555', password: 'longenough1',

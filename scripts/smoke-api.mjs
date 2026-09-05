@@ -50,6 +50,9 @@ await check('health reports the session-key source and account durability', asyn
   const body = (await health(req(), ctx)).jsonBody;
   // No database configured here, so both must read as the unsafe case.
   assert.equal(body.auth.sessionSecretSource, 'development');
+  // 'ephemeral' would differ per worker and break sessions across instances,
+  // so only 'configured' and 'derived' may ever count as healthy.
+  assert.ok(!['configured', 'derived'].includes(body.auth.sessionSecretSource));
   assert.equal(body.auth.accountsDurable, false);
   // ...and that alone is enough to keep the deployment out of "ok".
   assert.equal(body.status, 'degraded');
