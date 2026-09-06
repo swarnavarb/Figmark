@@ -52,7 +52,17 @@ export function AuthPage() {
           setBlocked(null);
         }
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        // Swallowing this is how a deployment ends up showing neither the demo
+        // hint nor a reason: both are read from health, and a failed read left
+        // the page looking merely ordinary while nothing worked.
+        if (cancelled) return;
+        setBlocked(
+          `The API status check failed, so this page cannot tell you what is wrong: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
     return () => {
       cancelled = true;
     };

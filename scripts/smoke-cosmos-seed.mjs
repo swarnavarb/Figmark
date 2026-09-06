@@ -18,7 +18,7 @@ const base = new URL('../api/dist/', import.meta.url);
 const { CosmosRepository } = await import(new URL('api/src/data/cosmos-repository.js', base));
 const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js', base));
 const { AuthError } = await import(new URL('api/src/auth/errors.js', base));
-const { DEMO_EMAIL, DEMO_PASSWORD } = await import(new URL('api/src/data/seed.js', base));
+const { DEMO_EMAIL, DEMO_PASSWORD, seedUsers } = await import(new URL('api/src/data/seed.js', base));
 
 let passed = 0;
 const check = async (name, fn) => {
@@ -134,16 +134,73 @@ await check('addresses likes and follows by the id that toggling reads back', ()
   for (const id of containers.get('follows').keys()) assert.match(id, /^usr_[a-z]+__usr_/);
 });
 
+console.log('\na database left half-seeded');
+
+/**
+ * What the old provisioning script actually produced: it wrote each user row
+ * before its reservations, and threw on the first user (reading a `username`
+ * field the capabilities model had removed). The result is one account with a
+ * password hash and no reservation behind it - so the database is not empty,
+ * every sign-in for it is answered "incorrect", and nothing about the page
+ * says why.
+ */
+const halfSeeded = new Map([
+  ['users', new Map([['usr_demo', seedUsers().find((u) => u.id === 'usr_demo')]])],
+]);
+const repaired = repositoryOn(halfSeeded);
+
+await check('starts out unable to sign that account in', async () => {
+  // Before init: the row is there, the reservation is not.
+  assert.equal(halfSeeded.get('users').size, 1);
+  assert.equal(halfSeeded.has('identifiers'), false);
+});
+
+await repaired.init();
+
+await check('is not mistaken for an empty database', () => {
+  assert.equal(repaired.status().signInAccounts, 1);
+  assert.match(repaired.status().detail, /half-written seed/);
+});
+
+await check('restores the reservation, so the demo account signs in again', async () => {
+  assert.equal(halfSeeded.get('identifiers').get(DEMO_EMAIL).userId, 'usr_demo');
+  const auth = new MockAuthProvider(repaired, 'test-secret', 3600);
+  const session = await auth.login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
+  assert.equal(session.user.displayName, 'Arjun Mehta');
+});
+
+await check('completes the catalog the half-written seed never reached', () => {
+  assert.ok(halfSeeded.get('listings').size >= 2);
+  assert.ok(halfSeeded.get('lots').size >= 1);
+});
+
 console.log('\na database that already holds accounts');
 
 await check('is left exactly as it is', async () => {
-  const existing = new Map([['users', new Map([['usr_real', { id: 'usr_real', passwordHash: 'x:y' }]])]]);
+  const existing = new Map([
+    ['users', new Map([['usr_real', { id: 'usr_real', email: 'someone@example.com', passwordHash: 'x:y' }]])],
+    ['identifiers', new Map([['someone@example.com', { id: 'someone@example.com', userId: 'usr_real' }]])],
+  ]);
   const untouched = repositoryOn(existing);
   await untouched.init();
   assert.equal(existing.get('users').size, 1, 'seeding must not touch a populated database');
   assert.equal(untouched.status().signInAccounts, 1);
   assert.equal(existing.has('listings'), false, 'nothing else should have been written');
   assert.deepEqual(untouched.listDemoAccounts(), [], 'never advertise a password against real accounts');
+});
+
+await check('a real account missing its reservation is restored, and nothing else', async () => {
+  // The repair is not a licence to write fixtures into someone's database: only
+  // the gap is filled, because the fixture account is not among the rows.
+  const orphaned = new Map([
+    ['users', new Map([['usr_real', { id: 'usr_real', email: 'Someone@Example.com', passwordHash: 'x:y' }]])],
+  ]);
+  const fixed = repositoryOn(orphaned);
+  await fixed.init();
+  assert.equal(orphaned.get('identifiers').get('someone@example.com').userId, 'usr_real');
+  assert.equal(orphaned.has('listings'), false, 'no fixtures in a database of real accounts');
+  assert.deepEqual(fixed.listDemoAccounts(), []);
+  assert.match(fixed.status().detail, /Restored 1 missing identifier reservation/);
 });
 
 console.log('\na database that cannot be reached');

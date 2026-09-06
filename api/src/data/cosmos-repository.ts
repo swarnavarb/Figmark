@@ -110,19 +110,12 @@ export class CosmosRepository implements Repository {
     }
 
     let seeded = '';
-    if (signInAccounts === 0 && autoSeedEnabled()) {
-      // An empty database is a database nobody can sign in to, and the only way
-      // to fill it is a terminal with credentials in it - which is exactly what
-      // whoever just set COSMOS_ENDPOINT in the portal does not have to hand.
-      // Seeding it here is safe precisely because it is empty: there is nothing
-      // to overwrite. Anything already in it is left alone.
+    if (autoSeedEnabled()) {
       try {
-        const written = await this.seedFixtures();
-        this.seeded = true;
+        seeded = signInAccounts === 0 ? await this.fill() : await this.repair();
         signInAccounts = await this.countSignInAccounts();
-        seeded = ` Seeded ${written} fixture records into an empty database.`;
       } catch (error) {
-        seeded = ` The database is empty and seeding it failed: ${describeError(error)}.`;
+        seeded = ` Preparing the database failed: ${describeError(error)}.`;
       }
     }
 
@@ -132,6 +125,80 @@ export class CosmosRepository implements Repository {
       detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${seeded}`,
       signInAccounts,
     };
+  }
+
+  /**
+   * Fills a database with nothing in it.
+   *
+   * Whoever sets COSMOS_ENDPOINT in the portal does not have a terminal with the
+   * account key in it to hand, which is what the provisioning script needs. This
+   * is safe precisely because the database is empty: there is nothing to
+   * overwrite.
+   */
+  private async fill(): Promise<string> {
+    const written = await this.seedFixtures();
+    this.seeded = true;
+    return ` Seeded ${written} fixture records into an empty database.`;
+  }
+
+  /**
+   * Repairs accounts that exist but cannot be signed into.
+   *
+   * Sign-in resolves an identifier through the reservation container, so a user
+   * row with no reservation behind it is unreachable - the account is there, and
+   * every password for it is answered "incorrect". A half-written seed leaves
+   * exactly that, because the user row is written before its reservations.
+   *
+   * Creating the missing reservation is what writing the account should have
+   * done. A reservation already claimed by a different account is left alone:
+   * that is a genuine conflict, not a gap to fill.
+   */
+  private async repair(): Promise<string> {
+    const users = await this.listAllUsers();
+    const repaired: string[] = [];
+
+    for (const user of users) {
+      for (const identifier of identifiersOf(user)) {
+        const existing = await this.readReservation(identifier);
+        if (existing) continue;
+        await this.container('identifiers').items.upsert({ id: identifier, userId: user.id });
+        repaired.push(user.id);
+      }
+    }
+
+    if (repaired.length === 0) return '';
+
+    // A half-written seed loses the catalog along with the reservations, so
+    // finish the job rather than leaving a signed-in user staring at nothing.
+    // Guarded on the fixture account being one of the unreachable rows, which
+    // only a seed of ours puts there - a database of real accounts never
+    // reaches this.
+    if (repaired.includes('usr_demo')) {
+      const written = await this.seedFixtures();
+      this.seeded = true;
+      return ` Completed a half-written seed: ${written} fixture records, including the identifier reservations sign-in resolves through.`;
+    }
+
+    return ` Restored ${repaired.length} missing identifier reservation(s), without which those accounts could not be signed into.`;
+  }
+
+  private async readReservation(identifier: string): Promise<IdentifierReservation | null> {
+    try {
+      const { resource } = await this.container('identifiers')
+        .item(identifier, identifier)
+        .read<IdentifierReservation>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  private async listAllUsers(): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({ query: 'SELECT * FROM c' })
+      .fetchAll();
+    return resources;
   }
 
   /** Accounts holding a password hash, i.e. accounts sign-in can resolve. */
