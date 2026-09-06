@@ -95,16 +95,28 @@ async function readBody(request) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-/** Rebuild the runtime's Set-Cookie string from the structured cookie form. */
-function serializeCookie(cookie) {
-  const parts = [`${cookie.name}=${cookie.value}`];
-  if (cookie.path) parts.push(`Path=${cookie.path}`);
-  if (cookie.maxAge !== undefined) parts.push(`Max-Age=${cookie.maxAge}`);
-  if (cookie.httpOnly) parts.push('HttpOnly');
-  // `Secure` is dropped deliberately: this server is plain HTTP, and a Secure
-  // cookie would be discarded by the browser. Production is HTTPS-only.
-  if (cookie.sameSite) parts.push(`SameSite=${cookie.sameSite}`);
-  return parts.join('; ');
+/**
+ * Pass the handler's own Set-Cookie headers through.
+ *
+ * This server used to build the cookie itself from the structured `cookies`
+ * form, which meant it emitted a session cookie whether or not the API produced
+ * a usable header - so a deployment where the cookie never reached the browser
+ * looked perfect locally. It now forwards what the handler actually set, and
+ * nothing else.
+ *
+ * `Secure` is the one edit: this server is plain HTTP, and a Secure cookie
+ * would be discarded by the browser. Production is HTTPS-only.
+ */
+function setCookiesOf(result) {
+  const headers = result.headers;
+  const raw = headers instanceof Headers ? headers.getSetCookie() : [];
+  return raw.map((cookie) =>
+    cookie
+      .split(';')
+      .map((part) => part.trim())
+      .filter((part) => part.toLowerCase() !== 'secure')
+      .join('; '),
+  );
 }
 
 const server = createServer((request, response) => {
@@ -126,9 +138,8 @@ const server = createServer((request, response) => {
       );
 
       const headers = { 'Content-Type': 'application/json' };
-      if (result.cookies?.length) {
-        headers['Set-Cookie'] = result.cookies.map(serializeCookie);
-      }
+      const cookies = setCookiesOf(result);
+      if (cookies.length > 0) headers['Set-Cookie'] = cookies;
       response.writeHead(result.status ?? 200, headers);
       response.end(JSON.stringify(result.jsonBody ?? null));
       return;

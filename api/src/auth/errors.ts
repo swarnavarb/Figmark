@@ -17,6 +17,36 @@ export class AuthError extends Error {
     return new AuthError(401, 'unauthenticated', message);
   }
 
+  /**
+   * No session cookie or bearer token arrived with the request.
+   *
+   * Distinguished from the rest because it is not a problem with the session at
+   * all - it is a request that carried none. Signed out is the ordinary reason;
+   * a cookie the browser was never given is the other, and telling them apart
+   * from the outside otherwise takes a packet capture.
+   */
+  static noSession(): AuthError {
+    return new AuthError(
+      401,
+      'no_session',
+      'No session was sent with this request. If you signed in just now, the browser was not given a session cookie.',
+    );
+  }
+
+  /** A token arrived, but this server could not verify its signature. */
+  static sessionUnverified(): AuthError {
+    return new AuthError(
+      401,
+      'session_unverified',
+      'This session could not be verified by the server. Sign in again.',
+    );
+  }
+
+  /** A valid token whose session was explicitly ended. */
+  static sessionEnded(): AuthError {
+    return new AuthError(401, 'session_ended', 'This session was signed out. Sign in again.');
+  }
+
   static forbidden(message = 'You do not have access to this resource.'): AuthError {
     return new AuthError(403, 'forbidden', message);
   }

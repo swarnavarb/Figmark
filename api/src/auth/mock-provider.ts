@@ -88,15 +88,24 @@ export class MockAuthProvider implements AuthService {
     const user = await this.getCurrentUser(request);
     if (user) return user;
 
-    // Separate "you are not signed in" from "you were, and the account behind
-    // that session is gone" - the second is what an ephemeral store produces
-    // after a restart, and it needs saying rather than looking like a logout.
+    // Every one of these reaches the user as "logged out", and they need
+    // completely different fixes - so say which it was. Three rounds of this bug
+    // were spent guessing between them from the outside.
     const token = readToken(request);
-    const payload = token ? verifySessionToken(token, this.sessionSecret) : null;
-    if (payload && !(await this.repository.getUserById(payload.sub))) {
-      throw AuthError.accountMissing();
-    }
-    throw AuthError.unauthenticated();
+    if (!token) throw AuthError.noSession();
+
+    const payload = verifySessionToken(token, this.sessionSecret);
+    if (!payload) throw AuthError.sessionUnverified();
+
+    if (await this.repository.isSessionRevoked(token)) throw AuthError.sessionEnded();
+
+    // The account behind a valid session is gone - what an ephemeral store
+    // produces after a restart, and worth saying rather than looking like a
+    // logout.
+    if (!(await this.repository.getUserById(payload.sub))) throw AuthError.accountMissing();
+
+    // A valid session for an account that exists, refused anyway: suspended.
+    throw AuthError.suspended();
   }
 
   async requireCapability(

@@ -71,6 +71,50 @@ await check('health advertises exactly one sign-in account', async () => {
 const session = await login(req({ body: { identifier: DEMO_EMAIL, password: DEMO_PASSWORD } }), ctx);
 const auth = { authorization: `Bearer ${session.jsonBody.token}` };
 
+/**
+ * The browser has no bearer token - only the cookie.
+ *
+ * Every check below authenticates with the Authorization header, which no
+ * browser ever sends, so the cookie could stop reaching it entirely and this
+ * suite would stay green. It did: the session went out through the runtime's
+ * structured cookie collection, the local dev server rebuilt the header by
+ * hand, and the deployed host sent none, so every request from the browser
+ * arrived anonymous. These read the cookie back out of the response headers the
+ * way a browser would.
+ */
+const setCookies =
+  session.headers instanceof Headers ? session.headers.getSetCookie() : [];
+const sessionCookie = setCookies.find((value) => value.startsWith('figmark_session='));
+
+await check('sign-in emits a real Set-Cookie header', () => {
+  assert.ok(sessionCookie, `expected a figmark_session cookie, got ${JSON.stringify(setCookies)}`);
+  for (const attribute of ['Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax']) {
+    assert.ok(sessionCookie.includes(attribute), `cookie is missing ${attribute}: ${sessionCookie}`);
+  }
+});
+
+/** Headers as a browser would send them back: the cookie pair, nothing else. */
+const cookieAuth = { cookie: sessionCookie.split(';')[0] };
+
+await check('the cookie alone is enough to be signed in', async () => {
+  const who = await me(req({ headers: cookieAuth }), ctx);
+  assert.equal(who.status, 200);
+  assert.equal(who.jsonBody.user.id, session.jsonBody.user.id);
+});
+
+await check('a request carrying no session says exactly that', async () => {
+  const anonymous = await myLots(req(), ctx);
+  assert.equal(anonymous.status, 401);
+  assert.equal(anonymous.jsonBody.error, 'no_session');
+});
+
+await check('a tampered cookie is reported as unverifiable, not as a logout', async () => {
+  const tampered = { cookie: `figmark_session=${session.jsonBody.token.slice(0, -3)}xyz` };
+  const refused = await myLots(req({ headers: tampered }), ctx);
+  assert.equal(refused.status, 401);
+  assert.equal(refused.jsonBody.error, 'session_unverified');
+});
+
 await check('signs in by email', () => {
   assert.equal(session.status, 200);
   assert.equal(session.jsonBody.user.displayName, 'Arjun Mehta');

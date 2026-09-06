@@ -134,8 +134,14 @@ await check('accepts a held capability', async () => {
 await expectAuthError('refuses a capability not held', 'forbidden', () =>
   auth.requireCapability(bearer, ['admin']),
 );
-await expectAuthError('refuses an anonymous request', 'unauthenticated', () =>
+// Each of these reaches the user as "logged out" and needs a different fix, so
+// the refusal has to say which one it is rather than a blanket "unauthenticated".
+await expectAuthError('a request with no session says none was sent', 'no_session', () =>
   auth.requireAuth(requestWith()),
+);
+
+await expectAuthError('a token it cannot verify says so', 'session_unverified', () =>
+  auth.requireAuth(requestWith({ authorization: 'Bearer bm90LWEtdG9rZW4.bm90LWEtc2ln' })),
 );
 
 console.log('\nsign-up');
@@ -297,6 +303,10 @@ await check('logout revokes the token', async () => {
   await auth.logout(bearer);
   assert.equal(await auth.getCurrentUser(bearer), null);
 });
+
+await expectAuthError('a revoked session is named as signed out', 'session_ended', () =>
+  auth.requireAuth(bearer),
+);
 
 console.log('\nan unserviceable store');
 

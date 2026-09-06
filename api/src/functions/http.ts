@@ -2,15 +2,22 @@ import type { HttpResponseInit, InvocationContext } from '@azure/functions';
 import type { ApiError } from '../../../shared/contracts.js';
 import { AuthError } from '../auth/errors.js';
 
-/** JSON response with optional Set-Cookie values. */
+/**
+ * JSON response with optional Set-Cookie values.
+ *
+ * The cookies go out as real Set-Cookie headers rather than through the
+ * runtime's structured `cookies` collection. The collection is a convenience
+ * the host translates for us, and depending on it put the entire session on one
+ * runtime feature: the local dev server implemented it by hand, so every test
+ * passed while the deployed host emitted no cookie at all and every
+ * authenticated request arrived anonymous. A header is what reaches the browser
+ * either way. `Headers` is used rather than a plain object because Set-Cookie
+ * is the one header that legitimately repeats.
+ */
 export function json(status: number, body: unknown, cookies: string[] = []): HttpResponseInit {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const response: HttpResponseInit = { status, headers, jsonBody: body };
-  if (cookies.length > 0) {
-    // Multiple Set-Cookie headers need the cookies collection, not a header.
-    response.cookies = cookies.map(parseSetCookie);
-  }
-  return response;
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+  return { status, headers, jsonBody: body };
 }
 
 export function error(status: number, code: string, message: string): HttpResponseInit {
@@ -42,48 +49,4 @@ export function handler<Args extends unknown[]>(
       return toErrorResponse(err, context);
     }
   };
-}
-
-interface ParsedCookie {
-  name: string;
-  value: string;
-  path?: string;
-  maxAge?: number;
-  httpOnly?: boolean;
-  secure?: boolean;
-  sameSite?: 'Strict' | 'Lax' | 'None';
-}
-
-/** Turn a Set-Cookie string into the structured form the runtime expects. */
-function parseSetCookie(raw: string): ParsedCookie {
-  const [pair, ...attributes] = raw.split(';').map((part) => part.trim());
-  const separator = (pair ?? '').indexOf('=');
-  const cookie: ParsedCookie = {
-    name: separator === -1 ? (pair ?? '') : (pair ?? '').slice(0, separator),
-    value: separator === -1 ? '' : (pair ?? '').slice(separator + 1),
-  };
-
-  for (const attribute of attributes) {
-    const [key, value] = attribute.split('=');
-    switch (key?.toLowerCase()) {
-      case 'path':
-        cookie.path = value;
-        break;
-      case 'max-age':
-        cookie.maxAge = Number(value);
-        break;
-      case 'httponly':
-        cookie.httpOnly = true;
-        break;
-      case 'secure':
-        cookie.secure = true;
-        break;
-      case 'samesite':
-        cookie.sameSite = value as ParsedCookie['sameSite'];
-        break;
-      default:
-        break;
-    }
-  }
-  return cookie;
 }
