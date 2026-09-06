@@ -148,3 +148,11 @@ export const REVIEW_DIRECTIONS = [
   'seller_to_forwarder',
 ] as const;
 export type ReviewDirection = (typeof REVIEW_DIRECTIONS)[number];
+
+/**
+ * How many forums may exist at once.
+ *
+ * Small on purpose: a forum nobody is in reads as a dead room, so the feature
+ * starts scarce and grows once there is traffic to justify it.
+ */
+export const FORUM_CAP = 6;

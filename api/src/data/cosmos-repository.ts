@@ -2,7 +2,7 @@ import { CosmosClient, type Container, type Database } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINERS } from '../../../shared/containers.js';
-import type { Follow, Like, Listing, ListingComment, Lot, Order, User } from '../../../shared/models.js';
+import type { Follow, Forum, Like, Listing, ListingComment, Lot, Order, Post, User } from '../../../shared/models.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -13,10 +13,12 @@ import {
   DEMO_PHONE,
   seedComments,
   seedFollows,
+  seedForums,
   seedLikes,
   seedListings,
   seedLots,
   seedOrders,
+  seedPosts,
   seedUsers,
 } from './seed.js';
 
@@ -236,6 +238,8 @@ export class CosmosRepository implements Repository {
       ['listings', seedListings()],
       ['orders', seedOrders()],
       ['comments', seedComments()],
+      ['forums', seedForums()],
+      ['posts', seedPosts()],
     ] as const) {
       for (const item of items) await this.container(name).items.upsert(item);
       written += items.length;
@@ -330,6 +334,86 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources;
+  }
+
+  async updateUser(user: User): Promise<User> {
+    const { resource } = await this.container('users').items.upsert<User>(user);
+    return resource ?? user;
+  }
+
+  async listOrdersForSeller(sellerId: string): Promise<Order[]> {
+    // Orders are partitioned by lot, so a seller's book is cross-partition.
+    // Bounded by one seller's order count, which is the right size for the
+    // dashboards that ask for it.
+    const { resources } = await this.container('orders')
+      .items.query<Order>({
+        query: 'SELECT * FROM c WHERE c.sellerId = @sellerId',
+        parameters: [{ name: '@sellerId', value: sellerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listPosts(channelId: string, limit = 50): Promise<Post[]> {
+    const { resources } = await this.container('posts')
+      .items.query<Post>(
+        { query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit', parameters: [{ name: '@limit', value: limit }] },
+        { partitionKey: channelId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  async listPostsForChannels(channelIds: readonly string[], limit = 60): Promise<Post[]> {
+    if (channelIds.length === 0) return [];
+    const { resources } = await this.container('posts')
+      .items.query<Post>({
+        query:
+          'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.channelId) ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+        parameters: [
+          { name: '@ids', value: [...channelIds] },
+          { name: '@limit', value: limit },
+        ],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async createPost(post: Post): Promise<Post> {
+    const { resource } = await this.container('posts').items.create(post);
+    // The forum's own count is denormalised, so a room can show its size
+    // without counting its posts.
+    if (post.channel === 'forum') {
+      const forum = await this.getForum(post.channelId);
+      if (forum) {
+        forum.postCount += 1;
+        forum.updatedAt = new Date().toISOString();
+        await this.container('forums').items.upsert(forum);
+      }
+    }
+    return resource ?? post;
+  }
+
+  async listForums(): Promise<Forum[]> {
+    const { resources } = await this.container('forums')
+      .items.query<Forum>({ query: 'SELECT * FROM c ORDER BY c.name' })
+      .fetchAll();
+    return resources;
+  }
+
+  async getForum(id: string): Promise<Forum | null> {
+    try {
+      const { resource } = await this.container('forums').item(id, id).read<Forum>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async createForum(forum: Forum): Promise<Forum> {
+    const { resource } = await this.container('forums').items.create(forum);
+    return resource ?? forum;
   }
 
   listDemoAccounts(): DemoAccount[] {

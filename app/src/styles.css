@@ -522,6 +522,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .nav__link { padding: 7px 9px; }
 }
 
+/* On a phone the top bar keeps only what the tab bar does not carry: search,
+   who you are, and the way out. Dropping the wordmark is what lets that fit on
+   one row instead of wrapping into three - the mark alone still says where you
+   are, and the tabs say what you are looking at. */
+@media (max-width: 560px) {
+  .brand__name { display: none; }
+  .nav { padding: 9px 14px; gap: 8px; }
+  .nav__links { gap: 4px; }
+}
+
 /* Phones: two items across, always.
    auto-fill with a 240px minimum drops to a single column under ~520px, which
    turns the feed into one enormous card per screen and hides everything below
@@ -563,3 +573,173 @@ button, input, select, textarea { font: inherit; color: inherit; }
      the seller name is the identity, the score is a detail for the item page. */
   .listing__foot .badge { display: none; }
 }
+
+/* ── Bottom tabs ───────────────────────────────────────────────────────── */
+
+/*
+ * A raised, notched bar. The active tab is a lifted panel and its neighbours
+ * curve away from it, so the selection reads as the surface the page sits on
+ * rather than a button that happens to be highlighted.
+ *
+ * The indicator is one element that slides, which is what makes the change feel
+ * continuous; the inward curves either side of it are radial gradients on its
+ * own pseudo-elements, so they travel with it and can never fall out of sync.
+ */
+.tabs {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  display: flex;
+  isolation: isolate;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tabs__indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--surface-2);
+  border-top: 1px solid var(--accent);
+  border-radius: 18px 18px 0 0;
+  z-index: -1;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* The two inward curves that make the raised tab look cut out of the row. */
+.tabs__indicator::before,
+.tabs__indicator::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at 0 100%, transparent 0 18px, var(--surface-2) 18px);
+}
+.tabs__indicator::before { left: -18px; transform: scaleX(-1); }
+.tabs__indicator::after { right: -18px; }
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 4px 10px;
+  color: var(--text-faint);
+  text-decoration: none;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  /* Only colour and lift animate; the surface behind is the indicator's job. */
+  transition: color 0.24s ease;
+}
+.tab-item__glyph {
+  font-size: 21px;
+  line-height: 1.15;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tab-item.is-on { color: var(--text); }
+.tab-item.is-on .tab-item__glyph { transform: translateY(-2px) scale(1.12); }
+
+/* The bar is fixed, so every page needs room under it to finish scrolling. */
+.shell--tabbed .page { padding-bottom: 96px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs__indicator,
+  .tab-item,
+  .tab-item__glyph { transition: none; }
+}
+
+/* ── Tab content transition ────────────────────────────────────────────── */
+
+/*
+ * A short rise on arrival. Long enough to read as movement between sections,
+ * short enough that it never delays the content itself.
+ */
+@keyframes tab-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.tab-view { animation: tab-enter 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .tab-view { animation: none; }
+}
+
+/* ── Segmented pill row (social) ───────────────────────────────────────── */
+
+.pills { display: flex; gap: 8px; }
+.pill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 11px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.2s;
+}
+.pill:hover { color: var(--text); border-color: var(--border-strong); }
+.pill.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+.pill__glyph { font-size: 17px; line-height: 1; }
+.pill__label { font-size: var(--t-xs); }
+
+/* ── Post cards ────────────────────────────────────────────────────────── */
+
+.post { display: grid; gap: 10px; }
+.post__head { display: flex; align-items: center; gap: 10px; }
+.post__who { display: grid; gap: 1px; min-width: 0; }
+.post__name { font-weight: 650; font-size: var(--t-sm); }
+.post__body { font-size: var(--t-sm); line-height: 1.55; white-space: pre-wrap; }
+.post__foot { display: flex; align-items: center; gap: 14px; color: var(--text-faint); font-size: var(--t-xs); }
+
+/* ── Channel list (message-list shape) ─────────────────────────────────── */
+
+.channel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+}
+.channel:last-child { border-bottom: none; }
+.channel:hover { background: var(--surface-2); }
+.channel__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.channel__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.channel__name { font-weight: 650; font-size: var(--t-sm); }
+.channel__last {
+  color: var(--text-dim);
+  font-size: var(--t-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.channel__photo { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+
+/* ── Stat tiles ────────────────────────────────────────────────────────── */
+
+.stats { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+.stat { padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.stat__label { font-size: var(--t-xs); color: var(--text-faint); font-weight: 600; }
+.stat__value { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; margin-top: 3px; }
+.stat__note { font-size: var(--t-xs); color: var(--text-faint); margin-top: 2px; }
+
+/* Thirty bars, one per day. A sparkline that says "which days", not "how much
+   exactly" - the number beside it is the precise answer. */
+.spark { display: flex; align-items: flex-end; gap: 2px; height: 54px; }
+.spark__bar { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: 0.85; }
+.spark__bar--empty { background: var(--border); opacity: 1; }

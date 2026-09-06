@@ -8,3 +8,5 @@ import './functions/health.js';
 import './functions/auth-routes.js';
 import './functions/catalog-routes.js';
 import './functions/fulfilment-routes.js';
+import './functions/seller-routes.js';
+import './functions/social-routes.js';

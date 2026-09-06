@@ -27,6 +27,13 @@ const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
+const { storefrontRoute, updateStorefrontRoute, dashboardRoute } = await import(
+  new URL('seller-routes.js', apiRoot)
+);
+const {
+  socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute,
+  listForumsRoute, createForumRoute,
+} = await import(new URL('social-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -56,6 +63,15 @@ const routes = [
   ['POST', '/api/lots/:id/tracking', setTrackingRoute],
   ['POST', '/api/lots/:id/details', updateLotDetailsRoute],
   ['GET', '/api/orders/:id', orderTrackingRoute],
+  ['GET', '/api/me/storefront', storefrontRoute],
+  ['POST', '/api/me/storefront/save', updateStorefrontRoute],
+  ['GET', '/api/me/dashboard', dashboardRoute],
+  ['GET', '/api/social/feed', socialFeedRoute],
+  ['GET', '/api/social/channels', channelsRoute],
+  ['GET', '/api/social/channels/:id', channelThreadRoute],
+  ['POST', '/api/social/posts', createPostRoute],
+  ['GET', '/api/social/forums', listForumsRoute],
+  ['POST', '/api/social/forums/new', createForumRoute],
 ];
 
 const MIME = {

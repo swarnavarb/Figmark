@@ -137,6 +137,21 @@ export interface SellerProfile {
   depositHeldMinor: number;
   dispatchRegion: string;
   followerCount: number;
+  /**
+   * Storefront picture, as a URL.
+   *
+   * A URL rather than an upload while blob storage is still unwired: the field
+   * the storefront reads is the same either way, so uploads become a change to
+   * how this is filled in rather than a change to the model.
+   */
+  photoUrl?: string | null;
+  /**
+   * One outbound link - Instagram, a WhatsApp group, a price list.
+   *
+   * Deliberately one. A row of links is a link farm; a single one is a
+   * storefront's front door, and keeps the card honest about what it is.
+   */
+  link?: string | null;
 }
 
 /** One China-origin to India-destination lane a forwarder claims to serve. */
@@ -465,4 +480,54 @@ export interface Dispute extends BaseDocument {
   sellerResponseDueAt: string | null;
   resolutionNote: string | null;
   resolvedAt: string | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Social                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where a post lives.
+ *
+ * A seller channel is one seller broadcasting to the people who follow them; a
+ * forum is a shared room. Both are just an id to partition by, which is why one
+ * container holds both: the reads are identical in shape, and the difference is
+ * only who may write.
+ */
+export type PostChannel = 'seller' | 'forum';
+
+/** What a post is, which decides how it renders rather than where it lives. */
+export type PostKind = 'update' | 'sale' | 'thread';
+
+export interface Post extends BaseDocument {
+  /**
+   * Partition key: the seller id for a channel post, the forum id for a forum
+   * post. Both a channel thread and a forum read one partition.
+   */
+  channelId: string;
+  channel: PostChannel;
+  kind: PostKind;
+  authorId: string;
+  /** Snapshot: a post keeps the name it was written under. */
+  authorName: string;
+  body: string;
+  /** Set on a sale post, so the item can be shown and opened inline. */
+  listingId: string | null;
+  photoUrl: string | null;
+  likeCount: number;
+  replyCount: number;
+}
+
+/**
+ * A shared room.
+ *
+ * Capped for now - see FORUM_CAP. The cap is the feature being deliberately
+ * small rather than a limit of the model: forums are a room with posts in it,
+ * and the rest (moderation, membership, ranking) is later work.
+ */
+export interface Forum extends BaseDocument {
+  name: string;
+  description: string;
+  createdBy: string;
+  postCount: number;
 }

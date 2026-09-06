@@ -134,6 +134,25 @@ export const CONTAINERS = {
     rationale: 'A dispute belongs to exactly one order and is always fetched with it.',
     excludedPaths: ['/evidence/*'],
   },
+  posts: {
+    name: 'posts',
+    partitionKeyPath: '/channelId',
+    rationale:
+      "A channel thread and a forum are each exactly one partition, which is how both are read. The cross-partition query is the 'everyone I follow' feed, which is bounded by how many sellers a person follows and is the accepted cost of keeping the two thread views single-partition.",
+    excludedPaths: ['/body/?'],
+    compositeIndexes: [
+      [
+        { path: '/channel', order: 'ascending' },
+        { path: '/createdAt', order: 'descending' },
+      ],
+    ],
+  },
+  forums: {
+    name: 'forums',
+    partitionKeyPath: '/id',
+    rationale:
+      'A handful of rooms read as a list and opened one at a time. Partitioned by id because there is no other axis: a forum belongs to nobody.',
+  },
   sessions: {
     name: 'sessions',
     partitionKeyPath: '/id',

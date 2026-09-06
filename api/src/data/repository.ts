@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import type { Listing, ListingComment, Lot, Order, User } from '../../../shared/models.js';
+import type { Forum, Listing, ListingComment, Lot, Order, Post, User } from '../../../shared/models.js';
 
 export interface BackendStatus {
   connected: boolean;
@@ -98,6 +98,24 @@ export interface Repository {
   /** Toggles a follow. Returns the resulting state. */
   toggleFollow(followerId: string, sellerId: string): Promise<boolean>;
   listFollowedSellerIds(followerId: string): Promise<string[]>;
+
+  /** Saves an edited account - the storefront editor is the only caller. */
+  updateUser(user: User): Promise<User>;
+
+  /** Every order a seller has taken, for the tracking and analytics views. */
+  listOrdersForSeller(sellerId: string): Promise<Order[]>;
+
+  /* Social. */
+
+  /** One channel or forum, newest first. */
+  listPosts(channelId: string, limit?: number): Promise<Post[]>;
+  /** The feed: posts across many channels, newest first. */
+  listPostsForChannels(channelIds: readonly string[], limit?: number): Promise<Post[]>;
+  createPost(post: Post): Promise<Post>;
+
+  listForums(): Promise<Forum[]>;
+  getForum(id: string): Promise<Forum | null>;
+  createForum(forum: Forum): Promise<Forum>;
 }
 
 /** How long a seller must wait between bumps on the same listing. */

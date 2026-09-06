@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import type { Follow, Like, Listing, ListingComment, Lot, Order, User } from '../../../shared/models.js';
+import type { Follow, Forum, Like, Listing, ListingComment, Lot, Order, Post, User } from '../../../shared/models.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import {
@@ -9,10 +9,12 @@ import {
   DEMO_PHONE,
   seedComments,
   seedFollows,
+  seedForums,
   seedLikes,
   seedListings,
   seedLots,
   seedOrders,
+  seedPosts,
   seedUsers,
 } from './seed.js';
 
@@ -35,6 +37,8 @@ export class MemoryRepository implements Repository {
   private readonly comments = new Map<string, ListingComment>();
   private readonly likes = new Map<string, Like>();
   private readonly follows = new Map<string, Follow>();
+  private readonly posts = new Map<string, Post>();
+  private readonly forums = new Map<string, Forum>();
   private readonly revokedSessions = new Map<string, number>();
 
   async init(): Promise<void> {
@@ -47,6 +51,8 @@ export class MemoryRepository implements Repository {
     for (const follow of seedFollows()) {
       this.follows.set(followKey(follow.followerId, follow.sellerId), follow);
     }
+    for (const forum of seedForums()) this.forums.set(forum.id, forum);
+    for (const post of seedPosts()) this.posts.set(post.id, post);
   }
 
   private indexUser(user: User): void {
@@ -280,7 +286,54 @@ export class MemoryRepository implements Repository {
   async listFollowedSellerIds(followerId: string): Promise<string[]> {
     return [...this.follows.values()].filter((f) => f.followerId === followerId).map((f) => f.sellerId);
   }
+
+  async updateUser(user: User): Promise<User> {
+    this.indexUser(user);
+    return user;
+  }
+
+  async listOrdersForSeller(sellerId: string): Promise<Order[]> {
+    return [...this.orders.values()].filter((order) => order.sellerId === sellerId);
+  }
+
+  async listPosts(channelId: string, limit = 50): Promise<Post[]> {
+    return [...this.posts.values()]
+      .filter((post) => post.channelId === channelId)
+      .sort(newestFirst)
+      .slice(0, limit);
+  }
+
+  async listPostsForChannels(channelIds: readonly string[], limit = 60): Promise<Post[]> {
+    const wanted = new Set(channelIds);
+    return [...this.posts.values()]
+      .filter((post) => wanted.has(post.channelId))
+      .sort(newestFirst)
+      .slice(0, limit);
+  }
+
+  async createPost(post: Post): Promise<Post> {
+    this.posts.set(post.id, post);
+    const forum = this.forums.get(post.channelId);
+    if (forum) forum.postCount += 1;
+    return post;
+  }
+
+  async listForums(): Promise<Forum[]> {
+    return [...this.forums.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getForum(id: string): Promise<Forum | null> {
+    return this.forums.get(id) ?? null;
+  }
+
+  async createForum(forum: Forum): Promise<Forum> {
+    this.forums.set(forum.id, forum);
+    return forum;
+  }
 }
+
+/** Newest first, by creation time. */
+const newestFirst = (a: Post, b: Post) => (a.createdAt < b.createdAt ? 1 : -1);
 
 /** A bump counts as recency without rewriting createdAt. */
 function freshness(listing: Listing): string {

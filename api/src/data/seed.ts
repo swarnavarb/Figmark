@@ -1,15 +1,18 @@
 import type {
   Follow,
+  Forum,
   Like,
   Listing,
   ListingComment,
   Lot,
   Order,
+  Post,
   SellerTrustSignals,
   TrustSignals,
   User,
   VerificationState,
 } from '../../../shared/models.js';
+import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { hashPassword } from '../auth/passwords.js';
 
 /**
@@ -428,6 +431,47 @@ export function seedOrders(): Order[] {
       escrow: { state: 'none', amountMinor: 54_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
       completedAt: null, createdAt: iso(-2), updatedAt: iso(-2),
     },
+    /* Sales the demo account has made, so the seller dashboards have numbers in
+       them rather than a row of zeroes. Spread over the month so the thirty-day
+       chart has a shape. */
+    {
+      id: 'ord_2001', lotId: 'lot_my_batch', sellerId: 'usr_demo', buyerId: 'usr_kaiju',
+      listingId: 'lst_my_statue', itemName: 'Garage kit statue — built and painted',
+      condition: 'LOOSE', quantity: 1, unitWeightGrams: 900, unitPriceMinor: 1_20_000, currency: 'INR',
+      status: 'delivered', paymentStatus: 'paid',
+      stage: 'delivered',
+      stageHistory: [
+        { stage: 'ordering', enteredAt: iso(-22), note: 'Order placed.', recordedBy: 'usr_kaiju' },
+        { stage: 'local_dispatch', enteredAt: iso(-19), note: null, recordedBy: 'usr_demo' },
+        { stage: 'delivered', enteredAt: iso(-17), note: 'Handed over.', recordedBy: 'usr_demo' },
+      ],
+      escrow: { state: 'released', amountMinor: 1_20_000, heldAt: iso(-22), releasedAt: iso(-17), autoReleaseAt: null, disputeId: null },
+      completedAt: iso(-17), createdAt: iso(-22), updatedAt: iso(-17),
+    },
+    {
+      id: 'ord_2002', lotId: DIRECT_LOT_ID, sellerId: 'usr_demo', buyerId: 'usr_tokyoline',
+      listingId: 'lst_my_cards', itemName: 'Card binder — 200+ commons and rares',
+      condition: 'LOOSE', quantity: 2, unitWeightGrams: 1_400, unitPriceMinor: 18_000, currency: 'INR',
+      status: 'delivered', paymentStatus: 'paid',
+      stage: 'delivered',
+      stageHistory: [
+        { stage: 'preparing', enteredAt: iso(-11), note: 'Order placed.', recordedBy: 'usr_tokyoline' },
+        { stage: 'dispatched', enteredAt: iso(-10), note: null, recordedBy: 'usr_demo' },
+        { stage: 'delivered', enteredAt: iso(-8), note: null, recordedBy: 'usr_demo' },
+      ],
+      escrow: { state: 'released', amountMinor: 36_000, heldAt: iso(-11), releasedAt: iso(-8), autoReleaseAt: null, disputeId: null },
+      completedAt: iso(-8), createdAt: iso(-11), updatedAt: iso(-8),
+    },
+    {
+      id: 'ord_2003', lotId: 'lot_my_batch', sellerId: 'usr_demo', buyerId: 'usr_gadgetgrid',
+      listingId: 'lst_my_statue', itemName: 'Garage kit statue — built and painted',
+      condition: 'LOOSE', quantity: 1, unitWeightGrams: 900, unitPriceMinor: 1_20_000, currency: 'INR',
+      status: 'in_fulfilment', paymentStatus: 'paid',
+      stage: 'ordering',
+      stageHistory: [{ stage: 'ordering', enteredAt: iso(-3), note: 'Order placed.', recordedBy: 'usr_gadgetgrid' }],
+      escrow: { state: 'held', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: null },
+      completedAt: null, createdAt: iso(-3), updatedAt: iso(-3),
+    },
   ];
 }
 
@@ -441,7 +485,14 @@ export function seedComments(): ListingComment[] {
 
 /** The demo account already follows one seller and has bookmarked a few items. */
 export function seedFollows(): Follow[] {
-  return [{ id: 'flw_1', followerId: 'usr_demo', sellerId: 'usr_kaiju', createdAt: iso(-20), updatedAt: iso(-20) }];
+  // Enough sellers for the social tab to have something in it: one follow makes
+  // a channel list that looks broken rather than quiet.
+  return [
+    { id: 'flw_1', followerId: 'usr_demo', sellerId: 'usr_kaiju', createdAt: iso(-20), updatedAt: iso(-20) },
+    { id: 'flw_2', followerId: 'usr_demo', sellerId: 'usr_tokyoline', createdAt: iso(-14), updatedAt: iso(-14) },
+    { id: 'flw_3', followerId: 'usr_demo', sellerId: 'usr_gadgetgrid', createdAt: iso(-9), updatedAt: iso(-9) },
+    { id: 'flw_4', followerId: 'usr_demo', sellerId: 'usr_sneakervault', createdAt: iso(-5), updatedAt: iso(-5) },
+  ];
 }
 
 export function seedLikes(): Like[] {
@@ -449,4 +500,143 @@ export function seedLikes(): Like[] {
     { id: 'like_1', userId: 'usr_demo', listingId: 'lst_sneaker_retro', createdAt: iso(-1), updatedAt: iso(-1) },
     { id: 'like_2', userId: 'usr_demo', listingId: 'lst_card_booster', createdAt: iso(-3), updatedAt: iso(-3) },
   ];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Social                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A few rooms, so the forums tab has something in it before anyone makes one.
+ *
+ * Deliberately generic and few: forums are the part of this that is explicitly
+ * unfinished, and a wall of empty specialist rooms would read worse than three
+ * that people might actually post in.
+ */
+export function seedForums(): Forum[] {
+  return [
+    {
+      id: 'frm_imports', name: 'Import questions',
+      description: 'Customs, duty, forwarders, and what actually clears.',
+      createdBy: 'usr_kaiju', postCount: 2,
+      createdAt: iso(-30), updatedAt: iso(-2),
+    },
+    {
+      id: 'frm_authenticity', name: 'Real or fake',
+      description: 'Post photos, get a second opinion before you pay.',
+      createdBy: 'usr_sneakervault', postCount: 1,
+      createdAt: iso(-26), updatedAt: iso(-3),
+    },
+    {
+      id: 'frm_deals', name: 'Deal spotting',
+      description: 'Price drops and group-buys worth joining.',
+      createdBy: 'usr_tokyoline', postCount: 1,
+      createdAt: iso(-18), updatedAt: iso(-1),
+    },
+  ];
+}
+
+interface PostSeed {
+  id: string;
+  channelId: string;
+  channel: Post['channel'];
+  kind: Post['kind'];
+  authorId: string;
+  authorName: string;
+  body: string;
+  listingId?: string;
+  likeCount: number;
+  replyCount: number;
+  ageDays: number;
+  ageHours?: number;
+}
+
+const POSTS: PostSeed[] = [
+  /* Seller channels: what the people you follow are saying. */
+  {
+    id: 'pst_kaiju_1', channelId: 'usr_kaiju', channel: 'seller', kind: 'sale',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'September Guangzhou run is open. Dragon Knight resin is in — 20 units needed before I place the order, 3 booked so far.',
+    listingId: 'lst_dragon_knight', likeCount: 24, replyCount: 6, ageDays: -1,
+  },
+  {
+    id: 'pst_kaiju_2', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'August lot cleared the warehouse and is with the forwarder. QC photos going out to everyone in that batch tonight.',
+    likeCount: 11, replyCount: 2, ageDays: -4,
+  },
+  {
+    id: 'pst_kaiju_3', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'Taking requests for the October run until the 20th. Scale figures and garage kits only this time.',
+    likeCount: 8, replyCount: 4, ageDays: -9,
+  },
+  {
+    id: 'pst_tokyo_1', channelId: 'usr_tokyoline', channel: 'seller', kind: 'sale',
+    authorId: 'usr_tokyoline', authorName: 'Tokyo Line',
+    body: 'Japanese-print booster boxes landed. Four left at this price, then it goes back up.',
+    listingId: 'lst_card_booster', likeCount: 31, replyCount: 9, ageDays: -2,
+  },
+  {
+    id: 'pst_gadget_1', channelId: 'usr_gadgetgrid', channel: 'seller', kind: 'update',
+    authorId: 'usr_gadgetgrid', authorName: 'Gadget Grid',
+    body: 'Shenzhen consolidation closes Friday. If you want anything added, say so before then — after that it ships as-is.',
+    likeCount: 6, replyCount: 1, ageDays: -3,
+  },
+  {
+    id: 'pst_sneaker_1', channelId: 'usr_sneakervault', channel: 'seller', kind: 'sale',
+    authorId: 'usr_sneakervault', authorName: 'Sneaker Vault',
+    body: 'Deadstock UK 9 retro high-top, authenticated in-house. One pair, original box.',
+    listingId: 'lst_sneaker_retro', likeCount: 47, replyCount: 12, ageDays: 0, ageHours: -5,
+  },
+  {
+    id: 'pst_demo_1', channelId: 'usr_demo', channel: 'seller', kind: 'update',
+    authorId: 'usr_demo', authorName: 'Arjun Collects',
+    body: 'Clearing shelf space this week — garage kit statue and a card binder up. Collection preferred in Mumbai.',
+    likeCount: 3, replyCount: 0, ageDays: -5,
+  },
+
+  /* Forums. */
+  {
+    id: 'pst_frm_1', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'Duty on resin figures has been assessed at 28% twice running at BLR. Anyone seeing different at MAA?',
+    likeCount: 14, replyCount: 7, ageDays: -2,
+  },
+  {
+    id: 'pst_frm_2', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
+    authorId: 'usr_gadgetgrid', authorName: 'Gadget Grid',
+    body: 'Sea freight to Chennai is running about three weeks door to door right now. Air is a week but roughly triples the per-kg.',
+    likeCount: 9, replyCount: 3, ageDays: -6,
+  },
+  {
+    id: 'pst_frm_3', channelId: 'frm_authenticity', channel: 'forum', kind: 'thread',
+    authorId: 'usr_sneakervault', authorName: 'Sneaker Vault',
+    body: 'Quick checklist for retro high-tops: stitching count on the toe box, insole print depth, and the size tag font. Photos of all three or it is a guess.',
+    likeCount: 22, replyCount: 5, ageDays: -3,
+  },
+  {
+    id: 'pst_frm_4', channelId: 'frm_deals', channel: 'forum', kind: 'thread',
+    authorId: 'usr_tokyoline', authorName: 'Tokyo Line',
+    body: 'Booster boxes are the cheapest they have been in months if you are splitting a case. Worth pooling.',
+    likeCount: 5, replyCount: 2, ageDays: -1,
+  },
+];
+
+export function seedPosts(): Post[] {
+  return POSTS.map((entry) => ({
+    id: entry.id,
+    channelId: entry.channelId,
+    channel: entry.channel,
+    kind: entry.kind,
+    authorId: entry.authorId,
+    authorName: entry.authorName,
+    body: entry.body,
+    listingId: entry.listingId ?? null,
+    photoUrl: null,
+    likeCount: entry.likeCount,
+    replyCount: entry.replyCount,
+    createdAt: iso(entry.ageDays, entry.ageHours ?? 0),
+    updatedAt: iso(entry.ageDays, entry.ageHours ?? 0),
+  }));
 }

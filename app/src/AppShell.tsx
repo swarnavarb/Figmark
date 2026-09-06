@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
+import { TabBar } from './components/TabBar';
 import { Avatar, Icon } from './components/ui';
 import { useSession } from './session';
 
@@ -21,7 +22,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="shell">
+    <div className="shell shell--tabbed">
       <header className="nav">
         <NavLink to="/" className="brand" onClick={() => setTerm('')}>
           <span className="brand__mark" aria-hidden="true" />
@@ -42,15 +43,12 @@ export function AppShell() {
           </div>
         </form>
 
+        {/* Buy, sell and social moved to the tab bar; what belongs up here is
+            the things that are not a section - search, who you are, and the
+            way out. */}
         <nav className="nav__links">
-          <NavLink to="/batches" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`}>
-            Batches
-          </NavLink>
           <NavLink to="/forwarders" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`}>
             Forwarders
-          </NavLink>
-          <NavLink to="/sell" className="btn" style={{ padding: '8px 14px' }}>
-            <Icon name="plus" size={15} /> Sell
           </NavLink>
           <NavLink to="/me" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`} title={user?.displayName}>
             {user ? <Avatar name={user.displayName} size={28} /> : 'Profile'}
@@ -77,6 +75,8 @@ export function AppShell() {
       )}
 
       <Outlet />
+
+      <TabBar />
     </div>
   );
 }

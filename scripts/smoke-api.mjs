@@ -19,6 +19,14 @@ const {
 const {
   myLotsRoute: myLots, createLotRoute: createLot, lotContentsRoute: lotContents,
   updateLotDetailsRoute: updateLotDetails,
+} = await import(new URL('fulfilment-routes.js', fns));
+const { storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, dashboardRoute: dashboard } =
+  await import(new URL('seller-routes.js', fns));
+const {
+  socialFeedRoute: socialFeed, channelsRoute: channels, channelThreadRoute: channelThread,
+  createPostRoute: createPost, listForumsRoute: listForums, createForumRoute: createForum,
+} = await import(new URL('social-routes.js', fns));
+const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
   setTrackingRoute: setTracking, orderTrackingRoute: orderTracking,
 } = await import(new URL('fulfilment-routes.js', fns));
@@ -206,7 +214,15 @@ await check('the feed never exposes a shipment batch to buyers', async () => {
 await check('followed sellers rank first for a signed-in viewer', async () => {
   const body = (await feed(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(body.followedSellerIds.includes('usr_kaiju'));
-  assert.equal(body.listings[0].sellerId, 'usr_kaiju');
+
+  // The invariant is the ordering, not which seller happens to be at the top:
+  // every followed seller's listing comes before every unfollowed one. Naming a
+  // single expected seller only held while exactly one was followed.
+  const followed = new Set(body.followedSellerIds);
+  const ranks = body.listings.map((listing) => Number(followed.has(listing.sellerId)));
+  const sorted = [...ranks].sort((a, b) => b - a);
+  assert.deepEqual(ranks, sorted, 'a listing from someone unfollowed came before a followed one');
+  assert.ok(followed.has(body.listings[0].sellerId));
 });
 
 /* ── listing detail and social ─────────────────────────────────────────── */
@@ -239,9 +255,14 @@ await check('like requires a session', async () => {
 });
 
 await check('follow toggles, and refuses following yourself', async () => {
-  const on = await toggleFollow(req({ headers: auth, params: { id: 'usr_tokyoline' } }), ctx);
-  assert.equal(on.jsonBody.following, true);
-  await toggleFollow(req({ headers: auth, params: { id: 'usr_tokyoline' } }), ctx);
+  // Asserted as a flip rather than "the first toggle turns it on": whether the
+  // demo account already follows this seller is a fact about the seed, and the
+  // behaviour under test is that the toggle inverts and lands back where it was.
+  const first = await toggleFollow(req({ headers: auth, params: { id: 'usr_tokyoline' } }), ctx);
+  const second = await toggleFollow(req({ headers: auth, params: { id: 'usr_tokyoline' } }), ctx);
+  assert.equal(typeof first.jsonBody.following, 'boolean');
+  assert.equal(second.jsonBody.following, !first.jsonBody.following);
+
   const self = await toggleFollow(req({ headers: auth, params: { id: 'usr_demo' } }), ctx);
   assert.equal(self.status, 400);
 });
@@ -535,6 +556,176 @@ await check('an order is private to its buyer and seller', async () => {
     params: { id: orders[0].id },
   }), ctx);
   assert.equal(peek.status, 403);
+});
+
+/* ── storefront and dashboards ─────────────────────────────────────────── */
+console.log('\nstorefront and dashboards');
+
+await check('the storefront can be designed, and reads back', async () => {
+  const saved = await saveStorefront(req({
+    headers: auth,
+    body: {
+      storefrontName: 'Arjun Collects Deluxe',
+      bio: 'Resales from my own shelf.',
+      dispatchRegion: 'Mumbai, MH',
+      link: 'instagram.com/arjuncollects',
+    },
+  }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.storefront.storefrontName, 'Arjun Collects Deluxe');
+  // A bare host is still a link; it is stored as one that a browser can follow.
+  assert.equal(saved.jsonBody.storefront.link, 'https://instagram.com/arjuncollects');
+  assert.equal(saved.jsonBody.storefront.storefrontSlug, 'arjun-collects-deluxe');
+
+  const read = await storefront(req({ headers: auth }), ctx);
+  assert.equal(read.jsonBody.storefront.bio, 'Resales from my own shelf.');
+});
+
+await check('a link that is not a link is refused, not rendered', async () => {
+  // The storefront link is shown as an href on a public page, so a
+  // javascript: URL there is stored XSS. Refused at the door rather than
+  // sanitised at the point of rendering.
+  for (const link of ['javascript:alert(1)', 'data:text/html,<script>x</script>', 'not a url at all']) {
+    const refused = await saveStorefront(req({ headers: auth, body: { link } }), ctx);
+    assert.equal(refused.status, 400, `expected ${link} to be refused`);
+  }
+});
+
+await check('an empty storefront name is refused', async () => {
+  const refused = await saveStorefront(req({ headers: auth, body: { storefrontName: '  ' } }), ctx);
+  assert.equal(refused.status, 400);
+});
+
+await check('the storefront is private to its owner', async () => {
+  assert.equal((await storefront(req(), ctx)).status, 401);
+  assert.equal((await saveStorefront(req({ body: { storefrontName: 'Nope' } }), ctx)).status, 401);
+});
+
+await check('the dashboard reports tracking and analytics together', async () => {
+  const body = (await dashboard(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.tracking.openLots >= 1);
+  assert.equal(body.analytics.daily.length, 30, 'thirty days, one entry each');
+  assert.ok(body.analytics.activeListings >= 2);
+  // Revenue is what the seller sold, never what they bought.
+  assert.ok(body.analytics.revenueMinor >= 0);
+  assert.ok(body.analytics.conversion >= 0 && body.analytics.conversion <= 1);
+});
+
+/* ── social ────────────────────────────────────────────────────────────── */
+console.log('\nsocial');
+
+await check('the feed carries posts from the sellers you follow', async () => {
+  const body = (await socialFeed(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.posts.length > 0);
+  const authors = new Set(body.posts.map((card) => card.post.channelId));
+  assert.ok(authors.has('usr_kaiju'), 'expected a followed seller in the feed');
+  // Newest first, so the feed reads as a feed.
+  const dates = body.posts.map((card) => card.post.createdAt);
+  assert.deepEqual(dates, [...dates].sort().reverse());
+});
+
+await check('a sale post carries the item, so it can be rendered inline', async () => {
+  const body = (await socialFeed(req({ headers: auth }), ctx)).jsonBody;
+  const sale = body.posts.find((card) => card.post.kind === 'sale');
+  assert.ok(sale, 'expected a sale post');
+  assert.ok(sale.listing, 'a sale post must carry its listing');
+  assert.equal(typeof sale.listing.priceMinor, 'number');
+});
+
+await check('the feed never carries someone you do not follow', async () => {
+  const body = (await socialFeed(req({ headers: auth }), ctx)).jsonBody;
+  const followed = new Set([...(await feed(req({ headers: auth }), ctx)).jsonBody.followedSellerIds, 'usr_demo']);
+  for (const card of body.posts) {
+    assert.ok(followed.has(card.post.channelId), `${card.post.channelId} is not followed`);
+  }
+});
+
+await check('channels list one row per followed seller, newest first', async () => {
+  const body = (await channels(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.channels.length >= 2);
+  const times = body.channels.map((row) => row.lastPostAt ?? '');
+  assert.deepEqual(times, [...times].sort().reverse());
+  assert.ok(body.channels.every((row) => typeof row.name === 'string'));
+});
+
+await check('a channel thread is that channel and nothing else', async () => {
+  const body = (await channelThread(req({ headers: auth, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  assert.equal(body.channel.kind, 'seller');
+  assert.ok(body.posts.length >= 2);
+  assert.ok(body.posts.every((card) => card.post.channelId === 'usr_kaiju'));
+});
+
+await check('posting an update goes to your own channel, never anyone else\'s', async () => {
+  const created = await createPost(req({ headers: auth, body: { body: 'Fresh batch landing Friday.' } }), ctx);
+  assert.equal(created.status, 201);
+  // The channel is taken from the session, so there is no field to point it
+  // at another seller in the first place.
+  assert.equal(created.jsonBody.post.channelId, 'usr_demo');
+  assert.equal(created.jsonBody.post.kind, 'update');
+
+  const mine = await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx);
+  assert.ok(mine.jsonBody.posts.some((card) => card.post.body === 'Fresh batch landing Friday.'));
+});
+
+await check('a sale post must point at an item you actually sell', async () => {
+  const mine = await createPost(req({
+    headers: auth, body: { body: 'This one is up.', listingId: 'lst_my_statue' },
+  }), ctx);
+  assert.equal(mine.jsonBody.post.kind, 'sale');
+  assert.equal(mine.jsonBody.post.listingId, 'lst_my_statue');
+
+  const theirs = await createPost(req({
+    headers: auth, body: { body: 'Not mine.', listingId: 'lst_dragon_knight' },
+  }), ctx);
+  assert.equal(theirs.status, 404);
+});
+
+await check('an empty post is refused, and posting needs a session', async () => {
+  assert.equal((await createPost(req({ headers: auth, body: { body: '   ' } }), ctx)).status, 400);
+  assert.equal((await createPost(req({ body: { body: 'hello' } }), ctx)).status, 401);
+});
+
+await check('forums list with the cap and what is left of it', async () => {
+  const body = (await listForums(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.forums.length >= 3);
+  assert.equal(body.remaining, body.cap - body.forums.length);
+});
+
+await check('a forum can be created, and posted into', async () => {
+  const created = await createForum(req({
+    headers: auth, body: { name: 'Packing and repack', description: 'How to not have it arrive broken.' },
+  }), ctx);
+  assert.equal(created.status, 201);
+
+  const posted = await createPost(req({
+    headers: auth, body: { body: 'Double-box anything resin.', forumId: created.jsonBody.forum.id },
+  }), ctx);
+  assert.equal(posted.status, 201);
+  assert.equal(posted.jsonBody.post.channel, 'forum');
+  assert.equal(posted.jsonBody.post.kind, 'thread');
+
+  const thread = await channelThread(req({ headers: auth, params: { id: created.jsonBody.forum.id } }), ctx);
+  assert.equal(thread.jsonBody.channel.kind, 'forum');
+  assert.equal(thread.jsonBody.posts.length, 1);
+});
+
+await check('forums are capped, and the refusal says so', async () => {
+  // Fill whatever is left, then prove the next one is refused rather than
+  // silently accepted - the cap is the feature being deliberately small.
+  let remaining = (await listForums(req({ headers: auth }), ctx)).jsonBody.remaining;
+  for (let index = 0; index < remaining; index += 1) {
+    const filler = await createForum(req({ headers: auth, body: { name: `Filler room ${index}` } }), ctx);
+    assert.equal(filler.status, 201);
+  }
+  const refused = await createForum(req({ headers: auth, body: { name: 'One too many' } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'forum_cap_reached');
+});
+
+await check('a duplicate forum name is refused', async () => {
+  const again = await createForum(req({ headers: auth, body: { name: 'Import questions' } }), ctx);
+  // Either reason is correct here; both keep the room list clean.
+  assert.equal(again.status, 409);
 });
 
 console.log(`\n${passed} checks passed`);

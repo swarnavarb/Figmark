@@ -7,7 +7,7 @@ import type {
   MeResponse,
 } from '@shared/contracts';
 import type { FulfilmentStage, Sourcing } from '@shared/enums';
-import type { ForwarderProfile, Listing, ListingComment, Lot, Order } from '@shared/models';
+import type { Forum, ForwarderProfile, Listing, ListingComment, Lot, Order, Post, SellerProfile } from '@shared/models';
 
 /**
  * Typed client for the Functions API. Response types come from the shared
@@ -171,6 +171,71 @@ export interface LotDetails {
   supplierReference?: string;
 }
 
+/* ── Social ────────────────────────────────────────────────────────────── */
+
+export interface PostCard {
+  post: Post;
+  listing: { id: string; title: string; priceMinor: number; currency: string; condition: string } | null;
+}
+
+export interface ChannelRow {
+  sellerId: string;
+  name: string;
+  photoUrl: string | null;
+  tier: string | null;
+  lastPost: string | null;
+  lastPostAt: string | null;
+  lastPostKind: string | null;
+}
+
+export interface ChannelThread {
+  channel: { id: string; kind: 'seller' | 'forum'; name: string; description: string };
+  posts: PostCard[];
+}
+
+export interface ForumsResponse {
+  forums: Forum[];
+  cap: number;
+  remaining: number;
+}
+
+/* ── Seller dashboards ─────────────────────────────────────────────────── */
+
+export interface DashboardResponse {
+  tracking: {
+    openLots: number;
+    inFlightOrders: number;
+    byStage: { stage: string; label: string; lots: number }[];
+    lots: {
+      id: string;
+      name: string;
+      stage: FulfilmentStage;
+      origin: string;
+      estimatedDispatchAt: string | null;
+      orderCount: number;
+    }[];
+  };
+  analytics: {
+    revenueMinor: number;
+    unitsSold: number;
+    orderCount: number;
+    activeListings: number;
+    views: number;
+    saves: number;
+    conversion: number;
+    daily: { date: string; orders: number; revenueMinor: number }[];
+    topListings: { id: string; title: string; viewCount: number; likeCount: number; unitsSold: number }[];
+  };
+}
+
+export interface StorefrontDraft {
+  storefrontName?: string;
+  bio?: string;
+  dispatchRegion?: string;
+  photoUrl?: string;
+  link?: string;
+}
+
 export const api = {
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),
@@ -217,6 +282,21 @@ export const api = {
     post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/tracking`, body),
 
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
+
+  storefront: () =>
+    request<{ storefront: SellerProfile | null; displayName: string }>('/me/storefront'),
+  saveStorefront: (body: StorefrontDraft) =>
+    post<{ storefront: SellerProfile }>('/me/storefront/save', body),
+  dashboard: () => request<DashboardResponse>('/me/dashboard'),
+
+  socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
+  channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),
+  channelThread: (id: string) => request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}`),
+  createPost: (body: { body: string; forumId?: string; listingId?: string }) =>
+    post<{ post: Post }>('/social/posts', body),
+  forums: () => request<ForumsResponse>('/social/forums'),
+  createForum: (body: { name: string; description?: string }) =>
+    post<{ forum: Forum }>('/social/forums/new', body),
   forwarders: (route?: string) =>
     request<{ forwarders: DirectoryForwarder[] }>(`/forwarders${route ? `?route=${encodeURIComponent(route)}` : ''}`),
 };

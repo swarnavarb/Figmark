@@ -10,6 +10,8 @@ import { ListingPage } from './pages/ListingPage';
 import { OrderPage } from './pages/OrderPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SellPage } from './pages/SellPage';
+import { ShopPage } from './pages/ShopPage';
+import { ChannelPage, SocialPage } from './pages/SocialPage';
 import { SessionProvider, useSession } from './session';
 import './styles.css';
 
@@ -39,7 +41,10 @@ function App() {
         <Route path="/" element={<FeedPage />} />
         <Route path="/listing/:id" element={<ListingPage />} />
         <Route path="/sell" element={<SellPage />} />
+        <Route path="/shop" element={<ShopPage />} />
         <Route path="/batches" element={<BatchesPage />} />
+        <Route path="/social" element={<SocialPage />} />
+        <Route path="/social/c/:id" element={<ChannelPage />} />
         <Route path="/order/:id" element={<OrderPage />} />
         <Route path="/forwarders" element={<ForwardersPage />} />
         <Route path="/me" element={<ProfilePage />} />
