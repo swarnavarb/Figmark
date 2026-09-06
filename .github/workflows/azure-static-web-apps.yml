@@ -41,10 +41,11 @@ jobs:
         working-directory: app
         run: npm run build
 
-      - name: Verify auth seam and HTTP contract
-        run: |
-          node scripts/smoke-auth.mjs
-          node scripts/smoke-api.mjs
+      # "npm test" rather than the scripts by name, so a suite added to it is
+      # covered here too. Naming them individually is how the route-conflict
+      # guard came to exist without ever running in CI.
+      - name: Verify routes, auth seam and HTTP contract
+        run: npm test
 
       # Static Web Apps deploys the api folder as-is, so it must carry its
       # production dependencies and none of its build-time ones.
