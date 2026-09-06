@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { LOT_STAGES, type LotStage } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID, furthestStage, stagesFor } from '../../../shared/fulfilment.js';
-import type { Lot, Order, StageEvent } from '../../../shared/models.js';
+import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -17,6 +17,74 @@ import { error, handler, json } from './http.js';
  */
 
 /** GET /api/me/lots - the seller's own batches, with what's in each. */
+/**
+ * Everything about a batch that is a description of it rather than a movement.
+ *
+ * Shared by create and edit so the two cannot drift: a field you can set when
+ * opening a batch is a field you can correct afterwards, which is the whole
+ * point of keeping them together.
+ */
+interface LotDetailsBody {
+  name?: string;
+  description?: string;
+  origin?: string;
+  estimatedDispatchAt?: string | null;
+  supplierName?: string;
+  supplierContact?: string;
+  supplierReference?: string;
+}
+
+/** Null unless a supplier was actually named; a contact alone is not one. */
+function supplierFrom(body: LotDetailsBody): LotSupplier | null {
+  const name = body.supplierName?.trim();
+  if (!name) return null;
+  return {
+    name,
+    contact: body.supplierContact?.trim() || null,
+    reference: body.supplierReference?.trim() || null,
+  };
+}
+
+/**
+ * PATCH-ish update of a batch's details.
+ *
+ * Only the keys present in the body are touched, so editing the origin cannot
+ * silently blank the supplier. The name is the one field that cannot be cleared:
+ * it is how the seller finds the batch again.
+ */
+async function updateLotDetails(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const lotId = request.params.id;
+  if (!lotId) return error(400, 'invalid_lot', 'A batch id is required.');
+
+  let body: LotDetailsBody;
+  try {
+    body = (await request.json()) as LotDetailsBody;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const repository = await getRepository();
+  // Scoped to the caller's partition, so one seller cannot edit another's batch.
+  const lot = await repository.getLot(user.id, lotId);
+  if (!lot) return error(404, 'not_found', 'No such batch.');
+
+  if (body.name !== undefined) {
+    const name = body.name.trim();
+    if (!name) return error(400, 'invalid_lot', 'A batch needs a name you will recognise.');
+    lot.name = name;
+  }
+  if (body.description !== undefined) lot.description = body.description.trim();
+  if (body.origin !== undefined) lot.origin = body.origin.trim();
+  if (body.estimatedDispatchAt !== undefined) lot.estimatedDispatchAt = body.estimatedDispatchAt;
+  // The supplier moves as a unit: naming one sets it, clearing the name drops it.
+  if (body.supplierName !== undefined) lot.supplier = supplierFrom(body);
+
+  lot.updatedAt = new Date().toISOString();
+  return json(200, { lot: await repository.updateLot(lot) });
+}
+
 async function myLots(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
@@ -50,7 +118,7 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
 
-  let body: { name?: string; description?: string; estimatedDispatchAt?: string; forwarderUserId?: string; forwarderName?: string; forwarderContact?: string };
+  let body: LotDetailsBody & { forwarderUserId?: string; forwarderName?: string; forwarderContact?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -65,6 +133,8 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
     sellerId: user.id,
     name,
     description: body.description?.trim() ?? '',
+    origin: body.origin?.trim() ?? '',
+    supplier: supplierFrom(body),
     status: 'open',
     stage: 'ordering',
     stageHistory: [{ stage: 'ordering', enteredAt: now, note: 'Batch opened.', recordedBy: user.id }],
@@ -278,6 +348,7 @@ export const lotContentsRoute = handler(lotContents);
 export const assignToLotRoute = handler(assignToLot);
 export const advanceStageRoute = handler(advanceStage);
 export const setTrackingRoute = handler(setTracking);
+export const updateLotDetailsRoute = handler(updateLotDetails);
 export const orderTrackingRoute = handler(orderTracking);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -287,4 +358,5 @@ app.http('lot-contents', { ...anon, methods: ['GET'], route: 'lots/{id}/contents
 app.http('lot-assign', { ...anon, methods: ['POST'], route: 'lots/{id}/assign', handler: assignToLotRoute });
 app.http('lot-stage', { ...anon, methods: ['POST'], route: 'lots/{id}/stage', handler: advanceStageRoute });
 app.http('lot-tracking', { ...anon, methods: ['POST'], route: 'lots/{id}/tracking', handler: setTrackingRoute });
+app.http('lot-details', { ...anon, methods: ['POST'], route: 'lots/{id}/details', handler: updateLotDetailsRoute });
 app.http('order-tracking', { ...anon, methods: ['GET'], route: 'orders/{id}', handler: orderTrackingRoute });

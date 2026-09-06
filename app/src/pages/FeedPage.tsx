@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CONDITION_TAGS } from '@shared/enums';
+import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
+import { sourcingOf } from '@shared/fulfilment';
 import { api, type FeedListing, type FeedResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon, LotMeter, Thumb, TrustBadge } from '../components/ui';
 import { daysUntil, formatMoney, timeAgo } from '../format';
@@ -170,6 +171,17 @@ function ListingCard({ listing }: { listing: FeedListing }) {
       <div className="listing__body">
         <span className="listing__title">{listing.title}</span>
         <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+
+        {/* The quick read: is it here or coming, what kind of thing, how many
+            left. Two cards fit across a phone, so this has to answer the
+            "should I tap this" question without one. */}
+        <div className="listing__meta">
+          <span className={`badge${sourcingOf(listing) === 'in_hand' ? ' badge--ok' : ''}`}>
+            {SOURCING_LABELS[sourcingOf(listing)]}
+          </span>
+          <span className="badge">{listing.category}</span>
+          {listing.quantityAvailable > 1 && <span className="faint">{listing.quantityAvailable} left</span>}
+        </div>
 
         {listing.preOrder && (
           <>

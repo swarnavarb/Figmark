@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
+import { SOURCING, type Sourcing } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
@@ -118,6 +119,25 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     return error(400, 'invalid_listing', 'A price above zero is required.');
   }
 
+  // A batch can be chosen while listing rather than only afterwards, so the
+  // seller is not made to publish and then go and file it. It has to be one of
+  // theirs: the lookup is scoped to their partition, so another seller's batch
+  // id simply does not resolve.
+  let lotId: string | null = null;
+  if (body.lotId) {
+    const lot = await repository.getLot(user.id, body.lotId);
+    if (!lot) return error(404, 'not_found', 'No such batch of yours to add this to.');
+    lotId = lot.id;
+  }
+
+  // Anything travelling in an import batch is imported by definition; only a
+  // single item is free to say which it is.
+  const sourcing: Sourcing = lotId
+    ? 'import'
+    : SOURCING.includes(body.sourcing as Sourcing)
+      ? (body.sourcing as Sourcing)
+      : 'in_hand';
+
   const now = new Date().toISOString();
   const listing: Listing = {
     id: `lst_${randomUUID().slice(0, 12)}`,
@@ -141,7 +161,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
             cutoffAt: body.preOrder.cutoffAt,
           }
         : null,
-    lotId: null,
+    lotId,
+    sourcing,
     photos: [],
     tags: body.tags ?? [],
     likeCount: 0,

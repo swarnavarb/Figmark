@@ -25,7 +25,7 @@ const {
 } = await import(new URL('catalog-routes.js', apiRoot));
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
-  advanceStageRoute, setTrackingRoute, orderTrackingRoute,
+  advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 
 /**
@@ -54,6 +54,7 @@ const routes = [
   ['POST', '/api/lots/:id/assign', assignToLotRoute],
   ['POST', '/api/lots/:id/stage', advanceStageRoute],
   ['POST', '/api/lots/:id/tracking', setTrackingRoute],
+  ['POST', '/api/lots/:id/details', updateLotDetailsRoute],
   ['GET', '/api/orders/:id', orderTrackingRoute],
 ];
 

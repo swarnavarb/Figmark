@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { LOT_STAGES, LOT_STAGE_LABELS } from '@shared/enums';
 import { nextStage } from '@shared/fulfilment';
 import type { Lot } from '@shared/models';
-import { ApiRequestError, api, type LotContents, type LotsResponse } from '../api';
+import { ApiRequestError, api, type LotContents, type LotDetails, type LotsResponse } from '../api';
+import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatDate, formatMoney, formatWeight } from '../format';
 
@@ -134,9 +135,7 @@ function StageTrack({ stage }: { stage: Lot['stage'] }) {
 }
 
 function NewBatchForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [dispatchDays, setDispatchDays] = useState('21');
+  const [details, setDetails] = useState<LotDetails>(emptyLotDetails);
   const [forwarderName, setForwarderName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,9 +146,8 @@ function NewBatchForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
     setError(null);
     try {
       await api.createLot({
-        name: name.trim(),
-        description: description.trim(),
-        estimatedDispatchAt: new Date(Date.now() + (Number(dispatchDays) || 21) * 86_400_000).toISOString(),
+        ...details,
+        name: details.name.trim(),
         // Either a directory forwarder or one you already work with; the batch
         // does not care which, and neither does the buyer's tracking.
         forwarderName: forwarderName.trim() || undefined,
@@ -162,35 +160,70 @@ function NewBatchForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
     }
   }
 
+  // The same fields as the popup in the sell flow, deliberately: one definition
+  // of what a batch has, so the two screens cannot drift apart.
   return (
     <form className="card card--pad form" onSubmit={submit} style={{ marginBottom: 22 }}>
       <h2>New batch</h2>
+      <LotDetailFields value={details} onChange={setDetails} />
       <label className="field">
-        <span>Name</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Guangzhou run — October" required />
-        <span className="field__hint">Only you see this.</span>
+        <span>Forwarder (optional)</span>
+        <input value={forwarderName} onChange={(e) => setForwarderName(e.target.value)}
+          placeholder="Lotus Freight, or your own" />
+        <span className="field__hint">Who moves the batch, as opposed to who you bought it from.</span>
       </label>
-      <label className="field">
-        <span>Notes</span>
-        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Air freight, QC before repack" />
-      </label>
-      <div className="field-row">
-        <label className="field">
-          <span>Est. dispatch (days out)</span>
-          <input type="number" min="1" value={dispatchDays} onChange={(e) => setDispatchDays(e.target.value)} />
-          <span className="field__hint">Buyers see this date on their order.</span>
-        </label>
-        <label className="field">
-          <span>Forwarder (optional)</span>
-          <input value={forwarderName} onChange={(e) => setForwarderName(e.target.value)} placeholder="Lotus Freight, or your own" />
-        </label>
-      </div>
       {error && <ErrorNotice message={error} />}
       <div className="row">
-        <button type="submit" className="btn" disabled={busy || !name.trim()}>Create batch</button>
+        <button type="submit" className="btn" disabled={busy || !details.name.trim()}>Create batch</button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Correct a batch's details after the fact.
+ *
+ * Everything set when the batch was opened - including from the popup in the
+ * sell flow, where a seller is in a hurry - is editable here, which is what
+ * makes it reasonable to ask for only a name up front.
+ */
+function EditLotDialog({ lot, onSaved, onCancel }: {
+  lot: Lot;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [details, setDetails] = useState<LotDetails>(() => lotDetailsOf(lot));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateLotDetails(lot.id, { ...details, name: details.name.trim() });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save these details.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Batch details" onClose={onCancel}>
+      <form className="form" onSubmit={submit}>
+        <LotDetailFields value={details} onChange={setDetails} />
+        {error && <ErrorNotice message={error} />}
+        <div className="row">
+          <button type="submit" className="btn" disabled={busy || !details.name.trim()}>
+            {busy ? 'Saving…' : 'Save details'}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -203,6 +236,7 @@ function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
   const [tracking, setTracking] = useState('');
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -248,10 +282,20 @@ function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
       <div className="page__head">
         <div>
           <h1>{lot.name}</h1>
-          <p className="muted">{lot.description || 'No description'}</p>
+          <p className="muted">
+            {[lot.origin, lot.supplier?.name, lot.description].filter(Boolean).join(' · ') || 'No details yet'}
+          </p>
         </div>
-        <StageBadge stage={lot.stage} />
+        <div className="row">
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>Edit details</button>
+          <StageBadge stage={lot.stage} />
+        </div>
       </div>
+
+      {editing && (
+        <EditLotDialog lot={lot} onCancel={() => setEditing(false)}
+          onSaved={() => { setEditing(false); void load(); }} />
+      )}
 
       {flash && <p className={`notice notice--${flash.includes('Moved') || flash.includes('Added') || flash.includes('Tracking') ? 'ok' : 'error'}`}>{flash}</p>}
 

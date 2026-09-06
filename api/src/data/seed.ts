@@ -208,6 +208,8 @@ interface ListingSeed {
   priceMinor: number;
   quantity: number;
   lotId?: string;
+  /** Only for an item imported without a batch behind it; a batch implies it. */
+  sourcing?: Listing['sourcing'];
   tags: string[];
   likeCount: number;
   viewCount: number;
@@ -248,7 +250,7 @@ const LISTINGS: ListingSeed[] = [
     id: 'lst_sneaker_retro', sellerId: 'usr_sneakervault', title: 'Retro high-top — UK 9, deadstock',
     description: 'Deadstock pair, authenticated in-house before dispatch. Original box included.',
     category: 'Sneakers', condition: 'MIB', priceMinor: 2_15_000,
-    quantity: 1, tags: ['sneakers', 'deadstock', 'uk9'],
+    quantity: 1, sourcing: 'import', tags: ['sneakers', 'deadstock', 'uk9'],
     likeCount: 73, viewCount: 1_204, ageDays: -1,
   },
   {
@@ -310,6 +312,9 @@ export function seedListings(): Listing[] {
         }
       : null,
     lotId: entry.lotId ?? null,
+    // A batch means imported; otherwise the entry says so, defaulting to stock
+    // already on the shelf.
+    sourcing: entry.lotId ? 'import' : (entry.sourcing ?? 'in_hand'),
     photos: [],
     tags: entry.tags,
     likeCount: entry.likeCount,
@@ -326,6 +331,8 @@ export function seedLots(): Lot[] {
       id: 'lot_gz_sep', sellerId: 'usr_kaiju',
       name: 'Guangzhou run — September',
       description: 'Consolidated shipment closing end of month. Air freight, QC before repack.',
+      origin: 'Guangzhou, CN',
+      supplier: { name: 'Baiyun Hobby Trading', contact: 'wechat: baiyun_hobby', reference: 'BH-2609' },
       status: 'open', stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Lot opened for pre-booking.', recordedBy: 'usr_kaiju' }],
       estimatedDispatchAt: iso(24),
@@ -337,6 +344,8 @@ export function seedLots(): Lot[] {
       id: 'lot_sz_oct', sellerId: 'usr_gadgetgrid',
       name: 'Shenzhen consolidation — October',
       description: 'Audio and small electronics. Sea freight to Chennai, then domestic dispatch.',
+      origin: 'Shenzhen, CN',
+      supplier: { name: 'Huaqiang North Electronics', contact: 'sales@hqn.example', reference: 'HQN-4471' },
       status: 'open', stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-4), note: null, recordedBy: 'usr_gadgetgrid' }],
       estimatedDispatchAt: iso(46),
@@ -350,6 +359,8 @@ export function seedLots(): Lot[] {
       id: 'lot_my_batch', sellerId: 'usr_demo',
       name: 'Mumbai dispatch — week 36',
       description: 'Items going out from my own shelf this week.',
+      origin: 'Mumbai, IN',
+      supplier: null,
       status: 'open', stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-3), note: 'Batch opened.', recordedBy: 'usr_demo' }],
       estimatedDispatchAt: iso(4),
@@ -361,6 +372,8 @@ export function seedLots(): Lot[] {
       id: 'lot_gz_aug', sellerId: 'usr_kaiju',
       name: 'Guangzhou run — August',
       description: 'Closed lot, currently in customs clearance at BLR.',
+      origin: 'Guangzhou, CN',
+      supplier: { name: 'Baiyun Hobby Trading', contact: 'wechat: baiyun_hobby', reference: 'BH-2508' },
       status: 'closed', stage: 'india_received',
       stageHistory: [
         { stage: 'ordering', enteredAt: iso(-40), note: null, recordedBy: 'usr_kaiju' },

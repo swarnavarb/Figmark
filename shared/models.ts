@@ -10,6 +10,7 @@ import type {
   PaymentStatus,
   ReviewDirection,
   SellerTier,
+  Sourcing,
   VerificationStatus,
 } from './enums.js';
 
@@ -211,6 +212,17 @@ export interface Listing extends BaseDocument {
    * never see the lot itself, only the tracking it produces.
    */
   lotId: string | null;
+  /**
+   * In hand or imported.
+   *
+   * Independent of `lotId` in one direction only: anything in an import lot is
+   * imported, but a single item can be imported without a batch behind it -
+   * which is exactly how a seller lists one-off pieces from a trip.
+   *
+   * Optional on the type because listings written before this field existed do
+   * not carry it; `sourcingOf` resolves those rather than showing a blank.
+   */
+  sourcing?: Sourcing;
   photos: ListingPhoto[];
   /** Free-text search terms, denormalised for query simplicity. */
   tags: string[];
@@ -287,6 +299,10 @@ export interface Lot extends BaseDocument {
   /** Seller's own label, e.g. "Guangzhou run - September". Never shown to buyers. */
   name: string;
   description: string;
+  /** Where the batch is coming from, e.g. "Guangzhou, CN". Seller-facing. */
+  origin: string;
+  /** Who the batch is bought from. Null until the seller fills it in. */
+  supplier: LotSupplier | null;
   status: LotStatus;
   stage: LotStage;
   stageHistory: StageEvent[];
@@ -296,6 +312,20 @@ export interface Lot extends BaseDocument {
   costModel: LotCostModel;
   /** Null until the seller picks a forwarder or enters one manually. */
   forwarder: LotForwarder | null;
+}
+
+/**
+ * The overseas seller or agent a lot is bought from.
+ *
+ * Distinct from the forwarder, which moves the batch, and from the Figmark
+ * account listing the items - this is the counterparty at the origin end, kept
+ * so a batch can be reconciled against their invoice months later.
+ */
+export interface LotSupplier {
+  name: string;
+  contact: string | null;
+  /** Their order or invoice reference. */
+  reference: string | null;
 }
 
 /**

@@ -46,6 +46,9 @@
 
   /* One spacing and shape scale */
   --r-sm: 8px;
+  /* The page's side padding, named so a full-bleed row can cancel it exactly
+     rather than guessing at the number. */
+  --page-pad: 20px;
   --r-md: 12px;
   --r-lg: 16px;
   --r-pill: 999px;
@@ -131,7 +134,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   width: 100%;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 28px 20px 72px;
+  padding: 28px var(--page-pad) 72px;
 }
 
 .page__head {
@@ -188,6 +191,55 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn--ghost:hover:not(:disabled) { background: var(--surface-2); border-color: var(--text-faint); }
 .btn--quiet { background: transparent; border-color: transparent; color: var(--text-dim); padding: 6px 10px; }
 .btn--quiet:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.btn--sm { padding: 6px 11px; font-size: var(--t-xs); }
+
+/* ── Segmented control ─────────────────────────────────────────────────── */
+
+.seg { display: flex; gap: 4px; padding: 4px; background: var(--surface-2); border-radius: var(--r-md); }
+.seg button {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--r-md) - 4px);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.seg button:hover { color: var(--text); }
+.seg button.is-on { background: var(--surface); color: var(--text); border-color: var(--border); }
+
+/* ── Dialog ────────────────────────────────────────────────────────────── */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow-y: auto;
+}
+.modal__panel {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+}
+.modal__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 18px; border-bottom: 1px solid var(--border);
+}
+.modal__head h2 { font-size: var(--t-md); }
+.modal__body { padding: 18px; overflow-y: auto; }
 .btn--block { width: 100%; }
 .btn--lg { padding: 12px 20px; font-size: var(--t-base); }
 .btn--danger { background: transparent; border-color: var(--border-strong); color: var(--danger); }
@@ -253,6 +305,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   overflow: hidden;
 }
 .listing__price { font-size: var(--t-md); font-weight: 700; letter-spacing: -0.02em; }
+/* The quick read under the price: sourcing, category, stock. Wraps rather than
+   overflowing, since two of these sit side by side on a phone. */
+.listing__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .listing__foot { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 
 /* ── Chips, badges, pills ──────────────────────────────────────────────── */
@@ -465,4 +520,46 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .nav { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 10px; }
   .field-row { grid-template-columns: 1fr; }
   .nav__link { padding: 7px 9px; }
+}
+
+/* Phones: two items across, always.
+   auto-fill with a 240px minimum drops to a single column under ~520px, which
+   turns the feed into one enormous card per screen and hides everything below
+   it. Two fixed columns keep a browsable grid; the type and padding come down
+   to match, so the card still says what it is. */
+@media (max-width: 560px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+  /* A sheet rather than a floating panel: it is the whole screen on a phone
+     either way, so it may as well sit where a thumb reaches it. */
+  /* Filters scroll sideways instead of wrapping into four rows. Wrapped, they
+     take ~340px of a phone screen and push the first item out of sight, which
+     defeats the point of a browsable grid. */
+  .chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    /* Bleed to the screen edges so the row reads as scrollable. */
+    margin-inline: calc(var(--page-pad) * -1);
+    padding-inline: var(--page-pad);
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chips > * { flex: 0 0 auto; }
+  /* The card grid is not a chip row: it must keep wrapping. */
+  .listing__meta { flex-wrap: wrap; overflow: visible; margin-inline: 0; padding-inline: 0; }
+
+  .modal { padding: 0; place-items: end stretch; }
+  .modal__panel { max-height: 92vh; border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: none; }
+  .seg button { padding: 9px 8px; font-size: var(--t-sm); }
+  .listing__body { padding: 9px 10px 11px; gap: 5px; }
+  .listing__title { font-size: var(--t-xs); -webkit-line-clamp: 2; }
+  .listing__price { font-size: var(--t-sm); }
+  .listing__meta { gap: 4px; }
+  .listing__meta .badge, .listing__meta .faint { font-size: 10px; padding: 2px 6px; }
+  .thumb { font-size: 22px; }
+  .thumb__like { width: 26px; height: 26px; top: 6px; right: 6px; }
+  .thumb__badges { inset: auto 6px 6px 6px; }
+  /* The seller's trust chip is the first thing worth dropping at this width:
+     the seller name is the identity, the score is a detail for the item page. */
+  .listing__foot .badge { display: none; }
 }

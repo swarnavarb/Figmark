@@ -39,6 +39,22 @@ export const CONDITION_TAGS = ['MISB', 'MIB', 'BIB', 'LOOSE'] as const;
 export type ConditionTag = (typeof CONDITION_TAGS)[number];
 
 /**
+ * Where the item comes from, chosen when it is listed.
+ *
+ * The two differ in what a buyer is waiting for, not in what the item is: an
+ * in-hand item ships from the seller's shelf, an imported one has to arrive
+ * first. An item travelling in an import lot is always `import`; a single item
+ * can be either.
+ */
+export const SOURCING = ['in_hand', 'import'] as const;
+export type Sourcing = (typeof SOURCING)[number];
+
+export const SOURCING_LABELS: Record<Sourcing, string> = {
+  in_hand: 'In hand',
+  import: 'Import',
+};
+
+/**
  * Fulfilment stages for a lot. Order is significant: this array *is* the
  * pipeline, and progress is computed from the index. Buyers see the same
  * timeline the seller works, which is the point of the whole feature.

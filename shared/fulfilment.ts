@@ -6,6 +6,7 @@ import {
   type DirectStage,
   type FulfilmentStage,
   type LotStage,
+  type Sourcing,
 } from './enums.js';
 import type { Order } from './models.js';
 
@@ -75,3 +76,15 @@ export function preOrderOpen(preOrder: { cutoffAt: string } | null): boolean {
 }
 
 export type { DirectStage, FulfilmentStage, LotStage };
+
+/**
+ * How a listing is sourced, resolving listings written before the field existed.
+ *
+ * An item in a shipment batch is imported by definition, so the batch answers
+ * for itself; anything else without a value predates the field and is treated
+ * as in hand, which is the safer default - it promises the buyer less, not more.
+ */
+export function sourcingOf(listing: { sourcing?: Sourcing; lotId: string | null }): Sourcing {
+  if (listing.sourcing) return listing.sourcing;
+  return listing.lotId ? 'import' : 'in_hand';
+}

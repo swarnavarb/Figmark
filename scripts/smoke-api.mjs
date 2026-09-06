@@ -18,6 +18,7 @@ const {
 } = await import(new URL('catalog-routes.js', fns));
 const {
   myLotsRoute: myLots, createLotRoute: createLot, lotContentsRoute: lotContents,
+  updateLotDetailsRoute: updateLotDetails,
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
   setTrackingRoute: setTracking, orderTrackingRoute: orderTracking,
 } = await import(new URL('fulfilment-routes.js', fns));
@@ -345,8 +346,96 @@ console.log('\nshipment batches');
 
 const batch = await createLot(req({
   headers: auth,
-  body: { name: 'Test consignment', description: 'smoke', estimatedDispatchAt: new Date(Date.now() + 6e8).toISOString(), forwarderName: 'Test Freight' },
+  body: {
+    name: 'Test consignment', description: 'smoke',
+    origin: 'Guangzhou, CN',
+    supplierName: 'Baiyun Hobby', supplierContact: 'wechat: baiyun', supplierReference: 'BH-1',
+    estimatedDispatchAt: new Date(Date.now() + 6e8).toISOString(), forwarderName: 'Test Freight',
+  },
 }), ctx);
+
+await check('a batch carries its origin and supplier', () => {
+  assert.equal(batch.jsonBody.lot.origin, 'Guangzhou, CN');
+  assert.equal(batch.jsonBody.lot.supplier.name, 'Baiyun Hobby');
+  assert.equal(batch.jsonBody.lot.supplier.reference, 'BH-1');
+});
+
+await check('the name is the only field a batch insists on', async () => {
+  const bare = await createLot(req({ headers: auth, body: { name: 'Bare batch' } }), ctx);
+  assert.equal(bare.status, 201);
+  assert.equal(bare.jsonBody.lot.origin, '');
+  // A contact with nobody attached to it is not a supplier.
+  assert.equal(bare.jsonBody.lot.supplier, null);
+
+  const nameless = await createLot(req({ headers: auth, body: { origin: 'Shenzhen, CN' } }), ctx);
+  assert.equal(nameless.status, 400);
+  assert.equal(nameless.jsonBody.error, 'invalid_lot');
+});
+
+await check('every detail can be corrected afterwards', async () => {
+  const id = batch.jsonBody.lot.id;
+  const edited = await updateLotDetails(req({
+    headers: auth, params: { id },
+    body: { name: 'Renamed consignment', origin: 'Yiwu, CN', supplierName: 'Yiwu Trading' },
+  }), ctx);
+  assert.equal(edited.status, 200);
+  assert.equal(edited.jsonBody.lot.name, 'Renamed consignment');
+  assert.equal(edited.jsonBody.lot.origin, 'Yiwu, CN');
+  assert.equal(edited.jsonBody.lot.supplier.name, 'Yiwu Trading');
+  // Untouched keys stay as they were: editing the origin must not blank notes.
+  assert.equal(edited.jsonBody.lot.description, 'smoke');
+});
+
+await check('a batch cannot be renamed to nothing, or by someone else', async () => {
+  const id = batch.jsonBody.lot.id;
+  const blank = await updateLotDetails(req({ headers: auth, params: { id }, body: { name: '  ' } }), ctx);
+  assert.equal(blank.status, 400);
+
+  // A batch is read from its owner's partition, so another seller's id does not
+  // resolve at all - it is not found rather than forbidden.
+  const stranger = await signup(req({
+    body: { displayName: 'Other Seller', email: 'other@figmark.example', phone: '+919000077777', password: 'longenough1' },
+  }), ctx);
+  const theirs = await updateLotDetails(req({
+    headers: { authorization: `Bearer ${stranger.jsonBody.token}` },
+    params: { id }, body: { name: 'Mine now' },
+  }), ctx);
+  assert.equal(theirs.status, 404);
+});
+
+await check('an item can be filed into a batch as it is listed', async () => {
+  const id = batch.jsonBody.lot.id;
+  const listed = await createListing(req({
+    headers: auth,
+    body: { title: 'Straight into the batch', priceMinor: 90_000, lotId: id },
+  }), ctx);
+  assert.equal(listed.status, 201);
+  assert.equal(listed.jsonBody.listing.lotId, id);
+  // A batch is a consignment of imports, so it settles the sourcing itself.
+  assert.equal(listed.jsonBody.listing.sourcing, 'import');
+});
+
+await check('someone else\'s batch is not a place to file things', async () => {
+  const refused = await createListing(req({
+    headers: auth,
+    body: { title: 'Nice try', priceMinor: 1000, lotId: 'lot_gz_sep' },
+  }), ctx);
+  assert.equal(refused.status, 404);
+});
+
+await check('a single item says whether it is in hand or imported', async () => {
+  for (const sourcing of ['in_hand', 'import']) {
+    const single = await createListing(req({
+      headers: auth, body: { title: `Single ${sourcing}`, priceMinor: 5000, sourcing },
+    }), ctx);
+    assert.equal(single.jsonBody.listing.sourcing, sourcing);
+    assert.equal(single.jsonBody.listing.lotId, null);
+  }
+
+  // Nothing claimed, nothing promised: an unstated item ships from the shelf.
+  const quiet = await createListing(req({ headers: auth, body: { title: 'Unstated', priceMinor: 5000 } }), ctx);
+  assert.equal(quiet.jsonBody.listing.sourcing, 'in_hand');
+});
 
 await check('a seller can open a batch', () => {
   assert.equal(batch.status, 201);

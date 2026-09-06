@@ -6,7 +6,7 @@ import type {
   LoginResponse,
   MeResponse,
 } from '@shared/contracts';
-import type { FulfilmentStage } from '@shared/enums';
+import type { FulfilmentStage, Sourcing } from '@shared/enums';
 import type { ForwarderProfile, Listing, ListingComment, Lot, Order } from '@shared/models';
 
 /**
@@ -153,7 +153,22 @@ export interface NewListing {
   priceMinor: number;
   quantityAvailable: number;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;
+  /** Omitted when the item goes into a batch, which settles it. */
+  sourcing?: Sourcing;
+  /** The seller's own batch to file this into, chosen while listing. */
+  lotId?: string | null;
   tags: string[];
+}
+
+/** Everything about a batch that can be set when opening it, and corrected later. */
+export interface LotDetails {
+  name: string;
+  description?: string;
+  origin?: string;
+  estimatedDispatchAt?: string | null;
+  supplierName?: string;
+  supplierContact?: string;
+  supplierReference?: string;
 }
 
 export const api = {
@@ -188,8 +203,11 @@ export const api = {
   activity: () => request<ActivityResponse>('/me/activity'),
 
   myLots: () => request<LotsResponse>('/me/lots'),
-  createLot: (body: { name: string; description?: string; estimatedDispatchAt?: string; forwarderUserId?: string; forwarderName?: string; forwarderContact?: string }) =>
-    post<{ lot: Lot }>('/lots', body),
+  createLot: (
+    body: LotDetails & { forwarderUserId?: string; forwarderName?: string; forwarderContact?: string },
+  ) => post<{ lot: Lot }>('/lots', body),
+  updateLotDetails: (id: string, body: Partial<LotDetails>) =>
+    post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/details`, body),
   lotContents: (id: string) => request<LotContents>(`/lots/${encodeURIComponent(id)}/contents`),
   assignToLot: (id: string, listingIds: string[], remove = false) =>
     post<{ changed: number }>(`/lots/${encodeURIComponent(id)}/assign`, { listingIds, remove }),

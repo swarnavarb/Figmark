@@ -1,10 +1,21 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CONDITION_TAGS } from '@shared/enums';
+import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import type { Lot } from '@shared/models';
 import { ApiRequestError, api } from '../api';
-import { ErrorNotice, Thumb } from '../components/ui';
+import { NewLotDialog } from '../components/LotFields';
+import { ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
+
+/**
+ * How the item is being sold.
+ *
+ * A lot is a consignment of imports, so anything in one is imported by
+ * definition. A single item is free to be either: stock already on the shelf,
+ * or one piece brought in without a consignment behind it.
+ */
+type Shape = 'single' | 'lot';
 
 const CATEGORIES = [
   'Scale figures', 'Model kits', 'Trading cards', 'Anime merch',
@@ -35,8 +46,41 @@ export function SellPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [shape, setShape] = useState<Shape>('single');
+  const [sourcing, setSourcing] = useState<Sourcing>('in_hand');
+  const [lots, setLots] = useState<Lot[]>([]);
+  const [lotId, setLotId] = useState('');
+  const [creatingLot, setCreatingLot] = useState(false);
+
+  // The seller's open batches, so an item can be filed as it is listed rather
+  // than published first and tidied up afterwards.
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .myLots()
+      .then((result) => {
+        if (cancelled) return;
+        const open = result.lots.map((entry) => entry.lot).filter((lot) => lot.status === 'open');
+        setLots(open);
+        setLotId((current) => current || (open[0]?.id ?? ''));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function lotCreated(lot: Lot) {
+    setLots((current) => [lot, ...current]);
+    setLotId(lot.id);
+    setShape('lot');
+    setCreatingLot(false);
+  }
+
   const priceMinor = Math.round(Number(price || 0) * 100);
-  const canPublish = title.trim().length > 2 && priceMinor > 0;
+  // A lot listing needs a lot; there is nothing to publish into otherwise.
+  const canPublish = title.trim().length > 2 && priceMinor > 0 && (shape === 'single' || lotId !== '');
+  const effectiveSourcing: Sourcing = shape === 'lot' ? 'import' : sourcing;
 
   async function publish(event: FormEvent) {
     event.preventDefault();
@@ -56,6 +100,8 @@ export function SellPage() {
               cutoffAt: new Date(Date.now() + (Number(cutoffDays) || 14) * 86_400_000).toISOString(),
             }
           : null,
+        sourcing: effectiveSourcing,
+        lotId: shape === 'lot' ? lotId : null,
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
       });
       navigate(`/listing/${result.listing.id}`);
@@ -157,10 +203,60 @@ export function SellPage() {
             )}
           </div>
 
-          <p className="notice notice--info">
-            Shipping batches are separate: publish this first, then tag it into a batch from
-            <strong> My batches</strong> when you know which consignment it travels in.
-          </p>
+          <div className="card card--pad stack">
+            <div>
+              <div style={{ fontWeight: 600 }}>How are you selling this?</div>
+              <span className="field__hint">
+                A lot is one consignment of imports arriving together. Buyers never see the lot — they see
+                the tracking it produces.
+              </span>
+            </div>
+
+            <div className="seg" role="radiogroup" aria-label="How are you selling this?">
+              <button type="button" role="radio" aria-checked={shape === 'single'}
+                className={shape === 'single' ? 'is-on' : ''} onClick={() => setShape('single')}>
+                Single item
+              </button>
+              <button type="button" role="radio" aria-checked={shape === 'lot'}
+                className={shape === 'lot' ? 'is-on' : ''} onClick={() => setShape('lot')}>
+                Part of a lot
+              </button>
+            </div>
+
+            {shape === 'single' ? (
+              <label className="field">
+                <span>Where is it now?</span>
+                <select value={sourcing} onChange={(e) => setSourcing(e.target.value as Sourcing)}>
+                  <option value="in_hand">{SOURCING_LABELS.in_hand} — ships from my shelf</option>
+                  <option value="import">{SOURCING_LABELS.import} — coming in, no lot behind it</option>
+                </select>
+                <span className="field__hint">
+                  This is what buyers read to know whether they are waiting on a shipment.
+                </span>
+              </label>
+            ) : (
+              <label className="field">
+                <span>Lot</span>
+                {lots.length > 0 ? (
+                  <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
+                    {lots.map((lot) => (
+                      <option key={lot.id} value={lot.id}>
+                        {lot.name}{lot.origin ? ` — ${lot.origin}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="field__hint">
+                    You have no open lots yet. Create one and this item goes straight into it.
+                  </span>
+                )}
+                <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start', marginTop: 8 }}
+                  onClick={() => setCreatingLot(true)}>
+                  <Icon name="plus" size={14} /> New lot
+                </button>
+              </label>
+            )}
+          </div>
 
           {error && <ErrorNotice message={error} />}
 
@@ -181,9 +277,12 @@ export function SellPage() {
             <div className="listing__body">
               <span className="listing__title">{title || 'Your listing title'}</span>
               <span className="listing__price">{priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</span>
+              <div className="listing__meta">
+                <span className="badge">{SOURCING_LABELS[effectiveSourcing]}</span>
+                <span className="badge">{category}</span>
+              </div>
               <div className="listing__foot">
                 <span className="faint">{user?.sellerProfile?.storefrontName ?? user?.displayName ?? 'You'}</span>
-                <span className="badge">{category}</span>
               </div>
             </div>
           </div>
@@ -192,6 +291,8 @@ export function SellPage() {
           </p>
         </aside>
       </div>
+
+      {creatingLot && <NewLotDialog onCreated={lotCreated} onCancel={() => setCreatingLot(false)} />}
     </main>
   );
 }
