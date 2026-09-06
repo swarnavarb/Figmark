@@ -60,6 +60,7 @@ export class MemoryRepository implements Repository {
       connected: true,
       database: null,
       detail: `In-memory store: ${signInAccounts} sign-in account, ${this.listings.size} listings, ${this.lots.size} lots. Set COSMOS_ENDPOINT to use Cosmos DB.`,
+      signInAccounts,
     };
   }
 

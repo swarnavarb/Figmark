@@ -130,6 +130,27 @@ export class MockAuthProvider implements AuthService {
     // Compare regardless of whether the user exists so a missing account and a
     // wrong password take the same time to answer.
     const ok = verifyPassword(credentials.password, user?.passwordHash ?? null);
+
+    // Before blaming the credentials, rule out the case where nothing could
+    // have matched them. A store that is unreachable, unprovisioned or empty
+    // answers every sign-in with "no such account", which reaches the user as
+    // "your password is wrong" for a password that is right - and no amount of
+    // retyping fixes a database that has no accounts in it.
+    if (!user) {
+      const status = this.repository.status();
+      if (!status.connected) {
+        throw AuthError.signInUnavailable(
+          `Sign-in is unavailable: the ${this.repository.backend} store is not reachable. ${status.detail}`,
+        );
+      }
+      if (status.signInAccounts === 0) {
+        throw AuthError.signInUnavailable(
+          'Sign-in is unavailable: this deployment is connected to a database that holds no accounts. ' +
+            `${status.detail} Seed it with "npm run build:api && npm run azure:provision -- --seed".`,
+        );
+      }
+    }
+
     if (!user || !ok) {
       const previous = locked && locked.until > Date.now() ? locked.count : 0;
       this.attempts.set(key, { count: previous + 1, until: Date.now() + LOCKOUT_MS });

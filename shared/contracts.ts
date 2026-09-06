@@ -97,6 +97,11 @@ export interface HealthResponse {
     connected: boolean;
     database: string | null;
     detail: string;
+    /**
+     * Accounts that can be signed into. Zero means sign-in cannot succeed for
+     * anyone, whatever they type; null means the store could not be asked.
+     */
+    signInAccounts: number | null;
   };
   storage: {
     backend: 'azure_blob' | 'memory';

@@ -61,8 +61,20 @@ credentials were present. These steps need a machine that can reach Azure:
    npm run azure:provision -- --seed
    ```
 
-   Development environments only — it creates accounts whose password is
+   Development environments only — it creates an account whose password is
    committed to this repository.
+
+   > **The order of steps 3 and 5 matters.** Pointing the deployed API at a
+   > database that does not exist, has no containers, or has no accounts in it
+   > used to look exactly like a wrong password: sign-in resolves every
+   > identifier to nobody, including the demo account, and no amount of
+   > retyping fixes it. The API now says which of those it is — on
+   > `/api/health`, and on the sign-in page itself — and seeds a database it
+   > finds provisioned but completely empty, so this step is the explicit path
+   > rather than the only one. Set `COSMOS_AUTOSEED=off` for a database that is
+   > meant to start empty. Containers still have to exist first: creating them
+   > is what step 3 does, and nothing can be written to a database without
+   > them.
 
 4. **Confirm connectivity:**
 

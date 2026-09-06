@@ -20,6 +20,8 @@ export function AuthPage() {
   const [error, setError] = useState<string | null>(null);
   const [demo, setDemo] = useState<DemoAccount | null>(null);
   const [durable, setDurable] = useState(true);
+  /** Set when the server already knows no sign-in can succeed. */
+  const [blocked, setBlocked] = useState<string | null>(null);
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -37,6 +39,18 @@ export function AuthPage() {
         const account = health.auth.demoAccounts[0];
         if (health.auth.mode === 'mock' && account) setDemo(account);
         setDurable(health.auth.accountsDurable);
+        // Say why sign-in cannot work before the form is filled in, rather
+        // than letting an empty or unreachable database answer a correct
+        // password with "that password is wrong".
+        if (!health.data.connected) {
+          setBlocked(`The ${health.data.backend} store behind this deployment is not reachable. ${health.data.detail}`);
+        } else if (health.data.signInAccounts === 0) {
+          setBlocked(
+            `This deployment is connected to a database that holds no accounts, so nobody can sign in. ${health.data.detail}`,
+          );
+        } else {
+          setBlocked(null);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -133,6 +147,8 @@ export function AuthPage() {
                 </span>
               )}
             </label>
+
+            {blocked && !error && <p className="notice notice--warn">{blocked}</p>}
 
             {error && <ErrorNotice message={error} />}
 

@@ -3,9 +3,13 @@
  *
  *   npm run build:api && npm run azure:provision
  *
- * Pass --seed to also write the development fixtures (four demo users, two
- * lots, two listings, two orders). Development environments only - it creates
- * accounts whose password is committed to this repository.
+ * Pass --seed to also write the development fixtures: the seeded users with
+ * their identifier reservations, plus lots, listings, orders, comments, likes
+ * and follows. Development environments only - it creates an account whose
+ * password is committed to this repository.
+ *
+ * The API also seeds a database it finds completely empty, so this is the
+ * explicit path rather than the only one.
  *
  * Idempotent: every create is a create-if-not-exists, so re-running it after
  * adding a container definition provisions only the new one. Container schema
@@ -153,25 +157,50 @@ if (process.argv.includes('--seed')) {
   console.log('\nSeeding development fixtures');
   console.log('  NOTE: these accounts share a password committed to this repository.');
 
+  // Email and phone are normalised the same way the repository normalises them
+  // at sign-in, so a reservation written here is one sign-in can resolve.
+  const normalise = (value) => {
+    const trimmed = value.trim().toLowerCase();
+    return trimmed.includes('@') ? trimmed : trimmed.replace(/[\s()-]/g, '');
+  };
+
   const users = seed.seedUsers();
+  let reservations = 0;
   for (const user of users) {
     await database.container('users').items.upsert(user);
-    // The reservation record is what makes the username globally unique; it
-    // must exist for sign-in to resolve the user.
-    await database
-      .container('usernames')
-      .items.upsert({ id: user.username.toLowerCase(), userId: user.id });
+    // The reservation records are what make an identifier globally unique, and
+    // what sign-in resolves through: without them no account can be signed in
+    // to, however correct the password is.
+    for (const value of [user.email, user.phone].filter(Boolean)) {
+      await database.container('identifiers').items.upsert({ id: normalise(value), userId: user.id });
+      reservations += 1;
+    }
   }
-  console.log(`  users      ${users.length} written (with username reservations)`);
+  console.log(`  users      ${users.length} written (${reservations} identifier reservations)`);
 
   for (const [name, items] of [
     ['lots', seed.seedLots()],
     ['listings', seed.seedListings()],
     ['orders', seed.seedOrders()],
+    ['comments', seed.seedComments()],
   ]) {
     for (const item of items) await database.container(name).items.upsert(item);
     console.log(`  ${name.padEnd(10)} ${items.length} written`);
   }
+
+  // Likes and follows are keyed by a composite id in Cosmos, since that is what
+  // toggling them reads back; the fixture ids would be unreachable rows.
+  const likes = seed.seedLikes();
+  for (const like of likes) {
+    await database.container('likes').items.upsert({ ...like, id: `${like.userId}__${like.listingId}` });
+  }
+  console.log(`  likes      ${likes.length} written`);
+
+  const follows = seed.seedFollows();
+  for (const follow of follows) {
+    await database.container('follows').items.upsert({ ...follow, id: `${follow.followerId}__${follow.sellerId}` });
+  }
+  console.log(`  follows    ${follows.length} written`);
 }
 
 console.log('\nDone. Run "npm run azure:check" to confirm.');

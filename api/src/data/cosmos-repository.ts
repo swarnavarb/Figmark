@@ -7,6 +7,29 @@ import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
+import {
+  DEMO_EMAIL,
+  DEMO_PASSWORD,
+  DEMO_PHONE,
+  seedComments,
+  seedFollows,
+  seedLikes,
+  seedListings,
+  seedLots,
+  seedOrders,
+  seedUsers,
+} from './seed.js';
+
+/**
+ * Whether an empty database may be filled with the development fixtures.
+ *
+ * On by default: the alternative is a deployment that connects successfully and
+ * then behaves as though every password were wrong. Set COSMOS_AUTOSEED=off for
+ * a database that is meant to start empty.
+ */
+function autoSeedEnabled(): boolean {
+  return (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase() !== 'off';
+}
 
 /**
  * Cosmos DB (Core/SQL) implementation.
@@ -17,6 +40,15 @@ import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
  */
 export class CosmosRepository implements Repository {
   readonly backend: BackendKind = 'cosmos';
+
+  /**
+   * Whether this instance put the development fixtures into the database.
+   *
+   * Only then is the demo sign-in hint shown. A database that arrived populated
+   * holds someone's real accounts, and advertising a password from this
+   * repository against it would be a fabrication at best.
+   */
+  private seeded = false;
 
   private readonly client: CosmosClient;
   private database!: Database;
@@ -36,22 +68,17 @@ export class CosmosRepository implements Repository {
       connected: false,
       database: cosmosConfig.database,
       detail: 'Not yet initialised.',
+      signInAccounts: null,
     };
   }
 
   async init(): Promise<void> {
     this.database = this.client.database(this.cosmosConfig.database);
+    const via = this.cosmosConfig.key ? 'an account key' : 'managed identity';
     try {
       // A database read is the cheapest call that proves endpoint, credential
       // and database name are all correct.
       await this.database.read();
-      this.state = {
-        connected: true,
-        database: this.cosmosConfig.database,
-        detail: `Connected to ${this.cosmosConfig.endpoint} using ${
-          this.cosmosConfig.key ? 'an account key' : 'managed identity'
-        }.`,
-      };
     } catch (error) {
       // A failure here must not take the API down: the status page needs to
       // load in order to report it.
@@ -59,8 +86,107 @@ export class CosmosRepository implements Repository {
         connected: false,
         database: this.cosmosConfig.database,
         detail: `Could not reach Cosmos DB: ${describeError(error)}. Run "npm run azure:provision" if the database has not been created yet.`,
+        signInAccounts: null,
       };
+      return;
     }
+
+    // Reaching the database is not the same as being able to serve it. A
+    // database with no accounts in it answers a correct password with "that is
+    // wrong", so establish which of the two we are in before any request does.
+    let signInAccounts: number | null;
+    try {
+      signInAccounts = await this.countSignInAccounts();
+    } catch (error) {
+      this.state = {
+        connected: false,
+        database: this.cosmosConfig.database,
+        detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}, but its containers could not be read: ${describeError(
+          error,
+        )}. Run "npm run azure:provision" to create them.`,
+        signInAccounts: null,
+      };
+      return;
+    }
+
+    let seeded = '';
+    if (signInAccounts === 0 && autoSeedEnabled()) {
+      // An empty database is a database nobody can sign in to, and the only way
+      // to fill it is a terminal with credentials in it - which is exactly what
+      // whoever just set COSMOS_ENDPOINT in the portal does not have to hand.
+      // Seeding it here is safe precisely because it is empty: there is nothing
+      // to overwrite. Anything already in it is left alone.
+      try {
+        const written = await this.seedFixtures();
+        this.seeded = true;
+        signInAccounts = await this.countSignInAccounts();
+        seeded = ` Seeded ${written} fixture records into an empty database.`;
+      } catch (error) {
+        seeded = ` The database is empty and seeding it failed: ${describeError(error)}.`;
+      }
+    }
+
+    this.state = {
+      connected: true,
+      database: this.cosmosConfig.database,
+      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${seeded}`,
+      signInAccounts,
+    };
+  }
+
+  /** Accounts holding a password hash, i.e. accounts sign-in can resolve. */
+  private async countSignInAccounts(): Promise<number> {
+    const { resources } = await this.container('users')
+      .items.query<number>({
+        query: 'SELECT VALUE COUNT(1) FROM c WHERE IS_DEFINED(c.passwordHash) AND c.passwordHash != null',
+      })
+      .fetchAll();
+    return resources[0] ?? 0;
+  }
+
+  /**
+   * Writes the development fixtures, including the identifier reservations that
+   * sign-in resolves through.
+   *
+   * Upserts rather than creates: two workers may reach this at the same moment
+   * on a cold start, and the fixtures are identical, so last write wins is the
+   * correct outcome rather than a conflict to handle.
+   */
+  private async seedFixtures(): Promise<number> {
+    const users = seedUsers();
+    let written = 0;
+
+    for (const user of users) {
+      await this.container('users').items.upsert(user);
+      for (const identifier of identifiersOf(user)) {
+        await this.container('identifiers').items.upsert({ id: identifier, userId: user.id });
+      }
+      written += 1;
+    }
+
+    for (const [name, items] of [
+      ['lots', seedLots()],
+      ['listings', seedListings()],
+      ['orders', seedOrders()],
+      ['comments', seedComments()],
+    ] as const) {
+      for (const item of items) await this.container(name).items.upsert(item);
+      written += items.length;
+    }
+
+    // Likes and follows are addressed by a composite id here, since that is
+    // what toggling them reads back. Seeding the fixture ids verbatim would
+    // leave rows this repository could never find again.
+    for (const like of seedLikes()) {
+      await this.container('likes').items.upsert({ ...like, id: `${like.userId}__${like.listingId}` });
+      written += 1;
+    }
+    for (const follow of seedFollows()) {
+      await this.container('follows').items.upsert({ ...follow, id: `${follow.followerId}__${follow.sellerId}` });
+      written += 1;
+    }
+
+    return written;
   }
 
   status(): BackendStatus {
@@ -140,8 +266,11 @@ export class CosmosRepository implements Repository {
   }
 
   listDemoAccounts(): DemoAccount[] {
-    // Never advertise sign-in hints against a real database.
-    return [];
+    // Only for a database this instance seeded itself: those fixtures are the
+    // ones in this repository, so naming them tells the user nothing the source
+    // does not. A database holding real accounts is never advertised.
+    if (!this.seeded) return [];
+    return [{ identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` }];
   }
 
   async revokeSession(token: string, expiresAt: Date): Promise<void> {

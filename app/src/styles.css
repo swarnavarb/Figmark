@@ -358,6 +358,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .notice--error { background: var(--danger-soft); border-color: rgba(229, 106, 90, 0.3); color: var(--danger); }
 .notice--ok { background: var(--ok-soft); border-color: rgba(78, 192, 125, 0.3); color: var(--ok); }
 .notice--info { background: var(--surface-2); border-color: var(--border); color: var(--text-dim); }
+.notice--warn { background: var(--warn-soft); border-color: rgba(224, 165, 60, 0.3); color: var(--warn); }
 
 /* ── Auth page ─────────────────────────────────────────────────────────── */
 

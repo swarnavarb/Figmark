@@ -28,6 +28,8 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
       data.connected &&
       storage.connected &&
       data.database !== null &&
+      // A store nobody can sign in to is running, not working.
+      data.signInAccounts !== 0 &&
       // 'ephemeral' differs per worker, so sessions break across instances.
       (config.sessionSecretSource === 'configured' || config.sessionSecretSource === 'derived')
         ? 'ok'
@@ -48,6 +50,7 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
       connected: data.connected,
       database: data.database,
       detail: data.detail,
+      signInAccounts: data.signInAccounts,
     },
     storage,
   };

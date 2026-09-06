@@ -7,6 +7,15 @@ export interface BackendStatus {
   database: string | null;
   /** Human-readable explanation, surfaced on the status page. */
   detail: string;
+  /**
+   * How many accounts in this store can be signed into.
+   *
+   * Zero is the difference between "that password is wrong" and "this database
+   * has no accounts in it yet", which are the same answer to a user typing
+   * correct credentials and a very different thing to fix. Null when the store
+   * could not be asked.
+   */
+  signInAccounts: number | null;
 }
 
 export interface CatalogQuery {

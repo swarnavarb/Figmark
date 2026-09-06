@@ -298,4 +298,78 @@ await check('logout revokes the token', async () => {
   assert.equal(await auth.getCurrentUser(bearer), null);
 });
 
+console.log('\nan unserviceable store');
+
+/**
+ * A store that holds no accounts, or cannot be reached, resolves every
+ * identifier to nobody - which reaches the user as "your password is wrong" for
+ * a password that is right. These assert it says what is actually wrong, since
+ * no amount of retyping fixes an empty database.
+ */
+const stubStore = (status) => ({
+  backend: 'cosmos',
+  status: () => status,
+  getUserById: async () => null,
+  getUserByIdentifier: async () => null,
+  isSessionRevoked: async () => false,
+});
+
+await expectAuthError(
+  'an empty database says so rather than blaming the password',
+  'sign_in_unavailable',
+  () =>
+    new MockAuthProvider(
+      stubStore({ connected: true, database: 'figmark', detail: 'connected', signInAccounts: 0 }),
+      'test-secret',
+      3600,
+    ).login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
+);
+
+await expectAuthError(
+  'an unreachable database says so rather than blaming the password',
+  'sign_in_unavailable',
+  () =>
+    new MockAuthProvider(
+      stubStore({ connected: false, database: 'figmark', detail: 'no route to host', signInAccounts: null }),
+      'test-secret',
+      3600,
+    ).login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
+);
+
+await check('the reason names the store, so the fix is visible', async () => {
+  try {
+    await new MockAuthProvider(
+      stubStore({ connected: true, database: 'figmark', detail: 'connected', signInAccounts: 0 }),
+      'test-secret',
+      3600,
+    ).login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
+    assert.fail('expected the sign-in to be refused');
+  } catch (err) {
+    assert.match(err.message, /no accounts/i);
+    assert.match(err.message, /azure:provision/);
+    assert.equal(err.status, 503);
+  }
+});
+
+await expectAuthError(
+  'a populated store still blames the credentials, not the backend',
+  'invalid_credentials',
+  () =>
+    new MockAuthProvider(
+      stubStore({ connected: true, database: 'figmark', detail: 'connected', signInAccounts: 4 }),
+      'test-secret',
+      3600,
+    ).login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
+);
+
+await check('a freshly seeded store reports exactly one sign-in account', async () => {
+  // Counted on a store of its own: the sign-up tests above added accounts to
+  // the shared one. Catalog sellers and forwarders carry no password hash, so
+  // the seed contributes exactly the demo account here.
+  const fresh = new MemoryRepository();
+  await fresh.init();
+  assert.equal(fresh.status().signInAccounts, 1);
+  assert.equal(fresh.status().connected, true);
+});
+
 console.log(`\n${passed} checks passed`);

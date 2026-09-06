@@ -40,6 +40,19 @@ export class AuthError extends Error {
     );
   }
 
+  /**
+   * Sign-in cannot be answered at all, because the store behind it is not
+   * serving accounts.
+   *
+   * A store that is unreachable, unprovisioned or simply empty resolves every
+   * identifier to nobody, which is indistinguishable from a wrong password
+   * unless it is said out loud. It is a property of the deployment rather than
+   * of the identifier typed in, so saying it enumerates nothing.
+   */
+  static signInUnavailable(detail: string): AuthError {
+    return new AuthError(503, 'sign_in_unavailable', detail);
+  }
+
   static suspended(): AuthError {
     return new AuthError(403, 'account_suspended', 'This account is suspended.');
   }
