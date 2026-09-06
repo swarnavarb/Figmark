@@ -19,7 +19,6 @@ const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
 const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
-const { listLotsRoute, lotManifestRoute } = await import(new URL('lot-routes.js', apiRoot));
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, forwardersRoute,
@@ -56,8 +55,6 @@ const routes = [
   ['POST', '/api/lots/:id/stage', advanceStageRoute],
   ['POST', '/api/lots/:id/tracking', setTrackingRoute],
   ['GET', '/api/orders/:id', orderTrackingRoute],
-  ['GET', '/api/lots', listLotsRoute],
-  ['GET', '/api/lots/:sellerId/:lotId/manifest', lotManifestRoute],
 ];
 
 const MIME = {

@@ -31,11 +31,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void api
-      .me()
-      .then((result) => !cancelled && setUser(result.user))
-      .catch(() => !cancelled && setUser(null))
-      .finally(() => !cancelled && setLoading(false));
+    // Only a clean answer of "nobody" means signed out. A network blip or a 500
+    // is the server failing to tell us, not the session ending - retry once,
+    // and never turn an error into a logout.
+    const resolveSession = async (): Promise<void> => {
+      try {
+        const result = await api.me();
+        if (!cancelled) setUser(result.user);
+      } catch {
+        try {
+          const retry = await api.me();
+          if (!cancelled) setUser(retry.user);
+        } catch {
+          if (!cancelled) setUser(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void resolveSession();
 
     void api
       .health()
