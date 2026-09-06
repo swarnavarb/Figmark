@@ -52,6 +52,17 @@ export class MockAuthProvider implements AuthService {
     private readonly sessionTtlSeconds: number,
   ) {}
 
+  /**
+   * True when the store cannot be trusted to hold an account.
+   *
+   * The in-memory store is per-worker, so an account created on one worker is
+   * invisible to the rest. Tokens issued while that is the case carry their own
+   * copy of the principal.
+   */
+  private get storeIsEphemeral(): boolean {
+    return this.repository.backend === 'memory';
+  }
+
   async getCurrentUser(request: HttpRequest): Promise<AuthUser | null> {
     const token = readToken(request);
     if (!token) return null;
@@ -61,10 +72,16 @@ export class MockAuthProvider implements AuthService {
 
     if (await this.repository.isSessionRevoked(token)) return null;
 
+    // The store is authoritative whenever it can be.
     const user = await this.repository.getUserById(payload.sub);
-    if (!user || user.suspended) return null;
+    if (user) return user.suspended ? null : toAuthUser(user);
 
-    return toAuthUser(user);
+    // It found nobody. With a real database that means the account is gone and
+    // the session is over. With the per-worker store it far more likely means
+    // this worker simply never saw the sign-up, so fall back to the snapshot
+    // the token carries rather than throwing the user out.
+    if (this.storeIsEphemeral && payload.usr) return payload.usr as AuthUser;
+    return null;
   }
 
   async requireAuth(request: HttpRequest): Promise<AuthUser> {
@@ -123,12 +140,14 @@ export class MockAuthProvider implements AuthService {
     // twice is not held back by it.
     this.attempts.delete(key);
 
+    const principal = toAuthUser(user);
     const { token, expiresAt } = createSessionToken(
       user.id,
       this.sessionSecret,
       this.sessionTtlSeconds,
+      this.storeIsEphemeral ? principal : undefined,
     );
-    return { user: toAuthUser(user), token, expiresAt: expiresAt.toISOString() };
+    return { user: principal, token, expiresAt: expiresAt.toISOString() };
   }
 
   async logout(request: HttpRequest): Promise<void> {
@@ -205,14 +224,20 @@ export class MockAuthProvider implements AuthService {
       throw new AuthError(409, 'identifier_taken', error instanceof Error ? error.message : 'That account already exists.');
     }
 
-    const { token, expiresAt } = createSessionToken(created.id, this.sessionSecret, this.sessionTtlSeconds);
+    const principal = toAuthUser(created);
+    const { token, expiresAt } = createSessionToken(
+      created.id,
+      this.sessionSecret,
+      this.sessionTtlSeconds,
+      this.storeIsEphemeral ? principal : undefined,
+    );
     return {
-      user: toAuthUser(created),
+      user: principal,
       token,
       expiresAt: expiresAt.toISOString(),
       // Told at the moment it matters, rather than discovered later when the
       // account has silently gone.
-      ...(this.repository.backend === 'memory'
+      ...(this.storeIsEphemeral
         ? {
             warning:
               'This server keeps accounts in memory, so this one will be lost when it restarts. The demo account is re-created each time.',

@@ -16,6 +16,21 @@ export interface SessionPayload {
   iat: number;
   /** Expiry, epoch seconds. */
   exp: number;
+  /**
+   * A snapshot of the principal, carried in the token itself.
+   *
+   * Only populated when the store behind the API is not durable. The host runs
+   * several workers, each with its own in-memory store, so an account created
+   * on one worker does not exist on the others: the token verifies, the lookup
+   * finds nobody, and the user is thrown out mid-session. The snapshot lets any
+   * worker answer from the signed token when its own store has never heard of
+   * the account.
+   *
+   * Safe because the whole payload is HMAC-signed - a client cannot edit it -
+   * but it is a snapshot, so it is only ever a fallback. A real store is always
+   * consulted first, and stays authoritative.
+   */
+  usr?: unknown;
 }
 
 function base64url(input: Buffer | string): string {
@@ -30,10 +45,13 @@ export function createSessionToken(
   userId: string,
   secret: string,
   ttlSeconds: number,
+  /** Snapshot to embed; pass only when the store cannot be relied on. */
+  snapshot?: unknown,
 ): { token: string; expiresAt: Date } {
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiry = issuedAt + ttlSeconds;
   const payload: SessionPayload = { sub: userId, iat: issuedAt, exp: expiry };
+  if (snapshot !== undefined) payload.usr = snapshot;
   const encoded = base64url(JSON.stringify(payload));
   return {
     token: `${encoded}.${sign(encoded, secret)}`,

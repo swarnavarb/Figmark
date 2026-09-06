@@ -55,7 +55,7 @@ export function BatchesPage() {
       {creating && <NewBatchForm onDone={() => { setCreating(false); void load(); }} onCancel={() => setCreating(false)} />}
 
       {!data ? (
-        <p className="muted">Loading…</p>
+        error ? null : <p className="muted">Loading…</p>
       ) : (
         <>
           {data.unassigned.length > 0 && (

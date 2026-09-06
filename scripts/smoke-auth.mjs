@@ -161,17 +161,21 @@ await expectAuthError('refuses a short password', 'invalid_signup', () =>
 
 console.log('\nsecurity');
 
-await check('a valid session for a vanished account says so, not "wrong password"', async () => {
-  // What a restart looks like: the token still verifies, the account is gone.
+await check('with a durable store, a deleted account ends the session honestly', async () => {
+  // Only meaningful once the store is authoritative: there, a missing account
+  // really is deleted, and the token must not resurrect it. (On the per-worker
+  // memory store the opposite is required - see the cross-worker check above.)
   const created = await auth.signup({
     displayName: 'Ghost', email: 'ghost@figmark.example', phone: '+919777000444', password: 'longenough1',
   });
-  const fresh = new MemoryRepository();
-  await fresh.init();
-  const other = new MockAuthProvider(fresh, 'test-secret', 3600);
+
+  const durable = new MemoryRepository();
+  await durable.init();
+  Object.defineProperty(durable, 'backend', { value: 'cosmos' });
+  const other = new MockAuthProvider(durable, 'test-secret', 3600);
   const carried = requestWith({ authorization: `Bearer ${created.token}` });
 
-  assert.equal(await other.getCurrentUser(carried), null);
+  assert.equal(await other.getCurrentUser(carried), null, 'no snapshot fallback with a real store');
   try {
     await other.requireAuth(carried);
     assert.fail('expected requireAuth to throw');
@@ -185,6 +189,53 @@ await check('a token signed by another instance is rejected, not silently truste
   const other = new MockAuthProvider(repository, 'a-different-instance-key', 3600);
   const carried = requestWith({ authorization: `Bearer ${session.token}` });
   assert.equal(await other.getCurrentUser(carried), null);
+});
+
+await check('a signed-up account still works on a worker that never saw it', async () => {
+  // The reported bug exactly: sign up lands on one worker, the next click is
+  // served by another whose in-memory store has never heard of the account.
+  const created = await auth.signup({
+    displayName: 'Cross Worker', email: 'cross@figmark.example', phone: '+919777000888', password: 'longenough1',
+  });
+
+  const otherWorker = new MemoryRepository();
+  await otherWorker.init();
+  const workerB = new MockAuthProvider(otherWorker, 'test-secret', 3600);
+  const carried = requestWith({ authorization: `Bearer ${created.token}` });
+
+  assert.equal(await otherWorker.getUserById(created.user.id), null, 'worker B has no such account');
+
+  const resolved = await workerB.getCurrentUser(carried);
+  assert.ok(resolved, 'the session must survive the worker that never saw the sign-up');
+  assert.equal(resolved.displayName, 'Cross Worker');
+  assert.equal(resolved.capabilities.canSell, true);
+
+  // And the capability-gated routes that were logging the user out now pass.
+  const permitted = await workerB.requireCapability(carried, ['sell']);
+  assert.equal(permitted.id, created.user.id);
+});
+
+await check('the snapshot is a fallback, never an override', async () => {
+  // A real store stays authoritative: it is consulted first, and a suspended
+  // account is refused even though the token still carries a valid snapshot.
+  const seeded = await repository.getUserById('usr_demo');
+  const session2 = await auth.login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
+  seeded.suspended = true;
+  const blocked = await auth.getCurrentUser(requestWith({ authorization: `Bearer ${session2.token}` }));
+  assert.equal(blocked, null, 'a suspended account must not be revived by its token');
+  seeded.suspended = false;
+});
+
+await check('a tampered snapshot is rejected with the signature', async () => {
+  const created = await auth.signup({
+    displayName: 'Honest', email: 'honest@figmark.example', phone: '+919777000999', password: 'longenough1',
+  });
+  // Forge an admin snapshot into the payload and re-encode without resigning.
+  const [payload, signature] = created.token.split('.');
+  const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  decoded.usr.capabilities.isAdmin = true;
+  const forged = `${Buffer.from(JSON.stringify(decoded)).toString('base64url')}.${signature}`;
+  assert.equal(await auth.getCurrentUser(requestWith({ authorization: `Bearer ${forged}` })), null);
 });
 
 await check('sign-up warns when the store will not keep the account', async () => {
