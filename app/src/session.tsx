@@ -13,6 +13,8 @@ interface SessionValue {
   loading: boolean;
   /** Non-null when the signed-in account is not durably stored. */
   warning: string | null;
+  /** True when sessions are signed with the key published in this repository. */
+  sessionsInsecure: boolean;
   signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (body: { displayName: string; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -25,6 +27,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   /** Set when sign-up succeeded on a store that will not keep the account. */
   const [warning, setWarning] = useState<string | null>(null);
+  const [sessionsInsecure, setSessionsInsecure] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,17 +36,41 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .then((result) => !cancelled && setUser(result.user))
       .catch(() => !cancelled && setUser(null))
       .finally(() => !cancelled && setLoading(false));
+
+    void api
+      .health()
+      .then((h) => !cancelled && setSessionsInsecure(h.auth.sessionSecretSource === 'development'))
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Any authenticated call the server rejects drops us back to sign-in, rather
-  // than leaving a stale user object and an unusable page behind it.
+  /**
+   * A single 401 is not proof the session is gone.
+   *
+   * Requests are spread across workers, and one of them answering 401 while the
+   * rest are fine must not destroy a working session - that turns a transient
+   * error into "clicking this link logs me out". So confirm with the server
+   * before clearing anything: only when /api/auth/me also reports nobody is
+   * the session actually over.
+   */
   useEffect(() => {
+    let checking = false;
     setSessionRejectedHandler(() => {
-      setUser(null);
-      setWarning(null);
+      if (checking) return;
+      checking = true;
+      void api
+        .me()
+        .then((result) => {
+          if (result.user) return; // Still signed in; the 401 was not ours to act on.
+          setUser(null);
+          setWarning(null);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          checking = false;
+        });
     });
     return () => setSessionRejectedHandler(null);
   }, []);
@@ -68,8 +95,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, warning, signIn, signUp, signOut }),
-    [user, loading, warning, signIn, signUp, signOut],
+    () => ({ user, loading, warning, sessionsInsecure, signIn, signUp, signOut }),
+    [user, loading, warning, sessionsInsecure, signIn, signUp, signOut],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import type { AuthMode } from '../../shared/contracts.js';
 import { DATABASE_NAME } from '../../shared/containers.js';
 
@@ -114,7 +114,14 @@ function resolveSessionSecret(hasRealBackend: boolean): {
     };
   }
 
-  if (hasRealBackend) return { secret: randomBytes(32).toString('hex'), source: 'ephemeral' };
+  // No secret material anywhere. A random key per worker would be safe in
+  // isolation and useless in practice: the workers would reject each other's
+  // tokens and nobody could stay signed in. Between an app that does not work
+  // and one whose sessions are forgeable by anyone reading this repository,
+  // take the second - but make it impossible to miss, via `degraded` on
+  // /api/health and a standing banner in the UI. Setting AUTH_SESSION_SECRET
+  // clears it in one line.
+  void hasRealBackend;
   return { secret: DEV_SESSION_SECRET, source: 'development' };
 }
 

@@ -53,6 +53,10 @@ await check('health reports the session-key source and account durability', asyn
   // 'ephemeral' would differ per worker and break sessions across instances,
   // so only 'configured' and 'derived' may ever count as healthy.
   assert.ok(!['configured', 'derived'].includes(body.auth.sessionSecretSource));
+  // The key must never differ per worker: 'ephemeral' would mean one worker
+  // rejecting another's tokens, which reads to a user as being logged out at
+  // random. No configuration may produce it.
+  assert.notEqual(body.auth.sessionSecretSource, 'ephemeral');
   assert.equal(body.auth.accountsDurable, false);
   // ...and that alone is enough to keep the deployment out of "ok".
   assert.equal(body.status, 'degraded');

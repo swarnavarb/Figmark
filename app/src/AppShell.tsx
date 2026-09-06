@@ -10,7 +10,7 @@ import { useSession } from './session';
  * where listing something is never more than one tap away.
  */
 export function AppShell() {
-  const { user, warning, signOut } = useSession();
+  const { user, warning, sessionsInsecure, signOut } = useSession();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [term, setTerm] = useState(params.get('q') ?? '');
@@ -60,6 +60,15 @@ export function AppShell() {
           </button>
         </nav>
       </header>
+
+      {sessionsInsecure && (
+        <div className="page" style={{ paddingBottom: 0 }}>
+          <p className="notice notice--error">
+            Sessions are signed with the development key published in this repository, so they can be
+            forged. Set <code>AUTH_SESSION_SECRET</code> in the app settings before any real user data.
+          </p>
+        </div>
+      )}
 
       {warning && (
         <div className="page" style={{ paddingBottom: 0 }}>
