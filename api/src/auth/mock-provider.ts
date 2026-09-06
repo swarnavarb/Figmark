@@ -16,9 +16,11 @@ import { AuthError } from './errors.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import {
   SESSION_COOKIE_NAME,
+  type TokenFailure,
   buildClearedSessionCookie,
   buildSessionCookie,
   createSessionToken,
+  inspectSessionToken,
   verifySessionToken,
 } from './tokens.js';
 import type { AuthService } from './types.js';
@@ -64,23 +66,24 @@ export class MockAuthProvider implements AuthService {
   }
 
   async getCurrentUser(request: HttpRequest): Promise<AuthUser | null> {
-    const token = readToken(request);
-    if (!token) return null;
+    // Any one of the tokens presented may be the live one, so a dead cookie
+    // sitting alongside a good one must not decide the answer.
+    for (const token of readTokens(request)) {
+      const payload = verifySessionToken(token, this.sessionSecret);
+      if (!payload) continue;
 
-    const payload = verifySessionToken(token, this.sessionSecret);
-    if (!payload) return null;
+      if (await this.repository.isSessionRevoked(token)) continue;
 
-    if (await this.repository.isSessionRevoked(token)) return null;
+      // The store is authoritative whenever it can be.
+      const user = await this.repository.getUserById(payload.sub);
+      if (user) return user.suspended ? null : toAuthUser(user);
 
-    // The store is authoritative whenever it can be.
-    const user = await this.repository.getUserById(payload.sub);
-    if (user) return user.suspended ? null : toAuthUser(user);
-
-    // It found nobody. With a real database that means the account is gone and
-    // the session is over. With the per-worker store it far more likely means
-    // this worker simply never saw the sign-up, so fall back to the snapshot
-    // the token carries rather than throwing the user out.
-    if (this.storeIsEphemeral && payload.usr) return payload.usr as AuthUser;
+      // It found nobody. With a real database that means the account is gone
+      // and the session is over. With the per-worker store it far more likely
+      // means this worker simply never saw the sign-up, so fall back to the
+      // snapshot the token carries rather than throwing the user out.
+      if (this.storeIsEphemeral && payload.usr) return payload.usr as AuthUser;
+    }
     return null;
   }
 
@@ -91,21 +94,53 @@ export class MockAuthProvider implements AuthService {
     // Every one of these reaches the user as "logged out", and they need
     // completely different fixes - so say which it was. Three rounds of this bug
     // were spent guessing between them from the outside.
-    const token = readToken(request);
-    if (!token) throw AuthError.noSession();
+    const tokens = readTokens(request);
+    if (tokens.length === 0) throw AuthError.noSession();
 
-    const payload = verifySessionToken(token, this.sessionSecret);
-    if (!payload) throw AuthError.sessionUnverified();
+    // A cookie this server cannot verify or that has expired is dead weight:
+    // the browser will keep sending it on every request forever, and while it
+    // does, signing in again cannot help. Clear it along with the refusal so
+    // the next sign-in is the one that counts.
+    const clearing = hasSessionCookie(request) ? [buildClearedSessionCookie()] : [];
 
-    if (await this.repository.isSessionRevoked(token)) throw AuthError.sessionEnded();
+    let best: TokenFailure = 'malformed';
+    for (const token of tokens) {
+      const result = inspectSessionToken(token, this.sessionSecret);
+      if (!result.ok) {
+        // Expiry is the most informative failure, so let it win the report.
+        if (result.failure === 'expired') best = 'expired';
+        else if (best !== 'expired') best = result.failure;
+        continue;
+      }
 
-    // The account behind a valid session is gone - what an ephemeral store
-    // produces after a restart, and worth saying rather than looking like a
-    // logout.
-    if (!(await this.repository.getUserById(payload.sub))) throw AuthError.accountMissing();
+      if (await this.repository.isSessionRevoked(token)) throw AuthError.sessionEnded(clearing);
 
-    // A valid session for an account that exists, refused anyway: suspended.
-    throw AuthError.suspended();
+      // The account behind a valid session is gone - what an ephemeral store
+      // produces after a restart, and worth saying rather than looking like a
+      // logout.
+      if (!(await this.repository.getUserById(result.payload.sub))) {
+        throw AuthError.accountMissing(clearing);
+      }
+
+      // A valid session for an account that exists, refused anyway: suspended.
+      throw AuthError.suspended();
+    }
+
+    if (best === 'expired') throw AuthError.sessionExpired(clearing);
+    throw AuthError.sessionUnverified(clearing);
+  }
+
+  /**
+   * Cookies to clear because the request carried a session nothing could use.
+   *
+   * Lets an endpoint that answers "nobody" rather than refusing - /api/auth/me -
+   * still get rid of a dead cookie, so simply loading the page recovers instead
+   * of waiting for the first authenticated call to fail.
+   */
+  async staleCookies(request: HttpRequest): Promise<string[]> {
+    if (!hasSessionCookie(request)) return [];
+    if (await this.getCurrentUser(request)) return [];
+    return [buildClearedSessionCookie()];
   }
 
   async requireCapability(
@@ -289,24 +324,48 @@ export class MockAuthProvider implements AuthService {
   }
 }
 
-/** Bearer header wins over the cookie, so API clients can override a stale cookie. */
-function readToken(request: HttpRequest): string | null {
+/**
+ * Every session token the request carries, best first.
+ *
+ * Plural, deliberately. A browser can hold more than one cookie of the same
+ * name - they are keyed by name *and* domain and path, so a cookie written
+ * under one scope sits alongside one written under another and both are sent.
+ * Taking the first meant a stale cookie could shadow a good one permanently:
+ * signing in again wrote a fresh cookie that was never the one read, so the
+ * session appeared broken in a way no amount of signing in could fix.
+ *
+ * The bearer header still wins, so an API client can override a cookie outright.
+ */
+function readTokens(request: HttpRequest): string[] {
+  const tokens: string[] = [];
+
   const header = request.headers.get('authorization');
   if (header?.toLowerCase().startsWith('bearer ')) {
     const value = header.slice(7).trim();
-    if (value) return value;
+    if (value) tokens.push(value);
   }
 
   const cookie = request.headers.get('cookie');
-  if (!cookie) return null;
-  for (const part of cookie.split(';')) {
-    const [name, ...rest] = part.trim().split('=');
-    if (name === SESSION_COOKIE_NAME) {
+  if (cookie) {
+    for (const part of cookie.split(';')) {
+      const [name, ...rest] = part.trim().split('=');
+      if (name !== SESSION_COOKIE_NAME) continue;
       const value = rest.join('=').trim();
-      if (value) return value;
+      if (value) tokens.push(value);
     }
   }
-  return null;
+  return tokens;
+}
+
+/** True when the request presented a session cookie, whatever its state. */
+function hasSessionCookie(request: HttpRequest): boolean {
+  const cookie = request.headers.get('cookie');
+  if (!cookie) return false;
+  return cookie.split(';').some((part) => part.trim().startsWith(`${SESSION_COOKIE_NAME}=`));
+}
+
+function readToken(request: HttpRequest): string | null {
+  return readTokens(request)[0] ?? null;
 }
 
 /** Strip credentials and internal bookkeeping before a user crosses the wire. */

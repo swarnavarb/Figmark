@@ -32,7 +32,11 @@ export function error(status: number, code: string, message: string): HttpRespon
  * with detail and returned to the caller without it.
  */
 export function toErrorResponse(err: unknown, context: InvocationContext): HttpResponseInit {
-  if (err instanceof AuthError) return error(err.status, err.code, err.message);
+  if (err instanceof AuthError) {
+    // Cookies on a refusal exist to clear a session the server just rejected,
+    // so they have to reach the browser with it.
+    return json(err.status, { error: err.code, message: err.message } satisfies ApiError, err.cookies);
+  }
   context.error('Unhandled error in request handler', err);
   return error(500, 'internal_error', 'Something went wrong handling this request.');
 }

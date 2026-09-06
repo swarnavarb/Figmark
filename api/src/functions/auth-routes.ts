@@ -55,7 +55,10 @@ async function me(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.getCurrentUser(request);
   const body: MeResponse = { user, authMode: auth.mode };
-  return json(200, body);
+  // A cookie that resolves to nobody is dead weight the browser would otherwise
+  // resend forever, so shed it here rather than only on a failing call.
+  const stale = auth instanceof MockAuthProvider ? await auth.staleCookies(request) : [];
+  return json(200, body, stale);
 }
 
 export const loginRoute = handler(login);

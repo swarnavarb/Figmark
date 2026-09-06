@@ -144,6 +144,47 @@ await expectAuthError('a token it cannot verify says so', 'session_unverified', 
   auth.requireAuth(requestWith({ authorization: 'Bearer bm90LWEtdG9rZW4.bm90LWEtc2ln' })),
 );
 
+/**
+ * Cookies are keyed by name, domain and path, so a browser can hold two of the
+ * same name and send both. Reading only the first let a dead cookie shadow a
+ * live one for good: signing in wrote a fresh cookie that was never the one
+ * read, so no amount of signing in fixed it.
+ */
+await check('a live cookie is found behind a dead one', async () => {
+  const stale = 'bm90LWEtdG9rZW4.bm90LWEtc2ln';
+  const both = requestWith({
+    cookie: `figmark_session=${stale}; figmark_session=${session.token}`,
+  });
+  const who = await auth.getCurrentUser(both);
+  assert.equal(who?.id, 'usr_demo');
+  assert.equal((await auth.requireAuth(both)).id, 'usr_demo');
+});
+
+await check('a refusal clears the cookie it just rejected', async () => {
+  try {
+    await auth.requireAuth(requestWith({ cookie: 'figmark_session=bm90LWEtdG9rZW4.bm90LWEtc2ln' }));
+    assert.fail('expected the request to be refused');
+  } catch (err) {
+    assert.equal(err.code, 'session_unverified');
+    // Without this the browser resends the dead cookie forever and signing in
+    // again changes nothing.
+    assert.equal(err.cookies.length, 1);
+    assert.match(err.cookies[0], /^figmark_session=;/);
+    assert.match(err.cookies[0], /Max-Age=0/);
+  }
+});
+
+await check('an expired session is named as expired, not as unverifiable', async () => {
+  const brief = new MockAuthProvider(repository, 'test-secret', -1);
+  const dead = await brief.login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
+  try {
+    await auth.requireAuth(requestWith({ cookie: `figmark_session=${dead.token}` }));
+    assert.fail('expected the request to be refused');
+  } catch (err) {
+    assert.equal(err.code, 'session_expired');
+  }
+});
+
 console.log('\nsign-up');
 
 await check('creates an account and reserves both identifiers', async () => {

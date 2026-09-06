@@ -5,12 +5,21 @@
 export class AuthError extends Error {
   readonly status: number;
   readonly code: string;
+  /**
+   * Set-Cookie values to send with the refusal.
+   *
+   * A refusal is the right moment to clear a cookie the server has just proved
+   * it cannot use: left in place, the browser resends it on every request and
+   * signing in again does not help.
+   */
+  readonly cookies: string[];
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, cookies: string[] = []) {
     super(message);
     this.name = 'AuthError';
     this.status = status;
     this.code = code;
+    this.cookies = cookies;
   }
 
   static unauthenticated(message = 'Authentication required.'): AuthError {
@@ -33,18 +42,35 @@ export class AuthError extends Error {
     );
   }
 
-  /** A token arrived, but this server could not verify its signature. */
-  static sessionUnverified(): AuthError {
+  /**
+   * A token arrived that this server did not issue.
+   *
+   * Almost always means the signing key changed under it - configuring a
+   * database rotates the derived key - so the cookie in the browser was signed
+   * by a key that no longer exists. Clearing it is the whole fix.
+   */
+  static sessionUnverified(cookies: string[] = []): AuthError {
     return new AuthError(
       401,
       'session_unverified',
-      'This session could not be verified by the server. Sign in again.',
+      'This session was not issued by this server, so it has been cleared. Sign in again.',
+      cookies,
     );
   }
 
+  /** An ordinary end of session: the token was ours, and its time ran out. */
+  static sessionExpired(cookies: string[] = []): AuthError {
+    return new AuthError(401, 'session_expired', 'This session has expired. Sign in again.', cookies);
+  }
+
   /** A valid token whose session was explicitly ended. */
-  static sessionEnded(): AuthError {
-    return new AuthError(401, 'session_ended', 'This session was signed out. Sign in again.');
+  static sessionEnded(cookies: string[] = []): AuthError {
+    return new AuthError(
+      401,
+      'session_ended',
+      'This session was signed out. Sign in again.',
+      cookies,
+    );
   }
 
   static forbidden(message = 'You do not have access to this resource.'): AuthError {
@@ -62,11 +88,12 @@ export class AuthError extends Error {
    * "you typed the wrong password" - which sends people round in circles
    * retyping a correct one - and "this server no longer has your account".
    */
-  static accountMissing(): AuthError {
+  static accountMissing(cookies: string[] = []): AuthError {
     return new AuthError(
       401,
       'account_unavailable',
       'Your account is no longer available on this server. Accounts are not durable until a database is configured.',
+      cookies,
     );
   }
 

@@ -59,26 +59,51 @@ export function createSessionToken(
   };
 }
 
-/** Returns the payload when the signature is valid and unexpired, else null. */
-export function verifySessionToken(token: string, secret: string): SessionPayload | null {
+/** Why a token was not accepted. Expiry is ordinary; the rest are not. */
+export type TokenFailure = 'malformed' | 'bad_signature' | 'expired';
+
+export type TokenInspection =
+  | { ok: true; payload: SessionPayload }
+  | { ok: false; failure: TokenFailure };
+
+/**
+ * Check a token and say what was wrong with it.
+ *
+ * Expiry and a bad signature both mean "not signed in", and they are wildly
+ * different problems: one is a session that ran its course, the other a token
+ * this server did not issue - which in practice means the signing key changed
+ * under it. Collapsing them into null hid that distinction exactly when it
+ * mattered.
+ */
+export function inspectSessionToken(token: string, secret: string): TokenInspection {
   const parts = token.split('.');
-  if (parts.length !== 2) return null;
+  if (parts.length !== 2) return { ok: false, failure: 'malformed' };
   const [encoded, signature] = parts as [string, string];
 
   const expected = Buffer.from(sign(encoded, secret));
   const provided = Buffer.from(signature);
-  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) return null;
+  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+    return { ok: false, failure: 'bad_signature' };
+  }
 
   let payload: SessionPayload;
   try {
     payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as SessionPayload;
   } catch {
-    return null;
+    return { ok: false, failure: 'malformed' };
   }
 
-  if (typeof payload.sub !== 'string' || typeof payload.exp !== 'number') return null;
-  if (payload.exp <= Math.floor(Date.now() / 1000)) return null;
-  return payload;
+  if (typeof payload.sub !== 'string' || typeof payload.exp !== 'number') {
+    return { ok: false, failure: 'malformed' };
+  }
+  if (payload.exp <= Math.floor(Date.now() / 1000)) return { ok: false, failure: 'expired' };
+  return { ok: true, payload };
+}
+
+/** Returns the payload when the signature is valid and unexpired, else null. */
+export function verifySessionToken(token: string, secret: string): SessionPayload | null {
+  const result = inspectSessionToken(token, secret);
+  return result.ok ? result.payload : null;
 }
 
 export const SESSION_COOKIE_NAME = 'figmark_session';
