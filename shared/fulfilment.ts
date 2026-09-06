@@ -78,13 +78,14 @@ export function preOrderOpen(preOrder: { cutoffAt: string } | null): boolean {
 export type { DirectStage, FulfilmentStage, LotStage };
 
 /**
- * How a listing is sourced, resolving listings written before the field existed.
+ * How a listing is sourced.
  *
- * An item in a shipment batch is imported by definition, so the batch answers
- * for itself; anything else without a value predates the field and is treated
- * as in hand, which is the safer default - it promises the buyer less, not more.
+ * The batch is the answer: an import travels in a consignment, so an item in a
+ * batch is imported and one without a batch ships from the seller's shelf. A
+ * stored value is honoured only where it agrees - a listing written before the
+ * rule that claims an import with no batch behind it is treated as in hand,
+ * which promises the buyer less rather than more.
  */
 export function sourcingOf(listing: { sourcing?: Sourcing; lotId: string | null }): Sourcing {
-  if (listing.sourcing) return listing.sourcing;
   return listing.lotId ? 'import' : 'in_hand';
 }

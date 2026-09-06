@@ -211,8 +211,6 @@ interface ListingSeed {
   priceMinor: number;
   quantity: number;
   lotId?: string;
-  /** Only for an item imported without a batch behind it; a batch implies it. */
-  sourcing?: Listing['sourcing'];
   tags: string[];
   likeCount: number;
   viewCount: number;
@@ -253,7 +251,7 @@ const LISTINGS: ListingSeed[] = [
     id: 'lst_sneaker_retro', sellerId: 'usr_sneakervault', title: 'Retro high-top — UK 9, deadstock',
     description: 'Deadstock pair, authenticated in-house before dispatch. Original box included.',
     category: 'Sneakers', condition: 'MIB', priceMinor: 2_15_000,
-    quantity: 1, sourcing: 'import', tags: ['sneakers', 'deadstock', 'uk9'],
+    quantity: 1, tags: ['sneakers', 'deadstock', 'uk9'],
     likeCount: 73, viewCount: 1_204, ageDays: -1,
   },
   {
@@ -315,9 +313,10 @@ export function seedListings(): Listing[] {
         }
       : null,
     lotId: entry.lotId ?? null,
-    // A batch means imported; otherwise the entry says so, defaulting to stock
-    // already on the shelf.
-    sourcing: entry.lotId ? 'import' : (entry.sourcing ?? 'in_hand'),
+    // The batch decides it: an import travels in a consignment, so an item with
+    // no batch behind it is stock already on the shelf. Derived rather than
+    // stated, so a fixture cannot claim an import it has no batch for.
+    sourcing: entry.lotId ? 'import' : 'in_hand',
     photos: [],
     tags: entry.tags,
     likeCount: entry.likeCount,

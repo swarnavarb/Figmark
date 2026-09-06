@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { SOURCING, type Sourcing } from '../../../shared/enums.js';
+import type { Sourcing } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
@@ -130,13 +130,20 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     lotId = lot.id;
   }
 
-  // Anything travelling in an import batch is imported by definition; only a
-  // single item is free to say which it is.
-  const sourcing: Sourcing = lotId
-    ? 'import'
-    : SOURCING.includes(body.sourcing as Sourcing)
-      ? (body.sourcing as Sourcing)
-      : 'in_hand';
+  // An import is a consignment, so it travels in one: a batch is what carries
+  // the stages a buyer waits on, and an imported item outside one has nowhere
+  // for its tracking to come from. So the batch decides the sourcing, and
+  // claiming an import without one is refused rather than quietly downgraded -
+  // a listing that says "import" and can never move is worse than being told to
+  // open a batch first.
+  if (!lotId && body.sourcing === 'import') {
+    return error(
+      400,
+      'invalid_listing',
+      'An imported item has to go in a lot. Create one, or list this as in hand.',
+    );
+  }
+  const sourcing: Sourcing = lotId ? 'import' : 'in_hand';
 
   const now = new Date().toISOString();
   const listing: Listing = {

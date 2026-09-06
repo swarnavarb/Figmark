@@ -230,9 +230,10 @@ export interface Listing extends BaseDocument {
   /**
    * In hand or imported.
    *
-   * Independent of `lotId` in one direction only: anything in an import lot is
-   * imported, but a single item can be imported without a batch behind it -
-   * which is exactly how a seller lists one-off pieces from a trip.
+   * Determined by `lotId` rather than chosen alongside it: an import is a
+   * consignment, and the batch is what carries the stages a buyer waits on, so
+   * an imported item outside a batch has nowhere for its tracking to come from.
+   * A batch means import; no batch means it ships from the seller's shelf.
    *
    * Optional on the type because listings written before this field existed do
    * not carry it; `sourcingOf` resolves those rather than showing a blank.

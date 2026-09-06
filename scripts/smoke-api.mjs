@@ -444,18 +444,37 @@ await check('someone else\'s batch is not a place to file things', async () => {
   assert.equal(refused.status, 404);
 });
 
-await check('a single item says whether it is in hand or imported', async () => {
-  for (const sourcing of ['in_hand', 'import']) {
-    const single = await createListing(req({
-      headers: auth, body: { title: `Single ${sourcing}`, priceMinor: 5000, sourcing },
-    }), ctx);
-    assert.equal(single.jsonBody.listing.sourcing, sourcing);
-    assert.equal(single.jsonBody.listing.lotId, null);
-  }
+await check('an item with no batch behind it is in hand', async () => {
+  const single = await createListing(req({
+    headers: auth, body: { title: 'Off my own shelf', priceMinor: 5000, sourcing: 'in_hand' },
+  }), ctx);
+  assert.equal(single.jsonBody.listing.sourcing, 'in_hand');
+  assert.equal(single.jsonBody.listing.lotId, null);
 
   // Nothing claimed, nothing promised: an unstated item ships from the shelf.
   const quiet = await createListing(req({ headers: auth, body: { title: 'Unstated', priceMinor: 5000 } }), ctx);
   assert.equal(quiet.jsonBody.listing.sourcing, 'in_hand');
+});
+
+await check('an import with no lot is refused, not quietly downgraded', async () => {
+  // The lot carries the stages a buyer waits on, so an imported item outside
+  // one has no tracking to give them. Saying so beats publishing a listing that
+  // claims an import and can never move.
+  const refused = await createListing(req({
+    headers: auth, body: { title: 'Import with nowhere to go', priceMinor: 5000, sourcing: 'import' },
+  }), ctx);
+  assert.equal(refused.status, 400);
+  assert.match(refused.jsonBody.message, /has to go in a lot/);
+});
+
+await check('no listing anywhere claims an import without a batch', async () => {
+  // The invariant, asserted across the whole catalog rather than one listing:
+  // sourcing follows the batch, both ways.
+  const body = (await feed(req({ headers: auth }), ctx)).jsonBody;
+  for (const listing of body.listings) {
+    const expected = listing.lotId ? 'import' : 'in_hand';
+    assert.equal(listing.sourcing, expected, `${listing.title} says ${listing.sourcing}`);
+  }
 });
 
 await check('a seller can open a batch', () => {

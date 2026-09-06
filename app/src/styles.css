@@ -585,7 +585,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
  * continuous; the inward curves either side of it are radial gradients on its
  * own pseudo-elements, so they travel with it and can never fall out of sync.
  */
-.tabs {
+/*
+ * Named `tabbar`, not `tabs`: the profile page already had a `.tabs` strip with
+ * a bottom margin on it, and sharing the name left that margin lifting this bar
+ * 20px off the bottom of the screen - close enough to look deliberate, and
+ * wrong enough that the page showed through underneath it.
+ */
+.tabbar {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 40;
@@ -596,7 +602,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.tabs__indicator {
+.tabbar__indicator {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -608,8 +614,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* The two inward curves that make the raised tab look cut out of the row. */
-.tabs__indicator::before,
-.tabs__indicator::after {
+.tabbar__indicator::before,
+.tabbar__indicator::after {
   content: '';
   position: absolute;
   top: 0;
@@ -617,8 +623,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   height: 18px;
   background: radial-gradient(circle at 0 100%, transparent 0 18px, var(--surface-2) 18px);
 }
-.tabs__indicator::before { left: -18px; transform: scaleX(-1); }
-.tabs__indicator::after { right: -18px; }
+.tabbar__indicator::before { left: -18px; transform: scaleX(-1); }
+.tabbar__indicator::after { right: -18px; }
 
 .tab-item {
   flex: 1;
@@ -646,7 +652,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .shell--tabbed .page { padding-bottom: 96px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .tabs__indicator,
+  .tabbar__indicator,
   .tab-item,
   .tab-item__glyph { transition: none; }
 }

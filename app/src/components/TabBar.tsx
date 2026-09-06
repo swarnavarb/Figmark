@@ -27,11 +27,11 @@ export function TabBar() {
   const activeIndex = Math.max(0, TABS.findIndex((tab) => tab.match(pathname)));
 
   return (
-    <nav className="tabs" aria-label="Sections">
+    <nav className="tabbar" aria-label="Sections">
       {/* Slides between tabs rather than cutting, which is what makes the row
           feel like one surface with a moving notch in it. */}
       <span
-        className="tabs__indicator"
+        className="tabbar__indicator"
         style={{ transform: `translateX(${activeIndex * 100}%)`, width: `${100 / TABS.length}%` }}
         aria-hidden="true"
       />

@@ -9,11 +9,11 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 
 /**
- * How the item is being sold.
+ * How the item is being sold, which is the same question as where it is.
  *
- * A lot is a consignment of imports, so anything in one is imported by
- * definition. A single item is free to be either: stock already on the shelf,
- * or one piece brought in without a consignment behind it.
+ * Every import travels in a lot: the lot is what carries the stages a buyer
+ * waits on, so an imported item outside one has no tracking to give them.
+ * Anything not in a lot is stock already on the shelf.
  */
 type Shape = 'single' | 'lot';
 
@@ -47,7 +47,6 @@ export function SellPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [shape, setShape] = useState<Shape>('single');
-  const [sourcing, setSourcing] = useState<Sourcing>('in_hand');
   const [lots, setLots] = useState<Lot[]>([]);
   const [lotId, setLotId] = useState('');
   const [creatingLot, setCreatingLot] = useState(false);
@@ -80,7 +79,8 @@ export function SellPage() {
   const priceMinor = Math.round(Number(price || 0) * 100);
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   const canPublish = title.trim().length > 2 && priceMinor > 0 && (shape === 'single' || lotId !== '');
-  const effectiveSourcing: Sourcing = shape === 'lot' ? 'import' : sourcing;
+  // The lot is the answer: in one means import, out of one means in hand.
+  const effectiveSourcing: Sourcing = shape === 'lot' ? 'import' : 'in_hand';
 
   async function publish(event: FormEvent) {
     event.preventDefault();
@@ -207,33 +207,27 @@ export function SellPage() {
             <div>
               <div style={{ fontWeight: 600 }}>How are you selling this?</div>
               <span className="field__hint">
-                A lot is one consignment of imports arriving together. Buyers never see the lot — they see
-                the tracking it produces.
+                Every imported item travels in a lot — that is what produces the tracking buyers follow.
+                They never see the lot itself, only the stages it moves through.
               </span>
             </div>
 
             <div className="seg" role="radiogroup" aria-label="How are you selling this?">
               <button type="button" role="radio" aria-checked={shape === 'single'}
                 className={shape === 'single' ? 'is-on' : ''} onClick={() => setShape('single')}>
-                Single item
+                In hand
               </button>
               <button type="button" role="radio" aria-checked={shape === 'lot'}
                 className={shape === 'lot' ? 'is-on' : ''} onClick={() => setShape('lot')}>
-                Part of a lot
+                Import — in a lot
               </button>
             </div>
 
             {shape === 'single' ? (
-              <label className="field">
-                <span>Where is it now?</span>
-                <select value={sourcing} onChange={(e) => setSourcing(e.target.value as Sourcing)}>
-                  <option value="in_hand">{SOURCING_LABELS.in_hand} — ships from my shelf</option>
-                  <option value="import">{SOURCING_LABELS.import} — coming in, no lot behind it</option>
-                </select>
-                <span className="field__hint">
-                  This is what buyers read to know whether they are waiting on a shipment.
-                </span>
-              </label>
+              <p className="field__hint">
+                Ships from your shelf. Buyers see <strong>{SOURCING_LABELS.in_hand}</strong> and expect it to go
+                out straight away.
+              </p>
             ) : (
               <label className="field">
                 <span>Lot</span>
@@ -247,7 +241,8 @@ export function SellPage() {
                   </select>
                 ) : (
                   <span className="field__hint">
-                    You have no open lots yet. Create one and this item goes straight into it.
+                    You have no open lots yet. Every imported item travels in one, so create a lot and this
+                    item goes straight into it.
                   </span>
                 )}
                 <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start', marginTop: 8 }}
