@@ -341,6 +341,13 @@ export class CosmosRepository implements Repository {
     return resource ?? user;
   }
 
+  async listStoreOwners(): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({ query: 'SELECT * FROM c WHERE IS_DEFINED(c.sellerProfile) AND c.sellerProfile != null' })
+      .fetchAll();
+    return resources;
+  }
+
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
     // Orders are partitioned by lot, so a seller's book is cross-partition.
     // Bounded by one seller's order count, which is the right size for the

@@ -1,6 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { LOT_STAGES, LOT_STAGE_LABELS } from '../../../shared/enums.js';
+import { LOT_STAGES, LOT_STAGE_LABELS, STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { SellerProfile } from '../../../shared/models.js';
+import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -223,6 +224,93 @@ async function dashboard(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/**
+ * GET /api/me/stores - every store this account may act in.
+ *
+ * Their own if they have opened one, plus any they have been given rights in.
+ * The sell tab asks this first: with nothing here, the only thing to offer is
+ * opening a store.
+ */
+async function myStores(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const mine = await repository.getUserById(user.id);
+  const stores: StoreAccess[] = [];
+
+  if (mine?.sellerProfile) {
+    const access = accessFor(mine, user.id);
+    if (access) stores.push(access);
+  }
+
+  // Stores that named this account as a manager. A scan of stores rather than
+  // an index: a person manages a handful, and the alternative is a second
+  // container to keep in step with the membership list itself.
+  for (const owner of await repository.listStoreOwners()) {
+    if (owner.id === user.id) continue;
+    const access = accessFor(owner, user.id);
+    if (access) stores.push(access);
+  }
+
+  return json(200, { stores });
+}
+
+/**
+ * POST /api/me/storefront/managers - add, change or remove someone.
+ *
+ * Only an admin may hand out access, and only the owner is beyond removal: a
+ * store that can be left with nobody able to administer it is a store somebody
+ * eventually locks themselves out of.
+ */
+async function updateManagers(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+
+  let body: { storeId?: string; identifier?: string; permissions?: StorePermission[]; remove?: boolean };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const repository = await getRepository();
+  const owner = await repository.getUserById(body.storeId ?? user.id);
+  if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+  if (!can(owner, user.id, 'admin')) {
+    return error(403, 'forbidden', 'Only a store admin can change who manages it.');
+  }
+
+  const identifier = body.identifier?.trim();
+  if (!identifier) return error(400, 'invalid_manager', 'Name the person by email or phone.');
+
+  const member = await repository.getUserByIdentifier(identifier);
+  if (!member) return error(404, 'not_found', 'Nobody here with that email or phone.');
+  if (member.id === owner.id) {
+    return error(400, 'invalid_manager', 'The owner already administers this store.');
+  }
+
+  const existing = owner.sellerProfile.managers ?? [];
+  if (body.remove) {
+    owner.sellerProfile.managers = existing.filter((entry) => entry.userId !== member.id);
+  } else {
+    const permissions = (body.permissions ?? []).filter((value) => STORE_PERMISSIONS.includes(value));
+    if (permissions.length === 0) {
+      return error(400, 'invalid_manager', 'Give them at least one thing they may do.');
+    }
+    owner.sellerProfile.managers = [
+      ...existing.filter((entry) => entry.userId !== member.id),
+      managerEntry(member.id, member.displayName, permissions, user.id),
+    ];
+  }
+
+  owner.updatedAt = new Date().toISOString();
+  const saved = await repository.updateUser(owner);
+  return json(200, { managers: saved.sellerProfile?.managers ?? [] });
+}
+
+export const myStoresRoute = handler(myStores);
+export const updateManagersRoute = handler(updateManagers);
 export const storefrontRoute = handler(getStorefront);
 export const updateStorefrontRoute = handler(updateStorefront);
 export const dashboardRoute = handler(dashboard);
@@ -232,3 +320,5 @@ const anon = { authLevel: 'anonymous' } as const;
 app.http('me-storefront', { ...anon, methods: ['GET'], route: 'me/storefront', handler: storefrontRoute });
 app.http('me-storefront-save', { ...anon, methods: ['POST'], route: 'me/storefront/save', handler: updateStorefrontRoute });
 app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', handler: dashboardRoute });
+app.http('me-stores', { ...anon, methods: ['GET'], route: 'me/stores', handler: myStoresRoute });
+app.http('me-store-managers', { ...anon, methods: ['POST'], route: 'me/storefront/managers', handler: updateManagersRoute });

@@ -292,6 +292,10 @@ export class MemoryRepository implements Repository {
     return user;
   }
 
+  async listStoreOwners(): Promise<User[]> {
+    return [...this.users.values()].filter((user) => user.sellerProfile !== null);
+  }
+
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
     return [...this.orders.values()].filter((order) => order.sellerId === sellerId);
   }

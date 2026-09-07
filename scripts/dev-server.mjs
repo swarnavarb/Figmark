@@ -27,9 +27,8 @@ const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, dashboardRoute } = await import(
-  new URL('seller-routes.js', apiRoot)
-);
+const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute } =
+  await import(new URL('seller-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute,
   listForumsRoute, createForumRoute,
@@ -66,6 +65,8 @@ const routes = [
   ['GET', '/api/me/storefront', storefrontRoute],
   ['POST', '/api/me/storefront/save', updateStorefrontRoute],
   ['GET', '/api/me/dashboard', dashboardRoute],
+  ['GET', '/api/me/stores', myStoresRoute],
+  ['POST', '/api/me/storefront/managers', updateManagersRoute],
   ['GET', '/api/social/feed', socialFeedRoute],
   ['GET', '/api/social/channels', channelsRoute],
   ['GET', '/api/social/channels/:id', channelThreadRoute],

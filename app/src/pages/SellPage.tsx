@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import type { Lot } from '@shared/models';
 import { ApiRequestError, api } from '../api';
@@ -32,6 +32,10 @@ const CATEGORIES = [
 export function SellPage() {
   const { user } = useSession();
   const navigate = useNavigate();
+  // Which shop this goes into. The sell tab passes it when a store is open, so
+  // a manager lists into the shop they were looking at rather than their own.
+  const [params] = useSearchParams();
+  const storeId = params.get('store') ?? undefined;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -102,6 +106,7 @@ export function SellPage() {
           : null,
         sourcing: effectiveSourcing,
         lotId: shape === 'lot' ? lotId : null,
+        ...(storeId ? { storeId } : {}),
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
       });
       navigate(`/listing/${result.listing.id}`);

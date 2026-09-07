@@ -102,6 +102,9 @@ export interface Repository {
   /** Saves an edited account - the storefront editor is the only caller. */
   updateUser(user: User): Promise<User>;
 
+  /** Every account that has opened a store, for resolving who manages what. */
+  listStoreOwners(): Promise<User[]>;
+
   /** Every order a seller has taken, for the tracking and analytics views. */
   listOrdersForSeller(sellerId: string): Promise<Order[]>;
 

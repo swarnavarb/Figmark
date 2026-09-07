@@ -11,6 +11,7 @@ import type {
   ReviewDirection,
   SellerTier,
   Sourcing,
+  StorePermission,
   VerificationStatus,
 } from './enums.js';
 
@@ -146,12 +147,34 @@ export interface SellerProfile {
    */
   photoUrl?: string | null;
   /**
+   * People who may act in this store besides its owner.
+   *
+   * The owner is not in this list: ownership is not a grant that could be
+   * revoked, and leaving them out means the store can never end up with nobody
+   * able to administer it.
+   */
+  managers?: StoreManager[];
+  /**
    * One outbound link - Instagram, a WhatsApp group, a price list.
    *
    * Deliberately one. A row of links is a link farm; a single one is a
    * storefront's front door, and keeps the card honest about what it is.
    */
   link?: string | null;
+}
+
+/**
+ * Someone granted rights in a store they do not own.
+ *
+ * The display name is a snapshot so a member list renders without a lookup per
+ * row; the id is what any permission check actually uses.
+ */
+export interface StoreManager {
+  userId: string;
+  displayName: string;
+  permissions: StorePermission[];
+  addedAt: string;
+  addedBy: string;
 }
 
 /** One China-origin to India-destination lane a forwarder claims to serve. */

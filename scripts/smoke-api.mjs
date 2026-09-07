@@ -20,8 +20,10 @@ const {
   myLotsRoute: myLots, createLotRoute: createLot, lotContentsRoute: lotContents,
   updateLotDetailsRoute: updateLotDetails,
 } = await import(new URL('fulfilment-routes.js', fns));
-const { storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, dashboardRoute: dashboard } =
-  await import(new URL('seller-routes.js', fns));
+const {
+  storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, dashboardRoute: dashboard,
+  myStoresRoute: myStores, updateManagersRoute: updateManagers,
+} = await import(new URL('seller-routes.js', fns));
 const {
   socialFeedRoute: socialFeed, channelsRoute: channels, channelThreadRoute: channelThread,
   createPostRoute: createPost, listForumsRoute: listForums, createForumRoute: createForum,
@@ -745,6 +747,122 @@ await check('a duplicate forum name is refused', async () => {
   const again = await createForum(req({ headers: auth, body: { name: 'Import questions' } }), ctx);
   // Either reason is correct here; both keep the room list clean.
   assert.equal(again.status, 409);
+});
+
+/* ── stores and who runs them ──────────────────────────────────────────── */
+console.log('\nstores and who runs them');
+
+// A second account, to be brought into the demo account's shop.
+const helperSession = await signup(req({
+  body: { displayName: 'Helper Person', email: 'helper@figmark.example', phone: '+919000088888', password: 'longenough1' },
+}), ctx);
+const helper = { authorization: `Bearer ${helperSession.jsonBody.token}` };
+const helperId = helperSession.jsonBody.user.id;
+
+await check('a fresh account runs no stores, which is what the sell tab asks', async () => {
+  const body = (await myStores(req({ headers: helper }), ctx)).jsonBody;
+  assert.deepEqual(body.stores, []);
+});
+
+await check('opening a storefront is what makes a store exist', async () => {
+  const before = (await myStores(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(before.stores.length, 1, 'the demo account already has one');
+  assert.equal(before.stores[0].isOwner, true);
+  // Ownership is total, and expanded once so a check is a plain includes.
+  assert.deepEqual(
+    [...before.stores[0].permissions].sort(),
+    ['admin', 'analytics', 'listings', 'lots', 'posts'],
+  );
+});
+
+await check('an admin can bring someone in with only the rights they chose', async () => {
+  const added = await updateManagers(req({
+    headers: auth,
+    body: { identifier: 'helper@figmark.example', permissions: ['listings', 'posts'] },
+  }), ctx);
+  assert.equal(added.status, 200);
+  assert.equal(added.jsonBody.managers.length, 1);
+  assert.equal(added.jsonBody.managers[0].userId, helperId);
+  assert.deepEqual(added.jsonBody.managers[0].permissions, ['listings', 'posts']);
+
+  const theirs = (await myStores(req({ headers: helper }), ctx)).jsonBody;
+  assert.equal(theirs.stores.length, 1);
+  assert.equal(theirs.stores[0].isOwner, false);
+  assert.deepEqual([...theirs.stores[0].permissions].sort(), ['listings', 'posts']);
+});
+
+await check('a manager lists into the store, not into their own', async () => {
+  const listed = await createListing(req({
+    headers: helper,
+    body: { title: 'Filed on behalf of the shop', priceMinor: 30_000, storeId: 'usr_demo' },
+  }), ctx);
+  assert.equal(listed.status, 201);
+  // The seller is the store, which is also the partition its items live in.
+  assert.equal(listed.jsonBody.listing.sellerId, 'usr_demo');
+});
+
+await check('a manager posts as the store, under the store name', async () => {
+  const posted = await createPost(req({
+    headers: helper, body: { body: 'New arrivals up now.', storeId: 'usr_demo' },
+  }), ctx);
+  assert.equal(posted.status, 201);
+  assert.equal(posted.jsonBody.post.channelId, 'usr_demo');
+  assert.equal(posted.jsonBody.post.authorName, 'Arjun Collects Deluxe');
+  // The author is still the person who typed it, which is what an audit needs.
+  assert.equal(posted.jsonBody.post.authorId, helperId);
+});
+
+await check('rights not granted are refused', async () => {
+  // Granted listings and posts, so lots and analytics are not theirs, and
+  // neither is handing out access.
+  const grabbing = await updateManagers(req({
+    headers: helper,
+    body: { storeId: 'usr_demo', identifier: DEMO_EMAIL, permissions: ['admin'] },
+  }), ctx);
+  assert.equal(grabbing.status, 403);
+});
+
+await check('a store you have no rights in is closed to you', async () => {
+  const listing = await createListing(req({
+    headers: helper, body: { title: 'Not my shop', priceMinor: 1000, storeId: 'usr_kaiju' },
+  }), ctx);
+  assert.equal(listing.status, 403);
+
+  const post = await createPost(req({
+    headers: helper, body: { body: 'Speaking for someone else.', storeId: 'usr_kaiju' },
+  }), ctx);
+  assert.equal(post.status, 403);
+});
+
+await check('a sale post must name an item the store sells, not the poster', async () => {
+  const wrong = await createPost(req({
+    headers: helper,
+    body: { body: 'Look at this.', storeId: 'usr_demo', listingId: 'lst_dragon_knight' },
+  }), ctx);
+  assert.equal(wrong.status, 404);
+});
+
+await check('the owner cannot be demoted into a manager slot', async () => {
+  const self = await updateManagers(req({
+    headers: auth, body: { identifier: DEMO_EMAIL, permissions: ['listings'] },
+  }), ctx);
+  assert.equal(self.status, 400);
+});
+
+await check('removing someone takes the store away with it', async () => {
+  const removed = await updateManagers(req({
+    headers: auth, body: { identifier: 'helper@figmark.example', remove: true },
+  }), ctx);
+  assert.equal(removed.status, 200);
+  assert.deepEqual(removed.jsonBody.managers, []);
+
+  const theirs = (await myStores(req({ headers: helper }), ctx)).jsonBody;
+  assert.deepEqual(theirs.stores, []);
+
+  const refused = await createListing(req({
+    headers: helper, body: { title: 'Still trying', priceMinor: 1000, storeId: 'usr_demo' },
+  }), ctx);
+  assert.equal(refused.status, 403);
 });
 
 console.log(`\n${passed} checks passed`);

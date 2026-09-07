@@ -8,6 +8,7 @@ import {
   type ForumsResponse,
   type PostCard,
 } from '../api';
+import type { StoreAccess } from '@shared/stores';
 import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -310,19 +311,46 @@ function Forums() {
 
 /* ── Shared pieces ──────────────────────────────────────────────────────── */
 
-/** Write an update to your own channel, or a post into a forum. */
+/**
+ * Write an update, or a post into a forum.
+ *
+ * Outside a forum the post goes somewhere: your own profile, or a shop you run.
+ * The choice only appears when there is one to make - one shop and no picker,
+ * no shops and no picker either.
+ */
 function Composer({ forumId, onPosted }: { forumId?: string; onPosted: () => void | Promise<void> }) {
   const { user } = useSession();
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stores, setStores] = useState<StoreAccess[]>([]);
+  const [as, setAs] = useState('');
+
+  useEffect(() => {
+    if (forumId) return;
+    let cancelled = false;
+    void api
+      .stores()
+      .then((result) => {
+        if (cancelled) return;
+        setStores(result.stores.filter((store) => store.permissions.includes('posts')));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [forumId]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.createPost(forumId ? { body: body.trim(), forumId } : { body: body.trim() });
+      await api.createPost(
+        forumId
+          ? { body: body.trim(), forumId }
+          : { body: body.trim(), ...(as ? { storeId: as } : {}) },
+      );
       setBody('');
       await onPosted();
     } catch (err) {
@@ -342,6 +370,18 @@ function Composer({ forumId, onPosted }: { forumId?: string; onPosted: () => voi
           <span className="field__hint">Goes to everyone following you, on their feed and in your channel.</span>
         )}
       </label>
+      {!forumId && stores.length > 0 && (
+        <label className="field">
+          <span>Post as</span>
+          <select value={as} onChange={(e) => setAs(e.target.value)}>
+            <option value="">{user?.displayName ?? 'Me'} — my profile</option>
+            {stores.map((store) => (
+              <option key={store.ownerId} value={store.ownerId}>{store.name}</option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {error && <ErrorNotice message={error} />}
       <button type="submit" className="btn" disabled={busy || body.trim().length < 2}
         style={{ justifySelf: 'start' }}>

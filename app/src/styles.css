@@ -749,3 +749,30 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .spark { display: flex; align-items: flex-end; gap: 2px; height: 54px; }
 .spark__bar { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: 0.85; }
 .spark__bar--empty { background: var(--border); opacity: 1; }
+
+/* ── Doors ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The two choices on an empty sell tab. Large targets with room to explain
+ * themselves, because picking between "sell one thing" and "open a shop" is a
+ * decision, not a menu item.
+ */
+.doors { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.door {
+  display: grid;
+  gap: 6px;
+  padding: 22px 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+.door:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
+.door__glyph { font-size: 30px; line-height: 1; }
+.door__title { font-size: var(--t-md); font-weight: 700; }
+.door__note { font-size: var(--t-sm); color: var(--text-dim); line-height: 1.5; }

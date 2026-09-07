@@ -156,3 +156,22 @@ export type ReviewDirection = (typeof REVIEW_DIRECTIONS)[number];
  * starts scarce and grows once there is traffic to justify it.
  */
 export const FORUM_CAP = 6;
+
+/**
+ * What someone may do in a store they do not own.
+ *
+ * Separate rights rather than one "manager" flag, because the jobs are
+ * genuinely different: the person who lists items is often not the person who
+ * should see the revenue, and neither of them should be able to hand out
+ * access. `admin` implies the rest.
+ */
+export const STORE_PERMISSIONS = ['listings', 'lots', 'posts', 'analytics', 'admin'] as const;
+export type StorePermission = (typeof STORE_PERMISSIONS)[number];
+
+export const STORE_PERMISSION_LABELS: Record<StorePermission, string> = {
+  listings: 'List and edit items',
+  lots: 'Open and move lots',
+  posts: 'Post as the store',
+  analytics: 'See the numbers',
+  admin: 'Manage the store and its people',
+};

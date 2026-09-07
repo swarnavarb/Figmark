@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import type { SellerProfile } from '@shared/models';
+import { STORE_PERMISSIONS, STORE_PERMISSION_LABELS, type StorePermission } from '@shared/enums';
+import type { SellerProfile, StoreManager } from '@shared/models';
+import type { StoreAccess } from '@shared/stores';
 import {
   ApiRequestError,
   api,
@@ -12,44 +14,161 @@ import { Avatar, EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
 
-type Section = 'storefront' | 'items' | 'tracking' | 'analytics';
+type Section = 'items' | 'tracking' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'storefront', label: 'Storefront' },
   { id: 'items', label: 'Items' },
   { id: 'tracking', label: 'Tracking' },
   { id: 'analytics', label: 'Analytics' },
+  { id: 'storefront', label: 'Storefront' },
+  { id: 'people', label: 'People' },
 ];
 
 /**
- * Everything about selling, in one place.
+ * The sell tab, which is two different screens depending on where you are.
  *
- * Listing, batches, the storefront and the numbers were four destinations
- * reached from four different places. They are one job done in one sitting, so
- * they are now one tab with sections rather than four entries competing for
- * space in a navigation bar.
+ * Before a store exists there are exactly two things worth offering: list one
+ * thing, or open a shop. Anything else is a console for a shop that is not
+ * there yet. Once one exists the tab becomes that console, and the two choices
+ * would only be in the way.
  */
 export function ShopPage() {
-  const [section, setSection] = useState<Section>('storefront');
+  const [stores, setStores] = useState<StoreAccess[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setStores((await api.stores()).stores);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your shop.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
+  if (!stores) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
+
+  if (stores.length === 0 && !opening) {
+    return <ShopStart onOpen={() => setOpening(true)} />;
+  }
+  if (stores.length === 0) {
+    return (
+      <main className="page tab-view">
+        <div className="page__head">
+          <div>
+            <h1>Open a storefront</h1>
+            <p className="muted">
+              A name, a picture and a line about what you sell. You can change all of it later.
+            </p>
+          </div>
+        </div>
+        <StorefrontEditor onSaved={() => { setOpening(false); void load(); }} />
+      </main>
+    );
+  }
+
+  return <ShopConsole stores={stores} onChanged={load} />;
+}
+
+/**
+ * The sell tab before there is a shop.
+ *
+ * Two doors, and nothing else on the screen. Listing one thing should not
+ * require opening a shop, and opening a shop should not be buried inside a
+ * console for the shop you have not opened.
+ */
+function ShopStart({ onOpen }: { onOpen: () => void }) {
+  return (
+    <main className="page tab-view">
+      <div className="page__head">
+        <div>
+          <h1>Sell</h1>
+          <p className="muted">Sell one thing, or set up a shop to sell properly.</p>
+        </div>
+      </div>
+
+      <div className="doors">
+        <Link to="/sell" className="door">
+          <span className="door__glyph" aria-hidden="true">🏷️</span>
+          <span className="door__title">List an item</span>
+          <span className="door__note">
+            One thing, from your own profile. Takes about a minute, and you keep everything.
+          </span>
+        </Link>
+
+        <button type="button" className="door" onClick={onOpen}>
+          <span className="door__glyph" aria-hidden="true">🏬</span>
+          <span className="door__title">Open a storefront</span>
+          <span className="door__note">
+            A name buyers follow, lot tracking, analytics, and people you can bring in to help run it.
+          </span>
+        </button>
+      </div>
+    </main>
+  );
+}
+
+/**
+ * The sell tab once a shop exists.
+ *
+ * Sections rather than pages, because running a shop is one sitting: file an
+ * item, check what is moving, look at the numbers. The store switcher only
+ * appears for someone who acts in more than one.
+ */
+function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: () => void | Promise<void> }) {
+  const [storeId, setStoreId] = useState(stores[0]!.ownerId);
+  const [section, setSection] = useState<Section>('items');
+
+  const store = stores.find((entry) => entry.ownerId === storeId) ?? stores[0]!;
+  // A section nobody may open should not be offered: a tab that answers 403 is
+  // worse than a tab that is not there.
+  const visible = SECTIONS.filter((entry) => {
+    if (entry.id === 'analytics') return store.permissions.includes('analytics');
+    if (entry.id === 'tracking') return store.permissions.includes('lots');
+    if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
+    return true;
+  });
+  const active = visible.some((entry) => entry.id === section) ? section : visible[0]!.id;
 
   return (
     <main className="page tab-view">
       <div className="page__head">
         <div>
-          <h1>Your shop</h1>
-          <p className="muted">Your storefront, what you have listed, what is moving, and how it is doing.</p>
+          <h1>{store.name}</h1>
+          <p className="muted">
+            {store.isOwner ? 'Your shop.' : 'You help run this shop.'} {store.permissions.length} of 5 rights.
+          </p>
         </div>
-        <Link to="/sell" className="btn">
-          <Icon name="plus" size={15} /> List an item
-        </Link>
+        {store.permissions.includes('listings') && (
+          <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn">
+            <Icon name="plus" size={15} /> List an item
+          </Link>
+        )}
       </div>
 
+      {stores.length > 1 && (
+        <label className="field" style={{ marginBottom: 14 }}>
+          <span>Store</span>
+          <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+            {stores.map((entry) => (
+              <option key={entry.ownerId} value={entry.ownerId}>
+                {entry.name}{entry.isOwner ? '' : ' — you help run this'}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       <div className="chips" style={{ marginBottom: 18 }}>
-        {SECTIONS.map((entry) => (
+        {visible.map((entry) => (
           <button
             key={entry.id}
             type="button"
-            className={`chip${section === entry.id ? ' is-on' : ''}`}
+            className={`chip${active === entry.id ? ' is-on' : ''}`}
             onClick={() => setSection(entry.id)}
           >
             {entry.label}
@@ -59,11 +178,12 @@ export function ShopPage() {
 
       {/* Keyed so switching sections replays the entrance rather than swapping
           content underneath a static frame. */}
-      <div className="tab-view" key={section}>
-        {section === 'storefront' && <StorefrontEditor />}
-        {section === 'items' && <MyItems />}
-        {section === 'tracking' && <Tracking />}
-        {section === 'analytics' && <Analytics />}
+      <div className="tab-view" key={`${store.ownerId}:${active}`}>
+        {active === 'items' && <MyItems />}
+        {active === 'tracking' && <Tracking />}
+        {active === 'analytics' && <Analytics />}
+        {active === 'storefront' && <StorefrontEditor />}
+        {active === 'people' && <People store={store} onChanged={onChanged} />}
       </div>
     </main>
   );
@@ -77,7 +197,7 @@ export function ShopPage() {
  * A name, a picture, what you sell, and one link. The single link is the point:
  * a row of them is a link farm, one is a front door.
  */
-function StorefrontEditor() {
+function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
   const { user } = useSession();
   const [draft, setDraft] = useState<StorefrontDraft | null>(null);
   const [saved, setSaved] = useState<SellerProfile | null>(null);
@@ -118,6 +238,7 @@ function StorefrontEditor() {
       const result = await api.saveStorefront(draft!);
       setSaved(result.storefront);
       setFlash('Storefront saved.');
+      onSaved?.();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save your storefront.');
     } finally {
@@ -406,6 +527,140 @@ function Analytics() {
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── People ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Who else runs this shop, and what they may do.
+ *
+ * Separate rights rather than one "manager" switch, because the jobs are
+ * different: whoever lists the items is often not whoever should see the
+ * revenue, and neither of them should be handing out access.
+ */
+function People({ store, onChanged }: { store: StoreAccess; onChanged: () => void | Promise<void> }) {
+  const [managers, setManagers] = useState<StoreManager[] | null>(null);
+  const [identifier, setIdentifier] = useState('');
+  const [granted, setGranted] = useState<StorePermission[]>(['listings']);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .storefront()
+      .then((result) => setManagers(result.storefront?.managers ?? []))
+      .catch((err: unknown) =>
+        setError(err instanceof ApiRequestError ? err.message : 'Could not load the people here.'),
+      );
+  }, [store.ownerId]);
+
+  async function run(fn: () => Promise<{ managers: StoreManager[] }>, message: string) {
+    setBusy(true);
+    setError(null);
+    setFlash(null);
+    try {
+      setManagers((await fn()).managers);
+      setFlash(message);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const toggle = (permission: StorePermission) =>
+    setGranted((current) =>
+      current.includes(permission)
+        ? current.filter((entry) => entry !== permission)
+        : [...current, permission],
+    );
+
+  return (
+    <div className="stack">
+      <div className="card card--pad stack">
+        <div>
+          <div style={{ fontWeight: 600 }}>Bring someone in</div>
+          <span className="field__hint">
+            They need an account here already. Name them by the email or phone they signed up with.
+          </span>
+        </div>
+
+        <label className="field">
+          <span>Email or phone</span>
+          <input value={identifier} onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="them@example.com" />
+        </label>
+
+        <div className="stack" style={{ gap: 8 }}>
+          <span className="field__hint">What they may do</span>
+          {STORE_PERMISSIONS.map((permission) => (
+            <label key={permission} className="row" style={{ cursor: 'pointer', gap: 9 }}>
+              <input type="checkbox" checked={granted.includes(permission)}
+                onChange={() => toggle(permission)}
+                style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
+              <span style={{ fontSize: 'var(--t-sm)' }}>{STORE_PERMISSION_LABELS[permission]}</span>
+            </label>
+          ))}
+        </div>
+
+        {flash && <p className="notice notice--ok">{flash}</p>}
+        {error && <ErrorNotice message={error} />}
+
+        <button type="button" className="btn" style={{ justifySelf: 'start' }}
+          disabled={busy || !identifier.trim() || granted.length === 0}
+          onClick={() =>
+            void run(
+              () => api.updateManager({ storeId: store.ownerId, identifier: identifier.trim(), permissions: granted }),
+              'Added.',
+            ).then(() => setIdentifier(''))
+          }>
+          {busy ? 'Saving…' : 'Add to the shop'}
+        </button>
+      </div>
+
+      <div className="card">
+        <div className="channel">
+          <Avatar name={store.name} size={40} />
+          <div className="channel__body">
+            <div className="channel__top">
+              <span className="channel__name">{store.isOwner ? 'You' : 'The owner'}</span>
+              <span className="badge badge--accent">Owner</span>
+            </div>
+            <span className="channel__last">Everything, and cannot be removed.</span>
+          </div>
+        </div>
+
+        {(managers ?? []).map((manager) => (
+          <div key={manager.userId} className="channel">
+            <Avatar name={manager.displayName} size={40} />
+            <div className="channel__body">
+              <div className="channel__top">
+                <span className="channel__name">{manager.displayName}</span>
+                <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
+                  onClick={() =>
+                    void run(
+                      () => api.updateManager({ storeId: store.ownerId, identifier: manager.userId, remove: true }),
+                      'Removed.',
+                    )
+                  }>
+                  Remove
+                </button>
+              </div>
+              <span className="channel__last">
+                {manager.permissions.map((p) => STORE_PERMISSION_LABELS[p]).join(' · ')}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {managers?.length === 0 && (
+        <p className="muted">Nobody else yet. A shop runs fine with one person.</p>
+      )}
     </div>
   );
 }

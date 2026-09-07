@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
+import { can } from '../../../shared/stores.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
@@ -106,11 +107,28 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
 
-  let body: Partial<Listing> & { preOrder?: { fillThreshold: number; cutoffAt: string } };
+  let body: Partial<Listing> & {
+    preOrder?: { fillThreshold: number; cutoffAt: string };
+    /** The store to list into; absent means the caller's own. */
+    storeId?: string;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  // A manager lists into the store they were given rights in, not into their
+  // own: the seller id is the store's owner, which is also the partition every
+  // one of its items already sits in. Absent, it is the caller's own store.
+  let sellerId = user.id;
+  if (body.storeId && body.storeId !== user.id) {
+    const owner = await repository.getUserById(body.storeId);
+    if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+    if (!can(owner, user.id, 'listings')) {
+      return error(403, 'forbidden', 'You cannot list items in that store.');
+    }
+    sellerId = owner.id;
   }
 
   const title = body.title?.trim();
@@ -125,7 +143,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // id simply does not resolve.
   let lotId: string | null = null;
   if (body.lotId) {
-    const lot = await repository.getLot(user.id, body.lotId);
+    const lot = await repository.getLot(sellerId, body.lotId);
     if (!lot) return error(404, 'not_found', 'No such batch of yours to add this to.');
     lotId = lot.id;
   }
@@ -148,7 +166,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   const now = new Date().toISOString();
   const listing: Listing = {
     id: `lst_${randomUUID().slice(0, 12)}`,
-    sellerId: user.id,
+    sellerId,
     title,
     description: body.description?.trim() ?? '',
     category: body.category ?? 'Collectibles',

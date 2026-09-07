@@ -6,8 +6,11 @@ import type {
   LoginResponse,
   MeResponse,
 } from '@shared/contracts';
-import type { FulfilmentStage, Sourcing } from '@shared/enums';
-import type { Forum, ForwarderProfile, Listing, ListingComment, Lot, Order, Post, SellerProfile } from '@shared/models';
+import type { FulfilmentStage, Sourcing, StorePermission } from '@shared/enums';
+import type { StoreAccess } from '@shared/stores';
+import type {
+  Forum, ForwarderProfile, Listing, ListingComment, Lot, Order, Post, SellerProfile, StoreManager,
+} from '@shared/models';
 
 /**
  * Typed client for the Functions API. Response types come from the shared
@@ -157,6 +160,8 @@ export interface NewListing {
   sourcing?: Sourcing;
   /** The seller's own batch to file this into, chosen while listing. */
   lotId?: string | null;
+  /** The store to list into; absent means your own. */
+  storeId?: string;
   tags: string[];
 }
 
@@ -283,6 +288,14 @@ export const api = {
 
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
 
+  stores: () => request<{ stores: StoreAccess[] }>('/me/stores'),
+  updateManager: (body: {
+    storeId?: string;
+    identifier: string;
+    permissions?: StorePermission[];
+    remove?: boolean;
+  }) => post<{ managers: StoreManager[] }>('/me/storefront/managers', body),
+
   storefront: () =>
     request<{ storefront: SellerProfile | null; displayName: string }>('/me/storefront'),
   saveStorefront: (body: StorefrontDraft) =>
@@ -292,7 +305,7 @@ export const api = {
   socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),
   channelThread: (id: string) => request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}`),
-  createPost: (body: { body: string; forumId?: string; listingId?: string }) =>
+  createPost: (body: { body: string; forumId?: string; listingId?: string; storeId?: string }) =>
     post<{ post: Post }>('/social/posts', body),
   forums: () => request<ForumsResponse>('/social/forums'),
   createForum: (body: { name: string; description?: string }) =>

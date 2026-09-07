@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { FORUM_CAP } from '../../../shared/enums.js';
 import type { Forum, Listing, Post, User } from '../../../shared/models.js';
+import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -136,7 +137,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
 
-  let body: { body?: string; forumId?: string; listingId?: string; photoUrl?: string };
+  let body: { body?: string; forumId?: string; listingId?: string; photoUrl?: string; storeId?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -152,6 +153,21 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   let channelId = user.id;
   let channel: Post['channel'] = 'seller';
   let kind: Post['kind'] = body.listingId ? 'sale' : 'update';
+  // Posting as yourself is the default; posting as a store you manage puts it
+  // in that store's channel, under the store's name, for its followers.
+  let authorName = user.displayName;
+
+  if (body.storeId && body.storeId !== user.id) {
+    const owner = await repository.getUserById(body.storeId);
+    if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+    if (!can(owner, user.id, 'posts')) {
+      return error(403, 'forbidden', 'You cannot post as that store.');
+    }
+    channelId = owner.id;
+    authorName = owner.sellerProfile.storefrontName;
+  } else if (body.storeId === user.id) {
+    authorName = user.sellerProfile?.storefrontName ?? user.displayName;
+  }
 
   if (body.forumId) {
     const forum = await repository.getForum(body.forumId);
@@ -165,7 +181,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   let listingId: string | null = null;
   if (body.listingId) {
     const listing = await repository.getListing(body.listingId);
-    if (!listing || listing.sellerId !== user.id) {
+    // Belongs to whoever is being posted as, not to whoever is typing: a
+    // manager posts a store's items, not their own.
+    if (!listing || listing.sellerId !== channelId) {
       return error(404, 'not_found', 'No such listing of yours to post about.');
     }
     listingId = listing.id;
@@ -178,7 +196,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     channel,
     kind,
     authorId: user.id,
-    authorName: user.sellerProfile?.storefrontName ?? user.displayName,
+    authorName,
     body: text,
     listingId,
     photoUrl: body.photoUrl?.trim() || null,
