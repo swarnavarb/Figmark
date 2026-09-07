@@ -16,7 +16,11 @@ import {
   seedForums,
   seedLikes,
   seedListings,
+  seedLotBuyers,
+  seedLotOrders,
   seedLots,
+  seedOpenLot,
+  seedShippedLot,
   seedOrders,
   seedPosts,
   seedUsers,
@@ -222,7 +226,7 @@ export class CosmosRepository implements Repository {
    * correct outcome rather than a conflict to handle.
    */
   private async seedFixtures(): Promise<number> {
-    const users = seedUsers();
+    const users = [...seedUsers(), ...seedLotBuyers()];
     let written = 0;
 
     for (const user of users) {
@@ -234,9 +238,9 @@ export class CosmosRepository implements Repository {
     }
 
     for (const [name, items] of [
-      ['lots', seedLots()],
+      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot()]],
       ['listings', seedListings()],
-      ['orders', seedOrders()],
+      ['orders', [...seedOrders(), ...seedLotOrders()]],
       ['comments', seedComments()],
       ['forums', seedForums()],
       ['posts', seedPosts()],

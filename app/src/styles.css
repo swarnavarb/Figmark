@@ -776,3 +776,161 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .door__glyph { font-size: 30px; line-height: 1; }
 .door__title { font-size: var(--t-md); font-weight: 700; }
 .door__note { font-size: var(--t-sm); color: var(--text-dim); line-height: 1.5; }
+
+/* ── Lot cards (tracking) ──────────────────────────────────────────────── */
+
+.lotcard {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+/* A lot already on its way is one line: the thing you do with it is open it. */
+.lotcard--moving { display: flex; align-items: stretch; border-color: rgba(224, 165, 60, 0.35); }
+.lotcard--moving .lotcard__head { background: rgba(224, 165, 60, 0.08); }
+
+/* Name and state share a column so the arrow keeps its width and the state
+   truncates against the whole card rather than against whatever is left after
+   a long lot name. */
+.lotcard__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: 10px;
+  padding: 12px 0 12px 16px;
+  border-bottom: 1px dashed var(--border);
+  min-width: 0;
+}
+.lotcard--moving .lotcard__head { border-bottom: none; flex: 1; }
+.lotcard__name {
+  grid-column: 1;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lotcard__state {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A lot in transit is one line, so its state sits beside the name. */
+.lotcard--moving .lotcard__state { grid-column: 2; grid-row: 1; text-align: right; }
+.lotcard--moving .lotcard__name { grid-column: 1; }
+.lotcard__go { grid-column: 2; grid-row: 1 / -1; }
+/* The way in. Deliberately the loudest thing on the card. */
+.lotcard__go {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  align-self: stretch;
+  background: var(--accent);
+  color: #fff;
+  font-size: 22px;
+  text-decoration: none;
+  transition: filter 0.15s;
+}
+.lotcard__go:hover { filter: brightness(1.08); }
+
+.lotcard__body { padding: 14px 16px 16px; display: grid; gap: 12px; }
+
+.tiles { display: grid; gap: 10px; grid-template-columns: repeat(3, 1fr); }
+.tiles--big { grid-template-columns: repeat(2, 1fr); }
+.tile {
+  padding: 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  text-align: center;
+}
+.tile--blue { border-color: rgba(94, 141, 255, 0.45); }
+.tile--green { border-color: rgba(78, 192, 125, 0.45); }
+.tile__value { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+.tiles--big .tile__value { font-size: 34px; }
+.tile__label {
+  margin-top: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 650;
+}
+
+.bars { display: grid; gap: 9px; }
+.bar { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 10px; }
+.bar__label { font-size: var(--t-xs); color: var(--text-dim); line-height: 1.25; }
+.bar__track { height: 9px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
+.bar__fill { display: block; height: 100%; border-radius: var(--r-pill); background: var(--accent); }
+.bar__count { font-size: var(--t-xs); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+/* ── Lot board (one lot) ───────────────────────────────────────────────── */
+
+.lothead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.lothead__name { font-size: var(--t-lg); font-weight: 800; letter-spacing: 0.01em; }
+
+.bands { display: grid; gap: 2px; border-radius: var(--r-md); overflow: hidden; }
+.band { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 11px 13px; }
+.band--china { background: rgba(229, 106, 90, 0.16); }
+.band--india { background: rgba(78, 192, 125, 0.14); }
+.band__side {
+  font-size: 10.5px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.band__count {
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  font-size: var(--t-xs);
+  color: var(--text-dim);
+}
+.band__count strong { color: var(--text); font-weight: 750; }
+
+/* One customer's parcel. Light, because it is a worksheet inside a dark app -
+   the thing you actually read and tick, not chrome around it. */
+.cust {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+.cust__head { display: grid; gap: 3px; padding: 13px 15px; background: var(--surface-2); }
+.cust__name { font-weight: 750; font-size: var(--t-md); }
+.cust__meta, .cust__track { font-size: var(--t-xs); color: var(--text-faint); }
+
+.cust__all {
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 15px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px dashed var(--border);
+  font-size: var(--t-sm); font-weight: 600; cursor: pointer;
+}
+.cust__all input, .tick input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+
+.orderrow { display: grid; gap: 8px; padding: 12px 15px; border-bottom: 1px solid var(--border); }
+.orderrow:last-child { border-bottom: none; }
+.orderrow__top { display: flex; gap: 8px; align-items: baseline; }
+.orderrow__index { color: var(--text-faint); font-size: var(--t-xs); }
+.orderrow__item { font-weight: 600; font-size: var(--t-sm); }
+.orderrow__meta { display: flex; align-items: center; gap: 8px; }
+
+/* Six ticks, wrapping. Each is a target big enough for a thumb on a phone. */
+.orderrow__ticks { display: flex; flex-wrap: wrap; gap: 6px; }
+.tick {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  font-size: var(--t-xs);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.tick:hover { border-color: var(--border-strong); color: var(--text); }
+.tick.is-on { background: var(--ok-soft); border-color: rgba(78, 192, 125, 0.45); color: var(--ok); }

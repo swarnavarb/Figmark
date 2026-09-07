@@ -26,6 +26,7 @@ const {
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
+  lotsBoardRoute, lotBoardRoute, setCheckpointRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute } =
   await import(new URL('seller-routes.js', apiRoot));
@@ -54,7 +55,10 @@ const routes = [
   ['POST', '/api/listings/:id/bump', bumpListingRoute],
   ['POST', '/api/listings/:id/comments', addCommentRoute],
   ['POST', '/api/sellers/:id/follow', toggleFollowRoute],
+  ['GET', '/api/me/lots/board', lotsBoardRoute],
   ['GET', '/api/me/lots', myLotsRoute],
+  ['GET', '/api/lots/:id/board', lotBoardRoute],
+  ['POST', '/api/orders/:id/checkpoint', setCheckpointRoute],
   ['POST', '/api/lots', createLotRoute],
   ['GET', '/api/lots/:id/contents', lotContentsRoute],
   ['POST', '/api/lots/:id/assign', assignToLotRoute],

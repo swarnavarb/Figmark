@@ -175,3 +175,82 @@ export const STORE_PERMISSION_LABELS: Record<StorePermission, string> = {
   analytics: 'See the numbers',
   admin: 'Manage the store and its people',
 };
+
+/* -------------------------------------------------------------------------- */
+/* Per-order checkpoints                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where one item has physically got to, ticked off one order at a time.
+ *
+ * Distinct from `LOT_STAGES`, which is the consignment as a whole. A crate does
+ * not arrive all at once: thirty-three of thirty-four pieces reach the China
+ * warehouse and one is still with the supplier, and the seller needs to see
+ * exactly that. So the checkpoints live on the order and the lot's headline
+ * numbers are counts of them, not a state of its own.
+ *
+ * Order matters: it is the sequence a piece travels, and progress is read from
+ * the index.
+ */
+export const ORDER_CHECKPOINTS = [
+  'china_received',
+  'china_packed',
+  'india_received',
+  'ready_to_dispatch',
+  'packed',
+  'dispatched',
+] as const;
+export type OrderCheckpoint = (typeof ORDER_CHECKPOINTS)[number];
+
+/** Short forms, as they appear on an order row. */
+export const CHECKPOINT_LABELS: Record<OrderCheckpoint, string> = {
+  china_received: 'China WH',
+  china_packed: 'Packed CH',
+  india_received: 'India WH',
+  ready_to_dispatch: 'Ready',
+  packed: 'Packed',
+  dispatched: 'Dispatched',
+};
+
+/** Long forms, for the counts on a lot card. */
+export const CHECKPOINT_COUNT_LABELS: Record<OrderCheckpoint, string> = {
+  china_received: 'China WH rcvd',
+  china_packed: 'Packed in China',
+  india_received: 'India received',
+  ready_to_dispatch: 'Ready to dispatch',
+  packed: 'Packed',
+  dispatched: 'Dispatched',
+};
+
+/** Which side of the water a checkpoint sits on, for the two status bands. */
+export const CHECKPOINT_SIDE: Record<OrderCheckpoint, 'china' | 'india'> = {
+  china_received: 'china',
+  china_packed: 'china',
+  india_received: 'india',
+  ready_to_dispatch: 'india',
+  packed: 'india',
+  dispatched: 'india',
+};
+
+/**
+ * The three the lot card charts.
+ *
+ * Not all six: the card is a glance, and these are the ones that move while a
+ * lot is being filled and shipped. The rest are counted as tiles instead.
+ */
+export const LOT_PROGRESS_CHECKPOINTS: OrderCheckpoint[] = [
+  'china_received',
+  'china_packed',
+  'india_received',
+];
+
+/** How a lot's own stage reads on its card, in the seller's words. */
+export const LOT_CARD_LABELS: Record<LotStage, string> = {
+  ordering: 'Lot getting filled',
+  china_wh_received: 'Arriving at China WH',
+  dispatched_from_china: 'Dispatched from China',
+  india_received: 'Received in India',
+  qc_repack: 'QC and repack',
+  local_dispatch: 'Out for local dispatch',
+  delivered: 'Delivered',
+};

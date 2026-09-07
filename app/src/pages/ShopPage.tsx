@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { STORE_PERMISSIONS, STORE_PERMISSION_LABELS, type StorePermission } from '@shared/enums';
+import {
+  CHECKPOINT_COUNT_LABELS, LOT_CARD_LABELS, STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
+  type StorePermission,
+} from '@shared/enums';
+import { countOf, type LotTally } from '@shared/board';
 import type { SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
 import {
@@ -9,6 +13,8 @@ import {
   type DashboardResponse,
   type StorefrontDraft,
   type ActivityResponse,
+  type BoardLot,
+  type LotsBoard,
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
@@ -180,7 +186,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           content underneath a static frame. */}
       <div className="tab-view" key={`${store.ownerId}:${active}`}>
         {active === 'items' && <MyItems />}
-        {active === 'tracking' && <Tracking />}
+        {active === 'tracking' && <Tracking store={store} />}
         {active === 'analytics' && <Analytics />}
         {active === 'storefront' && <StorefrontEditor />}
         {active === 'people' && <People store={store} onChanged={onChanged} />}
@@ -383,18 +389,26 @@ function MyItems() {
 
 /* ── Tracking ───────────────────────────────────────────────────────────── */
 
-/** What is in flight right now, and where each batch has got to. */
-function Tracking() {
-  const [data, setData] = useState<DashboardResponse | null>(null);
+/**
+ * The lot board.
+ *
+ * One card per lot: who is in it, how much is in it, and how far each piece has
+ * physically got. Every number is a count of orders past a checkpoint rather
+ * than a state stored on the lot, because a crate does not arrive all at once -
+ * thirty-three of thirty-four land and one is still with the supplier, and that
+ * is exactly the thing worth seeing.
+ */
+function Tracking({ store }: { store: StoreAccess }) {
+  const [data, setData] = useState<LotsBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setData(await api.dashboard());
+      setData(await api.lotsBoard(store.isOwner ? undefined : store.ownerId));
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your tracking.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.');
     }
-  }, []);
+  }, [store.ownerId, store.isOwner]);
 
   useEffect(() => {
     void load();
@@ -402,55 +416,93 @@ function Tracking() {
 
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
-
-  const { tracking } = data;
+  if (data.lots.length === 0) {
+    return (
+      <EmptyState title="No lots yet">
+        A lot is one consignment. Open one from <Link to="/batches">Manage batches</Link>, or when you list
+        an imported item.
+      </EmptyState>
+    );
+  }
 
   return (
     <div className="stack">
-      <div className="stats">
-        <Stat label="Open batches" value={String(tracking.openLots)} />
-        <Stat label="Orders in flight" value={String(tracking.inFlightOrders)} note="Not yet delivered" />
+      {data.lots.map(({ lot, tally }) => (
+        <LotCard key={lot.id} lot={lot} tally={tally} store={store} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One lot at a glance.
+ *
+ * The open lot is worth the whole card; a lot already on its way is a single
+ * line, because the thing you do with it is open it, not read it. The arrow is
+ * the way in either way.
+ */
+function LotCard({ lot, tally, store }: { lot: BoardLot; tally: LotTally; store: StoreAccess }) {
+  const working = lot.stage === 'ordering';
+  const to = `/lot/${lot.id}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`;
+
+  if (!working) {
+    return (
+      <div className="lotcard lotcard--moving">
+        <div className="lotcard__head">
+          <span className="lotcard__name">{lot.name}</span>
+          <span className="lotcard__state">{LOT_CARD_LABELS[lot.stage as keyof typeof LOT_CARD_LABELS]}</span>
+        </div>
+        <Link to={to} className="lotcard__go" aria-label={`Open ${lot.name}`}>→</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="lotcard">
+      <div className="lotcard__head">
+        <span className="lotcard__name">{lot.name}</span>
+        <span className="lotcard__state">
+          {LOT_CARD_LABELS[lot.stage as keyof typeof LOT_CARD_LABELS]} — {tally.orders} orders
+        </span>
+        <Link to={to} className="lotcard__go" aria-label={`Open ${lot.name}`}>→</Link>
       </div>
 
-      {tracking.lots.length === 0 ? (
-        <EmptyState title="Nothing in flight">
-          Open a batch from <Link to="/batches">Manage batches</Link>, or when you list an imported item.
-        </EmptyState>
-      ) : (
-        <div className="card">
-          {tracking.lots.map((lot) => (
-            <Link key={lot.id} to="/batches" className="channel">
-              <div className="channel__body">
-                <div className="channel__top">
-                  <span className="channel__name">{lot.name}</span>
-                  <span className="badge">{lot.stage.replace(/_/g, ' ')}</span>
-                </div>
-                <span className="channel__last">
-                  {[
-                    lot.origin || null,
-                    `${lot.orderCount} order${lot.orderCount === 1 ? '' : 's'}`,
-                    lot.estimatedDispatchAt ? `dispatch ${formatDate(lot.estimatedDispatchAt)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              </div>
-            </Link>
-          ))}
+      <div className="lotcard__body">
+        <div className="tiles tiles--big">
+          <Tile value={String(tally.customers)} label="Customers" />
+          <Tile value={String(tally.orders)} label="Orders" />
         </div>
-      )}
 
-      {tracking.byStage.length > 0 && (
-        <div className="card card--pad stack">
-          <h2>Where your batches are</h2>
-          {tracking.byStage.map((row) => (
-            <div key={row.stage} className="row" style={{ justifyContent: 'space-between' }}>
-              <span className="muted">{row.label}</span>
-              <span className="badge">{row.lots}</span>
+        <div className="tiles">
+          <Tile value={String(countOf(tally, 'ready_to_dispatch').done)} label="Ready to dispatch" tone="blue" />
+          <Tile value={String(countOf(tally, 'packed').done)} label="Packed" tone="blue" />
+          <Tile value={`${tally.customersDispatched}/${tally.customers}`} label="Dispatched" tone="green" />
+        </div>
+
+        <div className="bars">
+          {tally.progress.map((row) => (
+            <div key={row.checkpoint} className="bar">
+              <span className="bar__label">{CHECKPOINT_COUNT_LABELS[row.checkpoint]}</span>
+              <span className="bar__track">
+                <span
+                  className="bar__fill"
+                  style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }}
+                />
+              </span>
+              <span className="bar__count">{row.done}/{row.total}</span>
             </div>
           ))}
         </div>
-      )}
+      </div>
+    </div>
+  );
+}
+
+function Tile({ value, label, tone }: { value: string; label: string; tone?: 'blue' | 'green' }) {
+  return (
+    <div className={`tile${tone ? ` tile--${tone}` : ''}`}>
+      <div className="tile__value">{value}</div>
+      <div className="tile__label">{label}</div>
     </div>
   );
 }

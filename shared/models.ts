@@ -6,6 +6,7 @@ import type {
   ListingStatus,
   LotStage,
   LotStatus,
+  OrderCheckpoint,
   OrderStatus,
   PaymentStatus,
   ReviewDirection,
@@ -445,6 +446,15 @@ export interface Order extends BaseDocument {
   stageHistory: StageEvent[];
   /** Set once the order reaches `delivered`; unlocks reviews. */
   completedAt: string | null;
+  /**
+   * When each physical checkpoint was ticked for this one item.
+   *
+   * A timestamp rather than a boolean, so "is it in the China warehouse" and
+   * "when did it get there" are the same field and ticking one keeps its own
+   * history without a second structure to maintain. Absent or null means not
+   * yet; orders written before checkpoints existed simply have none.
+   */
+  checkpoints?: Partial<Record<OrderCheckpoint, string | null>>;
 }
 
 /** Escrow hold attached to an order. */

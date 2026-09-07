@@ -639,3 +639,174 @@ export function seedPosts(): Post[] {
     updatedAt: iso(entry.ageDays, entry.ageHours ?? 0),
   }));
 }
+
+/* -------------------------------------------------------------------------- */
+/* A working lot                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Buyers for the demo account's open lot.
+ *
+ * Accounts rather than names on an order, because the lot board groups by
+ * customer and looks each one up - a manifest of ids nobody can resolve reads
+ * as "Unknown" fifteen times over.
+ *
+ * No password hash: they are people the shop sells to, not accounts to sign in
+ * as, which is the same rule the catalog sellers follow.
+ */
+const LOT_BUYERS: [string, string, string][] = [
+  ['usr_b_avradeep', 'Avradeep Biswas', '+919547760697'],
+  ['usr_b_nikhil', 'Nikhil Raghavan', '+919820114477'],
+  ['usr_b_sana', 'Sana Qureshi', '+919867223311'],
+  ['usr_b_rohit', 'Rohit Deshmukh', '+919845667788'],
+  ['usr_b_ipsita', 'Ipsita Nair', '+919903445566'],
+  ['usr_b_karan', 'Karan Malhotra', '+919810778899'],
+  ['usr_b_meghna', 'Meghna Iyer', '+919742110022'],
+  ['usr_b_tanmay', 'Tanmay Bose', '+919831556677'],
+  ['usr_b_farah', 'Farah Sheikh', '+919920334455'],
+  ['usr_b_dev', 'Dev Anand Rao', '+919886445533'],
+  ['usr_b_priyanka', 'Priyanka Sen', '+919836778811'],
+  ['usr_b_vikram', 'Vikram Chauhan', '+919812009988'],
+  ['usr_b_aisha', 'Aisha Fernandes', '+919960112233'],
+  ['usr_b_sourav', 'Sourav Ganguly Jr', '+919874556600'],
+  ['usr_b_neha', 'Neha Kulkarni', '+919767889900'],
+];
+
+export function seedLotBuyers(): User[] {
+  return LOT_BUYERS.map(([id, displayName, phone]) => ({
+    id,
+    // A shop's customers are known by phone; the address is not something a
+    // packing list needs, and inventing one would put a fake in the store.
+    email: `${id.replace('usr_b_', '')}@customers.figmark.invalid`,
+    phone,
+    displayName,
+    isAdmin: false,
+    passwordHash: null,
+    verification: verification(true),
+    buyerTrust: trust(60, 4),
+    sellerTrust: sellerTrust(),
+    sellerProfile: null,
+    forwarderProfile: null,
+    suspended: false,
+    createdAt: iso(-90),
+    updatedAt: iso(-30),
+  }));
+}
+
+/** Items the shop is bringing in. Repeated across buyers, as a real lot is. */
+const LOT_ITEMS: [string, Listing['condition'], number, number][] = [
+  ['McF Doomsday', 'MIB', 700, 2_40_000],
+  ['McF Bane', 'MISB', 650, 2_10_000],
+  ['McF Batman Hush', 'MISB', 720, 2_60_000],
+  ['SHF Gogeta', 'MISB', 450, 3_10_000],
+  ['Nendoroid Frieren', 'MISB', 300, 1_85_000],
+  ['1/7 Rem scale figure', 'MISB', 1_400, 4_80_000],
+  ['Bandai RG Sazabi', 'MISB', 900, 3_40_000],
+  ['Prize figure — Nezuko', 'MIB', 380, 95_000],
+];
+
+/**
+ * Thirty-four orders across fifteen customers, nearly all landed in China.
+ *
+ * Distributed deterministically rather than randomly so the board looks the
+ * same on every worker and in every test: the same seed cannot produce two
+ * different manifests.
+ */
+export function seedLotOrders(): Order[] {
+  const orders: Order[] = [];
+  let index = 0;
+
+  for (let i = 0; i < 34; i += 1) {
+    const [buyerId] = LOT_BUYERS[i % LOT_BUYERS.length]!;
+    const [itemName, condition, grams, priceMinor] = LOT_ITEMS[i % LOT_ITEMS.length]!;
+    index += 1;
+
+    // All but one have reached the China warehouse - the single straggler is
+    // the point of counting per item rather than per lot.
+    const chinaReceived = i < 33 ? iso(-4, -i) : null;
+
+    orders.push({
+      id: `ord_lot24_${String(index).padStart(2, '0')}`,
+      lotId: 'lot_open_24',
+      sellerId: 'usr_demo',
+      buyerId,
+      listingId: 'lst_my_statue',
+      itemName,
+      condition,
+      quantity: 1,
+      unitWeightGrams: grams,
+      unitPriceMinor: priceMinor,
+      currency: 'INR',
+      status: 'in_fulfilment',
+      paymentStatus: 'paid',
+      escrow: {
+        state: 'held', amountMinor: priceMinor, heldAt: iso(-12),
+        releasedAt: null, autoReleaseAt: null, disputeId: null,
+      },
+      stage: 'china_wh_received',
+      stageHistory: [{ stage: 'ordering', enteredAt: iso(-12), note: 'Order placed.', recordedBy: buyerId }],
+      checkpoints: { china_received: chinaReceived },
+      completedAt: null,
+      createdAt: iso(-12, -i),
+      updatedAt: iso(-4, -i),
+    });
+  }
+
+  return orders;
+}
+
+/**
+ * A lot already on its way.
+ *
+ * Its card is one line rather than a panel: what you do with a lot in transit
+ * is open it, not read its counts off a list.
+ */
+export function seedShippedLot(): Lot {
+  return {
+    id: 'lot_ship_23',
+    sellerId: 'usr_demo',
+    name: 'Lot 23',
+    description: 'Left the China warehouse. Air freight, landing at BOM.',
+    origin: 'Guangzhou, CN',
+    supplier: { name: 'Baiyun Hobby Trading', contact: 'wechat: baiyun_hobby', reference: 'BH-2523' },
+    status: 'closed',
+    stage: 'dispatched_from_china',
+    stageHistory: [
+      { stage: 'ordering', enteredAt: iso(-40), note: 'Lot opened.', recordedBy: 'usr_demo' },
+      { stage: 'china_wh_received', enteredAt: iso(-22), note: null, recordedBy: 'usr_demo' },
+      { stage: 'dispatched_from_china', enteredAt: iso(-9), note: 'Handed to the forwarder.', recordedBy: 'usr_demo' },
+    ],
+    estimatedDispatchAt: iso(-9),
+    forwarder: {
+      forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight',
+      contact: 'ops@lotusfreight.example', trackingReference: 'LF-2026-09-8841',
+    },
+    costModel: {
+      currency: 'INR', goodsCostMinor: 41_20_000, freightMinor: 3_60_000, customsDutyMinor: 6_40_000,
+      packagingMinor: 62_000, localShippingMinor: 1_10_000, totalWeightGrams: 17_400,
+    },
+    createdAt: iso(-40), updatedAt: iso(-9),
+  };
+}
+
+/** The lot those orders travel in: the one the seller is working right now. */
+export function seedOpenLot(): Lot {
+  return {
+    id: 'lot_open_24',
+    sellerId: 'usr_demo',
+    name: 'Lot 24',
+    description: 'Getting filled. Air freight once the last piece lands at the China warehouse.',
+    origin: 'Guangzhou, CN',
+    supplier: { name: 'Baiyun Hobby Trading', contact: 'wechat: baiyun_hobby', reference: 'BH-2624' },
+    status: 'open',
+    stage: 'ordering',
+    stageHistory: [{ stage: 'ordering', enteredAt: iso(-14), note: 'Lot opened.', recordedBy: 'usr_demo' }],
+    estimatedDispatchAt: iso(12),
+    forwarder: { forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight', contact: 'ops@lotusfreight.example', trackingReference: null },
+    costModel: {
+      currency: 'INR', goodsCostMinor: 62_40_000, freightMinor: 4_80_000, customsDutyMinor: 9_10_000,
+      packagingMinor: 88_000, localShippingMinor: 1_40_000, totalWeightGrams: 24_800,
+    },
+    createdAt: iso(-14), updatedAt: iso(-1),
+  };
+}

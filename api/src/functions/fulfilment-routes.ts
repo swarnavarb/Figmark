@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { LOT_STAGES, type LotStage } from '../../../shared/enums.js';
+import { LOT_STAGES, ORDER_CHECKPOINTS, type LotStage, type OrderCheckpoint } from '../../../shared/enums.js';
+import { byCustomer, tally } from '../../../shared/board.js';
+import { can } from '../../../shared/stores.js';
 import { DIRECT_LOT_ID, furthestStage, stagesFor } from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
@@ -342,6 +344,175 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   });
 }
 
+/**
+ * The store a caller may work the lots of.
+ *
+ * Their own by default; a store they hold `lots` in when they name it. Returns
+ * null when they hold nothing there, which every caller turns into a 403.
+ */
+async function lotsStoreFor(
+  request: HttpRequest,
+  user: { id: string },
+  storeId: string | undefined,
+): Promise<string | null> {
+  if (!storeId || storeId === user.id) return user.id;
+  const repository = await getRepository();
+  const owner = await repository.getUserById(storeId);
+  if (!owner?.sellerProfile) return null;
+  return can(owner, user.id, 'lots') ? owner.id : null;
+}
+
+/**
+ * GET /api/me/lots/board - the tracking screen.
+ *
+ * One card per lot, with the counts it is read by. Every number is derived from
+ * the orders in the lot rather than stored on it, so a card can never claim
+ * progress the items themselves have not made.
+ */
+async function lotsBoard(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+
+  const sellerId = await lotsStoreFor(request, user, request.query.get('store') ?? undefined);
+  if (!sellerId) return error(403, 'forbidden', 'You cannot work the lots in that store.');
+
+  const repository = await getRepository();
+  const lots = await repository.listLots({ sellerId });
+
+  const cards = await Promise.all(
+    lots.map(async (lot) => {
+      const orders = await repository.listOrdersForLot(lot.id);
+      return {
+        lot: {
+          id: lot.id,
+          name: lot.name,
+          stage: lot.stage,
+          status: lot.status,
+          origin: lot.origin ?? '',
+          estimatedDispatchAt: lot.estimatedDispatchAt,
+          updatedAt: lot.updatedAt,
+        },
+        tally: tally(orders),
+      };
+    }),
+  );
+
+  // Most recently touched first: the lot that just moved is the lot being
+  // worked, which is what the board is for. Creation order would put a quiet
+  // old lot above the one filling up right now.
+  cards.sort((a, b) => b.lot.id.localeCompare(a.lot.id));
+  cards.sort((a, b) => (a.lot.updatedAt < b.lot.updatedAt ? 1 : -1));
+  return json(200, { lots: cards });
+}
+
+/**
+ * GET /api/lots/{id}/board - one lot, grouped by customer.
+ *
+ * A parcel goes to a person, not to a line item, so the unit of work here is a
+ * customer with all of their orders under them - which is how they get packed
+ * and how they get dispatched.
+ */
+async function lotBoard(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const lotId = request.params.id;
+  if (!lotId) return error(400, 'invalid_lot', 'A lot id is required.');
+
+  const sellerId = await lotsStoreFor(request, user, request.query.get('store') ?? undefined);
+  if (!sellerId) return error(403, 'forbidden', 'You cannot work the lots in that store.');
+
+  const repository = await getRepository();
+  const lot = await repository.getLot(sellerId, lotId);
+  if (!lot) return error(404, 'not_found', 'No such lot.');
+
+  const orders = await repository.listOrdersForLot(lot.id);
+  const grouped = byCustomer(orders);
+  const buyers = await repository.listUsersByIds([...grouped.keys()]);
+  const byId = new Map(buyers.map((buyer) => [buyer.id, buyer]));
+
+  const customers = [...grouped.entries()].map(([buyerId, theirs]) => {
+    const buyer = byId.get(buyerId);
+    return {
+      buyerId,
+      name: buyer?.displayName ?? 'Unknown',
+      phone: buyer?.phone ?? null,
+      orders: theirs.map((order) => ({
+        id: order.id,
+        itemName: order.itemName,
+        condition: order.condition,
+        quantity: order.quantity,
+        unitWeightGrams: order.unitWeightGrams,
+        checkpoints: order.checkpoints ?? {},
+      })),
+      trackingReference: lot.forwarder?.trackingReference ?? null,
+    };
+  });
+
+  // Alphabetical: a packing list is worked through, not ranked.
+  customers.sort((a, b) => a.name.localeCompare(b.name));
+
+  return json(200, {
+    lot: {
+      id: lot.id,
+      name: lot.name,
+      stage: lot.stage,
+      status: lot.status,
+      origin: lot.origin ?? '',
+      estimatedDispatchAt: lot.estimatedDispatchAt,
+    },
+    tally: tally(orders),
+    customers,
+  });
+}
+
+/**
+ * POST /api/orders/{id}/checkpoint - tick one item past one checkpoint.
+ *
+ * Ticking is not the same as advancing a stage: a stage is the consignment's
+ * story for the buyer, and this is the seller counting boxes. Untickable too,
+ * because the commonest correction on a packing floor is undoing a tick made on
+ * the wrong row.
+ */
+async function setCheckpoint(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const orderId = request.params.id;
+  if (!orderId) return error(400, 'invalid_order', 'An order id is required.');
+
+  let body: { checkpoint?: OrderCheckpoint; on?: boolean; orderIds?: string[] };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const checkpoint = body.checkpoint;
+  if (!checkpoint || !ORDER_CHECKPOINTS.includes(checkpoint)) {
+    return error(400, 'invalid_checkpoint', 'Name a checkpoint to tick.');
+  }
+
+  const repository = await getRepository();
+  const order = await repository.getOrder(orderId);
+  if (!order) return error(404, 'not_found', 'No such order.');
+
+  const sellerId = await lotsStoreFor(request, user, order.sellerId);
+  if (sellerId !== order.sellerId) {
+    return error(403, 'forbidden', 'That order is not yours to work.');
+  }
+
+  const on = body.on !== false;
+  const now = new Date().toISOString();
+  order.checkpoints = { ...(order.checkpoints ?? {}), [checkpoint]: on ? now : null };
+  order.updatedAt = now;
+
+  const saved = await repository.updateOrder(order);
+  const siblings = await repository.listOrdersForLot(order.lotId);
+  return json(200, { order: { id: saved.id, checkpoints: saved.checkpoints ?? {} }, tally: tally(siblings) });
+}
+
+export const lotsBoardRoute = handler(lotsBoard);
+export const lotBoardRoute = handler(lotBoard);
+export const setCheckpointRoute = handler(setCheckpoint);
 export const myLotsRoute = handler(myLots);
 export const createLotRoute = handler(createLot);
 export const lotContentsRoute = handler(lotContents);
@@ -359,4 +530,7 @@ app.http('lot-assign', { ...anon, methods: ['POST'], route: 'lots/{id}/assign', 
 app.http('lot-stage', { ...anon, methods: ['POST'], route: 'lots/{id}/stage', handler: advanceStageRoute });
 app.http('lot-tracking', { ...anon, methods: ['POST'], route: 'lots/{id}/tracking', handler: setTrackingRoute });
 app.http('lot-details', { ...anon, methods: ['POST'], route: 'lots/{id}/details', handler: updateLotDetailsRoute });
+app.http('lots-board', { ...anon, methods: ['GET'], route: 'me/lots/board', handler: lotsBoardRoute });
+app.http('lot-board', { ...anon, methods: ['GET'], route: 'lots/{id}/board', handler: lotBoardRoute });
+app.http('order-checkpoint', { ...anon, methods: ['POST'], route: 'orders/{id}/checkpoint', handler: setCheckpointRoute });
 app.http('order-tracking', { ...anon, methods: ['GET'], route: 'orders/{id}', handler: orderTrackingRoute });

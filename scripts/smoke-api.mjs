@@ -31,6 +31,7 @@ const {
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
   setTrackingRoute: setTracking, orderTrackingRoute: orderTracking,
+  lotsBoardRoute: lotsBoard, lotBoardRoute: lotBoard, setCheckpointRoute: setCheckpoint,
 } = await import(new URL('fulfilment-routes.js', fns));
 const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
@@ -863,6 +864,105 @@ await check('removing someone takes the store away with it', async () => {
     headers: helper, body: { title: 'Still trying', priceMinor: 1000, storeId: 'usr_demo' },
   }), ctx);
   assert.equal(refused.status, 403);
+});
+
+/* ── the lot board ─────────────────────────────────────────────────────── */
+console.log('\nthe lot board');
+
+await check('the board counts orders past each checkpoint, never a lot state', async () => {
+  const body = (await lotsBoard(req({ headers: auth }), ctx)).jsonBody;
+  const open = body.lots.find((entry) => entry.lot.id === 'lot_open_24');
+  assert.ok(open, 'expected the open lot');
+  assert.equal(open.tally.customers, 15);
+  assert.equal(open.tally.orders, 34);
+
+  // The straggler is the whole point: 33 of 34 landed, one has not.
+  const china = open.tally.counts.find((row) => row.checkpoint === 'china_received');
+  assert.equal(china.done, 33);
+  assert.equal(china.total, 34);
+});
+
+await check('the card charts three checkpoints, in travel order', async () => {
+  const body = (await lotsBoard(req({ headers: auth }), ctx)).jsonBody;
+  const open = body.lots.find((entry) => entry.lot.id === 'lot_open_24');
+  assert.deepEqual(
+    open.tally.progress.map((row) => row.checkpoint),
+    ['china_received', 'china_packed', 'india_received'],
+  );
+});
+
+await check('a lot is grouped by customer, because a parcel goes to a person', async () => {
+  const body = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.equal(body.customers.length, 15);
+  assert.equal(body.customers.reduce((sum, c) => sum + c.orders.length, 0), 34);
+  // Alphabetical: a packing list is worked through, not ranked.
+  const names = body.customers.map((c) => c.name);
+  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
+  assert.ok(body.customers.every((c) => c.name !== 'Unknown'), 'every buyer resolves to a name');
+});
+
+await check('ticking a checkpoint moves the count, and unticking moves it back', async () => {
+  const before = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const target = before.customers[0].orders[0];
+  assert.equal(Boolean(target.checkpoints.china_packed), false);
+
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: target.id }, body: { checkpoint: 'china_packed', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200);
+  assert.ok(ticked.jsonBody.order.checkpoints.china_packed, 'a tick records when, not just whether');
+  assert.equal(ticked.jsonBody.tally.counts.find((r) => r.checkpoint === 'china_packed').done, 1);
+
+  const undone = await setCheckpoint(req({
+    headers: auth, params: { id: target.id }, body: { checkpoint: 'china_packed', on: false },
+  }), ctx);
+  assert.equal(undone.jsonBody.order.checkpoints.china_packed, null);
+  assert.equal(undone.jsonBody.tally.counts.find((r) => r.checkpoint === 'china_packed').done, 0);
+});
+
+await check('a customer counts as ready only when everything of theirs is', async () => {
+  const board = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  // Someone with more than one order, so "all of it" means something.
+  const many = board.customers.find((c) => c.orders.length > 1);
+  assert.ok(many, 'expected a customer with several orders');
+
+  let tally;
+  for (const [index, order] of many.orders.entries()) {
+    const result = await setCheckpoint(req({
+      headers: auth, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch', on: true },
+    }), ctx);
+    tally = result.jsonBody.tally;
+    // Not ready until the last one: a parcel goes out whole.
+    if (index < many.orders.length - 1) assert.equal(tally.customersReady, 0);
+  }
+  assert.equal(tally.customersReady, 1);
+});
+
+await check('an unknown checkpoint is refused rather than stored', async () => {
+  const board = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const order = board.customers[0].orders[0];
+  const refused = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'teleported', on: true },
+  }), ctx);
+  assert.equal(refused.status, 400);
+});
+
+await check('another seller cannot read or tick this lot', async () => {
+  const stranger = await signup(req({
+    body: { displayName: 'Rival Seller', email: 'rival@figmark.example', phone: '+919000066666', password: 'longenough1' },
+  }), ctx);
+  assert.equal(stranger.status, 201, `signup failed: ${JSON.stringify(stranger.jsonBody)}`);
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+
+  const read = await lotBoard(req({ headers: theirs, params: { id: 'lot_open_24' } }), ctx);
+  assert.equal(read.status, 404, 'a lot outside your partition simply is not there');
+
+  const board = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const tick = await setCheckpoint(req({
+    headers: theirs, params: { id: board.customers[0].orders[0].id },
+    body: { checkpoint: 'china_packed', on: true },
+  }), ctx);
+  assert.equal(tick.status, 403);
 });
 
 console.log(`\n${passed} checks passed`);

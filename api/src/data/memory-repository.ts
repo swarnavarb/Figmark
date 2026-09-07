@@ -12,7 +12,11 @@ import {
   seedForums,
   seedLikes,
   seedListings,
+  seedLotBuyers,
+  seedLotOrders,
   seedLots,
+  seedOpenLot,
+  seedShippedLot,
   seedOrders,
   seedPosts,
   seedUsers,
@@ -42,10 +46,10 @@ export class MemoryRepository implements Repository {
   private readonly revokedSessions = new Map<string, number>();
 
   async init(): Promise<void> {
-    for (const user of seedUsers()) this.indexUser(user);
-    for (const lot of seedLots()) this.lots.set(lot.id, lot);
+    for (const user of [...seedUsers(), ...seedLotBuyers()]) this.indexUser(user);
+    for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()]) this.lots.set(lot.id, lot);
     for (const listing of seedListings()) this.listings.set(listing.id, listing);
-    for (const order of seedOrders()) this.orders.set(order.id, order);
+    for (const order of [...seedOrders(), ...seedLotOrders()]) this.orders.set(order.id, order);
     for (const comment of seedComments()) this.comments.set(comment.id, comment);
     for (const like of seedLikes()) this.likes.set(likeKey(like.userId, like.listingId), like);
     for (const follow of seedFollows()) {

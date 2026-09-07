@@ -6,7 +6,8 @@ import type {
   LoginResponse,
   MeResponse,
 } from '@shared/contracts';
-import type { FulfilmentStage, Sourcing, StorePermission } from '@shared/enums';
+import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
+import type { LotTally } from '@shared/board';
 import type { StoreAccess } from '@shared/stores';
 import type {
   Forum, ForwarderProfile, Listing, ListingComment, Lot, Order, Post, SellerProfile, StoreManager,
@@ -241,6 +242,45 @@ export interface StorefrontDraft {
   link?: string;
 }
 
+/* ── Lot board (tracking) ──────────────────────────────────────────────── */
+
+export interface BoardLot {
+  id: string;
+  name: string;
+  stage: FulfilmentStage;
+  status: string;
+  origin: string;
+  estimatedDispatchAt: string | null;
+  updatedAt?: string;
+}
+
+export interface BoardOrder {
+  id: string;
+  itemName: string;
+  condition: string;
+  quantity: number;
+  unitWeightGrams: number;
+  checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+}
+
+export interface BoardCustomer {
+  buyerId: string;
+  name: string;
+  phone: string | null;
+  orders: BoardOrder[];
+  trackingReference: string | null;
+}
+
+export interface LotsBoard {
+  lots: { lot: BoardLot; tally: LotTally }[];
+}
+
+export interface LotBoard {
+  lot: BoardLot;
+  tally: LotTally;
+  customers: BoardCustomer[];
+}
+
 export const api = {
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),
@@ -295,6 +335,18 @@ export const api = {
     permissions?: StorePermission[];
     remove?: boolean;
   }) => post<{ managers: StoreManager[] }>('/me/storefront/managers', body),
+
+  lotsBoard: (storeId?: string) =>
+    request<LotsBoard>(`/me/lots/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  lotBoard: (id: string, storeId?: string) =>
+    request<LotBoard>(
+      `/lots/${encodeURIComponent(id)}/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
+    ),
+  setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint, on: boolean) =>
+    post<{ order: { id: string; checkpoints: BoardOrder['checkpoints'] }; tally: LotTally }>(
+      `/orders/${encodeURIComponent(orderId)}/checkpoint`,
+      { checkpoint, on },
+    ),
 
   storefront: () =>
     request<{ storefront: SellerProfile | null; displayName: string }>('/me/storefront'),

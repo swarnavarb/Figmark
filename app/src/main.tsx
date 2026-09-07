@@ -10,6 +10,7 @@ import { ListingPage } from './pages/ListingPage';
 import { OrderPage } from './pages/OrderPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SellPage } from './pages/SellPage';
+import { LotBoardPage } from './pages/LotBoardPage';
 import { ShopPage } from './pages/ShopPage';
 import { ChannelPage, SocialPage } from './pages/SocialPage';
 import { SessionProvider, useSession } from './session';
@@ -42,6 +43,7 @@ function App() {
         <Route path="/listing/:id" element={<ListingPage />} />
         <Route path="/sell" element={<SellPage />} />
         <Route path="/shop" element={<ShopPage />} />
+        <Route path="/lot/:id" element={<LotBoardPage />} />
         <Route path="/batches" element={<BatchesPage />} />
         <Route path="/social" element={<SocialPage />} />
         <Route path="/social/c/:id" element={<ChannelPage />} />
