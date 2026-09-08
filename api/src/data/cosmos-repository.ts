@@ -475,7 +475,11 @@ export class CosmosRepository implements Repository {
     const { resources } = await this.container('messages')
       .items.query<Message>({
         query:
-          'SELECT * FROM c WHERE ARRAY_CONTAINS(@handles, c.from.handle) OR ARRAY_CONTAINS(@handles, c.to.handle) ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+          // `from` and `to` are reserved words in Cosmos SQL, so they can only
+          // be reached through the bracket form: `c.from` is a syntax error and
+          // the whole query comes back 400.
+          'SELECT * FROM c WHERE ARRAY_CONTAINS(@handles, c["from"].handle) OR ARRAY_CONTAINS(@handles, c["to"].handle)' +
+            ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
         parameters: [
           { name: '@handles', value: lowered },
           { name: '@limit', value: limit },

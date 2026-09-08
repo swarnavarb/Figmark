@@ -12,7 +12,7 @@
     "build:api": "npm --prefix api run build",
     "build:app": "npm --prefix app run build",
     "typecheck": "npm --prefix api run typecheck && npm --prefix app run typecheck",
-    "test": "node scripts/check-routes.mjs && node scripts/smoke-auth.mjs && node scripts/smoke-cosmos-seed.mjs && node scripts/smoke-api.mjs",
+    "test": "node scripts/check-routes.mjs && node scripts/check-queries.mjs && node scripts/smoke-auth.mjs && node scripts/smoke-cosmos-seed.mjs && node scripts/smoke-api.mjs",
     "dev": "npm --prefix app run dev",
     "serve": "node scripts/dev-server.mjs",
     "azure:check": "node scripts/azure-check.mjs",
