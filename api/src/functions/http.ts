@@ -26,10 +26,27 @@ export function error(status: number, code: string, message: string): HttpRespon
 }
 
 /**
+ * A Cosmos status code, when the thrown thing carries one.
+ *
+ * The SDK's errors are plain objects with a numeric `code`, so this is a shape
+ * check rather than an instanceof: nothing else in the stack throws that shape.
+ */
+function storeStatus(err: unknown): number | null {
+  if (typeof err !== 'object' || err === null) return null;
+  const code = (err as { code?: unknown; statusCode?: unknown }).code
+    ?? (err as { statusCode?: unknown }).statusCode;
+  return typeof code === 'number' ? code : null;
+}
+
+/**
  * Translate a thrown error into a response.
  *
- * `AuthError` carries its own status. Anything else is unexpected: it is logged
- * with detail and returned to the caller without it.
+ * `AuthError` carries its own status. Anything else is unexpected, and used to
+ * become "something went wrong handling this request" - which cost two rounds
+ * of guessing at a missing container from the outside. So the reply now names
+ * the *kind* of failure: the error's class and, for the data store, its status
+ * code. No message text crosses the wire, so nothing can leak; the detail stays
+ * in the log.
  */
 export function toErrorResponse(err: unknown, context: InvocationContext): HttpResponseInit {
   if (err instanceof AuthError) {
@@ -37,8 +54,28 @@ export function toErrorResponse(err: unknown, context: InvocationContext): HttpR
     // so they have to reach the browser with it.
     return json(err.status, { error: err.code, message: err.message } satisfies ApiError, err.cookies);
   }
+
   context.error('Unhandled error in request handler', err);
-  return error(500, 'internal_error', 'Something went wrong handling this request.');
+
+  // A 404 escaping to here came from a query, not a point read - those are
+  // caught where they are made - so the container itself is absent. That is a
+  // deployment gap rather than a bug in the request, and it has a known fix.
+  const status = storeStatus(err);
+  if (status === 404) {
+    return error(
+      503,
+      'store_incomplete',
+      'This feature\'s data container does not exist in the database yet. ' +
+        'Open /api/health: it names which containers are missing and how to create them.',
+    );
+  }
+
+  const kind = status !== null
+    ? `data store error ${status}`
+    : err instanceof Error
+      ? err.constructor.name
+      : typeof err;
+  return error(500, 'internal_error', `Something went wrong handling this request (${kind}).`);
 }
 
 /** Wrap a handler so every route gets uniform error translation. */

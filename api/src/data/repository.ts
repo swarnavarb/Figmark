@@ -16,6 +16,15 @@ export interface BackendStatus {
    * could not be asked.
    */
   signInAccounts: number | null;
+  /**
+   * Containers the schema declares that the store does not hold.
+   *
+   * Every feature reading one of these answers 500 and says nothing about why -
+   * which is exactly how a missing `messages` container cost two rounds of
+   * guessing from the outside. Empty is the healthy case; null means the store
+   * has no such concept.
+   */
+  missingContainers: string[] | null;
 }
 
 export interface CatalogQuery {

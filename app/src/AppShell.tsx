@@ -11,7 +11,7 @@ import { useSession } from './session';
  * where listing something is never more than one tap away.
  */
 export function AppShell() {
-  const { user, warning, sessionsInsecure, signOut } = useSession();
+  const { user, warning, sessionsInsecure, missingContainers, signOut } = useSession();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [term, setTerm] = useState(params.get('q') ?? '');
@@ -64,6 +64,19 @@ export function AppShell() {
           <p className="notice notice--error">
             Sessions are signed with the development key published in this repository, so they can be
             forged. Set <code>AUTH_SESSION_SECRET</code> in the app settings before any real user data.
+          </p>
+        </div>
+      )}
+
+      {/* A feature whose container does not exist fails on its own screen and
+          nowhere else, which makes it look like a bug in that screen. Name it
+          where every screen can see it. */}
+      {missingContainers.length > 0 && (
+        <div className="page" style={{ paddingBottom: 0 }}>
+          <p className="notice notice--error">
+            The database is missing {missingContainers.length === 1 ? 'a container' : 'containers'}:{' '}
+            <code>{missingContainers.join(', ')}</code>. Anything that reads {missingContainers.length === 1 ? 'it' : 'them'} will
+            fail. Run <code>npm run azure:provision</code> to create {missingContainers.length === 1 ? 'it' : 'them'}.
           </p>
         </div>
       )}

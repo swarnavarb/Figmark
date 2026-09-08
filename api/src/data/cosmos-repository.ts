@@ -77,6 +77,7 @@ export class CosmosRepository implements Repository {
       database: cosmosConfig.database,
       detail: 'Not yet initialised.',
       signInAccounts: null,
+      missingContainers: null,
     };
   }
 
@@ -95,6 +96,7 @@ export class CosmosRepository implements Repository {
         database: this.cosmosConfig.database,
         detail: `Could not reach Cosmos DB: ${describeError(error)}. Run "npm run azure:provision" if the database has not been created yet.`,
         signInAccounts: null,
+        missingContainers: null,
       };
       return;
     }
@@ -106,16 +108,18 @@ export class CosmosRepository implements Repository {
     // somebody re-ran a script by hand. Creating what is missing is cheap,
     // idempotent, and removes the manual step from between a deploy and a
     // working feature.
+    const containers = await this.ensureContainers();
     let created = '';
-    try {
-      const missing = await this.ensureContainers();
-      if (missing.length > 0) created = ` Created missing container(s): ${missing.join(', ')}.`;
-    } catch (error) {
-      // Creating a container is a management-plane operation, so an account
-      // key can do it and a data-plane managed identity cannot. Say which fix
-      // applies rather than leaving a feature quietly broken.
-      created =
-        ` Missing containers could not be created: ${describeError(error)}.` +
+    if (containers.created.length > 0) {
+      created = ` Created missing container(s): ${containers.created.join(', ')}.`;
+    }
+    if (containers.missing.length > 0) {
+      // Creating a container is a management-plane operation: an account key
+      // can do it, and a data-plane managed identity is refused. Naming the
+      // container and the fix beats leaving a feature broken and silent.
+      created +=
+        ` Missing container(s): ${containers.missing.join(', ')} —` +
+        ` every request that reads one will fail. ${containers.failure ?? ''}` +
         ' Run "npm run azure:provision" to create them.';
     }
 
@@ -133,6 +137,7 @@ export class CosmosRepository implements Repository {
           error,
         )}. Run "npm run azure:provision" to create them.`,
         signInAccounts: null,
+        missingContainers: containers.missing,
       };
       return;
     }
@@ -152,6 +157,7 @@ export class CosmosRepository implements Repository {
       database: this.cosmosConfig.database,
       detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${seeded}`,
       signInAccounts,
+      missingContainers: containers.missing,
     };
   }
 
@@ -159,21 +165,43 @@ export class CosmosRepository implements Repository {
    * Creates any container the schema declares and the database does not hold.
    *
    * One listing call, then a create for each gap, so the usual case - nothing
-   * missing - costs a single round trip. Returns what it had to create, which
-   * the health detail reports: a deployment silently repairing itself is worth
-   * seeing on the status page.
+   * missing - costs a single round trip.
+   *
+   * What is still missing afterwards matters more than what was created: a
+   * refused create leaves a feature broken, and the whole point is that the
+   * status page says which one rather than every request answering 500.
    */
-  private async ensureContainers(): Promise<string[]> {
-    const { resources } = await this.database.containers.readAll().fetchAll();
-    const present = new Set(resources.map((container) => container.id));
+  private async ensureContainers(): Promise<{ created: string[]; missing: string[]; failure: string | null }> {
+    let present: Set<string>;
+    try {
+      const { resources } = await this.database.containers.readAll().fetchAll();
+      present = new Set(resources.map((container) => container.id));
+    } catch (error) {
+      // The listing itself was refused, so nothing can be said about which
+      // containers exist. Report them all as unknown rather than guessing.
+      return {
+        created: [],
+        missing: CONTAINER_LIST.map((definition) => definition.name),
+        failure: `Containers could not be listed: ${describeError(error)}.`,
+      };
+    }
 
     const created: string[] = [];
+    const missing: string[] = [];
+    let failure: string | null = null;
     for (const definition of CONTAINER_LIST) {
       if (present.has(definition.name)) continue;
-      await this.database.containers.createIfNotExists(containerBody(definition) as ContainerRequest);
-      created.push(definition.name);
+      try {
+        await this.database.containers.createIfNotExists(containerBody(definition) as ContainerRequest);
+        created.push(definition.name);
+      } catch (error) {
+        // One refusal is every refusal when it is a permission, but a per
+        // container failure must not stop the rest being created.
+        missing.push(definition.name);
+        failure ??= `Creating them was refused: ${describeError(error)}.`;
+      }
     }
-    return created;
+    return { created, missing, failure };
   }
 
   /**

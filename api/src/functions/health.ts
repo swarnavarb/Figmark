@@ -30,6 +30,9 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
       data.database !== null &&
       // A store nobody can sign in to is running, not working.
       data.signInAccounts !== 0 &&
+      // A container the code queries and the store lacks is a broken feature,
+      // whatever the rest of the page says.
+      (data.missingContainers?.length ?? 0) === 0 &&
       // 'ephemeral' differs per worker, so sessions break across instances.
       (config.sessionSecretSource === 'configured' || config.sessionSecretSource === 'derived')
         ? 'ok'
@@ -51,6 +54,7 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
       database: data.database,
       detail: data.detail,
       signInAccounts: data.signInAccounts,
+      missingContainers: data.missingContainers,
     },
     storage,
   };

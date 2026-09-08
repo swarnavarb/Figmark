@@ -110,6 +110,12 @@ export interface HealthResponse {
      * anyone, whatever they type; null means the store could not be asked.
      */
     signInAccounts: number | null;
+    /**
+     * Containers the schema declares that the store does not hold. Every
+     * request reading one of these fails, so this is the first thing to check
+     * when one feature is broken and the rest of the app is fine.
+     */
+    missingContainers: string[] | null;
   };
   storage: {
     backend: 'azure_blob' | 'memory';

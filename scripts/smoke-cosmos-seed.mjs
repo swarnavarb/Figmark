@@ -257,6 +257,26 @@ await check('says nothing about containers when none were missing', async () => 
   const complete = repositoryOn(provisioned());
   await complete.init();
   assert.equal(/Created missing container/.test(complete.status().detail), false);
+  assert.deepEqual(complete.status().missingContainers, []);
+});
+
+await check('a container it may not create is named, not swallowed', async () => {
+  // What a data-plane managed identity actually gets: the listing works, the
+  // create is refused. Two rounds were spent guessing at this from the outside
+  // because every symptom was an anonymous 500, so the status has to say it.
+  const denied = provisioned(CONTAINER_LIST.map((d) => d.name).filter((name) => name !== 'messages'));
+  const repository = repositoryOn(denied);
+  const database = repository.client.database();
+  database.containers.createIfNotExists = async () => {
+    throw Object.assign(new Error('Forbidden'), { code: 403 });
+  };
+  await repository.init();
+
+  assert.deepEqual(repository.status().missingContainers, ['messages']);
+  assert.match(repository.status().detail, /Missing container\(s\): messages/);
+  assert.match(repository.status().detail, /azure:provision/);
+  // Still connected: one broken feature is not a broken deployment.
+  assert.equal(repository.status().connected, true);
 });
 
 console.log('\na database that cannot be reached');

@@ -15,6 +15,14 @@ interface SessionValue {
   warning: string | null;
   /** True when sessions are signed with the key published in this repository. */
   sessionsInsecure: boolean;
+  /**
+   * Containers the schema declares that the database does not hold.
+   *
+   * Every feature reading one is broken, and the only symptom is an error on
+   * that one screen — which is how a missing `messages` container went two
+   * rounds undiagnosed. Said out loud, in the same banner as the session key.
+   */
+  missingContainers: string[];
   signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -30,6 +38,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   /** Set when sign-up succeeded on a store that will not keep the account. */
   const [warning, setWarning] = useState<string | null>(null);
   const [sessionsInsecure, setSessionsInsecure] = useState(false);
+  const [missingContainers, setMissingContainers] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +64,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     void api
       .health()
-      .then((h) => !cancelled && setSessionsInsecure(h.auth.sessionSecretSource === 'development'))
+      .then((h) => {
+        if (cancelled) return;
+        setSessionsInsecure(h.auth.sessionSecretSource === 'development');
+        setMissingContainers(h.data.missingContainers ?? []);
+      })
       .catch(() => undefined);
     return () => {
       cancelled = true;
@@ -122,8 +135,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, warning, sessionsInsecure, signIn, signUp, signOut, refresh }),
-    [user, loading, warning, sessionsInsecure, signIn, signUp, signOut, refresh],
+    () => ({ user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh }),
+    [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

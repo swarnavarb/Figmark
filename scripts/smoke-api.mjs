@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
+const { toErrorResponse } = await import(new URL('http.js', fns));
 const { loginRoute: login, signupRoute: signup, meRoute: me } = await import(new URL('auth-routes.js', fns));
 const {
   feedRoute: feed, listingDetailRoute: listingDetail, createListingRoute: createListing,
@@ -79,6 +80,36 @@ await check('health reports the session-key source and account durability', asyn
   assert.equal(body.auth.accountsDurable, false);
   // ...and that alone is enough to keep the deployment out of "ok".
   assert.equal(body.status, 'degraded');
+});
+
+await check('a failure names its kind rather than saying nothing', async () => {
+  // The generic "something went wrong" is what made a missing container cost
+  // two rounds of guessing. Every unexplained 500 now says what kind it was,
+  // and a store 404 - which only a query against an absent container produces -
+  // says so outright and points at the page that names the fix.
+  const quiet = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
+
+  const missing = toErrorResponse(Object.assign(new Error('Resource Not Found'), { code: 404 }), quiet);
+  assert.equal(missing.status, 503);
+  assert.equal(missing.jsonBody.error, 'store_incomplete');
+  assert.match(missing.jsonBody.message, /\/api\/health/);
+
+  const throttled = toErrorResponse(Object.assign(new Error('Too many requests'), { code: 429 }), quiet);
+  assert.equal(throttled.status, 500);
+  assert.match(throttled.jsonBody.message, /data store error 429/);
+
+  const bug = toErrorResponse(new TypeError('x is not a function'), quiet);
+  assert.equal(bug.status, 500);
+  assert.match(bug.jsonBody.message, /TypeError/);
+  // The detail stays in the log: no message text crosses the wire.
+  assert.equal(bug.jsonBody.message.includes('x is not a function'), false);
+});
+
+await check('health reports which containers the store is missing', async () => {
+  const body = (await health(req(), ctx)).jsonBody;
+  // Nothing can be missing from the in-memory store, and it says so rather
+  // than leaving the field ambiguous.
+  assert.deepEqual(body.data.missingContainers, []);
 });
 
 await check('health advertises the demo sign-in, and only real ones', async () => {
