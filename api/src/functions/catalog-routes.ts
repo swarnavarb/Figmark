@@ -15,6 +15,8 @@ function toSellerCard(user: User) {
     displayName: user.displayName,
     storefrontName: user.sellerProfile?.storefrontName ?? user.displayName,
     storefrontSlug: user.sellerProfile?.storefrontSlug ?? null,
+    // The shop's own handle: where its page is, and where a message to it goes.
+    username: user.sellerProfile?.username ?? null,
     tier: user.sellerProfile?.tier ?? 'unverified',
     dispatchRegion: user.sellerProfile?.dispatchRegion ?? null,
     followerCount: user.sellerProfile?.followerCount ?? 0,
@@ -121,6 +123,9 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // A manager lists into the store they were given rights in, not into their
   // own: the seller id is the store's owner, which is also the partition every
   // one of its items already sits in. Absent, it is the caller's own store.
+  // Everything is sold by a shop. A listing with no storefront behind it has
+  // no name for a buyer to follow, no lot to travel in and nowhere for the
+  // tracking to come from - so opening one is a step, not an afterthought.
   let sellerId = user.id;
   if (body.storeId && body.storeId !== user.id) {
     const owner = await repository.getUserById(body.storeId);
@@ -129,6 +134,15 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
       return error(403, 'forbidden', 'You cannot list items in that store.');
     }
     sellerId = owner.id;
+  } else {
+    const mine = await repository.getUserById(user.id);
+    if (!mine?.sellerProfile) {
+      return error(
+        409,
+        'no_storefront',
+        'Open a storefront first — every item is listed from one.',
+      );
+    }
   }
 
   const title = body.title?.trim();

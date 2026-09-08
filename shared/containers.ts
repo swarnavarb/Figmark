@@ -153,6 +153,13 @@ export const CONTAINERS = {
     rationale:
       'A handful of rooms read as a list and opened one at a time. Partitioned by id because there is no other axis: a forum belongs to nobody.',
   },
+  messages: {
+    name: 'messages',
+    partitionKeyPath: '/threadId',
+    rationale:
+      'A conversation is one partition, and the thread id is derived from the two handles rather than allocated, so either side addresses the same partition without a handshake. The inbox is a cross-partition query over the handles a person speaks as, which is a small set.',
+    excludedPaths: ['/body/?'],
+  },
   sessions: {
     name: 'sessions',
     partitionKeyPath: '/id',

@@ -11,14 +11,16 @@ import {
 import type { StoreAccess } from '@shared/stores';
 import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
+import { MessagesView } from './MessagesPage';
 import { useSession } from '../session';
 
-type View = 'feed' | 'channels' | 'forums';
+type View = 'feed' | 'channels' | 'forums' | 'messages';
 
 const VIEWS: { id: View; label: string; glyph: string; hint: string }[] = [
   { id: 'feed', label: 'Following', glyph: '✳️', hint: 'Everything from the people you follow' },
   { id: 'channels', label: 'Channels', glyph: '💬', hint: 'One thread per seller' },
   { id: 'forums', label: 'Forums', glyph: '🏛️', hint: 'Shared rooms' },
+  { id: 'messages', label: 'Messages', glyph: '✉️', hint: 'Talk to anyone with a username' },
 ];
 
 /**
@@ -27,7 +29,9 @@ const VIEWS: { id: View; label: string; glyph: string; hint: string }[] = [
  * Three ways into the same posts, because they answer different questions:
  * "what is happening", "what has this one seller been saying", and "what is
  * everyone talking about". The first is a feed, the second a message list, the
- * third a set of rooms.
+ * third a set of rooms. Messages sit alongside them rather than in their own
+ * tab: reading what someone posted and asking them about it are the same
+ * errand.
  */
 export function SocialPage() {
   const [view, setView] = useState<View>('feed');
@@ -60,6 +64,7 @@ export function SocialPage() {
         {view === 'feed' && <FollowingFeed />}
         {view === 'channels' && <Channels />}
         {view === 'forums' && <Forums />}
+        {view === 'messages' && <MessagesView />}
       </div>
     </main>
   );

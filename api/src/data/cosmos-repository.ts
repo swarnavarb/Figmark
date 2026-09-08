@@ -2,7 +2,8 @@ import { CosmosClient, type Container, type Database } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINERS } from '../../../shared/containers.js';
-import type { Follow, Forum, Like, Listing, ListingComment, Lot, Order, Post, User } from '../../../shared/models.js';
+import type { Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, User } from '../../../shared/models.js';
+import { handleKey } from '../../../shared/handles.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -11,6 +12,7 @@ import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
   DEMO_PHONE,
+  PACKER_EMAIL,
   seedComments,
   seedFollows,
   seedForums,
@@ -234,6 +236,18 @@ export class CosmosRepository implements Repository {
       for (const identifier of identifiersOf(user)) {
         await this.container('identifiers').items.upsert({ id: identifier, userId: user.id });
       }
+      // Handles share the reservation container, so a seeded account is
+      // addressable at /<username> without a second pass.
+      if (user.username) {
+        await this.container('identifiers').items.upsert({
+          id: handleKey(user.username), userId: user.id, isStore: false,
+        });
+      }
+      if (user.sellerProfile?.username) {
+        await this.container('identifiers').items.upsert({
+          id: handleKey(user.sellerProfile.username), userId: user.id, isStore: true,
+        });
+      }
       written += 1;
     }
 
@@ -345,6 +359,81 @@ export class CosmosRepository implements Repository {
     return resource ?? user;
   }
 
+  async getByHandle(username: string): Promise<{ user: User; isStore: boolean } | null> {
+    const reservation = await this.readReservation(handleKey(username));
+    if (!reservation) return null;
+    const user = await this.getUserById(reservation.userId);
+    return user ? { user, isStore: Boolean(reservation.isStore) } : null;
+  }
+
+  async reserveHandle(username: string, userId: string, isStore: boolean): Promise<boolean> {
+    const key = handleKey(username);
+    const existing = await this.readReservation(key);
+    // Re-claiming your own is not a clash; somebody else's is.
+    if (existing) return existing.userId === userId && Boolean(existing.isStore) === isStore;
+    try {
+      await this.container('identifiers').items.create({ id: key, userId, isStore });
+      return true;
+    } catch (error) {
+      // Two claims racing: whoever lost simply did not get it.
+      if (isConflict(error)) return false;
+      throw error;
+    }
+  }
+
+  async releaseHandle(username: string): Promise<void> {
+    const key = handleKey(username);
+    await this.container('identifiers').item(key, key).delete().catch(() => {});
+  }
+
+  async listMessages(threadId: string, limit = 200): Promise<Message[]> {
+    const { resources } = await this.container('messages')
+      .items.query<Message>(
+        {
+          query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+          parameters: [{ name: '@limit', value: limit }],
+        },
+        { partitionKey: threadId },
+      )
+      .fetchAll();
+    // Read oldest first: a conversation is read downwards.
+    return resources.reverse();
+  }
+
+  async listMessagesForHandles(handles: readonly string[], limit = 300): Promise<Message[]> {
+    if (handles.length === 0) return [];
+    const lowered = handles.map((handle) => handle.toLowerCase());
+    const { resources } = await this.container('messages')
+      .items.query<Message>({
+        query:
+          'SELECT * FROM c WHERE ARRAY_CONTAINS(@handles, c.from.handle) OR ARRAY_CONTAINS(@handles, c.to.handle) ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+        parameters: [
+          { name: '@handles', value: lowered },
+          { name: '@limit', value: limit },
+        ],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async sendMessage(message: Message): Promise<Message> {
+    const { resource } = await this.container('messages').items.create(message);
+    return resource ?? message;
+  }
+
+  async markThreadRead(threadId: string, handle: string): Promise<number> {
+    const unread = await this.listMessages(threadId);
+    const now = new Date().toISOString();
+    let changed = 0;
+    for (const message of unread) {
+      if (message.to.handle !== handle.toLowerCase() || message.readAt) continue;
+      message.readAt = now;
+      await this.container('messages').items.upsert(message);
+      changed += 1;
+    }
+    return changed;
+  }
+
   async listStoreOwners(): Promise<User[]> {
     const { resources } = await this.container('users')
       .items.query<User>({ query: 'SELECT * FROM c WHERE IS_DEFINED(c.sellerProfile) AND c.sellerProfile != null' })
@@ -432,7 +521,10 @@ export class CosmosRepository implements Repository {
     // ones in this repository, so naming them tells the user nothing the source
     // does not. A database holding real accounts is never advertised.
     if (!this.seeded) return [];
-    return [{ identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` }];
+    return [
+      { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
+      { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
+    ];
   }
 
   async revokeSession(token: string, expiresAt: Date): Promise<void> {
@@ -681,6 +773,8 @@ export class CosmosRepository implements Repository {
 interface IdentifierReservation {
   id: string;
   userId: string;
+  /** Only on a `@handle` row: true when the handle belongs to a storefront. */
+  isStore?: boolean;
 }
 
 function isConflict(error: unknown): boolean {

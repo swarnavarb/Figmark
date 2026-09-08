@@ -48,6 +48,8 @@ export interface LoginRequest {
 
 export interface SignupRequest {
   displayName: string;
+  /** Optional: suggested from the name when left blank. */
+  username?: string;
   email: string;
   phone: string;
   password: string;

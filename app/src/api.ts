@@ -10,7 +10,8 @@ import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from
 import type { LotTally } from '@shared/board';
 import type { StoreAccess } from '@shared/stores';
 import type {
-  Forum, ForwarderProfile, Listing, ListingComment, Lot, Order, Post, SellerProfile, StoreManager,
+  Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty, Order, Post,
+  SellerProfile, StoreManager,
 } from '@shared/models';
 
 /**
@@ -79,6 +80,8 @@ export interface SellerCard {
   displayName: string;
   storefrontName: string;
   storefrontSlug: string | null;
+  /** The shop's handle: its page at `/username`, and where a message lands. */
+  username: string | null;
   tier: string;
   dispatchRegion: string | null;
   followerCount: number;
@@ -236,6 +239,7 @@ export interface DashboardResponse {
 
 export interface StorefrontDraft {
   storefrontName?: string;
+  username?: string;
   bio?: string;
   dispatchRegion?: string;
   photoUrl?: string;
@@ -281,6 +285,76 @@ export interface LotBoard {
   customers: BoardCustomer[];
 }
 
+/* ── Messages ──────────────────────────────────────────────────────────── */
+
+export interface ThreadRow {
+  threadId: string;
+  us: MessageParty;
+  them: MessageParty;
+  lastMessage: string;
+  lastAt: string;
+  lastFromUs: boolean;
+  unread: number;
+}
+
+export interface Inbox {
+  handles: MessageParty[];
+  threads: ThreadRow[];
+}
+
+export interface Thread {
+  us: MessageParty;
+  them: MessageParty;
+  /** Every handle the caller speaks as, so the thread can offer a switch. */
+  handles: MessageParty[];
+  threadId: string;
+  messages: Message[];
+}
+
+export interface PublicProfile {
+  handle: string;
+  isStore: boolean;
+  displayName: string;
+  bio: string;
+  photoUrl: string | null;
+  link: string | null;
+  dispatchRegion: string;
+  followerCount: number;
+  tier: string | null;
+  ownerHandle: string | null;
+  sellerId: string;
+  listings: {
+    id: string; title: string; priceMinor: number; currency: string; condition: string;
+    lotId: string | null; sourcing?: string; quantityAvailable: number; likeCount: number;
+  }[];
+}
+
+/* ── Exporter ──────────────────────────────────────────────────────────── */
+
+export interface ExporterItem {
+  id: string;
+  itemName: string;
+  condition: string;
+  quantity: number;
+  unitWeightGrams: number;
+  received: boolean;
+  packed: boolean;
+}
+
+export interface ExporterStore {
+  ownerId: string;
+  name: string;
+  /** The shop's handle, so the packer can tell it a crate has landed. */
+  handle: string | null;
+}
+
+export interface ExporterLot {
+  store: ExporterStore;
+  lot: { id: string; name: string; stage: FulfilmentStage; origin: string };
+  tally: LotTally;
+  items: ExporterItem[];
+}
+
 export const api = {
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),
@@ -288,7 +362,7 @@ export const api = {
   login: (identifier: string, password: string) =>
     post<LoginResponse>('/auth/login', { identifier, password }),
 
-  signup: (body: { displayName: string; email: string; phone: string; password: string }) =>
+  signup: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) =>
     post<LoginResponse>('/auth/signup', body),
 
   logout: () => post<{ ok: true }>('/auth/logout'),
@@ -347,6 +421,19 @@ export const api = {
       `/orders/${encodeURIComponent(orderId)}/checkpoint`,
       { checkpoint, on },
     ),
+
+  inbox: () => request<Inbox>('/messages'),
+  thread: (handle: string, as?: string) =>
+    request<Thread>(`/messages/${encodeURIComponent(handle)}${as ? `?as=${encodeURIComponent(as)}` : ''}`),
+  sendMessage: (handle: string, body: string, as?: string) =>
+    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as }),
+  profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
+
+  exporterLots: () =>
+    request<{ lots: { store: ExporterStore; lot: ExporterLot['lot']; tally: LotTally }[] }>(
+      '/exporter/lots',
+    ),
+  exporterLot: (id: string) => request<ExporterLot>(`/exporter/lots/${encodeURIComponent(id)}`),
 
   storefront: () =>
     request<{ storefront: SellerProfile | null; displayName: string }>('/me/storefront'),

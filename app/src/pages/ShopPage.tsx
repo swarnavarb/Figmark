@@ -5,6 +5,7 @@ import {
   type StorePermission,
 } from '@shared/enums';
 import { countOf, type LotTally } from '@shared/board';
+import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
 import {
@@ -16,15 +17,17 @@ import {
   type BoardLot,
   type LotsBoard,
 } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, Thumb, Tile } from '../components/ui';
+import { PackingList } from './ExporterPage';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
 
-type Section = 'items' | 'tracking' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'tracking' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
   { id: 'tracking', label: 'Tracking' },
+  { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
@@ -33,10 +36,10 @@ const SECTIONS: { id: Section; label: string }[] = [
 /**
  * The sell tab, which is two different screens depending on where you are.
  *
- * Before a store exists there are exactly two things worth offering: list one
- * thing, or open a shop. Anything else is a console for a shop that is not
- * there yet. Once one exists the tab becomes that console, and the two choices
- * would only be in the way.
+ * Before a store exists there is exactly one thing to offer: open one. Items
+ * are listed from a shop and only from a shop, so a "list an item" door here
+ * would lead to a refusal one screen later. Once a shop exists the tab becomes
+ * its console.
  */
 export function ShopPage() {
   const [stores, setStores] = useState<StoreAccess[] | null>(null);
@@ -83,9 +86,9 @@ export function ShopPage() {
 /**
  * The sell tab before there is a shop.
  *
- * Two doors, and nothing else on the screen. Listing one thing should not
- * require opening a shop, and opening a shop should not be buried inside a
- * console for the shop you have not opened.
+ * One door. Everything sold here is sold from a storefront, so the shop is not
+ * an upgrade you take later — it is the first step, and the screen says so
+ * rather than offering a shortcut that ends in an error.
  */
 function ShopStart({ onOpen }: { onOpen: () => void }) {
   return (
@@ -93,27 +96,24 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
       <div className="page__head">
         <div>
           <h1>Sell</h1>
-          <p className="muted">Sell one thing, or set up a shop to sell properly.</p>
+          <p className="muted">Everything is listed from a storefront. Opening one takes a minute.</p>
         </div>
       </div>
 
       <div className="doors">
-        <Link to="/sell" className="door">
-          <span className="door__glyph" aria-hidden="true">🏷️</span>
-          <span className="door__title">List an item</span>
-          <span className="door__note">
-            One thing, from your own profile. Takes about a minute, and you keep everything.
-          </span>
-        </Link>
-
         <button type="button" className="door" onClick={onOpen}>
           <span className="door__glyph" aria-hidden="true">🏬</span>
           <span className="door__title">Open a storefront</span>
           <span className="door__note">
-            A name buyers follow, lot tracking, analytics, and people you can bring in to help run it.
+            A username buyers can find you at, a name they follow, lot tracking, analytics, and people
+            you can bring in to help run it.
           </span>
         </button>
       </div>
+
+      <p className="notice notice--info" style={{ marginTop: 16 }}>
+        Already helping run someone else's shop? It shows up here once they add you.
+      </p>
     </main>
   );
 }
@@ -133,8 +133,10 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
   // A section nobody may open should not be offered: a tab that answers 403 is
   // worse than a tab that is not there.
   const visible = SECTIONS.filter((entry) => {
+    if (entry.id === 'items') return store.permissions.includes('listings');
     if (entry.id === 'analytics') return store.permissions.includes('analytics');
     if (entry.id === 'tracking') return store.permissions.includes('lots');
+    if (entry.id === 'packing') return store.permissions.includes('export');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     return true;
   });
@@ -146,7 +148,8 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         <div>
           <h1>{store.name}</h1>
           <p className="muted">
-            {store.isOwner ? 'Your shop.' : 'You help run this shop.'} {store.permissions.length} of 5 rights.
+            {store.isOwner ? 'Your shop.' : 'You help run this shop.'}{' '}
+            {store.permissions.length} of {STORE_PERMISSIONS.length} rights.
           </p>
         </div>
         {store.permissions.includes('listings') && (
@@ -185,8 +188,9 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       {/* Keyed so switching sections replays the entrance rather than swapping
           content underneath a static frame. */}
       <div className="tab-view" key={`${store.ownerId}:${active}`}>
-        {active === 'items' && <MyItems />}
+        {active === 'items' && <MyItems store={store} />}
         {active === 'tracking' && <Tracking store={store} />}
+        {active === 'packing' && <PackingList storeId={store.ownerId} />}
         {active === 'analytics' && <Analytics />}
         {active === 'storefront' && <StorefrontEditor />}
         {active === 'people' && <People store={store} onChanged={onChanged} />}
@@ -218,6 +222,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
         setSaved(result.storefront);
         setDraft({
           storefrontName: result.storefront?.storefrontName ?? result.displayName,
+          username: result.storefront?.username ?? suggestUsername(result.displayName),
           bio: result.storefront?.bio ?? '',
           dispatchRegion: result.storefront?.dispatchRegion ?? '',
           photoUrl: result.storefront?.photoUrl ?? '',
@@ -234,6 +239,10 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
 
   const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) =>
     setDraft({ ...draft, [key]: value });
+
+  // The same rules the server enforces, so a bad handle is caught while it is
+  // being typed rather than on save.
+  const handleProblem = checkUsername(draft.username ?? '');
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -261,8 +270,19 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           <span>Storefront name</span>
           <input value={draft.storefrontName ?? ''} onChange={(e) => set('storefrontName', e.target.value)}
             placeholder="Kaiju Imports" required />
+          <span className="field__hint">What buyers see instead of your own name.</span>
+        </label>
+
+        {/* The shop's address. Its own handle rather than the owner's, because
+            a shop is messaged and linked to as itself. */}
+        <label className="field">
+          <span>Username</span>
+          <input value={draft.username ?? ''} onChange={(e) => set('username', e.target.value.toLowerCase())}
+            placeholder="kaiju_imports" autoCapitalize="off" autoCorrect="off" spellCheck={false} required />
           <span className="field__hint">
-            What buyers see instead of your own name. {saved?.storefrontSlug && <>Address: <code>/s/{saved.storefrontSlug}</code></>}
+            {handleProblem
+              ? USERNAME_PROBLEMS[handleProblem]
+              : <>Your shop lives at <code>/{draft.username}</code>, and people message it at <code>@{draft.username}</code>.</>}
           </span>
         </label>
 
@@ -298,7 +318,8 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
         {flash && <p className="notice notice--ok">{flash}</p>}
         {error && <ErrorNotice message={error} />}
 
-        <button type="submit" className="btn btn--lg" disabled={busy || !draft.storefrontName?.trim()}>
+        <button type="submit" className="btn btn--lg"
+          disabled={busy || !draft.storefrontName?.trim() || handleProblem !== null}>
           {busy ? 'Saving…' : 'Save storefront'}
         </button>
       </form>
@@ -321,6 +342,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           <p className="muted" style={{ fontSize: 'var(--t-sm)' }}>
             {draft.bio || 'No description yet — buyers use this to decide whether to follow you.'}
           </p>
+          {draft.username && <span className="faint">@{draft.username}</span>}
           {draft.link && <span className="badge">{draft.link.replace(/^https?:\/\//, '')}</span>}
           <div className="row">
             <span className="badge">{saved?.tier ?? 'unverified'}</span>
@@ -335,7 +357,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
 /* ── Items ──────────────────────────────────────────────────────────────── */
 
 /** What is listed, and the way back to the batches that carry it. */
-function MyItems() {
+function MyItems({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -353,14 +375,15 @@ function MyItems() {
 
   return (
     <div className="stack">
+      {/* No second "list an item" here: the console header already carries it,
+          and two of the same button on one screen is one too many. */}
       <div className="row">
         <Link to="/batches" className="btn btn--ghost btn--sm">Manage batches</Link>
-        <Link to="/sell" className="btn btn--sm"><Icon name="plus" size={14} /> List an item</Link>
       </div>
 
       {data.listings.length === 0 ? (
         <EmptyState title="Nothing listed yet">
-          Your first listing creates your storefront. It takes about a minute.
+          Everything you list goes out under {store.name}. It takes about a minute.
         </EmptyState>
       ) : (
         <div className="grid">
@@ -494,15 +517,6 @@ function LotCard({ lot, tally, store }: { lot: BoardLot; tally: LotTally; store:
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function Tile({ value, label, tone }: { value: string; label: string; tone?: 'blue' | 'green' }) {
-  return (
-    <div className={`tile${tone ? ` tile--${tone}` : ''}`}>
-      <div className="tile__value">{value}</div>
-      <div className="tile__label">{label}</div>
     </div>
   );
 }

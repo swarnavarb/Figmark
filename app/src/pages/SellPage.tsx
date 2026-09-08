@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import type { Lot } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { NewLotDialog } from '../components/LotFields';
-import { ErrorNotice, Icon, Thumb } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 
@@ -117,6 +117,28 @@ export function SellPage() {
     }
   }
 
+  // Items are listed from a shop. Say so here rather than letting the form be
+  // filled in and refused on publish.
+  if (!storeId && user && user.sellerProfile === null) {
+    return (
+      <main className="page tab-view">
+        <div className="page__head">
+          <div>
+            <h1>Sell something</h1>
+            <p className="muted">Every item is listed from a storefront.</p>
+          </div>
+        </div>
+        <EmptyState title="You need a storefront first">
+          It takes a minute: a username, a name buyers follow, and a line about what you sell. Everything
+          you list afterwards goes out under it.
+        </EmptyState>
+        <Link to="/shop" className="btn btn--lg" style={{ justifySelf: 'start', marginTop: 16 }}>
+          Open a storefront
+        </Link>
+      </main>
+    );
+  }
+
   return (
     <main className="page">
       <div className="page__head">
@@ -126,11 +148,10 @@ export function SellPage() {
         </div>
       </div>
 
-      {/* The verification nudge from the spec: friction, not a wall. */}
-      {user && user.sellerProfile === null && (
+      {/* Verification is friction, not a wall: it gates value, not listing. */}
+      {user && user.verification.governmentId !== 'verified' && (
         <p className="notice notice--info" style={{ marginBottom: 20 }}>
-          This will be your first listing, so a storefront gets created for you. Verifying your ID unlocks
-          higher-value listings and payouts — you can do that any time.
+          Verifying your ID unlocks higher-value listings and payouts — you can do that any time.
         </p>
       )}
 

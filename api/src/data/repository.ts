@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import type { Forum, Listing, ListingComment, Lot, Order, Post, User } from '../../../shared/models.js';
+import type { Forum, Listing, ListingComment, Lot, Message, Order, Post, User } from '../../../shared/models.js';
 
 export interface BackendStatus {
   connected: boolean;
@@ -104,6 +104,22 @@ export interface Repository {
 
   /** Every account that has opened a store, for resolving who manages what. */
   listStoreOwners(): Promise<User[]>;
+
+  /** Resolves a username to the account behind it, and whether it is a store. */
+  getByHandle(username: string): Promise<{ user: User; isStore: boolean } | null>;
+  /** Claims a username. Returns false when somebody already holds it. */
+  reserveHandle(username: string, userId: string, isStore: boolean): Promise<boolean>;
+  /** Gives one up, so a rename does not strand the old handle. */
+  releaseHandle(username: string): Promise<void>;
+
+  /* Messages. */
+
+  listMessages(threadId: string, limit?: number): Promise<Message[]>;
+  /** Every message touching any of these handles, for the inbox. */
+  listMessagesForHandles(handles: readonly string[], limit?: number): Promise<Message[]>;
+  sendMessage(message: Message): Promise<Message>;
+  /** Marks everything addressed to `handle` in this thread as read. */
+  markThreadRead(threadId: string, handle: string): Promise<number>;
 
   /** Every order a seller has taken, for the tracking and analytics views. */
   listOrdersForSeller(sellerId: string): Promise<Order[]>;

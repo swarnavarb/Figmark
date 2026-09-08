@@ -2,6 +2,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { LOT_STAGES, LOT_STAGE_LABELS, STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { SellerProfile } from '../../../shared/models.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
+import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -74,6 +75,7 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
 
   let body: {
     storefrontName?: string;
+    username?: string;
     bio?: string;
     dispatchRegion?: string;
     photoUrl?: string;
@@ -101,6 +103,23 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     photoUrl: null,
     link: null,
   };
+
+  // The shop's own handle, out of the same namespace as people's: a store is
+  // addressed and messaged as itself, not as whoever owns it.
+  const wanted = (body.username ?? existing.username ?? suggestUsername(body.storefrontName ?? existing.storefrontName))
+    .trim()
+    .toLowerCase();
+  if (wanted !== existing.username) {
+    const problem = checkUsername(wanted);
+    if (problem) return error(400, 'invalid_storefront', USERNAME_PROBLEMS[problem]);
+    if (!(await repository.reserveHandle(wanted, record.id, true))) {
+      return error(409, 'username_taken', `@${wanted} is already taken.`);
+    }
+    // Only after the new one is safely held: a rename that frees the old handle
+    // first can lose both if the new one turns out to be taken.
+    if (existing.username) await repository.releaseHandle(existing.username);
+    existing.username = wanted;
+  }
 
   if (body.storefrontName !== undefined) {
     const name = body.storefrontName.trim();

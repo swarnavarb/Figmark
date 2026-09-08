@@ -10,3 +10,4 @@ import './functions/catalog-routes.js';
 import './functions/fulfilment-routes.js';
 import './functions/seller-routes.js';
 import './functions/social-routes.js';
+import './functions/message-routes.js';

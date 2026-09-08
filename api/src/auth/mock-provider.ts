@@ -13,6 +13,7 @@ import type { SignupRequest } from '../../../shared/contracts.js';
 import type { User, VerificationState } from '../../../shared/models.js';
 import type { Repository } from '../data/repository.js';
 import { AuthError } from './errors.js';
+import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import {
   SESSION_COOKIE_NAME,
@@ -247,6 +248,16 @@ export class MockAuthProvider implements AuthService {
       throw new AuthError(400, 'invalid_signup', 'Password must be at least 8 characters.');
     }
 
+    // A handle is how this account is addressed and messaged, so it is picked
+    // at sign-up rather than bolted on later. Offered as a suggestion from the
+    // name, and typed over if they would rather.
+    const username = (request.username?.trim() || suggestUsername(displayName)).toLowerCase();
+    const problem = checkUsername(username);
+    if (problem) throw new AuthError(400, 'invalid_signup', USERNAME_PROBLEMS[problem]);
+    if (!(await this.repository.reserveHandle(username, 'pending', false))) {
+      throw new AuthError(409, 'username_taken', `@${username} is already taken.`);
+    }
+
     const now = new Date().toISOString();
     const blank: VerificationState = {
       // Signup collects the minimum. Phone and email are treated as verified
@@ -263,13 +274,20 @@ export class MockAuthProvider implements AuthService {
       lastReviewedBy: null,
     };
 
+    const userId = `usr_${randomUUID().slice(0, 12)}`;
+    // The handle was reserved against a placeholder to close the race; now that
+    // the id exists, point it at the account it actually belongs to.
+    await this.repository.releaseHandle(username);
+    await this.repository.reserveHandle(username, userId, false);
+
     let created: User;
     try {
       created = await this.repository.createUser({
-        id: `usr_${randomUUID().slice(0, 12)}`,
+        id: userId,
         email,
         phone,
         displayName,
+        username,
         isAdmin: false,
         passwordHash: hashPassword(request.password),
         verification: blank,

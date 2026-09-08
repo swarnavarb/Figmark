@@ -201,7 +201,15 @@ export function ListingPage() {
               <div className="row">
                 <Avatar name={seller.storefrontName} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="card__title">{seller.storefrontName}</div>
+                  {/* The shop's name is its address: tapping it opens its page. */}
+                  {seller.username ? (
+                    <Link to={`/${seller.username}`} className="card__title"
+                      style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {seller.storefrontName}
+                    </Link>
+                  ) : (
+                    <div className="card__title">{seller.storefrontName}</div>
+                  )}
                   <span className="faint">{seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
                 <TrustBadge score={seller.trustScore} tier={seller.tier} />
@@ -222,6 +230,14 @@ export function ListingPage() {
                 <button className="btn btn--ghost btn--block" onClick={() => void toggleFollow()} disabled={busy}>
                   {data.following ? <><Icon name="check" size={14} /> Following</> : 'Follow seller'}
                 </button>
+              )}
+
+              {/* A question about an item is asked of the shop, not of whoever
+                  happens to own it — so the message goes to the shop's handle. */}
+              {user && !data.isOwn && seller.username && (
+                <Link to={`/messages/${encodeURIComponent(seller.username)}`} className="btn btn--quiet btn--block">
+                  💬 Message {seller.storefrontName}
+                </Link>
               )}
             </div>
           )}

@@ -1,4 +1,4 @@
-import type { StorePermission } from './enums.js';
+import { STORE_PERMISSIONS, type StorePermission } from './enums.js';
 import type { SellerProfile, StoreManager, User } from './models.js';
 
 /**
@@ -31,7 +31,9 @@ export interface StoreAccess {
  * is written down.
  */
 export function expandPermissions(granted: readonly StorePermission[]): StorePermission[] {
-  if (granted.includes('admin')) return ['listings', 'lots', 'posts', 'analytics', 'admin'];
+  // Taken from the list itself, so a permission added later is covered by
+  // `admin` without anyone having to remember to widen this line.
+  if (granted.includes('admin')) return [...STORE_PERMISSIONS];
   return [...granted];
 }
 

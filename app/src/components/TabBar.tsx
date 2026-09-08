@@ -9,8 +9,8 @@ import { NavLink, useLocation } from 'react-router-dom';
  */
 export const TABS = [
   { to: '/', label: 'Buy', glyph: '🛍️', match: (path: string) => path === '/' || path.startsWith('/listing') },
-  { to: '/shop', label: 'Sell', glyph: '📦', match: (path: string) => path.startsWith('/shop') || path.startsWith('/sell') || path.startsWith('/batches') || path.startsWith('/lot/') },
-  { to: '/social', label: 'Social', glyph: '💬', match: (path: string) => path.startsWith('/social') },
+  { to: '/shop', label: 'Sell', glyph: '📦', match: (path: string) => path.startsWith('/shop') || path.startsWith('/sell') || path.startsWith('/batches') || path.startsWith('/lot/') || path.startsWith('/packing') },
+  { to: '/social', label: 'Social', glyph: '💬', match: (path: string) => path.startsWith('/social') || path.startsWith('/messages') },
 ] as const;
 
 /**

@@ -26,7 +26,7 @@ const {
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
-  lotsBoardRoute, lotBoardRoute, setCheckpointRoute,
+  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, exporterLotsRoute, exporterLotRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute } =
   await import(new URL('seller-routes.js', apiRoot));
@@ -34,6 +34,8 @@ const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute,
   listForumsRoute, createForumRoute,
 } = await import(new URL('social-routes.js', apiRoot));
+const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute } =
+  await import(new URL('message-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -77,6 +79,12 @@ const routes = [
   ['POST', '/api/social/posts', createPostRoute],
   ['GET', '/api/social/forums', listForumsRoute],
   ['POST', '/api/social/forums/new', createForumRoute],
+  ['GET', '/api/messages', inboxRoute],
+  ['GET', '/api/messages/:handle', threadRoute],
+  ['POST', '/api/messages/:handle/send', sendMessageRoute],
+  ['GET', '/api/u/:handle', publicProfileRoute],
+  ['GET', '/api/exporter/lots', exporterLotsRoute],
+  ['GET', '/api/exporter/lots/:id', exporterLotRoute],
 ];
 
 const MIME = {

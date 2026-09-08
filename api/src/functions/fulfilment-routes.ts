@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { LOT_STAGES, ORDER_CHECKPOINTS, type LotStage, type OrderCheckpoint } from '../../../shared/enums.js';
 import { byCustomer, tally } from '../../../shared/board.js';
+import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
 import { DIRECT_LOT_ID, furthestStage, stagesFor } from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
@@ -475,7 +476,10 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
  */
 async function setCheckpoint(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  const user = await auth.requireCapability(request, ['sell']);
+  // Only authenticated here. Who may tick what depends on which side of the
+  // water they are on, and a packer abroad is not selling anything - gating
+  // this on the seller capability would lock them out of their own job.
+  const user = await auth.requireAuth(request);
   const orderId = request.params.id;
   if (!orderId) return error(400, 'invalid_order', 'An order id is required.');
 
@@ -496,8 +500,20 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   if (!order) return error(404, 'not_found', 'No such order.');
 
   const sellerId = await lotsStoreFor(request, user, order.sellerId);
-  if (sellerId !== order.sellerId) {
-    return error(403, 'forbidden', 'That order is not yours to work.');
+  if (sellerId === order.sellerId) {
+    // Working it as the store, which is a selling action like any other.
+    if (!hasAnyCapability(user.capabilities, ['sell'])) {
+      return error(403, 'forbidden', 'This action requires one of: sell.');
+    }
+  } else {
+    // Not theirs to work as a seller - but an exporter packs for this store,
+    // and packing is exactly one checkpoint. Anything else stays refused.
+    const owner = await repository.getUserById(order.sellerId);
+    const packer = owner ? can(owner, user.id, 'export') : false;
+    if (!packer) return error(403, 'forbidden', 'That order is not yours to work.');
+    if (checkpoint !== 'china_packed') {
+      return error(403, 'forbidden', 'You can mark items packed, and nothing else.');
+    }
   }
 
   const on = body.on !== false;
@@ -510,6 +526,111 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   return json(200, { order: { id: saved.id, checkpoints: saved.checkpoints ?? {} }, tally: tally(siblings) });
 }
 
+/**
+ * GET /api/exporter/lots - the lots this account packs for somebody.
+ *
+ * The exporter is the supplier at the origin end: they hold `export` in a store
+ * they do not own, and their whole job here is the packing list. They get the
+ * lots and nothing else - no customers, no prices, no analytics.
+ */
+/**
+ * The stages a lot is still the packer's to work.
+ *
+ * Once it has left China there is nothing for them to pack and no reason for
+ * them to keep reading it, so the list and the lot itself agree on one rule
+ * rather than each deciding for itself.
+ */
+const PACKABLE_STAGES: readonly LotStage[] = ['ordering', 'china_wh_received'];
+
+async function exporterLots(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const rows: {
+    store: { ownerId: string; name: string; handle: string | null };
+    lot: unknown;
+    tally: unknown;
+  }[] = [];
+  for (const owner of await repository.listStoreOwners()) {
+    if (!can(owner, user.id, 'export')) continue;
+    const lots = await repository.listLots({ sellerId: owner.id });
+    for (const lot of lots) {
+      // Only what is still on their side of the water.
+      if (!PACKABLE_STAGES.includes(lot.stage)) continue;
+      const orders = await repository.listOrdersForLot(lot.id);
+      rows.push({
+        store: {
+          ownerId: owner.id,
+          name: owner.sellerProfile?.storefrontName ?? owner.displayName,
+          handle: owner.sellerProfile?.username ?? null,
+        },
+        lot: { id: lot.id, name: lot.name, stage: lot.stage, origin: lot.origin ?? '' },
+        tally: tally(orders),
+      });
+    }
+  }
+
+  return json(200, { lots: rows });
+}
+
+/**
+ * GET /api/exporter/lots/{id} - one lot as a packing list.
+ *
+ * A flat grid of items rather than the owner's customer-by-customer board: the
+ * exporter packs pieces, and grouping by buyer would hand them a customer list
+ * they have no business holding. Prices are left out for the same reason.
+ */
+async function exporterLot(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const lotId = request.params.id;
+  if (!lotId) return error(400, 'invalid_lot', 'A lot id is required.');
+
+  const repository = await getRepository();
+  const owner = await findExportStoreFor(user.id, lotId, repository);
+  if (!owner) return error(403, 'forbidden', 'You do not pack for that lot.');
+
+  const lot = await repository.getLot(owner.id, lotId);
+  if (!lot) return error(404, 'not_found', 'No such lot.');
+  if (!PACKABLE_STAGES.includes(lot.stage)) {
+    return error(403, 'forbidden', 'That lot has left China. There is nothing left to pack.');
+  }
+
+  const orders = await repository.listOrdersForLot(lot.id);
+  return json(200, {
+    // The handle too: telling the shop a crate has landed is a message, and
+    // this screen is where the packer is standing when they need to send it.
+    store: {
+      ownerId: owner.id,
+      name: owner.sellerProfile?.storefrontName ?? owner.displayName,
+      handle: owner.sellerProfile?.username ?? null,
+    },
+    lot: { id: lot.id, name: lot.name, stage: lot.stage, origin: lot.origin ?? '' },
+    tally: tally(orders),
+    items: orders.map((order) => ({
+      id: order.id,
+      itemName: order.itemName,
+      condition: order.condition,
+      quantity: order.quantity,
+      unitWeightGrams: order.unitWeightGrams,
+      received: Boolean(order.checkpoints?.china_received),
+      packed: Boolean(order.checkpoints?.china_packed),
+    })),
+  });
+}
+
+/** The store whose lot this is, when the caller packs for it. */
+async function findExportStoreFor(userId: string, lotId: string, repository: Awaited<ReturnType<typeof getRepository>>) {
+  for (const owner of await repository.listStoreOwners()) {
+    if (!can(owner, userId, 'export')) continue;
+    if (await repository.getLot(owner.id, lotId)) return owner;
+  }
+  return null;
+}
+
+export const exporterLotsRoute = handler(exporterLots);
+export const exporterLotRoute = handler(exporterLot);
 export const lotsBoardRoute = handler(lotsBoard);
 export const lotBoardRoute = handler(lotBoard);
 export const setCheckpointRoute = handler(setCheckpoint);
@@ -533,4 +654,6 @@ app.http('lot-details', { ...anon, methods: ['POST'], route: 'lots/{id}/details'
 app.http('lots-board', { ...anon, methods: ['GET'], route: 'me/lots/board', handler: lotsBoardRoute });
 app.http('lot-board', { ...anon, methods: ['GET'], route: 'lots/{id}/board', handler: lotBoardRoute });
 app.http('order-checkpoint', { ...anon, methods: ['POST'], route: 'orders/{id}/checkpoint', handler: setCheckpointRoute });
+app.http('exporter-lots', { ...anon, methods: ['GET'], route: 'exporter/lots', handler: exporterLotsRoute });
+app.http('exporter-lot', { ...anon, methods: ['GET'], route: 'exporter/lots/{id}', handler: exporterLotRoute });
 app.http('order-tracking', { ...anon, methods: ['GET'], route: 'orders/{id}', handler: orderTrackingRoute });

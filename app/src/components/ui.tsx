@@ -103,3 +103,13 @@ export function LotMeter({ filled, threshold }: { filled: number; threshold: num
     </div>
   );
 }
+
+/** A single number under a word. The unit both the lot cards and packing use. */
+export function Tile({ value, label, tone }: { value: string; label: string; tone?: 'blue' | 'green' }) {
+  return (
+    <div className={`tile${tone ? ` tile--${tone}` : ''}`}>
+      <div className="tile__value">{value}</div>
+      <div className="tile__label">{label}</div>
+    </div>
+  );
+}

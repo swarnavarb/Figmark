@@ -165,7 +165,7 @@ export const FORUM_CAP = 6;
  * should see the revenue, and neither of them should be able to hand out
  * access. `admin` implies the rest.
  */
-export const STORE_PERMISSIONS = ['listings', 'lots', 'posts', 'analytics', 'admin'] as const;
+export const STORE_PERMISSIONS = ['listings', 'lots', 'posts', 'analytics', 'export', 'admin'] as const;
 export type StorePermission = (typeof STORE_PERMISSIONS)[number];
 
 export const STORE_PERMISSION_LABELS: Record<StorePermission, string> = {
@@ -173,6 +173,7 @@ export const STORE_PERMISSION_LABELS: Record<StorePermission, string> = {
   lots: 'Open and move lots',
   posts: 'Post as the store',
   analytics: 'See the numbers',
+  export: 'Pack the lots (exporter)',
   admin: 'Manage the store and its people',
 };
 

@@ -33,7 +33,14 @@ const {
   setTrackingRoute: setTracking, orderTrackingRoute: orderTracking,
   lotsBoardRoute: lotsBoard, lotBoardRoute: lotBoard, setCheckpointRoute: setCheckpoint,
 } = await import(new URL('fulfilment-routes.js', fns));
-const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD } = await import(
+const {
+  exporterLotsRoute: exporterLots, exporterLotRoute: exporterLot,
+} = await import(new URL('fulfilment-routes.js', fns));
+const {
+  inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
+  publicProfileRoute: publicProfile,
+} = await import(new URL('message-routes.js', fns));
+const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
 );
 
@@ -74,10 +81,14 @@ await check('health reports the session-key source and account durability', asyn
   assert.equal(body.status, 'degraded');
 });
 
-await check('health advertises exactly one sign-in account', async () => {
+await check('health advertises the demo sign-in, and only real ones', async () => {
   const body = (await health(req(), ctx)).jsonBody;
-  assert.equal(body.auth.demoAccounts.length, 1);
-  assert.equal(body.auth.demoAccounts[0].identifier, DEMO_EMAIL);
+  assert.ok(
+    body.auth.demoAccounts.some((account) => account.identifier === DEMO_EMAIL),
+    'the demo account must be offered',
+  );
+  // The hint is only useful if the count behind it matches what can sign in.
+  assert.equal(body.auth.demoAccounts.length, body.data.signInAccounts);
 });
 
 const session = await login(req({ body: { identifier: DEMO_EMAIL, password: DEMO_PASSWORD } }), ctx);
@@ -772,7 +783,7 @@ await check('opening a storefront is what makes a store exist', async () => {
   // Ownership is total, and expanded once so a check is a plain includes.
   assert.deepEqual(
     [...before.stores[0].permissions].sort(),
-    ['admin', 'analytics', 'listings', 'lots', 'posts'],
+    ['admin', 'analytics', 'export', 'listings', 'lots', 'posts'],
   );
 });
 
@@ -782,9 +793,9 @@ await check('an admin can bring someone in with only the rights they chose', asy
     body: { identifier: 'helper@figmark.example', permissions: ['listings', 'posts'] },
   }), ctx);
   assert.equal(added.status, 200);
-  assert.equal(added.jsonBody.managers.length, 1);
-  assert.equal(added.jsonBody.managers[0].userId, helperId);
-  assert.deepEqual(added.jsonBody.managers[0].permissions, ['listings', 'posts']);
+  const entry = added.jsonBody.managers.find((manager) => manager.userId === helperId);
+  assert.ok(entry, 'the helper should be on the member list');
+  assert.deepEqual(entry.permissions, ['listings', 'posts']);
 
   const theirs = (await myStores(req({ headers: helper }), ctx)).jsonBody;
   assert.equal(theirs.stores.length, 1);
@@ -855,7 +866,11 @@ await check('removing someone takes the store away with it', async () => {
     headers: auth, body: { identifier: 'helper@figmark.example', remove: true },
   }), ctx);
   assert.equal(removed.status, 200);
-  assert.deepEqual(removed.jsonBody.managers, []);
+  assert.equal(
+    removed.jsonBody.managers.some((manager) => manager.userId === helperId),
+    false,
+    'the helper should be off the member list',
+  );
 
   const theirs = (await myStores(req({ headers: helper }), ctx)).jsonBody;
   assert.deepEqual(theirs.stores, []);
@@ -963,6 +978,254 @@ await check('another seller cannot read or tick this lot', async () => {
     body: { checkpoint: 'china_packed', on: true },
   }), ctx);
   assert.equal(tick.status, 403);
+});
+
+/* ── usernames ─────────────────────────────────────────────────────────── */
+console.log('\nusernames');
+
+await check('a username is claimed at sign-up, and is where that person lives', async () => {
+  const made = await signup(req({
+    body: {
+      displayName: 'Nadia Rao', username: 'nadia_r',
+      email: 'nadia@figmark.example', phone: '+919000022221', password: 'longenough1',
+    },
+  }), ctx);
+  assert.equal(made.status, 201);
+
+  const page = await publicProfile(req({ params: { handle: 'nadia_r' } }), ctx);
+  assert.equal(page.status, 200);
+  assert.equal(page.jsonBody.isStore, false);
+  assert.equal(page.jsonBody.displayName, 'Nadia Rao');
+});
+
+await check('one namespace: a person and a shop cannot hold the same handle', async () => {
+  const clash = await signup(req({
+    body: {
+      displayName: 'Impostor', username: 'arjun_collects',
+      email: 'impostor@figmark.example', phone: '+919000022222', password: 'longenough1',
+    },
+  }), ctx);
+  assert.equal(clash.status, 409);
+  // And the shop still holds it.
+  const page = (await publicProfile(req({ params: { handle: 'arjun_collects' } }), ctx)).jsonBody;
+  assert.equal(page.isStore, true);
+});
+
+await check('a shop page answers with its shelf, a person page with neither', async () => {
+  const shop = (await publicProfile(req({ params: { handle: 'arjun_collects' } }), ctx)).jsonBody;
+  assert.ok(shop.listings.length > 0, 'a shop should show what it sells');
+  // The person behind it is a separate address, and named as one.
+  assert.equal(shop.ownerHandle, 'arjun');
+
+  const person = (await publicProfile(req({ params: { handle: 'nadia_r' } }), ctx)).jsonBody;
+  assert.deepEqual(person.listings, []);
+  assert.equal(person.ownerHandle, null);
+});
+
+await check('nobody home is a 404, not an empty page', async () => {
+  const missing = await publicProfile(req({ params: { handle: 'not_a_real_handle' } }), ctx);
+  assert.equal(missing.status, 404);
+});
+
+/* ── listing needs a storefront ────────────────────────────────────────── */
+console.log('\nlisting needs a storefront');
+
+const noShop = await signup(req({
+  body: {
+    displayName: 'Shopless Sam', email: 'sam@figmark.example',
+    phone: '+919000022223', password: 'longenough1',
+  },
+}), ctx);
+const shopless = { authorization: `Bearer ${noShop.jsonBody.token}` };
+
+await check('an account without one is refused, and told what to do', async () => {
+  const refused = await createListing(req({
+    headers: shopless, body: { title: 'Straight to the feed', priceMinor: 5_000 },
+  }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'no_storefront');
+  assert.match(refused.jsonBody.message, /storefront/i);
+});
+
+await check('opening one unblocks it, and the item goes out under the shop', async () => {
+  const opened = await saveStorefront(req({
+    headers: shopless, body: { storefrontName: "Sam's Corner", username: 'sams_corner' },
+  }), ctx);
+  assert.equal(opened.status, 200);
+  assert.equal(opened.jsonBody.storefront.username, 'sams_corner');
+
+  const listed = await createListing(req({
+    headers: shopless, body: { title: 'Now it works', priceMinor: 5_000 },
+  }), ctx);
+  assert.equal(listed.status, 201);
+  assert.equal(listed.jsonBody.listing.sellerId, noShop.jsonBody.user.id);
+});
+
+/* ── messages ──────────────────────────────────────────────────────────── */
+console.log('\nmessages');
+
+await check('an owner speaks as themselves or as their shop, and they differ', async () => {
+  const mine = (await inbox(req({ headers: auth }), ctx)).jsonBody;
+  const handles = mine.handles.map((party) => party.handle).sort();
+  assert.deepEqual(handles, ['arjun', 'arjun_collects']);
+  assert.equal(mine.handles.find((party) => party.handle === 'arjun_collects').isStore, true);
+  assert.equal(mine.handles.find((party) => party.handle === 'arjun').isStore, false);
+});
+
+await check('a message reaches the handle it was addressed to', async () => {
+  const sent = await sendMessage(req({
+    headers: auth, params: { handle: 'sams_corner' },
+    body: { body: 'Do you ship to Mumbai?', as: 'arjun' },
+  }), ctx);
+  assert.equal(sent.status, 201);
+  assert.equal(sent.jsonBody.message.from.handle, 'arjun');
+  assert.equal(sent.jsonBody.message.to.handle, 'sams_corner');
+
+  const theirs = (await inbox(req({ headers: shopless }), ctx)).jsonBody;
+  assert.equal(theirs.threads.length, 1);
+  assert.equal(theirs.threads[0].them.handle, 'arjun');
+  assert.equal(theirs.threads[0].unread, 1);
+});
+
+await check('the two voices are two conversations, not one', async () => {
+  await sendMessage(req({
+    headers: auth, params: { handle: 'sams_corner' },
+    body: { body: 'Wholesale rates for the shop?', as: 'arjun_collects' },
+  }), ctx);
+
+  const asPerson = (await thread(req({
+    headers: auth, params: { handle: 'sams_corner' }, query: { as: 'arjun' },
+  }), ctx)).jsonBody;
+  const asShop = (await thread(req({
+    headers: auth, params: { handle: 'sams_corner' }, query: { as: 'arjun_collects' },
+  }), ctx)).jsonBody;
+
+  assert.notEqual(asPerson.threadId, asShop.threadId);
+  assert.equal(asPerson.messages.length, 1);
+  assert.equal(asShop.messages.length, 1);
+  assert.equal(asPerson.messages[0].body, 'Do you ship to Mumbai?');
+  assert.equal(asShop.messages[0].from.isStore, true);
+});
+
+await check('opening a thread is what marks it read', async () => {
+  const before = (await inbox(req({ headers: shopless }), ctx)).jsonBody;
+  assert.equal(before.threads.reduce((sum, row) => sum + row.unread, 0), 2);
+
+  await thread(req({ headers: shopless, params: { handle: 'arjun' } }), ctx);
+  const after = (await inbox(req({ headers: shopless }), ctx)).jsonBody;
+  const fromPerson = after.threads.find((row) => row.them.handle === 'arjun');
+  assert.equal(fromPerson.unread, 0);
+  // The shop's thread is a different one and stays unread.
+  assert.equal(after.threads.find((row) => row.them.handle === 'arjun_collects').unread, 1);
+});
+
+await check('you cannot speak as a handle that is not yours, or to nobody', async () => {
+  const notYours = await sendMessage(req({
+    headers: shopless, params: { handle: 'arjun' },
+    body: { body: 'Pretending to be the shop.', as: 'arjun_collects' },
+  }), ctx);
+  assert.equal(notYours.status, 403);
+
+  const nobody = await sendMessage(req({
+    headers: auth, params: { handle: 'nobody_at_all' }, body: { body: 'Hello?' },
+  }), ctx);
+  assert.equal(nobody.status, 404);
+
+  const self = await sendMessage(req({
+    headers: auth, params: { handle: 'arjun' }, body: { body: 'Talking to myself.', as: 'arjun' },
+  }), ctx);
+  assert.equal(self.status, 400);
+});
+
+await check('messaging needs a session', async () => {
+  assert.equal((await inbox(req(), ctx)).status, 401);
+  assert.equal((await sendMessage(req({ params: { handle: 'arjun' }, body: { body: 'Hi' } }), ctx)).status, 401);
+});
+
+/* ── the exporter's packing view ───────────────────────────────────────── */
+console.log("\nthe exporter's packing view");
+
+const packerSession = await login(req({
+  body: { identifier: PACKER_EMAIL, password: DEMO_PASSWORD },
+}), ctx);
+const packer = { authorization: `Bearer ${packerSession.jsonBody.token}` };
+
+await check('a packer sees the lots they pack for, and only those', async () => {
+  const body = (await exporterLots(req({ headers: packer }), ctx)).jsonBody;
+  const ids = body.lots.map((row) => row.lot.id);
+  assert.ok(ids.includes('lot_open_24'), 'the open lot is theirs to pack');
+  // Already gone from China, so no longer theirs.
+  assert.equal(ids.includes('lot_ship_23'), false);
+
+  const outsider = (await exporterLots(req({ headers: helper }), ctx)).jsonBody;
+  assert.deepEqual(outsider.lots, []);
+});
+
+await check('a packing list is pieces, never customers or prices', async () => {
+  const body = (await exporterLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.equal(body.items.length, 34);
+  assert.equal(JSON.stringify(body).includes('priceMinor'), false);
+  assert.equal(JSON.stringify(body).includes('buyerId'), false);
+  for (const item of body.items) {
+    assert.deepEqual(
+      Object.keys(item).sort(),
+      ['condition', 'id', 'itemName', 'packed', 'quantity', 'received', 'unitWeightGrams'],
+    );
+  }
+});
+
+await check("marking packed is what moves the owner's ch-packed count", async () => {
+  const first = (await exporterLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const target = first.items.find((item) => !item.packed);
+  assert.ok(target, 'expected something still to pack');
+  const before = first.tally.counts.find((row) => row.checkpoint === 'china_packed').done;
+
+  const ticked = await setCheckpoint(req({
+    headers: packer, params: { id: target.id }, body: { checkpoint: 'china_packed', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200);
+
+  // Read back through the owner's own board: the two screens are one number.
+  const owners = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.equal(owners.tally.counts.find((row) => row.checkpoint === 'china_packed').done, before + 1);
+});
+
+await check('a packer may tick that, and nothing else', async () => {
+  const body = (await exporterLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const target = body.items[0];
+
+  for (const checkpoint of ['china_received', 'ready_to_dispatch', 'dispatched']) {
+    const refused = await setCheckpoint(req({
+      headers: packer, params: { id: target.id }, body: { checkpoint, on: true },
+    }), ctx);
+    assert.equal(refused.status, 403, `${checkpoint} should be the owner's alone`);
+  }
+});
+
+await check('the packing list names the shop, so a crate landing can be reported', async () => {
+  // The warehouse receipt is not something the packer can tick - they tell the
+  // shop and the shop ticks it - so the handle to tell has to be on this screen.
+  const body = (await exporterLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.equal(body.store.handle, 'arjun_collects');
+
+  const sent = await sendMessage(req({
+    headers: packer, params: { handle: body.store.handle },
+    body: { body: 'Lot 24 landed at the warehouse this morning.' },
+  }), ctx);
+  assert.equal(sent.status, 201);
+  assert.equal(sent.jsonBody.message.from.handle, 'baiyun_hobby');
+});
+
+await check('a lot they do not pack for is closed to them', async () => {
+  const refused = await exporterLot(req({ headers: packer, params: { id: 'lot_ship_23' } }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+await check('the packing view never shows the owner the buyer list twice', async () => {
+  // The owner keeps their own board; the flat list is the packer's shape, and
+  // ownership implying every right must not turn one into the other.
+  const owners = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.ok(owners.customers.length > 0, 'the owner still gets customers');
 });
 
 console.log(`\n${passed} checks passed`);

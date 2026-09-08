@@ -16,7 +16,7 @@ interface SessionValue {
   /** True when sessions are signed with the key published in this repository. */
   sessionsInsecure: boolean;
   signIn: (identifier: string, password: string) => Promise<void>;
-  signUp: (body: { displayName: string; email: string; phone: string; password: string }) => Promise<void>;
+  signUp: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
 }
 

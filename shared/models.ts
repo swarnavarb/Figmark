@@ -97,6 +97,14 @@ export interface User extends BaseDocument {
   phone: string | null;
   displayName: string;
   /**
+   * The handle this account is addressed by, at `/<username>`.
+   *
+   * Shares a namespace with storefront usernames, since both are addressable
+   * the same way. Optional on the type only because accounts written before
+   * handles existed do not carry one; the API backfills on read.
+   */
+  username?: string;
+  /**
    * Platform administration: verification queue, dispute console, payouts.
    * A real assigned role, not a capability derived from verification, so it is
    * stored rather than computed.
@@ -130,6 +138,14 @@ export interface User extends BaseDocument {
 export interface SellerProfile {
   /** URL slug for the public storefront. */
   storefrontSlug: string;
+  /**
+   * The storefront's own handle.
+   *
+   * A store is addressed and messaged as itself rather than as its owner -
+   * which is the whole point of a storefront - so it takes a username out of
+   * the same namespace instead of borrowing one.
+   */
+  username?: string;
   storefrontName: string;
   bio: string;
   tier: SellerTier;
@@ -564,4 +580,42 @@ export interface Forum extends BaseDocument {
   description: string;
   createdBy: string;
   postCount: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Messages                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Who is speaking.
+ *
+ * A person and a storefront are separate voices even when one person is behind
+ * both: an owner writing as their shop is not the same as writing as
+ * themselves, and the person reading needs to be able to tell. So a party is
+ * always a handle plus the account that actually typed it.
+ */
+export interface MessageParty {
+  /** Username, without the `@`. */
+  handle: string;
+  /** The account this handle resolves to; a store's is its owner. */
+  userId: string;
+  /** True when the handle is a storefront rather than a person. */
+  isStore: boolean;
+  /** Snapshot of the name shown, so a thread renders without a lookup. */
+  displayName: string;
+}
+
+export interface Message extends BaseDocument {
+  /**
+   * Partition key: the two handles, lowercased and sorted, joined by `|`.
+   *
+   * Deterministic from the pair, so either side computes the same thread id
+   * without one having to be created first, and a whole conversation is a
+   * single-partition read.
+   */
+  threadId: string;
+  from: MessageParty;
+  to: MessageParty;
+  body: string;
+  readAt: string | null;
 }

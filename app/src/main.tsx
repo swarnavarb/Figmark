@@ -13,6 +13,9 @@ import { SellPage } from './pages/SellPage';
 import { LotBoardPage } from './pages/LotBoardPage';
 import { ShopPage } from './pages/ShopPage';
 import { ChannelPage, SocialPage } from './pages/SocialPage';
+import { ThreadPage } from './pages/MessagesPage';
+import { ExporterPage, PackingLotPage } from './pages/ExporterPage';
+import { ProfileByHandlePage } from './pages/ProfileByHandlePage';
 import { SessionProvider, useSession } from './session';
 import './styles.css';
 
@@ -47,9 +50,15 @@ function App() {
         <Route path="/batches" element={<BatchesPage />} />
         <Route path="/social" element={<SocialPage />} />
         <Route path="/social/c/:id" element={<ChannelPage />} />
+        <Route path="/messages/:handle" element={<ThreadPage />} />
+        <Route path="/packing" element={<ExporterPage />} />
+        <Route path="/packing/:id" element={<PackingLotPage />} />
         <Route path="/order/:id" element={<OrderPage />} />
         <Route path="/forwarders" element={<ForwardersPage />} />
         <Route path="/me" element={<ProfilePage />} />
+        {/* Last, so every screen above keeps its path: `/<username>` is the
+            fallback reading of a single segment, not the first one. */}
+        <Route path="/:username" element={<ProfileByHandlePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

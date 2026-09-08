@@ -31,6 +31,15 @@ export const DEMO_EMAIL = 'demo@figmark.in';
 export const DEMO_PHONE = '+919812345678';
 export const DEMO_PASSWORD = 'figmark123';
 
+/**
+ * The supplier packing the demo shop's lots, as an account of their own.
+ *
+ * Packing access is the point of it: signing in here shows what the exporter
+ * sees, which is a list of pieces and nothing about the buyers behind them.
+ */
+export const PACKER_EMAIL = 'packer@baiyunhobby.example';
+export const PACKER_PHONE = '+8613800000024';
+
 const NOW = new Date('2026-09-01T09:00:00.000Z');
 const iso = (days = 0, hours = 0) =>
   new Date(NOW.getTime() + days * 86_400_000 + hours * 3_600_000).toISOString();
@@ -73,6 +82,7 @@ export function seedUsers(): User[] {
     /* The single sign-in account. Both buyer and seller, as every account is. */
     {
       id: 'usr_demo',
+      username: 'arjun',
       email: DEMO_EMAIL,
       phone: DEMO_PHONE,
       displayName: 'Arjun Mehta',
@@ -83,6 +93,7 @@ export function seedUsers(): User[] {
       sellerTrust: sellerTrust(58, 3, 1),
       sellerProfile: {
         storefrontSlug: 'arjun-collects',
+        username: 'arjun_collects',
         storefrontName: 'Arjun Collects',
         bio: 'Occasional resales from my own collection. Mumbai based.',
         tier: 'verified',
@@ -90,11 +101,40 @@ export function seedUsers(): User[] {
         depositHeldMinor: 0,
         dispatchRegion: 'Mumbai, MH',
         followerCount: 14,
+        managers: [
+          {
+            userId: 'usr_packer',
+            displayName: 'Baiyun Hobby Trading',
+            permissions: ['export'],
+            addedAt: iso(-40),
+            addedBy: 'usr_demo',
+          },
+        ],
       },
       forwarderProfile: null,
       suspended: false,
       createdAt: iso(-120),
       updatedAt: iso(-2),
+    },
+
+    /* The supplier in Guangzhou. A sign-in account, because the packing screen
+       only means anything seen from their side. */
+    {
+      id: 'usr_packer',
+      username: 'baiyun_hobby',
+      email: PACKER_EMAIL,
+      phone: PACKER_PHONE,
+      displayName: 'Baiyun Hobby Trading',
+      isAdmin: false,
+      passwordHash: hashPassword(DEMO_PASSWORD),
+      verification: verification(false),
+      buyerTrust: trust(),
+      sellerTrust: sellerTrust(),
+      sellerProfile: null,
+      forwarderProfile: null,
+      suspended: false,
+      createdAt: iso(-60),
+      updatedAt: iso(-3),
     },
 
     /* Catalog sellers. No password hash: they populate the feed, they are not
@@ -136,6 +176,9 @@ function storefront(
 ): User {
   return {
     id,
+    // The person behind the shop and the shop itself are separate handles, so
+    // "@kaiju_imports posted" and "@ravi replied" are visibly different voices.
+    username: id.replace('usr_', ''),
     email: `${slug}@figmark.example`,
     phone: null,
     displayName: name,
@@ -147,6 +190,7 @@ function storefront(
     sellerTrust: sellerTrust(score, completed, onTime),
     sellerProfile: {
       storefrontSlug: slug,
+      username: slug.replace(/-/g, '_'),
       storefrontName: name,
       bio,
       tier: score > 80 ? 'pro' : 'verified',
@@ -169,6 +213,7 @@ function forwarder(
 ): User {
   return {
     id,
+    username: id.replace('usr_fwd_', ''),
     email,
     phone,
     displayName: company,
@@ -675,6 +720,7 @@ const LOT_BUYERS: [string, string, string][] = [
 export function seedLotBuyers(): User[] {
   return LOT_BUYERS.map(([id, displayName, phone]) => ({
     id,
+    username: id.replace('usr_b_', ''),
     // A shop's customers are known by phone; the address is not something a
     // packing list needs, and inventing one would put a fake in the store.
     email: `${id.replace('usr_b_', '')}@customers.figmark.invalid`,

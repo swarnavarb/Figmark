@@ -60,10 +60,23 @@ await check('identifier matching ignores case and phone punctuation', async () =
   }
 });
 
-await check('exactly one account can sign in', async () => {
+await check('every advertised demo account actually signs in', async () => {
+  // The hint on the sign-in page is only worth showing if it works: assert the
+  // behaviour rather than the count, so adding a demo account cannot silently
+  // advertise a login nobody can use.
   const accounts = repository.listDemoAccounts();
-  assert.equal(accounts.length, 1);
-  assert.equal(accounts[0].identifier, DEMO_EMAIL);
+  assert.ok(accounts.length >= 1, 'at least one sign-in must be offered');
+  assert.ok(
+    accounts.some((account) => account.identifier === DEMO_EMAIL),
+    'the demo account must be among them',
+  );
+  for (const account of accounts) {
+    // The label carries the password after the last separator, which is what
+    // the page's "fill credentials" button reads.
+    const password = account.label.split('·').pop().trim();
+    const result = await auth.login({ identifier: account.identifier, password });
+    assert.ok(result.user.id, `${account.identifier} should sign in`);
+  }
 });
 
 await check('catalog sellers and forwarders cannot be signed into', async () => {
@@ -413,13 +426,14 @@ await expectAuthError(
     ).login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
 );
 
-await check('a freshly seeded store reports exactly one sign-in account', async () => {
+await check('a freshly seeded store counts exactly the accounts it advertises', async () => {
   // Counted on a store of its own: the sign-up tests above added accounts to
   // the shared one. Catalog sellers and forwarders carry no password hash, so
-  // the seed contributes exactly the demo account here.
+  // the seed contributes exactly the accounts the sign-in page offers — the
+  // number the health check reports is what a visitor could actually use.
   const fresh = new MemoryRepository();
   await fresh.init();
-  assert.equal(fresh.status().signInAccounts, 1);
+  assert.equal(fresh.status().signInAccounts, fresh.listDemoAccounts().length);
   assert.equal(fresh.status().connected, true);
 });
 

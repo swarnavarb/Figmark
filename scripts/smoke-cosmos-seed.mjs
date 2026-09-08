@@ -100,7 +100,7 @@ await repository.init();
 
 await check('is seeded on init rather than served empty', () => {
   assert.equal(repository.status().connected, true);
-  assert.equal(repository.status().signInAccounts, 1);
+  assert.equal(repository.status().signInAccounts, repository.listDemoAccounts().length);
   assert.match(repository.status().detail, /Seeded \d+ fixture records/);
 });
 
@@ -158,7 +158,7 @@ await check('starts out unable to sign that account in', async () => {
 await repaired.init();
 
 await check('is not mistaken for an empty database', () => {
-  assert.equal(repaired.status().signInAccounts, 1);
+  assert.equal(repaired.status().signInAccounts, repaired.listDemoAccounts().length);
   assert.match(repaired.status().detail, /half-written seed/);
 });
 

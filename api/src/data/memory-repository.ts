@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import type { Follow, Forum, Like, Listing, ListingComment, Lot, Order, Post, User } from '../../../shared/models.js';
+import type { Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, User } from '../../../shared/models.js';
+import { handleKey } from '../../../shared/handles.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
   DEMO_PHONE,
+  PACKER_EMAIL,
   seedComments,
   seedFollows,
   seedForums,
@@ -43,6 +45,9 @@ export class MemoryRepository implements Repository {
   private readonly follows = new Map<string, Follow>();
   private readonly posts = new Map<string, Post>();
   private readonly forums = new Map<string, Forum>();
+  private readonly messages = new Map<string, Message>();
+  /** `@username` -> who holds it. Mirrors the reservations in `identifiers`. */
+  private readonly handles = new Map<string, { userId: string; isStore: boolean }>();
   private readonly revokedSessions = new Map<string, number>();
 
   async init(): Promise<void> {
@@ -62,6 +67,12 @@ export class MemoryRepository implements Repository {
   private indexUser(user: User): void {
     this.users.set(user.id, user);
     for (const identifier of identifiersOf(user)) this.identifiers.set(identifier, user.id);
+    // Handles are indexed alongside, so a seeded account is addressable at
+    // /<username> without a separate pass to register it.
+    if (user.username) this.handles.set(handleKey(user.username), { userId: user.id, isStore: false });
+    if (user.sellerProfile?.username) {
+      this.handles.set(handleKey(user.sellerProfile.username), { userId: user.id, isStore: true });
+    }
   }
 
   status(): BackendStatus {
@@ -102,8 +113,12 @@ export class MemoryRepository implements Repository {
   }
 
   listDemoAccounts(): DemoAccount[] {
-    // Only the one account that can actually be signed into.
-    return [{ identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` }];
+    // The accounts that can actually be signed into: the shop owner, and the
+    // supplier who packs for them.
+    return [
+      { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
+      { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
+    ];
   }
 
   async revokeSession(token: string, expiresAt: Date): Promise<void> {
@@ -296,6 +311,58 @@ export class MemoryRepository implements Repository {
     return user;
   }
 
+  async getByHandle(username: string): Promise<{ user: User; isStore: boolean } | null> {
+    const entry = this.handles.get(handleKey(username));
+    if (!entry) return null;
+    const user = this.users.get(entry.userId);
+    return user ? { user, isStore: entry.isStore } : null;
+  }
+
+  async reserveHandle(username: string, userId: string, isStore: boolean): Promise<boolean> {
+    const key = handleKey(username);
+    const existing = this.handles.get(key);
+    // Re-claiming your own handle is not a clash; somebody else's is.
+    if (existing && !(existing.userId === userId && existing.isStore === isStore)) return false;
+    this.handles.set(key, { userId, isStore });
+    return true;
+  }
+
+  async releaseHandle(username: string): Promise<void> {
+    this.handles.delete(handleKey(username));
+  }
+
+  async listMessages(threadId: string, limit = 200): Promise<Message[]> {
+    return [...this.messages.values()]
+      .filter((message) => message.threadId === threadId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .slice(-limit);
+  }
+
+  async listMessagesForHandles(handles: readonly string[], limit = 300): Promise<Message[]> {
+    const mine = new Set(handles.map((handle) => handle.toLowerCase()));
+    return [...this.messages.values()]
+      .filter((message) => mine.has(message.from.handle) || mine.has(message.to.handle))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+
+  async sendMessage(message: Message): Promise<Message> {
+    this.messages.set(message.id, message);
+    return message;
+  }
+
+  async markThreadRead(threadId: string, handle: string): Promise<number> {
+    const now = new Date().toISOString();
+    let changed = 0;
+    for (const message of this.messages.values()) {
+      if (message.threadId !== threadId) continue;
+      if (message.to.handle !== handle.toLowerCase() || message.readAt) continue;
+      message.readAt = now;
+      changed += 1;
+    }
+    return changed;
+  }
+
   async listStoreOwners(): Promise<User[]> {
     return [...this.users.values()].filter((user) => user.sellerProfile !== null);
   }
@@ -372,4 +439,4 @@ export function identifiersOf(user: User): string[] {
 const likeKey = (userId: string, listingId: string) => `${userId}::${listingId}`;
 const followKey = (followerId: string, sellerId: string) => `${followerId}::${sellerId}`;
 
-export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE };
+export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE, PACKER_EMAIL };

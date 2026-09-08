@@ -934,3 +934,116 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .tick:hover { border-color: var(--border-strong); color: var(--text); }
 .tick.is-on { background: var(--ok-soft); border-color: rgba(78, 192, 125, 0.45); color: var(--ok); }
+
+/* ── Messages ──────────────────────────────────────────────────────────── */
+
+.thread__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.thread__name { font-weight: 750; font-size: var(--t-md); }
+
+/*
+ * A conversation reads bottom-up, so it scrolls on its own rather than pushing
+ * the composer off the screen. The height is capped, not fixed: a short thread
+ * should not leave a well of empty space above the box.
+ */
+.thread {
+  display: grid;
+  gap: 8px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding: 4px 2px 12px;
+}
+
+.bubble {
+  justify-self: start;
+  max-width: min(78%, 460px);
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  border-bottom-left-radius: var(--r-sm);
+  background: var(--surface);
+}
+/* Yours in the accent, on the right: the same rule every messenger uses, and
+   the reason a thread can be read without reading the names. */
+.bubble--mine {
+  justify-self: end;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  border-bottom-left-radius: var(--r-md);
+  border-bottom-right-radius: var(--r-sm);
+}
+.bubble__body { font-size: var(--t-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble__meta { margin-top: 4px; font-size: var(--t-xs); color: var(--text-faint); }
+
+.composer { display: flex; gap: 8px; margin-top: 12px; }
+.composer input { flex: 1; min-width: 0; }
+
+/* ── Packing (the exporter's side) ─────────────────────────────────────── */
+
+.packbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.packbar__count { font-size: var(--t-sm); color: var(--text-dim); }
+.packbar__count strong { font-size: var(--t-lg); color: var(--text); }
+.packbar__filter { display: flex; align-items: center; gap: 8px; font-size: var(--t-xs); cursor: pointer; }
+.packbar__filter input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+
+.packgrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.packcard {
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.packcard.is-packed { border-color: rgba(78, 192, 125, 0.45); background: var(--ok-soft); }
+.packcard__name { font-weight: 650; font-size: var(--t-sm); overflow-wrap: anywhere; }
+.packcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.packcard__state { font-size: var(--t-xs); color: var(--text-faint); }
+
+/* One button per piece, thumb-sized: this screen is worked standing up. */
+.packbtn {
+  padding: 11px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--t-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.packbtn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+/* Also matched while hovered: a piece that is packed must not read as unpacked
+   simply because the finger that packed it is still on the button. */
+.packbtn.is-on, .packbtn.is-on:hover { background: var(--ok); border-color: var(--ok); color: #0d1b12; }
+.packbtn:disabled { opacity: 0.55; cursor: progress; }
+
+/* ── A username's page ─────────────────────────────────────────────────── */
+
+.profilehead { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.profilehead__photo { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+/* Shrinkable, so a long shop name or a long dispatch line wraps beside the
+   picture instead of running off the edge of a phone. */
+.profilehead__who { flex: 1 1 auto; min-width: 0; }
+.profilehead__who p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.profilehead__name { font-size: var(--t-lg); margin: 0; overflow-wrap: anywhere; }
+.profilehead__bio { color: var(--text-dim); font-size: var(--t-sm); margin: 0 0 14px; }

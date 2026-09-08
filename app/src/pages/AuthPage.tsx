@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { DemoAccount } from '@shared/contracts';
+import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api } from '../api';
 import { ErrorNotice } from '../components/ui';
 import { useSession } from '../session';
@@ -18,7 +19,7 @@ export function AuthPage() {
   const [mode, setMode] = useState<Mode>('signin');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [demo, setDemo] = useState<DemoAccount | null>(null);
+  const [demo, setDemo] = useState<DemoAccount[]>([]);
   const [durable, setDurable] = useState(true);
   /** Set when the server already knows no sign-in can succeed. */
   const [blocked, setBlocked] = useState<string | null>(null);
@@ -26,6 +27,8 @@ export function AuthPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  /** Empty means "use the suggestion", which is what the placeholder shows. */
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
 
@@ -36,8 +39,7 @@ export function AuthPage() {
       .health()
       .then((health) => {
         if (cancelled) return;
-        const account = health.auth.demoAccounts[0];
-        if (health.auth.mode === 'mock' && account) setDemo(account);
+        if (health.auth.mode === 'mock') setDemo(health.auth.demoAccounts);
         setDurable(health.auth.accountsDurable);
         // Say why sign-in cannot work before the form is filled in, rather
         // than letting an empty or unreachable database answer a correct
@@ -68,13 +70,18 @@ export function AuthPage() {
     };
   }, []);
 
+  // What the server would pick if the field is left alone, and what is wrong
+  // with it when it is not.
+  const suggested = suggestUsername(displayName);
+  const problem = username.trim() ? checkUsername(username) : null;
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
       if (mode === 'signin') await signIn(identifier, password);
-      else await signUp({ displayName, email, phone, password });
+      else await signUp({ displayName, username: username.trim() || undefined, email, phone, password });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
     } finally {
@@ -82,12 +89,11 @@ export function AuthPage() {
     }
   }
 
-  function useDemoAccount() {
-    if (!demo) return;
+  function useDemoAccount(account: DemoAccount) {
     setMode('signin');
-    setIdentifier(demo.identifier);
+    setIdentifier(account.identifier);
     // The label carries the demo password after the separator.
-    setPassword(demo.label.split('·').pop()?.trim() ?? '');
+    setPassword(account.label.split('·').pop()?.trim() ?? '');
     setError(null);
   }
 
@@ -121,6 +127,20 @@ export function AuthPage() {
                   <span>Your name</span>
                   <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
                     autoComplete="name" placeholder="Arjun Mehta" required />
+                </label>
+                {/* Your address here. Left blank it is taken from your name,
+                    because nobody should be stopped at the door by it. */}
+                <label className="field">
+                  <span>Username</span>
+                  <input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                    autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                    placeholder={suggested || 'arjun_mehta'} />
+                  <span className="field__hint">
+                    {problem
+                      ? USERNAME_PROBLEMS[problem]
+                      : <>People find you at <code>/{username.trim() || suggested || 'yourname'}</code> and message you at{' '}
+                        <code>@{username.trim() || suggested || 'yourname'}</code>.</>}
+                  </span>
                 </label>
                 <div className="field-row">
                   <label className="field">
@@ -169,20 +189,29 @@ export function AuthPage() {
               </p>
             )}
 
-            <button type="submit" className="btn btn--lg btn--block" disabled={busy}>
+            <button type="submit" className="btn btn--lg btn--block"
+              disabled={busy || (mode === 'signup' && problem !== null)}>
               {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
           </form>
 
-          {demo && mode === 'signin' && (
+          {/* Every seeded sign-in, not just the first: the shop owner and the
+              supplier who packs for them see different halves of the same lot,
+              and both are worth trying. */}
+          {demo.length > 0 && mode === 'signin' && (
             <div className="auth__demo">
-              <strong>Demo account</strong>
-              <div style={{ marginTop: 6 }}>
-                <code>{demo.identifier}</code> · <code>{demo.label.split('·').pop()?.trim()}</code>
-              </div>
-              <button type="button" className="btn btn--ghost" style={{ marginTop: 10 }} onClick={useDemoAccount}>
-                Fill demo credentials
-              </button>
+              <strong>{demo.length === 1 ? 'Demo account' : 'Demo accounts'}</strong>
+              {demo.map((account) => (
+                <div key={account.identifier} style={{ marginTop: 10 }}>
+                  <div>
+                    <code>{account.identifier}</code> · <code>{account.label.split('·').pop()?.trim()}</code>
+                  </div>
+                  <button type="button" className="btn btn--ghost" style={{ marginTop: 6 }}
+                    onClick={() => useDemoAccount(account)}>
+                    Fill {account.label.includes('packing') ? 'the packer' : 'the shop owner'}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
