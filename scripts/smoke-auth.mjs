@@ -340,7 +340,12 @@ await check('search matches title, tags and description', async () => {
 
 await check('the demo account owns listings and purchases', async () => {
   assert.ok((await repository.listListings({ sellerId: 'usr_demo' })).length >= 2);
-  assert.equal((await repository.listOrdersForBuyer('usr_demo')).length, 3);
+  // Behaviour, not a seed count: every order this returns is theirs, and there
+  // is at least one. Asserting the number instead breaks whenever a fixture is
+  // added, which says nothing about whether the query is right.
+  const purchases = await repository.listOrdersForBuyer('usr_demo');
+  assert.ok(purchases.length >= 3);
+  assert.equal(purchases.every((order) => order.buyerId === 'usr_demo'), true);
 });
 
 await check('bump is rate-limited after the first use', async () => {

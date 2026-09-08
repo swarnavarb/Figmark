@@ -351,9 +351,13 @@ async function myActivity(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const [listings, orders, likedIds, followedIds] = await Promise.all([
+  const [listings, orders, sales, likedIds, followedIds] = await Promise.all([
     repository.listListings({ sellerId: user.id }),
     repository.listOrdersForBuyer(user.id),
+    // Sales as well as purchases: a dispute is raised against the seller, and a
+    // refund button nobody can reach is not a resolution path. One account is
+    // both sides of this marketplace, so its own page shows both.
+    repository.listOrdersForSeller(user.id),
     repository.listLikedListingIds(user.id),
     repository.listFollowedSellerIds(user.id),
   ]);
@@ -362,6 +366,7 @@ async function myActivity(request: HttpRequest, _context: InvocationContext) {
   return json(200, {
     listings,
     orders,
+    sales,
     likedListingIds: likedIds,
     following: followed.map(toSellerCard),
   });

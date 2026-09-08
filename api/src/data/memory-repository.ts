@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import type { Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, User } from '../../../shared/models.js';
+import type {
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, User,
+} from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -19,8 +21,11 @@ import {
   seedLots,
   seedOpenLot,
   seedShippedLot,
+  seedLiveSale,
   seedOrders,
   seedPosts,
+  seedReviews,
+  seedDisputes,
   seedUsers,
 } from './seed.js';
 
@@ -46,6 +51,8 @@ export class MemoryRepository implements Repository {
   private readonly posts = new Map<string, Post>();
   private readonly forums = new Map<string, Forum>();
   private readonly messages = new Map<string, Message>();
+  private readonly reviews = new Map<string, Review>();
+  private readonly disputes = new Map<string, Dispute>();
   /** `@username` -> who holds it. Mirrors the reservations in `identifiers`. */
   private readonly handles = new Map<string, { userId: string; isStore: boolean }>();
   private readonly revokedSessions = new Map<string, number>();
@@ -54,7 +61,7 @@ export class MemoryRepository implements Repository {
     for (const user of [...seedUsers(), ...seedLotBuyers()]) this.indexUser(user);
     for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()]) this.lots.set(lot.id, lot);
     for (const listing of seedListings()) this.listings.set(listing.id, listing);
-    for (const order of [...seedOrders(), ...seedLotOrders()]) this.orders.set(order.id, order);
+    for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders()]) this.orders.set(order.id, order);
     for (const comment of seedComments()) this.comments.set(comment.id, comment);
     for (const like of seedLikes()) this.likes.set(likeKey(like.userId, like.listingId), like);
     for (const follow of seedFollows()) {
@@ -62,6 +69,8 @@ export class MemoryRepository implements Repository {
     }
     for (const forum of seedForums()) this.forums.set(forum.id, forum);
     for (const post of seedPosts()) this.posts.set(post.id, post);
+    for (const review of seedReviews()) this.reviews.set(review.id, review);
+    for (const record of seedDisputes()) this.disputes.set(record.id, record);
   }
 
   private indexUser(user: User): void {
@@ -351,6 +360,40 @@ export class MemoryRepository implements Repository {
   async sendMessage(message: Message): Promise<Message> {
     this.messages.set(message.id, message);
     return message;
+  }
+
+  async listReviewsAbout(subjectId: string): Promise<Review[]> {
+    return [...this.reviews.values()]
+      .filter((review) => review.subjectId === subjectId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listReviewsForOrder(orderId: string): Promise<Review[]> {
+    return [...this.reviews.values()].filter((review) => review.orderId === orderId);
+  }
+
+  async createReview(review: Review): Promise<Review> {
+    this.reviews.set(review.id, review);
+    return review;
+  }
+
+  async updateReview(review: Review): Promise<Review> {
+    this.reviews.set(review.id, review);
+    return review;
+  }
+
+  async createDispute(dispute: Dispute): Promise<Dispute> {
+    this.disputes.set(dispute.id, dispute);
+    return dispute;
+  }
+
+  async getDispute(_orderId: string, id: string): Promise<Dispute | null> {
+    return this.disputes.get(id) ?? null;
+  }
+
+  async updateDispute(dispute: Dispute): Promise<Dispute> {
+    this.disputes.set(dispute.id, dispute);
+    return dispute;
   }
 
   async markThreadRead(threadId: string, handle: string): Promise<number> {

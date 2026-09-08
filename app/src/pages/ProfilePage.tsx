@@ -1,20 +1,35 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
+import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api, type ActivityResponse } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Tab = 'listings' | 'purchases' | 'following' | 'settings';
+type Tab = 'listings' | 'purchases' | 'sales' | 'following' | 'settings';
 
 const TAB_LABELS: Record<Tab, string> = {
   listings: 'My listings',
   purchases: 'My purchases',
+  sales: 'My sales',
   following: 'Following',
   settings: 'Settings',
 };
+
+/**
+ * The orders waiting on this person, either way round.
+ *
+ * Read from the shared rules rather than re-derived, so this can never point at
+ * something the server would refuse. Disputing is left out on purpose: it is
+ * always available on a held payment, and a standing option is not a task.
+ */
+function waitingOn(data: ActivityResponse, userId: string) {
+  return [...data.orders, ...data.sales].filter((order) =>
+    actionsFor(order, userId).some((action) => action === 'pay' || action === 'confirm' || action === 'refund'),
+  );
+}
 
 /**
  * One profile, both sides of the account.
@@ -111,13 +126,35 @@ export function ProfilePage() {
         )}
       </div>
 
+      {/* Something with money on it and a person waiting. Above the tabs,
+          because it is the reason to have opened this page at all. */}
+      {data && waitingOn(data, user.id).length > 0 && (
+        <div className="card card--pad stack" style={{ marginBottom: 18, borderColor: 'var(--accent-line)' }}>
+          <span className="card__title">Waiting on you</span>
+          {waitingOn(data, user.id).map((order) => (
+            <Link key={order.id} to={`/order/${order.id}`} className="row row--between"
+              style={{ color: 'inherit', textDecoration: 'none' }}>
+              <span>{order.itemName}</span>
+              <span className="badge badge--accent">
+                {order.escrow.state === 'disputed' ? 'disputed'
+                  : order.paymentStatus === 'unpaid' ? 'pay'
+                  : 'confirm delivery'}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+
       <div className="tabs">
-        {(['listings', 'purchases', 'following', 'settings'] as Tab[]).map((entry) => (
+        {(['listings', 'purchases', 'sales', 'following', 'settings'] as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
             {data && entry !== 'settings' && (
               <span className="faint" style={{ marginLeft: 6 }}>
-                {entry === 'listings' ? data.listings.length : entry === 'purchases' ? data.orders.length : data.following.length}
+                {entry === 'listings' ? data.listings.length
+                  : entry === 'purchases' ? data.orders.length
+                  : entry === 'sales' ? data.sales.length
+                  : data.following.length}
               </span>
             )}
           </button>
@@ -153,9 +190,13 @@ export function ProfilePage() {
             ))}
           </div>
         )
-      ) : tab === 'purchases' ? (
-        data.orders.length === 0 ? (
-          <EmptyState icon="◫" title="No purchases yet">Anything you buy shows up here with its tracking.</EmptyState>
+      ) : tab === 'purchases' || tab === 'sales' ? (
+        (tab === 'sales' ? data.sales : data.orders).length === 0 ? (
+          <EmptyState icon="◫" title={tab === 'sales' ? 'No sales yet' : 'No purchases yet'}>
+            {tab === 'sales'
+              ? 'Orders placed with you show up here, with anything needing an answer.'
+              : 'Anything you buy shows up here with its tracking.'}
+          </EmptyState>
         ) : (
           <div className="card table-scroll">
             <table className="table">
@@ -163,7 +204,7 @@ export function ProfilePage() {
                 <tr><th>Item</th><th>Qty</th><th>Total</th><th>Tracking</th><th>Payment</th><th>Escrow</th><th>Ordered</th></tr>
               </thead>
               <tbody>
-                {data.orders.map((order) => (
+                {(tab === 'sales' ? data.sales : data.orders).map((order) => (
                   <tr key={order.id}>
                     <td>
                       <Link to={`/order/${order.id}`} style={{ color: 'var(--accent)', fontWeight: 550 }}>

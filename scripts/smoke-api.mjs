@@ -41,6 +41,11 @@ const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
   publicProfileRoute: publicProfile, setUsernameRoute: setUsername,
 } = await import(new URL('message-routes.js', fns));
+const {
+  payRoute: payOrder, confirmRoute: confirmOrder, disputeRoute: disputeOrder,
+  refundRoute: refundOrder, reviewRoute: reviewOrder, orderStateRoute: orderState,
+  reviewsAboutRoute: reviewsAbout,
+} = await import(new URL('order-routes.js', fns));
 const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
 );
@@ -1319,6 +1324,217 @@ await check('the packing view never shows the owner the buyer list twice', async
   // ownership implying every right must not turn one into the other.
   const owners = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
   assert.ok(owners.customers.length > 0, 'the owner still gets customers');
+});
+
+/* ── the order lifecycle ───────────────────────────────────────────────── */
+console.log('\nthe order lifecycle');
+
+await check('an order nobody has paid for offers exactly one thing: paying', async () => {
+  const body = (await orderState(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).jsonBody;
+  assert.equal(body.side, 'buyer');
+  assert.equal(body.counterpartyName, 'Gadget Grid');
+  assert.deepEqual(body.actions, ['pay']);
+  assert.equal(body.order.escrow.state, 'none');
+  // Never implied to be a real charge.
+  assert.equal(body.simulatedPayment, true);
+});
+
+await check('paying holds the money rather than sending it', async () => {
+  const paid = await payOrder(req({ headers: auth, params: { id: 'ord_1003' } }), ctx);
+  assert.equal(paid.status, 200);
+  assert.equal(paid.jsonBody.order.escrow.state, 'held');
+  assert.equal(paid.jsonBody.order.paymentStatus, 'paid');
+  assert.equal(paid.jsonBody.order.status, 'confirmed');
+  assert.equal(paid.jsonBody.simulatedPayment, true);
+
+  // The clock does not start here. An import can sit in a lot for weeks, and a
+  // window opened at checkout would pay the seller for a box still with their
+  // supplier.
+  assert.equal(paid.jsonBody.order.escrow.autoReleaseAt, null);
+
+  // Paying twice is refused rather than charging twice.
+  assert.equal((await payOrder(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).status, 409);
+});
+
+await check('a held payment cannot be confirmed before it has shipped', async () => {
+  const body = (await orderState(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).jsonBody;
+  assert.equal(body.actions.includes('confirm'), false);
+  assert.equal(body.actions.includes('dispute'), true);
+  assert.equal((await confirmOrder(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).status, 409);
+});
+
+await check('the seller ticking dispatched is what starts the clock', async () => {
+  // One place says the box left, and the order takes its state from that rather
+  // than from a second screen repeating it. ord_2004 is the demo account's own
+  // sale, so the seller side is a session these tests hold.
+  const before = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
+  assert.equal(before.order.escrow.autoReleaseAt, null);
+
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: 'ord_2004' }, body: { checkpoint: 'dispatched', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200);
+
+  const body = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
+  assert.equal(body.order.status, 'shipped');
+  assert.ok(body.order.escrow.autoReleaseAt, 'the auto-release window should now be open');
+
+  // Un-ticking a mistake winds both back rather than leaving a clock running.
+  await setCheckpoint(req({
+    headers: auth, params: { id: 'ord_2004' }, body: { checkpoint: 'dispatched', on: false },
+  }), ctx);
+  const undone = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
+  assert.equal(undone.order.status, 'confirmed');
+  assert.equal(undone.order.escrow.autoReleaseAt, null);
+});
+
+await check('only the buyer may confirm delivery', async () => {
+  // usr_demo is the seller on ord_2004, so confirming is not theirs to do.
+  const body = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
+  assert.equal(body.side, 'seller');
+  // Named from this side: the seller is not "buying from" themselves.
+  assert.equal(body.counterpartyName, 'Tokyo Line');
+  assert.equal(body.actions.includes('confirm'), false);
+  assert.equal((await confirmOrder(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).status, 409);
+});
+
+await check('a disputed order does not start a release clock when it ships', async () => {
+  // ord_2003 arrives disputed. Dispatching it must not open a window that would
+  // pay the seller while the buyer is still contesting it.
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: 'ord_2003' }, body: { checkpoint: 'dispatched', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200);
+  const body = (await orderState(req({ headers: auth, params: { id: 'ord_2003' } }), ctx)).jsonBody;
+  assert.equal(body.order.escrow.autoReleaseAt, null);
+  assert.equal(body.order.escrow.state, 'disputed');
+});
+
+await check('the seller can settle a dispute by refunding', async () => {
+  const before = (await orderState(req({ headers: auth, params: { id: 'ord_2003' } }), ctx)).jsonBody;
+  assert.equal(before.side, 'seller');
+  assert.deepEqual(before.actions, ['refund']);
+  assert.ok(before.dispute, 'the seller can read what was raised');
+  assert.equal(before.dispute.status, 'awaiting_seller');
+
+  const refunded = await refundOrder(req({ headers: auth, params: { id: 'ord_2003' } }), ctx);
+  assert.equal(refunded.status, 200);
+  assert.equal(refunded.jsonBody.order.escrow.state, 'refunded');
+  assert.equal(refunded.jsonBody.order.status, 'refunded');
+
+  const after = (await orderState(req({ headers: auth, params: { id: 'ord_2003' } }), ctx)).jsonBody;
+  assert.equal(after.dispute.status, 'resolved_buyer');
+  assert.ok(after.dispute.resolvedAt);
+  assert.deepEqual(after.actions, [], 'and there is nothing left to do');
+});
+
+await check('a stranger cannot see or touch an order', async () => {
+  for (const call of [orderState, payOrder, confirmOrder, refundOrder]) {
+    const refused = await call(req({ headers: helper, params: { id: 'ord_1003' }, body: {} }), ctx);
+    assert.equal(refused.status, 403, `${call.name} should refuse`);
+  }
+});
+
+await check('disputing stops the money, and refunding gives it back', async () => {
+  const opened = await disputeOrder(req({
+    headers: auth, params: { id: 'ord_1003' }, body: { reason: 'Arrived with the base snapped off.' },
+  }), ctx);
+  assert.equal(opened.status, 201);
+  assert.equal(opened.jsonBody.order.escrow.state, 'disputed');
+  assert.equal(opened.jsonBody.dispute.status, 'awaiting_seller');
+  assert.ok(opened.jsonBody.dispute.sellerResponseDueAt);
+
+  // A disputed payment can no longer be released by confirming.
+  assert.equal((await confirmOrder(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).status, 409);
+
+  // And the buyer cannot refund themselves.
+  assert.equal((await refundOrder(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).status, 409);
+});
+
+await check('an empty dispute is refused rather than filed', async () => {
+  const blank = await disputeOrder(req({
+    headers: auth, params: { id: 'ord_1001' }, body: { reason: '  ' },
+  }), ctx);
+  assert.equal(blank.status, 400);
+});
+
+/* ── two-sided reviews ─────────────────────────────────────────────────── */
+console.log('\ntwo-sided reviews');
+
+await check('a review needs a completed order, not an opinion', async () => {
+  const early = await reviewOrder(req({
+    headers: auth, params: { id: 'ord_1001' }, body: { rating: 1, body: 'Slow.' },
+  }), ctx);
+  assert.equal(early.status, 409);
+  assert.equal(early.jsonBody.error, 'not_reviewable');
+});
+
+await check('a rating outside one to five is refused', async () => {
+  for (const rating of [0, 6, 2.5, 'five']) {
+    const bad = await reviewOrder(req({
+      headers: auth, params: { id: 'ord_1004' }, body: { rating, body: '' },
+    }), ctx);
+    assert.equal(bad.status, 400, `${rating} should be refused`);
+  }
+});
+
+await check("the other side's review stays hidden until yours is written", async () => {
+  // The seed has the seller's half of ord_1004 written and unrevealed.
+  const before = (await orderState(req({ headers: auth, params: { id: 'ord_1004' } }), ctx)).jsonBody;
+  assert.equal(before.theirReview, null, 'it must not be readable before you write yours');
+  assert.equal(before.theirReviewPending, true, 'but it should say one is waiting');
+  assert.ok(before.actions.includes('review'));
+});
+
+await check('writing yours reveals both at once', async () => {
+  const written = await reviewOrder(req({
+    headers: auth, params: { id: 'ord_1004' },
+    body: { rating: 4, body: 'Long wait on customs, but kept me posted.' },
+  }), ctx);
+  assert.equal(written.status, 201);
+
+  const after = (await orderState(req({ headers: auth, params: { id: 'ord_1004' } }), ctx)).jsonBody;
+  assert.ok(after.myReview, 'yours is there');
+  assert.ok(after.theirReview, "and theirs is now readable");
+  assert.equal(after.theirReviewPending, false);
+  assert.equal(after.actions.includes('review'), false, 'and there is nothing left to write');
+});
+
+await check('reviewing twice is refused', async () => {
+  const again = await reviewOrder(req({
+    headers: auth, params: { id: 'ord_1004' }, body: { rating: 1, body: 'Changed my mind.' },
+  }), ctx);
+  assert.equal(again.status, 409);
+});
+
+await check('being a good seller and a good buyer are counted separately', async () => {
+  // One account is both, so one blended average would let a prompt-paying buyer
+  // carry a shop that never posts anything.
+  const body = (await reviewsAbout(req({ params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  // The review just written: 4 out of 5, so 80 out of 100, as a seller.
+  assert.equal(body.asSeller.average, 80);
+  assert.equal(body.asSeller.count, 1);
+  // And their separate standing as a buyer is untouched by it.
+  assert.equal(body.asBuyer.average, 100);
+  assert.equal(body.asBuyer.count, 1);
+});
+
+await check('the score on the account follows the reviews about it', async () => {
+  const kaiju = (await publicProfile(req({ params: { handle: 'kaiju_imports' } }), ctx)).jsonBody;
+  assert.equal(kaiju.isStore, true);
+  // Seeded at 91 before anyone rated them; the real rating replaces it.
+  const seller = (await reviewsAbout(req({ params: { id: kaiju.sellerId } }), ctx)).jsonBody;
+  assert.equal(seller.asSeller.average, 80);
+});
+
+await check('the public list never carries a review still hidden', async () => {
+  const body = (await reviewsAbout(req({ params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  for (const review of body.reviews) {
+    assert.ok(review.rating >= 1 && review.rating <= 5);
+    // Author names, never author ids: a review page is not a directory.
+    assert.equal('authorId' in review, false);
+  }
+  assert.equal(body.count, body.reviews.length);
 });
 
 console.log(`\n${passed} checks passed`);

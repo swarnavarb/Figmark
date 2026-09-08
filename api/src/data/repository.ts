@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import type { Forum, Listing, ListingComment, Lot, Message, Order, Post, User } from '../../../shared/models.js';
+import type {
+  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Post, Review, User,
+} from '../../../shared/models.js';
 
 export interface BackendStatus {
   connected: boolean;
@@ -96,6 +98,23 @@ export interface Repository {
   listOrdersForLot(lotId: string): Promise<Order[]>;
   listOrdersForBuyer(buyerId: string): Promise<Order[]>;
   createOrder(order: Order): Promise<Order>;
+
+  /**
+   * Reviews written about one person, newest first.
+   *
+   * Includes the hidden ones: whether a review may be shown is decided by the
+   * caller from the pair, not stored per row, so the store hands over both and
+   * the rule stays in one place.
+   */
+  listReviewsAbout(subjectId: string): Promise<Review[]>;
+  /** Both sides' reviews of one order — at most two, and usually fewer. */
+  listReviewsForOrder(orderId: string): Promise<Review[]>;
+  createReview(review: Review): Promise<Review>;
+  updateReview(review: Review): Promise<Review>;
+
+  createDispute(dispute: Dispute): Promise<Dispute>;
+  getDispute(orderId: string, id: string): Promise<Dispute | null>;
+  updateDispute(dispute: Dispute): Promise<Dispute>;
 
   listComments(listingId: string): Promise<ListingComment[]>;
   addComment(comment: ListingComment): Promise<ListingComment>;

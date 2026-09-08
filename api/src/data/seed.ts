@@ -6,7 +6,9 @@ import type {
   ListingComment,
   Lot,
   Order,
+  Dispute,
   Post,
+  Review,
   SellerTrustSignals,
   TrustSignals,
   User,
@@ -475,6 +477,25 @@ export function seedOrders(): Order[] {
       escrow: { state: 'none', amountMinor: 54_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
       completedAt: null, createdAt: iso(-2), updatedAt: iso(-2),
     },
+    {
+      /* A purchase that finished. Without one the buyer's half of the review
+         mechanism has nothing to act on: you cannot rate a seller you have not
+         completed a transaction with, which is the rule the whole thing rests
+         on. Kaiju has already written their half of this one - see
+         seedReviews - so writing yours reveals both at once. */
+      id: 'ord_1004', lotId: 'lot_gz_aug', sellerId: 'usr_kaiju', buyerId: 'usr_demo',
+      listingId: 'lst_mecha_kit', itemName: 'HG Mecha model kit — assorted wave 2',
+      condition: 'MIB', quantity: 1, unitWeightGrams: 900, unitPriceMinor: 29_000, currency: 'INR',
+      status: 'delivered', paymentStatus: 'paid',
+      stage: 'delivered',
+      stageHistory: [
+        { stage: 'ordering', enteredAt: iso(-64), note: 'Order placed.', recordedBy: 'usr_demo' },
+        { stage: 'india_received', enteredAt: iso(-30), note: 'Cleared customs.', recordedBy: 'usr_kaiju' },
+        { stage: 'delivered', enteredAt: iso(-24), note: 'Delivery confirmed by the buyer.', recordedBy: 'usr_demo' },
+      ],
+      escrow: { state: 'released', amountMinor: 29_000, heldAt: iso(-64), releasedAt: iso(-24), autoReleaseAt: null, disputeId: null },
+      completedAt: iso(-24), createdAt: iso(-64), updatedAt: iso(-24),
+    },
     /* Sales the demo account has made, so the seller dashboards have numbers in
        them rather than a row of zeroes. Spread over the month so the thirty-day
        chart has a shape. */
@@ -510,13 +531,98 @@ export function seedOrders(): Order[] {
       id: 'ord_2003', lotId: 'lot_my_batch', sellerId: 'usr_demo', buyerId: 'usr_gadgetgrid',
       listingId: 'lst_my_statue', itemName: 'Garage kit statue — built and painted',
       condition: 'LOOSE', quantity: 1, unitWeightGrams: 900, unitPriceMinor: 1_20_000, currency: 'INR',
+      /* Disputed, so the seller's side of a dispute is reachable at all. Only
+         a buyer can open one, and the buyer here holds no password - without
+         this the refund button would exist with no way to ever see it. */
       status: 'in_fulfilment', paymentStatus: 'paid',
       stage: 'ordering',
-      stageHistory: [{ stage: 'ordering', enteredAt: iso(-3), note: 'Order placed.', recordedBy: 'usr_gadgetgrid' }],
-      escrow: { state: 'held', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: null },
-      completedAt: null, createdAt: iso(-3), updatedAt: iso(-3),
+      stageHistory: [
+        { stage: 'ordering', enteredAt: iso(-3), note: 'Order placed.', recordedBy: 'usr_gadgetgrid' },
+        { stage: 'ordering', enteredAt: iso(-1), note: 'Buyer opened a dispute.', recordedBy: 'usr_gadgetgrid' },
+      ],
+      escrow: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
+      completedAt: null, createdAt: iso(-3), updatedAt: iso(-1),
     },
   ];
+}
+
+/**
+ * Reviews, in all three states the mechanism has.
+ *
+ * Revealed pairs so a profile has a rating to show; one written and hidden,
+ * waiting on the demo account to answer it, because a blind review that nobody
+ * can watch resolve is indistinguishable from a broken one.
+ */
+export function seedReviews(): Review[] {
+  const revealed = (
+    id: string, subjectId: string, authorId: string, orderId: string,
+    direction: Review['direction'], rating: number, body: string, days: number,
+  ): Review => ({
+    id, subjectId, authorId, orderId, direction, rating, body,
+    revealed: true,
+    revealAt: iso(days + 14),
+    createdAt: iso(days), updatedAt: iso(days),
+  });
+
+  return [
+    /* Both sides of a finished sale, visible. */
+    revealed('rev_1', 'usr_demo', 'usr_kaiju', 'ord_2001', 'buyer_to_seller', 5,
+      'Packed properly and posted the day after payment. Would buy again.', -16),
+    revealed('rev_2', 'usr_kaiju', 'usr_demo', 'ord_2001', 'seller_to_buyer', 5,
+      'Paid straight away, no messing about.', -15),
+    revealed('rev_3', 'usr_demo', 'usr_tokyoline', 'ord_2002', 'buyer_to_seller', 4,
+      'Cards as described. Took a couple of days to post, but well wrapped.', -10),
+
+    /* Written by the seller and hidden, because the buyer has not answered.
+       This is what the demo account sees as "written, and hidden until you
+       write yours" - and writing theirs reveals both. */
+    {
+      id: 'rev_4', subjectId: 'usr_demo', authorId: 'usr_kaiju', orderId: 'ord_1004',
+      direction: 'seller_to_buyer', rating: 5,
+      body: 'Waited out a slow customs clearance without a single chasing message.',
+      revealed: false,
+      // Still inside its window. Written later than the order completed, which
+      // is ordinary, and dated so it is genuinely waiting rather than expired -
+      // a lapsed window reveals a review on its own, correctly, and that would
+      // demonstrate the opposite of what this fixture is for.
+      revealAt: iso(11),
+      createdAt: iso(-3), updatedAt: iso(-3),
+    },
+  ];
+}
+
+/** The open dispute on `ord_2003`, so the seller has one to answer. */
+export function seedDisputes(): Dispute[] {
+  return [
+    {
+      id: 'dsp_1',
+      orderId: 'ord_2003',
+      raisedBy: 'usr_gadgetgrid',
+      againstUserId: 'usr_demo',
+      reason: 'Paint on the left arm is chipped — not what the photos showed.',
+      status: 'awaiting_seller',
+      evidence: [],
+      sellerResponseDueAt: iso(2),
+      resolutionNote: null,
+      resolvedAt: null,
+      createdAt: iso(-1),
+      updatedAt: iso(-1),
+    },
+  ];
+}
+
+/** A sale in flight and paid for: the ordinary case, alongside the disputed one. */
+export function seedLiveSale(): Order {
+  return {
+    id: 'ord_2004', lotId: 'lot_my_batch', sellerId: 'usr_demo', buyerId: 'usr_tokyoline',
+    listingId: 'lst_my_statue', itemName: 'Garage kit statue — second cast',
+    condition: 'LOOSE', quantity: 1, unitWeightGrams: 900, unitPriceMinor: 1_10_000, currency: 'INR',
+    status: 'confirmed', paymentStatus: 'paid',
+    stage: 'ordering',
+    stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Order placed.', recordedBy: 'usr_tokyoline' }],
+    escrow: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },
+    completedAt: null, createdAt: iso(-6), updatedAt: iso(-6),
+  };
 }
 
 export function seedComments(): ListingComment[] {

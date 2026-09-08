@@ -1067,3 +1067,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .profilehead__who p { margin: 2px 0 0; overflow-wrap: anywhere; }
 .profilehead__name { font-size: var(--t-lg); margin: 0; overflow-wrap: anywhere; }
 .profilehead__bio { color: var(--text-dim); font-size: var(--t-sm); margin: 0 0 14px; }
+
+/* ── Ratings ───────────────────────────────────────────────────────────── */
+
+.stars { color: var(--warn); letter-spacing: 2px; font-size: var(--t-md); }
+.stars__off { color: var(--border-strong); }
+
+/* Five targets big enough for a thumb, and obvious without a legend. */
+.starbtn {
+  border: 0; padding: 2px 4px; background: none; cursor: pointer;
+  font-size: 26px; line-height: 1; color: var(--border-strong);
+  transition: color 0.15s, transform 0.15s;
+}
+.starbtn.is-on { color: var(--warn); }
+.starbtn:hover { transform: scale(1.12); }
+
+.review { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.review:last-child { border-bottom: 0; }
+.review__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.review__who { font-weight: 650; font-size: var(--t-sm); }

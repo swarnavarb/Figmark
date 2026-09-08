@@ -9,9 +9,10 @@ import type {
 import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { LotTally } from '@shared/board';
 import type { StoreAccess } from '@shared/stores';
+import type { OrderAction, OrderSide } from '@shared/orders';
 import type {
-  Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty, Order, Post,
-  SellerProfile, StoreManager,
+  Dispute, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty, Order, Post,
+  Review, SellerProfile, StoreManager,
 } from '@shared/models';
 
 /**
@@ -114,7 +115,10 @@ export interface ListingDetail {
 
 export interface ActivityResponse {
   listings: Listing[];
+  /** Orders this account placed. */
   orders: Order[];
+  /** Orders placed with this account. */
+  sales: Order[];
   likedListingIds: string[];
   following: SellerCard[];
 }
@@ -150,6 +154,47 @@ export interface OrderTracking {
   sellerName: string;
   trackingReference: string | null;
   estimatedDispatchAt: string | null;
+}
+
+/* ── The order lifecycle ───────────────────────────────────────────────── */
+
+export interface PublicReview {
+  id: string;
+  rating: number;
+  body: string;
+  direction: string;
+  authorName: string;
+  createdAt: string;
+}
+
+export interface OrderState {
+  order: Order;
+  side: OrderSide | null;
+  /** The other party, named from this viewer's side of the order. */
+  counterpartyName: string;
+  actions: OrderAction[];
+  /** True while no payment provider is wired; the hold is recorded, not taken. */
+  simulatedPayment: boolean;
+  myReview: Review | null;
+  /** Null while it is still hidden — which is the point of writing yours. */
+  theirReview: Review | null;
+  theirReviewPending: boolean;
+  dispute: Dispute | null;
+}
+
+/** Out of 100, or null when nobody has rated that side of them yet. */
+export interface RatingSummary {
+  average: number | null;
+  count: number;
+}
+
+export interface ReviewsAbout {
+  reviews: PublicReview[];
+  /** Split, because being a good seller and a good buyer are different claims. */
+  asSeller: RatingSummary;
+  asBuyer: RatingSummary;
+  count: number;
+  pending: number;
 }
 
 export interface NewListing {
@@ -401,6 +446,17 @@ export const api = {
     post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/tracking`, body),
 
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
+  orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),
+  payOrder: (id: string) =>
+    post<{ order: Order; simulatedPayment: boolean }>(`/orders/${encodeURIComponent(id)}/pay`),
+  confirmOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/confirm`),
+  disputeOrder: (id: string, reason: string) =>
+    post<{ order: Order; dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/dispute`, { reason }),
+  refundOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund`),
+  reviewOrder: (id: string, rating: number, body: string) =>
+    post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
+  reviewsAbout: (userId: string) =>
+    request<ReviewsAbout>(`/users/${encodeURIComponent(userId)}/reviews`),
 
   stores: () => request<{ stores: StoreAccess[] }>('/me/stores'),
   updateManager: (body: {

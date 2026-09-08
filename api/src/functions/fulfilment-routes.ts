@@ -4,6 +4,7 @@ import { LOT_STAGES, ORDER_CHECKPOINTS, type LotStage, type OrderCheckpoint } fr
 import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
+import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
 import { DIRECT_LOT_ID, furthestStage, stagesFor } from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
@@ -520,6 +521,26 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const now = new Date().toISOString();
   order.checkpoints = { ...(order.checkpoints ?? {}), [checkpoint]: on ? now : null };
   order.updatedAt = now;
+
+  // Dispatching is already recorded here, so the order takes its shipped state
+  // from this tick rather than from a second screen saying the same thing. It
+  // is also what starts the auto-release clock: the window has to open when the
+  // box leaves, not when the buyer paid - an import can sit in a lot for weeks,
+  // and a clock started at checkout would pay the seller for a box still with
+  // their supplier.
+  if (checkpoint === 'dispatched' && order.escrow.state === 'held') {
+    order.status = on ? 'shipped' : 'confirmed';
+    order.escrow = { ...order.escrow, autoReleaseAt: on ? daysFrom(AUTO_RELEASE_DAYS) : null };
+    order.stageHistory = [
+      ...order.stageHistory,
+      {
+        stage: order.stage,
+        enteredAt: now,
+        note: on ? 'Dispatched to the buyer.' : 'Dispatch un-marked.',
+        recordedBy: user.id,
+      },
+    ];
+  }
 
   const saved = await repository.updateOrder(order);
   const siblings = await repository.listOrdersForLot(order.lotId);

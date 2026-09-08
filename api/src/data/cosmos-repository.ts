@@ -2,7 +2,9 @@ import { CosmosClient, type Container, type ContainerRequest, type Database } fr
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
-import type { Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, User } from '../../../shared/models.js';
+import type {
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, User,
+} from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
@@ -23,8 +25,11 @@ import {
   seedLots,
   seedOpenLot,
   seedShippedLot,
+  seedLiveSale,
   seedOrders,
   seedPosts,
+  seedReviews,
+  seedDisputes,
   seedUsers,
 } from './seed.js';
 
@@ -323,10 +328,12 @@ export class CosmosRepository implements Repository {
     for (const [name, items] of [
       ['lots', [...seedLots(), seedOpenLot(), seedShippedLot()]],
       ['listings', seedListings()],
-      ['orders', [...seedOrders(), ...seedLotOrders()]],
+      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders()]],
       ['comments', seedComments()],
       ['forums', seedForums()],
       ['posts', seedPosts()],
+      ['reviews', seedReviews()],
+      ['disputes', seedDisputes()],
     ] as const) {
       for (const item of items) await this.container(name).items.upsert(item);
       written += items.length;
@@ -492,6 +499,67 @@ export class CosmosRepository implements Repository {
   async sendMessage(message: Message): Promise<Message> {
     const { resource } = await this.container('messages').items.create(message);
     return resource ?? message;
+  }
+
+  /**
+   * Reviews are partitioned by who they are about, which is how they are read:
+   * a profile asks for everything written about one person.
+   */
+  async listReviewsAbout(subjectId: string): Promise<Review[]> {
+    const { resources } = await this.container('reviews')
+      .items.query<Review>(
+        { query: 'SELECT * FROM c ORDER BY c.createdAt DESC' },
+        { partitionKey: subjectId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  /**
+   * The pair of reviews on one order.
+   *
+   * Cross-partition, because the two sit under different subjects by
+   * definition - and it is bounded at two rows, which is the size that makes
+   * the scan acceptable.
+   */
+  async listReviewsForOrder(orderId: string): Promise<Review[]> {
+    const { resources } = await this.container('reviews')
+      .items.query<Review>({
+        query: 'SELECT * FROM c WHERE c.orderId = @orderId',
+        parameters: [{ name: '@orderId', value: orderId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async createReview(review: Review): Promise<Review> {
+    const { resource } = await this.container('reviews').items.create(review);
+    return resource ?? review;
+  }
+
+  async updateReview(review: Review): Promise<Review> {
+    const { resource } = await this.container('reviews').items.upsert<Review>(review);
+    return resource ?? review;
+  }
+
+  async createDispute(dispute: Dispute): Promise<Dispute> {
+    const { resource } = await this.container('disputes').items.create(dispute);
+    return resource ?? dispute;
+  }
+
+  async getDispute(orderId: string, id: string): Promise<Dispute | null> {
+    try {
+      const { resource } = await this.container('disputes').item(id, orderId).read<Dispute>();
+      return resource ?? null;
+    } catch (error) {
+      if ((error as { code?: number }).code === 404) return null;
+      throw error;
+    }
+  }
+
+  async updateDispute(dispute: Dispute): Promise<Dispute> {
+    const { resource } = await this.container('disputes').items.upsert<Dispute>(dispute);
+    return resource ?? dispute;
   }
 
   async markThreadRead(threadId: string, handle: string): Promise<number> {

@@ -36,6 +36,9 @@ const {
 } = await import(new URL('social-routes.js', apiRoot));
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute } =
   await import(new URL('message-routes.js', apiRoot));
+const {
+  payRoute, confirmRoute, disputeRoute, refundRoute, reviewRoute, orderStateRoute, reviewsAboutRoute,
+} = await import(new URL('order-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -84,6 +87,13 @@ const routes = [
   ['POST', '/api/messages/:handle/send', sendMessageRoute],
   ['GET', '/api/u/:handle', publicProfileRoute],
   ['POST', '/api/me/username', setUsernameRoute],
+  ['GET', '/api/orders/:id/state', orderStateRoute],
+  ['POST', '/api/orders/:id/pay', payRoute],
+  ['POST', '/api/orders/:id/confirm', confirmRoute],
+  ['POST', '/api/orders/:id/dispute', disputeRoute],
+  ['POST', '/api/orders/:id/refund', refundRoute],
+  ['POST', '/api/orders/:id/review', reviewRoute],
+  ['GET', '/api/users/:id/reviews', reviewsAboutRoute],
   ['GET', '/api/exporter/lots', exporterLotsRoute],
   ['GET', '/api/exporter/lots/:id', exporterLotRoute],
 ];

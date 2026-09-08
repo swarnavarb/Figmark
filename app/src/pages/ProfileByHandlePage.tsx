@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type PublicProfile } from '../api';
+import { ApiRequestError, api, type PublicProfile, type ReviewsAbout } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Thumb } from '../components/ui';
-import { formatMoney } from '../format';
+import { formatMoney, timeAgo } from '../format';
 import { MessageButton } from './MessagesPage';
+import { Stars } from './OrderPage';
 
 /**
  * Whatever lives at `/<username>`.
@@ -17,6 +18,7 @@ import { MessageButton } from './MessagesPage';
 export function ProfileByHandlePage() {
   const { username } = useParams<{ username: string }>();
   const [data, setData] = useState<PublicProfile | null>(null);
+  const [reviews, setReviews] = useState<ReviewsAbout | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,9 +31,15 @@ export function ProfileByHandlePage() {
     }
     setError(null);
     setData(null);
+    setReviews(null);
     void api
       .profile(username)
-      .then(setData)
+      .then((profile) => {
+        setData(profile);
+        // Reviews are about the account, not the handle, so they need the id
+        // the profile resolves to — and a page without them still renders.
+        void api.reviewsAbout(profile.sellerId).then(setReviews).catch(() => undefined);
+      })
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not open that page.'),
       );
@@ -48,6 +56,13 @@ export function ProfileByHandlePage() {
     );
   }
   if (!data) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
+
+  // A shop's page is about them as a seller. A review of the same account as a
+  // buyer is a real review of a different thing, and belongs on the side of
+  // them this page is not about — so the list matches the average above it.
+  const direction = data.isStore ? 'buyer_to_seller' : 'seller_to_buyer';
+  const rating = reviews ? (data.isStore ? reviews.asSeller : reviews.asBuyer) : null;
+  const listed = reviews?.reviews.filter((review) => review.direction === direction) ?? [];
 
   return (
     <main className="page tab-view">
@@ -68,6 +83,15 @@ export function ProfileByHandlePage() {
               {data.followerCount} {data.followerCount === 1 ? 'follower' : 'followers'}
               {data.dispatchRegion && ` · ships from ${data.dispatchRegion}`}
               {data.tier && ` · ${data.tier}`}
+            </p>
+          )}
+          {/* The side of them this page is about: a shop is rated as a seller,
+              a person as a buyer. Absent rather than zero when unrated. */}
+          {rating?.average != null && (
+            <p className="faint">
+              <Stars value={Math.round(rating.average / 20)} />{' '}
+              {(rating.average / 20).toFixed(1)} from {rating.count}{' '}
+              {rating.count === 1 ? 'review' : 'reviews'}
             </p>
           )}
         </div>
@@ -120,6 +144,36 @@ export function ProfileByHandlePage() {
           {data.displayName} buys here. Open a storefront under a username to sell from one.
         </EmptyState>
       )}
+
+      <section className="detail__section" style={{ marginTop: 24 }}>
+        <h3>Reviews</h3>
+        {!reviews ? (
+          <p className="faint">Loading…</p>
+        ) : listed.length === 0 ? (
+          <p className="faint">
+            No reviews yet{data.isStore ? ' as a seller' : ''}.
+            {reviews.pending > 0 && ` ${reviews.pending} written and waiting on the other side.`}
+          </p>
+        ) : (
+          <div className="card card--pad">
+            {listed.map((review) => (
+              <article key={review.id} className="review">
+                <div className="review__head">
+                  <span className="review__who">{review.authorName}</span>
+                  <span className="faint">{timeAgo(review.createdAt)}</span>
+                </div>
+                <Stars value={review.rating} />
+                {review.body && <p className="muted">{review.body}</p>}
+              </article>
+            ))}
+            {reviews.pending > 0 && (
+              <p className="faint" style={{ marginTop: 10 }}>
+                {reviews.pending} more written and hidden until both sides have rated.
+              </p>
+            )}
+          </div>
+        )}
+      </section>
     </main>
   );
 }
