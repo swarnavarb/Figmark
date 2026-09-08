@@ -273,16 +273,25 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           <span className="field__hint">What buyers see instead of your own name.</span>
         </label>
 
-        {/* The shop's address. Its own handle rather than the owner's, because
-            a shop is messaged and linked to as itself. */}
+        {/* The shop's own address, not the owner's: a shop is followed,
+            linked to and messaged as itself, and the person behind it keeps a
+            separate handle of their own. */}
         <label className="field">
-          <span>Username</span>
+          <span>Shop username</span>
           <input value={draft.username ?? ''} onChange={(e) => set('username', e.target.value.toLowerCase())}
             placeholder="kaiju_imports" autoCapitalize="off" autoCorrect="off" spellCheck={false} required />
           <span className="field__hint">
             {handleProblem
               ? USERNAME_PROBLEMS[handleProblem]
-              : <>Your shop lives at <code>/{draft.username}</code>, and people message it at <code>@{draft.username}</code>.</>}
+              : (
+                <>
+                  Your shop lives at <code>/{draft.username}</code> and is messaged at <code>@{draft.username}</code>.
+                  This is the shop's, not yours —{' '}
+                  {user?.username
+                    ? <>you are <code>@{user.username}</code>.</>
+                    : <Link to="/me?tab=settings">pick your own username</Link>}
+                </>
+              )}
           </span>
         </label>
 

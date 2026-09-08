@@ -1,7 +1,7 @@
-import { CosmosClient, type Container, type Database } from '@azure/cosmos';
+import { CosmosClient, type Container, type ContainerRequest, type Database } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import { CONTAINERS } from '../../../shared/containers.js';
+import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type { Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, User } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import type { CosmosConfig } from '../config.js';
@@ -99,6 +99,26 @@ export class CosmosRepository implements Repository {
       return;
     }
 
+    // A container this code queries but the database does not hold answers
+    // every request against it with a 500 and no clue as to why. That was the
+    // shape of it: `messages` was added to the schema, the database had been
+    // provisioned before it existed, and the inbox was simply broken until
+    // somebody re-ran a script by hand. Creating what is missing is cheap,
+    // idempotent, and removes the manual step from between a deploy and a
+    // working feature.
+    let created = '';
+    try {
+      const missing = await this.ensureContainers();
+      if (missing.length > 0) created = ` Created missing container(s): ${missing.join(', ')}.`;
+    } catch (error) {
+      // Creating a container is a management-plane operation, so an account
+      // key can do it and a data-plane managed identity cannot. Say which fix
+      // applies rather than leaving a feature quietly broken.
+      created =
+        ` Missing containers could not be created: ${describeError(error)}.` +
+        ' Run "npm run azure:provision" to create them.';
+    }
+
     // Reaching the database is not the same as being able to serve it. A
     // database with no accounts in it answers a correct password with "that is
     // wrong", so establish which of the two we are in before any request does.
@@ -130,9 +150,30 @@ export class CosmosRepository implements Repository {
     this.state = {
       connected: true,
       database: this.cosmosConfig.database,
-      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${seeded}`,
+      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${seeded}`,
       signInAccounts,
     };
+  }
+
+  /**
+   * Creates any container the schema declares and the database does not hold.
+   *
+   * One listing call, then a create for each gap, so the usual case - nothing
+   * missing - costs a single round trip. Returns what it had to create, which
+   * the health detail reports: a deployment silently repairing itself is worth
+   * seeing on the status page.
+   */
+  private async ensureContainers(): Promise<string[]> {
+    const { resources } = await this.database.containers.readAll().fetchAll();
+    const present = new Set(resources.map((container) => container.id));
+
+    const created: string[] = [];
+    for (const definition of CONTAINER_LIST) {
+      if (present.has(definition.name)) continue;
+      await this.database.containers.createIfNotExists(containerBody(definition) as ContainerRequest);
+      created.push(definition.name);
+    }
+    return created;
   }
 
   /**

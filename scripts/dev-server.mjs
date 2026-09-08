@@ -34,7 +34,7 @@ const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute,
   listForumsRoute, createForumRoute,
 } = await import(new URL('social-routes.js', apiRoot));
-const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute } =
+const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute } =
   await import(new URL('message-routes.js', apiRoot));
 
 /**
@@ -83,6 +83,7 @@ const routes = [
   ['GET', '/api/messages/:handle', threadRoute],
   ['POST', '/api/messages/:handle/send', sendMessageRoute],
   ['GET', '/api/u/:handle', publicProfileRoute],
+  ['POST', '/api/me/username', setUsernameRoute],
   ['GET', '/api/exporter/lots', exporterLotsRoute],
   ['GET', '/api/exporter/lots/:id', exporterLotRoute],
 ];

@@ -428,6 +428,7 @@ export const api = {
   sendMessage: (handle: string, body: string, as?: string) =>
     post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as }),
   profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
+  setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
 
   exporterLots: () =>
     request<{ lots: { store: ExporterStore; lot: ExporterLot['lot']; tally: LotTally }[] }>(

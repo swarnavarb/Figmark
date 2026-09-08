@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { handleKey, threadIdFor } from '../../../shared/handles.js';
+import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
 import type { Message, MessageParty, User } from '../../../shared/models.js';
 import { accessFor } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
@@ -8,13 +8,17 @@ import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 
 /**
- * Messages between handles.
+ * The handle namespace, and the messages addressed through it.
  *
  * The unit is a handle, not an account, because a storefront is a voice of its
  * own: an owner writing as their shop is saying something different from the
  * same person writing as themselves, and whoever reads it needs to be able to
  * tell. So a thread is between two handles, and the account behind each is
  * recorded alongside rather than instead.
+ *
+ * People and shops draw from one namespace, so resolving a handle and claiming
+ * a personal one live here too - the shop's own is claimed alongside the rest
+ * of the storefront, which is where its owner goes to change it.
  */
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -268,7 +272,50 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
   });
 }
 
+/**
+ * POST /api/me/username - claim or change your own handle.
+ *
+ * Separate from the storefront's, because they are two addresses: the shop is
+ * followed and bought from, the person behind it is not the same party. An
+ * account that predates handles has none at all, which is the case this exists
+ * to close.
+ */
+async function setUsername(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  let body: { username?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const record = await repository.getUserById(user.id);
+  if (!record) return error(404, 'not_found', 'This account no longer exists.');
+
+  const wanted = (body.username ?? '').trim().toLowerCase();
+  const problem = checkUsername(wanted);
+  if (problem) return error(400, 'invalid_username', USERNAME_PROBLEMS[problem]);
+
+  if (wanted !== record.username) {
+    // The new one is held before the old is let go: a rename that frees first
+    // can lose both if the name it wanted turns out to be taken.
+    if (!(await repository.reserveHandle(wanted, record.id, false))) {
+      return error(409, 'username_taken', `@${wanted} is already taken.`);
+    }
+    if (record.username) await repository.releaseHandle(record.username);
+    record.username = wanted;
+    record.updatedAt = new Date().toISOString();
+    await repository.updateUser(record);
+  }
+
+  return json(200, { username: record.username });
+}
+
 export const inboxRoute = handler(inbox);
+export const setUsernameRoute = handler(setUsername);
 export const threadRoute = handler(thread);
 export const sendMessageRoute = handler(send);
 export const publicProfileRoute = handler(publicProfile);
@@ -281,3 +328,4 @@ app.http('messages-thread', { ...anon, methods: ['GET'], route: 'messages/{handl
 // equivalent templates as a conflict regardless of verb.
 app.http('messages-send', { ...anon, methods: ['POST'], route: 'messages/{handle}/send', handler: sendMessageRoute });
 app.http('public-profile', { ...anon, methods: ['GET'], route: 'u/{handle}', handler: publicProfileRoute });
+app.http('me-username', { ...anon, methods: ['POST'], route: 'me/username', handler: setUsernameRoute });

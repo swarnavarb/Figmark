@@ -18,6 +18,9 @@ export function MessagesView() {
   const [data, setData] = useState<Inbox | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [to, setTo] = useState('');
+  /** Which inbox is showing: a handle, or '' for everything. */
+  const [box, setBox] = useState('');
+  const [composing, setComposing] = useState(false);
 
   useEffect(() => {
     void api
@@ -31,36 +34,90 @@ export function MessagesView() {
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
 
+  // Threads addressed to you and threads addressed to your shop are two
+  // inboxes, not one list with a label on each row: a shop's messages are work
+  // and yours are not, and they get read at different times.
+  const threads = box ? data.threads.filter((row) => row.us.handle === box) : data.threads;
+  const unreadIn = (handle: string) =>
+    data.threads.reduce((sum, row) => (row.us.handle === handle ? sum + row.unread : sum), 0);
+  const voice = data.handles.find((party) => party.handle === box);
+
   return (
     <div className="stack">
-      <form
-        className="card card--pad form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const handle = to.trim().replace(/^@/, '').toLowerCase();
-          if (handle) navigate(`/messages/${encodeURIComponent(handle)}`);
-        }}
-      >
-        <label className="field">
-          <span>Message someone</span>
-          <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="@username" />
-          <span className="field__hint">
-            Anyone with a username — a person or a shop. You speak as{' '}
-            {data.handles.map((party) => `@${party.handle}`).join(' or ') || 'nobody yet'}.
-          </span>
-        </label>
-        <button type="submit" className="btn" style={{ justifySelf: 'start' }} disabled={!to.trim()}>
-          Open conversation
+      {/* Only worth showing when there is more than one voice to separate. */}
+      {data.handles.length > 1 && (
+        <div className="pills pills--sm">
+          <button type="button" className={`pill${box === '' ? ' is-on' : ''}`}
+            aria-pressed={box === ''} onClick={() => setBox('')}>
+            <span className="pill__label">All</span>
+          </button>
+          {data.handles.map((party) => {
+            const unread = unreadIn(party.handle);
+            return (
+              <button
+                key={party.handle}
+                type="button"
+                className={`pill${box === party.handle ? ' is-on' : ''}`}
+                aria-pressed={box === party.handle}
+                onClick={() => setBox(party.handle)}
+              >
+                <span className="pill__label">
+                  {party.isStore ? party.displayName : 'You'}
+                  {unread > 0 && <span className="badge badge--accent" style={{ marginLeft: 6 }}>{unread}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {/* The inbox is the content here, so the way to start a new conversation
+          is a button until it is wanted: on a phone this form was pushing every
+          thread below the fold. */}
+      {!composing ? (
+        <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }}
+          onClick={() => setComposing(true)}>
+          <Icon name="plus" size={14} /> New message
         </button>
-      </form>
+      ) : (
+        <form
+          className="card card--pad form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const handle = to.trim().replace(/^@/, '').toLowerCase();
+            // Opening from inside one inbox writes from that voice.
+            if (handle) navigate(`/messages/${encodeURIComponent(handle)}${box ? `?as=${encodeURIComponent(box)}` : ''}`);
+          }}
+        >
+          <label className="field">
+            <span>Message someone</span>
+            <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="@username" autoFocus />
+            <span className="field__hint">
+              {data.handles.length === 0 ? (
+                <>Pick a username in <Link to="/me?tab=settings">your settings</Link> before messaging anyone.</>
+              ) : box ? (
+                <>Anyone with a username. This one goes out as <code>@{box}</code>.</>
+              ) : (
+                <>
+                  Anyone with a username — a person or a shop. You speak as{' '}
+                  {data.handles.map((party) => `@${party.handle}`).join(' or ')}.
+                </>
+              )}
+            </span>
+          </label>
+          <div className="row">
+            <button type="submit" className="btn" disabled={!to.trim()}>Open conversation</button>
+            <button type="button" className="btn btn--quiet" onClick={() => setComposing(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
 
-      {data.threads.length === 0 ? (
-        <EmptyState title="No messages yet">
+      {threads.length === 0 ? (
+        <EmptyState title={voice ? `Nothing for ${voice.isStore ? voice.displayName : 'you'} yet` : 'No messages yet'}>
           Start one above, or from any shop's page.
         </EmptyState>
       ) : (
         <div className="card">
-          {data.threads.map((row) => (
+          {threads.map((row) => (
             <Link
               key={row.threadId}
               to={`/messages/${encodeURIComponent(row.them.handle)}?as=${encodeURIComponent(row.us.handle)}`}
@@ -79,9 +136,9 @@ export function MessagesView() {
                   {row.lastFromUs && 'You: '}
                   {row.lastMessage}
                 </span>
-                {/* Which of your voices this thread belongs to. Only worth
-                    saying when you have more than one. */}
-                {data.handles.length > 1 && (
+                {/* Which of your voices this thread belongs to - said only in
+                    the combined view, where the rows are mixed together. */}
+                {box === '' && data.handles.length > 1 && (
                   <span className="faint">to @{row.us.handle}</span>
                 )}
               </div>

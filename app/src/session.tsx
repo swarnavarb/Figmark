@@ -18,6 +18,8 @@ interface SessionValue {
   signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Re-read the principal, after something on it has changed server-side. */
+  refresh: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -102,6 +104,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  const refresh = useCallback(async () => {
+    // Only a clean answer replaces the principal: a failure here means the
+    // server could not tell us, not that the account changed underneath.
+    try {
+      const result = await api.me();
+      if (result.user) setUser(result.user);
+    } catch {
+      /* keep what we have */
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     await api.logout();
     setUser(null);
@@ -109,8 +122,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, warning, sessionsInsecure, signIn, signUp, signOut }),
-    [user, loading, warning, sessionsInsecure, signIn, signUp, signOut],
+    () => ({ user, loading, warning, sessionsInsecure, signIn, signUp, signOut, refresh }),
+    [user, loading, warning, sessionsInsecure, signIn, signUp, signOut, refresh],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

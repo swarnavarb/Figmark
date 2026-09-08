@@ -23,6 +23,12 @@ import type {
 export interface AuthUser {
   id: string;
   displayName: string;
+  /**
+   * This person's own handle - their page at `/username`, and the voice they
+   * speak in. Null for accounts created before handles existed, which is why
+   * there is a screen to claim one.
+   */
+  username: string | null;
   email: string;
   phone: string | null;
   /**

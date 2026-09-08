@@ -391,6 +391,7 @@ export function toAuthUser(user: User): AuthUser {
   return {
     id: user.id,
     displayName: user.displayName,
+    username: user.username ?? null,
     email: user.email,
     phone: user.phone,
     capabilities: deriveCapabilities(user),

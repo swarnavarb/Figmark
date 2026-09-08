@@ -1,12 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
-import { api, type ActivityResponse } from '../api';
+import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
+import { ApiRequestError, api, type ActivityResponse } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Tab = 'listings' | 'purchases' | 'following';
+type Tab = 'listings' | 'purchases' | 'following' | 'settings';
+
+const TAB_LABELS: Record<Tab, string> = {
+  listings: 'My listings',
+  purchases: 'My purchases',
+  following: 'Following',
+  settings: 'Settings',
+};
 
 /**
  * One profile, both sides of the account.
@@ -46,6 +54,25 @@ export function ProfilePage() {
           <Avatar name={user.displayName} size={58} />
           <div style={{ flex: 1, minWidth: 200 }}>
             <h1>{user.displayName}</h1>
+            {/* Two addresses, said plainly, because they are two parties: the
+                person, and the shop they run. */}
+            <p className="muted">
+              {user.username ? (
+                <Link to={`/${user.username}`} style={{ color: 'inherit' }}>@{user.username}</Link>
+              ) : (
+                <button type="button" className="linklike" onClick={() => setTab('settings')}>
+                  Pick a username
+                </button>
+              )}
+              {user.sellerProfile?.username && (
+                <>
+                  {' · shop '}
+                  <Link to={`/${user.sellerProfile.username}`} style={{ color: 'inherit' }}>
+                    @{user.sellerProfile.username}
+                  </Link>
+                </>
+              )}
+            </p>
             <p className="muted">
               {user.sellerProfile?.storefrontName ?? 'No storefront yet'}
               {user.sellerProfile && ` · ${user.sellerProfile.dispatchRegion}`}
@@ -85,10 +112,10 @@ export function ProfilePage() {
       </div>
 
       <div className="tabs">
-        {(['listings', 'purchases', 'following'] as Tab[]).map((entry) => (
+        {(['listings', 'purchases', 'following', 'settings'] as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
-            {entry === 'listings' ? 'My listings' : entry === 'purchases' ? 'My purchases' : 'Following'}
-            {data && (
+            {TAB_LABELS[entry]}
+            {data && entry !== 'settings' && (
               <span className="faint" style={{ marginLeft: 6 }}>
                 {entry === 'listings' ? data.listings.length : entry === 'purchases' ? data.orders.length : data.following.length}
               </span>
@@ -98,7 +125,9 @@ export function ProfilePage() {
       </div>
 
       {error && <ErrorNotice message={error} />}
-      {!data ? (
+      {tab === 'settings' ? (
+        <UsernameSettings />
+      ) : !data ? (
         <p className="muted">Loading…</p>
       ) : tab === 'listings' ? (
         data.listings.length === 0 ? (
@@ -176,5 +205,101 @@ export function ProfilePage() {
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * The username on your own profile.
+ *
+ * Its own thing, and not the shop's: an account is addressed at `/username`
+ * and messaged at `@username`, and running a shop gives that shop a second
+ * address rather than replacing this one. Accounts made before handles existed
+ * have none, so this is also where the gap gets closed.
+ */
+function UsernameSettings() {
+  const { user, refresh } = useSession();
+  const [draft, setDraft] = useState(user?.username ?? '');
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!user) return null;
+
+  // The same rules the server enforces, checked while it is being typed.
+  const problem = checkUsername(draft);
+  const suggestion = suggestUsername(user.displayName);
+  const unchanged = draft.trim().toLowerCase() === (user.username ?? '');
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setFlash(null);
+    setError(null);
+    try {
+      const result = await api.setUsername(draft.trim().toLowerCase());
+      await refresh();
+      setFlash(`You are @${result.username}.`);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save that username.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack" style={{ maxWidth: 560 }}>
+      <form className="card card--pad form" onSubmit={save}>
+        <label className="field">
+          <span>Your username</span>
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value.toLowerCase())}
+            placeholder={suggestion}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+          <span className="field__hint">
+            {problem ? (
+              USERNAME_PROBLEMS[problem]
+            ) : (
+              <>Your page is <code>/{draft.trim()}</code> and people message you at <code>@{draft.trim()}</code>.</>
+            )}
+          </span>
+        </label>
+
+        {flash && <p className="notice notice--ok">{flash}</p>}
+        {error && <ErrorNotice message={error} />}
+
+        <button type="submit" className="btn" style={{ justifySelf: 'start' }}
+          disabled={busy || problem !== null || unchanged}>
+          {busy ? 'Saving…' : user.username ? 'Change username' : 'Claim username'}
+        </button>
+      </form>
+
+      <div className="card card--pad stack">
+        <span className="card__title">Your addresses</span>
+        <div className="kv">
+          <dt>You</dt>
+          <dd>{user.username ? <Link to={`/${user.username}`}>@{user.username}</Link> : 'Not picked yet'}</dd>
+        </div>
+        <div className="kv">
+          <dt>Your shop</dt>
+          <dd>
+            {user.sellerProfile?.username ? (
+              <Link to={`/${user.sellerProfile.username}`}>@{user.sellerProfile.username}</Link>
+            ) : user.sellerProfile ? (
+              <Link to="/shop">Set one in the storefront editor</Link>
+            ) : (
+              <Link to="/shop">No storefront yet</Link>
+            )}
+          </dd>
+        </div>
+        <p className="faint">
+          Two separate addresses, and messages to each are separate conversations — so a question for the
+          shop does not land in the same thread as a message to you.
+        </p>
+      </div>
+    </div>
   );
 }

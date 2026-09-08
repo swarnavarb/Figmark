@@ -177,3 +177,33 @@ export const CONTAINER_LIST: ContainerDefinition[] = Object.values(CONTAINERS);
 export const PHOTO_CONTAINER_NAME = 'listing-photos';
 /** Blob container holding dispute evidence. Never publicly readable. */
 export const EVIDENCE_CONTAINER_NAME = 'dispute-evidence';
+
+/**
+ * A container definition as the Cosmos SDK wants it.
+ *
+ * Shared by the provisioning script and the API, because a container the code
+ * knows how to query is a container the code should be able to create: the two
+ * had drifted once already, and the symptom was a screen that answered every
+ * request with a 500 until somebody remembered to re-provision by hand.
+ */
+export function containerBody(definition: ContainerDefinition): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    id: definition.name,
+    partitionKey: { paths: [definition.partitionKeyPath] },
+    indexingPolicy: {
+      indexingMode: 'consistent',
+      automatic: true,
+      includedPaths: [{ path: '/*' }],
+      excludedPaths: [
+        { path: '/"_etag"/?' },
+        ...(definition.excludedPaths ?? []).map((path) => ({ path })),
+      ],
+      ...(definition.compositeIndexes ? { compositeIndexes: definition.compositeIndexes } : {}),
+    },
+  };
+  if (definition.uniqueKeyPaths) {
+    body.uniqueKeyPolicy = { uniqueKeys: definition.uniqueKeyPaths.map((paths) => ({ paths })) };
+  }
+  if (definition.defaultTtlSeconds !== undefined) body.defaultTtl = definition.defaultTtlSeconds;
+  return body;
+}

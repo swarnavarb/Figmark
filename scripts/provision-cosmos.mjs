@@ -34,6 +34,7 @@ try {
 
 const {
   CONTAINER_LIST,
+  containerBody,
   DATABASE_NAME,
   SHARED_THROUGHPUT_RU,
   PHOTO_CONTAINER_NAME,
@@ -84,29 +85,9 @@ console.log(
 );
 
 for (const definition of CONTAINER_LIST) {
-  const body = {
-    id: definition.name,
-    partitionKey: { paths: [definition.partitionKeyPath] },
-    indexingPolicy: {
-      indexingMode: 'consistent',
-      automatic: true,
-      includedPaths: [{ path: '/*' }],
-      excludedPaths: [
-        { path: '/"_etag"/?' },
-        ...(definition.excludedPaths ?? []).map((path) => ({ path })),
-      ],
-      ...(definition.compositeIndexes ? { compositeIndexes: definition.compositeIndexes } : {}),
-    },
-  };
-
-  if (definition.uniqueKeyPaths) {
-    body.uniqueKeyPolicy = { uniqueKeys: definition.uniqueKeyPaths.map((paths) => ({ paths })) };
-  }
-  if (definition.defaultTtlSeconds !== undefined) {
-    body.defaultTtl = definition.defaultTtlSeconds;
-  }
-
-  const result = await database.containers.createIfNotExists(body);
+  // The same body the API builds when it finds a container missing, so running
+  // this script and letting the API heal itself produce the same container.
+  const result = await database.containers.createIfNotExists(containerBody(definition));
   console.log(
     `  container ${definition.name.padEnd(10)} ${
       result.statusCode === 201 ? 'created' : 'already existed'

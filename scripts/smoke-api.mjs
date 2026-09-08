@@ -38,7 +38,7 @@ const {
 } = await import(new URL('fulfilment-routes.js', fns));
 const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
-  publicProfileRoute: publicProfile,
+  publicProfileRoute: publicProfile, setUsernameRoute: setUsername,
 } = await import(new URL('message-routes.js', fns));
 const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
@@ -1022,6 +1022,55 @@ await check('a shop page answers with its shelf, a person page with neither', as
   assert.equal(person.ownerHandle, null);
 });
 
+await check('a person can claim a username of their own, apart from any shop', async () => {
+  // The case that matters: an account made before handles existed has none,
+  // and running a shop gives the shop an address rather than giving them one.
+  const made = await signup(req({
+    body: {
+      displayName: 'Late Comer', email: 'late@figmark.example',
+      phone: '+919000022224', password: 'longenough1',
+    },
+  }), ctx);
+  const late = { authorization: `Bearer ${made.jsonBody.token}` };
+
+  const claimed = await setUsername(req({ headers: late, body: { username: 'late_comer_2' } }), ctx);
+  assert.equal(claimed.status, 200);
+  assert.equal(claimed.jsonBody.username, 'late_comer_2');
+
+  // It is on the principal, so every screen knows where this person lives.
+  const who = (await me(req({ headers: late }), ctx)).jsonBody;
+  assert.equal(who.user.username, 'late_comer_2');
+  assert.equal((await publicProfile(req({ params: { handle: 'late_comer_2' } }), ctx)).status, 200);
+});
+
+await check('renaming frees the old handle and keeps the new one', async () => {
+  const session = await login(req({
+    body: { identifier: 'late@figmark.example', password: 'longenough1' },
+  }), ctx);
+  const late = { authorization: `Bearer ${session.jsonBody.token}` };
+
+  const renamed = await setUsername(req({ headers: late, body: { username: 'late_comer_3' } }), ctx);
+  assert.equal(renamed.status, 200);
+  assert.equal((await publicProfile(req({ params: { handle: 'late_comer_3' } }), ctx)).status, 200);
+  assert.equal((await publicProfile(req({ params: { handle: 'late_comer_2' } }), ctx)).status, 404);
+});
+
+await check('a taken handle is refused, and the old one survives the refusal', async () => {
+  const session = await login(req({
+    body: { identifier: 'late@figmark.example', password: 'longenough1' },
+  }), ctx);
+  const late = { authorization: `Bearer ${session.jsonBody.token}` };
+
+  const clash = await setUsername(req({ headers: late, body: { username: 'arjun_collects' } }), ctx);
+  assert.equal(clash.status, 409);
+  // The rename reserves before it releases, so a refusal cannot lose both.
+  assert.equal((await publicProfile(req({ params: { handle: 'late_comer_3' } }), ctx)).status, 200);
+
+  const bad = await setUsername(req({ headers: late, body: { username: 'no' } }), ctx);
+  assert.equal(bad.status, 400);
+  assert.equal((await setUsername(req({ body: { username: 'anon' } }), ctx)).status, 401);
+});
+
 await check('nobody home is a 404, not an empty page', async () => {
   const missing = await publicProfile(req({ params: { handle: 'not_a_real_handle' } }), ctx);
   assert.equal(missing.status, 404);
@@ -1135,6 +1184,19 @@ await check('you cannot speak as a handle that is not yours, or to nobody', asyn
     headers: auth, params: { handle: 'arjun' }, body: { body: 'Talking to myself.', as: 'arjun' },
   }), ctx);
   assert.equal(self.status, 400);
+});
+
+await check('your inbox and your shop\'s are two inboxes, not one list', async () => {
+  // What the two filter buttons filter on: each row says which of your voices
+  // it belongs to, so the client can split them without asking again.
+  const mine = (await inbox(req({ headers: auth }), ctx)).jsonBody;
+  const own = mine.threads.filter((row) => row.us.handle === 'arjun');
+  const shop = mine.threads.filter((row) => row.us.handle === 'arjun_collects');
+  assert.ok(own.length > 0, 'expected a thread of your own');
+  assert.ok(shop.length > 0, "expected a thread of the shop's");
+  // Every row belongs to exactly one of them: the two never overlap.
+  assert.equal(own.length + shop.length, mine.threads.length);
+  assert.equal(own.some((row) => shop.includes(row)), false);
 });
 
 await check('messaging needs a session', async () => {

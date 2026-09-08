@@ -19,6 +19,7 @@ const { CosmosRepository } = await import(new URL('api/src/data/cosmos-repositor
 const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js', base));
 const { AuthError } = await import(new URL('api/src/auth/errors.js', base));
 const { DEMO_EMAIL, DEMO_PASSWORD, seedUsers } = await import(new URL('api/src/data/seed.js', base));
+const { CONTAINER_LIST } = await import(new URL('shared/containers.js', base));
 
 let passed = 0;
 const check = async (name, fn) => {
@@ -76,25 +77,48 @@ function repositoryOn(containers, { reachable = true } = {}) {
   // so its keep-alive agent does not hold the process open, and stand in for the
   // one call init() makes through it.
   repository.client.dispose?.();
-  repository.client = {
-    database: () => ({
-      read: async () => {
-        if (!reachable) throw new Error('no route to host');
-        return {};
+  // init() takes its database handle from the client, so the stub has to carry
+  // everything init() then asks of it: the reachability probe and the container
+  // listing behind ensureContainers().
+  const database = {
+    read: async () => {
+      if (!reachable) throw new Error('no route to host');
+      return {};
+    },
+    containers: {
+      readAll: () => ({
+        async fetchAll() {
+          return { resources: [...containers.keys()].map((id) => ({ id })) };
+        },
+      }),
+      async createIfNotExists(body) {
+        containers.set(body.id, new Map());
+        return { statusCode: 201 };
       },
-    }),
+    },
   };
+  repository.client = { database: () => database };
   // Every container access goes through container(), which this shadows.
+  // Unlike the old fake, an unprovisioned container is *not* conjured up on
+  // first touch: Cosmos answers a missing container with a 404, and a fake
+  // more forgiving than the real thing is how a missing container reached
+  // production in the first place.
   repository.container = (name) => {
-    if (!containers.has(name)) containers.set(name, new Map());
-    return fakeContainer(containers.get(name));
+    const store = containers.get(name);
+    if (!store) throw { code: 404, message: `Container ${name} does not exist.` };
+    return fakeContainer(store);
   };
   return repository;
 }
 
+/** A database provisioned with every container the schema declares. */
+function provisioned(names = CONTAINER_LIST.map((definition) => definition.name)) {
+  return new Map(names.map((name) => [name, new Map()]));
+}
+
 console.log('an empty Cosmos database');
 
-const containers = new Map();
+const containers = provisioned();
 const repository = repositoryOn(containers);
 await repository.init();
 
@@ -144,15 +168,14 @@ console.log('\na database left half-seeded');
  * every sign-in for it is answered "incorrect", and nothing about the page
  * says why.
  */
-const halfSeeded = new Map([
-  ['users', new Map([['usr_demo', seedUsers().find((u) => u.id === 'usr_demo')]])],
-]);
+const halfSeeded = provisioned();
+halfSeeded.set('users', new Map([['usr_demo', seedUsers().find((u) => u.id === 'usr_demo')]]));
 const repaired = repositoryOn(halfSeeded);
 
 await check('starts out unable to sign that account in', async () => {
   // Before init: the row is there, the reservation is not.
   assert.equal(halfSeeded.get('users').size, 1);
-  assert.equal(halfSeeded.has('identifiers'), false);
+  assert.equal(halfSeeded.get('identifiers').size, 0);
 });
 
 await repaired.init();
@@ -185,7 +208,9 @@ await check('is left exactly as it is', async () => {
   await untouched.init();
   assert.equal(existing.get('users').size, 1, 'seeding must not touch a populated database');
   assert.equal(untouched.status().signInAccounts, 1);
-  assert.equal(existing.has('listings'), false, 'nothing else should have been written');
+  // The container exists - init() creates whatever the schema declares - but
+  // nothing was written into it, which is the promise that matters.
+  assert.equal(existing.get('listings').size, 0, 'nothing else should have been written');
   assert.deepEqual(untouched.listDemoAccounts(), [], 'never advertise a password against real accounts');
 });
 
@@ -198,9 +223,40 @@ await check('a real account missing its reservation is restored, and nothing els
   const fixed = repositoryOn(orphaned);
   await fixed.init();
   assert.equal(orphaned.get('identifiers').get('someone@example.com').userId, 'usr_real');
-  assert.equal(orphaned.has('listings'), false, 'no fixtures in a database of real accounts');
+  assert.equal(orphaned.get('listings').size, 0, 'no fixtures in a database of real accounts');
   assert.deepEqual(fixed.listDemoAccounts(), []);
   assert.match(fixed.status().detail, /Restored 1 missing identifier reservation/);
+});
+
+console.log('\na database provisioned before a container existed');
+
+await check('creates what the schema declares and the database lacks', async () => {
+  // Exactly the shape of the bug: `messages` was added to the schema long after
+  // this database was provisioned, so every request against the inbox answered
+  // 500 until somebody re-ran a script by hand.
+  const old = provisioned(CONTAINER_LIST.map((d) => d.name).filter((name) => name !== 'messages'));
+  const repository = repositoryOn(old);
+  await repository.init();
+
+  assert.ok(old.has('messages'), 'the missing container should have been created');
+  assert.match(repository.status().detail, /Created missing container\(s\): messages/);
+
+  // And it works, rather than merely existing.
+  const sent = await repository.sendMessage({
+    id: 'msg_1', threadId: 'a|b',
+    from: { handle: 'a', userId: 'usr_a', isStore: false, displayName: 'A' },
+    to: { handle: 'b', userId: 'usr_b', isStore: false, displayName: 'B' },
+    body: 'Anyone there?', readAt: null,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  assert.equal(sent.id, 'msg_1');
+  assert.equal((await repository.listMessagesForHandles(['a'])).length, 1);
+});
+
+await check('says nothing about containers when none were missing', async () => {
+  const complete = repositoryOn(provisioned());
+  await complete.init();
+  assert.equal(/Created missing container/.test(complete.status().detail), false);
 });
 
 console.log('\na database that cannot be reached');
@@ -235,7 +291,25 @@ await check('COSMOS_AUTOSEED=off leaves an empty database empty', async () => {
     const optedOut = repositoryOn(empty);
     await optedOut.init();
     assert.equal(optedOut.status().signInAccounts, 0);
-    assert.equal(empty.has('listings'), false);
+    assert.equal(empty.get('listings').size, 0);
+  } finally {
+    delete process.env.COSMOS_AUTOSEED;
+  }
+});
+
+await check('opting out declines the fixtures, not the schema', async () => {
+  // Containers are what the code needs to run at all, and creating an empty one
+  // writes nothing. Withholding them would leave the same opaque 500 behind,
+  // with the operator no better informed.
+  process.env.COSMOS_AUTOSEED = 'off';
+  try {
+    const empty = new Map();
+    const optedOut = repositoryOn(empty);
+    await optedOut.init();
+    for (const definition of CONTAINER_LIST) {
+      assert.ok(empty.has(definition.name), `${definition.name} should exist`);
+      assert.equal(empty.get(definition.name).size, 0, `${definition.name} should be empty`);
+    }
   } finally {
     delete process.env.COSMOS_AUTOSEED;
   }
