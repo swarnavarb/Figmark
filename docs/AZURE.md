@@ -118,6 +118,51 @@ credentials were present. These steps need a machine that can reach Azure:
    `main` under Settings → General → Default branch. Check that the Static Web
    App's own production branch setting in Azure matches.
 
+## The operations console
+
+The console is a second bundle in the same deployment, served at `/admin`. It
+shares the API and the stylesheet with the marketplace and nothing else: its own
+entry point, its own sign-in, no link either way.
+
+**Nobody can reach it until you say who may.** `isAdmin` is derived at request
+time from `ADMIN_EMAILS`, never from a row, so operating the marketplace cannot
+be acquired by signing up, by a bug in a write path, or by restoring a database
+from somewhere else. With the setting absent, a Cosmos-backed deployment has no
+operators at all — which is the right state for one nobody has configured.
+
+```bash
+az staticwebapp appsettings set \
+  --name stapp-figuremarket-dev \
+  --resource-group rg-figuremarket-dev \
+  --setting-names ADMIN_EMAILS="you@example.com,ops@example.com"
+```
+
+On the in-memory store the demo account is an operator by default. That store is
+a throwaway whose password is published in this repository, so admin over data
+that resets on restart grants nothing; a durable store gets nobody.
+
+### Putting it on a subdomain
+
+The console is built to live at `admin.<your domain>` — nothing in it links back
+into the marketplace and nothing in the marketplace links to it, so moving it is
+a hosting change rather than a code one. Two ways, depending on how separate you
+want it:
+
+1. **Same app, second custom domain.** Add `admin.<domain>` as a custom domain on
+   the Static Web App (Settings → Custom domains) with a CNAME to the app's
+   default hostname. Both hostnames serve the same content, so the console stays
+   reachable at `/admin` on either — the separation is cosmetic, and the API is
+   the thing actually enforcing access.
+
+2. **Its own Static Web App.** Deploy `app/dist/admin.html` and its bundle as a
+   separate app with `admin.<domain>` pointed at it, and give it the same
+   `/api` backend by linking the Functions app. This is the one to choose if the
+   console should be unreachable from the marketplace's hostname at all — for
+   example behind a different network restriction.
+
+Either way the DNS record and the Azure custom-domain step are manual: they
+cannot be created from the repository.
+
 ## Preferring managed identity over keys
 
 Both the repository and the storage client fall back to `DefaultAzureCredential`

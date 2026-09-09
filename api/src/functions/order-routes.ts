@@ -8,6 +8,7 @@ import {
   REVIEW_REVEAL_DAYS,
   actionsFor,
   autoReleaseDue,
+  protectionFeeMinor,
   daysFrom,
   reviewRevealed,
   scoreFrom,
@@ -101,11 +102,17 @@ async function settle(order: Order, repository: Repo): Promise<Order> {
 }
 
 /**
- * POST /api/orders/{id}/pay - the buyer pays, and the money is held.
+ * POST /api/orders/{id}/pay - the buyer pays, with or without protection.
  *
- * Held rather than handed over: the whole point of the escrow record is that a
- * buyer sending money abroad for a box that has not been packed is not paying
- * the seller yet.
+ * Protection is what creates the escrow. Bought, the money is held and the
+ * company will settle a dispute over it; declined, it goes to the seller and
+ * the buyer is on their own with them. That is a real choice with a real cost
+ * either way, so the checkout states both halves rather than defaulting the
+ * buyer into one quietly.
+ *
+ * It is only on the table where the company has granted the seller it, which is
+ * the point of the grant: the marketplace is agreeing to arbitrate for that
+ * seller, and it does not agree to that for everyone.
  */
 async function pay(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -116,26 +123,97 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
+  let body: { protection?: boolean };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    // Paying without a body is paying without protection. Explicit is better,
+    // but a missing body must not become an accidental purchase of it.
+    body = {};
+  }
+
   if (!actionsFor(order, user.id).includes('pay')) {
     return error(409, 'not_payable', 'This order is not waiting for payment.');
   }
 
+  const seller = await repository.getUserById(order.sellerId);
+  const rights = seller?.escrowRights ?? null;
+  if (body.protection && !rights) {
+    return error(409, 'protection_unavailable', 'This seller is not set up for buyer protection.');
+  }
+
   const now = new Date().toISOString();
+  const totalMinor = order.unitPriceMinor * order.quantity;
+
   order.paymentStatus = 'paid';
   order.status = 'confirmed';
-  order.escrow = {
-    ...order.escrow,
-    state: 'held',
-    heldAt: now,
-    // Deliberately not set yet. The clock starts at dispatch, because an import
-    // can sit in a lot for weeks and a window opened at checkout would pay the
-    // seller for a box still with their supplier.
-    autoReleaseAt: null,
-  };
   order.updatedAt = now;
-  note(order, 'Payment received and held.', user.id);
 
-  return json(200, { order: await repository.updateOrder(order), simulatedPayment: true });
+  if (body.protection && rights) {
+    order.protection = {
+      // The rate is copied onto the order, not looked up later: the fee is a
+      // term of this transaction and must not move when the grant is changed.
+      feeBasisPoints: rights.feeBasisPoints,
+      feeMinor: protectionFeeMinor(totalMinor, rights.feeBasisPoints),
+      boughtAt: now,
+      refundedAt: null,
+    };
+    order.escrow = {
+      ...order.escrow,
+      state: 'held',
+      amountMinor: totalMinor,
+      heldAt: now,
+      // Deliberately not set yet. The clock starts at dispatch, because an
+      // import can sit in a lot for weeks and a window opened at checkout would
+      // pay the seller for a box still with their supplier.
+      autoReleaseAt: null,
+    };
+    note(order, `Paid with buyer protection. ${totalMinor} held.`, user.id);
+  } else {
+    order.protection = null;
+    order.escrow = { ...order.escrow, state: 'none', heldAt: null, autoReleaseAt: null };
+    note(order, 'Paid directly to the seller, without protection.', user.id);
+  }
+
+  return json(200, {
+    order: await repository.updateOrder(order),
+    simulatedPayment: true,
+  });
+}
+
+/**
+ * GET /api/orders/{id}/checkout - what paying for this would cost, and buy.
+ *
+ * Read before paying so the buyer is choosing between two stated outcomes
+ * rather than agreeing to a line item. Protection is absent, not zero, when the
+ * seller has not been granted it: an option priced at nothing still reads as an
+ * option.
+ */
+async function checkout(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  const seller = await repository.getUserById(order.sellerId);
+  const rights = seller?.escrowRights ?? null;
+  const totalMinor = order.unitPriceMinor * order.quantity;
+
+  return json(200, {
+    itemMinor: totalMinor,
+    currency: order.currency,
+    protection: rights
+      ? {
+          available: true,
+          feeMinor: protectionFeeMinor(totalMinor, rights.feeBasisPoints),
+          feeBasisPoints: rights.feeBasisPoints,
+        }
+      : { available: false, feeMinor: 0, feeBasisPoints: 0 },
+    sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'the seller',
+  });
 }
 
 /**
@@ -159,103 +237,6 @@ async function confirm(request: HttpRequest, _context: InvocationContext) {
   }
 
   return json(200, { order: await release(order, 'Delivery confirmed by the buyer.', user.id, repository) });
-}
-
-/**
- * POST /api/orders/{id}/dispute - the buyer contests it.
- *
- * Escrow without a way to contest it is only a delay before the seller is paid,
- * so this stops the release and the clock with it. The cooperative resolution -
- * the seller refunding - is the one that exists; a contested dispute needs a
- * mediator, and there is not one yet.
- */
-async function dispute(request: HttpRequest, _context: InvocationContext) {
-  const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
-  const repository = await getRepository();
-
-  const found = await ownOrder(request, repository, user.id);
-  if ('refusal' in found) return found.refusal;
-  const order = found.order;
-
-  let body: { reason?: string };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return error(400, 'invalid_body', 'Request body must be JSON.');
-  }
-
-  const reason = body.reason?.trim();
-  if (!reason) return error(400, 'invalid_dispute', 'Say what is wrong with the order.');
-  if (reason.length > 2000) return error(400, 'invalid_dispute', 'Keep it under 2000 characters.');
-
-  if (!actionsFor(order, user.id).includes('dispute')) {
-    return error(409, 'not_disputable', 'There is no held payment on this order to dispute.');
-  }
-
-  const now = new Date().toISOString();
-  const record: Dispute = {
-    id: `dsp_${randomUUID().slice(0, 12)}`,
-    orderId: order.id,
-    raisedBy: user.id,
-    againstUserId: order.sellerId,
-    reason,
-    status: 'awaiting_seller',
-    evidence: [],
-    sellerResponseDueAt: daysFrom(DISPUTE_RESPONSE_DAYS),
-    resolutionNote: null,
-    resolvedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-  await repository.createDispute(record);
-
-  order.escrow = { ...order.escrow, state: 'disputed', disputeId: record.id };
-  order.updatedAt = now;
-  note(order, 'Buyer opened a dispute.', user.id);
-
-  return json(201, { order: await repository.updateOrder(order), dispute: record });
-}
-
-/**
- * POST /api/orders/{id}/refund - the seller agrees, and the money goes back.
- *
- * The only resolution built. A seller who wants to contest one has nothing to
- * click, which is honest: mediation is a queue with a human at the end of it and
- * that does not exist.
- */
-async function refund(request: HttpRequest, _context: InvocationContext) {
-  const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
-  const repository = await getRepository();
-
-  const found = await ownOrder(request, repository, user.id);
-  if ('refusal' in found) return found.refusal;
-  const order = found.order;
-
-  if (!actionsFor(order, user.id).includes('refund')) {
-    return error(409, 'not_refundable', 'There is nothing to refund on this order.');
-  }
-
-  const now = new Date().toISOString();
-  order.escrow = { ...order.escrow, state: 'refunded' };
-  order.status = 'refunded';
-  order.paymentStatus = 'refunded';
-  order.updatedAt = now;
-  note(order, 'Seller refunded the buyer.', user.id);
-
-  if (order.escrow.disputeId) {
-    const record = await repository.getDispute(order.id, order.escrow.disputeId);
-    if (record) {
-      record.status = 'resolved_buyer';
-      record.resolutionNote = 'Seller refunded in full.';
-      record.resolvedAt = now;
-      record.updatedAt = now;
-      await repository.updateDispute(record);
-    }
-  }
-
-  return json(200, { order: await repository.updateOrder(order), simulatedPayment: true });
 }
 
 /**
@@ -446,18 +427,16 @@ async function reviewsAbout(request: HttpRequest, _context: InvocationContext) {
 
 export const payRoute = handler(pay);
 export const confirmRoute = handler(confirm);
-export const disputeRoute = handler(dispute);
-export const refundRoute = handler(refund);
 export const reviewRoute = handler(review);
 export const orderStateRoute = handler(orderState);
+export const checkoutRoute = handler(checkout);
 export const reviewsAboutRoute = handler(reviewsAbout);
 
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });
 app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/confirm', handler: confirmRoute });
-app.http('order-dispute', { ...anon, methods: ['POST'], route: 'orders/{id}/dispute', handler: disputeRoute });
-app.http('order-refund', { ...anon, methods: ['POST'], route: 'orders/{id}/refund', handler: refundRoute });
 app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
 app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state', handler: orderStateRoute });
+app.http('order-checkout', { ...anon, methods: ['GET'], route: 'orders/{id}/checkout', handler: checkoutRoute });
 app.http('user-reviews', { ...anon, methods: ['GET'], route: 'users/{id}/reviews', handler: reviewsAboutRoute });

@@ -114,6 +114,14 @@ export function seedUsers(): User[] {
         ],
       },
       forwarderProfile: null,
+      /* Granted, so the demo account can be both sides of protection: buying it
+         from Kaiju, and selling under it to somebody else. */
+      escrowRights: {
+        grantedAt: iso(-30),
+        grantedBy: 'usr_ops',
+        feeBasisPoints: 250,
+        note: 'Small seller, good record. Watch the first few protected orders.',
+      },
       suspended: false,
       createdAt: iso(-120),
       updatedAt: iso(-2),
@@ -141,8 +149,12 @@ export function seedUsers(): User[] {
 
     /* Catalog sellers. No password hash: they populate the feed, they are not
        accounts you can sign in as. */
-    storefront('usr_kaiju', 'Kaiju Imports', 'kaiju-imports', 'Bengaluru, KA', 91, 148, 0.96,
-      'Weekly group-buys from Guangzhou. Scale figures and garage kits.'),
+    withEscrow(
+      storefront('usr_kaiju', 'Kaiju Imports', 'kaiju-imports', 'Bengaluru, KA', 91, 148, 0.96,
+        'Weekly group-buys from Guangzhou. Scale figures and garage kits.'),
+      200,
+      'High volume, long record, no unresolved disputes.',
+    ),
     storefront('usr_tokyoline', 'Tokyo Line', 'tokyo-line', 'Delhi, DL', 84, 96, 0.91,
       'Anime merch and trading cards, direct from Akihabara runs.'),
     storefront('usr_sneakervault', 'Sneaker Vault', 'sneaker-vault', 'Pune, MH', 77, 61, 0.88,
@@ -170,6 +182,14 @@ export function seedUsers(): User[] {
         { originCity: 'Shanghai', destinationCity: 'Bengaluru', claimedTurnaroundDays: 8, ratePerKgMinor: 68_000, currency: 'INR' },
       ]),
   ];
+}
+
+/** Grants a seeded storefront protected checkout at a given rate. */
+function withEscrow(user: User, feeBasisPoints: number, note: string): User {
+  return {
+    ...user,
+    escrowRights: { grantedAt: iso(-45), grantedBy: 'usr_ops', feeBasisPoints, note },
+  };
 }
 
 function storefront(
@@ -449,6 +469,7 @@ export function seedOrders(): Order[] {
       status: 'confirmed', paymentStatus: 'paid',
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_demo' }],
+      protection: { feeMinor: 5_800, feeBasisPoints: 200, boughtAt: iso(-5), refundedAt: null },
       escrow: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
       completedAt: null, createdAt: iso(-5), updatedAt: iso(-5),
     },
@@ -464,6 +485,7 @@ export function seedOrders(): Order[] {
         { stage: 'dispatched_from_china', enteredAt: iso(-19), note: 'Air freight, AWB on file.', recordedBy: 'usr_kaiju' },
         { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
       ],
+      protection: { feeMinor: 640, feeBasisPoints: 200, boughtAt: iso(-30), refundedAt: null },
       escrow: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
       completedAt: null, createdAt: iso(-30), updatedAt: iso(-4),
     },
@@ -495,6 +517,20 @@ export function seedOrders(): Order[] {
       ],
       escrow: { state: 'released', amountMinor: 29_000, heldAt: iso(-64), releasedAt: iso(-24), autoReleaseAt: null, disputeId: null },
       completedAt: iso(-24), createdAt: iso(-64), updatedAt: iso(-24),
+    },
+    {
+      /* Unpaid, from a seller the company has granted protection. The other
+         unpaid order is from one it has not, so the checkout has both cases to
+         show: a real choice, and no choice at all. */
+      id: 'ord_1005', lotId: 'lot_gz_sep', sellerId: 'usr_kaiju', buyerId: 'usr_demo',
+      listingId: 'lst_mecha_kit', itemName: 'HG Mecha model kit — assorted wave 4',
+      condition: 'MIB', quantity: 1, unitWeightGrams: 900, unitPriceMinor: 32_000, currency: 'INR',
+      status: 'pending_payment', paymentStatus: 'unpaid',
+      stage: 'ordering',
+      stageHistory: [{ stage: 'ordering', enteredAt: iso(-1), note: 'Order placed.', recordedBy: 'usr_demo' }],
+      protection: null,
+      escrow: { state: 'none', amountMinor: 32_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      completedAt: null, createdAt: iso(-1), updatedAt: iso(-1),
     },
     /* Sales the demo account has made, so the seller dashboards have numbers in
        them rather than a row of zeroes. Spread over the month so the thirty-day
@@ -540,6 +576,7 @@ export function seedOrders(): Order[] {
         { stage: 'ordering', enteredAt: iso(-3), note: 'Order placed.', recordedBy: 'usr_gadgetgrid' },
         { stage: 'ordering', enteredAt: iso(-1), note: 'Buyer opened a dispute.', recordedBy: 'usr_gadgetgrid' },
       ],
+      protection: { feeMinor: 3_000, feeBasisPoints: 250, boughtAt: iso(-3), refundedAt: null },
       escrow: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
       completedAt: null, createdAt: iso(-3), updatedAt: iso(-1),
     },
@@ -599,10 +636,24 @@ export function seedDisputes(): Dispute[] {
       orderId: 'ord_2003',
       raisedBy: 'usr_gadgetgrid',
       againstUserId: 'usr_demo',
+      raisedSide: 'buyer',
+      reasonCode: 'not_as_described',
       reason: 'Paint on the left arm is chipped — not what the photos showed.',
-      status: 'awaiting_seller',
-      evidence: [],
-      sellerResponseDueAt: iso(2),
+      status: 'awaiting_response',
+      messages: [
+        {
+          id: 'dmsg_1',
+          authorId: 'usr_gadgetgrid',
+          authorRole: 'buyer',
+          body: 'Paint on the left arm is chipped — not what the photos showed.',
+          evidence: [],
+          createdAt: iso(-1),
+        },
+      ],
+      offer: null,
+      respondByAt: iso(2),
+      escalatedAt: null,
+      resolution: null,
       resolutionNote: null,
       resolvedAt: null,
       createdAt: iso(-1),
@@ -620,6 +671,7 @@ export function seedLiveSale(): Order {
     status: 'confirmed', paymentStatus: 'paid',
     stage: 'ordering',
     stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Order placed.', recordedBy: 'usr_tokyoline' }],
+    protection: { feeMinor: 2_750, feeBasisPoints: 250, boughtAt: iso(-6), refundedAt: null },
     escrow: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },
     completedAt: null, createdAt: iso(-6), updatedAt: iso(-6),
   };

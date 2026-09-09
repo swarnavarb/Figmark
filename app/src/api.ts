@@ -10,6 +10,13 @@ import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from
 import type { LotTally } from '@shared/board';
 import type { StoreAccess } from '@shared/stores';
 import type { OrderAction, OrderSide } from '@shared/orders';
+import type { DisputeAction } from '@shared/disputes';
+
+/** Evidence as the form collects it: a link and a caption. */
+export interface EvidenceDraft {
+  url: string;
+  caption: string;
+}
 import type {
   Dispute, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty, Order, Post,
   Review, SellerProfile, StoreManager,
@@ -165,6 +172,22 @@ export interface PublicReview {
   direction: string;
   authorName: string;
   createdAt: string;
+}
+
+export interface Checkout {
+  itemMinor: number;
+  currency: string;
+  protection: { available: boolean; feeMinor: number; feeBasisPoints: number };
+  sellerName: string;
+}
+
+export interface DisputeView {
+  dispute: Dispute;
+  order: Order;
+  side: OrderSide | null;
+  actions: DisputeAction[];
+  overdue: boolean;
+  names: { buyer: string; seller: string };
 }
 
 export interface OrderState {
@@ -447,12 +470,23 @@ export const api = {
 
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),
-  payOrder: (id: string) =>
-    post<{ order: Order; simulatedPayment: boolean }>(`/orders/${encodeURIComponent(id)}/pay`),
+  checkout: (id: string) => request<Checkout>(`/orders/${encodeURIComponent(id)}/checkout`),
+  payOrder: (id: string, protection: boolean) =>
+    post<{ order: Order; simulatedPayment: boolean }>(`/orders/${encodeURIComponent(id)}/pay`, { protection }),
   confirmOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/confirm`),
-  disputeOrder: (id: string, reason: string) =>
-    post<{ order: Order; dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/dispute`, { reason }),
-  refundOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund`),
+  openDispute: (id: string, body: { reasonCode: string; reason: string; evidence: EvidenceDraft[] }) =>
+    post<{ dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/dispute`, body),
+  dispute: (id: string) => request<DisputeView>(`/disputes/${encodeURIComponent(id)}`),
+  disputeReply: (id: string, body: string, evidence: EvidenceDraft[]) =>
+    post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/reply`, { body, evidence }),
+  disputeOffer: (id: string, refundMinor: number, note: string) =>
+    post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/offer`, { refundMinor, note }),
+  disputeAccept: (id: string) =>
+    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/accept`),
+  disputeWithdraw: (id: string) =>
+    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/withdraw`),
+  disputeEscalate: (id: string) =>
+    post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/escalate`),
   reviewOrder: (id: string, rating: number, body: string) =>
     post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
   reviewsAbout: (userId: string) =>

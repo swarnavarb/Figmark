@@ -391,6 +391,56 @@ export class MemoryRepository implements Repository {
     return this.disputes.get(id) ?? null;
   }
 
+  async getDisputeById(id: string): Promise<Dispute | null> {
+    return this.disputes.get(id) ?? null;
+  }
+
+  async listDisputes(status?: string): Promise<Dispute[]> {
+    return [...this.disputes.values()]
+      .filter((dispute) => !status || dispute.status === status)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  /* ── Operating the marketplace ───────────────────────────────────────── */
+
+  async listAllUsers(): Promise<User[]> {
+    return [...this.users.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listPostsByAuthor(authorId: string): Promise<Post[]> {
+    return [...this.posts.values()]
+      .filter((post) => post.authorId === authorId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    const user = this.users.get(id);
+    if (!user) return;
+    // Every reservation this account held goes back into circulation with it:
+    // an identifier left pointing at a deleted row locks that email or handle
+    // out of the marketplace forever.
+    for (const identifier of identifiersOf(user)) this.identifiers.delete(identifier);
+    if (user.username) this.handles.delete(handleKey(user.username));
+    if (user.sellerProfile?.username) this.handles.delete(handleKey(user.sellerProfile.username));
+    this.users.delete(id);
+  }
+
+  async deleteListing(_sellerId: string, id: string): Promise<void> {
+    this.listings.delete(id);
+  }
+
+  async deletePost(_channelId: string, id: string): Promise<void> {
+    this.posts.delete(id);
+  }
+
+  async deleteLot(_sellerId: string, id: string): Promise<void> {
+    this.lots.delete(id);
+  }
+
+  async deleteReview(_subjectId: string, id: string): Promise<void> {
+    this.reviews.delete(id);
+  }
+
   async updateDispute(dispute: Dispute): Promise<Dispute> {
     this.disputes.set(dispute.id, dispute);
     return dispute;

@@ -103,9 +103,24 @@ await expectAuthError('rejects an unknown identifier', 'invalid_credentials', ()
 console.log('\ncapabilities');
 
 await check('the demo account can both buy and sell', () => {
-  assert.deepEqual(session.user.capabilities, {
-    canBuy: true, canSell: true, canForward: false, isAdmin: false,
+  const { canBuy, canSell, canForward } = session.user.capabilities;
+  assert.deepEqual({ canBuy, canSell, canForward }, { canBuy: true, canSell: true, canForward: false });
+});
+
+await check('operating the marketplace comes from configuration, never from a row', async () => {
+  // The right to delete accounts and hold other people's money must not be
+  // something an account can acquire by signing up. On this throwaway store the
+  // demo account is an operator by default — its password is published in this
+  // repository, so admin over data that resets on restart grants nothing — but
+  // a new account is not, and no write path can make it one.
+  const made = await auth.signup({
+    displayName: 'Ordinary Person', email: 'ordinary@figmark.example',
+    phone: '+919000045451', password: 'longenough1',
   });
+  assert.equal(made.user.capabilities.isAdmin, false);
+
+  const stored = await repository.getUserById(made.user.id);
+  assert.equal(stored.isAdmin, false, 'nothing writes the role onto the row either');
 });
 
 await check('buyer and seller trust are separate numbers', () => {
@@ -144,8 +159,10 @@ await check('accepts a held capability', async () => {
   assert.equal((await auth.requireCapability(bearer, ['sell'])).id, 'usr_demo');
 });
 
+// `forward` rather than `admin`: on this throwaway store the demo account is a
+// configured operator, so admin is no longer an example of something it lacks.
 await expectAuthError('refuses a capability not held', 'forbidden', () =>
-  auth.requireCapability(bearer, ['admin']),
+  auth.requireCapability(bearer, ['forward']),
 );
 // Each of these reaches the user as "logged out" and needs a different fix, so
 // the refusal has to say which one it is rather than a blanket "unauthenticated".

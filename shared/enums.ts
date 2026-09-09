@@ -126,14 +126,76 @@ export const ESCROW_STATES = ['none', 'held', 'released', 'refunded', 'disputed'
 export type EscrowState = (typeof ESCROW_STATES)[number];
 
 export const DISPUTE_STATUSES = [
-  'open',
-  'awaiting_seller',
+  'awaiting_response',
+  'in_discussion',
   'under_mediation',
-  'resolved_buyer',
-  'resolved_seller',
+  'resolved',
   'withdrawn',
 ] as const;
 export type DisputeStatus = (typeof DISPUTE_STATUSES)[number];
+
+export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
+  awaiting_response: 'Waiting on the other side',
+  in_discussion: 'Being discussed',
+  under_mediation: 'With Figmark',
+  resolved: 'Settled',
+  withdrawn: 'Withdrawn',
+};
+
+/**
+ * How a dispute ended.
+ *
+ * `split` exists because it is the commonest honest answer to "it arrived
+ * damaged but I can still use it", and a system that can only find wholly for
+ * one side pushes every one of those into a lie.
+ */
+export const DISPUTE_OUTCOMES = ['refund_buyer', 'release_seller', 'split', 'withdrawn'] as const;
+export type DisputeOutcome = (typeof DISPUTE_OUTCOMES)[number];
+
+export const DISPUTE_OUTCOME_LABELS: Record<DisputeOutcome, string> = {
+  refund_buyer: 'Refunded to the buyer',
+  release_seller: 'Released to the seller',
+  split: 'Split between both',
+  withdrawn: 'Withdrawn',
+};
+
+/**
+ * Why a dispute was opened, from each side.
+ *
+ * Structured rather than free text alone: it decides what the form asks next,
+ * lets the mediation queue be triaged, and makes "sellers keep getting hit with
+ * X" a question the company can actually answer. The free-text reason stays,
+ * because a code never captures the specific thing that went wrong.
+ */
+export const BUYER_DISPUTE_REASONS = [
+  'not_received',
+  'not_as_described',
+  'damaged',
+  'wrong_item',
+  'counterfeit',
+] as const;
+
+export const SELLER_DISPUTE_REASONS = [
+  'buyer_unresponsive',
+  'false_claim',
+  'returned_damaged',
+  'delivery_refused',
+] as const;
+
+export const DISPUTE_REASONS = [...BUYER_DISPUTE_REASONS, ...SELLER_DISPUTE_REASONS] as const;
+export type DisputeReason = (typeof DISPUTE_REASONS)[number];
+
+export const DISPUTE_REASON_LABELS: Record<DisputeReason, string> = {
+  not_received: 'Never arrived',
+  not_as_described: 'Not what was described',
+  damaged: 'Arrived damaged',
+  wrong_item: 'Wrong item sent',
+  counterfeit: 'Not genuine',
+  buyer_unresponsive: 'Buyer will not confirm or reply',
+  false_claim: 'The claim against me is untrue',
+  returned_damaged: 'Came back damaged',
+  delivery_refused: 'Buyer refused the delivery',
+};
 
 /**
  * Review directions, all gated on a completed transaction.

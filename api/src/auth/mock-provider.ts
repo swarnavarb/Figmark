@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import type { SignupRequest } from '../../../shared/contracts.js';
 import type { User, VerificationState } from '../../../shared/models.js';
 import type { Repository } from '../data/repository.js';
+import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { hashPassword, verifyPassword } from './passwords.js';
@@ -386,15 +387,24 @@ function readToken(request: HttpRequest): string | null {
   return readTokens(request)[0] ?? null;
 }
 
-/** Strip credentials and internal bookkeeping before a user crosses the wire. */
+/**
+ * Strip credentials and internal bookkeeping before a user crosses the wire.
+ *
+ * `isAdmin` is taken from configuration rather than from the row. Operating the
+ * marketplace means deleting accounts and handing out the right to hold other
+ * people's money, so it has to be something a deployment is configured with -
+ * never something a row can acquire through a bug in a write path, and never
+ * something that survives being copied between databases.
+ */
 export function toAuthUser(user: User): AuthUser {
+  const operator = config.adminEmails.includes(user.email.trim().toLowerCase());
   return {
     id: user.id,
     displayName: user.displayName,
     username: user.username ?? null,
     email: user.email,
     phone: user.phone,
-    capabilities: deriveCapabilities(user),
+    capabilities: { ...deriveCapabilities(user), isAdmin: operator },
     verification: user.verification,
     buyerTrust: user.buyerTrust,
     sellerTrust: user.sellerTrust,

@@ -5,12 +5,17 @@
   },
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/api/*", "/assets/*", "*.{png,jpg,jpeg,svg,webp,ico,css,js,map}"]
+    "exclude": ["/api/*", "/admin*", "/assets/*", "*.{png,jpg,jpeg,svg,webp,ico,css,js,map}"]
   },
   "routes": [
     {
       "route": "/api/*",
       "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
+      "comment": "The operations console is a bundle of its own, so it is served rather than falling through to the marketplace. Its own sign-in gates it, and the API refuses every /api/admin/* call from an account that is not a configured operator - the rewrite is routing, never access control.",
+      "route": "/admin*",
+      "rewrite": "/admin.html"
     }
   ],
   "globalHeaders": {

@@ -37,8 +37,16 @@ const {
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
-  payRoute, confirmRoute, disputeRoute, refundRoute, reviewRoute, orderStateRoute, reviewsAboutRoute,
+  payRoute, confirmRoute, reviewRoute, orderStateRoute, reviewsAboutRoute, checkoutRoute,
 } = await import(new URL('order-routes.js', apiRoot));
+const {
+  openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
+  acceptDisputeRoute, withdrawDisputeRoute, escalateDisputeRoute,
+} = await import(new URL('dispute-routes.js', apiRoot));
+const {
+  adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
+  adminDeleteResourceRoute, adminEscrowRoute, adminDisputesRoute, adminResolveRoute,
+} = await import(new URL('admin-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -88,11 +96,25 @@ const routes = [
   ['GET', '/api/u/:handle', publicProfileRoute],
   ['POST', '/api/me/username', setUsernameRoute],
   ['GET', '/api/orders/:id/state', orderStateRoute],
+  ['GET', '/api/orders/:id/checkout', checkoutRoute],
   ['POST', '/api/orders/:id/pay', payRoute],
   ['POST', '/api/orders/:id/confirm', confirmRoute],
-  ['POST', '/api/orders/:id/dispute', disputeRoute],
-  ['POST', '/api/orders/:id/refund', refundRoute],
+  ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],
+  ['GET', '/api/disputes/:id', readDisputeRoute],
+  ['POST', '/api/disputes/:id/reply', replyDisputeRoute],
+  ['POST', '/api/disputes/:id/offer', offerDisputeRoute],
+  ['POST', '/api/disputes/:id/accept', acceptDisputeRoute],
+  ['POST', '/api/disputes/:id/withdraw', withdrawDisputeRoute],
+  ['POST', '/api/disputes/:id/escalate', escalateDisputeRoute],
+  ['GET', '/api/admin/users', adminUsersRoute],
+  ['GET', '/api/admin/users/:id', adminUserDetailRoute],
+  ['POST', '/api/admin/users/:id/suspend', adminSuspendRoute],
+  ['POST', '/api/admin/users/:id/delete', adminDeleteUserRoute],
+  ['POST', '/api/admin/users/:id/escrow', adminEscrowRoute],
+  ['POST', '/api/admin/resources/delete', adminDeleteResourceRoute],
+  ['GET', '/api/admin/disputes', adminDisputesRoute],
+  ['POST', '/api/admin/disputes/:id/resolve', adminResolveRoute],
   ['GET', '/api/users/:id/reviews', reviewsAboutRoute],
   ['GET', '/api/exporter/lots', exporterLotsRoute],
   ['GET', '/api/exporter/lots/:id', exporterLotRoute],
@@ -192,11 +214,16 @@ const server = createServer((request, response) => {
       return;
     }
 
-    // Static files, with SPA fallback to index.html.
+    // Static files, with SPA fallback. Two bundles, so the fallback depends on
+    // which one the path belongs to - mirroring the rewrite in
+    // staticwebapp.config.json rather than reimplementing a different rule.
     const relative = normalize(url.pathname).replace(/^(\.\.[/\\])+/, '');
     let filePath = join(staticRoot, relative);
     const found = await stat(filePath).catch(() => null);
-    if (!found?.isFile()) filePath = join(staticRoot, 'index.html');
+    if (!found?.isFile()) {
+      const isOps = url.pathname === '/admin' || url.pathname.startsWith('/admin/');
+      filePath = join(staticRoot, isOps ? 'admin.html' : 'index.html');
+    }
 
     response.writeHead(200, {
       'Content-Type': MIME[extname(filePath)] ?? 'application/octet-stream',

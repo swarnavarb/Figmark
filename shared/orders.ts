@@ -37,7 +37,12 @@ export const REVIEW_REVEAL_DAYS = 14;
 /** Days a seller has to answer a dispute before it needs a human. */
 export const DISPUTE_RESPONSE_DAYS = 3;
 
-export type OrderAction = 'pay' | 'confirm' | 'dispute' | 'refund' | 'review';
+export type OrderAction = 'pay' | 'confirm' | 'dispute' | 'review';
+
+/** Protection is only offered where the company has granted the seller it. */
+export function protectionFeeMinor(totalMinor: number, feeBasisPoints: number): number {
+  return Math.max(0, Math.round((totalMinor * feeBasisPoints) / 10_000));
+}
 
 /** How the viewer relates to an order. Nobody else may see one at all. */
 export type OrderSide = 'buyer' | 'seller';
@@ -70,7 +75,10 @@ export function autoReleaseDue(order: Pick<Order, 'escrow'>, now = new Date()): 
  * on the courier, or on nothing at all.
  */
 export function actionsFor(
-  order: Pick<Order, 'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt'>,
+  order: Pick<
+    Order,
+    'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
+  >,
   viewerId: string,
   reviewed = false,
 ): OrderAction[] {
@@ -86,18 +94,19 @@ export function actionsFor(
 
   // Confirming delivery is the buyer's alone: it is the one fact in the whole
   // pipeline that only they can know. The seller ticking "dispatched" is not
-  // the same claim, which is why it does not release the money.
-  if (side === 'buyer' && order.escrow.state === 'held' && order.status === 'shipped') {
-    actions.push('confirm');
-  }
+  // the same claim, which is why it does not release the money. Unprotected
+  // orders confirm too — there is simply no money to let go of.
+  const awaitingDelivery =
+    order.status === 'shipped' && (order.escrow.state === 'held' || order.escrow.state === 'none');
+  if (side === 'buyer' && awaitingDelivery && order.paymentStatus === 'paid') actions.push('confirm');
 
-  // Disputing is open from payment until the money is gone. Escrow without a
-  // way to contest it is just a delay before the seller is paid anyway.
-  if (side === 'buyer' && order.escrow.state === 'held') actions.push('dispute');
-
-  // The seller's answer to a dispute. Refunding is the cooperative resolution
-  // and the only one that exists yet; contesting needs a mediator.
-  if (side === 'seller' && order.escrow.state === 'disputed') actions.push('refund');
+  // Disputing needs something to dispute over. Without protection the money
+  // went straight to the seller and there is nothing for the company to hold,
+  // which is exactly what declining protection means — so this is the one place
+  // the choice made at checkout actually bites.
+  const protectedAndHeld = order.protection != null && order.escrow.state === 'held';
+  const disputable = side === 'buyer' ? protectedAndHeld : protectedAndHeld && order.status === 'shipped';
+  if (disputable) actions.push('dispute');
 
   // A review is earned by a completed transaction, never by an opinion.
   if (order.completedAt && !reviewed) actions.push('review');

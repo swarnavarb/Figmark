@@ -34,6 +34,18 @@ export interface AppConfig {
   cosmos: CosmosConfig | null;
   /** Null when Storage is not configured; the in-memory store is used instead. */
   storage: StorageConfig | null;
+  /**
+   * Accounts that operate the marketplace, by email.
+   *
+   * An explicit list rather than a flag on a row, because the admin panel
+   * deletes accounts and hands out the right to hold other people's money -
+   * granting that has to be a deliberate act of configuration, not something an
+   * account can acquire by signing up or by a bug in a write path.
+   *
+   * Empty by default. A deployment with nobody in it has no admin panel at all,
+   * which is the correct state for one nobody has configured.
+   */
+  adminEmails: string[];
 }
 
 function env(name: string): string | null {
@@ -49,6 +61,23 @@ function resolveCosmos(): CosmosConfig | null {
     key: env('COSMOS_KEY'),
     database: env('COSMOS_DATABASE') ?? DATABASE_NAME,
   };
+}
+
+/**
+ * Who operates the marketplace.
+ *
+ * On the in-memory store the demo account is included, because that store is a
+ * throwaway fixture whose password is published in this repository - admin over
+ * data that resets on restart grants nothing. A durable store gets nobody
+ * unless ADMIN_EMAILS says so.
+ */
+function resolveAdmins(cosmos: CosmosConfig | null): string[] {
+  const configured = (env('ADMIN_EMAILS') ?? '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  if (configured.length > 0) return configured;
+  return cosmos ? [] : ['demo@figmark.in'];
 }
 
 function resolveStorage(): StorageConfig | null {
@@ -136,6 +165,7 @@ export const config: AppConfig = {
   sessionTtlSeconds: 60 * 60 * 12,
   cosmos,
   storage: resolveStorage(),
+  adminEmails: resolveAdmins(cosmos),
 };
 
 /** True when the session secret is the constant published in this repository. */

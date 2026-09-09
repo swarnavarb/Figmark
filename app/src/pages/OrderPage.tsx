@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
-import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS } from '@shared/orders';
-import { ApiRequestError, api, type OrderState, type OrderTracking } from '../api';
+import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
+import { reasonsFor } from '@shared/disputes';
+import { DISPUTE_REASON_LABELS } from '@shared/enums';
+import type { Order } from '@shared/models';
+import {
+  ApiRequestError, api,
+  type Checkout, type EvidenceDraft, type OrderState, type OrderTracking,
+} from '../api';
 import { ErrorNotice, Icon } from '../components/ui';
 import { formatDate, formatMoney, timeAgo } from '../format';
 
@@ -160,10 +166,11 @@ export function OrderPage() {
 function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Promise<void> }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
   const [disputing, setDisputing] = useState(false);
-  const [reason, setReason] = useState('');
 
   const { order, actions } = state;
+  const disputeId = order.escrow.disputeId;
 
   async function run(name: string, fn: () => Promise<unknown>) {
     setBusy(name);
@@ -171,8 +178,8 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
     try {
       await fn();
       await onDone();
+      setPaying(false);
       setDisputing(false);
-      setReason('');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
     } finally {
@@ -186,40 +193,47 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
     <div className="stack" style={{ marginBottom: 20 }}>
       {/* Said plainly, everywhere money is mentioned: no provider is wired up,
           and a screen that implied one would be lying about a payment. */}
-      {state.simulatedPayment && order.escrow.state !== 'none' && (
+      {state.simulatedPayment && order.paymentStatus !== 'unpaid' && (
         <p className="notice notice--warn">
-          Payments are simulated while no provider is connected — the hold is recorded, nothing is charged.
+          Payments are simulated while no provider is connected — nothing is charged.
         </p>
       )}
 
-      {order.escrow.state === 'disputed' && (
-        <p className="notice notice--warn">
-          {state.side === 'buyer'
-            ? 'You opened a dispute. The payment stays held until the seller refunds it.'
-            : 'The buyer opened a dispute. The payment is held until you refund it.'}
-          {state.dispute?.reason && <> — “{state.dispute.reason}”</>}
-        </p>
+      {/* What protection did or did not buy, once the choice has been made. */}
+      {order.paymentStatus !== 'unpaid' && (
+        order.protection ? (
+          <p className="notice notice--ok">
+            Bought with buyer protection ({formatMoney(order.protection.feeMinor, order.currency)}).
+            The payment is held by Figmark and either side can open a dispute over it.
+            {order.protection.refundedAt && ' The fee was refunded.'}
+          </p>
+        ) : (
+          <p className="notice notice--info">
+            Paid without protection, so the money went straight to the seller. There is nothing held
+            for Figmark to settle if this goes wrong.
+          </p>
+        )
+      )}
+
+      {disputeId && (
+        <Link to={`/dispute/${disputeId}`} className="notice notice--warn"
+          style={{ display: 'block', textDecoration: 'none' }}>
+          There is an open dispute on this order — tap to read it.
+        </Link>
       )}
 
       {!nothingToDo && (
         <div className="card card--pad stack">
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            {actions.includes('pay') && (
-              <button className="btn btn--lg" disabled={busy !== null}
-                onClick={() => void run('pay', () => api.payOrder(order.id))}>
-                {busy === 'pay' ? 'Holding…' : `Pay ${formatMoney(order.unitPriceMinor * order.quantity, order.currency)}`}
+            {actions.includes('pay') && !paying && (
+              <button className="btn btn--lg" onClick={() => setPaying(true)}>
+                Pay {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}
               </button>
             )}
             {actions.includes('confirm') && (
               <button className="btn btn--lg" disabled={busy !== null}
                 onClick={() => void run('confirm', () => api.confirmOrder(order.id))}>
-                {busy === 'confirm' ? 'Releasing…' : 'It arrived — release payment'}
-              </button>
-            )}
-            {actions.includes('refund') && (
-              <button className="btn btn--lg" disabled={busy !== null}
-                onClick={() => void run('refund', () => api.refundOrder(order.id))}>
-                {busy === 'refund' ? 'Refunding…' : 'Refund the buyer'}
+                {busy === 'confirm' ? 'Releasing…' : 'It arrived — complete the order'}
               </button>
             )}
             {actions.includes('dispute') && !disputing && (
@@ -229,35 +243,16 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
             )}
           </div>
 
-          {actions.includes('pay') && (
-            <p className="faint">
-              Held by Figmark, not sent to the seller. You release it when the item arrives.
-            </p>
-          )}
+          {paying && <PayPanel order={order} busy={busy} onPay={(p) => run('pay', () => api.payOrder(order.id, p))}
+            onCancel={() => setPaying(false)} />}
 
           {disputing && (
-            <form
-              className="form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run('dispute', () => api.disputeOrder(order.id, reason.trim()));
-              }}
-            >
-              <label className="field">
-                <span>What is wrong?</span>
-                <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
-                  placeholder="Never arrived, wrong item, damaged…" autoFocus />
-                <span className="field__hint">
-                  This stops the payment reaching the seller until it is settled.
-                </span>
-              </label>
-              <div className="row">
-                <button type="submit" className="btn" disabled={busy !== null || reason.trim().length < 4}>
-                  {busy === 'dispute' ? 'Opening…' : 'Open dispute'}
-                </button>
-                <button type="button" className="btn btn--quiet" onClick={() => setDisputing(false)}>Cancel</button>
-              </div>
-            </form>
+            <DisputeForm
+              side={state.side ?? 'buyer'}
+              busy={busy === 'dispute'}
+              onCancel={() => setDisputing(false)}
+              onOpen={(body) => run('dispute', () => api.openDispute(order.id, body))}
+            />
           )}
 
           {error && <ErrorNotice message={error} />}
@@ -265,6 +260,171 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       )}
 
       {order.completedAt && <ReviewPanel state={state} onDone={onDone} />}
+    </div>
+  );
+}
+
+/**
+ * Choosing whether to buy protection, with both outcomes stated.
+ *
+ * A default here would be the whole decision: the buyer is choosing between
+ * paying a fee and having no recourse, and neither is obviously right for a
+ * ₹200 order from someone they have bought from ten times. So nothing is
+ * pre-selected and both buttons say what they cost.
+ */
+function PayPanel({ order, busy, onPay, onCancel }: {
+  order: Order;
+  busy: string | null;
+  onPay: (protection: boolean) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const [quote, setQuote] = useState<Checkout | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .checkout(order.id)
+      .then(setQuote)
+      .catch((err: unknown) =>
+        setError(err instanceof ApiRequestError ? err.message : 'Could not price this order.'),
+      );
+  }, [order.id]);
+
+  if (error) return <ErrorNotice message={error} />;
+  if (!quote) return <p className="muted">Loading…</p>;
+
+  const total = quote.itemMinor + quote.protection.feeMinor;
+
+  return (
+    <div className="stack">
+      <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
+
+      {quote.protection.available ? (
+        <>
+          <div className="kv">
+            <dt>Buyer protection ({(quote.protection.feeBasisPoints / 100).toFixed(1)}%)</dt>
+            <dd>{formatMoney(quote.protection.feeMinor, quote.currency)}</dd>
+          </div>
+          <p className="faint">
+            With protection, Figmark holds your payment until you confirm the item arrived, and either
+            side can open a dispute we settle. Without it, the money goes to {quote.sellerName}{' '}
+            immediately and any problem is between the two of you.
+          </p>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button className="btn btn--lg" disabled={busy !== null} onClick={() => void onPay(true)}>
+              {busy === 'pay' ? 'Paying…' : `Pay ${formatMoney(total, quote.currency)} with protection`}
+            </button>
+            <button className="btn btn--quiet" disabled={busy !== null} onClick={() => void onPay(false)}>
+              Pay {formatMoney(quote.itemMinor, quote.currency)} without
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="faint">
+            {quote.sellerName} is not set up for buyer protection, so this payment goes to them
+            directly and Figmark holds nothing.
+          </p>
+          <button className="btn btn--lg" disabled={busy !== null} onClick={() => void onPay(false)}>
+            {busy === 'pay' ? 'Paying…' : `Pay ${formatMoney(quote.itemMinor, quote.currency)}`}
+          </button>
+        </>
+      )}
+      <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Opening a dispute: a reason from a list, what happened, and what shows it.
+ *
+ * The list is per side — a seller cannot claim a parcel never arrived — and it
+ * is what makes the queue triageable later. The photographs are most of the
+ * argument in a dispute about a physical object, so they are asked for here
+ * rather than chased afterwards.
+ */
+function DisputeForm({ side, busy, onOpen, onCancel }: {
+  side: OrderSide;
+  busy: boolean;
+  onOpen: (body: { reasonCode: string; reason: string; evidence: EvidenceDraft[] }) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const reasons = reasonsFor(side);
+  const [reasonCode, setReasonCode] = useState<string>(reasons[0]!);
+  const [reason, setReason] = useState('');
+  const [evidence, setEvidence] = useState<EvidenceDraft[]>([]);
+
+  return (
+    <form
+      className="form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onOpen({ reasonCode, reason: reason.trim(), evidence: evidence.filter((e) => e.url.trim()) });
+      }}
+    >
+      <label className="field">
+        <span>What went wrong?</span>
+        <select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
+          {reasons.map((code) => (
+            <option key={code} value={code}>{DISPUTE_REASON_LABELS[code]}</option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span>In your own words</span>
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+          placeholder="What happened, and what you would like done about it." autoFocus />
+        <span className="field__hint">
+          The other side reads everything here, and so does whoever settles it if they cannot.
+        </span>
+      </label>
+
+      <EvidenceFields evidence={evidence} onChange={setEvidence} />
+
+      <div className="row">
+        <button type="submit" className="btn" disabled={busy || reason.trim().length < 4}>
+          {busy ? 'Opening…' : 'Open dispute'}
+        </button>
+        <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Photographs, as links.
+ *
+ * The same shape the storefront photo already uses: uploads land when blob
+ * storage is wired, and the field a reader renders is the same either way.
+ */
+export function EvidenceFields({ evidence, onChange }: {
+  evidence: EvidenceDraft[];
+  onChange: (next: EvidenceDraft[]) => void;
+}) {
+  return (
+    <div className="stack">
+      {evidence.map((item, index) => (
+        <div className="field-row" key={index}>
+          <label className="field">
+            <span>Photo link</span>
+            <input value={item.url} inputMode="url" placeholder="https://…"
+              onChange={(e) => onChange(evidence.map((entry, i) => (i === index ? { ...entry, url: e.target.value } : entry)))} />
+          </label>
+          <label className="field">
+            <span>What it shows</span>
+            <input value={item.caption}
+              onChange={(e) => onChange(evidence.map((entry, i) => (i === index ? { ...entry, caption: e.target.value } : entry)))} />
+          </label>
+        </div>
+      ))}
+      {evidence.length < 8 && (
+        <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
+          onClick={() => onChange([...evidence, { url: '', caption: '' }])}>
+          <Icon name="plus" size={13} /> Add a photo
+        </button>
+      )}
     </div>
   );
 }

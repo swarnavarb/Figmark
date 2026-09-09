@@ -26,9 +26,12 @@ const TAB_LABELS: Record<Tab, string> = {
  * always available on a held payment, and a standing option is not a task.
  */
 function waitingOn(data: ActivityResponse, userId: string) {
-  return [...data.orders, ...data.sales].filter((order) =>
-    actionsFor(order, userId).some((action) => action === 'pay' || action === 'confirm' || action === 'refund'),
-  );
+  return [...data.orders, ...data.sales].filter((order) => {
+    // An open dispute is waiting on somebody whichever side they are, so it
+    // counts whether or not there is an order action behind it.
+    if (order.escrow.state === 'disputed') return true;
+    return actionsFor(order, userId).some((action) => action === 'pay' || action === 'confirm');
+  });
 }
 
 /**

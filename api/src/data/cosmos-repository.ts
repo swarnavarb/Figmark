@@ -276,13 +276,6 @@ export class CosmosRepository implements Repository {
     }
   }
 
-  private async listAllUsers(): Promise<User[]> {
-    const { resources } = await this.container('users')
-      .items.query<User>({ query: 'SELECT * FROM c' })
-      .fetchAll();
-    return resources;
-  }
-
   /** Accounts holding a password hash, i.e. accounts sign-in can resolve. */
   private async countSignInAccounts(): Promise<number> {
     const { resources } = await this.container('users')
@@ -560,6 +553,86 @@ export class CosmosRepository implements Repository {
   async updateDispute(dispute: Dispute): Promise<Dispute> {
     const { resource } = await this.container('disputes').items.upsert<Dispute>(dispute);
     return resource ?? dispute;
+  }
+
+  /**
+   * By id alone. Cross-partition, because a link into a dispute carries only
+   * its id and the order it belongs to is what the row itself says.
+   */
+  async getDisputeById(id: string): Promise<Dispute | null> {
+    const { resources } = await this.container('disputes')
+      .items.query<Dispute>({
+        query: 'SELECT * FROM c WHERE c.id = @id OFFSET 0 LIMIT 1',
+        parameters: [{ name: '@id', value: id }],
+      })
+      .fetchAll();
+    return resources[0] ?? null;
+  }
+
+  async listDisputes(status?: string): Promise<Dispute[]> {
+    const { resources } = await this.container('disputes')
+      .items.query<Dispute>(
+        status
+          ? {
+              query: 'SELECT * FROM c WHERE c.status = @status ORDER BY c.updatedAt DESC',
+              parameters: [{ name: '@status', value: status }],
+            }
+          : { query: 'SELECT * FROM c ORDER BY c.updatedAt DESC' },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  /* ── Operating the marketplace ───────────────────────────────────────── */
+
+  async listAllUsers(): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({ query: 'SELECT * FROM c ORDER BY c.createdAt DESC' })
+      .fetchAll();
+    return resources;
+  }
+
+  async listPostsByAuthor(authorId: string): Promise<Post[]> {
+    const { resources } = await this.container('posts')
+      .items.query<Post>({
+        query: 'SELECT * FROM c WHERE c.authorId = @authorId ORDER BY c.createdAt DESC',
+        parameters: [{ name: '@authorId', value: authorId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    const user = await this.getUserById(id);
+    if (!user) return;
+    // The reservations go back with the row. An identifier still pointing at a
+    // deleted account locks that email or handle out of the marketplace for
+    // good, which is a worse outcome than the deletion itself.
+    for (const identifier of identifiersOf(user)) {
+      await this.container('identifiers').item(identifier, identifier).delete().catch(() => {});
+    }
+    for (const handle of [user.username, user.sellerProfile?.username]) {
+      if (!handle) continue;
+      const key = handleKey(handle);
+      await this.container('identifiers').item(key, key).delete().catch(() => {});
+    }
+    await this.container('users').item(id, id).delete().catch(() => {});
+  }
+
+  async deleteListing(sellerId: string, id: string): Promise<void> {
+    await this.container('listings').item(id, sellerId).delete().catch(() => {});
+  }
+
+  async deletePost(channelId: string, id: string): Promise<void> {
+    await this.container('posts').item(id, channelId).delete().catch(() => {});
+  }
+
+  async deleteLot(sellerId: string, id: string): Promise<void> {
+    await this.container('lots').item(id, sellerId).delete().catch(() => {});
+  }
+
+  async deleteReview(subjectId: string, id: string): Promise<void> {
+    await this.container('reviews').item(id, subjectId).delete().catch(() => {});
   }
 
   async markThreadRead(threadId: string, handle: string): Promise<number> {

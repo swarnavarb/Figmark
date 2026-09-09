@@ -114,7 +114,23 @@ export interface Repository {
 
   createDispute(dispute: Dispute): Promise<Dispute>;
   getDispute(orderId: string, id: string): Promise<Dispute | null>;
+  /** By id alone, for a link into one: the order it belongs to is on the row. */
+  getDisputeById(id: string): Promise<Dispute | null>;
   updateDispute(dispute: Dispute): Promise<Dispute>;
+  /** The mediation queue: everything the company has been asked to settle. */
+  listDisputes(status?: string): Promise<Dispute[]>;
+
+  /* ── Operating the marketplace ───────────────────────────────────────── */
+
+  /** Every account, for the admin list. Bounded by how many people signed up. */
+  listAllUsers(): Promise<User[]>;
+  /** Everything one account has made, for the admin's view of them. */
+  listPostsByAuthor(authorId: string): Promise<Post[]>;
+  deleteUser(id: string): Promise<void>;
+  deleteListing(sellerId: string, id: string): Promise<void>;
+  deletePost(channelId: string, id: string): Promise<void>;
+  deleteLot(sellerId: string, id: string): Promise<void>;
+  deleteReview(subjectId: string, id: string): Promise<void>;
 
   listComments(listingId: string): Promise<ListingComment[]>;
   addComment(comment: ListingComment): Promise<ListingComment>;

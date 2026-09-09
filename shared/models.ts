@@ -1,6 +1,8 @@
 import type {
   ConditionTag,
   FulfilmentStage,
+  DisputeOutcome,
+  DisputeReason,
   DisputeStatus,
   EscrowState,
   ListingStatus,
@@ -131,6 +133,11 @@ export interface User extends BaseDocument {
    * separate system; this extension is what puts one in the directory.
    */
   forwarderProfile: ForwarderProfile | null;
+  /**
+   * Non-null once the company has granted this seller protected checkout.
+   * Absent on every account that has not been granted it, which is most.
+   */
+  escrowRights?: EscrowRights | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
 }
@@ -186,6 +193,23 @@ export interface SellerProfile {
  * The display name is a snapshot so a member list renders without a lookup per
  * row; the id is what any permission check actually uses.
  */
+/**
+ * The company's grant that this seller's items may be bought with protection.
+ *
+ * Held rather than derived, because it is a commercial decision about a named
+ * person: the marketplace is agreeing to hold their customers' money and to
+ * arbitrate when it goes wrong. The fee rate lives here too, so a seller who
+ * needs watching can carry a different one.
+ */
+export interface EscrowRights {
+  grantedAt: string;
+  grantedBy: string;
+  /** Charged to the buyer on top of the order, in basis points of the total. */
+  feeBasisPoints: number;
+  /** Why the company granted it. Read in the admin list, not by buyers. */
+  note: string;
+}
+
 export interface StoreManager {
   userId: string;
   displayName: string;
@@ -450,6 +474,16 @@ export interface Order extends BaseDocument {
   paymentStatus: PaymentStatus;
   escrow: EscrowRecord;
   /**
+   * What the buyer bought alongside the item.
+   *
+   * Null means they declined protection, or the seller was never granted it -
+   * and then there is no escrow to hold and no dispute for the company to
+   * settle. Recorded on the order rather than looked up later, because the fee
+   * and the rate are terms of that transaction and must not move when the
+   * seller's grant is changed afterwards.
+   */
+  protection?: OrderProtection | null;
+  /**
    * The order's own fulfilment record, not a view onto the lot's.
    *
    * Advancing a lot appends an event to every order in it. Keeping the history
@@ -471,6 +505,20 @@ export interface Order extends BaseDocument {
    * yet; orders written before checkpoints existed simply have none.
    */
   checkpoints?: Partial<Record<OrderCheckpoint, string | null>>;
+}
+
+/** Buyer protection, as bought. */
+export interface OrderProtection {
+  /** The fee paid, on top of the item total. */
+  feeMinor: number;
+  feeBasisPoints: number;
+  boughtAt: string;
+  /**
+   * Set when the fee is handed back. The fee buys the service, so it is kept
+   * whatever the outcome - except when the company finds fully for the buyer,
+   * which means the service was needed and the seller was at fault.
+   */
+  refundedAt: string | null;
 }
 
 /** Escrow hold attached to an order. */
@@ -511,11 +559,65 @@ export interface Review extends BaseDocument {
 /* Disputes                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A photograph, or whatever else backs up a claim.
+ *
+ * A link for now, the same way a storefront photo is a link: uploads fill
+ * `blobName` when blob storage is wired, and the field a reader renders is the
+ * same either way. In a dispute about a physical object this is most of the
+ * argument, so it attaches to a message rather than sitting in a pile — who
+ * said what, with what to show for it.
+ */
 export interface DisputeEvidence {
-  blobName: string;
+  url: string | null;
+  blobName: string | null;
   caption: string;
   uploadedBy: string;
   uploadedAt: string;
+}
+
+/**
+ * One turn in the argument.
+ *
+ * Both sides read the whole thread, and so does the mediator. A dispute settled
+ * on evidence one party could not see is not settled, it is imposed - so
+ * nothing here is private, and the screens say so before anyone writes.
+ */
+export interface DisputeMessage {
+  id: string;
+  authorId: string;
+  /** 'company' marks a message from whoever is mediating. */
+  authorRole: 'buyer' | 'seller' | 'company';
+  body: string;
+  evidence: DisputeEvidence[];
+  createdAt: string;
+}
+
+/**
+ * A settlement one side proposes and the other accepts.
+ *
+ * Most disputes are not really contested: the seller knows the box was
+ * damaged and would rather refund half than argue. An offer the other side can
+ * accept in one tap resolves those without the company being involved at all,
+ * which is the outcome a marketplace should want most.
+ */
+export interface DisputeOffer {
+  fromUserId: string;
+  /** What goes back to the buyer. Zero is "release it all to the seller". */
+  refundMinor: number;
+  note: string;
+  createdAt: string;
+}
+
+/** How a dispute ended, and what happened to the money. */
+export interface DisputeResolution {
+  outcome: DisputeOutcome;
+  refundMinor: number;
+  note: string;
+  /** The account that decided: one of the parties, or the company. */
+  decidedBy: string;
+  byCompany: boolean;
+  decidedAt: string;
 }
 
 export interface Dispute extends BaseDocument {
@@ -523,11 +625,19 @@ export interface Dispute extends BaseDocument {
   orderId: string;
   raisedBy: string;
   againstUserId: string;
+  /** Which side opened it. Either may: a seller has grievances too. */
+  raisedSide: 'buyer' | 'seller';
+  /** Structured, so the queue can be triaged and the form can ask the right thing. */
+  reasonCode: DisputeReason;
   reason: string;
   status: DisputeStatus;
-  evidence: DisputeEvidence[];
-  /** Seller response SLA deadline. */
-  sellerResponseDueAt: string | null;
+  messages: DisputeMessage[];
+  /** The offer currently on the table, if either side has made one. */
+  offer: DisputeOffer | null;
+  /** The other side's SLA. Missing it escalates to the company, never auto-decides. */
+  respondByAt: string | null;
+  escalatedAt: string | null;
+  resolution: DisputeResolution | null;
   resolutionNote: string | null;
   resolvedAt: string | null;
 }
