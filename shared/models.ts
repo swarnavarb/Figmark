@@ -869,12 +869,37 @@ export interface Want extends BaseDocument {
   status: WantStatus;
   /** Denormalised so the board can say how much interest there is. */
   offerCount: number;
+  /**
+   * How many people have said they want the same thing, the poster included.
+   *
+   * Counted on the hunt so the board can sort and show it without reading
+   * every row behind every card.
+   */
+  seekerCount?: number;
   expiresAt: string;
   /** Set when the buyer says they are done, and why. */
   closedAt: string | null;
 }
 
 export type WantStatus = 'open' | 'closed';
+
+/**
+ * Somebody else looking for the same thing.
+ *
+ * A hunt with one name on it is a request; a hunt with nine is a reason to
+ * fill a crate. On an import marketplace that difference is the whole
+ * economics, so it is worth one tap to say "me too" - and worth counting where
+ * a seller can see it.
+ *
+ * A row per person rather than a number on the hunt, because the count has to
+ * be reversible, has to be exactly one per person, and because everybody who
+ * put their name to it is who gets told when somebody answers.
+ */
+export interface WantSeeker extends BaseDocument {
+  /** Partition key: a hunt and everyone waiting on it are read together. */
+  wantId: string;
+  userId: string;
+}
 
 /**
  * A seller's answer to a hunt.
@@ -899,6 +924,31 @@ export interface WantOffer extends BaseDocument {
   priceMinor: number | null;
   message: string;
 }
+
+/**
+ * Something that happened which somebody asked to hear about.
+ *
+ * Deliberately thin: a line of text and somewhere to go. A notification that
+ * cannot be acted on is an interruption, so every one of these carries the
+ * route that answers it - tapping the news about an answer opens the hunt it
+ * answered.
+ *
+ * Written at the moment the thing happens rather than assembled by asking
+ * "what is new since you last looked". The second needs a read cursor per
+ * person per kind and gets slower as the app grows; this is a row.
+ */
+export interface Notification extends BaseDocument {
+  /** Partition key: your notifications are read as one list, which is yours. */
+  userId: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  /** Where tapping it goes, as an in-app route. */
+  link: string;
+  readAt: string | null;
+}
+
+export type NotificationKind = 'want_answered';
 
 /**
  * A shared room.

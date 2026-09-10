@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User, Want, WantOffer,
+  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -125,6 +125,13 @@ export interface Repository {
   getWant(id: string, buyerId: string): Promise<Want | null>;
   saveWant(want: Want): Promise<Want>;
   listWantOffers(wantId: string): Promise<WantOffer[]>;
+  /** Everybody who put their name to a hunt: to count them, and to tell them. */
+  listWantSeekers(wantId: string): Promise<WantSeeker[]>;
+  saveWantSeeker(seeker: WantSeeker): Promise<WantSeeker>;
+  deleteWantSeeker(id: string, wantId: string): Promise<void>;
+  /** Everything waiting for one person, newest first. */
+  listNotifications(userId: string, limit?: number): Promise<Notification[]>;
+  saveNotification(notification: Notification): Promise<Notification>;
   saveWantOffer(offer: WantOffer): Promise<WantOffer>;
   listStoreReviews(subjectId: string): Promise<StoreReview[]>;
   saveStoreReview(review: StoreReview): Promise<StoreReview>;

@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { gradientFor, hueFor, initialsOf } from '../format';
 
@@ -135,7 +136,15 @@ export function Modal({ title, onClose, children }: {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
+  // Rendered at the top of the document rather than where it was written.
+  //
+  // A dialog has to sit above everything, and `position: fixed` cannot do that
+  // from inside a stacking context - which `.tab-view` creates, because it is
+  // animated. So the modal was fixed to its tab rather than to the window, and
+  // the header and tab bar drew over the top of it however high its z-index
+  // went. A portal is the fix that keeps working when somebody animates
+  // something else later.
+  return createPortal(
     <div className="modal" role="dialog" aria-modal="true" aria-label={title}
       onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="modal__box">
@@ -147,7 +156,8 @@ export function Modal({ title, onClose, children }: {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS } from '@shared/enums';
 import { ApiRequestError, api, type WantCard, type WantDetail } from '../api';
 import { EmptyState, ErrorNotice, Modal, PersonLink } from '../components/ui';
@@ -25,6 +26,7 @@ const CATEGORIES = [
 
 export function WantedPage() {
   const { user } = useSession();
+  const [params, setParams] = useSearchParams();
   const [data, setData] = useState<{ wants: WantCard[]; mine: WantCard[] } | null>(null);
   const [category, setCategory] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,20 @@ export function WantedPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A notification names one hunt. Opening the board on the right tab and
+  // leaving somebody to find it would be most of the way to useless, so the
+  // hunt in the URL opens itself — including a closed one, which is exactly
+  // the case a stale notification points at.
+  const askedFor = params.get('want');
+  const askedBuyer = params.get('buyer');
+  useEffect(() => {
+    if (!askedFor || !askedBuyer || openWant?.id === askedFor) return;
+    void api
+      .want(askedFor, askedBuyer)
+      .then((detail) => setOpenWant(detail.want))
+      .catch(() => undefined);
+  }, [askedFor, askedBuyer, openWant?.id]);
 
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
@@ -120,12 +136,34 @@ export function WantedPage() {
       {openWant && (
         <WantDialog
           card={openWant}
-          onClose={() => setOpenWant(null)}
+          onClose={() => {
+            setOpenWant(null);
+            // Or the link in the URL immediately reopens what was just closed.
+            if (askedFor) {
+              const next = new URLSearchParams(params);
+              next.delete('want');
+              next.delete('buyer');
+              setParams(next, { replace: true });
+            }
+          }}
           onChanged={load}
         />
       )}
     </div>
   );
+}
+
+/**
+ * How many other people are hunting for this, from the reader's side.
+ *
+ * The stored count includes whoever pressed the button, so a reader who is one
+ * of them has to be taken out of it — "1 person looking too" when that one
+ * person is you says somebody else is there when nobody is.
+ */
+function othersLine(seekerCount: number, joined: boolean): string {
+  const others = joined ? seekerCount - 1 : seekerCount;
+  if (others === 0) return joined ? 'just you so far' : 'nobody else yet';
+  return `${others} other${others === 1 ? '' : 's'} looking too`;
 }
 
 /** One hunt on the board: what, how much, and how many people have answered. */
@@ -147,11 +185,16 @@ function WantRow({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
             ? 'Open to offers'
             : `up to ${formatMoney(want.budgetMinor, want.currency)}`}
         </span>
-        <span className={`badge${want.offerCount > 0 ? ' badge--accent' : ''}`}>
-          {want.offerCount === 0
-            ? 'no answers'
-            : `${want.offerCount} ${want.offerCount === 1 ? 'answer' : 'answers'}`}
-        </span>
+        <div className="row" style={{ gap: 6 }}>
+          {want.seekerCount > 0 && (
+            <span className="badge">+{want.seekerCount}</span>
+          )}
+          <span className={`badge${want.offerCount > 0 ? ' badge--accent' : ''}`}>
+            {want.offerCount === 0
+              ? 'no answers'
+              : `${want.offerCount} ${want.offerCount === 1 ? 'answer' : 'answers'}`}
+          </span>
+        </div>
       </div>
     </button>
   );
@@ -283,6 +326,20 @@ function WantDialog({ card, onClose, onChanged }: {
     }
   }
 
+  async function joinIn() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.alsoMe(card.id, card.buyerId);
+      await load();
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not do that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function close() {
     setBusy(true);
     try {
@@ -307,6 +364,26 @@ function WantDialog({ card, onClose, onChanged }: {
         <dd>{card.budgetMinor === null ? 'Open to offers' : formatMoney(card.budgetMinor, card.currency)}</dd>
       </div>
       {card.details && <p className="muted">{card.details}</p>}
+
+      {/* Under the post, and the count beside it: how many people want the same
+          thing is the number a seller is actually deciding on. */}
+      {data && !data.mine && card.status === 'open' && (
+        <div className="alsome">
+          <button type="button" className={`btn${data.joined ? ' btn--quiet' : ''}`}
+            disabled={busy || !user} onClick={() => void joinIn()}>
+            {data.joined ? '✓ You are in' : '+Me'}
+          </button>
+          {/* Counted from where the reader stands. "1 person looking too" when
+              that one person is you reads as somebody else being there. */}
+          <span className="alsome__count">{othersLine(data.seekerCount, data.joined)}</span>
+        </div>
+      )}
+      {data?.mine && (
+        <div className="alsome">
+          <span className="faint">Your want.</span>
+          <span className="alsome__count">{othersLine(data.seekerCount, false)}</span>
+        </div>
+      )}
 
       {!data ? (
         <p className="muted">Loading…</p>

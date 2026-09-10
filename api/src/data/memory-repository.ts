@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User, Want, WantOffer,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
@@ -58,6 +58,8 @@ export class MemoryRepository implements Repository {
   private readonly storeReviews = new Map<string, StoreReview>();
   private readonly wants = new Map<string, Want>();
   private readonly wantOffers = new Map<string, WantOffer>();
+  private readonly wantSeekers = new Map<string, WantSeeker>();
+  private readonly notifications = new Map<string, Notification>();
   private readonly disputes = new Map<string, Dispute>();
   /** `@username` -> who holds it. Mirrors the reservations in `identifiers`. */
   private readonly handles = new Map<string, { userId: string; isStore: boolean }>();
@@ -416,6 +418,31 @@ export class MemoryRepository implements Repository {
   async saveWantOffer(offer: WantOffer): Promise<WantOffer> {
     this.wantOffers.set(offer.id, offer);
     return offer;
+  }
+
+  async listWantSeekers(wantId: string): Promise<WantSeeker[]> {
+    return [...this.wantSeekers.values()].filter((seeker) => seeker.wantId === wantId);
+  }
+
+  async saveWantSeeker(seeker: WantSeeker): Promise<WantSeeker> {
+    this.wantSeekers.set(seeker.id, seeker);
+    return seeker;
+  }
+
+  async deleteWantSeeker(id: string): Promise<void> {
+    this.wantSeekers.delete(id);
+  }
+
+  async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
+    return [...this.notifications.values()]
+      .filter((entry) => entry.userId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+
+  async saveNotification(notification: Notification): Promise<Notification> {
+    this.notifications.set(notification.id, notification);
+    return notification;
   }
 
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {

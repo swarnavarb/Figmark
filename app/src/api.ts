@@ -397,6 +397,8 @@ export interface WantCard {
   condition: string | null;
   status: 'open' | 'closed';
   offerCount: number;
+  /** How many people are hunting for the same thing. */
+  seekerCount: number;
   createdAt: string;
   expiresAt: string;
   closedAt: string | null;
@@ -411,9 +413,23 @@ export interface WantOfferRow {
   listing: { id: string; title: string; priceMinor: number; currency: string; condition: string } | null;
 }
 
+export interface AppNotification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  /** Where tapping it goes. */
+  link: string;
+  read: boolean;
+  createdAt: string;
+}
+
 export interface WantDetail {
   want: WantCard;
   mine: boolean;
+  /** Whether you have put your name to it. */
+  joined: boolean;
+  seekerCount: number;
   /** Your own answer, if you have already made one. */
   yours: { id: string; message: string; priceMinor: number | null; listingId: string | null } | null;
   offers: WantOfferRow[];
@@ -740,6 +756,14 @@ export const api = {
   }) => post<{ offerCount: number }>(
     `/wants/${encodeURIComponent(id)}/offers?buyer=${encodeURIComponent(buyerId)}`, body,
   ),
+  alsoMe: (id: string, buyerId: string) =>
+    post<{ joined: boolean; seekerCount: number }>(
+      `/wants/${encodeURIComponent(id)}/me?buyer=${encodeURIComponent(buyerId)}`,
+    ),
+  notifications: () =>
+    request<{ notifications: AppNotification[]; unread: number }>('/notifications'),
+  markNotificationsRead: (id?: string) =>
+    post<{ read: number }>('/notifications/read', id ? { id } : {}),
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   createForum: (body: { name: string; description?: string }) =>

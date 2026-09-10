@@ -129,6 +129,25 @@ export const CONTAINERS = {
       'A hunt and every answer to it are read together, which is exactly one partition. One answer per seller, enforced by the unique key rather than by remembering to check.',
     uniqueKeyPaths: [['/sellerId']],
   },
+  wantSeekers: {
+    name: 'wantSeekers',
+    partitionKeyPath: '/wantId',
+    rationale:
+      'Everybody waiting on one hunt is read together - to count them, and to tell them when it is answered. One per person, enforced by the unique key rather than by remembering to check.',
+    uniqueKeyPaths: [['/userId']],
+  },
+  notifications: {
+    name: 'notifications',
+    partitionKeyPath: '/userId',
+    rationale:
+      'Read as "everything waiting for me", which is exactly one partition. Written at the moment something happens rather than derived from a read cursor per person per kind, which is a query that gets slower as the app grows.',
+    compositeIndexes: [
+      [
+        { path: '/readAt', order: 'ascending' },
+        { path: '/createdAt', order: 'descending' },
+      ],
+    ],
+  },
   storeReviews: {
     name: 'storeReviews',
     partitionKeyPath: '/subjectId',

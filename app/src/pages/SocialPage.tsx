@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   ApiRequestError,
   api,
@@ -37,7 +37,14 @@ const VIEWS: { id: View; label: string; glyph: string; hint: string }[] = [
  * errand.
  */
 export function SocialPage() {
-  const [view, setView] = useState<View>('feed');
+  // A notification points at a view, and sometimes at one thing inside it.
+  // Reading it from the URL is what makes tapping one land where it promised
+  // rather than on the tab it happens to be filed under.
+  const [params] = useSearchParams();
+  const wanted = params.get('view');
+  const [view, setView] = useState<View>(
+    VIEWS.some((entry) => entry.id === wanted) ? (wanted as View) : 'feed',
+  );
 
   return (
     <main className="page tab-view">

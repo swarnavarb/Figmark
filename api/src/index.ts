@@ -15,4 +15,5 @@ import './functions/order-routes.js';
 import './functions/dispute-routes.js';
 import './functions/profile-routes.js';
 import './functions/want-routes.js';
+import './functions/notification-routes.js';
 import './functions/admin-routes.js';

@@ -46,6 +46,7 @@ function card(want: Want) {
     condition: want.condition,
     status: want.status,
     offerCount: want.offerCount,
+    seekerCount: want.seekerCount ?? 0,
     createdAt: want.createdAt,
     expiresAt: want.expiresAt,
     closedAt: want.closedAt,
@@ -179,9 +180,14 @@ async function readWant(request: HttpRequest, _context: InvocationContext) {
     offers.map((offer) => (offer.listingId ? repository.getListing(offer.listingId) : null)),
   );
 
+  const seekers = await repository.listWantSeekers(found.want.id);
+
   return json(200, {
     want: card(found.want),
     mine: viewer?.id === found.want.buyerId,
+    /** Whether this viewer has put their name to it, so the button knows. */
+    joined: Boolean(viewer && seekers.some((seeker) => seeker.userId === viewer.id)),
+    seekerCount: found.want.seekerCount ?? seekers.length,
     /** Whether this viewer has already answered, so the form knows its job. */
     yours: viewer ? (offers.find((offer) => offer.sellerId === viewer.id) ?? null) : null,
     offers: offers.map((offer, index) => {
@@ -289,7 +295,103 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
     await repository.saveWant(want);
   }
 
+  // Everybody who put their name to this hears about it: the person who asked,
+  // and everyone who pressed +Me. That is what pressing it was for - a board
+  // you have to keep going back to check is a board you stop checking.
+  //
+  // Only on a new answer. Somebody editing their own wording is not news, and
+  // a notification for it would teach people to ignore the rest.
+  if (!existing) {
+    await notifySeekers(repository, want, who.name);
+  }
+
   return json(existing ? 200 : 201, { offer: saved, offerCount: want.offerCount });
+}
+
+/**
+ * Tell the person who asked, and everybody who said they wanted it too.
+ *
+ * The offering seller is left out: they know. Failures are swallowed one at a
+ * time rather than in a batch, because a notification that could not be written
+ * must not undo the answer that was.
+ */
+async function notifySeekers(
+  repository: Awaited<ReturnType<typeof getRepository>>,
+  want: Want,
+  sellerName: string,
+): Promise<void> {
+  const seekers = await repository.listWantSeekers(want.id);
+  const audience = new Set([want.buyerId, ...seekers.map((seeker) => seeker.userId)]);
+  const now = new Date().toISOString();
+
+  await Promise.all(
+    [...audience].map(async (userId) => {
+      try {
+        await repository.saveNotification({
+          id: `ntf_${randomUUID().slice(0, 12)}`,
+          userId,
+          kind: 'want_answered',
+          title: `${sellerName} answered a want`,
+          body: want.title,
+          // Straight to the hunt it answered. A notification that only says
+          // something happened makes the reader go and find it.
+          link: `/social?view=wanted&want=${want.id}&buyer=${want.buyerId}`,
+          readAt: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch {
+        // One person missing their notification is not a reason to fail the
+        // answer that has already been written.
+      }
+    }),
+  );
+}
+
+/**
+ * POST /api/wants/{id}/me - somebody else is looking for the same thing.
+ *
+ * A hunt with one name on it is a request; a hunt with nine is a reason to
+ * fill a crate, which on an import marketplace is the whole economics. So it
+ * is one tap, it toggles, and it puts you on the list of people who get told
+ * when somebody answers - which is the actual reason to press it.
+ */
+async function alsoMe(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await findWant(request, repository);
+  if ('refusal' in found) return found.refusal;
+  const want = found.want;
+
+  if (want.buyerId === user.id) {
+    // They are already on it, by having written it.
+    return error(400, 'own_want', 'You posted this one.');
+  }
+  if (want.status !== 'open') return error(409, 'want_closed', 'That hunt is over.');
+
+  const seekers = await repository.listWantSeekers(want.id);
+  const existing = seekers.find((seeker) => seeker.userId === user.id);
+  const now = new Date().toISOString();
+
+  if (existing) {
+    await repository.deleteWantSeeker(existing.id, want.id);
+    want.seekerCount = Math.max(0, (want.seekerCount ?? seekers.length) - 1);
+  } else {
+    await repository.saveWantSeeker({
+      id: `wsk_${randomUUID().slice(0, 12)}`,
+      wantId: want.id,
+      userId: user.id,
+      createdAt: now,
+      updatedAt: now,
+    });
+    want.seekerCount = (want.seekerCount ?? seekers.length) + 1;
+  }
+
+  want.updatedAt = now;
+  await repository.saveWant(want);
+  return json(200, { joined: !existing, seekerCount: want.seekerCount });
 }
 
 /**
@@ -324,6 +426,7 @@ export const wantPostRoute = handler(post);
 export const wantReadRoute = handler(readWant);
 export const wantOfferRoute = handler(offer);
 export const wantCloseRoute = handler(close);
+export const wantAlsoMeRoute = handler(alsoMe);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -332,3 +435,4 @@ app.http('want-post', { ...anon, methods: ['POST'], route: 'wants/new', handler:
 app.http('want-read', { ...anon, methods: ['GET'], route: 'wants/{id}', handler: wantReadRoute });
 app.http('want-offer', { ...anon, methods: ['POST'], route: 'wants/{id}/offers', handler: wantOfferRoute });
 app.http('want-close', { ...anon, methods: ['POST'], route: 'wants/{id}/close', handler: wantCloseRoute });
+app.http('want-also-me', { ...anon, methods: ['POST'], route: 'wants/{id}/me', handler: wantAlsoMeRoute });

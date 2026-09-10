@@ -48,8 +48,10 @@ const {
 } = await import(new URL('order-routes.js', fns));
 const {
   wantsBoardRoute: wantsBoard, wantPostRoute: postWant, wantReadRoute: readWant,
-  wantOfferRoute: offerOnWant, wantCloseRoute: closeWant,
+  wantOfferRoute: offerOnWant, wantCloseRoute: closeWant, wantAlsoMeRoute: alsoMe,
 } = await import(new URL('want-routes.js', fns));
+const { notificationsRoute: notifications, notificationsReadRoute: markRead } =
+  await import(new URL('notification-routes.js', fns));
 const {
   creditRoute: credit, pageReviewsRoute: pageReviews,
   writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
@@ -2521,6 +2523,103 @@ const bystander = await signup(req({
   },
 }), ctx);
 const bystanderAuth = { authorization: `Bearer ${bystander.jsonBody.token}` };
+
+await check('somebody else looking for the same thing is one tap, and reversible', async () => {
+  const joined = await alsoMe(req({
+    headers: bystanderAuth, params: { id: 'wnt_3' }, query: { buyer: 'usr_tokyoline' },
+  }), ctx);
+  assert.equal(joined.status, 200);
+  assert.equal(joined.jsonBody.joined, true);
+  assert.equal(joined.jsonBody.seekerCount, 1);
+
+  const again = await alsoMe(req({
+    headers: bystanderAuth, params: { id: 'wnt_3' }, query: { buyer: 'usr_tokyoline' },
+  }), ctx);
+  assert.equal(again.jsonBody.joined, false, 'pressing it again takes you off');
+  assert.equal(again.jsonBody.seekerCount, 0);
+
+  // Back on, so the notification test below has an audience.
+  await alsoMe(req({
+    headers: bystanderAuth, params: { id: 'wnt_3' }, query: { buyer: 'usr_tokyoline' },
+  }), ctx);
+});
+
+await check('you cannot add yourself to your own hunt', async () => {
+  // You are already on it, by having written it.
+  const self = await alsoMe(req({
+    headers: auth, params: { id: 'wnt_1' }, query: { buyer: 'usr_demo' },
+  }), ctx);
+  assert.equal(self.status, 400);
+  assert.equal(self.jsonBody.error, 'own_want');
+});
+
+await check('an answer tells the person who asked and everyone who joined in', async () => {
+  // The reason to press +Me at all: a board you have to keep going back to
+  // check is a board you stop checking.
+  const answered = await offerOnWant(req({
+    headers: auth, params: { id: 'wnt_3' }, query: { buyer: 'usr_tokyoline' },
+    body: { message: 'I can bring twenty HGs in on the next run.' },
+  }), ctx);
+  assert.equal(answered.status, 201);
+
+  const theirs = (await notifications(req({ headers: bystanderAuth }), ctx)).jsonBody;
+  assert.equal(theirs.unread, 1, 'somebody who joined in hears about it');
+  const row = theirs.notifications[0];
+  assert.equal(row.kind, 'want_answered');
+  assert.match(row.body, /HG Gundam/);
+  // It goes somewhere. A notification that only says something happened makes
+  // the reader go and find it.
+  assert.match(row.link, /view=wanted/);
+  assert.match(row.link, /want=wnt_3/);
+  assert.match(row.link, /buyer=usr_tokyoline/);
+});
+
+await check('the seller who answered is not told about their own answer', async () => {
+  const mine = (await notifications(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(
+    mine.notifications.some((row) => row.body.includes('HG Gundam')),
+    false,
+    'they know: they wrote it',
+  );
+});
+
+await check('editing an answer is not news', async () => {
+  const before = (await notifications(req({ headers: bystanderAuth }), ctx)).jsonBody.notifications.length;
+  await offerOnWant(req({
+    headers: auth, params: { id: 'wnt_3' }, query: { buyer: 'usr_tokyoline' },
+    body: { message: 'Twenty, and I can do better on the price.' },
+  }), ctx);
+  const after = (await notifications(req({ headers: bystanderAuth }), ctx)).jsonBody.notifications.length;
+  assert.equal(after, before, 'a reworded answer would teach people to ignore the rest');
+});
+
+await check('reading one marks it read without touching the others', async () => {
+  const before = (await notifications(req({ headers: bystanderAuth }), ctx)).jsonBody;
+  assert.ok(before.unread > 0);
+
+  const marked = await markRead(req({
+    headers: bystanderAuth, body: { id: before.notifications[0].id },
+  }), ctx);
+  assert.equal(marked.status, 200);
+
+  const after = (await notifications(req({ headers: bystanderAuth }), ctx)).jsonBody;
+  assert.equal(after.unread, before.unread - 1);
+  assert.equal(after.notifications[0].read, true);
+});
+
+await check('notifications are yours alone', async () => {
+  const stranger = await signup(req({
+    body: {
+      displayName: 'Uninvolved', email: 'uninvolved@figmark.example',
+      phone: '+919000045921', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = (await notifications(req({
+    headers: { authorization: `Bearer ${stranger.jsonBody.token}` },
+  }), ctx)).jsonBody;
+  assert.deepEqual(theirs.notifications, []);
+  assert.equal(theirs.unread, 0);
+});
 
 await check('only whoever posted a hunt can close it', async () => {
   assert.equal(bystander.status, 201, `signup failed: ${JSON.stringify(bystander.jsonBody)}`);

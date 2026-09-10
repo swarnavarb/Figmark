@@ -1104,7 +1104,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ── Operations console ────────────────────────────────────────────────── */
 
 .modal {
-  position: fixed; inset: 0; z-index: 50;
+  /* Above the header and the tab bar, both of which it now shares a stacking
+     context with rather than being trapped beneath. */
+  position: fixed; inset: 0; z-index: 200;
   display: grid; place-items: center; padding: 20px;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(2px);
@@ -1427,3 +1429,47 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .want__title { font-weight: 650; font-size: var(--t-sm); }
 .want__side { display: grid; gap: 4px; justify-items: end; flex: none; }
 .want__budget { font-size: var(--t-xs); font-weight: 650; white-space: nowrap; }
+
+/* ── The bell ───────────────────────────────────────────────────────────── */
+
+.bell { position: relative; }
+.bell__button {
+  position: relative; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--surface-2);
+  font-size: 15px; line-height: 1; cursor: pointer;
+}
+.bell__button:hover { border-color: var(--border-strong); }
+.bell__dot {
+  position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px;
+  padding: 0 4px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 10px; font-weight: 750; line-height: 16px;
+}
+.bell__panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 120;
+  width: min(320px, calc(100vw - 32px));
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.bell__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+}
+.bell__list { max-height: 60vh; overflow-y: auto; }
+.bell__row {
+  display: grid; gap: 2px; width: 100%; padding: 10px 12px; text-align: left;
+  background: none; border: 0; border-bottom: 1px solid var(--border);
+  color: inherit; font: inherit; cursor: pointer;
+}
+.bell__row:hover { background: var(--surface-hover); }
+/* Unread reads as unread without a second colour to learn. */
+.bell__row.is-unread { background: var(--accent-soft); }
+.bell__title { font-size: var(--t-sm); font-weight: 650; }
+
+/* +Me and how many others, on one row under the post. */
+.alsome {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 12px 0; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.alsome__count { font-size: var(--t-xs); color: var(--text-faint); text-align: right; }

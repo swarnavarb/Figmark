@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
+import { Notifications } from './components/Notifications';
 import { TabBar } from './components/TabBar';
 import { Avatar, Icon } from './components/ui';
 import { useSession } from './session';
@@ -50,6 +51,9 @@ export function AppShell() {
           <NavLink to="/forwarders" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`}>
             Forwarders
           </NavLink>
+          {/* Before the avatar, because it is about you rather than about the
+              app, and because that is where a thumb already goes. */}
+          {user && <Notifications />}
           <NavLink to="/me" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`} title={user?.displayName}>
             {user ? <Avatar name={user.displayName} size={28} /> : 'Profile'}
           </NavLink>

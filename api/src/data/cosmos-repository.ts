@@ -3,7 +3,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User, Want, WantOffer,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
 import type { CosmosConfig } from '../config.js';
@@ -893,6 +893,40 @@ export class CosmosRepository implements Repository {
 
   async saveWantOffer(offer: WantOffer): Promise<WantOffer> {
     const { resource } = await this.container('wantOffers').items.upsert<WantOffer>(offer);
+    return resource!;
+  }
+
+  async listWantSeekers(wantId: string): Promise<WantSeeker[]> {
+    const { resources } = await this.container('wantSeekers')
+      .items.query<WantSeeker>({ query: 'SELECT * FROM c' }, { partitionKey: wantId })
+      .fetchAll();
+    return resources;
+  }
+
+  async saveWantSeeker(seeker: WantSeeker): Promise<WantSeeker> {
+    const { resource } = await this.container('wantSeekers').items.upsert<WantSeeker>(seeker);
+    return resource!;
+  }
+
+  async deleteWantSeeker(id: string, wantId: string): Promise<void> {
+    await this.container('wantSeekers').item(id, wantId).delete();
+  }
+
+  async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
+    const { resources } = await this.container('notifications')
+      .items.query<Notification>(
+        {
+          query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+          parameters: [{ name: '@limit', value: limit }],
+        },
+        { partitionKey: userId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  async saveNotification(notification: Notification): Promise<Notification> {
+    const { resource } = await this.container('notifications').items.upsert<Notification>(notification);
     return resource!;
   }
 
