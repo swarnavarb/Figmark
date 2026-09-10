@@ -245,16 +245,21 @@ export class CosmosRepository implements Repository {
    */
   private async repair(): Promise<string> {
     const users = await this.listAllUsers();
-    const repaired: string[] = [];
+    // One projection rather than a point read per identifier. This runs on
+    // every cold start, so the healthy case - nothing missing - must cost one
+    // round trip and not one per account.
+    const present = await this.existingIds('identifiers');
 
+    const missing: { id: string; userId: string }[] = [];
+    const repaired: string[] = [];
     for (const user of users) {
       for (const identifier of identifiersOf(user)) {
-        const existing = await this.readReservation(identifier);
-        if (existing) continue;
-        await this.container('identifiers').items.upsert({ id: identifier, userId: user.id });
+        if (present.has(identifier)) continue;
+        missing.push({ id: identifier, userId: user.id });
         repaired.push(user.id);
       }
     }
+    await Promise.all(missing.map((row) => this.container('identifiers').items.upsert(row)));
 
     if (repaired.length === 0) return '';
 
@@ -290,33 +295,11 @@ export class CosmosRepository implements Repository {
   private async topUpFixtures(): Promise<string> {
     if (!(await this.getUserById('usr_demo'))) return '';
 
-    let added = 0;
-    /** Creates when absent; a conflict means it is already there, which is fine. */
-    const addIfAbsent = async (container: keyof typeof CONTAINERS, item: { id: string }) => {
-      try {
-        await this.container(container).items.create(item);
-        added += 1;
-        return true;
-      } catch (error) {
-        if ((error as { code?: number }).code === 409) return false;
-        throw error;
-      }
-    };
-
-    for (const user of [...seedUsers(), ...seedLotBuyers()]) {
-      if (!(await addIfAbsent('users', user))) continue;
-      // A new fixture account needs the reservations sign-in and `/<username>`
-      // resolve through, or it exists and cannot be reached.
-      for (const identifier of identifiersOf(user)) {
-        await addIfAbsent('identifiers', { id: identifier, userId: user.id } as { id: string });
-      }
-      for (const [handle, isStore] of [[user.username, false], [user.sellerProfile?.username, true]] as const) {
-        if (!handle) continue;
-        await addIfAbsent('identifiers', { id: handleKey(handle), userId: user.id, isStore } as { id: string });
-      }
-    }
-
-    for (const [name, items] of [
+    // What is already there, one container at a time. The usual answer is
+    // "everything", and that answer has to be cheap: this runs on every cold
+    // start, and every request landing on a cold worker waits behind it.
+    const fixtures = [
+      ['users', [...seedUsers(), ...seedLotBuyers()]],
       ['lots', [...seedLots(), seedOpenLot(), seedShippedLot()]],
       ['listings', seedListings()],
       ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders()]],
@@ -325,11 +308,53 @@ export class CosmosRepository implements Repository {
       ['posts', seedPosts()],
       ['reviews', seedReviews()],
       ['disputes', seedDisputes()],
-    ] as const) {
-      for (const item of items) await addIfAbsent(name, item);
+    ] as const;
+
+    let added = 0;
+    const newUsers: User[] = [];
+
+    for (const [name, items] of fixtures) {
+      const present = await this.existingIds(name);
+      const missing = items.filter((item) => !present.has(item.id));
+      if (missing.length === 0) continue;
+
+      // Only the genuinely absent ones are written, and in parallel: a handful
+      // of rows after a release, none at all on the run after that.
+      await Promise.all(missing.map((item) => this.container(name).items.upsert(item)));
+      added += missing.length;
+      if (name === 'users') newUsers.push(...(missing as readonly User[]));
+    }
+
+    // A new fixture account needs the reservations sign-in and `/<username>`
+    // resolve through, or it exists and cannot be reached.
+    if (newUsers.length > 0) {
+      const reservations: { id: string; userId: string; isStore?: boolean }[] = [];
+      for (const user of newUsers) {
+        for (const identifier of identifiersOf(user)) reservations.push({ id: identifier, userId: user.id });
+        if (user.username) reservations.push({ id: handleKey(user.username), userId: user.id, isStore: false });
+        if (user.sellerProfile?.username) {
+          reservations.push({ id: handleKey(user.sellerProfile.username), userId: user.id, isStore: true });
+        }
+      }
+      await Promise.all(reservations.map((row) => this.container('identifiers').items.upsert(row)));
     }
 
     return added === 0 ? '' : ` Added ${added} fixture record(s) this database did not have yet.`;
+  }
+
+  /**
+   * The ids a container already holds.
+   *
+   * One projection query instead of a point read per row. Init runs on every
+   * cold start and every request that lands on a cold worker waits for it, so
+   * the difference between one round trip and two hundred is the difference
+   * between a slow page and a page that never arrives.
+   */
+  private async existingIds(container: keyof typeof CONTAINERS): Promise<Set<string>> {
+    const { resources } = await this.container(container)
+      .items.query<string>({ query: 'SELECT VALUE c.id FROM c' })
+      .fetchAll();
+    return new Set(resources);
   }
 
   private async readReservation(identifier: string): Promise<IdentifierReservation | null> {

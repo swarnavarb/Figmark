@@ -28,15 +28,27 @@ const check = async (name, fn) => {
   console.log(`  ok  ${name}`);
 };
 
+/**
+ * How much work the repository actually did.
+ *
+ * Counted because init runs on every cold start and every request landing on a
+ * cold worker waits behind it: a correct init that costs two hundred round
+ * trips is a page that never loads.
+ */
+const calls = { reads: 0, writes: 0, queries: 0 };
+const resetCalls = () => Object.assign(calls, { reads: 0, writes: 0, queries: 0 });
+
 /** A container backed by a Map, answering only what the repository asks of it. */
 function fakeContainer(store) {
   return {
     items: {
       async upsert(doc) {
+        calls.writes += 1;
         store.set(doc.id, doc);
         return { resource: doc };
       },
       async create(doc) {
+        calls.writes += 1;
         if (store.has(doc.id)) throw { code: 409 };
         store.set(doc.id, doc);
         return { resource: doc };
@@ -44,10 +56,17 @@ function fakeContainer(store) {
       query(spec) {
         return {
           async fetchAll() {
+            calls.queries += 1;
             const query = typeof spec === 'string' ? spec : spec.query;
             if (query.startsWith('SELECT VALUE COUNT(1)')) {
               const withPassword = [...store.values()].filter((doc) => doc.passwordHash != null);
               return { resources: [withPassword.length] };
+            }
+            // Projections have to project. A double that answers every query
+            // with whole documents cannot tell a cheap init from an expensive
+            // one, which is the difference this file now cares about.
+            if (/^SELECT VALUE c\.id\b/i.test(query)) {
+              return { resources: [...store.keys()] };
             }
             return { resources: [...store.values()] };
           },
@@ -57,6 +76,7 @@ function fakeContainer(store) {
     item(id) {
       return {
         async read() {
+          calls.reads += 1;
           const resource = store.get(id);
           if (!resource) throw { code: 404 };
           return { resource };
@@ -263,6 +283,25 @@ await check('gains the fixtures a later release added, and keeps what it had', a
   // And the new account is reachable, not merely present.
   assert.ok(containers.get('identifiers').has('meera@figmark.in'));
   assert.equal((await updated.getUserByIdentifier('meera@figmark.in')).id, 'usr_escrow_meera');
+});
+
+await check('starting against an up-to-date database is cheap', async () => {
+  // The regression this exists to catch. Checking each fixture with its own
+  // round trip is correct and unusable: two hundred sequential calls on every
+  // cold start is a request that never comes back, and the page behind it sits
+  // on "Loading…" forever. The healthy case is a handful of projections and no
+  // writes at all.
+  const containers = provisioned();
+  const seeded = repositoryOn(containers);
+  await seeded.init();
+
+  resetCalls();
+  const restarted = repositoryOn(containers);
+  await restarted.init();
+
+  assert.equal(calls.writes, 0, `nothing to write, but wrote ${calls.writes} times`);
+  assert.ok(calls.queries < 25, `init should cost a few queries, not ${calls.queries}`);
+  assert.ok(calls.reads < 10, `init should not read row by row: ${calls.reads} point reads`);
 });
 
 await check('a database of real accounts is never topped up with fixtures', async () => {
