@@ -678,7 +678,10 @@ export const api = {
   socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),
   channelThread: (id: string) => request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}`),
-  createPost: (body: { body: string; forumId?: string; listingId?: string; storeId?: string; channelId?: string }) =>
+  createPost: (body: {
+    body: string; forumId?: string; listingId?: string; storeId?: string;
+    channelId?: string; announcement?: boolean;
+  }) =>
     post<{ post: Post }>('/social/posts', body),
   forums: () => request<ForumsResponse>('/social/forums'),
   createForum: (body: { name: string; description?: string }) =>

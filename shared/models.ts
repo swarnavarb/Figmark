@@ -820,6 +820,20 @@ export interface Post extends BaseDocument {
    * a broadcast.
    */
   reach?: PostReach;
+  /**
+   * Marked by the shop as something its followers should not miss.
+   *
+   * Not every message from a shop is one. A shop answering a question in its
+   * own room is talking, not announcing, and a filter that treated the two
+   * alike would fill the announcement list with conversation and make it worth
+   * nothing to open. So it is a choice made per message, and only by whoever
+   * speaks for the shop.
+   *
+   * Absent on posts written before the distinction existed. Those were made in
+   * the shop's voice when that was the only kind there was, so `isAnnouncement`
+   * reads them as announcements rather than hiding them.
+   */
+  announcement?: boolean;
 }
 
 /**

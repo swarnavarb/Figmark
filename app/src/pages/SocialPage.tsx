@@ -10,6 +10,7 @@ import {
 } from '../api';
 import type { StoreAccess } from '@shared/stores';
 import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { useSession } from '../session';
@@ -184,7 +185,7 @@ export function ChannelPage() {
   const { user } = useSession();
   const [data, setData] = useState<ChannelThread | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [show, setShow] = useState<'updates' | 'everything'>('updates');
+  const [show, setShow] = useState<'announcements' | 'everything'>('announcements');
   const foot = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
@@ -209,7 +210,7 @@ export function ChannelPage() {
   const ordered = [...data.posts].reverse();
   const shown = isForum || show === 'everything'
     ? ordered
-    : ordered.filter((card) => (card.post.voice ?? 'store') === 'store');
+    : ordered.filter((card) => isAnnouncement(card.post));
 
   return (
     <main className="page chanroom">
@@ -237,7 +238,7 @@ export function ChannelPage() {
       {!isForum && (
         <div className="chips chips--tight">
           {([
-            ['updates', 'From the shop'],
+            ['announcements', 'Announcements'],
             ['everything', 'Everything'],
           ] as const).map(([key, label]) => (
             <button key={key} type="button" className={`chip${show === key ? ' is-on' : ''}`}
@@ -255,8 +256,8 @@ export function ChannelPage() {
               ? 'This is where you tell the people who follow you what is happening — a batch closing, customs cleared, a delay. It stays here rather than going to everyone\'s feed.'
               : isForum
                 ? 'Start it off.'
-                : show === 'updates'
-                  ? 'This shop has not posted an update. Try Everything.'
+                : show === 'announcements'
+                  ? 'Nothing announced here. Try Everything.'
                   : 'Nobody has said anything here yet.'}
           </EmptyState>
         ) : (
@@ -295,11 +296,18 @@ export function ChannelPage() {
 function ChannelMessage({ card, mine }: { card: PostCard; mine: boolean }) {
   const { post, listing, author } = card;
   const fromShop = (post.voice ?? 'store') === 'store';
+  const announced = isAnnouncement(post);
 
   return (
-    <div className={`bubble${fromShop ? ' bubble--shop' : ' bubble--visitor'}${mine ? ' bubble--mine' : ''}`}>
+    <div className={`bubble${fromShop ? ' bubble--shop' : ' bubble--visitor'}`
+      + `${mine ? ' bubble--mine' : ''}${announced ? ' bubble--announced' : ''}`}>
       <div className="bubble__head">
         <PersonLink party={author} className="bubble__who">{post.authorName}</PersonLink>
+        {/* Marked where it is read, not only where it is filtered: an
+            announcement nobody can pick out of the room is just a message. */}
+        {announced && post.channel !== 'forum' && (
+          <span className="badge badge--accent">announcement</span>
+        )}
         <span className="faint">{timeAgo(post.createdAt)}</span>
       </div>
       <p className="bubble__body">{post.body}</p>
@@ -333,6 +341,9 @@ function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
   const [text, setText] = useState('');
   const [listingId, setListingId] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  // Off by default. Most of what is said in a room is conversation, and a shop
+  // that announces every line has an announcement list worth nothing to open.
+  const [announce, setAnnounce] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -348,9 +359,11 @@ function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
         body,
         ...(isForum ? { forumId: channelId } : { channelId }),
         ...(listingId ? { listingId } : {}),
+        ...(announce ? { announcement: true } : {}),
       });
       setText('');
       setListingId(null);
+      setAnnounce(false);
       await onPosted();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not post that.');
@@ -360,11 +373,11 @@ function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
   }
 
   return (
-    <div className="composer">
+    <div className="saybar">
       {error && <p className="notice notice--error" style={{ margin: '0 0 8px' }}>{error}</p>}
 
       {attached && (
-        <div className="composer__attached">
+        <div className="saybar__attached">
           <span style={{ minWidth: 0 }}>{attached.title}</span>
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => setListingId(null)}>
             Remove
@@ -373,12 +386,12 @@ function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
       )}
 
       {picking && (
-        <div className="composer__picker">
+        <div className="saybar__picker">
           {shareable.length === 0 ? (
             <p className="faint" style={{ margin: 0 }}>Nothing listed to share yet.</p>
           ) : (
             shareable.map((entry) => (
-              <button key={entry.id} type="button" className="composer__pick"
+              <button key={entry.id} type="button" className="saybar__pick"
                 onClick={() => { setListingId(entry.id); setPicking(false); }}>
                 <span style={{ minWidth: 0 }}>{entry.title}</span>
                 <span className="faint">{formatMoney(entry.priceMinor, entry.currency)}</span>
@@ -388,17 +401,29 @@ function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
         </div>
       )}
 
-      <div className="composer__row">
+      {/* The choice sits above the box rather than beside it, because it
+          changes what the message is rather than adding something to it. */}
+      {asShop && !isForum && (
+        <label className="saybar__announce">
+          <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
+          <span>📣 Send as an announcement</span>
+          <span className="faint">
+            {announce ? 'Pinned to the Announcements list.' : 'Just a message in the room.'}
+          </span>
+        </label>
+      )}
+
+      <div className="saybar__row">
         {/* Only a shop advertises in its own room. A customer attaching a
             listing here would be advertising in somebody else's shop. */}
         {asShop && !isForum && (
-          <button type="button" className="composer__attach" aria-label="Share one of your items"
+          <button type="button" className="saybar__attach" aria-label="Share one of your items"
             onClick={() => setPicking(!picking)}>
             🏷️
           </button>
         )}
         <textarea
-          className="composer__input"
+          className="saybar__input"
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -411,7 +436,7 @@ function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
           rows={1}
           placeholder={asShop ? 'Message followers…' : 'Say something…'}
         />
-        <button type="button" className="composer__send" disabled={busy || !text.trim()}
+        <button type="button" className="saybar__send" disabled={busy || !text.trim()}
           aria-label="Send" onClick={() => void send()}>
           {busy ? '…' : '↑'}
         </button>

@@ -63,6 +63,7 @@ const {
   adminDeleteResourceRoute: adminDeleteResource, adminEscrowRoute: adminEscrow,
   adminDisputesRoute: adminDisputes, adminResolveRoute: adminResolve,
 } = await import(new URL('admin-routes.js', fns));
+const { isAnnouncement } = await import(new URL('../api/dist/shared/posts.js', import.meta.url));
 const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
 );
@@ -825,6 +826,61 @@ await check('posting from the feed still reaches followers', async () => {
 
   const feedNow = (await socialFeed(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(feedNow.posts.some((card) => card.post.id === said.jsonBody.post.id));
+});
+
+await check('a shop chooses which of its messages is an announcement', async () => {
+  // Not everything a shop says is news. A shop answering a question is talking,
+  // and a list that treated the two alike would be worth nothing to open.
+  const chat = await createPost(req({
+    headers: auth, body: { body: 'Yes, still available.', channelId: 'usr_demo' },
+  }), ctx);
+  assert.equal(chat.jsonBody.post.announcement, false, 'ordinary by default');
+
+  const news = await createPost(req({
+    headers: auth,
+    body: { body: 'Batch closes Friday.', channelId: 'usr_demo', announcement: true },
+  }), ctx);
+  assert.equal(news.jsonBody.post.announcement, true);
+});
+
+await check('a customer cannot announce in somebody else\'s room', async () => {
+  const visitor = await signup(req({
+    body: {
+      displayName: 'Loud Visitor', email: 'loud@figmark.example',
+      phone: '+919000045804', password: 'longenough1',
+    },
+  }), ctx);
+  const said = await createPost(req({
+    headers: { authorization: `Bearer ${visitor.jsonBody.token}` },
+    body: { body: 'LOOK AT ME', channelId: 'usr_demo', announcement: true },
+  }), ctx);
+  assert.equal(said.status, 201, 'they may still speak');
+  assert.equal(said.jsonBody.post.announcement, false, 'but not announce');
+});
+
+await check('a broadcast is an announcement without being asked', async () => {
+  // It went to every follower's feed; there is no other thing that could be.
+  const said = await createPost(req({
+    headers: auth, body: { body: 'New drop.', storeId: 'usr_demo' },
+  }), ctx);
+  assert.equal(said.jsonBody.post.announcement, true);
+});
+
+await check('a message from before the choice existed still reads as one', async () => {
+  // The rule the filter and the badge both read, tested directly rather than
+  // inferred from a response. An unmarked post from the shop was made when the
+  // shop's voice was the only kind there was, so the list must not come up
+  // empty on a room full of them.
+  assert.equal(isAnnouncement({}), true, 'an unmarked shop post counts');
+  assert.equal(isAnnouncement({ voice: 'store' }), true);
+  assert.equal(isAnnouncement({ voice: 'visitor' }), false, 'an unmarked customer post never did');
+  // An explicit choice always wins over the fallback, both ways.
+  assert.equal(isAnnouncement({ voice: 'store', announcement: false }), false);
+  assert.equal(isAnnouncement({ voice: 'visitor', announcement: true }), true);
+
+  // And the seeded rooms are not empty under it.
+  const room = (await channelThread(req({ headers: auth, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  assert.ok(room.posts.some((card) => isAnnouncement(card.post)), 'an older room still has some');
 });
 
 await check('a visitor cannot advertise in somebody else\'s room', async () => {

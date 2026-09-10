@@ -202,6 +202,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     body?: string; forumId?: string; listingId?: string; photoUrl?: string; storeId?: string;
     /** Somebody else's shop channel, which a follower may speak in. */
     channelId?: string;
+    /** Mark it as something followers should not miss. Shops only. */
+    announcement?: boolean;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -240,6 +242,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   // decided by rights, not by who typed it: a manager is the shop.
   let voice: Post['voice'] = 'store';
   let reach: Post['reach'] = 'feed';
+  // A broadcast is an announcement by definition - it went to every follower's
+  // feed. Inside a room it is a choice, because most of what is said there is
+  // conversation rather than news.
+  let announcement = true;
   if (body.channelId) {
     const owner = await repository.getUserById(body.channelId);
     if (!owner?.sellerProfile) return error(404, 'not_found', 'Only a shop has a channel.');
@@ -255,6 +261,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     // having one: somewhere to say "customs cleared, dispatching Tuesday"
     // without it being an announcement to everybody's feed in the same breath.
     reach = 'channel';
+    // Only the shop announces in its own room, and only when it says so. A
+    // customer's message is never one, whatever they send.
+    announcement = voice === 'store' && body.announcement === true;
   }
 
   if (body.forumId) {
@@ -265,6 +274,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     kind = 'thread';
     voice = 'visitor';
     reach = 'channel';
+    announcement = false;
   }
 
   // A sale post has to point at an item this account actually sells.
@@ -296,6 +306,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     replyCount: 0,
     voice,
     reach,
+    announcement,
     createdAt: now,
     updatedAt: now,
   };
