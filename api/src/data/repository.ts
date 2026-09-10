@@ -128,6 +128,14 @@ export interface Repository {
   /** Everybody who put their name to a hunt: to count them, and to tell them. */
   listWantSeekers(wantId: string): Promise<WantSeeker[]>;
   saveWantSeeker(seeker: WantSeeker): Promise<WantSeeker>;
+  /**
+   * Every hunt this person has put their name to.
+   *
+   * One query rather than a partition read per card: the board needs to know
+   * which of fifty rows the reader is already on, and asking fifty times is
+   * fifty times too many.
+   */
+  listWantIdsSeekingBy(userId: string): Promise<string[]>;
   deleteWantSeeker(id: string, wantId: string): Promise<void>;
   /** Everything waiting for one person, newest first. */
   listNotifications(userId: string, limit?: number): Promise<Notification[]>;

@@ -20,6 +20,7 @@ import { actionsFor, daysFrom, sideOf } from '../../../shared/orders.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -191,10 +192,19 @@ export async function settleDispute(
     }
   }
 
-  return {
-    dispute: await repository.updateDispute(dispute),
-    order: await repository.updateOrder(order),
-  };
+  const settled = await repository.updateDispute(dispute);
+  const saved = await repository.updateOrder(order);
+
+  // Here rather than in each of the four routes that settle one, so a new way
+  // to end a dispute cannot quietly end it without telling anybody.
+  await notify(repository, [order.buyerId, order.sellerId], {
+    kind: 'dispute_settled',
+    title: 'A dispute was settled',
+    body: order.itemName,
+    link: `/dispute/${dispute.id}`,
+  }, { except: decidedBy });
+
+  return { dispute: settled, order: saved };
 }
 
 /** POST /api/orders/{id}/dispute - open one, from either side. */
@@ -279,6 +289,15 @@ async function open(request: HttpRequest, _context: InvocationContext) {
   note(order, `${side === 'buyer' ? 'Buyer' : 'Seller'} opened a dispute.`, user.id);
   await repository.updateOrder(order);
 
+  // The other end of the trade, and whoever is holding the money: a dispute
+  // nobody was told about is one that runs down its clock unanswered.
+  await notify(repository, [record.againstUserId, order.protection?.escrowAgentId], {
+    kind: 'dispute_opened',
+    title: 'A dispute was opened on your order',
+    body: order.itemName,
+    link: `/dispute/${record.id}`,
+  }, { except: user.id });
+
   return json(201, { dispute: record });
 }
 
@@ -347,8 +366,16 @@ async function reply(request: HttpRequest, _context: InvocationContext) {
     dispute.respondByAt = null;
   }
   dispute.updatedAt = new Date().toISOString();
+  const saved = await repository.updateDispute(dispute);
 
-  return json(200, { dispute: await repository.updateDispute(dispute) });
+  await notify(repository, [order.buyerId, order.sellerId, order.protection?.escrowAgentId], {
+    kind: 'dispute_replied',
+    title: 'Somebody answered on a dispute',
+    body: order.itemName,
+    link: `/dispute/${dispute.id}`,
+  }, { except: user.id });
+
+  return json(200, { dispute: saved });
 }
 
 /** POST /api/disputes/{id}/offer - propose a settlement the other side can take. */

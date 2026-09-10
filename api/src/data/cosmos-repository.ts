@@ -908,6 +908,18 @@ export class CosmosRepository implements Repository {
     return resource!;
   }
 
+  async listWantIdsSeekingBy(userId: string): Promise<string[]> {
+    // Cross-partition, and small: it is bounded by how many hunts one person
+    // has joined, not by how many exist.
+    const { resources } = await this.container('wantSeekers')
+      .items.query<string>({
+        query: 'SELECT VALUE c.wantId FROM c WHERE c.userId = @userId',
+        parameters: [{ name: '@userId', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async deleteWantSeeker(id: string, wantId: string): Promise<void> {
     await this.container('wantSeekers').item(id, wantId).delete();
   }

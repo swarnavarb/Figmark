@@ -948,7 +948,14 @@ export interface Notification extends BaseDocument {
   readAt: string | null;
 }
 
-export type NotificationKind = 'want_answered';
+export type NotificationKind =
+  | 'want_answered'
+  | 'payment_claimed'
+  | 'payment_settled'
+  | 'dispute_opened'
+  | 'dispute_replied'
+  | 'dispute_settled'
+  | 'lot_moved';
 
 /**
  * A shared room.

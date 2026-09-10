@@ -1446,8 +1446,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: 10px; font-weight: 750; line-height: 16px;
 }
 .bell__panel {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 120;
-  width: min(320px, calc(100vw - 32px));
+  /* Fixed to the screen rather than hung off the bell. Anchored to the bell it
+     was 320px wide starting from wherever the bell happened to sit, which on a
+     phone put its left edge past the edge of the screen. */
+  position: fixed; top: calc(var(--nav-h) + 6px); right: 12px; z-index: 120;
+  width: min(340px, calc(100vw - 24px));
   border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   overflow: hidden;
@@ -1473,3 +1476,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   margin: 12px 0; padding-top: 12px; border-top: 1px solid var(--border);
 }
 .alsome__count { font-size: var(--t-xs); color: var(--text-faint); text-align: right; }
+
+/* A hunt on the board: the post, and the one action worth taking on it. */
+.wantcard {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); overflow: hidden;
+}
+.wantcard .want { border: 0; border-radius: 0; background: none; }
+.alsome--card { margin: 0; padding: 8px 14px 10px; border-top: 1px solid var(--border); }

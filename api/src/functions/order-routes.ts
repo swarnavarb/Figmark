@@ -18,6 +18,7 @@ import {
 } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -579,6 +580,15 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   note(order, reference ? `Buyer paid directly — reference ${reference}.` : 'Buyer paid directly.', user.id);
   await repository.updateOrder(order);
 
+  // The seller is the only person who can answer this, and they have no reason
+  // to be looking at the order until somebody tells them to.
+  await notify(repository, [order.sellerId], {
+    kind: 'payment_claimed',
+    title: 'A buyer says they have paid',
+    body: order.itemName,
+    link: `/order/${order.id}`,
+  });
+
   return json(200, { order, awaiting: 'seller' });
 }
 
@@ -643,6 +653,15 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
 
   order.updatedAt = now;
   await repository.updateOrder(order);
+
+  // The buyer has sent money somewhere and is waiting to hear. A denial is the
+  // one they most need, because it is the one they have to act on.
+  await notify(repository, [order.buyerId], {
+    kind: 'payment_settled',
+    title: body.accept ? 'Your payment was confirmed' : 'The seller says your payment has not arrived',
+    body: body.accept ? order.itemName : reason,
+    link: `/order/${order.id}`,
+  });
 
   return json(200, { order });
 }

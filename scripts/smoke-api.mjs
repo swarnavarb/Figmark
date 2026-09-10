@@ -70,6 +70,7 @@ const {
   adminDisputesRoute: adminDisputes, adminResolveRoute: adminResolve,
 } = await import(new URL('admin-routes.js', fns));
 const { isAnnouncement } = await import(new URL('../api/dist/shared/posts.js', import.meta.url));
+const { LOT_STAGES } = await import(new URL('../api/dist/shared/enums.js', import.meta.url));
 const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
 );
@@ -80,6 +81,9 @@ const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
 const repository_user = async (id) => (await getRepository()).getUserById(id);
 const repository_dispute = async (id) => (await getRepository()).getDisputeById(id);
+// Fixture buyers have no password, so their notifications are read through the
+// same repository the routes write them to rather than by signing in as them.
+const noticesFor = async (id) => (await getRepository()).listNotifications(id, 40);
 const req = ({ headers = {}, body, query = {}, params = {} } = {}) => ({
   headers: new Headers(headers),
   query: new URLSearchParams(query),
@@ -2647,6 +2651,135 @@ await check('closing takes it off the board and refuses further answers', async 
   }), ctx);
   assert.equal(late.status, 409);
   assert.equal(late.jsonBody.error, 'want_closed');
+});
+
+console.log('\nbeing told what happened');
+
+await check('a claimed payment tells the seller, and nobody else', async () => {
+  const buyer = await signup(req({
+    body: {
+      displayName: 'Told You', email: 'toldyou@figmark.example',
+      phone: '+919000046101', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${buyer.jsonBody.token}` };
+
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Notifying item', priceMinor: 30_000, sourcing: 'in_hand' },
+  }), ctx);
+  const order = (await createOrder(req({
+    headers: theirs, body: { listingId: listed.jsonBody.listing.id, quantity: 1 },
+  }), ctx)).jsonBody.order;
+
+  const before = (await notifications(req({ headers: auth }), ctx)).jsonBody.unread;
+  await claimPayment(req({
+    headers: theirs, params: { id: order.id }, body: { reference: 'UTR-NOTIFY-1' },
+  }), ctx);
+
+  const sellers = (await notifications(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(sellers.unread, before + 1);
+  const row = sellers.notifications[0];
+  assert.equal(row.kind, 'payment_claimed');
+  assert.equal(row.link, `/order/${order.id}`, 'straight to the order it is about');
+
+  // The buyer did it; they do not need telling.
+  const buyers = (await notifications(req({ headers: theirs }), ctx)).jsonBody;
+  assert.equal(buyers.notifications.some((entry) => entry.kind === 'payment_claimed'), false);
+
+  // And the answer comes back the other way.
+  await settleClaim(req({
+    headers: auth, params: { id: order.id },
+    body: { accept: false, reason: 'Nothing against that reference yet.' },
+  }), ctx);
+  const answered = (await notifications(req({ headers: theirs }), ctx)).jsonBody;
+  assert.equal(answered.notifications[0].kind, 'payment_settled');
+  // A denial is the one they have to act on, so it carries the reason.
+  assert.match(answered.notifications[0].body, /Nothing against that reference/);
+});
+
+await check('a batch moving tells everybody who bought into it', async () => {
+  // The notification this whole product is for: twenty people paid weeks ago
+  // and cannot know it cleared customs unless somebody tells them.
+  // Read who is actually in the batch rather than naming fixture ids, which is
+  // how the last version of this failed for a reason unrelated to notifying.
+  const inLot = await (await getRepository()).listOrdersForLot('lot_my_batch');
+  const buyerIds = [...new Set(inLot.map((order) => order.buyerId))];
+  assert.ok(buyerIds.length > 0, 'somebody bought into this batch');
+
+  const before = await Promise.all(
+    buyerIds.map(async (id) => (await noticesFor(id)).length),
+  );
+
+  // Whatever comes next from where the batch actually is: earlier tests move
+  // it, and a hard-coded stage fails for a reason that has nothing to do with
+  // whether anybody was told.
+  const lot = await (await getRepository()).getLot('usr_demo', 'lot_my_batch');
+  const stages = LOT_STAGES;
+  const next = stages[stages.indexOf(lot.stage) + 1];
+  assert.ok(next, 'the batch has somewhere left to go');
+
+  const moved = await advanceStage(req({
+    headers: auth, params: { id: 'lot_my_batch' }, body: { stage: next },
+  }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+
+  const after = await Promise.all(
+    buyerIds.map(async (id) => (await noticesFor(id)).length),
+  );
+  for (const [index, id] of buyerIds.entries()) {
+    assert.ok(after[index] > before[index], `${id} was told`);
+  }
+
+  const one = (await noticesFor(buyerIds[0]))[0];
+  assert.equal(one.kind, 'lot_moved');
+  // To their own purchases, not to the seller's view of the batch, which
+  // shows them everybody else's orders.
+  assert.equal(one.link, '/me?tab=purchases');
+});
+
+await check('a dispute tells the other side and whoever holds the money', async () => {
+  const opened = (await noticesFor('usr_demo'))
+    .filter((row) => row.kind === 'dispute_opened');
+  // dsp_1 was raised against usr_demo by usr_gadgetgrid in the fixtures, so
+  // opening one in this run is what puts a row here.
+  assert.ok(Array.isArray(opened));
+
+  const buyer = await signup(req({
+    body: {
+      displayName: 'Will Dispute', email: 'willdispute@figmark.example',
+      phone: '+919000046102', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${buyer.jsonBody.token}` };
+
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Disputable item', priceMinor: 50_000, sourcing: 'in_hand' },
+  }), ctx);
+  const order = (await createOrder(req({
+    headers: theirs, body: { listingId: listed.jsonBody.listing.id, quantity: 1 },
+  }), ctx)).jsonBody.order;
+  await payOrder(req({
+    headers: theirs, params: { id: order.id },
+    body: { protection: true, escrowAgentId: 'usr_escrow_meera' },
+  }), ctx);
+
+  const beforeSeller = (await noticesFor('usr_demo')).length;
+  const beforeEscrow = (await noticesFor('usr_escrow_meera')).length;
+
+  const raised = await openDispute(req({
+    headers: theirs, params: { id: order.id },
+    body: { reasonCode: 'not_as_described', reason: 'The box arrived crushed and the figure is chipped.' },
+  }), ctx);
+  assert.equal(raised.status, 201);
+
+  assert.ok(
+    (await noticesFor('usr_demo')).length > beforeSeller,
+    'the other side is told',
+  );
+  assert.ok(
+    (await noticesFor('usr_escrow_meera')).length > beforeEscrow,
+    'and so is whoever is holding the money',
+  );
 });
 
 console.log('\noperating the marketplace');

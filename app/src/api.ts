@@ -399,6 +399,8 @@ export interface WantCard {
   offerCount: number;
   /** How many people are hunting for the same thing. */
   seekerCount: number;
+  /** Whether you are one of them, so the button under the card knows. */
+  joined: boolean;
   createdAt: string;
   expiresAt: string;
   closedAt: string | null;

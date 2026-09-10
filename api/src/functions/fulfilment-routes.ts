@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { LOT_STAGES, ORDER_CHECKPOINTS, type LotStage, type OrderCheckpoint } from '../../../shared/enums.js';
+import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type OrderCheckpoint } from '../../../shared/enums.js';
 import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
@@ -10,6 +10,7 @@ import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -277,6 +278,25 @@ async function advanceStage(request: HttpRequest, _context: InvocationContext) {
         updatedAt: now,
       }),
     ),
+  );
+
+  // Every buyer in the batch, in one go. This is the notification the whole
+  // product is really for: twenty people paid for one shipment weeks ago and
+  // have no way of knowing it cleared customs unless somebody tells them.
+  // Without this they ask the seller one at a time, which is the conversation
+  // the channel exists to stop happening twenty times.
+  await notify(
+    repository,
+    orders.map((order) => order.buyerId),
+    {
+      kind: 'lot_moved',
+      title: `${lot.name}: ${LOT_STAGE_LABELS[target]}`,
+      body: `${orders.length} ${orders.length === 1 ? 'order' : 'orders'} in this batch moved.`,
+      // To their own order rather than to the batch, which is the seller's
+      // view of it and shows them everybody else's purchases.
+      link: '/me?tab=purchases',
+    },
+    { except: lot.sellerId },
   );
 
   return json(200, { lot: updated, ordersUpdated: orders.length });

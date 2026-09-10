@@ -90,7 +90,8 @@ export function WantedPage() {
           <h3>Yours</h3>
           <div className="stack">
             {openMine.map((want) => (
-              <WantRow key={want.id} want={want} onOpen={() => setOpenWant(want)} />
+              <WantRow key={want.id} want={want} mine onOpen={() => setOpenWant(want)}
+                onChanged={load} />
             ))}
           </div>
         </section>
@@ -118,7 +119,8 @@ export function WantedPage() {
       ) : (
         <div className="stack">
           {others.map((want) => (
-            <WantRow key={want.id} want={want} onOpen={() => setOpenWant(want)} />
+            <WantRow key={want.id} want={want} mine={false} onOpen={() => setOpenWant(want)}
+              onChanged={load} />
           ))}
         </div>
       )}
@@ -166,8 +168,54 @@ function othersLine(seekerCount: number, joined: boolean): string {
   return `${others} other${others === 1 ? '' : 's'} looking too`;
 }
 
-/** One hunt on the board: what, how much, and how many people have answered. */
-function WantRow({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
+/**
+ * One hunt on the board, with the one action worth taking on it.
+ *
+ * +Me is under the card rather than only inside the dialog, because saying "me
+ * too" needs to cost one tap from the list. Making somebody open a post to
+ * agree with it is most of the reason nobody agrees with it.
+ */
+function WantRow({ want, mine, onOpen, onChanged }: {
+  want: WantCard;
+  mine: boolean;
+  onOpen: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const { user } = useSession();
+  const [busy, setBusy] = useState(false);
+
+  async function joinIn() {
+    setBusy(true);
+    try {
+      await api.alsoMe(want.id, want.buyerId);
+      await onChanged();
+    } catch {
+      // The board reloads either way; a failed tap simply does not move it.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="wantcard">
+      <WantBody want={want} onOpen={onOpen} />
+      <div className="alsome alsome--card">
+        {mine || !user ? (
+          <span className="faint">{mine ? 'Your want' : 'Sign in to join'}</span>
+        ) : (
+          <button type="button" className={`btn btn--sm${want.joined ? ' btn--quiet' : ''}`}
+            disabled={busy} onClick={() => void joinIn()}>
+            {want.joined ? '✓ You are in' : '+Me'}
+          </button>
+        )}
+        <span className="alsome__count">{othersLine(want.seekerCount, want.joined)}</span>
+      </div>
+    </div>
+  );
+}
+
+/** The hunt itself, which opens it. */
+function WantBody({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
   return (
     <button type="button" className="want" onClick={onOpen}>
       <div className="want__main">
@@ -185,16 +233,13 @@ function WantRow({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
             ? 'Open to offers'
             : `up to ${formatMoney(want.budgetMinor, want.currency)}`}
         </span>
-        <div className="row" style={{ gap: 6 }}>
-          {want.seekerCount > 0 && (
-            <span className="badge">+{want.seekerCount}</span>
-          )}
-          <span className={`badge${want.offerCount > 0 ? ' badge--accent' : ''}`}>
-            {want.offerCount === 0
-              ? 'no answers'
-              : `${want.offerCount} ${want.offerCount === 1 ? 'answer' : 'answers'}`}
-          </span>
-        </div>
+        {/* How many others is on the row below, next to the button that
+            changes it. Twice on one card is once too many. */}
+        <span className={`badge${want.offerCount > 0 ? ' badge--accent' : ''}`}>
+          {want.offerCount === 0
+            ? 'no answers'
+            : `${want.offerCount} ${want.offerCount === 1 ? 'answer' : 'answers'}`}
+        </span>
       </div>
     </button>
   );

@@ -75,11 +75,17 @@ async function board(request: HttpRequest, _context: InvocationContext) {
       )
     : wants;
 
+  // Which of these the reader is already on, in one query rather than one per
+  // card — the button under each has to know, and fifty reads to draw a list
+  // is fifty too many.
+  const joined = viewer ? new Set(await repository.listWantIdsSeekingBy(viewer.id)) : new Set<string>();
+  const withJoined = (want: Want) => ({ ...card(want), joined: joined.has(want.id) });
+
   return json(200, {
-    wants: matching.map(card),
+    wants: matching.map(withJoined),
     // Their own, so the board can say what they are already asking for
     // rather than making them go and look somewhere else.
-    mine: viewer ? (await repository.listWantsBy(viewer.id)).map(card) : [],
+    mine: viewer ? (await repository.listWantsBy(viewer.id)).map(withJoined) : [],
   });
 }
 

@@ -429,6 +429,12 @@ export class MemoryRepository implements Repository {
     return seeker;
   }
 
+  async listWantIdsSeekingBy(userId: string): Promise<string[]> {
+    return [...this.wantSeekers.values()]
+      .filter((seeker) => seeker.userId === userId)
+      .map((seeker) => seeker.wantId);
+  }
+
   async deleteWantSeeker(id: string): Promise<void> {
     this.wantSeekers.delete(id);
   }
