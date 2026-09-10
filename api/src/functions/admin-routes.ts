@@ -62,7 +62,7 @@ function row(user: User) {
   };
 }
 
-/** GET /api/admin/users - everyone, with the store they run. */
+/** GET /api/ops/users - everyone, with the store they run. */
 async function users(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
   const repository = await getRepository();
@@ -80,7 +80,7 @@ async function users(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/admin/users/{id} - everything one account has made.
+ * GET /api/ops/users/{id} - everything one account has made.
  *
  * One call rather than six, because the operator opening this is deciding
  * whether to delete somebody and needs to see the whole of what would go.
@@ -151,7 +151,7 @@ async function deletionBlockers(id: string, repository: Repo): Promise<string[]>
 }
 
 /**
- * POST /api/admin/users/{id}/suspend - stop an account without erasing it.
+ * POST /api/ops/users/{id}/suspend - stop an account without erasing it.
  *
  * The answer to almost everything deletion is reached for. It is reversible,
  * it keeps the history a dispute might need, and it does not take a
@@ -180,7 +180,7 @@ async function suspend(request: HttpRequest, _context: InvocationContext) {
   return json(200, { user: row(await repository.updateUser(user)) });
 }
 
-/** POST /api/admin/users/{id}/delete - permanently, and only when nothing is owed. */
+/** POST /api/ops/users/{id}/delete - permanently, and only when nothing is owed. */
 async function deleteAccount(request: HttpRequest, _context: InvocationContext) {
   const admin = await operator(request);
   const repository = await getRepository();
@@ -213,7 +213,7 @@ async function deleteAccount(request: HttpRequest, _context: InvocationContext) 
   });
 }
 
-/** POST /api/admin/resources/delete - remove one thing somebody made. */
+/** POST /api/ops/resources/delete - remove one thing somebody made. */
 async function deleteResource(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
   const repository = await getRepository();
@@ -249,7 +249,7 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
 }
 
 /**
- * POST /api/admin/users/{id}/escrow - approve or remove an escrow.
+ * POST /api/ops/users/{id}/escrow - approve or remove an escrow.
  *
  * The commercial decision behind the whole feature: this person may hold other
  * people's money and settle what happens to it. Buyers choose from the people
@@ -304,7 +304,7 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/admin/disputes - the mediation queue.
+ * GET /api/ops/disputes - the mediation queue.
  *
  * Escalated first, because those are the ones actually waiting on the company.
  * Everything else is here to be read, not worked.
@@ -345,7 +345,7 @@ async function disputes(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * POST /api/admin/disputes/{id}/resolve - the company decides.
+ * POST /api/ops/disputes/{id}/resolve - the company decides.
  *
  * The last step, not the first: a dispute reaches here because the two sides
  * could not settle it themselves. The note is written into the record both of
@@ -402,11 +402,11 @@ export const adminResolveRoute = handler(resolveDispute);
 
 const anon = { authLevel: 'anonymous' } as const;
 
-app.http('admin-users', { ...anon, methods: ['GET'], route: 'admin/users', handler: adminUsersRoute });
-app.http('admin-user', { ...anon, methods: ['GET'], route: 'admin/users/{id}', handler: adminUserDetailRoute });
-app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'admin/users/{id}/suspend', handler: adminSuspendRoute });
-app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'admin/users/{id}/delete', handler: adminDeleteUserRoute });
-app.http('admin-escrow', { ...anon, methods: ['POST'], route: 'admin/users/{id}/escrow', handler: adminEscrowRoute });
-app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'admin/resources/delete', handler: adminDeleteResourceRoute });
-app.http('admin-disputes', { ...anon, methods: ['GET'], route: 'admin/disputes', handler: adminDisputesRoute });
-app.http('admin-resolve', { ...anon, methods: ['POST'], route: 'admin/disputes/{id}/resolve', handler: adminResolveRoute });
+app.http('admin-users', { ...anon, methods: ['GET'], route: 'ops/users', handler: adminUsersRoute });
+app.http('admin-user', { ...anon, methods: ['GET'], route: 'ops/users/{id}', handler: adminUserDetailRoute });
+app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'ops/users/{id}/suspend', handler: adminSuspendRoute });
+app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'ops/users/{id}/delete', handler: adminDeleteUserRoute });
+app.http('admin-escrow', { ...anon, methods: ['POST'], route: 'ops/users/{id}/escrow', handler: adminEscrowRoute });
+app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'ops/resources/delete', handler: adminDeleteResourceRoute });
+app.http('admin-disputes', { ...anon, methods: ['GET'], route: 'ops/disputes', handler: adminDisputesRoute });
+app.http('admin-resolve', { ...anon, methods: ['POST'], route: 'ops/disputes/{id}/resolve', handler: adminResolveRoute });

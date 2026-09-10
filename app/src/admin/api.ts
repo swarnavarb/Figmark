@@ -110,24 +110,24 @@ export const admin = {
 
   users: (query: string) =>
     request<{ users: AdminUserRow[]; total: number }>(
-      `/admin/users${query ? `?q=${encodeURIComponent(query)}` : ''}`,
+      `/ops/users${query ? `?q=${encodeURIComponent(query)}` : ''}`,
     ),
-  user: (id: string) => request<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`),
+  user: (id: string) => request<AdminUserDetail>(`/ops/users/${encodeURIComponent(id)}`),
   suspend: (id: string, suspended: boolean) =>
-    post<{ user: AdminUserRow }>(`/admin/users/${encodeURIComponent(id)}/suspend`, { suspended }),
+    post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/suspend`, { suspended }),
   deleteUser: (id: string) =>
-    post<{ deleted: Record<string, unknown> }>(`/admin/users/${encodeURIComponent(id)}/delete`),
+    post<{ deleted: Record<string, unknown> }>(`/ops/users/${encodeURIComponent(id)}/delete`),
   deleteResource: (kind: string, id: string, ownerId: string) =>
-    post<{ deleted: Record<string, unknown> }>('/admin/resources/delete', { kind, id, ownerId }),
+    post<{ deleted: Record<string, unknown> }>('/ops/resources/delete', { kind, id, ownerId }),
   setEscrow: (id: string, body: { enabled: boolean; feeBasisPoints?: number; displayName?: string; note?: string }) =>
-    post<{ user: AdminUserRow }>(`/admin/users/${encodeURIComponent(id)}/escrow`, body),
+    post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/escrow`, body),
 
   /** What the API is actually running on, for the status line. */
   health: () => request<HealthResponse>('/health'),
 
-  disputes: () => request<{ disputes: AdminDisputeRow[] }>('/admin/disputes'),
+  disputes: () => request<{ disputes: AdminDisputeRow[] }>('/ops/disputes'),
   resolve: (id: string, body: { outcome: string; refundMinor: number; note: string }) =>
-    post<{ dispute: Dispute }>(`/admin/disputes/${encodeURIComponent(id)}/resolve`, body),
+    post<{ dispute: Dispute }>(`/ops/disputes/${encodeURIComponent(id)}/resolve`, body),
 };
 
 export { ApiRequestError };

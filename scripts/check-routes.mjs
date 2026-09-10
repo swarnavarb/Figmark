@@ -76,6 +76,23 @@ for (const [shape, entries] of shaped) {
 }
 assert.equal(shaped.length, 0, `${shaped.length} route template(s) differing only in parameter name`);
 
+// The Functions host serves its own management API from /admin, and refuses a
+// function route that collides with it - regardless of the /api prefix the
+// route ends up behind. It refuses quietly: the deploy succeeds, the rest of
+// the app works, and only those routes answer 404. That is exactly what took
+// the operations console down, and nothing local could see it, because the dev
+// server has no reserved names.
+const RESERVED_PREFIXES = ['admin', 'runtime'];
+const reserved = registrations.filter((entry) =>
+  RESERVED_PREFIXES.includes(entry.route.split('/')[0].toLowerCase()),
+);
+for (const entry of reserved) {
+  console.error(
+    `  RESERVED  '${entry.route}' (${entry.name}, ${entry.file}) starts with a segment the host keeps for itself`,
+  );
+}
+assert.equal(reserved.length, 0, `${reserved.length} route(s) under a reserved prefix; the host will not serve these`);
+
 // Every registration must be reachable, and it is only reachable if the entry
 // point imports the module it lives in. The v4 model registers as a side
 // effect of import, so a module nobody imports is a set of routes that answer
