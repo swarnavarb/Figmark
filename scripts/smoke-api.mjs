@@ -1495,7 +1495,13 @@ await check('the seller ticking dispatched is what starts the clock', async () =
 await check('only the buyer may confirm delivery', async () => {
   const body = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
   assert.equal(body.side, 'seller');
-  assert.equal(body.counterpartyName, 'Tokyo Line');
+  // Named, and addressed: every reference to somebody is a link to their page,
+  // so the name arrives with the handle it opens. This one is a buyer, so it is
+  // their own page rather than any shop they run.
+  // The person who bought it, not the shop they happen to run: those are two
+  // names and two pages, and this order was placed by the person.
+  assert.equal(body.counterparty.name, 'Meiko Tanaka');
+  assert.equal(body.counterparty.handle, 'tokyoline');
   assert.equal(body.actions.includes('confirm'), false);
   assert.equal((await confirmOrder(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).status, 409);
 });
@@ -1600,7 +1606,8 @@ await check('it shows up in the shop\'s payments queue', async () => {
   const row = queue.waiting.find((entry) => entry.id === directOrder.id);
   assert.ok(row, 'waiting on this shop');
   assert.equal(row.claim.reference, 'UTR12345');
-  assert.equal(row.buyerName, 'Direct Buyer');
+  assert.equal(row.buyer.name, 'Direct Buyer');
+  assert.ok(row.buyer.handle, 'the buyer is reachable from the queue');
 });
 
 await check('a stranger cannot read a shop\'s payments queue', async () => {
@@ -2165,6 +2172,56 @@ await check('a banner that is not a link is refused', async () => {
   }), ctx);
   assert.equal(bad.status, 400);
   assert.equal(bad.jsonBody.error, 'invalid_profile');
+});
+
+console.log('\nnames are addresses');
+
+await check('a seller reference opens the shop, a buyer reference opens the person', async () => {
+  // The two are different pages with different records. Pointing a seller's
+  // name at the person shows a reader how promptly that account pays other
+  // people, which says nothing about whether the shop ships.
+  const kaiju = (await publicProfile(req({ params: { handle: 'kaiju_imports' } }), ctx)).jsonBody;
+
+  // usr_demo buys from kaiju on ord_1005, so demo sees a seller reference.
+  const asBuyer = (await orderState(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
+  assert.equal(asBuyer.side, 'buyer');
+  assert.equal(asBuyer.counterparty.handle, 'kaiju_imports', 'the shop, not the owner');
+  assert.notEqual(asBuyer.counterparty.handle, kaiju.ownerHandle);
+
+  // ord_2001 runs the other way: kaiju buys from demo, so demo sees a buyer.
+  const asSeller = (await orderState(req({ headers: auth, params: { id: 'ord_2001' } }), ctx)).jsonBody;
+  assert.equal(asSeller.side, 'seller');
+  assert.equal(asSeller.counterparty.handle, kaiju.ownerHandle, 'the person, not their shop');
+});
+
+await check('a review carries the address of whoever wrote it', async () => {
+  const body = (await reviewsAbout(req({ params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  const written = body.reviews.find((entry) => entry.direction === 'buyer_to_seller');
+  assert.ok(written, 'somebody rated them as a seller');
+  assert.ok(written.author.name, 'named');
+  // The author of a review of a seller is a buyer, so it is their own page.
+  assert.equal(written.author.handle, 'arjun');
+});
+
+await check('a comment carries one too, resolved now rather than frozen', async () => {
+  const detail = (await listingDetail(req({ params: { id: 'lst_dragon_knight' } }), ctx)).jsonBody;
+  assert.ok(detail.comments.length > 0, 'this listing has questions on it');
+  for (const comment of detail.comments) {
+    assert.ok(comment.author, 'every comment names somebody');
+    assert.equal(typeof comment.author.name, 'string');
+  }
+});
+
+await check('somebody with no handle is named without being linked', async () => {
+  // Catalog fixtures were never sign-in accounts and hold no handle. A link to
+  // nowhere is worse than plain text.
+  const holdings = (await escrowHoldings(req({ headers: escrow }), ctx)).jsonBody;
+  for (const row of holdings.holdings) {
+    assert.ok(row.buyer.name && row.seller.name, 'both ends are named');
+    for (const party of [row.buyer, row.seller]) {
+      assert.ok(party.handle === null || typeof party.handle === 'string');
+    }
+  }
 });
 
 console.log('\noperating the marketplace');

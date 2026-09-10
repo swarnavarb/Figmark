@@ -3,6 +3,7 @@ import { LOT_STAGES, LOT_STAGE_LABELS, STORE_PERMISSIONS, type StorePermission }
 import type { SellerProfile } from '../../../shared/models.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
+import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -306,11 +307,10 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   }
 
   const orders = await repository.listOrdersForSeller(storeId);
-  const buyers = new Map<string, string>();
+  const buyers = new Map<string, ReturnType<typeof personRef>>();
   for (const order of orders) {
     if (buyers.has(order.buyerId)) continue;
-    const buyer = await repository.getUserById(order.buyerId);
-    buyers.set(order.buyerId, buyer?.displayName ?? 'Someone');
+    buyers.set(order.buyerId, personRef(await repository.getUserById(order.buyerId)));
   }
 
   const row = (order: (typeof orders)[number]) => ({
@@ -319,7 +319,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     quantity: order.quantity,
     totalMinor: order.unitPriceMinor * order.quantity,
     currency: order.currency,
-    buyerName: buyers.get(order.buyerId) ?? 'Someone',
+    buyer: buyers.get(order.buyerId) ?? personRef(null),
     paymentStatus: order.paymentStatus,
     claim: order.paymentClaim ?? null,
     createdAt: order.createdAt,

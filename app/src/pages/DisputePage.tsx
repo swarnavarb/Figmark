@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { DISPUTE_OUTCOME_LABELS, DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { RESPONSE_DAYS } from '@shared/disputes';
-import { ApiRequestError, api, type DisputeView, type EvidenceDraft } from '../api';
-import { Avatar, ErrorNotice, Icon } from '../components/ui';
+import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type PartyRef } from '../api';
+import { Avatar, ErrorNotice, Icon, PersonLink } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { EvidenceFields } from './OrderPage';
 
@@ -35,9 +35,9 @@ export function DisputePage() {
   if (error && !data) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
   if (!data) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
 
-  const { dispute, order, side, actions, names } = data;
+  const { dispute, order, side, actions, parties } = data;
   const held = order.escrow.amountMinor;
-  const them = side === 'buyer' ? names.seller : names.buyer;
+  const them = side === 'buyer' ? parties.seller : parties.buyer;
 
   return (
     <main className="page tab-view">
@@ -49,7 +49,7 @@ export function DisputePage() {
         <div>
           <h1>Dispute</h1>
           <p className="muted">
-            {DISPUTE_REASON_LABELS[dispute.reasonCode]} · with {them}
+            {DISPUTE_REASON_LABELS[dispute.reasonCode]} · with <PersonLink party={them} />
           </p>
         </div>
         <span className={`badge badge--${dispute.status === 'resolved' ? 'ok' : 'warn'}`}>
@@ -88,7 +88,7 @@ export function DisputePage() {
         )}
         {data.overdue && !dispute.resolvedAt && (
           <p className="notice notice--warn">
-            {them} has had {RESPONSE_DAYS} days to answer. You can ask Figmark to settle it.
+            <PersonLink party={them} /> has had {RESPONSE_DAYS} days to answer. You can ask Figmark to settle it.
           </p>
         )}
       </div>
@@ -116,16 +116,20 @@ export function DisputePage() {
       <div className="stack">
         {dispute.messages.map((message) => {
           const mine = message.authorId === (side === 'buyer' ? order.buyerId : order.sellerId);
-          const who =
-            message.authorRole === 'company' ? 'Figmark'
-              : message.authorRole === 'buyer' ? names.buyer
-              : names.seller;
+          // The company speaks as itself and has no page; the two parties do.
+          const who: PartyRef | null =
+            message.authorRole === 'company' ? null
+              : message.authorRole === 'buyer' ? parties.buyer
+              : parties.seller;
+          const label = who?.name ?? 'Figmark';
           return (
             <article key={message.id} className={`card card--pad post${mine ? ' post--mine' : ''}`}>
               <div className="post__head">
-                <Avatar name={who} size={32} />
+                <Avatar name={label} size={32} />
                 <div className="post__who">
-                  <span className="post__name">{who}{mine && ' (you)'}</span>
+                  <span className="post__name">
+                    {who ? <PersonLink party={who} /> : label}{mine && ' (you)'}
+                  </span>
                   <span className="faint">{timeAgo(message.createdAt)}</span>
                 </div>
               </div>

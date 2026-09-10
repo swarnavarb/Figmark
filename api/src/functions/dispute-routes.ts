@@ -17,6 +17,7 @@ import {
   splitFor,
 } from '../../../shared/disputes.js';
 import { actionsFor, daysFrom, sideOf } from '../../../shared/orders.js';
+import { personRef, sellerRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -302,9 +303,9 @@ async function read(request: HttpRequest, _context: InvocationContext) {
     side: sideOf(order, user.id),
     actions: disputeActionsFor(dispute, order, user.id),
     overdue: responseOverdue(dispute),
-    names: {
-      buyer: buyer?.displayName ?? 'the buyer',
-      seller: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'the seller',
+    parties: {
+      buyer: personRef(buyer, 'the buyer'),
+      seller: sellerRef(seller),
     },
   });
 }
@@ -567,8 +568,8 @@ async function holdings(request: HttpRequest, _context: InvocationContext) {
           lotId: order.lotId, status: order.status,
           escrow: order.escrow, protection: order.protection ?? null,
         },
-        buyerName: buyer?.displayName ?? 'the buyer',
-        sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'the seller',
+        buyer: personRef(buyer, 'the buyer'),
+        seller: sellerRef(seller),
         dispute,
         // Theirs to decide only once the two of them have had their go.
         decidable: Boolean(

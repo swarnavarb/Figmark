@@ -3,6 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import type { Dispute, Order, Review, SellerPaymentDetails, User } from '../../../shared/models.js';
+import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
   AUTO_RELEASE_DAYS,
   DISPUTE_RESPONSE_DAYS,
@@ -234,7 +235,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   return json(200, {
     itemMinor: totalMinor,
     currency: order.currency,
-    sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'the seller',
+    seller: sellerRef(seller),
     /**
      * How to pay them, if they have said. Null means a direct sale cannot be
      * offered at all - there is nowhere to send the money.
@@ -487,10 +488,9 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
   return json(200, {
     order,
     side,
-    counterpartyName:
-      side === 'buyer'
-        ? (other?.sellerProfile?.storefrontName ?? other?.displayName ?? 'the seller')
-        : (other?.displayName ?? 'the buyer'),
+    // Which page their name opens is which side of the trade they are on: a
+    // seller's name goes to the shop, a buyer's to the person.
+    counterparty: side === 'buyer' ? sellerRef(other) : personRef(other, 'the buyer'),
     actions: actionsFor(order, user.id, mine !== null),
     simulatedPayment: true,
     myReview: mine,

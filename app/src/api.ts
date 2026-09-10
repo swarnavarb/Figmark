@@ -12,6 +12,12 @@ import type { StoreAccess } from '@shared/stores';
 import type { OrderAction, OrderSide } from '@shared/orders';
 import type { DisputeAction } from '@shared/disputes';
 
+/** Somebody named on a screen, and the page their name opens. */
+export interface PartyRef {
+  name: string;
+  handle: string | null;
+}
+
 /** Evidence as the form collects it: a link and a caption. */
 export interface EvidenceDraft {
   url: string;
@@ -114,7 +120,7 @@ export interface ListingDetail {
   listing: Listing;
   seller: SellerCard | null;
   estimatedDispatchAt: string | null;
-  comments: ListingComment[];
+  comments: (ListingComment & { author: PartyRef })[];
   liked: boolean;
   following: boolean;
   isOwn: boolean;
@@ -170,7 +176,7 @@ export interface PublicReview {
   rating: number;
   body: string;
   direction: string;
-  authorName: string;
+  author: PartyRef;
   createdAt: string;
   /** What it was written about. Null only where the order has since gone. */
   item: {
@@ -239,7 +245,7 @@ export interface EscrowOption {
 export interface Checkout {
   itemMinor: number;
   currency: string;
-  sellerName: string;
+  seller: PartyRef;
   /** Where to send the money on a direct sale. Null when the seller has set none. */
   sellerPayment: SellerPaymentDetails | null;
   /** Empty when nobody approved can be neutral in this trade. */
@@ -255,7 +261,7 @@ export interface SaleRow {
   quantity: number;
   totalMinor: number;
   currency: string;
-  buyerName: string;
+  buyer: PartyRef;
   paymentStatus: string;
   claim: PaymentClaim | null;
   createdAt: string;
@@ -266,8 +272,8 @@ export interface EscrowHolding {
     id: string; itemName: string; currency: string; lotId: string; status: string;
     escrow: Order['escrow']; protection: Order['protection'];
   };
-  buyerName: string;
-  sellerName: string;
+  buyer: PartyRef;
+  seller: PartyRef;
   dispute: Dispute | null;
   decidable: boolean;
 }
@@ -278,14 +284,14 @@ export interface DisputeView {
   side: OrderSide | null;
   actions: DisputeAction[];
   overdue: boolean;
-  names: { buyer: string; seller: string };
+  parties: { buyer: PartyRef; seller: PartyRef };
 }
 
 export interface OrderState {
   order: Order;
   side: OrderSide | null;
   /** The other party, named from this viewer's side of the order. */
-  counterpartyName: string;
+  counterparty: PartyRef;
   actions: OrderAction[];
   /** True while no payment provider is wired; the hold is recorded, not taken. */
   simulatedPayment: boolean;
@@ -344,6 +350,8 @@ export interface LotDetails {
 export interface PostCard {
   post: Post;
   listing: { id: string; title: string; priceMinor: number; currency: string; condition: string } | null;
+  /** Where the author's name goes. Resolved on read, not frozen into the post. */
+  author: PartyRef;
 }
 
 export interface ChannelRow {
@@ -547,7 +555,7 @@ export const api = {
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
   bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
-    post<{ comment: ListingComment }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
+    post<{ comment: ListingComment & { author: PartyRef } }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
   follow: (sellerId: string) =>
     post<{ following: boolean }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
   order: (listingId: string, quantity = 1) => post<{ order: Order }>('/orders', { listingId, quantity }),

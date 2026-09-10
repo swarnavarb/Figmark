@@ -9,7 +9,7 @@ import {
   type PostCard,
 } from '../api';
 import type { StoreAccess } from '@shared/stores';
-import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { useSession } from '../session';
@@ -398,19 +398,22 @@ function Composer({ forumId, onPosted }: { forumId?: string; onPosted: () => voi
 
 /** One post, with the item attached when it is a sale post. */
 function PostView({ card }: { card: PostCard }) {
-  const { post, listing } = card;
+  const { post, listing, author } = card;
 
   return (
     <article className="card card--pad post">
       <div className="post__head">
         <Avatar name={post.authorName} size={38} />
         <div className="post__who">
-          <Link to={`/social/c/${post.channelId}`} className="post__name" style={{ color: 'inherit', textDecoration: 'none' }}>
-            {post.authorName}
-          </Link>
+          {/* The name opens who wrote it, which is what a name is for. Their
+              feed is still one tap away, on the line below — it used to be
+              what the name did, and losing that path was not the point. */}
+          <PersonLink party={author} className="post__name">{post.authorName}</PersonLink>
           <span className="faint">
             {post.kind === 'sale' && '🏷️ For sale · '}
             {post.kind === 'thread' && '🏛️ Forum · '}
+            <Link to={`/social/c/${post.channelId}`} className="personlink">their feed</Link>
+            {' · '}
             {timeAgo(post.createdAt)}
           </span>
         </div>

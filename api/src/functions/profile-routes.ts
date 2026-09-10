@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Order, Review, StoreReview, User } from '../../../shared/models.js';
 import { reviewRevealed, scoreFrom } from '../../../shared/orders.js';
+import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -217,7 +218,9 @@ async function tradeReviews(request: HttpRequest, _context: InvocationContext) {
     repository.listUsersByIds([...new Set(visible.map((entry) => entry.authorId))]),
     Promise.all(visible.map((entry) => repository.getOrder(entry.orderId))),
   ]);
-  const nameOf = new Map(authors.map((author: User) => [author.id, author.displayName]));
+  // A review of a seller was written by a buyer, so their name opens their own
+  // page - where their record as a buyer is - rather than any shop they run.
+  const authorOf = new Map(authors.map((author: User) => [author.id, author]));
   const orderOf = new Map(
     orders.filter((order): order is Order => Boolean(order)).map((order) => [order.id, order]),
   );
@@ -230,7 +233,7 @@ async function tradeReviews(request: HttpRequest, _context: InvocationContext) {
         rating: entry.rating,
         body: entry.body,
         direction: entry.direction,
-        authorName: nameOf.get(entry.authorId) ?? 'Someone',
+        author: personRef(authorOf.get(entry.authorId)),
         createdAt: entry.createdAt,
         // What it was about. Null only where the order has since been deleted.
         item: order

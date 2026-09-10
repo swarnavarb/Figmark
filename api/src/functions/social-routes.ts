@@ -3,6 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { FORUM_CAP } from '../../../shared/enums.js';
 import type { Forum, Listing, Post, User } from '../../../shared/models.js';
 import { can } from '../../../shared/stores.js';
+import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -19,6 +20,15 @@ import { error, handler, json } from './http.js';
 interface PostCard {
   post: Post;
   listing: Pick<Listing, 'id' | 'title' | 'priceMinor' | 'currency' | 'condition'> | null;
+  /**
+   * Where the author's name goes when tapped.
+   *
+   * Resolved on read rather than stored on the post: a post keeps the name as
+   * it was written, which is right, but an address that was frozen a year ago
+   * points at whoever holds that handle now. A shop post opens the shop, a
+   * person's post opens the person - the same rule as everywhere else.
+   */
+  author: PartyRef;
 }
 
 async function decorate(posts: Post[], repository: Awaited<ReturnType<typeof getRepository>>): Promise<PostCard[]> {
@@ -26,17 +36,26 @@ async function decorate(posts: Post[], repository: Awaited<ReturnType<typeof get
   // at a time would be a request per post.
   const ids = [...new Set(posts.map((p) => p.listingId).filter((id): id is string => id !== null))];
   const listings = new Map<string, Listing>();
-  await Promise.all(
-    ids.map(async (id) => {
-      const listing = await repository.getListing(id);
-      if (listing) listings.set(id, listing);
-    }),
-  );
+  const [authors] = await Promise.all([
+    repository.listUsersByIds([...new Set(posts.map((post) => post.authorId))]),
+    Promise.all(
+      ids.map(async (id) => {
+        const listing = await repository.getListing(id);
+        if (listing) listings.set(id, listing);
+      }),
+    ),
+  ]);
+  const authorOf = new Map(authors.map((author) => [author.id, author]));
 
   return posts.map((post) => {
     const listing = post.listingId ? listings.get(post.listingId) : undefined;
+    const author = authorOf.get(post.authorId);
+    // A post made as the shop opens the shop; one made as the person opens the
+    // person. The post already records which voice it was written in.
+    const spokenAsShop = author?.sellerProfile?.storefrontName === post.authorName;
     return {
       post,
+      author: spokenAsShop ? sellerRef(author) : personRef(author),
       listing: listing
         ? {
             id: listing.id,

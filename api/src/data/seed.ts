@@ -195,16 +195,16 @@ export function seedUsers(): User[] {
     /* Catalog sellers. No password hash: they populate the feed, they are not
        accounts you can sign in as. */
     withEscrow(
-      storefront('usr_kaiju', 'Kaiju Imports', 'kaiju-imports', 'Bengaluru, KA', 91, 148, 0.96,
+      storefront('usr_kaiju', 'Kaiju Imports', 'Ravi Krishnan', 'kaiju-imports', 'Bengaluru, KA', 91, 148, 0.96,
         'Weekly group-buys from Guangzhou. Scale figures and garage kits.'),
       200,
       'High volume, long record, no unresolved disputes.',
     ),
-    storefront('usr_tokyoline', 'Tokyo Line', 'tokyo-line', 'Delhi, DL', 84, 96, 0.91,
+    storefront('usr_tokyoline', 'Tokyo Line', 'Meiko Tanaka', 'tokyo-line', 'Delhi, DL', 84, 96, 0.91,
       'Anime merch and trading cards, direct from Akihabara runs.'),
-    storefront('usr_sneakervault', 'Sneaker Vault', 'sneaker-vault', 'Pune, MH', 77, 61, 0.88,
+    storefront('usr_sneakervault', 'Sneaker Vault', 'Imran Shaikh', 'sneaker-vault', 'Pune, MH', 77, 61, 0.88,
       'Deadstock sneakers, authenticated before dispatch.'),
-    storefront('usr_gadgetgrid', 'Gadget Grid', 'gadget-grid', 'Hyderabad, TS', 69, 40, 0.83,
+    storefront('usr_gadgetgrid', 'Gadget Grid', 'Sneha Pillai', 'gadget-grid', 'Hyderabad, TS', 69, 40, 0.83,
       'Shenzhen electronics — audio, handhelds, accessories.'),
 
     /* Freight forwarders. Directory entries, also not sign-in accounts. */
@@ -244,7 +244,7 @@ function withEscrow(user: User, feeBasisPoints: number, note: string): User {
 }
 
 function storefront(
-  id: string, name: string, slug: string, region: string,
+  id: string, name: string, owner: string, slug: string, region: string,
   score: number, completed: number, onTime: number, bio: string,
 ): User {
   return {
@@ -254,7 +254,10 @@ function storefront(
     username: id.replace('usr_', ''),
     email: `${slug}@figmark.example`,
     phone: null,
-    displayName: name,
+    // And separate names, or the two pages are indistinguishable at a glance
+    // and nobody can tell which record they are reading. A shop is rated on
+    // whether it ships; the person behind it on whether they pay.
+    displayName: owner,
     isAdmin: false,
     // No password: a catalog seller, not a sign-in account.
     passwordHash: null,

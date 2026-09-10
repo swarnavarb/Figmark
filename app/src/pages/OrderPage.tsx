@@ -9,7 +9,7 @@ import {
   ApiRequestError, api,
   type Checkout, type EscrowOption, type EvidenceDraft, type OrderState, type OrderTracking,
 } from '../api';
-import { ErrorNotice, Icon, Modal } from '../components/ui';
+import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { formatDate, formatMoney, timeAgo } from '../format';
 
 /**
@@ -65,7 +65,7 @@ export function OrderPage() {
         <div>
           <h1>{order.itemName}</h1>
           <p className="muted">
-            {state.side === 'seller' ? 'Sold to' : 'From'} {state.counterpartyName} · ordered{' '}
+            {state.side === 'seller' ? 'Sold to' : 'From'} <PersonLink party={state.counterparty} /> · ordered{' '}
             {timeAgo(order.createdAt)}
           </p>
         </div>
@@ -369,8 +369,8 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
         <span className="buyway__title">Buy directly from the seller</span>
         <span className="buyway__note">
           {canPayDirect
-            ? `Pay ${quote.sellerName} yourself, then show them it went through. Nothing is held, so anything that goes wrong is between the two of you.`
-            : `${quote.sellerName} has not added any payment details, so there is nowhere to send the money.`}
+            ? <>Pay <PersonLink party={quote.seller} /> yourself, then show them it went through. Nothing is held, so anything that goes wrong is between the two of you.</>
+            : <><PersonLink party={quote.seller} /> has not added any payment details, so there is nowhere to send the money.</>}
         </span>
         <span className="buyway__price">{formatMoney(quote.itemMinor, quote.currency)}</span>
       </button>
@@ -494,7 +494,7 @@ function DirectPay({ quote, payment, busy, onPaid, onBack }: {
 
       <div className="card card--pad stack">
         <div className="row row--between">
-          <strong>Send {formatMoney(quote.itemMinor, quote.currency)} to {quote.sellerName}</strong>
+          <strong>Send {formatMoney(quote.itemMinor, quote.currency)} to <PersonLink party={quote.seller} /></strong>
         </div>
         {rows.filter(([, value]) => value).map(([label, value]) => (
           <div className="kv" key={label}>
@@ -507,7 +507,7 @@ function DirectPay({ quote, payment, busy, onPaid, onBack }: {
 
       <p className="notice notice--info">
         Figmark is not handling this payment and is not holding anything. Once you have sent it,
-        tell {quote.sellerName} here — they confirm it landed before the order moves.
+        tell <PersonLink party={quote.seller} /> here — they confirm it landed before the order moves.
       </p>
 
       <label className="tick tick--wide">
@@ -605,7 +605,7 @@ function EscrowPicker({ quote, chosenId, onPick, onClose }: {
     <Modal title="Who should hold your payment?" onClose={onClose}>
       <p className="faint" style={{ marginTop: 0 }}>
         An escrow holds {formatMoney(quote.itemMinor, quote.currency)} until you confirm the item
-        arrived, and decides if you and {quote.sellerName} cannot agree. Their fee is on top.
+        arrived, and decides if you and <PersonLink party={quote.seller} /> cannot agree. Their fee is on top.
       </p>
 
       <div className="stack" style={{ marginTop: 12 }}>

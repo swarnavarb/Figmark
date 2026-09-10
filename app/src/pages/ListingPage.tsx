@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { PreOrder } from '@shared/models';
 import { ApiRequestError, api, type ListingDetail } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, LotMeter, Thumb, TrustBadge } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, LotMeter, PersonLink, Thumb, TrustBadge } from '../components/ui';
 import { daysUntil, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
@@ -133,7 +133,7 @@ export function ListingPage() {
                 <div key={comment.id}>
                   <div className="comment">
                     <div className="comment__head">
-                      <span className="comment__who">{comment.authorName}</span>
+                      <PersonLink party={comment.author} className="comment__who" />
                       <span className="faint">{timeAgo(comment.createdAt)}</span>
                     </div>
                     <p style={{ fontSize: 'var(--t-sm)' }}>{comment.body}</p>
@@ -141,7 +141,7 @@ export function ListingPage() {
                   {comments.filter((reply) => reply.replyToId === comment.id).map((reply) => (
                     <div key={reply.id} className="comment comment--reply">
                       <div className="comment__head">
-                        <span className="comment__who">{reply.authorName}</span>
+                        <PersonLink party={reply.author} className="comment__who" />
                         <span className="badge badge--accent">Seller</span>
                         <span className="faint">{timeAgo(reply.createdAt)}</span>
                       </div>
@@ -208,14 +208,8 @@ export function ListingPage() {
                 <Avatar name={seller.storefrontName} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {/* The shop's name is its address: tapping it opens its page. */}
-                  {seller.username ? (
-                    <Link to={`/${seller.username}`} className="card__title"
-                      style={{ color: 'inherit', textDecoration: 'none' }}>
-                      {seller.storefrontName}
-                    </Link>
-                  ) : (
-                    <div className="card__title">{seller.storefrontName}</div>
-                  )}
+                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username }}
+                    className="card__title" />
                   <span className="faint">{seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
                 <TrustBadge score={seller.trustScore} tier={seller.tier} />

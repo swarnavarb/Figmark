@@ -4,6 +4,7 @@ import type { Sourcing } from '../../../shared/enums.js';
 import { can } from '../../../shared/stores.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
+import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -80,12 +81,24 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   if (!listing) return error(404, 'not_found', 'No such listing.');
 
   const viewer = await auth.getCurrentUser(request);
-  const [sellers, comments, likedIds, followed] = await Promise.all([
+  const [sellers, rawComments, likedIds, followed] = await Promise.all([
     repository.listUsersByIds([listing.sellerId]),
     repository.listComments(id),
     viewer ? repository.listLikedListingIds(viewer.id) : Promise.resolve([]),
     viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([]),
   ]);
+
+  // A comment keeps the name it was written under, which is right, but the
+  // address has to be current - so it is resolved now rather than frozen into
+  // the row. A commenter is a person, so it opens their page, not a shop.
+  const commenters = await repository.listUsersByIds([
+    ...new Set(rawComments.map((comment) => comment.authorId)),
+  ]);
+  const commenterOf = new Map(commenters.map((person) => [person.id, person]));
+  const comments = rawComments.map((comment) => ({
+    ...comment,
+    author: personRef(commenterOf.get(comment.authorId), comment.authorName),
+  }));
 
   // Deliberately not returning the lot: which consignment an item rides in,
   // who else is in it and what stage it is at are the seller's business. The
@@ -266,7 +279,10 @@ async function addComment(request: HttpRequest, _context: InvocationContext) {
     createdAt: now,
     updatedAt: now,
   };
-  return json(201, { comment: await (await getRepository()).addComment(comment) });
+  // Returned in the shape the read path uses, so the page can append it as-is:
+  // a comment that came back without its author's address rendered nameless.
+  const saved = await (await getRepository()).addComment(comment);
+  return json(201, { comment: { ...saved, author: personRef(user) } });
 }
 
 /** POST /api/sellers/{id}/follow - toggle following a seller. */

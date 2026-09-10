@@ -569,7 +569,7 @@ function Payments({ store }: { store: StoreAccess }) {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 650 }}>{row.itemName}</div>
                 <span className="faint">
-                  {row.buyerName} · said paid {timeAgo(row.claim?.claimedAt ?? row.createdAt)}
+                  {row.buyer.name} · said paid {timeAgo(row.claim?.claimedAt ?? row.createdAt)}
                   {row.claim?.reference ? ` · ${row.claim.reference}` : ''}
                 </span>
               </div>
@@ -590,7 +590,7 @@ function Payments({ store }: { store: StoreAccess }) {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 650 }}>{row.itemName}</div>
                 <span className="faint">
-                  {row.buyerName} · {timeAgo(row.claim?.decidedAt ?? row.createdAt)}
+                  {row.buyer.name} · {timeAgo(row.claim?.decidedAt ?? row.createdAt)}
                 </span>
               </div>
               <div className="row" style={{ alignItems: 'center' }}>

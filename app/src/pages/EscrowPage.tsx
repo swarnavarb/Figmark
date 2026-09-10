@@ -7,7 +7,7 @@ import {
   DISPUTE_STATUS_LABELS,
 } from '@shared/enums';
 import { ApiRequestError, api, type EscrowHolding } from '../api';
-import { EmptyState, ErrorNotice, Modal } from '../components/ui';
+import { EmptyState, ErrorNotice, Modal, PersonLink } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 
 /**
@@ -67,7 +67,7 @@ export function EscrowPage() {
               <div className="row row--between">
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 650 }}>{row.order.itemName}</div>
-                  <span className="faint">{row.buyerName} → {row.sellerName}</span>
+                  <span className="faint"><PersonLink party={row.buyer} /> → <PersonLink party={row.seller} /></span>
                 </div>
                 <span className="badge badge--accent">
                   {formatMoney(row.order.escrow.amountMinor, row.order.currency)}
@@ -177,7 +177,7 @@ function SettleDialog({ holding, onClose, onDone }: {
 
       {outcome === 'split' && (
         <label className="field">
-          <span>Back to {holding.buyerName}</span>
+          <span>Back to {holding.buyer.name}</span>
           <input value={refund} onChange={(event) => setRefund(event.target.value)} inputMode="decimal" />
           <span className="field__hint">Between nothing and {formatMoney(held, currency)}.</span>
         </label>

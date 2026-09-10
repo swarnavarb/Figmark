@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { gradientFor, hueFor, initialsOf } from '../format';
 
 /** Inline icons. Kept as a small set so no icon dependency is needed. */
@@ -147,5 +148,31 @@ export function Modal({ title, onClose, children }: {
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Somebody's name, as a link to their page.
+ *
+ * Every reference to a person or a shop is an address, and the one place that
+ * decides what happens when there is no address to give. Accounts that predate
+ * handles have none, and catalog fixtures were never sign-in accounts at all —
+ * those render as plain text rather than as a link to a 404.
+ *
+ * Which page it opens is decided by whoever built the reference, not here: a
+ * seller's name carries the shop's handle, a buyer's carries the person's.
+ */
+export function PersonLink({ party, className, children }: {
+  party: { name: string; handle: string | null } | null | undefined;
+  className?: string;
+  children?: ReactNode;
+}) {
+  if (!party) return null;
+  const label = children ?? party.name;
+  if (!party.handle) return <span className={className}>{label}</span>;
+  return (
+    <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>
+      {label}
+    </Link>
   );
 }

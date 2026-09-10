@@ -5,7 +5,7 @@ import {
   ApiRequestError, api,
   type Credit, type PageReviews, type PublicProfile, type ReviewsAbout,
 } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Modal, Thumb } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Modal, PersonLink, Thumb } from '../components/ui';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { MessageButton } from './MessagesPage';
@@ -174,16 +174,16 @@ export function ProfileByHandlePage() {
         {/* The credit record. Two words and a percentage is all that fits, and
             all of it opens onto what it counted — a grade nobody can check is
             a grade nobody should believe. */}
-        <button type="button" className="credit" onClick={() => setCreditOpen(true)}>
+        {/* One record, and it is the one this page is about: a storefront is
+            rated as a seller, a person as a buyer. Showing both here invited
+            the wrong one to be read — a shop whose owner buys a lot would
+            carry a reassuring figure that says nothing about shipping. */}
+        <button type="button" className="credit credit--one" onClick={() => setCreditOpen(true)}>
           <div className="credit__cell">
-            <span className="credit__grade">{gradeFor(reviews?.asSeller.average ?? null)}</span>
-            <span className="credit__label">Seller credit</span>
-          </div>
-          <div className="credit__cell">
-            <span className="credit__grade credit__grade--buyer">
-              {gradeFor(reviews?.asBuyer.average ?? null)}
+            <span className={`credit__grade${data.isStore ? '' : ' credit__grade--buyer'}`}>
+              {gradeFor(rating?.average ?? null)}
             </span>
-            <span className="credit__label">Buyer credit</span>
+            <span className="credit__label">{data.isStore ? 'Seller credit' : 'Buyer credit'}</span>
           </div>
           <div className="credit__cell">
             <span className="credit__figure">
@@ -192,6 +192,12 @@ export function ProfileByHandlePage() {
             <span className="credit__label">
               {rating?.count ? `from ${rating.count}` : 'unrated'}
             </span>
+          </div>
+          <div className="credit__cell">
+            <span className="credit__figure">
+              {data.isStore ? data.counts.sold : (pageReviews?.count ?? 0)}
+            </span>
+            <span className="credit__label">{data.isStore ? 'sold out' : 'page notes'}</span>
           </div>
           <span className="credit__open">›</span>
         </button>
@@ -304,7 +310,11 @@ function CreditSheet({ profile, onClose }: { profile: PublicProfile; onClose: ()
             {profile.displayName} · here since {formatDate(credit.memberSince)}
           </p>
 
-          <div className="creditgrid">
+          {/* The side this page is about, and only that side. The same account
+              may be excellent at one and untested at the other, and a reader
+              deciding whether to buy from a shop is not helped by how promptly
+              its owner pays other people. */}
+          {profile.isStore ? (
             <CreditCard
               title="As a seller"
               grade={gradeFor(credit.seller.average)}
@@ -316,6 +326,7 @@ function CreditSheet({ profile, onClose }: { profile: PublicProfile; onClose: ()
                 ['Disputes lost', credit.asSeller.disputes],
               ]}
             />
+          ) : (
             <CreditCard
               title="As a buyer"
               grade={gradeFor(credit.buyer.average)}
@@ -327,14 +338,28 @@ function CreditSheet({ profile, onClose }: { profile: PublicProfile; onClose: ()
                 ['Disputes lost', credit.asBuyer.disputes],
               ]}
             />
-          </div>
+          )}
+
+          {/* Where the other half of this account lives, for anybody who wants
+              it. Named rather than shown, because it is a different question. */}
+          {profile.isStore && profile.ownerHandle && (
+            <p className="faint">
+              How they behave as a buyer is on their own page,{' '}
+              <Link to={`/${profile.ownerHandle}`}>@{profile.ownerHandle}</Link>.
+            </p>
+          )}
 
           <section className="detail__section">
             <h3>What has been checked</h3>
             <div className="kv"><dt>Phone</dt><dd>{credit.verification.phone}</dd></div>
             <div className="kv"><dt>Email</dt><dd>{credit.verification.email}</dd></div>
             <div className="kv"><dt>Government ID</dt><dd>{credit.verification.governmentId}</dd></div>
-            {credit.tier && <div className="kv"><dt>Seller tier</dt><dd>{credit.tier}</dd></div>}
+            {/* A seller fact, so it belongs only on the page that is about
+                selling. It was appearing under a buyer's record, where it read
+                as part of a figure it has nothing to do with. */}
+            {profile.isStore && credit.tier && (
+              <div className="kv"><dt>Seller tier</dt><dd>{credit.tier}</dd></div>
+            )}
           </section>
 
           {/* Said out loud rather than left to be inferred, because the number
@@ -407,7 +432,7 @@ function ReviewsTab({ profile, trade, listed, page, canWrite, onWritten }: {
             {listed.map((review) => (
               <article key={review.id} className="review">
                 <div className="review__head">
-                  <span className="review__who">{review.authorName}</span>
+                  <span className="review__who"><PersonLink party={review.author} /></span>
                   <span className="faint">{timeAgo(review.createdAt)}</span>
                 </div>
                 <Stars value={review.rating} />
