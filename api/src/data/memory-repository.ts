@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User, Want, WantOffer,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
@@ -27,6 +27,8 @@ import {
   seedPosts,
   seedReviews,
   seedDisputes,
+  seedWants,
+  seedWantOffers,
   seedUsers,
 } from './seed.js';
 
@@ -54,6 +56,8 @@ export class MemoryRepository implements Repository {
   private readonly messages = new Map<string, Message>();
   private readonly reviews = new Map<string, Review>();
   private readonly storeReviews = new Map<string, StoreReview>();
+  private readonly wants = new Map<string, Want>();
+  private readonly wantOffers = new Map<string, WantOffer>();
   private readonly disputes = new Map<string, Dispute>();
   /** `@username` -> who holds it. Mirrors the reservations in `identifiers`. */
   private readonly handles = new Map<string, { userId: string; isStore: boolean }>();
@@ -73,6 +77,8 @@ export class MemoryRepository implements Repository {
     for (const post of seedPosts()) this.posts.set(post.id, post);
     for (const review of seedReviews()) this.reviews.set(review.id, review);
     for (const record of seedDisputes()) this.disputes.set(record.id, record);
+    for (const record of seedWants()) this.wants.set(record.id, record);
+    for (const record of seedWantOffers()) this.wantOffers.set(record.id, record);
   }
 
   private indexUser(user: User): void {
@@ -375,6 +381,41 @@ export class MemoryRepository implements Repository {
     return [...this.reviews.values()]
       .filter((review) => review.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listOpenWants(options: { category?: string; limit?: number } = {}): Promise<Want[]> {
+    const now = new Date().toISOString();
+    return [...this.wants.values()]
+      .filter((want) => want.status === 'open' && want.expiresAt > now)
+      .filter((want) => !options.category || want.category === options.category)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, options.limit ?? 50);
+  }
+
+  async listWantsBy(buyerId: string): Promise<Want[]> {
+    return [...this.wants.values()]
+      .filter((want) => want.buyerId === buyerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getWant(id: string, _buyerId?: string): Promise<Want | null> {
+    return this.wants.get(id) ?? null;
+  }
+
+  async saveWant(want: Want): Promise<Want> {
+    this.wants.set(want.id, want);
+    return want;
+  }
+
+  async listWantOffers(wantId: string): Promise<WantOffer[]> {
+    return [...this.wantOffers.values()]
+      .filter((offer) => offer.wantId === wantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async saveWantOffer(offer: WantOffer): Promise<WantOffer> {
+    this.wantOffers.set(offer.id, offer);
+    return offer;
   }
 
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {

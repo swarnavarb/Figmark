@@ -13,6 +13,8 @@ import type {
   TrustSignals,
   User,
   VerificationState,
+  Want,
+  WantOffer,
 } from '../../../shared/models.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { hashPassword } from '../auth/passwords.js';
@@ -707,6 +709,51 @@ export function seedReviews(): Review[] {
       // a lapsed window reveals a review on its own, correctly, and that would
       // demonstrate the opposite of what this fixture is for.
       revealAt: iso(11),
+      createdAt: iso(-3), updatedAt: iso(-3),
+    },
+  ];
+}
+
+/**
+ * A few hunts, so the board demonstrates itself.
+ *
+ * One with a budget, one open to offers, and one already answered — because a
+ * board of unanswered posts reads as a place nobody uses, which is the opposite
+ * of what it is for.
+ */
+export function seedWants(): Want[] {
+  const want = (
+    id: string, buyerId: string, buyerName: string, buyerHandle: string,
+    title: string, category: string, budgetMinor: number | null,
+    condition: Want['condition'], details: string, days: number, offerCount = 0,
+  ): Want => ({
+    id, buyerId, buyerName, buyerHandle, title, details, category,
+    budgetMinor, currency: 'INR', condition, status: 'open', offerCount,
+    expiresAt: iso(30 + days), closedAt: null,
+    createdAt: iso(days), updatedAt: iso(days),
+  });
+
+  return [
+    want('wnt_1', 'usr_demo', 'Arjun Mehta', 'arjun',
+      '1/7 Rem, Furyu — any colourway', 'Scale figures', 6_50_000, 'MIB',
+      'Box can be scuffed, figure has to be clean. Would take a repaint if the work is good.', -4, 1),
+    want('wnt_2', 'usr_gadgetgrid', 'Sneha Pillai', 'gadgetgrid',
+      'Sealed Pokemon 151 booster box, JP print', 'Trading cards', null, 'MISB',
+      'Open to offers — I have been quoted a lot of different numbers for these.', -2),
+    want('wnt_3', 'usr_tokyoline', 'Meiko Tanaka', 'tokyoline',
+      'HG Gundam kits, bulk lot for a class', 'Model kits', 12_00_000, null,
+      'Twenty or so, any grade, does not matter if boxes are opened. For a workshop.', -1),
+  ];
+}
+
+/** One answer already on the board, so it does not read as a place nobody uses. */
+export function seedWantOffers(): WantOffer[] {
+  return [
+    {
+      id: 'wof_1', wantId: 'wnt_1',
+      sellerId: 'usr_kaiju', sellerName: 'Kaiju Imports', sellerHandle: 'kaiju_imports',
+      listingId: null, priceMinor: 6_20_000,
+      message: 'I can add one to the October Guangzhou run — about three weeks door to door.',
       createdAt: iso(-3), updatedAt: iso(-3),
     },
   ];

@@ -383,6 +383,42 @@ export interface ChannelThread {
   posts: PostCard[];
 }
 
+/* ── Wanted ────────────────────────────────────────────────────────────── */
+
+export interface WantCard {
+  id: string;
+  buyerId: string;
+  buyer: PartyRef;
+  title: string;
+  details: string;
+  category: string;
+  budgetMinor: number | null;
+  currency: string;
+  condition: string | null;
+  status: 'open' | 'closed';
+  offerCount: number;
+  createdAt: string;
+  expiresAt: string;
+  closedAt: string | null;
+}
+
+export interface WantOfferRow {
+  id: string;
+  seller: PartyRef;
+  message: string;
+  priceMinor: number | null;
+  createdAt: string;
+  listing: { id: string; title: string; priceMinor: number; currency: string; condition: string } | null;
+}
+
+export interface WantDetail {
+  want: WantCard;
+  mine: boolean;
+  /** Your own answer, if you have already made one. */
+  yours: { id: string; message: string; priceMinor: number | null; listingId: string | null } | null;
+  offers: WantOfferRow[];
+}
+
 export interface ForumsResponse {
   forums: Forum[];
   cap: number;
@@ -684,6 +720,28 @@ export const api = {
   }) =>
     post<{ post: Post }>('/social/posts', body),
   forums: () => request<ForumsResponse>('/social/forums'),
+
+  wants: (options: { category?: string; q?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (options.category) query.set('category', options.category);
+    if (options.q) query.set('q', options.q);
+    const suffix = query.toString();
+    return request<{ wants: WantCard[]; mine: WantCard[] }>(`/wants${suffix ? `?${suffix}` : ''}`);
+  },
+  postWant: (body: {
+    title: string; details: string; category: string;
+    budgetMinor: number | null; condition: string | null;
+  }) => post<{ want: WantCard }>('/wants/new', body),
+  // The buyer is on the path because a want is stored under whoever posted it.
+  want: (id: string, buyerId: string) =>
+    request<WantDetail>(`/wants/${encodeURIComponent(id)}?buyer=${encodeURIComponent(buyerId)}`),
+  offerOnWant: (id: string, buyerId: string, body: {
+    message: string; listingId?: string | null; priceMinor?: number | null;
+  }) => post<{ offerCount: number }>(
+    `/wants/${encodeURIComponent(id)}/offers?buyer=${encodeURIComponent(buyerId)}`, body,
+  ),
+  closeWant: (id: string, buyerId: string) =>
+    post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   createForum: (body: { name: string; description?: string }) =>
     post<{ forum: Forum }>('/social/forums/new', body),
   forwarders: (route?: string) =>

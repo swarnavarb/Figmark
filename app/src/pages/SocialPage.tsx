@@ -13,13 +13,15 @@ import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../com
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
+import { WantedPage } from './WantedPage';
 import { useSession } from '../session';
 
-type View = 'feed' | 'channels' | 'forums' | 'messages';
+type View = 'feed' | 'channels' | 'wanted' | 'forums' | 'messages';
 
 const VIEWS: { id: View; label: string; glyph: string; hint: string }[] = [
   { id: 'feed', label: 'Feed', glyph: '✳️', hint: 'Everything from the people and shops you follow' },
   { id: 'channels', label: 'Channels', glyph: '💬', hint: 'One thread per seller' },
+  { id: 'wanted', label: 'Wanted', glyph: '🔎', hint: 'What people are hunting for' },
   { id: 'forums', label: 'Forums', glyph: '🏛️', hint: 'Shared rooms' },
   { id: 'messages', label: 'Messages', glyph: '✉️', hint: 'Talk to anyone with a username' },
 ];
@@ -63,6 +65,7 @@ export function SocialPage() {
 
       <div className="tab-view" key={view}>
         {view === 'feed' && <FollowingFeed />}
+        {view === 'wanted' && <WantedPage />}
         {view === 'channels' && <Channels />}
         {view === 'forums' && <Forums />}
         {view === 'messages' && <MessagesView />}

@@ -47,6 +47,10 @@ const {
   claimPaymentRoute: claimPayment, settleClaimRoute: settleClaim,
 } = await import(new URL('order-routes.js', fns));
 const {
+  wantsBoardRoute: wantsBoard, wantPostRoute: postWant, wantReadRoute: readWant,
+  wantOfferRoute: offerOnWant, wantCloseRoute: closeWant,
+} = await import(new URL('want-routes.js', fns));
+const {
   creditRoute: credit, pageReviewsRoute: pageReviews,
   writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
   saveProfileRoute: saveProfile,
@@ -2406,6 +2410,144 @@ await check('somebody with no handle is named without being linked', async () =>
       assert.ok(party.handle === null || typeof party.handle === 'string');
     }
   }
+});
+
+console.log('\nwhat people are hunting for');
+
+await check('the board carries open hunts, and says how many answers each has', async () => {
+  const body = (await wantsBoard(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.wants.length >= 3, 'the seeded board is not empty');
+  const answered = body.wants.find((want) => want.id === 'wnt_1');
+  assert.equal(answered.offerCount, 1);
+  // A hunt is addressed to somebody, and that name opens their page.
+  assert.ok(answered.buyer.name && answered.buyer.handle);
+  // Their own are separated out, so they need not go looking for them.
+  assert.ok(body.mine.some((want) => want.id === 'wnt_1'));
+});
+
+await check('a category narrows it without inventing rows', async () => {
+  const all = (await wantsBoard(req({ headers: auth }), ctx)).jsonBody.wants;
+  const cards = (await wantsBoard(req({
+    headers: auth, query: { category: 'Trading cards' },
+  }), ctx)).jsonBody.wants;
+  assert.ok(cards.length > 0 && cards.length < all.length);
+  assert.ok(cards.every((want) => want.category === 'Trading cards'));
+});
+
+await check('a hunt needs saying what and where to look', async () => {
+  const bare = await postWant(req({ headers: auth, body: { title: 'x', category: 'Model kits' } }), ctx);
+  assert.equal(bare.status, 400);
+  const uncategorised = await postWant(req({
+    headers: auth, body: { title: 'A real thing I want' },
+  }), ctx);
+  assert.equal(uncategorised.status, 400);
+  assert.match(uncategorised.jsonBody.message, /category/);
+});
+
+await check('a budget is optional, because for a rare piece it has to be', async () => {
+  const posted = await postWant(req({
+    headers: auth,
+    body: { title: 'Anything from the 2019 Kotobukiya run', category: 'Scale figures' },
+  }), ctx);
+  assert.equal(posted.status, 201);
+  assert.equal(posted.jsonBody.want.budgetMinor, null, 'unstated, not zero');
+  assert.equal(posted.jsonBody.want.status, 'open');
+  assert.ok(posted.jsonBody.want.expiresAt > new Date().toISOString(), 'and it expires');
+});
+
+await check('a budget that is not a number is refused', async () => {
+  const bad = await postWant(req({
+    headers: auth, body: { title: 'Something', category: 'Model kits', budgetMinor: -5 },
+  }), ctx);
+  assert.equal(bad.status, 400);
+});
+
+await check('a seller answers with what they can get, not only with a link', async () => {
+  // The answer that matters on an import marketplace: most of what is wanted
+  // here has not been bought by anybody yet.
+  const answered = await offerOnWant(req({
+    headers: auth, params: { id: 'wnt_2' }, query: { buyer: 'usr_gadgetgrid' },
+    body: { message: 'I can source these on the next run.', priceMinor: 45_000 },
+  }), ctx);
+  assert.equal(answered.status, 201);
+  assert.equal(answered.jsonBody.offerCount, 1, 'counted on the hunt itself');
+
+  const detail = (await readWant(req({
+    headers: auth, params: { id: 'wnt_2' }, query: { buyer: 'usr_gadgetgrid' },
+  }), ctx)).jsonBody;
+  assert.equal(detail.offers.length, 1);
+  assert.equal(detail.offers[0].listing, null, 'nothing attached, and that is fine');
+  assert.ok(detail.yours, 'and the form knows it is mine to edit');
+});
+
+await check('answering again replaces it rather than stacking another on', async () => {
+  const again = await offerOnWant(req({
+    headers: auth, params: { id: 'wnt_2' }, query: { buyer: 'usr_gadgetgrid' },
+    body: { message: 'Actually I can do better than that.', priceMinor: 42_000 },
+  }), ctx);
+  assert.equal(again.status, 200);
+  assert.equal(again.jsonBody.offerCount, 1, 'still one answer from me');
+
+  const detail = (await readWant(req({
+    headers: auth, params: { id: 'wnt_2' }, query: { buyer: 'usr_gadgetgrid' },
+  }), ctx)).jsonBody;
+  assert.equal(detail.offers.length, 1);
+  assert.equal(detail.offers[0].priceMinor, 42_000);
+});
+
+await check('nobody answers their own hunt', async () => {
+  const self = await offerOnWant(req({
+    headers: auth, params: { id: 'wnt_1' }, query: { buyer: 'usr_demo' },
+    body: { message: 'I have one myself' },
+  }), ctx);
+  assert.equal(self.status, 400);
+  assert.equal(self.jsonBody.error, 'own_want');
+});
+
+await check("an offered item has to be the seller's own", async () => {
+  // Otherwise the board becomes a place to advertise other people's stock.
+  const refused = await offerOnWant(req({
+    headers: auth, params: { id: 'wnt_2' }, query: { buyer: 'usr_gadgetgrid' },
+    body: { message: 'Here you go', listingId: 'lst_dragon_knight' },
+  }), ctx);
+  assert.equal(refused.status, 404);
+});
+
+/* Somebody who is neither the buyer nor already involved. */
+const bystander = await signup(req({
+  body: {
+    displayName: 'Not Their Business', email: 'notmine@figmark.example',
+    phone: '+919000045911', password: 'longenough1',
+  },
+}), ctx);
+const bystanderAuth = { authorization: `Bearer ${bystander.jsonBody.token}` };
+
+await check('only whoever posted a hunt can close it', async () => {
+  assert.equal(bystander.status, 201, `signup failed: ${JSON.stringify(bystander.jsonBody)}`);
+  const refused = await closeWant(req({
+    headers: bystanderAuth, params: { id: 'wnt_1' }, query: { buyer: 'usr_demo' },
+  }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+await check('closing takes it off the board and refuses further answers', async () => {
+  const closed = await closeWant(req({
+    headers: auth, params: { id: 'wnt_1' }, query: { buyer: 'usr_demo' },
+  }), ctx);
+  assert.equal(closed.status, 200);
+  assert.equal(closed.jsonBody.want.status, 'closed');
+
+  const board = (await wantsBoard(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(board.wants.some((want) => want.id === 'wnt_1'), false, 'gone from the board');
+
+  // Asked by somebody who could otherwise have answered, so it is the hunt
+  // being over that refuses them and not a rule about their own post.
+  const late = await offerOnWant(req({
+    headers: bystanderAuth, params: { id: 'wnt_1' }, query: { buyer: 'usr_demo' },
+    body: { message: 'Still got one going' },
+  }), ctx);
+  assert.equal(late.status, 409);
+  assert.equal(late.jsonBody.error, 'want_closed');
 });
 
 console.log('\noperating the marketplace');

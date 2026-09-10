@@ -40,6 +40,9 @@ const {
   payRoute, confirmRoute, reviewRoute, orderStateRoute, checkoutRoute,
   claimPaymentRoute, settleClaimRoute,
 } = await import(new URL('order-routes.js', apiRoot));
+const {
+  wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute,
+} = await import(new URL('want-routes.js', apiRoot));
 const { creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute } =
   await import(new URL('profile-routes.js', apiRoot));
 const {
@@ -124,6 +127,11 @@ const routes = [
   ['POST', '/api/ops/resources/delete', adminDeleteResourceRoute],
   ['GET', '/api/ops/disputes', adminDisputesRoute],
   ['POST', '/api/ops/disputes/:id/resolve', adminResolveRoute],
+  ['GET', '/api/wants', wantsBoardRoute],
+  ['POST', '/api/wants/new', wantPostRoute],
+  ['GET', '/api/wants/:id', wantReadRoute],
+  ['POST', '/api/wants/:id/offers', wantOfferRoute],
+  ['POST', '/api/wants/:id/close', wantCloseRoute],
   ['GET', '/api/users/:id/reviews', tradeReviewsRoute],
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],

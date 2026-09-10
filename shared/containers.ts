@@ -109,6 +109,26 @@ export const CONTAINERS = {
       ],
     ],
   },
+  wants: {
+    name: 'wants',
+    partitionKeyPath: '/buyerId',
+    rationale:
+      'A person reads their own hunts as a list, which is one partition. The board itself is a cross-partition query, the same accepted cost as the unified catalog - and for the same reason: the other read is the one worth keeping cheap.',
+    excludedPaths: ['/details/?'],
+    compositeIndexes: [
+      [
+        { path: '/status', order: 'ascending' },
+        { path: '/createdAt', order: 'descending' },
+      ],
+    ],
+  },
+  wantOffers: {
+    name: 'wantOffers',
+    partitionKeyPath: '/wantId',
+    rationale:
+      'A hunt and every answer to it are read together, which is exactly one partition. One answer per seller, enforced by the unique key rather than by remembering to check.',
+    uniqueKeyPaths: [['/sellerId']],
+  },
   storeReviews: {
     name: 'storeReviews',
     partitionKeyPath: '/subjectId',

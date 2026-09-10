@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User,
+  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User, Want, WantOffer,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -114,6 +114,18 @@ export interface Repository {
    * trade, these are not, and the whole value of the first number is that the
    * second cannot move it.
    */
+  /**
+   * The board: open hunts, newest first.
+   *
+   * Cross-partition, like the catalog, and bounded - a seller scanning for
+   * demand reads the recent end of it, not all of history.
+   */
+  listOpenWants(options?: { category?: string; limit?: number }): Promise<Want[]>;
+  listWantsBy(buyerId: string): Promise<Want[]>;
+  getWant(id: string, buyerId: string): Promise<Want | null>;
+  saveWant(want: Want): Promise<Want>;
+  listWantOffers(wantId: string): Promise<WantOffer[]>;
+  saveWantOffer(offer: WantOffer): Promise<WantOffer>;
   listStoreReviews(subjectId: string): Promise<StoreReview[]>;
   saveStoreReview(review: StoreReview): Promise<StoreReview>;
   /** Both sides' reviews of one order — at most two, and usually fewer. */

@@ -3,7 +3,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User, Want, WantOffer,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
 import type { CosmosConfig } from '../config.js';
@@ -31,6 +31,8 @@ import {
   seedPosts,
   seedReviews,
   seedDisputes,
+  seedWants,
+  seedWantOffers,
   seedUsers,
 } from './seed.js';
 
@@ -437,6 +439,8 @@ export class CosmosRepository implements Repository {
       ['posts', seedPosts()],
       ['reviews', seedReviews()],
       ['disputes', seedDisputes()],
+      ['wants', seedWants()],
+      ['wantOffers', seedWantOffers()],
     ] as const;
 
     let added = 0;
@@ -549,6 +553,8 @@ export class CosmosRepository implements Repository {
       ['posts', seedPosts()],
       ['reviews', seedReviews()],
       ['disputes', seedDisputes()],
+      ['wants', seedWants()],
+      ['wantOffers', seedWantOffers()],
     ] as const) {
       for (const item of items) await this.container(name).items.upsert(item);
       written += items.length;
@@ -821,6 +827,73 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
+  async listOpenWants(options: { category?: string; limit?: number } = {}): Promise<Want[]> {
+    // Cross-partition, bounded, and filtered on the server rather than after:
+    // a seller scanning for demand reads the recent end of the board, and an
+    // expired hunt is one nobody is still hunting.
+    //
+    // One fixed query with the category always supplied rather than a WHERE
+    // clause built by concatenation. An assembled query cannot be read by the
+    // check that verifies every named parameter is actually passed, and losing
+    // that check is a worse trade than one redundant comparison: an empty
+    // category means "any", which the first half of the OR says outright.
+    const { resources } = await this.container('wants')
+      .items.query<Want>({
+        query:
+          "SELECT * FROM c WHERE c.status = 'open' AND c.expiresAt > @now" +
+          ' AND (@category = "" OR c.category = @category)' +
+          ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+        parameters: [
+          { name: '@now', value: new Date().toISOString() },
+          { name: '@category', value: options.category ?? '' },
+          { name: '@limit', value: options.limit ?? 50 },
+        ],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listWantsBy(buyerId: string): Promise<Want[]> {
+    const { resources } = await this.container('wants')
+      .items.query<Want>(
+        { query: 'SELECT * FROM c ORDER BY c.createdAt DESC' },
+        { partitionKey: buyerId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  async getWant(id: string, buyerId: string): Promise<Want | null> {
+    // Partitioned by the person who posted it, so reading one needs both -
+    // and the board hands the caller the pair.
+    try {
+      const { resource } = await this.container('wants').item(id, buyerId).read<Want>();
+      return resource ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveWant(want: Want): Promise<Want> {
+    const { resource } = await this.container('wants').items.upsert<Want>(want);
+    return resource!;
+  }
+
+  async listWantOffers(wantId: string): Promise<WantOffer[]> {
+    const { resources } = await this.container('wantOffers')
+      .items.query<WantOffer>(
+        { query: 'SELECT * FROM c ORDER BY c.createdAt DESC' },
+        { partitionKey: wantId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  async saveWantOffer(offer: WantOffer): Promise<WantOffer> {
+    const { resource } = await this.container('wantOffers').items.upsert<WantOffer>(offer);
+    return resource!;
   }
 
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {

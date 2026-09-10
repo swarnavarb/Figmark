@@ -837,6 +837,70 @@ export interface Post extends BaseDocument {
 }
 
 /**
+ * Somebody hunting for something nobody has listed.
+ *
+ * The other half of a marketplace, and the half that is usually silent. A
+ * buyer who cannot find what they want leaves, and takes with them the one
+ * piece of information a seller most needs: that there was demand. This turns
+ * that into something a seller can read and answer - which is why it lives in
+ * the social side rather than in search. Search tells you what exists; this
+ * tells you what people wish existed.
+ *
+ * It expires on purpose. A board of hunts nobody is still hunting is a board
+ * sellers stop opening.
+ */
+export interface Want extends BaseDocument {
+  /** Partition key: their own hunts read as one partition. */
+  buyerId: string;
+  /** Their name and address as they were when they posted it. */
+  buyerName: string;
+  buyerHandle: string | null;
+  title: string;
+  details: string;
+  category: string;
+  /**
+   * What they will pay, in minor units. Null means they have not said - which
+   * is a real answer for a rare piece and not the same as zero.
+   */
+  budgetMinor: number | null;
+  currency: string;
+  /** Null means any condition will do. */
+  condition: ConditionTag | null;
+  status: WantStatus;
+  /** Denormalised so the board can say how much interest there is. */
+  offerCount: number;
+  expiresAt: string;
+  /** Set when the buyer says they are done, and why. */
+  closedAt: string | null;
+}
+
+export type WantStatus = 'open' | 'closed';
+
+/**
+ * A seller's answer to a hunt.
+ *
+ * Either something they already have, or an offer to source it - the second is
+ * the whole point on an import marketplace, where most of what is wanted has
+ * not been bought yet by anybody.
+ *
+ * One per seller per hunt, replaced rather than added to. A board where a
+ * seller can answer ten times is a board that describes whoever had the most
+ * time.
+ */
+export interface WantOffer extends BaseDocument {
+  /** Partition key: a hunt and its answers are read together. */
+  wantId: string;
+  sellerId: string;
+  sellerName: string;
+  sellerHandle: string | null;
+  /** Something they already list, or null for "I can get this". */
+  listingId: string | null;
+  /** What they would charge. Null when they have only offered to look. */
+  priceMinor: number | null;
+  message: string;
+}
+
+/**
  * A shared room.
  *
  * Capped for now - see FORUM_CAP. The cap is the feature being deliberately

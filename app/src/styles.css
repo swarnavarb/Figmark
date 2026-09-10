@@ -1412,3 +1412,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* An announcement has to be pickable out of a room, not only out of a filter. */
 .bubble--announced { border-color: var(--accent-line); background: var(--accent-soft); }
 .bubble__head .badge { font-size: 9.5px; padding: 1px 6px; }
+
+/* ── The wanted board ───────────────────────────────────────────────────── */
+
+.want {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.want:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.want__main { display: grid; gap: 3px; min-width: 0; }
+.want__title { font-weight: 650; font-size: var(--t-sm); }
+.want__side { display: grid; gap: 4px; justify-items: end; flex: none; }
+.want__budget { font-size: var(--t-xs); font-weight: 650; white-space: nowrap; }
