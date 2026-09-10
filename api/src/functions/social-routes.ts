@@ -83,7 +83,10 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
 
   const channelIds = await myChannelIds(user.id, repository);
   const posts = await repository.listPostsForChannels(channelIds);
-  return json(200, { posts: await decorate(posts, repository) });
+  // Channel messages stay in their channel. A post written before the two were
+  // separate carries no reach and was a broadcast, so absent reads as 'feed'.
+  const broadcast = posts.filter((post) => (post.reach ?? 'feed') === 'feed');
+  return json(200, { posts: await decorate(broadcast, repository) });
 }
 
 /**
@@ -98,17 +101,29 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
 
   const followed = await repository.listFollowedSellerIds(user.id);
-  const sellers = await repository.listUsersByIds(followed);
+  // Your own shop is always here, whether or not you follow yourself, and
+  // whether or not it has ever been posted in: it is the one channel you write
+  // rather than read, so an empty one is a prompt, not an absence. Shops you
+  // help run count too - a manager posting for a shop needs its channel.
+  const mineToo = [...new Set([...followed, user.id])];
+  const candidates = await repository.listUsersByIds(mineToo);
+
+  // Only a shop has a channel. A person's page is where their own posts live;
+  // a channel is a shopfront's address book, and giving one to every account
+  // would fill this list with rooms nobody has any reason to open.
+  const shops = candidates.filter((account: User) => account.sellerProfile);
 
   const rows = await Promise.all(
-    sellers.map(async (seller: User) => {
+    shops.map(async (seller: User) => {
       const posts = await repository.listPosts(seller.id, 1);
       const latest = posts[0] ?? null;
       return {
         sellerId: seller.id,
         name: seller.sellerProfile?.storefrontName ?? seller.displayName,
+        handle: seller.sellerProfile?.username ?? seller.username ?? null,
         photoUrl: seller.sellerProfile?.photoUrl ?? null,
         tier: seller.sellerProfile?.tier ?? null,
+        mine: can(seller, user.id, 'posts'),
         lastPost: latest?.body ?? null,
         lastPostAt: latest?.createdAt ?? null,
         lastPostKind: latest?.kind ?? null,
@@ -116,14 +131,17 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
     }),
   );
 
-  rows.sort((a, b) => (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''));
+  // Yours on top, then whoever spoke most recently.
+  rows.sort(
+    (a, b) => Number(b.mine) - Number(a.mine) || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''),
+  );
   return json(200, { channels: rows });
 }
 
 /** GET /api/social/channels/{id} - one channel or forum, newest first. */
 async function channelThread(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  await auth.requireAuth(request);
+  const viewer = await auth.requireAuth(request);
   const channelId = request.params.id;
   if (!channelId) return error(400, 'invalid_channel', 'A channel id is required.');
 
@@ -132,15 +150,39 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
   const forum = await repository.getForum(channelId);
   const seller = forum ? null : await repository.getUserById(channelId);
 
+  if (!forum && !seller?.sellerProfile) {
+    return error(404, 'not_found', 'Only a shop has a channel.');
+  }
+
+  // Whoever may speak for the shop. A manager posting for it is the shop
+  // speaking, which is why this is a rights check rather than an id comparison.
+  const mine = Boolean(seller && can(seller, viewer.id, 'posts'));
+
+  // What the shop could put in front of its followers without leaving the
+  // channel to go and find it. Only for whoever runs it - nobody else has a
+  // reason to see an unsorted list of somebody's stock.
+  const shareable = mine
+    ? (await repository.listListings({ sellerId: channelId, limit: 8 })).map((listing) => ({
+        id: listing.id,
+        title: listing.title,
+        priceMinor: listing.priceMinor,
+        currency: listing.currency,
+      }))
+    : [];
+
   return json(200, {
     channel: forum
-      ? { id: forum.id, kind: 'forum' as const, name: forum.name, description: forum.description }
+      ? { id: forum.id, kind: 'forum' as const, name: forum.name, description: forum.description, mine: false }
       : {
           id: channelId,
           kind: 'seller' as const,
-          name: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'Unknown',
-          description: seller?.sellerProfile?.bio ?? '',
+          name: seller!.sellerProfile!.storefrontName,
+          handle: seller!.sellerProfile!.username ?? seller!.username ?? null,
+          description: seller!.sellerProfile!.bio ?? '',
+          photoUrl: seller!.sellerProfile!.photoUrl ?? null,
+          mine,
         },
+    shareable,
     posts: await decorate(posts, repository),
   });
 }
@@ -156,7 +198,11 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
 
-  let body: { body?: string; forumId?: string; listingId?: string; photoUrl?: string; storeId?: string };
+  let body: {
+    body?: string; forumId?: string; listingId?: string; photoUrl?: string; storeId?: string;
+    /** Somebody else's shop channel, which a follower may speak in. */
+    channelId?: string;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -188,12 +234,37 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     authorName = user.sellerProfile?.storefrontName ?? user.displayName;
   }
 
+  // Speaking in a shop's channel. Anybody may - that is the difference between
+  // a channel and a broadcast, and a shop that cannot be answered in its own
+  // room is a noticeboard. Whether it reads as the shop or as a customer is
+  // decided by rights, not by who typed it: a manager is the shop.
+  let voice: Post['voice'] = 'store';
+  let reach: Post['reach'] = 'feed';
+  if (body.channelId) {
+    const owner = await repository.getUserById(body.channelId);
+    if (!owner?.sellerProfile) return error(404, 'not_found', 'Only a shop has a channel.');
+    channelId = owner.id;
+    if (can(owner, user.id, 'posts')) {
+      authorName = owner.sellerProfile.storefrontName;
+      voice = 'store';
+    } else {
+      authorName = user.displayName;
+      voice = 'visitor';
+    }
+    // A channel message stays in the channel. That is the whole point of
+    // having one: somewhere to say "customs cleared, dispatching Tuesday"
+    // without it being an announcement to everybody's feed in the same breath.
+    reach = 'channel';
+  }
+
   if (body.forumId) {
     const forum = await repository.getForum(body.forumId);
     if (!forum) return error(404, 'not_found', 'No such forum.');
     channelId = forum.id;
     channel = 'forum';
     kind = 'thread';
+    voice = 'visitor';
+    reach = 'channel';
   }
 
   // A sale post has to point at an item this account actually sells.
@@ -201,11 +272,13 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   if (body.listingId) {
     const listing = await repository.getListing(body.listingId);
     // Belongs to whoever is being posted as, not to whoever is typing: a
-    // manager posts a store's items, not their own.
-    if (!listing || listing.sellerId !== channelId) {
+    // manager posts a store's items, not their own. And a visitor cannot
+    // advertise in somebody else's channel.
+    if (!listing || listing.sellerId !== channelId || voice === 'visitor') {
       return error(404, 'not_found', 'No such listing of yours to post about.');
     }
     listingId = listing.id;
+    kind = 'sale';
   }
 
   const now = new Date().toISOString();
@@ -221,6 +294,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     photoUrl: body.photoUrl?.trim() || null,
     likeCount: 0,
     replyCount: 0,
+    voice,
+    reach,
     createdAt: now,
     updatedAt: now,
   };

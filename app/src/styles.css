@@ -1329,3 +1329,72 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .personlink:active { opacity: 0.7; }
 /* One record rather than two: three cells, not four. */
 .credit--one { grid-template-columns: 1.2fr 1fr 1fr auto; }
+
+/* ── A shop's channel, read as a room ───────────────────────────────────── */
+
+.chanroom { display: flex; flex-direction: column; padding-bottom: 0; }
+.chanroom__head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  margin-bottom: 12px;
+}
+.chanroom__head h1 { margin: 0 0 2px; font-size: var(--t-lg); }
+/* The thread scrolls, the composer does not: the bar stays where a thumb
+   expects it while the conversation moves behind it. */
+.chanroom__thread {
+  display: grid; gap: 10px; align-content: start;
+  padding-bottom: 12px;
+}
+
+.bubble {
+  max-width: 82%; padding: 10px 12px; border-radius: var(--r-md);
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+/* The shop's word on one side, everyone else's on the other. Cheaper than
+   labelling every line with who is who. */
+.bubble--shop { justify-self: start; border-top-left-radius: 4px; }
+.bubble--visitor {
+  justify-self: end; border-top-right-radius: 4px;
+  background: var(--surface); border-color: var(--border-strong);
+}
+.bubble--mine { border-color: var(--accent-line, var(--accent)); }
+.bubble__head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.bubble__who { font-weight: 650; font-size: var(--t-xs); }
+.bubble__body { margin: 0; font-size: var(--t-sm); line-height: 1.5; white-space: pre-wrap; }
+.bubble__item {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 8px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg); text-decoration: none; color: inherit;
+}
+.bubble__item .thumb { width: 44px; height: 44px; flex: none; border-radius: var(--r-sm); }
+.bubble__itemname { display: block; font-size: var(--t-xs); font-weight: 650; }
+
+/* The bar you write from. Sits above the tab bar rather than under it. */
+.composer {
+  position: sticky; bottom: calc(var(--tabbar-h, 64px) + 8px); z-index: 5;
+  padding: 8px 0; background: var(--bg);
+}
+.composer__row { display: flex; align-items: flex-end; gap: 8px; }
+.composer__input {
+  /* A single line has to fit on one line: the placeholder wrapping inside a
+     one-row box clipped half of it. */
+  flex: 1; min-width: 0; resize: none; max-height: 120px; min-height: 40px;
+  padding: 10px 14px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  font: inherit; font-size: var(--t-sm); line-height: 1.4;
+}
+.composer__input:focus { outline: none; border-color: var(--border-strong); }
+.composer__attach, .composer__send {
+  flex: none; width: 40px; height: 40px; border-radius: 999px; border: 0; cursor: pointer;
+  font-size: 17px; line-height: 1;
+}
+.composer__attach { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.composer__send { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.composer__send:disabled { opacity: 0.45; cursor: not-allowed; }
+.composer__attached, .composer__pick {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 8px 10px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: inherit; font: inherit; font-size: var(--t-xs);
+  text-align: left; cursor: pointer;
+}
+.composer__picker { display: grid; gap: 0; max-height: 190px; overflow-y: auto; }

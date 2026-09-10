@@ -731,12 +731,140 @@ await check('the feed never carries someone you do not follow', async () => {
   }
 });
 
-await check('channels list one row per followed seller, newest first', async () => {
+await check('your own shop is first, then whoever spoke most recently', async () => {
   const body = (await channels(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(body.channels.length >= 2);
-  const times = body.channels.map((row) => row.lastPostAt ?? '');
-  assert.deepEqual(times, [...times].sort().reverse());
+
+  // Yours is the channel you write rather than read, so it does not wait its
+  // turn behind shops that happened to post today.
+  assert.equal(body.channels[0].mine, true);
+  assert.equal(body.channels[0].sellerId, 'usr_demo');
+
+  const rest = body.channels.filter((row) => !row.mine).map((row) => row.lastPostAt ?? '');
+  assert.deepEqual(rest, [...rest].sort().reverse(), 'the others are newest first');
   assert.ok(body.channels.every((row) => typeof row.name === 'string'));
+});
+
+await check('only a shop has a channel', async () => {
+  // A person's posts live on their page. Giving every account a channel fills
+  // this list with rooms nobody has a reason to open.
+  const buyer = await signup(req({
+    body: {
+      displayName: 'Channelless', email: 'nochannel@figmark.example',
+      phone: '+919000045801', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${buyer.jsonBody.token}` };
+
+  const body = (await channels(req({ headers: theirs }), ctx)).jsonBody;
+  assert.equal(body.channels.some((row) => row.sellerId === buyer.jsonBody.user.id), false);
+
+  const refused = await channelThread(req({ headers: theirs, params: { id: buyer.jsonBody.user.id } }), ctx);
+  assert.equal(refused.status, 404);
+});
+
+await check('a follower may speak in a shop\'s room, as themselves', async () => {
+  // A shop that cannot be answered in its own channel is a noticeboard, and
+  // the questions only end up in twenty separate private messages instead.
+  const visitor = await signup(req({
+    body: {
+      displayName: 'Curious Buyer', email: 'curious@figmark.example',
+      phone: '+919000045802', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${visitor.jsonBody.token}` };
+
+  const said = await createPost(req({
+    headers: theirs, body: { body: 'Is the September batch still open?', channelId: 'usr_kaiju' },
+  }), ctx);
+  assert.equal(said.status, 201);
+  assert.equal(said.jsonBody.post.channelId, 'usr_kaiju');
+  assert.equal(said.jsonBody.post.voice, 'visitor', 'a customer is not the shop');
+  assert.equal(said.jsonBody.post.authorName, 'Curious Buyer');
+});
+
+await check('the shop speaking in its own room speaks as the shop', async () => {
+  // Read the shop's name rather than writing it out: an earlier test renames
+  // the storefront, and hard-coding it here fails for a reason that has
+  // nothing to do with whose voice a channel post carries.
+  const shop = (await storefront(req({ headers: auth }), ctx)).jsonBody.storefront;
+
+  const said = await createPost(req({
+    headers: auth, body: { body: 'Customs cleared. Dispatching Tuesday.', channelId: 'usr_demo' },
+  }), ctx);
+  assert.equal(said.status, 201);
+  assert.equal(said.jsonBody.post.voice, 'store');
+  assert.equal(said.jsonBody.post.authorName, shop.storefrontName, 'the shop, not the person');
+  assert.notEqual(said.jsonBody.post.authorName, 'Arjun Mehta');
+});
+
+await check('a channel message stays in the channel', async () => {
+  // The whole point of having one: somewhere to say "customs cleared" without
+  // it being an announcement to everybody's feed in the same breath.
+  const before = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts.length;
+
+  const said = await createPost(req({
+    headers: auth, body: { body: 'Two units short on the mecha kits.', channelId: 'usr_demo' },
+  }), ctx);
+  assert.equal(said.jsonBody.post.reach, 'channel');
+
+  const after = (await socialFeed(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(after.posts.length, before, 'the feed did not grow');
+  assert.equal(after.posts.some((card) => card.post.id === said.jsonBody.post.id), false);
+
+  // But it is in the room, which is where it was said.
+  const room = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(room.posts.some((card) => card.post.id === said.jsonBody.post.id));
+});
+
+await check('posting from the feed still reaches followers', async () => {
+  const said = await createPost(req({
+    headers: auth, body: { body: 'New drop live now.', storeId: 'usr_demo' },
+  }), ctx);
+  assert.equal(said.jsonBody.post.reach ?? 'feed', 'feed');
+
+  const feedNow = (await socialFeed(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(feedNow.posts.some((card) => card.post.id === said.jsonBody.post.id));
+});
+
+await check('a visitor cannot advertise in somebody else\'s room', async () => {
+  const visitor = await signup(req({
+    body: {
+      displayName: 'Would Be Advertiser', email: 'advert@figmark.example',
+      phone: '+919000045803', password: 'longenough1',
+    },
+  }), ctx);
+  const refused = await createPost(req({
+    headers: { authorization: `Bearer ${visitor.jsonBody.token}` },
+    body: { body: 'Buy mine instead', channelId: 'usr_kaiju', listingId: 'lst_dragon_knight' },
+  }), ctx);
+  assert.equal(refused.status, 404);
+});
+
+await check("a shop can put one of its own items in its room", async () => {
+  const shared = await createPost(req({
+    headers: auth,
+    body: { body: 'Restocked.', channelId: 'usr_demo', listingId: 'lst_my_statue' },
+  }), ctx);
+  assert.equal(shared.status, 201);
+  assert.equal(shared.jsonBody.post.listingId, 'lst_my_statue');
+  assert.equal(shared.jsonBody.post.kind, 'sale');
+
+  // And it comes back with the item attached, ready to render.
+  const room = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  const card = room.posts.find((entry) => entry.post.id === shared.jsonBody.post.id);
+  assert.ok(card.listing, 'the item travels with the message');
+  assert.ok(card.listing.title);
+});
+
+await check('only whoever runs the shop is offered its items to share', async () => {
+  const mine = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.equal(mine.channel.mine, true);
+  assert.ok(mine.shareable.length > 0, 'my own stock is there to share');
+
+  const theirs = (await channelThread(req({ headers: auth, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  assert.equal(theirs.channel.mine, false);
+  assert.deepEqual(theirs.shareable, [], "nobody else's stock is listed for me");
 });
 
 await check('a channel thread is that channel and nothing else', async () => {

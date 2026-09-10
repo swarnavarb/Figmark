@@ -357,15 +357,29 @@ export interface PostCard {
 export interface ChannelRow {
   sellerId: string;
   name: string;
+  handle: string | null;
   photoUrl: string | null;
   tier: string | null;
+  /** Whether you may speak for this shop. Yours sorts to the top. */
+  mine: boolean;
   lastPost: string | null;
   lastPostAt: string | null;
   lastPostKind: string | null;
 }
 
 export interface ChannelThread {
-  channel: { id: string; kind: 'seller' | 'forum'; name: string; description: string };
+  channel: {
+    id: string;
+    kind: 'seller' | 'forum';
+    name: string;
+    description: string;
+    handle?: string | null;
+    photoUrl?: string | null;
+    /** Whether you may post as this shop rather than as a customer. */
+    mine: boolean;
+  };
+  /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
+  shareable: { id: string; title: string; priceMinor: number; currency: string }[];
   posts: PostCard[];
 }
 
@@ -664,7 +678,7 @@ export const api = {
   socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),
   channelThread: (id: string) => request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}`),
-  createPost: (body: { body: string; forumId?: string; listingId?: string; storeId?: string }) =>
+  createPost: (body: { body: string; forumId?: string; listingId?: string; storeId?: string; channelId?: string }) =>
     post<{ post: Post }>('/social/posts', body),
   forums: () => request<ForumsResponse>('/social/forums'),
   createForum: (body: { name: string; description?: string }) =>

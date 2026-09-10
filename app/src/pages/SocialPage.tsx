@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ApiRequestError,
@@ -9,7 +9,7 @@ import {
   type PostCard,
 } from '../api';
 import type { StoreAccess } from '@shared/stores';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { useSession } from '../session';
@@ -138,8 +138,9 @@ function Channels() {
   if (!rows) return <p className="muted">Loading…</p>;
   if (rows.length === 0) {
     return (
-      <EmptyState title="You are not following anyone yet">
-        Following a seller puts their channel here, so you can catch up one seller at a time.
+      <EmptyState title="No channels yet">
+        A channel belongs to a shop. Open one and yours appears here; follow a shop and theirs does
+        too.
       </EmptyState>
     );
   }
@@ -155,12 +156,15 @@ function Channels() {
           )}
           <div className="channel__body">
             <div className="channel__top">
-              <span className="channel__name">{row.name}</span>
+              <span className="channel__name">
+                {row.name}
+                {row.mine && <span className="badge badge--accent" style={{ marginLeft: 8 }}>yours</span>}
+              </span>
               <span className="faint">{row.lastPostAt ? timeAgo(row.lastPostAt) : ''}</span>
             </div>
             <span className="channel__last">
               {row.lastPostKind === 'sale' && '🏷️ '}
-              {row.lastPost ?? 'No posts yet'}
+              {row.lastPost ?? (row.mine ? 'Say something to your followers' : 'No posts yet')}
             </span>
           </div>
         </Link>
@@ -177,8 +181,11 @@ function Channels() {
  */
 export function ChannelPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useSession();
   const [data, setData] = useState<ChannelThread | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [show, setShow] = useState<'updates' | 'everything'>('updates');
+  const foot = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -196,30 +203,220 @@ export function ChannelPage() {
   if (error) return <main className="page"><ErrorNotice message={error} /></main>;
   if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
 
+  const isForum = data.channel.kind === 'forum';
+  // Oldest first: a channel is read like a conversation, not like a feed. The
+  // newest thing is at the bottom, above where you type.
+  const ordered = [...data.posts].reverse();
+  const shown = isForum || show === 'everything'
+    ? ordered
+    : ordered.filter((card) => (card.post.voice ?? 'store') === 'store');
+
   return (
-    <main className="page tab-view">
-      <Link to="/social" className="btn btn--quiet" style={{ marginBottom: 16 }}>
+    <main className="page chanroom">
+      <Link to="/social" className="btn btn--quiet" style={{ marginBottom: 12 }}>
         <Icon name="back" size={14} /> Social
       </Link>
 
-      <div className="page__head">
-        <div>
+      <header className="chanroom__head">
+        <div style={{ minWidth: 0 }}>
           <h1>{data.channel.name}</h1>
-          <p className="muted">{data.channel.description || 'No description'}</p>
+          <p className="muted" style={{ margin: 0 }}>
+            {data.channel.mine
+              ? 'Your channel. Everyone who follows the shop reads this.'
+              : data.channel.description || 'No description'}
+          </p>
         </div>
-      </div>
+        {data.channel.handle && (
+          <Link to={`/${data.channel.handle}`} className="btn btn--ghost btn--sm">Shop</Link>
+        )}
+      </header>
 
-      <div className="stack" style={{ marginTop: 16 }}>
-        {data.channel.kind === 'forum' && <Composer forumId={data.channel.id} onPosted={load} />}
-        {data.posts.length === 0 ? (
-          <EmptyState title="Nothing posted here yet">
-            {data.channel.kind === 'forum' ? 'Start it off.' : 'This seller has not posted yet.'}
+      {/* Two ways to read a shop's room: what the shop said, or the whole
+          conversation with it. The first is the announcement board and the one
+          most people want; the second is everything, including customers. */}
+      {!isForum && (
+        <div className="chips chips--tight">
+          {([
+            ['updates', 'From the shop'],
+            ['everything', 'Everything'],
+          ] as const).map(([key, label]) => (
+            <button key={key} type="button" className={`chip${show === key ? ' is-on' : ''}`}
+              onClick={() => setShow(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="chanroom__thread">
+        {shown.length === 0 ? (
+          <EmptyState title={data.channel.mine ? 'Nothing said here yet' : 'Nothing posted here yet'}>
+            {data.channel.mine
+              ? 'This is where you tell the people who follow you what is happening — a batch closing, customs cleared, a delay. It stays here rather than going to everyone\'s feed.'
+              : isForum
+                ? 'Start it off.'
+                : show === 'updates'
+                  ? 'This shop has not posted an update. Try Everything.'
+                  : 'Nobody has said anything here yet.'}
           </EmptyState>
         ) : (
-          data.posts.map((card) => <PostView key={card.post.id} card={card} />)
+          shown.map((card) => (
+            <ChannelMessage key={card.post.id} card={card} mine={card.post.authorId === user?.id} />
+          ))
         )}
+        <div ref={foot} />
       </div>
+
+      {/* Anybody may speak in a shop's room. A shop that cannot be answered in
+          its own channel is a noticeboard, and the questions would only end up
+          in twenty separate private messages instead. */}
+      <ChannelComposer
+        channelId={data.channel.id}
+        isForum={isForum}
+        asShop={data.channel.mine}
+        shareable={data.shareable}
+        onPosted={async () => {
+          await load();
+          foot.current?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
     </main>
+  );
+}
+
+/**
+ * One message in a shop's room.
+ *
+ * The shop's own messages and a customer's read differently because they are
+ * different things: one is the announcement, the other is somebody talking back
+ * to it. Aligning them opposite each other is the cheapest way to say so
+ * without labelling every line.
+ */
+function ChannelMessage({ card, mine }: { card: PostCard; mine: boolean }) {
+  const { post, listing, author } = card;
+  const fromShop = (post.voice ?? 'store') === 'store';
+
+  return (
+    <div className={`bubble${fromShop ? ' bubble--shop' : ' bubble--visitor'}${mine ? ' bubble--mine' : ''}`}>
+      <div className="bubble__head">
+        <PersonLink party={author} className="bubble__who">{post.authorName}</PersonLink>
+        <span className="faint">{timeAgo(post.createdAt)}</span>
+      </div>
+      <p className="bubble__body">{post.body}</p>
+      {listing && (
+        <Link to={`/listing/${listing.id}`} className="bubble__item">
+          <Thumb seed={listing.id} label={listing.title} />
+          <div style={{ minWidth: 0 }}>
+            <span className="bubble__itemname">{listing.title}</span>
+            <span className="faint">{formatMoney(listing.priceMinor, listing.currency)}</span>
+          </div>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The bar at the bottom, which is where a room is written from.
+ *
+ * A message box pinned to the foot rather than a form at the top, because that
+ * is what everybody already knows a room to be — and because the thing you
+ * came to say is usually a sentence, not a composition.
+ */
+function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
+  channelId: string;
+  isForum: boolean;
+  asShop: boolean;
+  shareable: ChannelThread['shareable'];
+  onPosted: () => void | Promise<void>;
+}) {
+  const [text, setText] = useState('');
+  const [listingId, setListingId] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const attached = shareable.find((entry) => entry.id === listingId) ?? null;
+
+  async function send() {
+    const body = text.trim();
+    if (!body) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.createPost({
+        body,
+        ...(isForum ? { forumId: channelId } : { channelId }),
+        ...(listingId ? { listingId } : {}),
+      });
+      setText('');
+      setListingId(null);
+      await onPosted();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not post that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="composer">
+      {error && <p className="notice notice--error" style={{ margin: '0 0 8px' }}>{error}</p>}
+
+      {attached && (
+        <div className="composer__attached">
+          <span style={{ minWidth: 0 }}>{attached.title}</span>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setListingId(null)}>
+            Remove
+          </button>
+        </div>
+      )}
+
+      {picking && (
+        <div className="composer__picker">
+          {shareable.length === 0 ? (
+            <p className="faint" style={{ margin: 0 }}>Nothing listed to share yet.</p>
+          ) : (
+            shareable.map((entry) => (
+              <button key={entry.id} type="button" className="composer__pick"
+                onClick={() => { setListingId(entry.id); setPicking(false); }}>
+                <span style={{ minWidth: 0 }}>{entry.title}</span>
+                <span className="faint">{formatMoney(entry.priceMinor, entry.currency)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+
+      <div className="composer__row">
+        {/* Only a shop advertises in its own room. A customer attaching a
+            listing here would be advertising in somebody else's shop. */}
+        {asShop && !isForum && (
+          <button type="button" className="composer__attach" aria-label="Share one of your items"
+            onClick={() => setPicking(!picking)}>
+            🏷️
+          </button>
+        )}
+        <textarea
+          className="composer__input"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter sends, Shift+Enter breaks the line, as everywhere else.
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              void send();
+            }
+          }}
+          rows={1}
+          placeholder={asShop ? 'Message followers…' : 'Say something…'}
+        />
+        <button type="button" className="composer__send" disabled={busy || !text.trim()}
+          aria-label="Send" onClick={() => void send()}>
+          {busy ? '…' : '↑'}
+        </button>
+      </div>
+    </div>
   );
 }
 

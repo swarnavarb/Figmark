@@ -776,6 +776,12 @@ export type PostChannel = 'seller' | 'forum';
 /** What a post is, which decides how it renders rather than where it lives. */
 export type PostKind = 'update' | 'sale' | 'thread';
 
+/** Who is speaking in a shop's channel: the shop, or somebody who follows it. */
+export type PostVoice = 'store' | 'visitor';
+
+/** Whether a post broadcasts to followers' feeds or stays in the channel. */
+export type PostReach = 'feed' | 'channel';
+
 export interface Post extends BaseDocument {
   /**
    * Partition key: the seller id for a channel post, the forum id for a forum
@@ -793,6 +799,27 @@ export interface Post extends BaseDocument {
   photoUrl: string | null;
   likeCount: number;
   replyCount: number;
+  /**
+   * Who is speaking in a shop's channel.
+   *
+   * A channel belongs to one shop and everybody else in it is a customer, so
+   * the two read differently and are filtered apart. Stored rather than derived
+   * from the author id, because a manager posting for the shop is the shop
+   * speaking, and their own id would say otherwise. Absent on posts written
+   * before channels had two voices - those were all the shop's.
+   */
+  voice?: PostVoice;
+  /**
+   * How far this goes.
+   *
+   * 'feed' reaches everyone who follows, on their feed. 'channel' stays in the
+   * channel for whoever opens it. The distinction is the point of having a
+   * channel at all: a shop needs somewhere to say "customs cleared, dispatching
+   * Tuesday" without it being an announcement in the same breath as a new
+   * listing. Absent means 'feed' - everything written before this existed was
+   * a broadcast.
+   */
+  reach?: PostReach;
 }
 
 /**
