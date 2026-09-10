@@ -478,11 +478,7 @@ function ReviewsTab({ profile, trade, listed, page, canWrite, onWritten }: {
               <article key={review.id} className="review">
                 <div className="review__head">
                   <span className="review__who">
-                    {review.authorHandle ? (
-                      <Link to={`/${review.authorHandle}`}>{review.authorName}</Link>
-                    ) : (
-                      review.authorName
-                    )}
+                    <PersonLink party={{ name: review.authorName, handle: review.authorHandle }} />
                     {review.mine && <span className="badge" style={{ marginLeft: 8 }}>yours</span>}
                   </span>
                   <span className="faint">{timeAgo(review.createdAt)}</span>
