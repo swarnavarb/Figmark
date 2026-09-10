@@ -5,7 +5,7 @@ import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/conta
 import type {
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User,
 } from '../../../shared/models.js';
-import { handleKey } from '../../../shared/handles.js';
+import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -231,6 +231,74 @@ export class CosmosRepository implements Repository {
   }
 
   /**
+   * Gives a handle to any account that has none.
+   *
+   * A row written before handles existed carries no username, and nothing
+   * backfills one - the fixture top-up only ever adds whole rows and leaves
+   * existing ones untouched, which is the right rule and the reason this gap
+   * stayed open. The effect is an account with no address: it cannot be linked
+   * to, `/<username>` has nothing to resolve, and every mention of that person
+   * anywhere in the app renders as plain text because there is nowhere to send
+   * the reader.
+   *
+   * Only an absent handle is filled. A handle somebody already has is theirs,
+   * and a name they chose is not ours to change.
+   */
+  private async backfillHandles(): Promise<string> {
+    const users = await this.listAllUsers();
+    // Handle reservations share the identifiers container with sign-in
+    // identifiers - one namespace, one uniqueness guarantee - so what is
+    // already claimed is exactly what is in there.
+    const claimed = await this.existingIds('identifiers');
+
+    let given = 0;
+    for (const user of users) {
+      const wantsPersonal = !user.username;
+      const wantsStore = Boolean(user.sellerProfile) && !user.sellerProfile!.username;
+      if (!wantsPersonal && !wantsStore) continue;
+
+      if (wantsPersonal) {
+        const handle = await this.freeHandle(suggestUsername(nameFor(user)), claimed);
+        if (handle && (await this.reserveHandle(handle, user.id, false))) {
+          user.username = handle;
+          claimed.add(handleKey(handle));
+          given += 1;
+        }
+      }
+      if (wantsStore) {
+        const shop = user.sellerProfile!;
+        const handle = await this.freeHandle(suggestUsername(shop.storefrontName || nameFor(user)), claimed);
+        if (handle && (await this.reserveHandle(handle, user.id, true))) {
+          shop.username = handle;
+          claimed.add(handleKey(handle));
+          given += 1;
+        }
+      }
+
+      user.updatedAt = new Date().toISOString();
+      await this.updateUser(user);
+    }
+
+    return given === 0 ? '' : ` Gave ${given} handle(s) to accounts that had none.`;
+  }
+
+  /**
+   * The wanted handle, or the first numbered variant nobody holds.
+   *
+   * Two shops called "Kaiju Imports" cannot both be at /kaiju_imports, and the
+   * second one silently getting no handle at all is worse than it getting
+   * kaiju_imports2.
+   */
+  private async freeHandle(wanted: string, claimed: Set<string>): Promise<string | null> {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const candidate = attempt === 0 ? wanted : `${wanted}${attempt + 1}`;
+      if (checkUsername(candidate)) continue;
+      if (!claimed.has(handleKey(candidate))) return candidate;
+    }
+    return null;
+  }
+
+  /**
    * Waits for the background fixture pass, if one is running.
    *
    * Only the tests call this: a request that waited for maintenance would be
@@ -255,7 +323,10 @@ export class CosmosRepository implements Repository {
       // than queue: the repair reads users and identifiers, the top-up reads
       // the nine containers that hold fixtures.
       const [repaired, toppedUp] = await Promise.all([this.repair(), this.topUpFixtures()]);
-      outcome = `${repaired}${toppedUp}` || ' Fixtures were already up to date.';
+      // After the rows are in place, so anything the top-up just added is
+      // considered too.
+      const handles = await this.backfillHandles();
+      outcome = `${repaired}${toppedUp}${handles}` || ' Fixtures were already up to date.';
     } catch (error) {
       outcome = ` Preparing the database failed: ${describeError(error)}.`;
     }
@@ -1183,6 +1254,18 @@ function isConflict(error: unknown): boolean {
 
 function isNotFound(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: number }).code === 404;
+}
+
+/**
+ * Something to build a handle from, for a row that may be missing pieces.
+ *
+ * A partial row is a fact of any database that has been running a while, and a
+ * maintenance pass that throws on one leaves every later row unrepaired. The
+ * email's local part, then the id, are both worse than a display name and both
+ * better than nothing.
+ */
+function nameFor(user: { displayName?: string; email?: string; id: string }): string {
+  return user.displayName?.trim() || user.email?.split('@')[0] || user.id.replace(/^usr_/, '');
 }
 
 function describeError(error: unknown): string {

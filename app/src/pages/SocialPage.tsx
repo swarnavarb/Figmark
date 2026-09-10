@@ -17,7 +17,7 @@ import { useSession } from '../session';
 type View = 'feed' | 'channels' | 'forums' | 'messages';
 
 const VIEWS: { id: View; label: string; glyph: string; hint: string }[] = [
-  { id: 'feed', label: 'Following', glyph: '✳️', hint: 'Everything from the people you follow' },
+  { id: 'feed', label: 'Feed', glyph: '✳️', hint: 'Everything from the people and shops you follow' },
   { id: 'channels', label: 'Channels', glyph: '💬', hint: 'One thread per seller' },
   { id: 'forums', label: 'Forums', glyph: '🏛️', hint: 'Shared rooms' },
   { id: 'messages', label: 'Messages', glyph: '✉️', hint: 'Talk to anyone with a username' },
@@ -70,9 +70,15 @@ export function SocialPage() {
   );
 }
 
-/* ── Following ──────────────────────────────────────────────────────────── */
+/* ── Feed ───────────────────────────────────────────────────────────────── */
 
-/** Everything from everyone you follow, newest first, sale posts included. */
+/**
+ * Everything from everyone you follow, newest first, sale posts included.
+ *
+ * People and shops both land here. An account can post as either, and which
+ * voice it used decides whose page the name opens — but the feed does not care
+ * which it was: what you follow is what you see.
+ */
 function FollowingFeed() {
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);

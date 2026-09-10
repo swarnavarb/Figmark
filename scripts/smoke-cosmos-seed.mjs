@@ -353,6 +353,83 @@ await check('an empty database is filled before it serves anybody', async () => 
   assert.equal(fresh.status().signInAccounts, fresh.listDemoAccounts().length);
 });
 
+await check('an account written before handles existed is given one', async () => {
+  // The gap that made every mention of somebody render as plain text on the
+  // deployed site: a row from before handles carries no username, nothing
+  // backfills one, and an account with no address cannot be linked to from
+  // anywhere. The fixture top-up correctly refuses to touch existing rows, so
+  // it was never going to close this.
+  const containers = provisioned();
+  const seeded = repositoryOn(containers);
+  await seeded.init();
+  await seeded.settled();
+
+  // Strip the handles off two rows, the way an older seed left them.
+  const users = containers.get('users');
+  const kaiju = users.get('usr_kaiju');
+  delete kaiju.username;
+  delete kaiju.sellerProfile.username;
+  users.set('usr_kaiju', kaiju);
+
+  const restarted = repositoryOn(containers);
+  await restarted.init();
+  await restarted.settled();
+
+  const fixed = containers.get('users').get('usr_kaiju');
+  assert.ok(fixed.username, 'the person has an address again');
+  assert.ok(fixed.sellerProfile.username, 'and so does their shop');
+  // Reachable, not merely present: the handle resolves.
+  assert.equal((await restarted.getByHandle(fixed.username)).user.id, 'usr_kaiju');
+  assert.equal((await restarted.getByHandle(fixed.sellerProfile.username)).isStore, true);
+  assert.match(restarted.status().detail, /Gave \d+ handle/);
+});
+
+await check('a handle somebody already chose is left alone', async () => {
+  // Only an absent handle is filled. A name they picked is not ours to change.
+  const containers = provisioned();
+  const seeded = repositoryOn(containers);
+  await seeded.init();
+  await seeded.settled();
+
+  const before = containers.get('users').get('usr_kaiju').sellerProfile.username;
+
+  const restarted = repositoryOn(containers);
+  await restarted.init();
+  await restarted.settled();
+
+  assert.equal(containers.get('users').get('usr_kaiju').sellerProfile.username, before);
+  assert.doesNotMatch(restarted.status().detail, /Gave \d+ handle/);
+});
+
+await check('two shops of the same name do not both get the same address', async () => {
+  const containers = provisioned();
+  const seeded = repositoryOn(containers);
+  await seeded.init();
+  await seeded.settled();
+
+  const users = containers.get('users');
+  // Two handle-less rows that would both want the same one.
+  for (const id of ['usr_twin_a', 'usr_twin_b']) {
+    users.set(id, {
+      id, email: `${id}@example.com`, phone: null, displayName: 'Same Name Shop',
+      passwordHash: null, isAdmin: false, suspended: false,
+      verification: {}, buyerTrust: {}, sellerTrust: {},
+      sellerProfile: { storefrontName: 'Same Name Shop', bio: '', tier: 'unverified' },
+      forwarderProfile: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+  }
+
+  const restarted = repositoryOn(containers);
+  await restarted.init();
+  await restarted.settled();
+
+  const a = users.get('usr_twin_a');
+  const b = users.get('usr_twin_b');
+  assert.ok(a.username && b.username, 'both are addressable');
+  assert.notEqual(a.username, b.username, 'and not at the same address');
+  assert.notEqual(a.sellerProfile.username, b.sellerProfile.username);
+});
+
 await check('a database of real accounts is never topped up with fixtures', async () => {
   // `usr_demo` is a fixture id. Without it this is somebody's real database,
   // and writing our demo accounts into it would be indefensible.
