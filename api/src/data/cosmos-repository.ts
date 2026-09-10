@@ -151,7 +151,14 @@ export class CosmosRepository implements Repository {
     let seeded = '';
     if (autoSeedEnabled()) {
       try {
-        seeded = signInAccounts === 0 ? await this.fill() : await this.repair();
+        if (signInAccounts === 0) {
+          seeded = await this.fill();
+        } else {
+          // Repair what is broken, then add what is simply not there yet: a
+          // database seeded by an older release keeps serving that release
+          // until somebody notices the data never moved with the code.
+          seeded = (await this.repair()) + (await this.topUpFixtures());
+        }
         signInAccounts = await this.countSignInAccounts();
       } catch (error) {
         seeded = ` Preparing the database failed: ${describeError(error)}.`;
@@ -263,6 +270,66 @@ export class CosmosRepository implements Repository {
     }
 
     return ` Restored ${repaired.length} missing identifier reservation(s), without which those accounts could not be signed into.`;
+  }
+
+  /**
+   * Adds fixture rows a later release introduced and this database never got.
+   *
+   * The seed only ran on an empty database, so a deployment seeded once and
+   * then updated kept whatever it had on day one: every account, order and
+   * fixture added afterwards was in the code and absent from the data, and the
+   * site quietly showed an older product than the one that was deployed. Three
+   * releases of escrows, reviews and disputes landed that way and none of them
+   * were visible.
+   *
+   * Only ever adds. A row already there is left exactly as it is, because by
+   * then it may carry real use — somebody's order state is not ours to reset.
+   * And only on a database that is demonstrably one of ours: `usr_demo` is a
+   * fixture id, so a database of real accounts never reaches this at all.
+   */
+  private async topUpFixtures(): Promise<string> {
+    if (!(await this.getUserById('usr_demo'))) return '';
+
+    let added = 0;
+    /** Creates when absent; a conflict means it is already there, which is fine. */
+    const addIfAbsent = async (container: keyof typeof CONTAINERS, item: { id: string }) => {
+      try {
+        await this.container(container).items.create(item);
+        added += 1;
+        return true;
+      } catch (error) {
+        if ((error as { code?: number }).code === 409) return false;
+        throw error;
+      }
+    };
+
+    for (const user of [...seedUsers(), ...seedLotBuyers()]) {
+      if (!(await addIfAbsent('users', user))) continue;
+      // A new fixture account needs the reservations sign-in and `/<username>`
+      // resolve through, or it exists and cannot be reached.
+      for (const identifier of identifiersOf(user)) {
+        await addIfAbsent('identifiers', { id: identifier, userId: user.id } as { id: string });
+      }
+      for (const [handle, isStore] of [[user.username, false], [user.sellerProfile?.username, true]] as const) {
+        if (!handle) continue;
+        await addIfAbsent('identifiers', { id: handleKey(handle), userId: user.id, isStore } as { id: string });
+      }
+    }
+
+    for (const [name, items] of [
+      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot()]],
+      ['listings', seedListings()],
+      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders()]],
+      ['comments', seedComments()],
+      ['forums', seedForums()],
+      ['posts', seedPosts()],
+      ['reviews', seedReviews()],
+      ['disputes', seedDisputes()],
+    ] as const) {
+      for (const item of items) await addIfAbsent(name, item);
+    }
+
+    return added === 0 ? '' : ` Added ${added} fixture record(s) this database did not have yet.`;
   }
 
   private async readReservation(identifier: string): Promise<IdentifierReservation | null> {

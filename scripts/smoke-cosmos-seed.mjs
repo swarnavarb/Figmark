@@ -228,6 +228,58 @@ await check('a real account missing its reservation is restored, and nothing els
   assert.match(fixed.status().detail, /Restored 1 missing identifier reservation/);
 });
 
+console.log('\na database seeded by an older release');
+
+await check('gains the fixtures a later release added, and keeps what it had', async () => {
+  // The failure this exists to prevent: the seed only ran on an empty
+  // database, so a deployment seeded once and then updated kept day-one data
+  // forever. Three releases of escrows, reviews and disputes were in the code
+  // and absent from the site, and nothing said so.
+  const containers = provisioned();
+  const repository = repositoryOn(containers);
+  await repository.init();
+
+  // Stand in for an older seed: drop the fixtures a later release introduced,
+  // and put real use onto one of the rows that stayed.
+  const users = containers.get('users');
+  const orders = containers.get('orders');
+  users.delete('usr_escrow_meera');
+  orders.delete('ord_1005');
+  const touched = orders.get('ord_1001');
+  touched.itemName = 'Renamed by somebody using the site';
+  orders.set('ord_1001', touched);
+
+  const updated = repositoryOn(containers);
+  await updated.init();
+
+  assert.ok(users.has('usr_escrow_meera'), 'the new account arrives');
+  assert.ok(orders.has('ord_1005'), 'and the new order with it');
+  assert.match(updated.status().detail, /Added \d+ fixture record/);
+
+  // A row already there is left exactly as it is: by then it may carry real
+  // use, and somebody's order state is not ours to reset.
+  assert.equal(orders.get('ord_1001').itemName, 'Renamed by somebody using the site');
+
+  // And the new account is reachable, not merely present.
+  assert.ok(containers.get('identifiers').has('meera@figmark.in'));
+  assert.equal((await updated.getUserByIdentifier('meera@figmark.in')).id, 'usr_escrow_meera');
+});
+
+await check('a database of real accounts is never topped up with fixtures', async () => {
+  // `usr_demo` is a fixture id. Without it this is somebody's real database,
+  // and writing our demo accounts into it would be indefensible.
+  const real = provisioned();
+  real.set('users', new Map([['usr_real', { id: 'usr_real', email: 'someone@example.com', passwordHash: 'x:y' }]]));
+  real.set('identifiers', new Map([['someone@example.com', { id: 'someone@example.com', userId: 'usr_real' }]]));
+
+  const repository = repositoryOn(real);
+  await repository.init();
+
+  assert.equal(real.get('users').size, 1, 'nothing was added');
+  assert.equal(real.get('listings').size, 0);
+  assert.equal(/Added \d+ fixture record/.test(repository.status().detail), false);
+});
+
 console.log('\na database provisioned before a container existed');
 
 await check('creates what the schema declares and the database lacks', async () => {
