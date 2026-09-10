@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import {
+  DISPUTE_OUTCOMES,
   DISPUTE_REASONS,
   type DisputeOutcome,
   type DisputeReason,
@@ -42,11 +43,18 @@ import { error, handler, json } from './http.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
-/** The dispute and its order, or the refusal. Only the two parties may look. */
+/**
+ * The dispute and its order, or the refusal.
+ *
+ * Three parties may look: the two sides, and the escrow holding the money. The
+ * escrow is not a spectator — they are the person who has to decide, and they
+ * cannot decide on an argument they are not allowed to read.
+ */
 async function ownDispute(
   request: HttpRequest,
   repository: Repo,
   viewerId: string,
+  { asEscrow = false } = {},
 ): Promise<{ dispute: Dispute; order: Order } | { refusal: ReturnType<typeof error> }> {
   const id = request.params.id;
   if (!id) return { refusal: error(400, 'invalid_request', 'A dispute id is required.') };
@@ -56,7 +64,10 @@ async function ownDispute(
 
   const order = await repository.getOrder(dispute.orderId);
   if (!order) return { refusal: error(404, 'not_found', 'That dispute has no order behind it.') };
-  if (!sideOf(order, viewerId)) {
+
+  const party = sideOf(order, viewerId) !== null;
+  const holding = order.protection?.escrowAgentId === viewerId;
+  if (!party && !(asEscrow && holding)) {
     return { refusal: error(403, 'forbidden', 'That dispute is not yours.') };
   }
   return { dispute, order };
@@ -462,7 +473,126 @@ async function escalate(request: HttpRequest, _context: InvocationContext) {
   return json(200, { dispute: await repository.updateDispute(dispute) });
 }
 
+/**
+ * POST /api/disputes/{id}/settle - the escrow decides.
+ *
+ * The reason a buyer chose this person rather than another. They hold the money
+ * and they end the argument over it, so this is theirs and not the company's -
+ * the company keeps its own route as a backstop for when the escrow itself is
+ * the problem.
+ *
+ * They cannot settle before the two sides have had a chance to do it themselves:
+ * an escrow that rules the moment a dispute opens is a worse version of the
+ * conversation it interrupted.
+ */
+async function settleAsEscrow(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownDispute(request, repository, user.id, { asEscrow: true });
+  if ('refusal' in found) return found.refusal;
+  const { dispute, order } = found;
+
+  if (order.protection?.escrowAgentId !== user.id) {
+    return error(403, 'forbidden', 'You are not the escrow on this order.');
+  }
+  if (dispute.resolvedAt) return error(409, 'already_resolved', 'That dispute is already settled.');
+  if (dispute.status !== 'under_mediation' && !responseOverdue(dispute)) {
+    return error(
+      409,
+      'too_early',
+      'Let the two of them try to settle it first, or wait for the response window to run out.',
+    );
+  }
+
+  let body: { outcome?: string; refundMinor?: number; note?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const outcome = body.outcome as DisputeOutcome | undefined;
+  if (!outcome || outcome === 'withdrawn' || !DISPUTE_OUTCOMES.includes(outcome)) {
+    return error(400, 'invalid_outcome', 'Say how it was decided.');
+  }
+  const noteText = (body.note ?? '').trim();
+  if (!noteText) return error(400, 'invalid_outcome', 'Write the reasoning. Both parties read it.');
+
+  const refundMinor = Math.round(Number(body.refundMinor ?? 0));
+  if (outcome === 'split' && (!Number.isFinite(refundMinor) || refundMinor <= 0 || refundMinor >= order.escrow.amountMinor)) {
+    return error(400, 'invalid_outcome', 'A split is between nothing and the full amount held.');
+  }
+
+  // Recorded as the escrow's, not the company's: the parties chose this person,
+  // and the record should say it was them who decided.
+  const settled = await settleDispute(
+    dispute, order, outcome, refundMinor, noteText, user.id, false, repository,
+  );
+  return json(200, settled);
+}
+
+/**
+ * GET /api/escrow/holdings - what this escrow is holding, and what needs them.
+ *
+ * Their whole job on one screen: the money in their name, and the arguments
+ * waiting on a decision.
+ */
+async function holdings(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const me = await repository.getUserById(user.id);
+  if (!me?.escrowRights) {
+    return error(403, 'not_an_escrow', 'You are not approved to hold payments.');
+  }
+
+  // Held or contested, both sides of the ledger. Bounded by what one person is
+  // holding, which is the size that makes a scan the right answer.
+  const all = await repository.listOrdersHeldBy(user.id);
+  const rows = await Promise.all(
+    all.map(async (order) => {
+      const [buyer, seller] = await Promise.all([
+        repository.getUserById(order.buyerId),
+        repository.getUserById(order.sellerId),
+      ]);
+      const dispute = order.escrow.disputeId
+        ? await repository.getDisputeById(order.escrow.disputeId)
+        : null;
+      return {
+        order: {
+          id: order.id, itemName: order.itemName, currency: order.currency,
+          lotId: order.lotId, status: order.status,
+          escrow: order.escrow, protection: order.protection ?? null,
+        },
+        buyerName: buyer?.displayName ?? 'the buyer',
+        sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'the seller',
+        dispute,
+        // Theirs to decide only once the two of them have had their go.
+        decidable: Boolean(
+          dispute && !dispute.resolvedAt &&
+          (dispute.status === 'under_mediation' || responseOverdue(dispute)),
+        ),
+      };
+    }),
+  );
+
+  const heldMinor = rows
+    .filter((row) => row.order.escrow.state === 'held' || row.order.escrow.state === 'disputed')
+    .reduce((sum, row) => sum + row.order.escrow.amountMinor, 0);
+
+  return json(200, {
+    rights: me.escrowRights,
+    heldMinor,
+    holdings: rows.sort((a, b) => Number(Boolean(b.dispute)) - Number(Boolean(a.dispute))),
+  });
+}
+
 export const openDisputeRoute = handler(open);
+export const settleAsEscrowRoute = handler(settleAsEscrow);
+export const escrowHoldingsRoute = handler(holdings);
 export const readDisputeRoute = handler(read);
 export const replyDisputeRoute = handler(reply);
 export const offerDisputeRoute = handler(offer);
@@ -479,3 +609,5 @@ app.http('dispute-offer', { ...anon, methods: ['POST'], route: 'disputes/{id}/of
 app.http('dispute-accept', { ...anon, methods: ['POST'], route: 'disputes/{id}/accept', handler: acceptDisputeRoute });
 app.http('dispute-withdraw', { ...anon, methods: ['POST'], route: 'disputes/{id}/withdraw', handler: withdrawDisputeRoute });
 app.http('dispute-escalate', { ...anon, methods: ['POST'], route: 'disputes/{id}/escalate', handler: escalateDisputeRoute });
+app.http('dispute-settle', { ...anon, methods: ['POST'], route: 'disputes/{id}/settle', handler: settleAsEscrowRoute });
+app.http('escrow-holdings', { ...anon, methods: ['GET'], route: 'escrow/holdings', handler: escrowHoldingsRoute });

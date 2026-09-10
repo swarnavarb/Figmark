@@ -83,7 +83,7 @@ export const admin = {
     post<{ deleted: Record<string, unknown> }>(`/admin/users/${encodeURIComponent(id)}/delete`),
   deleteResource: (kind: string, id: string, ownerId: string) =>
     post<{ deleted: Record<string, unknown> }>('/admin/resources/delete', { kind, id, ownerId }),
-  setEscrow: (id: string, body: { enabled: boolean; feeBasisPoints?: number; note?: string }) =>
+  setEscrow: (id: string, body: { enabled: boolean; feeBasisPoints?: number; displayName?: string; note?: string }) =>
     post<{ user: AdminUserRow }>(`/admin/users/${encodeURIComponent(id)}/escrow`, body),
 
   disputes: () => request<{ disputes: AdminDisputeRow[] }>('/admin/disputes'),

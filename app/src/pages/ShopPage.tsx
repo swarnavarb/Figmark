@@ -91,6 +91,7 @@ export function ShopPage() {
  * rather than offering a shortcut that ends in an error.
  */
 function ShopStart({ onOpen }: { onOpen: () => void }) {
+  const { user } = useSession();
   return (
     <main className="page tab-view">
       <div className="page__head">
@@ -111,6 +112,18 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
         </button>
       </div>
 
+      {/* Somebody may hold money for other people's trades without selling a
+          thing themselves, and their console has to be reachable. */}
+      {user?.escrowRights && (
+        <Link to="/escrow" className="door" style={{ marginTop: 14 }}>
+          <span className="door__glyph" aria-hidden="true">🔒</span>
+          <span className="door__title">Escrow</span>
+          <span className="door__note">
+            Payments buyers have asked you to hold, and the disputes waiting on your decision.
+          </span>
+        </Link>
+      )}
+
       <p className="notice notice--info" style={{ marginTop: 16 }}>
         Already helping run someone else's shop? It shows up here once they add you.
       </p>
@@ -126,6 +139,7 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
  * appears for someone who acts in more than one.
  */
 function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: () => void | Promise<void> }) {
+  const { user } = useSession();
   const [storeId, setStoreId] = useState(stores[0]!.ownerId);
   const [section, setSection] = useState<Section>('items');
 
@@ -152,11 +166,16 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
             {store.permissions.length} of {STORE_PERMISSIONS.length} rights.
           </p>
         </div>
-        {store.permissions.includes('listings') && (
-          <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn">
-            <Icon name="plus" size={15} /> List an item
-          </Link>
-        )}
+        <div className="row">
+          {user?.escrowRights && (
+            <Link to="/escrow" className="btn btn--ghost">🔒 Escrow</Link>
+          )}
+          {store.permissions.includes('listings') && (
+            <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn">
+              <Icon name="plus" size={15} /> List an item
+            </Link>
+          )}
+        </div>
       </div>
 
       {stores.length > 1 && (

@@ -5,6 +5,7 @@
 
 import type { UserCapabilities } from './capabilities.js';
 import type {
+  EscrowRights,
   ForwarderProfile,
   SellerProfile,
   SellerTrustSignals,
@@ -44,6 +45,12 @@ export interface AuthUser {
   sellerProfile: SellerProfile | null;
   /** Non-null for accounts that also operate as freight forwarders. */
   forwarderProfile: ForwarderProfile | null;
+  /**
+   * Non-null when the company has approved this account to hold other people's
+   * money. The app reads it to offer the escrow console; the API checks the row
+   * again on every request that acts on it.
+   */
+  escrowRights: EscrowRights | null;
 }
 
 export interface LoginRequest {

@@ -14,6 +14,7 @@ import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
   DEMO_PHONE,
+  ESCROW_EMAIL,
   PACKER_EMAIL,
   seedComments,
   seedFollows,
@@ -592,6 +593,15 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listEscrowAgents(): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({
+        query: 'SELECT * FROM c WHERE IS_DEFINED(c.escrowRights) AND c.escrowRights != null',
+      })
+      .fetchAll();
+    return resources.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
   async listPostsByAuthor(authorId: string): Promise<Post[]> {
     const { resources } = await this.container('posts')
       .items.query<Post>({
@@ -651,6 +661,16 @@ export class CosmosRepository implements Repository {
   async listStoreOwners(): Promise<User[]> {
     const { resources } = await this.container('users')
       .items.query<User>({ query: 'SELECT * FROM c WHERE IS_DEFINED(c.sellerProfile) AND c.sellerProfile != null' })
+      .fetchAll();
+    return resources;
+  }
+
+  async listOrdersHeldBy(escrowAgentId: string): Promise<Order[]> {
+    const { resources } = await this.container('orders')
+      .items.query<Order>({
+        query: 'SELECT * FROM c WHERE c.protection.escrowAgentId = @id ORDER BY c.updatedAt DESC',
+        parameters: [{ name: '@id', value: escrowAgentId }],
+      })
       .fetchAll();
     return resources;
   }
@@ -738,6 +758,7 @@ export class CosmosRepository implements Repository {
     return [
       { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
+      { identifier: ESCROW_EMAIL, label: `the escrow holding the money · ${DEMO_PASSWORD}` },
     ];
   }
 

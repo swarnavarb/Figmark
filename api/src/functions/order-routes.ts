@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
+import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import type { Dispute, Order, Review, User } from '../../../shared/models.js';
 import {
   AUTO_RELEASE_DAYS,
@@ -123,7 +124,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
-  let body: { protection?: boolean };
+  let body: { protection?: boolean; escrowAgentId?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -136,10 +137,22 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'not_payable', 'This order is not waiting for payment.');
   }
 
-  const seller = await repository.getUserById(order.sellerId);
-  const rights = seller?.escrowRights ?? null;
-  if (body.protection && !rights) {
-    return error(409, 'protection_unavailable', 'This seller is not set up for buyer protection.');
+  // Protection means an escrow holds the money, so it needs a named one. The
+  // buyer chooses; there is no house default, because "whoever the platform
+  // picked" is not a party either side agreed to trust.
+  let agent = null;
+  if (body.protection) {
+    if (!body.escrowAgentId) {
+      return error(400, 'no_escrow', 'Choose an escrow to hold the payment.');
+    }
+    agent = await repository.getUserById(body.escrowAgentId);
+    if (!agent?.escrowRights) {
+      return error(409, 'protection_unavailable', 'That escrow is not approved to hold payments.');
+    }
+    // Neither end of a trade can be the neutral party in it.
+    if (agent.id === order.buyerId || agent.id === order.sellerId) {
+      return error(400, 'invalid_escrow', 'An escrow cannot be the buyer or the seller.');
+    }
   }
 
   const now = new Date().toISOString();
@@ -149,8 +162,13 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   order.status = 'confirmed';
   order.updatedAt = now;
 
-  if (body.protection && rights) {
+  if (agent?.escrowRights) {
+    const rights = agent.escrowRights;
     order.protection = {
+      escrowAgentId: agent.id,
+      // Their name as it was today: a later rename must not rewrite what the
+      // buyer agreed to.
+      escrowName: rights.displayName || agent.displayName,
       // The rate is copied onto the order, not looked up later: the fee is a
       // term of this transaction and must not move when the grant is changed.
       feeBasisPoints: rights.feeBasisPoints,
@@ -168,7 +186,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       // pay the seller for a box still with their supplier.
       autoReleaseAt: null,
     };
-    note(order, `Paid with buyer protection. ${totalMinor} held.`, user.id);
+    note(order, `Paid with buyer protection. ${order.protection.escrowName} is holding it.`, user.id);
   } else {
     order.protection = null;
     order.escrow = { ...order.escrow, state: 'none', heldAt: null, autoReleaseAt: null };
@@ -199,21 +217,74 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
 
   const seller = await repository.getUserById(order.sellerId);
-  const rights = seller?.escrowRights ?? null;
   const totalMinor = order.unitPriceMinor * order.quantity;
+
+  // Everyone approved to hold money, minus the two people who cannot be neutral
+  // in this particular trade.
+  const agents = (await repository.listEscrowAgents()).filter(
+    (agent) => agent.id !== order.buyerId && agent.id !== order.sellerId && !agent.suspended,
+  );
 
   return json(200, {
     itemMinor: totalMinor,
     currency: order.currency,
-    protection: rights
-      ? {
-          available: true,
-          feeMinor: protectionFeeMinor(totalMinor, rights.feeBasisPoints),
-          feeBasisPoints: rights.feeBasisPoints,
-        }
-      : { available: false, feeMinor: 0, feeBasisPoints: 0 },
     sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'the seller',
+    escrows: agents.map((agent) => ({
+      id: agent.id,
+      name: agent.escrowRights!.displayName || agent.displayName,
+      feeBasisPoints: agent.escrowRights!.feeBasisPoints,
+      feeMinor: protectionFeeMinor(totalMinor, agent.escrowRights!.feeBasisPoints),
+      /** What the group already knows about them, rather than a rating we invented. */
+      heldBefore: agent.buyerTrust.completedTransactions,
+      since: agent.escrowRights!.grantedAt,
+    })),
+    suggested: await suggestEscrow(order, agents, repository),
   });
+}
+
+/**
+ * The escrow the rest of this lot is already using.
+ *
+ * A consignment is one shipment with one set of problems, and thirty buyers
+ * each picking a different holder turns a single conversation into thirty. So
+ * when others in the same lot have already settled on somebody, say so — and
+ * say how many, because that is the actual reason to agree with them.
+ *
+ * A suggestion, never a default: the buyer still chooses.
+ */
+async function suggestEscrow(
+  order: Order,
+  agents: User[],
+  repository: Repo,
+): Promise<{ agentId: string; name: string; because: string } | null> {
+  // A direct sale rides in no consignment, so there is nobody to agree with.
+  if (order.lotId === DIRECT_LOT_ID) return null;
+
+  const siblings = await repository.listOrdersForLot(order.lotId);
+  const counts = new Map<string, number>();
+  for (const sibling of siblings) {
+    const held = sibling.protection?.escrowAgentId;
+    if (!held || sibling.id === order.id) continue;
+    counts.set(held, (counts.get(held) ?? 0) + 1);
+  }
+
+  let best: { agentId: string; count: number } | null = null;
+  for (const [agentId, count] of counts) {
+    // Only somebody this buyer could actually choose.
+    if (!agents.some((agent) => agent.id === agentId)) continue;
+    if (!best || count > best.count) best = { agentId, count };
+  }
+  if (!best) return null;
+
+  const agent = agents.find((entry) => entry.id === best!.agentId)!;
+  return {
+    agentId: agent.id,
+    name: agent.escrowRights!.displayName || agent.displayName,
+    because:
+      best.count === 1
+        ? '1 other order in this batch already uses them.'
+        : `${best.count} other orders in this batch already use them.`,
+  };
 }
 
 /**

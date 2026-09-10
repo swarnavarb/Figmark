@@ -124,6 +124,13 @@ export interface Repository {
 
   /** Every account, for the admin list. Bounded by how many people signed up. */
   listAllUsers(): Promise<User[]>;
+  /**
+   * Everyone the company has approved to hold money.
+   *
+   * Read at checkout, so it is on the buyer's path: a handful of vetted people,
+   * which is the size that makes a scan the right answer.
+   */
+  listEscrowAgents(): Promise<User[]>;
   /** Everything one account has made, for the admin's view of them. */
   listPostsByAuthor(authorId: string): Promise<Post[]>;
   deleteUser(id: string): Promise<void>;
@@ -167,6 +174,8 @@ export interface Repository {
 
   /** Every order a seller has taken, for the tracking and analytics views. */
   listOrdersForSeller(sellerId: string): Promise<Order[]>;
+  /** Everything one escrow is holding, or has held. */
+  listOrdersHeldBy(escrowAgentId: string): Promise<Order[]>;
 
   /* Social. */
 

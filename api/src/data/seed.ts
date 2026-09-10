@@ -40,6 +40,9 @@ export const DEMO_PASSWORD = 'figmark123';
  * sees, which is a list of pieces and nothing about the buyers behind them.
  */
 export const PACKER_EMAIL = 'packer@baiyunhobby.example';
+
+/** The neutral escrow, so their side of a held payment can be signed into. */
+export const ESCROW_EMAIL = 'meera@figmark.in';
 export const PACKER_PHONE = '+8613800000024';
 
 const NOW = new Date('2026-09-01T09:00:00.000Z');
@@ -114,17 +117,47 @@ export function seedUsers(): User[] {
         ],
       },
       forwarderProfile: null,
-      /* Granted, so the demo account can be both sides of protection: buying it
-         from Kaiju, and selling under it to somebody else. */
+      /* Also an escrow: a trusted regular who holds money for other people's
+         trades. Never for their own — you cannot be the neutral party in a
+         transaction you are one end of. */
       escrowRights: {
         grantedAt: iso(-30),
         grantedBy: 'usr_ops',
         feeBasisPoints: 250,
-        note: 'Small seller, good record. Watch the first few protected orders.',
+        displayName: 'Arjun M.',
+        note: 'Long-standing member. Holds for the Mumbai group buys.',
       },
       suspended: false,
       createdAt: iso(-120),
       updatedAt: iso(-2),
+    },
+
+    /* An escrow and nothing else: no shop, no listings, just the person the
+       group trusts to hold the money. Sign-in-able, because the escrow console
+       only means anything seen from their side. */
+    {
+      id: 'usr_escrow_meera',
+      username: 'meera_holds',
+      email: ESCROW_EMAIL,
+      phone: '+919812300099',
+      displayName: 'Meera Iyer',
+      isAdmin: false,
+      passwordHash: hashPassword(DEMO_PASSWORD),
+      verification: verification(true),
+      buyerTrust: trust(88, 12),
+      sellerTrust: sellerTrust(),
+      sellerProfile: null,
+      forwarderProfile: null,
+      escrowRights: {
+        grantedAt: iso(-90),
+        grantedBy: 'usr_ops',
+        feeBasisPoints: 150,
+        displayName: 'Meera I. — community escrow',
+        note: 'Runs escrow for three of the larger Bengaluru group buys. No complaints.',
+      },
+      suspended: false,
+      createdAt: iso(-200),
+      updatedAt: iso(-10),
     },
 
     /* The supplier in Guangzhou. A sign-in account, because the packing screen
@@ -184,11 +217,17 @@ export function seedUsers(): User[] {
   ];
 }
 
-/** Grants a seeded storefront protected checkout at a given rate. */
+/** Approves a seeded account to hold other people's money, at a given rate. */
 function withEscrow(user: User, feeBasisPoints: number, note: string): User {
   return {
     ...user,
-    escrowRights: { grantedAt: iso(-45), grantedBy: 'usr_ops', feeBasisPoints, note },
+    escrowRights: {
+      grantedAt: iso(-45),
+      grantedBy: 'usr_ops',
+      feeBasisPoints,
+      displayName: user.sellerProfile?.storefrontName ?? user.displayName,
+      note,
+    },
   };
 }
 
@@ -469,7 +508,10 @@ export function seedOrders(): Order[] {
       status: 'confirmed', paymentStatus: 'paid',
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_demo' }],
-      protection: { feeMinor: 5_800, feeBasisPoints: 200, boughtAt: iso(-5), refundedAt: null },
+      protection: {
+        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — community escrow',
+        feeMinor: 4_350, feeBasisPoints: 150, boughtAt: iso(-5), refundedAt: null,
+      },
       escrow: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
       completedAt: null, createdAt: iso(-5), updatedAt: iso(-5),
     },
@@ -485,7 +527,10 @@ export function seedOrders(): Order[] {
         { stage: 'dispatched_from_china', enteredAt: iso(-19), note: 'Air freight, AWB on file.', recordedBy: 'usr_kaiju' },
         { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
       ],
-      protection: { feeMinor: 640, feeBasisPoints: 200, boughtAt: iso(-30), refundedAt: null },
+      protection: {
+        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — community escrow',
+        feeMinor: 480, feeBasisPoints: 150, boughtAt: iso(-30), refundedAt: null,
+      },
       escrow: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
       completedAt: null, createdAt: iso(-30), updatedAt: iso(-4),
     },
@@ -576,7 +621,10 @@ export function seedOrders(): Order[] {
         { stage: 'ordering', enteredAt: iso(-3), note: 'Order placed.', recordedBy: 'usr_gadgetgrid' },
         { stage: 'ordering', enteredAt: iso(-1), note: 'Buyer opened a dispute.', recordedBy: 'usr_gadgetgrid' },
       ],
-      protection: { feeMinor: 3_000, feeBasisPoints: 250, boughtAt: iso(-3), refundedAt: null },
+      protection: {
+        escrowAgentId: 'usr_kaiju', escrowName: 'Kaiju Imports',
+        feeMinor: 2_400, feeBasisPoints: 200, boughtAt: iso(-3), refundedAt: null,
+      },
       escrow: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
       completedAt: null, createdAt: iso(-3), updatedAt: iso(-1),
     },
@@ -671,7 +719,12 @@ export function seedLiveSale(): Order {
     status: 'confirmed', paymentStatus: 'paid',
     stage: 'ordering',
     stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Order placed.', recordedBy: 'usr_tokyoline' }],
-    protection: { feeMinor: 2_750, feeBasisPoints: 250, boughtAt: iso(-6), refundedAt: null },
+    /* Same lot as ord_2003, same escrow — which is exactly what the suggestion
+       at checkout is for. */
+    protection: {
+      escrowAgentId: 'usr_kaiju', escrowName: 'Kaiju Imports',
+      feeMinor: 2_200, feeBasisPoints: 200, boughtAt: iso(-6), refundedAt: null,
+    },
     escrow: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },
     completedAt: null, createdAt: iso(-6), updatedAt: iso(-6),
   };

@@ -249,12 +249,12 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
 }
 
 /**
- * POST /api/admin/users/{id}/escrow - grant or withdraw protected checkout.
+ * POST /api/admin/users/{id}/escrow - approve or remove an escrow.
  *
- * The commercial decision behind the whole escrow feature: the company is
- * agreeing to hold this seller's customers' money and to arbitrate when it goes
- * wrong. The fee rate travels with the grant, so a seller who needs watching can
- * carry a different one.
+ * The commercial decision behind the whole feature: this person may hold other
+ * people's money and settle what happens to it. Buyers choose from the people
+ * approved here, so the grant is what puts somebody on that list, and the rate
+ * is theirs — it is their fee for doing the work.
  */
 async function escrowRights(request: HttpRequest, _context: InvocationContext) {
   const admin = await operator(request);
@@ -263,7 +263,7 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A user id is required.');
 
-  let body: { enabled?: boolean; feeBasisPoints?: number; note?: string };
+  let body: { enabled?: boolean; feeBasisPoints?: number; note?: string; displayName?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -284,9 +284,16 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
       return error(400, 'invalid_rate', 'A protection fee is between 0 and 2000 basis points (0-20%).');
     }
     const rights: EscrowRights = {
-      grantedAt: new Date().toISOString(),
+      // Regranting keeps the original date: the grant is a standing decision,
+      // and re-rating somebody is not the marketplace meeting them again.
+      grantedAt: user.escrowRights?.grantedAt ?? new Date().toISOString(),
       grantedBy: admin.id,
       feeBasisPoints: points,
+      displayName:
+        (body.displayName ?? '').trim().slice(0, 80) ||
+        user.escrowRights?.displayName ||
+        user.sellerProfile?.storefrontName ||
+        user.displayName,
       note: (body.note ?? '').trim().slice(0, 500),
     };
     user.escrowRights = rights;

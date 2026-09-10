@@ -73,7 +73,7 @@ export function UsersView() {
               {row.store && <span className="badge">store</span>}
               {row.escrowRights && (
                 <span className="badge badge--ok">
-                  escrow {(row.escrowRights.feeBasisPoints / 100).toFixed(1)}%
+                  escrow · {(row.escrowRights.feeBasisPoints / 100).toFixed(1)}%
                 </span>
               )}
             </div>
@@ -264,14 +264,16 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 /**
- * Granting the right to hold other people's money.
+ * Approving somebody to hold other people's money.
  *
- * The fee rate travels with the grant rather than sitting in one global
- * setting, because the rate is the lever: a seller the company is less sure of
- * can carry a higher one without being refused outright.
+ * An escrow is a party, not a mechanism: buyers pick one at checkout from the
+ * people approved here, and that person decides what happens to the money if
+ * the trade goes wrong. The rate travels with the grant rather than sitting in
+ * one global setting, because it is their fee for doing the work.
  */
 function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
   const [percent, setPercent] = useState(String((user.escrowRights?.feeBasisPoints ?? 200) / 100));
+  const [label, setLabel] = useState(user.escrowRights?.displayName ?? '');
   const [note, setNote] = useState(user.escrowRights?.note ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -284,6 +286,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
       await admin.setEscrow(user.id, {
         enabled,
         feeBasisPoints: Math.round(Number(percent) * 100),
+        displayName: label,
         note,
       });
       await onChanged();
@@ -297,38 +300,44 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
 
   return (
     <div className="card card--pad stack">
-      <span className="card__title">Buyer protection</span>
+      <span className="card__title">Escrow</span>
       {user.escrowRights ? (
         <p className="faint">
-          Granted {formatDate(user.escrowRights.grantedAt)} at{' '}
-          {(user.escrowRights.feeBasisPoints / 100).toFixed(1)}%. Buyers can choose protection on this
-          seller's items, and Figmark settles disputes over them.
+          Approved {formatDate(user.escrowRights.grantedAt)} at{' '}
+          {(user.escrowRights.feeBasisPoints / 100).toFixed(1)}%, listed to buyers as{' '}
+          <strong>{user.escrowRights.displayName}</strong>. They can be chosen to hold payments on any
+          trade they are not part of, and they settle disputes over what they hold.
         </p>
       ) : (
         <p className="faint">
-          Not granted. Buyers of this seller's items pay them directly, and there is nothing held for
-          Figmark to settle if it goes wrong.
+          Not approved. They cannot be chosen to hold anybody's payment.
         </p>
       )}
 
       <div className="field-row">
         <label className="field">
-          <span>Protection fee (%)</span>
+          <span>Listed to buyers as</span>
+          <input value={label} onChange={(event) => setLabel(event.target.value)}
+            placeholder={user.store?.name ?? user.displayName} />
+          <span className="field__hint">The name in the picker at checkout.</span>
+        </label>
+        <label className="field">
+          <span>Their fee (%)</span>
           <input value={percent} onChange={(event) => setPercent(event.target.value)} inputMode="decimal" />
           <span className="field__hint">Charged to the buyer on top of the item. Up to 20%.</span>
         </label>
-        <label className="field">
-          <span>Note</span>
-          <input value={note} onChange={(event) => setNote(event.target.value)}
-            placeholder="Why this seller, at this rate." />
-        </label>
       </div>
+      <label className="field">
+        <span>Note</span>
+        <input value={note} onChange={(event) => setNote(event.target.value)}
+          placeholder="Why this person, at this rate. Operators only — buyers never see it." />
+      </label>
 
       {error && <p className="notice notice--error">{error}</p>}
 
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <button className="btn" disabled={busy} onClick={() => void save(true)}>
-          {user.escrowRights ? 'Update grant' : 'Grant escrow rights'}
+          {user.escrowRights ? 'Update' : 'Approve as an escrow'}
         </button>
         {user.escrowRights && (
           <button className="btn btn--quiet" disabled={busy} onClick={() => setConfirming(true)}>
@@ -339,16 +348,16 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
 
       {confirming && (
         <Confirm
-          title="Withdraw escrow rights?"
-          confirmLabel="Withdraw"
+          title="Remove them as an escrow?"
+          confirmLabel="Remove"
           busy={busy}
           onCancel={() => setConfirming(false)}
           onConfirm={() => void save(false)}
         >
-          <p>New checkouts on {user.displayName}'s items will have no protection option.</p>
+          <p>{user.displayName} will no longer appear in the picker at checkout.</p>
           <p>
-            Orders already bought with protection keep the terms they were bought under — those are
-            settled transactions, not a setting.
+            Payments they are already holding stay with them — those are live transactions the two
+            parties agreed to, not a setting.
           </p>
         </Confirm>
       )}

@@ -194,19 +194,24 @@ export interface SellerProfile {
  * row; the id is what any permission check actually uses.
  */
 /**
- * The company's grant that this seller's items may be bought with protection.
+ * The company's grant that this person may hold other people's money.
+ *
+ * An escrow is a party, not a mechanism: a vetted individual who holds a
+ * buyer's payment until the goods land and who settles it if the two sides
+ * disagree. Buyers choose one at checkout, so the grant is what puts somebody
+ * on that list — and the rate is theirs, because it is their fee for the work.
  *
  * Held rather than derived, because it is a commercial decision about a named
- * person: the marketplace is agreeing to hold their customers' money and to
- * arbitrate when it goes wrong. The fee rate lives here too, so a seller who
- * needs watching can carry a different one.
+ * person and the marketplace has to be able to point at when it made it.
  */
 export interface EscrowRights {
   grantedAt: string;
   grantedBy: string;
   /** Charged to the buyer on top of the order, in basis points of the total. */
   feeBasisPoints: number;
-  /** Why the company granted it. Read in the admin list, not by buyers. */
+  /** How they are listed to buyers choosing one. */
+  displayName: string;
+  /** Why the company granted it. Read by operators, never by buyers. */
   note: string;
 }
 
@@ -507,8 +512,12 @@ export interface Order extends BaseDocument {
   checkpoints?: Partial<Record<OrderCheckpoint, string | null>>;
 }
 
-/** Buyer protection, as bought. */
+/** Buyer protection, as bought: who holds it, and on what terms. */
 export interface OrderProtection {
+  /** The escrow holding this payment, and who will settle a dispute over it. */
+  escrowAgentId: string;
+  /** Their name as it was at purchase, so a later rename cannot rewrite it. */
+  escrowName: string;
   /** The fee paid, on top of the item total. */
   feeMinor: number;
   feeBasisPoints: number;

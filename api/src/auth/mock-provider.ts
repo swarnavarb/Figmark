@@ -410,5 +410,6 @@ export function toAuthUser(user: User): AuthUser {
     sellerTrust: user.sellerTrust,
     sellerProfile: user.sellerProfile,
     forwarderProfile: user.forwarderProfile,
+    escrowRights: user.escrowRights ?? null,
   };
 }

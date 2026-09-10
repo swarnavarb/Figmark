@@ -10,6 +10,7 @@ import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
   DEMO_PHONE,
+  ESCROW_EMAIL,
   PACKER_EMAIL,
   seedComments,
   seedFollows,
@@ -129,6 +130,7 @@ export class MemoryRepository implements Repository {
     return [
       { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
+      { identifier: ESCROW_EMAIL, label: `the escrow holding the money · ${DEMO_PASSWORD}` },
     ];
   }
 
@@ -208,6 +210,12 @@ export class MemoryRepository implements Repository {
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
     return [...this.orders.values()].filter((o) => o.lotId === lotId);
+  }
+
+  async listOrdersHeldBy(escrowAgentId: string): Promise<Order[]> {
+    return [...this.orders.values()]
+      .filter((order) => order.protection?.escrowAgentId === escrowAgentId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   async listOrdersForBuyer(buyerId: string): Promise<Order[]> {
@@ -407,6 +415,12 @@ export class MemoryRepository implements Repository {
     return [...this.users.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  async listEscrowAgents(): Promise<User[]> {
+    return [...this.users.values()]
+      .filter((user) => user.escrowRights)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
   async listPostsByAuthor(authorId: string): Promise<Post[]> {
     return [...this.posts.values()]
       .filter((post) => post.authorId === authorId)
@@ -534,4 +548,4 @@ export function identifiersOf(user: User): string[] {
 const likeKey = (userId: string, listingId: string) => `${userId}::${listingId}`;
 const followKey = (followerId: string, sellerId: string) => `${followerId}::${sellerId}`;
 
-export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE, PACKER_EMAIL };
+export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE, ESCROW_EMAIL, PACKER_EMAIL };

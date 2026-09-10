@@ -1150,3 +1150,21 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .userrow__name { font-weight: 650; font-size: var(--t-sm); }
 .userrow__meta { font-size: var(--t-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .userrow__tags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ── Choosing an escrow ────────────────────────────────────────────────── */
+
+/* A wide tick: the checkbox is the question, so it gets a whole row. */
+.tick--wide { width: 100%; justify-content: flex-start; padding: 11px 12px; font-size: var(--t-sm); }
+
+.escrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.escrow:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.escrow.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.escrow__main { display: grid; gap: 3px; min-width: 0; }
+.escrow__name { font-weight: 650; font-size: var(--t-sm); }
+.escrow__fee { font-size: var(--t-sm); font-weight: 600; white-space: nowrap; }

@@ -18,8 +18,8 @@ export interface EvidenceDraft {
   caption: string;
 }
 import type {
-  Dispute, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty, Order, Post,
-  Review, SellerProfile, StoreManager,
+  Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty,
+  Order, Post, Review, SellerProfile, StoreManager,
 } from '@shared/models';
 
 /**
@@ -174,11 +174,35 @@ export interface PublicReview {
   createdAt: string;
 }
 
+/** Someone approved to hold this payment, as the picker lists them. */
+export interface EscrowOption {
+  id: string;
+  name: string;
+  feeBasisPoints: number;
+  feeMinor: number;
+  heldBefore: number;
+  since: string;
+}
+
 export interface Checkout {
   itemMinor: number;
   currency: string;
-  protection: { available: boolean; feeMinor: number; feeBasisPoints: number };
   sellerName: string;
+  /** Empty when nobody approved can be neutral in this trade. */
+  escrows: EscrowOption[];
+  /** The one the rest of the batch already uses, and why. Never a default. */
+  suggested: { agentId: string; name: string; because: string } | null;
+}
+
+export interface EscrowHolding {
+  order: {
+    id: string; itemName: string; currency: string; lotId: string; status: string;
+    escrow: Order['escrow']; protection: Order['protection'];
+  };
+  buyerName: string;
+  sellerName: string;
+  dispute: Dispute | null;
+  decidable: boolean;
 }
 
 export interface DisputeView {
@@ -471,8 +495,11 @@ export const api = {
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),
   checkout: (id: string) => request<Checkout>(`/orders/${encodeURIComponent(id)}/checkout`),
-  payOrder: (id: string, protection: boolean) =>
-    post<{ order: Order; simulatedPayment: boolean }>(`/orders/${encodeURIComponent(id)}/pay`, { protection }),
+  payOrder: (id: string, protection: boolean, escrowAgentId?: string) =>
+    post<{ order: Order; simulatedPayment: boolean }>(
+      `/orders/${encodeURIComponent(id)}/pay`,
+      { protection, escrowAgentId },
+    ),
   confirmOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/confirm`),
   openDispute: (id: string, body: { reasonCode: string; reason: string; evidence: EvidenceDraft[] }) =>
     post<{ dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/dispute`, body),
@@ -487,6 +514,10 @@ export const api = {
     post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/withdraw`),
   disputeEscalate: (id: string) =>
     post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/escalate`),
+  disputeSettle: (id: string, body: { outcome: string; refundMinor: number; note: string }) =>
+    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/settle`, body),
+  escrowHoldings: () =>
+    request<{ rights: EscrowRights; heldMinor: number; holdings: EscrowHolding[] }>('/escrow/holdings'),
   reviewOrder: (id: string, rating: number, body: string) =>
     post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
   reviewsAbout: (userId: string) =>

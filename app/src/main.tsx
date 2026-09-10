@@ -15,6 +15,7 @@ import { ShopPage } from './pages/ShopPage';
 import { ChannelPage, SocialPage } from './pages/SocialPage';
 import { ThreadPage } from './pages/MessagesPage';
 import { DisputePage } from './pages/DisputePage';
+import { EscrowPage } from './pages/EscrowPage';
 import { ExporterPage, PackingLotPage } from './pages/ExporterPage';
 import { ProfileByHandlePage } from './pages/ProfileByHandlePage';
 import { SessionProvider, useSession } from './session';
@@ -56,6 +57,7 @@ function App() {
         <Route path="/packing/:id" element={<PackingLotPage />} />
         <Route path="/order/:id" element={<OrderPage />} />
         <Route path="/dispute/:id" element={<DisputePage />} />
+        <Route path="/escrow" element={<EscrowPage />} />
         <Route path="/forwarders" element={<ForwardersPage />} />
         <Route path="/me" element={<ProfilePage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the

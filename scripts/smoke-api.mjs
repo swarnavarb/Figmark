@@ -49,6 +49,7 @@ const {
   openDisputeRoute: openDispute, readDisputeRoute: readDispute, replyDisputeRoute: replyDispute,
   offerDisputeRoute: offerDispute, acceptDisputeRoute: acceptDispute,
   withdrawDisputeRoute: withdrawDispute, escalateDisputeRoute: escalateDispute,
+  settleAsEscrowRoute: settleAsEscrow, escrowHoldingsRoute: escrowHoldings,
 } = await import(new URL('dispute-routes.js', fns));
 const {
   adminUsersRoute: adminUsers, adminUserDetailRoute: adminUser,
@@ -56,7 +57,7 @@ const {
   adminDeleteResourceRoute: adminDeleteResource, adminEscrowRoute: adminEscrow,
   adminDisputesRoute: adminDisputes, adminResolveRoute: adminResolve,
 } = await import(new URL('admin-routes.js', fns));
-const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL } = await import(
+const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
 );
 
@@ -65,6 +66,7 @@ const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 /** Reads a row straight from the store, for the state a response does not carry. */
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
 const repository_user = async (id) => (await getRepository()).getUserById(id);
+const repository_dispute = async (id) => (await getRepository()).getDisputeById(id);
 const req = ({ headers = {}, body, query = {}, params = {} } = {}) => ({
   headers: new Headers(headers),
   query: new URLSearchParams(query),
@@ -1343,25 +1345,102 @@ await check('the packing view never shows the owner the buyer list twice', async
 /* ── checkout, with and without protection ─────────────────────────────── */
 console.log('\ncheckout, with and without protection');
 
-await check('protection is only offered where the company has granted it', async () => {
-  // Kaiju has the grant; Gadget Grid does not. The difference is the whole
-  // point of the grant, so it has to reach the checkout.
-  const granted = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
-  assert.equal(granted.protection.available, true);
-  // 2% of 32,000 is 640.
-  assert.equal(granted.protection.feeMinor, 640);
+await check('the checkout offers the escrows who could be neutral in this trade', async () => {
+  const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
+  const ids = body.escrows.map((entry) => entry.id);
 
-  const ungranted = (await checkout(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).jsonBody;
-  assert.equal(ungranted.protection.available, false);
-  assert.equal(ungranted.protection.feeMinor, 0);
+  assert.ok(ids.includes('usr_escrow_meera'), 'a neutral escrow is on the list');
+  // Neither end of a trade can hold it: usr_demo is the buyer here, usr_kaiju
+  // the seller, and both are approved escrows in general.
+  assert.equal(ids.includes('usr_demo'), false, 'the buyer cannot hold their own payment');
+  assert.equal(ids.includes('usr_kaiju'), false, 'nor can the seller');
+
+  // Each carries their own rate: 1.5% of 32,000 is 480.
+  const meera = body.escrows.find((entry) => entry.id === 'usr_escrow_meera');
+  assert.equal(meera.feeBasisPoints, 150);
+  assert.equal(meera.feeMinor, 480);
 });
 
-await check('buying protection is what holds the money', async () => {
-  const paid = await payOrder(req({ headers: auth, params: { id: 'ord_1005' }, body: { protection: true } }), ctx);
+await check('the batch suggests the escrow the rest of it already uses', async () => {
+  // ord_2003 and ord_2004 are both in lot_my_batch and both held by Kaiju, so
+  // a third order in that batch should be pointed at them. Thirty buyers each
+  // picking a different holder turns one conversation into thirty.
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Third in the batch', priceMinor: 40_000, lotId: 'lot_my_batch', sourcing: 'import' },
+  }), ctx);
+  assert.equal(listed.status, 201);
+
+  const buyer = await signup(req({
+    body: {
+      displayName: 'Batch Buyer', email: 'batch@figmark.example',
+      phone: '+919000045511', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${buyer.jsonBody.token}` };
+  const placed = await createOrder(req({
+    headers: theirs, body: { listingId: listed.jsonBody.listing.id, quantity: 1 },
+  }), ctx);
+  assert.equal(placed.status, 201);
+
+  const body = (await checkout(req({ headers: theirs, params: { id: placed.jsonBody.order.id } }), ctx)).jsonBody;
+  assert.ok(body.suggested, 'the batch has an escrow to suggest');
+  assert.equal(body.suggested.agentId, 'usr_kaiju');
+  assert.match(body.suggested.because, /2 other orders in this batch already use them/);
+});
+
+await check('the suggestion reads correctly for a single other order', async () => {
+  // One order says "uses", two say "use". A count in a sentence is a sentence.
+  const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
+  if (body.suggested) assert.match(body.suggested.because, /already uses? them\./);
+});
+
+await check('a direct sale has no batch, so nothing to agree with', async () => {
+  const body = (await checkout(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).jsonBody;
+  // ord_1003 rides in lot_sz_oct, whose other orders carry no escrow.
+  assert.equal(body.suggested, null);
+});
+
+await check('protection needs a named escrow, not just a tick', async () => {
+  const nameless = await payOrder(req({
+    headers: auth, params: { id: 'ord_1005' }, body: { protection: true },
+  }), ctx);
+  assert.equal(nameless.status, 400);
+  assert.equal(nameless.jsonBody.error, 'no_escrow');
+});
+
+await check('an escrow cannot be either end of the trade it holds', async () => {
+  const seller = await payOrder(req({
+    headers: auth, params: { id: 'ord_1005' }, body: { protection: true, escrowAgentId: 'usr_kaiju' },
+  }), ctx);
+  assert.equal(seller.status, 400);
+  assert.equal(seller.jsonBody.error, 'invalid_escrow');
+
+  const self = await payOrder(req({
+    headers: auth, params: { id: 'ord_1005' }, body: { protection: true, escrowAgentId: 'usr_demo' },
+  }), ctx);
+  assert.equal(self.status, 400);
+});
+
+await check('somebody never approved cannot be chosen', async () => {
+  const refused = await payOrder(req({
+    headers: auth, params: { id: 'ord_1005' },
+    body: { protection: true, escrowAgentId: 'usr_tokyoline' },
+  }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'protection_unavailable');
+});
+
+await check('choosing one is what holds the money, in their name', async () => {
+  const paid = await payOrder(req({
+    headers: auth, params: { id: 'ord_1005' },
+    body: { protection: true, escrowAgentId: 'usr_escrow_meera' },
+  }), ctx);
   assert.equal(paid.status, 200);
   assert.equal(paid.jsonBody.order.escrow.state, 'held');
-  assert.equal(paid.jsonBody.order.protection.feeMinor, 640);
-  assert.equal(paid.jsonBody.order.protection.feeBasisPoints, 200);
+  assert.equal(paid.jsonBody.order.protection.escrowAgentId, 'usr_escrow_meera');
+  // Their name as it was today: a later rename must not rewrite the terms.
+  assert.match(paid.jsonBody.order.protection.escrowName, /Meera/);
+  assert.equal(paid.jsonBody.order.protection.feeMinor, 480);
   // The clock still does not start at checkout.
   assert.equal(paid.jsonBody.order.escrow.autoReleaseAt, null);
 });
@@ -1384,27 +1463,6 @@ await check('an unprotected order has nothing to dispute, and says so', async ()
   }), ctx);
   assert.equal(refused.status, 409);
   assert.match(refused.jsonBody.message, /without buyer protection/i);
-});
-
-await check('protection cannot be bought from a seller who was never granted it', async () => {
-  // A client that asks for it anyway is refused rather than quietly charged.
-  const other = await signup(req({
-    body: {
-      displayName: 'Chancer', email: 'chancer@figmark.example',
-      phone: '+919000045452', password: 'longenough1',
-    },
-  }), ctx);
-  const theirs = { authorization: `Bearer ${other.jsonBody.token}` };
-  const listed = await createOrder(req({
-    headers: theirs, body: { listingId: 'lst_iem_audio', quantity: 1 },
-  }), ctx);
-  assert.equal(listed.status, 201);
-
-  const refused = await payOrder(req({
-    headers: theirs, params: { id: listed.jsonBody.order.id }, body: { protection: true },
-  }), ctx);
-  assert.equal(refused.status, 409);
-  assert.equal(refused.jsonBody.error, 'protection_unavailable');
 });
 
 await check('paying twice is refused rather than charging twice', async () => {
@@ -1646,6 +1704,91 @@ await check('the public list never carries a review still hidden', async () => {
     assert.equal('authorId' in review, false);
   }
   assert.equal(body.count, body.reviews.length);
+});
+
+/* ── the escrow's side ─────────────────────────────────────────────────── */
+console.log("\nthe escrow's side");
+
+const escrowSession = await login(req({
+  body: { identifier: ESCROW_EMAIL, password: DEMO_PASSWORD },
+}), ctx);
+const escrow = { authorization: `Bearer ${escrowSession.jsonBody.token}` };
+
+await check('an escrow sees what is in their name, and nothing else', async () => {
+  const body = (await escrowHoldings(req({ headers: escrow }), ctx)).jsonBody;
+  assert.ok(body.holdings.length > 0);
+  for (const row of body.holdings) {
+    assert.equal(row.order.protection.escrowAgentId, escrowSession.jsonBody.user.id);
+  }
+  assert.ok(body.heldMinor > 0, 'the number they are accountable for');
+});
+
+await check('somebody never approved has no holdings screen at all', async () => {
+  const refused = await escrowHoldings(req({ headers: helper }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.jsonBody.error, 'not_an_escrow');
+});
+
+// ord_1001 is held by Meera, so a dispute on it is hers to settle.
+const heldDispute = await openDispute(req({
+  headers: auth, params: { id: 'ord_1001' },
+  body: { reasonCode: 'damaged', reason: 'Both statues arrived with cracked bases.' },
+}), ctx);
+
+await check('the escrow can read a dispute over money they hold', async () => {
+  assert.equal(heldDispute.status, 201);
+  const id = heldDispute.jsonBody.dispute.id;
+  // A party to neither side, but the person who has to decide.
+  assert.equal((await readDispute(req({ headers: escrow, params: { id } }), ctx)).status, 403,
+    'reading the thread is still the parties\' route');
+  // Their own route is the one that lets them see it.
+  const holdings = (await escrowHoldings(req({ headers: escrow }), ctx)).jsonBody;
+  const row = holdings.holdings.find((entry) => entry.order.id === 'ord_1001');
+  assert.ok(row.dispute, 'the argument is on their screen');
+});
+
+await check('the escrow may not rule while the two of them are still talking', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const early = await settleAsEscrow(req({
+    headers: escrow, params: { id }, body: { outcome: 'refund_buyer', note: 'Sorting it out.' },
+  }), ctx);
+  assert.equal(early.status, 409);
+  assert.equal(early.jsonBody.error, 'too_early');
+});
+
+await check('once escalated, the escrow settles it — not the company', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+
+  // The response window has to run out, or somebody has to ask. The seller
+  // holds no password here, so the buyer escalates once they are overdue.
+  const record = await repository_dispute(id);
+  record.respondByAt = new Date(Date.now() - 86_400_000).toISOString();
+  await (await getRepository()).updateDispute(record);
+
+  const escalated = await escalateDispute(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(escalated.status, 200);
+  assert.equal(escalated.jsonBody.dispute.status, 'under_mediation');
+
+  const settled = await settleAsEscrow(req({
+    headers: escrow, params: { id },
+    body: { outcome: 'split', refundMinor: 1_45_000, note: 'Damaged in transit; half back, keep the pieces.' },
+  }), ctx);
+  assert.equal(settled.status, 200);
+  assert.equal(settled.jsonBody.dispute.resolution.outcome, 'split');
+  // Recorded as theirs: the parties chose this person, and the record says so.
+  assert.equal(settled.jsonBody.dispute.resolution.byCompany, false);
+  assert.equal(settled.jsonBody.dispute.resolution.decidedBy, escrowSession.jsonBody.user.id);
+  assert.equal(settled.jsonBody.order.paymentStatus, 'partially_paid');
+});
+
+await check('an escrow cannot settle a dispute over money somebody else holds', async () => {
+  // ord_2003 is held by Kaiju, not Meera.
+  const held = (await orderState(req({ headers: auth, params: { id: 'ord_2003' } }), ctx)).jsonBody;
+  const id = held.order.escrow.disputeId;
+  const refused = await settleAsEscrow(req({
+    headers: escrow, params: { id }, body: { outcome: 'refund_buyer', note: 'Not mine to call.' },
+  }), ctx);
+  assert.equal(refused.status, 403);
 });
 
 /* ── mediation ─────────────────────────────────────────────────────────── */

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { gradientFor, hueFor, initialsOf } from '../format';
 
 /** Inline icons. Kept as a small set so no icon dependency is needed. */
@@ -110,6 +110,42 @@ export function Tile({ value, label, tone }: { value: string; label: string; ton
     <div className={`tile${tone ? ` tile--${tone}` : ''}`}>
       <div className="tile__value">{value}</div>
       <div className="tile__label">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * A modal dialog.
+ *
+ * Escape closes it and so does the backdrop, because the way out of a dialog
+ * should be the thing people reach for without thinking. Used for choices worth
+ * interrupting the page for — picking who holds your money is one.
+ */
+export function Modal({ title, onClose, children }: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal" role="dialog" aria-modal="true" aria-label={title}
+      onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="modal__box">
+        <div className="row row--between" style={{ marginBottom: 10 }}>
+          <h2 className="modal__title" style={{ margin: 0 }}>{title}</h2>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
     </div>
   );
 }

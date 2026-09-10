@@ -42,6 +42,7 @@ const {
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
   acceptDisputeRoute, withdrawDisputeRoute, escalateDisputeRoute,
+  settleAsEscrowRoute, escrowHoldingsRoute,
 } = await import(new URL('dispute-routes.js', apiRoot));
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
@@ -107,6 +108,8 @@ const routes = [
   ['POST', '/api/disputes/:id/accept', acceptDisputeRoute],
   ['POST', '/api/disputes/:id/withdraw', withdrawDisputeRoute],
   ['POST', '/api/disputes/:id/escalate', escalateDisputeRoute],
+  ['POST', '/api/disputes/:id/settle', settleAsEscrowRoute],
+  ['GET', '/api/escrow/holdings', escrowHoldingsRoute],
   ['GET', '/api/admin/users', adminUsersRoute],
   ['GET', '/api/admin/users/:id', adminUserDetailRoute],
   ['POST', '/api/admin/users/:id/suspend', adminSuspendRoute],
