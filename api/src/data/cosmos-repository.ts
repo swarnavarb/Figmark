@@ -68,6 +68,14 @@ export class CosmosRepository implements Repository {
   private database!: Database;
   private state: BackendStatus;
 
+  /**
+   * The background fixture pass, while it is still running.
+   *
+   * Nothing on a request path waits for this. It is held so that the tests can
+   * assert on what it did, and so a second `init()` cannot start a second one.
+   */
+  private maintenance: Promise<void> | null = null;
+
   constructor(private readonly cosmosConfig: CosmosConfig) {
     // A key is used when supplied; otherwise managed identity, which is the
     // preferred path once the Static Web App has an identity assigned.
@@ -150,18 +158,23 @@ export class CosmosRepository implements Repository {
 
     let seeded = '';
     if (autoSeedEnabled()) {
-      try {
-        if (signInAccounts === 0) {
+      if (signInAccounts === 0) {
+        // An empty database cannot serve anybody: every password is answered
+        // "incorrect" until something is in it. So this one waits.
+        try {
           seeded = await this.fill();
-        } else {
-          // Repair what is broken, then add what is simply not there yet: a
-          // database seeded by an older release keeps serving that release
-          // until somebody notices the data never moved with the code.
-          seeded = (await this.repair()) + (await this.topUpFixtures());
+          signInAccounts = await this.countSignInAccounts();
+        } catch (error) {
+          seeded = ` Preparing the database failed: ${describeError(error)}.`;
         }
-        signInAccounts = await this.countSignInAccounts();
-      } catch (error) {
-        seeded = ` Preparing the database failed: ${describeError(error)}.`;
+      } else {
+        // A populated database already serves. Repairing it and adding what a
+        // later release introduced are both maintenance, and maintenance does
+        // not belong in front of a request: it used to run here, so the first
+        // person to reach a cold worker waited for a full pass over every
+        // container before their own read even started.
+        seeded = ' Checking the fixtures in the background.';
+        this.maintenance = this.runMaintenance(via, created).catch(() => undefined);
       }
     }
 
@@ -215,6 +228,51 @@ export class CosmosRepository implements Repository {
       }
     }
     return { created, missing, failure };
+  }
+
+  /**
+   * Waits for the background fixture pass, if one is running.
+   *
+   * Only the tests call this: a request that waited for maintenance would be
+   * back to paying for it, which is the whole thing this moved off that path.
+   */
+  async settled(): Promise<void> {
+    await this.maintenance;
+  }
+
+  /**
+   * Repair, then top up, with nobody waiting on the result.
+   *
+   * Runs against a database that is already serving, so it may only ever add
+   * what is missing - never rewrite a row somebody is using. The outcome lands
+   * in the status detail, because a maintenance pass nobody can see the result
+   * of is one that fails silently.
+   */
+  private async runMaintenance(via: string, created: string): Promise<void> {
+    let outcome: string;
+    try {
+      // Independent passes over different containers, so they overlap rather
+      // than queue: the repair reads users and identifiers, the top-up reads
+      // the nine containers that hold fixtures.
+      const [repaired, toppedUp] = await Promise.all([this.repair(), this.topUpFixtures()]);
+      outcome = `${repaired}${toppedUp}` || ' Fixtures were already up to date.';
+    } catch (error) {
+      outcome = ` Preparing the database failed: ${describeError(error)}.`;
+    }
+
+    let signInAccounts = this.state.signInAccounts;
+    try {
+      signInAccounts = await this.countSignInAccounts();
+    } catch {
+      // Leave the count as init found it; the outcome above is the news here.
+    }
+
+    this.state = {
+      ...this.state,
+      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${outcome}`,
+      signInAccounts,
+    };
+    this.maintenance = null;
   }
 
   /**

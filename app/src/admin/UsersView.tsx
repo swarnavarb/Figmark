@@ -18,6 +18,7 @@ export function UsersView() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setError(null);
     try {
       const result = await admin.users(query);
       setRows(result.users);
@@ -31,7 +32,19 @@ export function UsersView() {
     void load();
   }, [load]);
 
-  if (error) return <p className="notice notice--error">{error}</p>;
+  // A failure the operator can act on. Retry rather than "reload the page":
+  // the usual cause is a worker that was still starting, and the second attempt
+  // is the one that works.
+  if (error) {
+    return (
+      <div className="stack">
+        <p className="notice notice--error">{error}</p>
+        <button className="btn" style={{ justifySelf: 'start' }} onClick={() => void load()}>
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (!rows) return <p className="muted">Loading…</p>;
 
   if (openId) {

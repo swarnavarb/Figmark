@@ -23,6 +23,7 @@ export function DisputesView() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setError(null);
     try {
       setRows((await admin.disputes()).disputes);
     } catch (err) {
@@ -34,7 +35,16 @@ export function DisputesView() {
     void load();
   }, [load]);
 
-  if (error) return <p className="notice notice--error">{error}</p>;
+  if (error) {
+    return (
+      <div className="stack">
+        <p className="notice notice--error">{error}</p>
+        <button className="btn" style={{ justifySelf: 'start' }} onClick={() => void load()}>
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (!rows) return <p className="muted">Loading…</p>;
   if (rows.length === 0) return <p className="muted">Nothing is in dispute.</p>;
 

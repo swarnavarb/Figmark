@@ -199,6 +199,7 @@ await check('starts out unable to sign that account in', async () => {
 });
 
 await repaired.init();
+await repaired.settled();
 
 await check('is not mistaken for an empty database', () => {
   assert.equal(repaired.status().signInAccounts, repaired.listDemoAccounts().length);
@@ -226,6 +227,7 @@ await check('is left exactly as it is', async () => {
   ]);
   const untouched = repositoryOn(existing);
   await untouched.init();
+  await untouched.settled();
   assert.equal(existing.get('users').size, 1, 'seeding must not touch a populated database');
   assert.equal(untouched.status().signInAccounts, 1);
   // The container exists - init() creates whatever the schema declares - but
@@ -242,6 +244,7 @@ await check('a real account missing its reservation is restored, and nothing els
   ]);
   const fixed = repositoryOn(orphaned);
   await fixed.init();
+  await fixed.settled();
   assert.equal(orphaned.get('identifiers').get('someone@example.com').userId, 'usr_real');
   assert.equal(orphaned.get('listings').size, 0, 'no fixtures in a database of real accounts');
   assert.deepEqual(fixed.listDemoAccounts(), []);
@@ -258,6 +261,7 @@ await check('gains the fixtures a later release added, and keeps what it had', a
   const containers = provisioned();
   const repository = repositoryOn(containers);
   await repository.init();
+  await repository.settled();
 
   // Stand in for an older seed: drop the fixtures a later release introduced,
   // and put real use onto one of the rows that stayed.
@@ -271,6 +275,7 @@ await check('gains the fixtures a later release added, and keeps what it had', a
 
   const updated = repositoryOn(containers);
   await updated.init();
+  await updated.settled();
 
   assert.ok(users.has('usr_escrow_meera'), 'the new account arrives');
   assert.ok(orders.has('ord_1005'), 'and the new order with it');
@@ -294,14 +299,58 @@ await check('starting against an up-to-date database is cheap', async () => {
   const containers = provisioned();
   const seeded = repositoryOn(containers);
   await seeded.init();
+  await seeded.settled();
+
+  resetCalls();
+  const restarted = repositoryOn(containers);
+  await restarted.init();
+  await restarted.settled();
+
+  assert.equal(calls.writes, 0, `nothing to write, but wrote ${calls.writes} times`);
+  assert.ok(calls.queries < 25, `init should cost a few queries, not ${calls.queries}`);
+  assert.ok(calls.reads < 10, `init should not read row by row: ${calls.reads} point reads`);
+});
+
+await check('a populated database serves before the fixture pass has run', async () => {
+  // What actually kept the operations console on "Loading…". Making init cheap
+  // was not enough, because cheap still meant a full pass over every container
+  // in front of the first request on every cold worker - and a serverless host
+  // makes cold workers whenever it feels like it.
+  //
+  // So the cost is measured where it is paid: what init does before it returns.
+  // A database that already holds accounts is already serving, and checking its
+  // fixtures is maintenance. Maintenance runs behind the request, not in front
+  // of it.
+  const containers = provisioned();
+  const warm = repositoryOn(containers);
+  await warm.init();
+  await warm.settled();
 
   resetCalls();
   const restarted = repositoryOn(containers);
   await restarted.init();
 
-  assert.equal(calls.writes, 0, `nothing to write, but wrote ${calls.writes} times`);
-  assert.ok(calls.queries < 25, `init should cost a few queries, not ${calls.queries}`);
-  assert.ok(calls.reads < 10, `init should not read row by row: ${calls.reads} point reads`);
+  const onTheRequestPath = calls.reads + calls.writes + calls.queries;
+  assert.ok(
+    onTheRequestPath <= 4,
+    `init should connect and hand back, not sweep the database: ${onTheRequestPath} calls`,
+  );
+
+  // And it still happens - moved off the path, not dropped.
+  await restarted.settled();
+  assert.ok(calls.queries > onTheRequestPath, 'the fixture pass should still have run');
+});
+
+await check('an empty database is filled before it serves anybody', async () => {
+  // The one case that must still block: there is nothing to serve. A database
+  // with no accounts answers every correct password with "that is wrong", so
+  // handing it back early would trade a slow console for a broken sign-in.
+  const empty = provisioned();
+  const fresh = repositoryOn(empty);
+  await fresh.init();
+
+  assert.ok(empty.get('users').size > 0, 'an empty database must be filled by init itself');
+  assert.equal(fresh.status().signInAccounts, fresh.listDemoAccounts().length);
 });
 
 await check('a database of real accounts is never topped up with fixtures', async () => {

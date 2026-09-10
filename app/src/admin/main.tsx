@@ -1,6 +1,6 @@
 import { StrictMode, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { AuthUser } from '@shared/contracts';
+import type { AuthUser, HealthResponse } from '@shared/contracts';
 import { ApiRequestError, admin } from './api';
 import { UsersView } from './UsersView';
 import { DisputesView } from './DisputesView';
@@ -96,8 +96,54 @@ function Console() {
         </div>
 
         {tab === 'users' ? <UsersView /> : <DisputesView />}
+
+        <BackendStatus />
       </main>
     </>
+  );
+}
+
+/**
+ * What the API is running on, at the foot of the console.
+ *
+ * The marketplace has a banner for this; the console had nothing, so a
+ * misconfigured or unreachable database looked identical to an empty one from
+ * in here. It is quiet when everything is as it should be and states the
+ * problem when it is not, because the person reading this screen is the one who
+ * would fix it.
+ */
+function BackendStatus() {
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+
+  useEffect(() => {
+    void admin.health().then(setHealth).catch(() => setHealth(null));
+  }, []);
+
+  if (!health) return null;
+
+  const data = health.data;
+  const missing = data.missingContainers ?? [];
+  const wrong = !data.connected || data.signInAccounts === 0 || missing.length > 0;
+
+  return (
+    <footer className="ops__status">
+      {wrong ? (
+        <p className="notice notice--error">{data.detail}</p>
+      ) : (
+        <p className="faint">
+          {[
+            data.backend,
+            // The in-memory backend has no database to name, and an empty
+            // segment between two separators reads as a missing value.
+            data.database,
+            `${data.signInAccounts} sign-in account(s)`,
+            `v${health.version}`,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      )}
+    </footer>
   );
 }
 

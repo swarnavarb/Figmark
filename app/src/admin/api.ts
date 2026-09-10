@@ -1,3 +1,4 @@
+import type { HealthResponse } from '@shared/contracts';
 import type { Dispute, EscrowRights, SellerTrustSignals, TrustSignals } from '@shared/models';
 import { ApiRequestError, api as marketplace } from '../api';
 
@@ -51,15 +52,50 @@ export interface AdminDisputeRow {
   seller: { id: string; name: string; trust: SellerTrustSignals } | null;
 }
 
+/**
+ * How long the console will wait before it says so.
+ *
+ * A cold worker on a serverless host can take seconds to answer, so this is
+ * generous. What it must not be is absent: a request with no deadline that
+ * never comes back leaves the screen on "Loading…" indefinitely, which reads as
+ * a broken page and says nothing about what broke. That cost several rounds of
+ * guessing at a fault nobody could see, so the wait is bounded and named.
+ */
+const TIMEOUT_MS = 20_000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  const abort = new AbortController();
+  const deadline = setTimeout(() => abort.abort(), TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, {
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      signal: abort.signal,
+      ...init,
+    });
+  } catch (err) {
+    if (abort.signal.aborted) {
+      throw new ApiRequestError(
+        0,
+        'timeout',
+        `The server did not answer /api${path} within ${TIMEOUT_MS / 1000} seconds.` +
+          ' It may still be starting up — try again in a moment.',
+      );
+    }
+    throw new ApiRequestError(0, 'network_error', `Could not reach the API at /api${path}.`);
+  } finally {
+    clearTimeout(deadline);
+  }
+
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
-    throw new ApiRequestError(response.status, body?.error ?? 'error', body?.message ?? response.statusText);
+    throw new ApiRequestError(
+      response.status,
+      body?.error ?? 'http_error',
+      body?.message ?? `Request failed with status ${response.status}.`,
+    );
   }
   return (await response.json()) as T;
 }
@@ -85,6 +121,9 @@ export const admin = {
     post<{ deleted: Record<string, unknown> }>('/admin/resources/delete', { kind, id, ownerId }),
   setEscrow: (id: string, body: { enabled: boolean; feeBasisPoints?: number; displayName?: string; note?: string }) =>
     post<{ user: AdminUserRow }>(`/admin/users/${encodeURIComponent(id)}/escrow`, body),
+
+  /** What the API is actually running on, for the status line. */
+  health: () => request<HealthResponse>('/health'),
 
   disputes: () => request<{ disputes: AdminDisputeRow[] }>('/admin/disputes'),
   resolve: (id: string, body: { outcome: string; refundMinor: number; note: string }) =>

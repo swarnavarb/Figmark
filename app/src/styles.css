@@ -1168,3 +1168,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .escrow__main { display: grid; gap: 3px; min-width: 0; }
 .escrow__name { font-weight: 650; font-size: var(--t-sm); }
 .escrow__fee { font-size: var(--t-sm); font-weight: 600; white-space: nowrap; }
+
+/* The operations console's status line: quiet when the backend is healthy. */
+.ops__status { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); }
+.ops__status p { margin: 0; }
