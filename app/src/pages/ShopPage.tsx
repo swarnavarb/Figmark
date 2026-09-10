@@ -6,7 +6,7 @@ import {
 } from '@shared/enums';
 import { countOf, type LotTally } from '@shared/board';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import type { SellerProfile, StoreManager } from '@shared/models';
+import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
 import {
   ApiRequestError,
@@ -16,16 +16,18 @@ import {
   type ActivityResponse,
   type BoardLot,
   type LotsBoard,
+  type SaleRow,
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, Thumb, Tile } from '../components/ui';
 import { PackingList } from './ExporterPage';
-import { formatDate, formatMoney } from '../format';
+import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Section = 'items' | 'tracking' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'tracking' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
+  { id: 'payments', label: 'Payments' },
   { id: 'tracking', label: 'Tracking' },
   { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
@@ -148,6 +150,9 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
   // worse than a tab that is not there.
   const visible = SECTIONS.filter((entry) => {
     if (entry.id === 'items') return store.permissions.includes('listings');
+    // Answering for money is an owner's call, so it rides on the same right
+    // the API checks rather than on a wider one.
+    if (entry.id === 'payments') return store.permissions.includes('admin');
     if (entry.id === 'analytics') return store.permissions.includes('analytics');
     if (entry.id === 'tracking') return store.permissions.includes('lots');
     if (entry.id === 'packing') return store.permissions.includes('export');
@@ -208,6 +213,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           content underneath a static frame. */}
       <div className="tab-view" key={`${store.ownerId}:${active}`}>
         {active === 'items' && <MyItems store={store} />}
+        {active === 'payments' && <Payments store={store} />}
         {active === 'tracking' && <Tracking store={store} />}
         {active === 'packing' && <PackingList storeId={store.ownerId} />}
         {active === 'analytics' && <Analytics />}
@@ -246,6 +252,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           dispatchRegion: result.storefront?.dispatchRegion ?? '',
           photoUrl: result.storefront?.photoUrl ?? '',
           link: result.storefront?.link ?? '',
+          payment: result.storefront?.payment ?? null,
         });
       })
       .catch((err: unknown) =>
@@ -258,6 +265,10 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
 
   const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) =>
     setDraft({ ...draft, [key]: value });
+
+  /** One payment field at a time, without losing the others already typed. */
+  const setPayment = (key: keyof SellerPaymentDetails, value: string) =>
+    setDraft({ ...draft, payment: { ...(draft.payment ?? {}), [key]: value } });
 
   // The same rules the server enforces, so a bad handle is caught while it is
   // being typed rather than on save.
@@ -342,6 +353,46 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
             <span className="field__hint">One only. Instagram, a group, a price list.</span>
           </label>
         </div>
+
+        <fieldset className="fieldset">
+          <legend>How buyers pay you directly</legend>
+          <p className="faint" style={{ marginTop: 0 }}>
+            Shown only to somebody checking out an order with you, never on the storefront. Without
+            at least one of these, buyers cannot buy from you directly at all. Figmark does not move
+            this money and does not check the account exists.
+          </p>
+          <label className="field">
+            <span>UPI ID</span>
+            <input value={draft.payment?.upiId ?? ''}
+              onChange={(e) => setPayment('upiId', e.target.value)}
+              placeholder="yourshop@okhdfcbank" />
+          </label>
+          <div className="field-row">
+            <label className="field">
+              <span>Account name</span>
+              <input value={draft.payment?.accountName ?? ''}
+                onChange={(e) => setPayment('accountName', e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Account number</span>
+              <input value={draft.payment?.accountNumber ?? ''}
+                onChange={(e) => setPayment('accountNumber', e.target.value)} />
+            </label>
+          </div>
+          <div className="field-row">
+            <label className="field">
+              <span>IFSC</span>
+              <input value={draft.payment?.ifsc ?? ''}
+                onChange={(e) => setPayment('ifsc', e.target.value.toUpperCase())} />
+            </label>
+            <label className="field">
+              <span>Anything else they should do</span>
+              <input value={draft.payment?.instructions ?? ''}
+                onChange={(e) => setPayment('instructions', e.target.value)}
+                placeholder="Quote the order number in the note" />
+            </label>
+          </div>
+        </fieldset>
 
         {flash && <p className="notice notice--ok">{flash}</p>}
         {error && <ErrorNotice message={error} />}
@@ -449,6 +500,91 @@ function MyItems({ store }: { store: StoreAccess }) {
  * thirty-three of thirty-four land and one is still with the supplier, and that
  * is exactly the thing worth seeing.
  */
+/**
+ * Payments a buyer says they have sent.
+ *
+ * A direct sale ends here: somebody transferred money outside this app and the
+ * only person who can confirm it landed is the one whose account it landed in.
+ * So this is a queue of decisions rather than a feed of notifications — what is
+ * waiting on this shop first, then what it has already answered, because a
+ * denial the seller regrets should still be findable afterwards.
+ */
+function Payments({ store }: { store: StoreAccess }) {
+  const [data, setData] = useState<{ waiting: SaleRow[]; answered: SaleRow[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setData(await api.sales(store.ownerId));
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load payments.');
+    }
+  }, [store.ownerId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (error) return <ErrorNotice message={error} />;
+  if (!data) return <p className="muted">Loading…</p>;
+
+  if (data.waiting.length === 0 && data.answered.length === 0) {
+    return (
+      <EmptyState title="No payments to check">
+        When a buyer pays you directly and says so, it lands here for you to confirm.
+      </EmptyState>
+    );
+  }
+
+  return (
+    <div className="stack">
+      {data.waiting.length > 0 && (
+        <>
+          <h2 style={{ margin: 0 }}>Waiting on you</h2>
+          {data.waiting.map((row) => (
+            <Link key={row.id} to={`/order/${row.id}`} className="card card--pad salerow">
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 650 }}>{row.itemName}</div>
+                <span className="faint">
+                  {row.buyerName} · said paid {timeAgo(row.claim?.claimedAt ?? row.createdAt)}
+                  {row.claim?.reference ? ` · ${row.claim.reference}` : ''}
+                </span>
+              </div>
+              <div className="row" style={{ alignItems: 'center' }}>
+                <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
+                <span className="badge badge--warn">check it</span>
+              </div>
+            </Link>
+          ))}
+        </>
+      )}
+
+      {data.answered.length > 0 && (
+        <>
+          <h2 style={{ marginBottom: 0 }}>Already answered</h2>
+          {data.answered.map((row) => (
+            <Link key={row.id} to={`/order/${row.id}`} className="card card--pad salerow">
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 650 }}>{row.itemName}</div>
+                <span className="faint">
+                  {row.buyerName} · {timeAgo(row.claim?.decidedAt ?? row.createdAt)}
+                </span>
+              </div>
+              <div className="row" style={{ alignItems: 'center' }}>
+                <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
+                <span className={`badge badge--${row.claim?.decision === 'accepted' ? 'ok' : 'warn'}`}>
+                  {row.claim?.decision === 'accepted' ? 'received' : 'not received'}
+                </span>
+              </div>
+            </Link>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 function Tracking({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<LotsBoard | null>(null);
   const [error, setError] = useState<string | null>(null);

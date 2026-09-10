@@ -37,7 +37,7 @@ export const REVIEW_REVEAL_DAYS = 14;
 /** Days a seller has to answer a dispute before it needs a human. */
 export const DISPUTE_RESPONSE_DAYS = 3;
 
-export type OrderAction = 'pay' | 'confirm' | 'dispute' | 'review';
+export type OrderAction = 'pay' | 'settle_claim' | 'confirm' | 'dispute' | 'review';
 
 /** Protection is only offered where the company has granted the seller it. */
 export function protectionFeeMinor(totalMinor: number, feeBasisPoints: number): number {
@@ -91,6 +91,12 @@ export function actionsFor(
   if (side === 'buyer' && order.paymentStatus === 'unpaid' && order.status === 'pending_payment') {
     actions.push('pay');
   }
+
+  // A claimed payment is waiting on the seller, and on nobody else. The buyer
+  // has done everything they can do and gets no button; the seller gets the
+  // only one that matters, because whether the money arrived is a fact only
+  // their own bank can tell them.
+  if (side === 'seller' && order.paymentStatus === 'claimed') actions.push('settle_claim');
 
   // Confirming delivery is the buyer's alone: it is the one fact in the whole
   // pipeline that only they can know. The seller ticking "dispatched" is not

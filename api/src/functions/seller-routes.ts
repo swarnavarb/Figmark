@@ -80,6 +80,13 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     dispatchRegion?: string;
     photoUrl?: string;
     link?: string;
+    payment?: {
+      upiId?: string;
+      accountName?: string;
+      accountNumber?: string;
+      ifsc?: string;
+      instructions?: string;
+    } | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -140,6 +147,22 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     const link = safeLink(body.link);
     if (link === undefined) return error(400, 'invalid_storefront', 'That link is not a valid http(s) URL.');
     existing.link = link;
+  }
+  if (body.payment !== undefined) {
+    // Carried as typed. The platform does not move this money and cannot
+    // verify an account exists, so validating the shape of it would only
+    // suggest it had checked something. Length is capped; nothing else.
+    const trim = (value: string | undefined) => (value ?? '').trim().slice(0, 120) || null;
+    const payment = body.payment
+      ? {
+          upiId: trim(body.payment.upiId),
+          accountName: trim(body.payment.accountName),
+          accountNumber: trim(body.payment.accountNumber),
+          ifsc: trim(body.payment.ifsc),
+          instructions: (body.payment.instructions ?? '').trim().slice(0, 400) || null,
+        }
+      : null;
+    existing.payment = payment && Object.values(payment).some(Boolean) ? payment : null;
   }
 
   record.sellerProfile = existing;
@@ -244,6 +267,65 @@ async function dashboard(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
+ * GET /api/me/sales - orders waiting on the seller, and the ones just settled.
+ *
+ * A direct sale ends with the seller checking their own bank and saying whether
+ * the money arrived. That is a job, not a notification, so it gets a queue: what
+ * is waiting on them first, then what they have already answered, so a decision
+ * they regret is at least visible afterwards.
+ */
+async function sales(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const storeId = request.query.get('store') ?? user.id;
+  // A manager acts in the shop, so the shop's orders are the ones they answer -
+  // but only where the store has actually granted them that.
+  if (storeId !== user.id) {
+    const owner = await repository.getUserById(storeId);
+    // Answering for the money is an owner's decision, so it rides on `admin`
+    // rather than on the rights that only cover stock and shipping.
+    if (!owner || !can(owner, user.id, 'admin')) {
+      return error(403, 'forbidden', 'You do not have rights to answer payments in this shop.');
+    }
+  }
+
+  const orders = await repository.listOrdersForSeller(storeId);
+  const buyers = new Map<string, string>();
+  for (const order of orders) {
+    if (buyers.has(order.buyerId)) continue;
+    const buyer = await repository.getUserById(order.buyerId);
+    buyers.set(order.buyerId, buyer?.displayName ?? 'Someone');
+  }
+
+  const row = (order: (typeof orders)[number]) => ({
+    id: order.id,
+    itemName: order.itemName,
+    quantity: order.quantity,
+    totalMinor: order.unitPriceMinor * order.quantity,
+    currency: order.currency,
+    buyerName: buyers.get(order.buyerId) ?? 'Someone',
+    paymentStatus: order.paymentStatus,
+    claim: order.paymentClaim ?? null,
+    createdAt: order.createdAt,
+  });
+
+  const waiting = orders.filter((order) => order.paymentStatus === 'claimed');
+  const answered = orders
+    .filter((order) => order.paymentClaim?.decision)
+    .sort((a, b) => (b.paymentClaim!.decidedAt ?? '').localeCompare(a.paymentClaim!.decidedAt ?? ''))
+    .slice(0, 10);
+
+  return json(200, {
+    waiting: waiting
+      .sort((a, b) => (a.paymentClaim?.claimedAt ?? '').localeCompare(b.paymentClaim?.claimedAt ?? ''))
+      .map(row),
+    answered: answered.map(row),
+  });
+}
+
+/**
  * GET /api/me/stores - every store this account may act in.
  *
  * Their own if they have opened one, plus any they have been given rights in.
@@ -333,11 +415,13 @@ export const updateManagersRoute = handler(updateManagers);
 export const storefrontRoute = handler(getStorefront);
 export const updateStorefrontRoute = handler(updateStorefront);
 export const dashboardRoute = handler(dashboard);
+export const salesRoute = handler(sales);
 
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('me-storefront', { ...anon, methods: ['GET'], route: 'me/storefront', handler: storefrontRoute });
 app.http('me-storefront-save', { ...anon, methods: ['POST'], route: 'me/storefront/save', handler: updateStorefrontRoute });
 app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', handler: dashboardRoute });
+app.http('me-sales', { ...anon, methods: ['GET'], route: 'me/sales', handler: salesRoute });
 app.http('me-stores', { ...anon, methods: ['GET'], route: 'me/stores', handler: myStoresRoute });
 app.http('me-store-managers', { ...anon, methods: ['POST'], route: 'me/storefront/managers', handler: updateManagersRoute });

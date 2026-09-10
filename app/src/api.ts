@@ -19,7 +19,7 @@ export interface EvidenceDraft {
 }
 import type {
   Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty,
-  Order, Post, Review, SellerProfile, StoreManager,
+  Order, PaymentClaim, Post, Review, SellerPaymentDetails, SellerProfile, StoreManager,
 } from '@shared/models';
 
 /**
@@ -182,16 +182,39 @@ export interface EscrowOption {
   feeMinor: number;
   heldBefore: number;
   since: string;
+  /** Payments they have held, ever. */
+  held: number;
+  /** Of those, the ones that finished - released or refunded. */
+  settled: number;
+  /** What they are holding right now, including anything in dispute. */
+  openNow: number;
+  /** Out of five, from their own record. Null until they have settled one. */
+  rating: number | null;
 }
 
 export interface Checkout {
   itemMinor: number;
   currency: string;
   sellerName: string;
+  /** Where to send the money on a direct sale. Null when the seller has set none. */
+  sellerPayment: SellerPaymentDetails | null;
   /** Empty when nobody approved can be neutral in this trade. */
   escrows: EscrowOption[];
   /** The one the rest of the batch already uses, and why. Never a default. */
   suggested: { agentId: string; name: string; because: string } | null;
+}
+
+/** One order waiting on the seller to say whether the money arrived. */
+export interface SaleRow {
+  id: string;
+  itemName: string;
+  quantity: number;
+  totalMinor: number;
+  currency: string;
+  buyerName: string;
+  paymentStatus: string;
+  claim: PaymentClaim | null;
+  createdAt: string;
 }
 
 export interface EscrowHolding {
@@ -336,6 +359,8 @@ export interface StorefrontDraft {
   dispatchRegion?: string;
   photoUrl?: string;
   link?: string;
+  /** How a buyer pays this shop directly. Null clears it. */
+  payment?: SellerPaymentDetails | null;
 }
 
 /* ── Lot board (tracking) ──────────────────────────────────────────────── */
@@ -495,6 +520,14 @@ export const api = {
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),
   checkout: (id: string) => request<Checkout>(`/orders/${encodeURIComponent(id)}/checkout`),
+  claimPayment: (id: string, body: { reference: string; screenshot: string | null }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/claim-payment`, body),
+  settleClaim: (id: string, body: { accept: boolean; reason?: string }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/settle-claim`, body),
+  sales: (storeId?: string) =>
+    request<{ waiting: SaleRow[]; answered: SaleRow[] }>(
+      `/me/sales${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
+    ),
   payOrder: (id: string, protection: boolean, escrowAgentId?: string) =>
     post<{ order: Order; simulatedPayment: boolean }>(
       `/orders/${encodeURIComponent(id)}/pay`,

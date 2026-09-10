@@ -23,7 +23,7 @@ const {
 } = await import(new URL('fulfilment-routes.js', fns));
 const {
   storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, dashboardRoute: dashboard,
-  myStoresRoute: myStores, updateManagersRoute: updateManagers,
+  myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales,
 } = await import(new URL('seller-routes.js', fns));
 const {
   socialFeedRoute: socialFeed, channelsRoute: channels, channelThreadRoute: channelThread,
@@ -44,6 +44,7 @@ const {
 const {
   payRoute: payOrder, confirmRoute: confirmOrder, reviewRoute: reviewOrder,
   orderStateRoute: orderState, reviewsAboutRoute: reviewsAbout, checkoutRoute: checkout,
+  claimPaymentRoute: claimPayment, settleClaimRoute: settleClaim,
 } = await import(new URL('order-routes.js', fns));
 const {
   openDisputeRoute: openDispute, readDisputeRoute: readDispute, replyDisputeRoute: replyDispute,
@@ -1502,6 +1503,161 @@ await check('a stranger cannot see or touch an order', async () => {
 });
 
 /* ── disputes, from both sides ─────────────────────────────────────────── */
+console.log('\nbuying directly from the seller');
+
+await check('the checkout carries the seller\'s details, so there is somewhere to send it', async () => {
+  const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
+  assert.ok(body.sellerPayment, 'the seller can be paid directly');
+  assert.ok(body.sellerPayment.upiId, 'and the UPI id is what a buyer needs');
+});
+
+await check('an escrow with no settled payments has no rating, rather than a blank five', async () => {
+  const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
+  for (const option of body.escrows) {
+    assert.ok(typeof option.held === 'number', 'their record is counted, not invented');
+    if (option.settled === 0) assert.equal(option.rating, null, 'unproven is not the same as bad');
+    else assert.ok(option.rating > 0 && option.rating <= 5);
+  }
+});
+
+/* A whole direct sale, end to end, on an order of its own. */
+const directBuyer = await signup(req({
+  body: {
+    displayName: 'Direct Buyer', email: 'direct@figmark.example',
+    phone: '+919000045512', password: 'longenough1',
+  },
+}), ctx);
+const directAuth = { authorization: `Bearer ${directBuyer.jsonBody.token}` };
+const directListing = await createListing(req({
+  headers: auth, body: { title: 'Sold hand to hand', priceMinor: 25_000, sourcing: 'in_hand' },
+}), ctx);
+const directOrder = (await createOrder(req({
+  headers: directAuth, body: { listingId: directListing.jsonBody.listing.id, quantity: 1 },
+}), ctx)).jsonBody.order;
+
+await check('a claim needs proof, not just a button press', async () => {
+  const empty = await claimPayment(req({
+    headers: directAuth, params: { id: directOrder.id }, body: {},
+  }), ctx);
+  assert.equal(empty.status, 400);
+  assert.equal(empty.jsonBody.error, 'no_proof');
+});
+
+await check('a screenshot that is not an image is refused', async () => {
+  const wrong = await claimPayment(req({
+    headers: directAuth, params: { id: directOrder.id }, body: { screenshot: 'https://example.com/a.png' },
+  }), ctx);
+  assert.equal(wrong.status, 400);
+  assert.equal(wrong.jsonBody.error, 'invalid_screenshot');
+});
+
+await check('an oversized screenshot is refused with its actual size', async () => {
+  const huge = await claimPayment(req({
+    headers: directAuth,
+    params: { id: directOrder.id },
+    body: { screenshot: `data:image/jpeg;base64,${'A'.repeat(500_000)}` },
+  }), ctx);
+  assert.equal(huge.status, 413);
+  assert.match(huge.jsonBody.message, /KB and the limit is/);
+});
+
+await check('only the buyer can say they have paid', async () => {
+  const seller = await claimPayment(req({
+    headers: auth, params: { id: directOrder.id }, body: { reference: 'UTR999' },
+  }), ctx);
+  assert.equal(seller.status, 403);
+  assert.equal(seller.jsonBody.error, 'not_the_buyer');
+});
+
+await check('claiming puts it in front of the seller, and is not the same as paid', async () => {
+  const claimed = await claimPayment(req({
+    headers: directAuth,
+    params: { id: directOrder.id },
+    body: { reference: 'UTR12345', screenshot: 'data:image/jpeg;base64,QUJD' },
+  }), ctx);
+  assert.equal(claimed.status, 200);
+  assert.equal(claimed.jsonBody.order.paymentStatus, 'claimed');
+  assert.equal(claimed.jsonBody.awaiting, 'seller');
+  assert.equal(claimed.jsonBody.order.paymentClaim.reference, 'UTR12345');
+  assert.equal(claimed.jsonBody.order.paymentClaim.decision, null);
+});
+
+await check('the buyer has nothing left to do; the seller has the only button', async () => {
+  const theirs = (await orderState(req({ headers: directAuth, params: { id: directOrder.id } }), ctx)).jsonBody;
+  assert.deepEqual(theirs.actions, [], 'the buyer waits');
+
+  const sellers = (await orderState(req({ headers: auth, params: { id: directOrder.id } }), ctx)).jsonBody;
+  assert.ok(sellers.actions.includes('settle_claim'), 'the seller answers');
+});
+
+await check('it shows up in the shop\'s payments queue', async () => {
+  const queue = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  const row = queue.waiting.find((entry) => entry.id === directOrder.id);
+  assert.ok(row, 'waiting on this shop');
+  assert.equal(row.claim.reference, 'UTR12345');
+  assert.equal(row.buyerName, 'Direct Buyer');
+});
+
+await check('a stranger cannot read a shop\'s payments queue', async () => {
+  const refused = await sales(req({ headers: directAuth, params: {}, query: { store: 'usr_demo' } }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+await check('denying it needs a reason the buyer can act on', async () => {
+  const blank = await settleClaim(req({
+    headers: auth, params: { id: directOrder.id }, body: { accept: false, reason: '' },
+  }), ctx);
+  assert.equal(blank.status, 400);
+  assert.equal(blank.jsonBody.error, 'no_reason');
+});
+
+await check('a denial puts it back to unpaid and keeps the evidence', async () => {
+  const denied = await settleClaim(req({
+    headers: auth,
+    params: { id: directOrder.id },
+    body: { accept: false, reason: 'Nothing has landed in the account yet.' },
+  }), ctx);
+  assert.equal(denied.status, 200);
+  assert.equal(denied.jsonBody.order.paymentStatus, 'unpaid');
+  // A denied claim is the start of an argument, so the buyer's proof survives it.
+  assert.equal(denied.jsonBody.order.paymentClaim.decision, 'denied');
+  assert.equal(denied.jsonBody.order.paymentClaim.reference, 'UTR12345');
+  assert.match(denied.jsonBody.order.paymentClaim.decidedReason, /Nothing has landed/);
+});
+
+await check('so the buyer can send it again', async () => {
+  const again = await claimPayment(req({
+    headers: directAuth, params: { id: directOrder.id }, body: { reference: 'UTR67890' },
+  }), ctx);
+  assert.equal(again.status, 200);
+  assert.equal(again.jsonBody.order.paymentStatus, 'claimed');
+});
+
+await check('accepting is the seller saying it is in their account', async () => {
+  const accepted = await settleClaim(req({
+    headers: auth, params: { id: directOrder.id }, body: { accept: true },
+  }), ctx);
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.jsonBody.order.paymentStatus, 'paid');
+  assert.equal(accepted.jsonBody.order.status, 'confirmed');
+  // Nobody held this, so there is nothing to release and nothing to dispute.
+  assert.equal(accepted.jsonBody.order.escrow.state, 'none');
+  assert.equal(accepted.jsonBody.order.protection ?? null, null);
+});
+
+await check('and it cannot be answered twice', async () => {
+  const again = await settleClaim(req({
+    headers: auth, params: { id: directOrder.id }, body: { accept: true },
+  }), ctx);
+  assert.equal(again.status, 409);
+  assert.equal(again.jsonBody.error, 'nothing_to_settle');
+});
+
+await check('a direct sale has nothing to dispute, which is what it cost', async () => {
+  const state = (await orderState(req({ headers: directAuth, params: { id: directOrder.id } }), ctx)).jsonBody;
+  assert.equal(state.actions.includes('dispute'), false);
+});
+
 console.log('\ndisputes, from both sides');
 
 await check('a seller can raise one too, with reasons only a seller has', async () => {

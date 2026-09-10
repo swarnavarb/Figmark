@@ -1156,18 +1156,69 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* A wide tick: the checkbox is the question, so it gets a whole row. */
 .tick--wide { width: 100%; justify-content: flex-start; padding: 11px 12px; font-size: var(--t-sm); }
 
+/* An escrow in the picker: a row that opens onto its record. */
 .escrow {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+}
+.escrow:hover { border-color: var(--border-strong); }
+.escrow.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.escrow__head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   width: 100%; padding: 12px 14px;
+  background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.escrow__main { display: grid; gap: 3px; min-width: 0; }
+.escrow__name { font-weight: 650; font-size: var(--t-sm); }
+.escrow__fee { font-size: var(--t-sm); font-weight: 600; white-space: nowrap; }
+.escrow__more {
+  display: grid; gap: 12px; padding: 0 14px 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.escrow__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+/* The arrow is the commitment, so it is the one thing here that looks pressable. */
+.escrow__add {
+  flex: none; width: 40px; height: 40px; border-radius: 999px;
+  border: 0; background: var(--accent); color: var(--accent-ink);
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.escrow__add:hover { filter: brightness(1.08); }
+
+/* The two ways to buy, as two things rather than a tick on one. */
+.buyway {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 12px;
+  width: 100%; padding: 14px;
   border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface-2); color: inherit; font: inherit; text-align: left; cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-.escrow:hover { border-color: var(--border-strong); background: var(--surface-hover); }
-.escrow.is-on { border-color: var(--accent); background: var(--accent-soft); }
-.escrow__main { display: grid; gap: 3px; min-width: 0; }
-.escrow__name { font-weight: 650; font-size: var(--t-sm); }
-.escrow__fee { font-size: var(--t-sm); font-weight: 600; white-space: nowrap; }
+.buyway:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-hover); }
+.buyway.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.buyway:disabled { opacity: 0.55; cursor: not-allowed; }
+.buyway__title { font-weight: 650; font-size: var(--t-sm); }
+.buyway__price { font-weight: 650; font-size: var(--t-sm); white-space: nowrap; text-align: right; }
+.buyway__note { grid-column: 1 / -1; color: var(--text-dim); font-size: var(--t-xs); line-height: 1.45; }
+
+/* A payment screenshot, on either side of the claim. */
+.proof {
+  display: block; width: 100%; max-width: 320px; border-radius: var(--r-md);
+  border: 1px solid var(--border);
+}
+
+/* One order in the shop's payments queue. */
+.salerow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  text-decoration: none; color: inherit;
+}
+
+/* A group of fields that belong to one decision. */
+.fieldset {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 14px; margin: 0; display: grid; gap: 12px;
+}
+.fieldset > legend { padding: 0 6px; font-weight: 650; font-size: var(--t-sm); }
 
 /* The operations console's status line: quiet when the backend is healthy. */
 .ops__status { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); }

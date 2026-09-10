@@ -185,6 +185,34 @@ export interface SellerProfile {
    * storefront's front door, and keeps the card honest about what it is.
    */
   link?: string | null;
+  /**
+   * Where a buyer sends the money on a direct sale.
+   *
+   * Shown to a buyer only once they are on the checkout of an order with this
+   * seller, never on the storefront: these are the details somebody needs to
+   * pay, and a shop page is not a reason to publish them to everyone who walks
+   * past. Absent means this seller has not set any up, and a direct sale
+   * cannot be offered at all.
+   */
+  payment?: SellerPaymentDetails | null;
+}
+
+/**
+ * How to pay this seller directly, in their own words.
+ *
+ * Free text rather than a validated bank record on purpose: the platform is not
+ * moving this money and must not pretend to have checked it. What it can do is
+ * carry the details accurately and make the buyer's proof of sending it part of
+ * the order, which is what the two of them will argue from if it goes wrong.
+ */
+export interface SellerPaymentDetails {
+  /** A UPI handle, which is how most of these are actually settled. */
+  upiId?: string | null;
+  accountName?: string | null;
+  accountNumber?: string | null;
+  ifsc?: string | null;
+  /** Anything the buyer needs to do besides send it - a reference to quote. */
+  instructions?: string | null;
 }
 
 /**
@@ -510,6 +538,37 @@ export interface Order extends BaseDocument {
    * yet; orders written before checkpoints existed simply have none.
    */
   checkpoints?: Partial<Record<OrderCheckpoint, string | null>>;
+  /**
+   * The buyer's claim that they have paid, and what the seller made of it.
+   *
+   * A direct sale is settled outside this app, so nothing here observes the
+   * money moving. What the order can hold is each side's account of it: the
+   * buyer's reference and screenshot, then the seller's decision. Both are
+   * kept even after a denial, because a denied claim is the beginning of an
+   * argument and deleting the evidence would leave only one side of it.
+   */
+  paymentClaim?: PaymentClaim | null;
+}
+
+/** One buyer's assertion that they sent the money, and the seller's answer. */
+export interface PaymentClaim {
+  claimedAt: string;
+  /** The transaction reference the buyer typed - a UTR, or whatever their app gave them. */
+  reference: string | null;
+  /**
+   * Their screenshot of it.
+   *
+   * Held on the order as a downscaled image rather than a link, because a link
+   * to somebody's photo host is evidence that can be taken away later, and
+   * this is the only proof the buyer has. It moves behind the photo store when
+   * blob storage is wired; the field the order reads stays the same.
+   */
+  screenshot: string | null;
+  /** Null while the seller has not answered yet. */
+  decision: 'accepted' | 'denied' | null;
+  decidedAt: string | null;
+  /** Why they denied it. Read by the buyer, so it has to say something. */
+  decidedReason: string | null;
 }
 
 /** Buyer protection, as bought: who holds it, and on what terms. */

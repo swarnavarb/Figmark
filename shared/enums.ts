@@ -115,7 +115,13 @@ export const ORDER_STATUSES = [
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
-export const PAYMENT_STATUSES = ['unpaid', 'partially_paid', 'paid', 'refunded'] as const;
+/**
+ * 'claimed' is the buyer saying they have paid, which is not the same as having
+ * been paid. A direct sale settles outside this app - a UPI transfer between two
+ * strangers - so the money arriving is a fact only the seller can confirm, and
+ * the order waits in this state until they do.
+ */
+export const PAYMENT_STATUSES = ['unpaid', 'claimed', 'partially_paid', 'paid', 'refunded'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 /**

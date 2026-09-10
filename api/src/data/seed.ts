@@ -106,6 +106,13 @@ export function seedUsers(): User[] {
         depositHeldMinor: 0,
         dispatchRegion: 'Mumbai, MH',
         followerCount: 14,
+        payment: {
+          upiId: 'arjuncollects@okhdfcbank',
+          accountName: 'Arjun Mehta',
+          accountNumber: null,
+          ifsc: null,
+          instructions: 'Put the order number in the payment note.',
+        },
         managers: [
           {
             userId: 'usr_packer',
@@ -259,6 +266,16 @@ function storefront(
       depositHeldMinor: score > 80 ? 25_00_000 : 0,
       dispatchRegion: region,
       followerCount: Math.round(completed * 2.4),
+      // Every seeded shop can be paid directly, or the buy flow has nothing to
+      // show: without details there is nowhere to send the money and the
+      // direct route is correctly refused.
+      payment: {
+        upiId: `${slug.replace(/-/g, '')}@okaxis`,
+        accountName: name,
+        accountNumber: null,
+        ifsc: null,
+        instructions: 'Put the order number in the payment note.',
+      },
     },
     forwarderProfile: null,
     suspended: false,

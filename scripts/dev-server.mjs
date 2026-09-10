@@ -28,7 +28,7 @@ const {
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
   lotsBoardRoute, lotBoardRoute, setCheckpointRoute, exporterLotsRoute, exporterLotRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute } =
+const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute,
@@ -38,6 +38,7 @@ const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUserna
   await import(new URL('message-routes.js', apiRoot));
 const {
   payRoute, confirmRoute, reviewRoute, orderStateRoute, reviewsAboutRoute, checkoutRoute,
+  claimPaymentRoute, settleClaimRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
@@ -83,6 +84,7 @@ const routes = [
   ['GET', '/api/me/storefront', storefrontRoute],
   ['POST', '/api/me/storefront/save', updateStorefrontRoute],
   ['GET', '/api/me/dashboard', dashboardRoute],
+  ['GET', '/api/me/sales', salesRoute],
   ['GET', '/api/me/stores', myStoresRoute],
   ['POST', '/api/me/storefront/managers', updateManagersRoute],
   ['GET', '/api/social/feed', socialFeedRoute],
@@ -99,6 +101,8 @@ const routes = [
   ['GET', '/api/orders/:id/state', orderStateRoute],
   ['GET', '/api/orders/:id/checkout', checkoutRoute],
   ['POST', '/api/orders/:id/pay', payRoute],
+  ['POST', '/api/orders/:id/claim-payment', claimPaymentRoute],
+  ['POST', '/api/orders/:id/settle-claim', settleClaimRoute],
   ['POST', '/api/orders/:id/confirm', confirmRoute],
   ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],

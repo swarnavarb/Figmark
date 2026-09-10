@@ -4,7 +4,7 @@ import { labelFor } from '@shared/fulfilment';
 import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
 import { reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS } from '@shared/enums';
-import type { Order } from '@shared/models';
+import type { Order, SellerPaymentDetails } from '@shared/models';
 import {
   ApiRequestError, api,
   type Checkout, type EscrowOption, type EvidenceDraft, type OrderState, type OrderTracking,
@@ -168,6 +168,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const [settling, setSettling] = useState(false);
   const [disputing, setDisputing] = useState(false);
 
   const { order, actions } = state;
@@ -180,6 +181,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       await fn();
       await onDone();
       setPaying(false);
+      setSettling(false);
       setDisputing(false);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
@@ -192,16 +194,35 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
 
   return (
     <div className="stack" style={{ marginBottom: 20 }}>
-      {/* Said plainly, everywhere money is mentioned: no provider is wired up,
-          and a screen that implied one would be lying about a payment. */}
-      {state.simulatedPayment && order.paymentStatus !== 'unpaid' && (
+      {/* Only the held payment is simulated. A direct sale is real money that
+          genuinely left the buyer's account — Figmark simply had no part in it,
+          which the checkout says in its own words. Claiming otherwise here
+          would tell somebody who has actually paid that they have not. */}
+      {state.simulatedPayment && order.protection != null && (
         <p className="notice notice--warn">
-          Payments are simulated while no provider is connected — nothing is charged.
+          The escrow hold is simulated while no provider is connected — nothing is charged.
+        </p>
+      )}
+
+      {/* A claimed payment is the one state where each side is waiting on a
+          different thing, so each is told which. */}
+      {order.paymentStatus === 'claimed' && (
+        <p className="notice notice--info">
+          {state.side === 'buyer'
+            ? 'You have told the seller you paid. They confirm it landed in their account before this moves — nothing else is needed from you.'
+            : 'The buyer says they have paid. Check your own account, then say whether it arrived.'}
+        </p>
+      )}
+
+      {order.paymentClaim?.decision === 'denied' && state.side === 'buyer' && (
+        <p className="notice notice--warn">
+          The seller says the payment has not arrived: {order.paymentClaim.decidedReason} You can
+          send it again and tell them.
         </p>
       )}
 
       {/* What protection did or did not buy, once the choice has been made. */}
-      {order.paymentStatus !== 'unpaid' && (
+      {(order.paymentStatus === 'paid' || order.paymentStatus === 'refunded') && (
         order.protection ? (
           <p className="notice notice--ok">
             Held by <strong>{order.protection.escrowName}</strong> —{' '}
@@ -232,6 +253,11 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
                 Pay {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}
               </button>
             )}
+            {actions.includes('settle_claim') && !settling && (
+              <button className="btn btn--lg" onClick={() => setSettling(true)}>
+                Did this payment arrive?
+              </button>
+            )}
             {actions.includes('confirm') && (
               <button className="btn btn--lg" disabled={busy !== null}
                 onClick={() => void run('confirm', () => api.confirmOrder(order.id))}>
@@ -246,11 +272,20 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
           </div>
 
           {paying && (
-            <PayPanel
+            <BuyPanel
               order={order}
               busy={busy}
-              onPay={(p, escrowAgentId) => run('pay', () => api.payOrder(order.id, p, escrowAgentId))}
+              onPaid={(body) => run('claim', () => api.claimPayment(order.id, body))}
               onCancel={() => setPaying(false)}
+            />
+          )}
+
+          {settling && (
+            <SettleClaim
+              order={order}
+              busy={busy === 'settle'}
+              onCancel={() => setSettling(false)}
+              onAnswer={(body) => run('settle', () => api.settleClaim(order.id, body))}
             />
           )}
 
@@ -273,23 +308,25 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
 }
 
 /**
- * Choosing whether to buy protection, with both outcomes stated.
+ * How to pay for this, which is two genuinely different transactions.
  *
- * A default here would be the whole decision: the buyer is choosing between
- * paying a fee and having no recourse, and neither is obviously right for a
- * ₹200 order from someone they have bought from ten times. So nothing is
- * pre-selected and both buttons say what they cost.
+ * Buying direct means the money leaves the buyer's bank and arrives in the
+ * seller's, with this app holding nothing but both sides' account of it. Buying
+ * with protection means an escrow holds it instead. They are not a setting on
+ * one purchase: they differ in who has the money, who can be argued with, and
+ * what happens if the box never turns up. So they are offered as two choices
+ * with what each one costs and gives up written on it, rather than a tick box
+ * on a single Pay button.
  */
-function PayPanel({ order, busy, onPay, onCancel }: {
+function BuyPanel({ order, busy, onPaid, onCancel }: {
   order: Order;
   busy: string | null;
-  onPay: (protection: boolean, escrowAgentId?: string) => void | Promise<void>;
+  onPaid: (body: { reference: string; screenshot: string | null }) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [quote, setQuote] = useState<Checkout | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** Ticked, but nobody chosen yet — which is what opens the picker. */
-  const [wantProtection, setWantProtection] = useState(false);
+  const [route, setRoute] = useState<'direct' | 'protected' | null>(null);
   const [picking, setPicking] = useState(false);
   const [chosen, setChosen] = useState<EscrowOption | null>(null);
 
@@ -305,69 +342,86 @@ function PayPanel({ order, busy, onPay, onCancel }: {
   if (error) return <ErrorNotice message={error} />;
   if (!quote) return <p className="muted">Loading…</p>;
 
-  const available = quote.escrows.length > 0;
-  const total = quote.itemMinor + (chosen?.feeMinor ?? 0);
+  const canProtect = quote.escrows.length > 0;
+  const canPayDirect = quote.sellerPayment !== null;
 
-  function tick(on: boolean) {
-    setWantProtection(on);
-    // Ticking the box is the question, not the answer: protection means somebody
-    // holds the money, so the next thing to say is who.
-    if (on && !chosen) setPicking(true);
-    if (!on) setChosen(null);
+  if (route === 'direct' && quote.sellerPayment) {
+    return (
+      <DirectPay
+        quote={quote}
+        payment={quote.sellerPayment}
+        busy={busy === 'claim'}
+        onPaid={onPaid}
+        onBack={() => setRoute(null)}
+      />
+    );
   }
 
   return (
     <div className="stack">
       <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
 
-      {available ? (
-        <>
-          <label className="tick tick--wide">
-            <input type="checkbox" checked={wantProtection} onChange={(e) => tick(e.target.checked)} />
-            <span>Buyer protection</span>
-          </label>
+      <button type="button" className="buyway" disabled={!canPayDirect}
+        onClick={() => setRoute('direct')}>
+        <span className="buyway__title">Buy directly from the seller</span>
+        <span className="buyway__note">
+          {canPayDirect
+            ? `Pay ${quote.sellerName} yourself, then show them it went through. Nothing is held, so anything that goes wrong is between the two of you.`
+            : `${quote.sellerName} has not added any payment details, so there is nowhere to send the money.`}
+        </span>
+        <span className="buyway__price">{formatMoney(quote.itemMinor, quote.currency)}</span>
+      </button>
 
-          {wantProtection && chosen && (
-            <>
-              <div className="kv">
-                <dt>{chosen.name} ({(chosen.feeBasisPoints / 100).toFixed(1)}%)</dt>
-                <dd>{formatMoney(chosen.feeMinor, quote.currency)}</dd>
-              </div>
-              <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
-                onClick={() => setPicking(true)}>
-                Choose a different escrow
-              </button>
-            </>
-          )}
+      <button type="button" className={`buyway${route === 'protected' ? ' is-on' : ''}`}
+        disabled={!canProtect}
+        onClick={() => {
+          setRoute('protected');
+          if (!chosen) setPicking(true);
+        }}>
+        <span className="buyway__title">Add buyer protection</span>
+        <span className="buyway__note">
+          {canProtect
+            ? 'An escrow holds the money until you confirm the item arrived, and settles it if the two of you disagree. Their fee is on top.'
+            : 'Nobody approved to hold payments can be neutral in this trade.'}
+        </span>
+        <span className="buyway__price">
+          {chosen
+            ? formatMoney(quote.itemMinor + chosen.feeMinor, quote.currency)
+            : `${formatMoney(quote.itemMinor, quote.currency)} + fee`}
+        </span>
+      </button>
 
-          <p className="faint">
-            {wantProtection
-              ? 'Your payment goes to the escrow, not the seller, and stays there until you confirm the item arrived. If the two of you disagree, they settle it.'
-              : `Without protection the money goes to ${quote.sellerName} immediately and any problem is between the two of you.`}
-          </p>
-
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button className="btn btn--lg" disabled={busy !== null || (wantProtection && !chosen)}
-              onClick={() => void onPay(Boolean(chosen), chosen?.id)}>
-              {busy === 'pay' ? 'Paying…' : `Pay ${formatMoney(total, quote.currency)}`}
-            </button>
-            <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+      {route === 'protected' && chosen && (
+        <div className="card card--pad stack">
+          <div className="kv">
+            <dt>{chosen.name} ({(chosen.feeBasisPoints / 100).toFixed(1)}%)</dt>
+            <dd>{formatMoney(chosen.feeMinor, quote.currency)}</dd>
           </div>
-        </>
-      ) : (
-        <>
-          <p className="faint">
-            Nobody approved to hold payments can be neutral in this trade, so this one goes to{' '}
-            {quote.sellerName} directly.
-          </p>
-          <div className="row">
-            <button className="btn btn--lg" disabled={busy !== null} onClick={() => void onPay(false)}>
-              {busy === 'pay' ? 'Paying…' : `Pay ${formatMoney(quote.itemMinor, quote.currency)}`}
-            </button>
-            <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+          <div className="kv">
+            <dt><strong>Total</strong></dt>
+            <dd><strong>{formatMoney(quote.itemMinor + chosen.feeMinor, quote.currency)}</strong></dd>
           </div>
-        </>
+          <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
+            onClick={() => setPicking(true)}>
+            Choose a different escrow
+          </button>
+
+          {/* Said before the button rather than after it is pressed: the escrow
+              is chosen and priced, and the part that moves the money is not
+              built. Offering a live Pay here would be the screen lying. */}
+          <p className="notice notice--warn" style={{ marginBottom: 0 }}>
+            <strong>Work in progress.</strong> Choosing an escrow and pricing their fee works;
+            paying into one does not yet. Buy directly from the seller in the meantime.
+          </p>
+          <button className="btn btn--lg" disabled>
+            Pay {formatMoney(quote.itemMinor + chosen.feeMinor, quote.currency)}
+          </button>
+        </div>
       )}
+
+      <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={onCancel}>
+        Cancel
+      </button>
 
       {picking && (
         <EscrowPicker
@@ -379,9 +433,8 @@ function PayPanel({ order, busy, onPay, onCancel }: {
           }}
           onClose={() => {
             setPicking(false);
-            // Closing without choosing unticks the box, rather than leaving it
-            // ticked over a choice that was never made.
-            if (!chosen) setWantProtection(false);
+            // Closing without choosing leaves no half-made decision behind.
+            if (!chosen) setRoute(null);
           }}
         />
       )}
@@ -390,11 +443,141 @@ function PayPanel({ order, busy, onPay, onCancel }: {
 }
 
 /**
+ * Paying the seller yourself, and proving you did.
+ *
+ * The details are theirs, copied as they typed them — this app is not moving
+ * the money and must not imply it checked the account exists. What it can do is
+ * make the buyer's proof part of the order, because the screenshot is the whole
+ * of their case if the seller later says nothing arrived.
+ */
+function DirectPay({ quote, payment, busy, onPaid, onBack }: {
+  quote: Checkout;
+  payment: SellerPaymentDetails;
+  busy: boolean;
+  onPaid: (body: { reference: string; screenshot: string | null }) => void | Promise<void>;
+  onBack: () => void;
+}) {
+  const [reference, setReference] = useState('');
+  const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [shrinking, setShrinking] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setShrinking(true);
+    setError(null);
+    try {
+      setScreenshot(await downscale(file));
+    } catch {
+      setError('That image could not be read. A PNG or JPEG screenshot works.');
+    } finally {
+      setShrinking(false);
+    }
+  }
+
+  const rows: [string, string | null | undefined][] = [
+    ['UPI', payment.upiId],
+    ['Account name', payment.accountName],
+    ['Account number', payment.accountNumber],
+    ['IFSC', payment.ifsc],
+  ];
+
+  return (
+    <div className="stack">
+      <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }} onClick={onBack}>
+        ← Other ways to pay
+      </button>
+
+      <div className="card card--pad stack">
+        <div className="row row--between">
+          <strong>Send {formatMoney(quote.itemMinor, quote.currency)} to {quote.sellerName}</strong>
+        </div>
+        {rows.filter(([, value]) => value).map(([label, value]) => (
+          <div className="kv" key={label}>
+            <dt>{label}</dt>
+            <dd><code>{value}</code></dd>
+          </div>
+        ))}
+        {payment.instructions && <p className="faint" style={{ margin: 0 }}>{payment.instructions}</p>}
+      </div>
+
+      <p className="notice notice--info">
+        Figmark is not handling this payment and is not holding anything. Once you have sent it,
+        tell {quote.sellerName} here — they confirm it landed before the order moves.
+      </p>
+
+      <label className="tick tick--wide">
+        <input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
+        <span>I have sent the payment</span>
+      </label>
+
+      {paid && (
+        <>
+          <label className="field">
+            <span>Transaction reference</span>
+            <input value={reference} onChange={(e) => setReference(e.target.value)}
+              placeholder="The UTR or reference your app gave you" />
+          </label>
+
+          <label className="field">
+            <span>Screenshot of the confirmation</span>
+            <input type="file" accept="image/*" onChange={(e) => void pick(e.target.files?.[0])} />
+            <span className="field__hint">
+              {shrinking ? 'Reading it…' : 'Shrunk on this device before it is sent. One of these two is enough, both is better.'}
+            </span>
+          </label>
+
+          {screenshot && (
+            <img src={screenshot} alt="Your payment confirmation" className="proof" />
+          )}
+
+          {error && <ErrorNotice message={error} />}
+
+          <button className="btn btn--lg" style={{ justifySelf: 'start' }}
+            disabled={busy || shrinking || (!reference.trim() && !screenshot)}
+            onClick={() => void onPaid({ reference: reference.trim(), screenshot })}>
+            {busy ? 'Sending…' : 'Tell the seller I have paid'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Shrink a screenshot to something an order can carry.
+ *
+ * Phone screenshots are two or three megabytes and a Cosmos item stops at two,
+ * so this is not a nicety. Long edge to 900px and JPEG at 0.7 puts a legible
+ * payment confirmation at well under a hundred kilobytes — the numbers on it
+ * stay readable, which is the only thing it is for.
+ */
+async function downscale(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 900 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('No 2d context');
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL('image/jpeg', 0.7);
+}
+
+/**
  * Choosing who holds the money.
  *
  * A real decision, so it gets a dialog rather than a dropdown: these are named
  * people with their own fees, and the buyer is picking who to trust with the
- * whole amount until the box lands.
+ * whole amount until the box lands. Each one opens to show what they have
+ * actually done — held, settled, holding now — because that record is the only
+ * honest basis for the choice, and an escrow with none says so rather than
+ * showing five blank stars.
+ *
+ * Tapping a name expands it; the arrow adds them. Two steps on purpose: reading
+ * about somebody should not be the same gesture as handing them the money.
  *
  * The suggestion is the one the rest of the batch already uses. A consignment is
  * one shipment with one set of problems, and thirty buyers each picking a
@@ -407,6 +590,8 @@ function EscrowPicker({ quote, chosenId, onPick, onClose }: {
   onPick: (option: EscrowOption) => void;
   onClose: () => void;
 }) {
+  const [openId, setOpenId] = useState<string | null>(quote.suggested?.agentId ?? null);
+
   // Suggested first: it is the answer most buyers should give.
   const ordered = [...quote.escrows].sort((a, b) => {
     const suggested = quote.suggested?.agentId;
@@ -423,31 +608,145 @@ function EscrowPicker({ quote, chosenId, onPick, onClose }: {
       <div className="stack" style={{ marginTop: 12 }}>
         {ordered.map((option) => {
           const isSuggested = quote.suggested?.agentId === option.id;
+          const open = openId === option.id;
           return (
-            <button
-              key={option.id}
-              type="button"
-              className={`escrow${chosenId === option.id ? ' is-on' : ''}`}
-              onClick={() => onPick(option)}
-            >
-              <div className="escrow__main">
-                <span className="escrow__name">
-                  {option.name}
-                  {isSuggested && <span className="badge badge--accent" style={{ marginLeft: 8 }}>suggested</span>}
-                </span>
-                <span className="faint">
-                  {isSuggested ? quote.suggested!.because : `${option.heldBefore} transactions on record`}
-                </span>
-              </div>
-              <div className="escrow__fee">
-                {formatMoney(option.feeMinor, quote.currency)}
-                <span className="faint"> · {(option.feeBasisPoints / 100).toFixed(1)}%</span>
-              </div>
-            </button>
+            <div key={option.id} className={`escrow${chosenId === option.id ? ' is-on' : ''}`}>
+              <button type="button" className="escrow__head"
+                aria-expanded={open}
+                onClick={() => setOpenId(open ? null : option.id)}>
+                <div className="escrow__main">
+                  <span className="escrow__name">
+                    {option.name}
+                    {isSuggested && <span className="badge badge--accent" style={{ marginLeft: 8 }}>suggested</span>}
+                  </span>
+                  <span className="faint">
+                    {option.rating !== null
+                      ? `${option.rating.toFixed(1)} out of 5 · ${option.settled} settled`
+                      : 'No payments settled yet'}
+                  </span>
+                </div>
+                <div className="escrow__fee">
+                  {formatMoney(option.feeMinor, quote.currency)}
+                  <span className="faint"> · {(option.feeBasisPoints / 100).toFixed(1)}%</span>
+                </div>
+              </button>
+
+              {open && (
+                <div className="escrow__more">
+                  <div className="escrow__stats">
+                    <Stat label="Held" value={String(option.held)} />
+                    <Stat label="Settled" value={String(option.settled)} />
+                    <Stat label="Holding now" value={String(option.openNow)} />
+                  </div>
+                  <p className="faint" style={{ margin: 0 }}>
+                    {isSuggested
+                      ? quote.suggested!.because
+                      : `Approved to hold payments since ${formatDate(option.since)}.`}
+                  </p>
+                  <div className="row row--between" style={{ alignItems: 'center' }}>
+                    <span className="faint">
+                      Total with their fee{' '}
+                      <strong>{formatMoney(quote.itemMinor + option.feeMinor, quote.currency)}</strong>
+                    </span>
+                    {/* The arrow is the commitment, separate from reading about
+                        them. Labelled for anybody not seeing the glyph. */}
+                    <button type="button" className="escrow__add"
+                      aria-label={`Use ${option.name} as the escrow`}
+                      onClick={() => onPick(option)}>
+                      →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
     </Modal>
+  );
+}
+
+/** A number under a word, for the escrow's record. */
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="tile">
+      <div className="tile__value" style={{ fontSize: 'var(--t-md)' }}>{value}</div>
+      <div className="tile__label">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * Answering a claimed payment.
+ *
+ * The seller is being asked about a fact only their own bank holds, so the
+ * screen shows the buyer's evidence and then gets out of the way. Denying needs
+ * a reason because the buyer has already sent money somewhere and "no" on its
+ * own tells them nothing about what to do next.
+ */
+function SettleClaim({ order, busy, onAnswer, onCancel }: {
+  order: Order;
+  busy: boolean;
+  onAnswer: (body: { accept: boolean; reason?: string }) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const [denying, setDenying] = useState(false);
+  const [reason, setReason] = useState('');
+  const claim = order.paymentClaim;
+
+  return (
+    <div className="stack">
+      <div className="card card--pad stack">
+        <div className="kv">
+          <dt>Amount</dt>
+          <dd>{formatMoney(order.unitPriceMinor * order.quantity, order.currency)}</dd>
+        </div>
+        {claim?.reference && (
+          <div className="kv"><dt>Reference</dt><dd><code>{claim.reference}</code></dd></div>
+        )}
+        {claim?.claimedAt && (
+          <div className="kv"><dt>Said to be paid</dt><dd>{timeAgo(claim.claimedAt)}</dd></div>
+        )}
+        {claim?.screenshot ? (
+          <img src={claim.screenshot} alt="The buyer's payment confirmation" className="proof" />
+        ) : (
+          <p className="faint" style={{ margin: 0 }}>No screenshot — they gave a reference only.</p>
+        )}
+      </div>
+
+      <p className="faint" style={{ margin: 0 }}>
+        Check your own account before answering. Accepting is you saying the money is there.
+      </p>
+
+      {denying ? (
+        <>
+          <label className="field">
+            <span>What is wrong</span>
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+              placeholder="Nothing has arrived, the amount is short, the reference does not match…" />
+            <span className="field__hint">The buyer reads this and acts on it.</span>
+          </label>
+          <div className="row">
+            <button className="btn btn--lg" disabled={busy || reason.trim().length < 4}
+              onClick={() => void onAnswer({ accept: false, reason: reason.trim() })}>
+              {busy ? 'Sending…' : 'It has not arrived'}
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={() => setDenying(false)}>Back</button>
+          </div>
+        </>
+      ) : (
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <button className="btn btn--lg" disabled={busy}
+            onClick={() => void onAnswer({ accept: true })}>
+            {busy ? 'Confirming…' : 'Yes, it arrived'}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={() => setDenying(true)}>
+            No, it has not
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+        </div>
+      )}
+    </div>
   );
 }
 

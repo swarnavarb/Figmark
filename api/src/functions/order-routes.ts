@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
-import type { Dispute, Order, Review, User } from '../../../shared/models.js';
+import type { Dispute, Order, Review, SellerPaymentDetails, User } from '../../../shared/models.js';
 import {
   AUTO_RELEASE_DAYS,
   DISPUTE_RESPONSE_DAYS,
@@ -225,21 +225,73 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     (agent) => agent.id !== order.buyerId && agent.id !== order.sellerId && !agent.suspended,
   );
 
+  // What each of them has actually done as an escrow. Read per agent because a
+  // rating assembled from anything else would be a number we made up.
+  const records = await Promise.all(agents.map((agent) => escrowRecord(agent, repository)));
+
+  const payment = seller?.sellerProfile?.payment ?? null;
+
   return json(200, {
     itemMinor: totalMinor,
     currency: order.currency,
     sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'the seller',
-    escrows: agents.map((agent) => ({
+    /**
+     * How to pay them, if they have said. Null means a direct sale cannot be
+     * offered at all - there is nowhere to send the money.
+     */
+    sellerPayment: payment && hasAnyDetail(payment) ? payment : null,
+    escrows: agents.map((agent, index) => ({
       id: agent.id,
       name: agent.escrowRights!.displayName || agent.displayName,
       feeBasisPoints: agent.escrowRights!.feeBasisPoints,
       feeMinor: protectionFeeMinor(totalMinor, agent.escrowRights!.feeBasisPoints),
       /** What the group already knows about them, rather than a rating we invented. */
       heldBefore: agent.buyerTrust.completedTransactions,
-      since: agent.escrowRights!.grantedAt,
+      ...records[index]!,
     })),
     suggested: await suggestEscrow(order, agents, repository),
   });
+}
+
+/** True once a seller has filled in at least one way to be paid. */
+function hasAnyDetail(payment: SellerPaymentDetails): boolean {
+  return Boolean(payment.upiId?.trim() || (payment.accountNumber?.trim() && payment.ifsc?.trim()));
+}
+
+/**
+ * What an escrow has done, as a rating a buyer can weigh.
+ *
+ * Assembled from their own record rather than from stars anybody typed: how
+ * much they have held, how many arguments they settled, and how many of those
+ * were escalated past them. `rating` is null when there is nothing behind it -
+ * a new escrow is unproven, not bad, and five blank stars would say the
+ * opposite of the truth.
+ */
+async function escrowRecord(
+  agent: User,
+  repository: Repo,
+): Promise<{
+  held: number;
+  settled: number;
+  openNow: number;
+  rating: number | null;
+  since: string;
+}> {
+  const holdings = await repository.listOrdersHeldBy(agent.id);
+  const settled = holdings.filter((order) => order.escrow.state === 'released' || order.escrow.state === 'refunded');
+  const openNow = holdings.filter((order) => order.escrow.state === 'held' || order.escrow.state === 'disputed');
+
+  // Their published trust score, but only once they have actually held
+  // something. Out of five, because that is how the picker reads it.
+  const rating = settled.length > 0 ? Math.round((agent.buyerTrust.score / 20) * 10) / 10 : null;
+
+  return {
+    held: holdings.length,
+    settled: settled.length,
+    openNow: openNow.length,
+    rating,
+    since: agent.escrowRights!.grantedAt,
+  };
 }
 
 /**
@@ -496,7 +548,152 @@ async function reviewsAbout(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/**
+ * Largest screenshot the order will carry, as a data URL.
+ *
+ * A Cosmos item stops at 2 MB and this one shares the order with everything
+ * else on it, so the app downscales before sending and this is the backstop.
+ * Refusing with the actual size beats a write that fails deep in the store.
+ */
+const MAX_SCREENSHOT_BYTES = 400_000;
+
+/**
+ * POST /api/orders/{id}/claim-payment - the buyer says they have sent it.
+ *
+ * A direct sale settles outside this app, so nothing here watches the money
+ * move. What this records is the buyer's account of having sent it, with
+ * whatever proof they have, and puts the order in front of the seller. It is
+ * deliberately not "paid": only the person whose account it lands in can say
+ * that, and the whole point of this state is that the two claims are separate.
+ */
+async function claimPayment(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (order.buyerId !== user.id) {
+    return error(403, 'not_the_buyer', 'Only the buyer can say they have paid.');
+  }
+  if (!actionsFor(order, user.id).includes('pay')) {
+    return error(409, 'not_payable', 'This order is not waiting for payment.');
+  }
+
+  let body: { reference?: string; screenshot?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+
+  const reference = (body.reference ?? '').trim();
+  const screenshot = (body.screenshot ?? '').trim();
+
+  // One of the two, at minimum. A claim with neither is just a button press,
+  // and the seller has nothing to check it against.
+  if (!reference && !screenshot) {
+    return error(400, 'no_proof', 'Add the transaction reference or a screenshot of it.');
+  }
+  if (screenshot && !screenshot.startsWith('data:image/')) {
+    return error(400, 'invalid_screenshot', 'That does not look like an image.');
+  }
+  if (screenshot.length > MAX_SCREENSHOT_BYTES) {
+    return error(
+      413,
+      'screenshot_too_large',
+      `That screenshot is ${Math.round(screenshot.length / 1000)} KB and the limit is ` +
+        `${MAX_SCREENSHOT_BYTES / 1000} KB. A smaller crop of the confirmation is enough.`,
+    );
+  }
+
+  const now = new Date().toISOString();
+  order.paymentStatus = 'claimed';
+  order.updatedAt = now;
+  order.paymentClaim = {
+    claimedAt: now,
+    reference: reference || null,
+    screenshot: screenshot || null,
+    decision: null,
+    decidedAt: null,
+    decidedReason: null,
+  };
+  note(order, reference ? `Buyer paid directly — reference ${reference}.` : 'Buyer paid directly.', user.id);
+  await repository.updateOrder(order);
+
+  return json(200, { order, awaiting: 'seller' });
+}
+
+/**
+ * POST /api/orders/{id}/settle-claim - the seller answers it.
+ *
+ * Accepting is the seller saying the money is in their account, which is the
+ * only place that fact exists. Denying puts the order back to unpaid so the
+ * buyer can try again, and keeps the claim: a denied payment is the start of an
+ * argument, and throwing away the buyer's evidence would leave one side of it.
+ */
+async function settleClaim(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('settle_claim')) {
+    return error(409, 'nothing_to_settle', 'There is no payment waiting on you for this order.');
+  }
+
+  let body: { accept?: boolean; reason?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_request', 'Say whether the payment arrived.');
+  }
+  if (typeof body.accept !== 'boolean') {
+    return error(400, 'invalid_request', 'Say whether the payment arrived.');
+  }
+
+  const reason = (body.reason ?? '').trim();
+  // A denial the buyer cannot understand is a denial they cannot act on, and
+  // they have already sent money somewhere.
+  if (!body.accept && reason.length < 4) {
+    return error(400, 'no_reason', 'Say why it has not arrived, so the buyer knows what to do.');
+  }
+
+  const now = new Date().toISOString();
+  const claim = order.paymentClaim;
+  if (claim) {
+    claim.decision = body.accept ? 'accepted' : 'denied';
+    claim.decidedAt = now;
+    claim.decidedReason = body.accept ? null : reason;
+  }
+
+  if (body.accept) {
+    order.paymentStatus = 'paid';
+    order.status = 'confirmed';
+    // Nobody is holding this. The money went from the buyer to the seller
+    // directly, so there is no escrow to release and nothing to dispute over -
+    // which is exactly what buying without protection means.
+    order.escrow = { ...order.escrow, state: 'none' };
+    note(order, 'Seller confirmed the payment arrived.', user.id);
+  } else {
+    order.paymentStatus = 'unpaid';
+    note(order, `Seller says the payment has not arrived: ${reason}`, user.id);
+  }
+
+  order.updatedAt = now;
+  await repository.updateOrder(order);
+
+  return json(200, { order });
+}
+
 export const payRoute = handler(pay);
+export const claimPaymentRoute = handler(claimPayment);
+export const settleClaimRoute = handler(settleClaim);
 export const confirmRoute = handler(confirm);
 export const reviewRoute = handler(review);
 export const orderStateRoute = handler(orderState);
@@ -506,6 +703,8 @@ export const reviewsAboutRoute = handler(reviewsAbout);
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });
+app.http('order-claim-payment', { ...anon, methods: ['POST'], route: 'orders/{id}/claim-payment', handler: claimPaymentRoute });
+app.http('order-settle-claim', { ...anon, methods: ['POST'], route: 'orders/{id}/settle-claim', handler: settleClaimRoute });
 app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/confirm', handler: confirmRoute });
 app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
 app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state', handler: orderStateRoute });
