@@ -172,6 +172,50 @@ export interface PublicReview {
   direction: string;
   authorName: string;
   createdAt: string;
+  /** What it was written about. Null only where the order has since gone. */
+  item: {
+    orderId: string; listingId: string; name: string; totalMinor: number; currency: string;
+  } | null;
+}
+
+/** An opinion left on somebody's page, which nothing had to be bought to write. */
+export interface PageReview {
+  id: string;
+  rating: number;
+  body: string;
+  authorName: string;
+  authorHandle: string | null;
+  createdAt: string;
+  mine: boolean;
+}
+
+export interface PageReviews {
+  reviews: PageReview[];
+  average: number | null;
+  count: number;
+  /** This viewer's own rating, if they have left one. */
+  yours: number | null;
+}
+
+/** One side's record, counted from rows rather than stored. */
+export interface CreditSide {
+  praised: number;
+  rated: number;
+  goodRate: number | null;
+  disputes: number;
+  completed: number;
+}
+
+export interface Credit {
+  memberSince: string;
+  asSeller: CreditSide & { sold: number };
+  asBuyer: CreditSide & { bought: number };
+  seller: RatingSummary;
+  buyer: RatingSummary;
+  /** Opinions on the page, never mixed into the two above. */
+  page: RatingSummary;
+  verification: Record<string, string>;
+  tier: string | null;
 }
 
 /** Someone approved to hold this payment, as the picker lists them. */
@@ -358,6 +402,8 @@ export interface StorefrontDraft {
   bio?: string;
   dispatchRegion?: string;
   photoUrl?: string;
+  coverUrl?: string;
+  tags?: string[];
   link?: string;
   /** How a buyer pays this shop directly. Null clears it. */
   payment?: SellerPaymentDetails | null;
@@ -434,12 +480,17 @@ export interface PublicProfile {
   displayName: string;
   bio: string;
   photoUrl: string | null;
+  coverUrl: string | null;
+  tags: string[];
   link: string | null;
   dispatchRegion: string;
   followerCount: number;
   tier: string | null;
   ownerHandle: string | null;
   sellerId: string;
+  memberSince: string;
+  lastSeenAt: string | null;
+  counts: { listings: number; onSale: number; sold: number };
   listings: {
     id: string; title: string; priceMinor: number; currency: string; condition: string;
     lotId: string | null; sourcing?: string; quantityAvailable: number; likeCount: number;
@@ -582,6 +633,12 @@ export const api = {
   sendMessage: (handle: string, body: string, as?: string) =>
     post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as }),
   profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
+  credit: (userId: string) => request<Credit>(`/users/${encodeURIComponent(userId)}/credit`),
+  pageReviews: (userId: string) => request<PageReviews>(`/users/${encodeURIComponent(userId)}/page-reviews`),
+  writePageReview: (userId: string, body: { rating: number; body: string }) =>
+    post<{ review: PageReview }>(`/users/${encodeURIComponent(userId)}/page-reviews/new`, body),
+  saveProfile: (body: { bio?: string; coverUrl?: string; tags?: string[] }) =>
+    post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
   setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
 
   exporterLots: () =>

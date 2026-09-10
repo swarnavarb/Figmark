@@ -411,5 +411,8 @@ export function toAuthUser(user: User): AuthUser {
     sellerProfile: user.sellerProfile,
     forwarderProfile: user.forwarderProfile,
     escrowRights: user.escrowRights ?? null,
+    bio: user.bio ?? '',
+    coverUrl: user.coverUrl ?? null,
+    tags: user.tags ?? [],
   };
 }

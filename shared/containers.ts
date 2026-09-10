@@ -109,6 +109,13 @@ export const CONTAINERS = {
       ],
     ],
   },
+  storeReviews: {
+    name: 'storeReviews',
+    partitionKeyPath: '/subjectId',
+    rationale:
+      'Opinions left on somebody\'s page, read as "everything said about this account", which is exactly one partition. Separate from `reviews` because these are not earned by a transaction and must never be averaged in with the ones that are - and because the unique key differs: one per author here, one per order there.',
+    uniqueKeyPaths: [['/authorId']],
+  },
   comments: {
     name: 'comments',
     partitionKeyPath: '/listingId',

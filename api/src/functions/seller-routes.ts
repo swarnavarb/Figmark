@@ -79,6 +79,8 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     bio?: string;
     dispatchRegion?: string;
     photoUrl?: string;
+    coverUrl?: string;
+    tags?: string[];
     link?: string;
     payment?: {
       upiId?: string;
@@ -147,6 +149,18 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     const link = safeLink(body.link);
     if (link === undefined) return error(400, 'invalid_storefront', 'That link is not a valid http(s) URL.');
     existing.link = link;
+  }
+  if (body.coverUrl !== undefined) {
+    const cover = safeLink(body.coverUrl);
+    if (cover === undefined) return error(400, 'invalid_storefront', 'The banner link is not a valid http(s) URL.');
+    existing.coverUrl = cover;
+  }
+  if (body.tags !== undefined) {
+    // Six, short, deduplicated. A row of chips is scanned; twenty of them is a
+    // wall, and a wall is skipped.
+    existing.tags = [...new Set(body.tags.map((tag) => tag.trim()).filter(Boolean))]
+      .map((tag) => tag.slice(0, 24))
+      .slice(0, 6);
   }
   if (body.payment !== undefined) {
     // Carried as typed. The platform does not move this money and cannot

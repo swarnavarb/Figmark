@@ -166,7 +166,10 @@ export function ProfilePage() {
 
       {error && <ErrorNotice message={error} />}
       {tab === 'settings' ? (
-        <UsernameSettings />
+        <>
+          <UsernameSettings />
+          <MyPageSettings />
+        </>
       ) : !data ? (
         <p className="muted">Loading…</p>
       ) : tab === 'listings' ? (
@@ -249,6 +252,83 @@ export function ProfilePage() {
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * Your own page, as distinct from your shop's.
+ *
+ * A buyer is somebody a seller decides whether to deal with, so the page at
+ * `/<your username>` is worth as much care as a storefront — and gets the same
+ * three controls. Kept apart from the shop's on purpose: an account can be
+ * both, and they are two different faces.
+ */
+function MyPageSettings() {
+  const { user, refresh } = useSession();
+  const [bio, setBio] = useState(user?.bio ?? '');
+  const [coverUrl, setCoverUrl] = useState(user?.coverUrl ?? '');
+  const [tags, setTags] = useState((user?.tags ?? []).join(', '));
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!user) return null;
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    setFlash(null);
+    try {
+      await api.saveProfile({
+        bio: bio.trim(),
+        coverUrl: coverUrl.trim(),
+        tags: tags.split(',').map((tag: string) => tag.trim()).filter(Boolean),
+      });
+      await refresh();
+      setFlash('Saved.');
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card card--pad form" style={{ marginBottom: 16 }}>
+      <h2 style={{ margin: 0 }}>Your page</h2>
+      <p className="faint" style={{ marginTop: 0 }}>
+        What a seller sees when they look you up before shipping to you.
+        {user.username && (
+          <> It is at <Link to={`/${user.username}`}>/{user.username}</Link>.</>
+        )}
+      </p>
+
+      <label className="field">
+        <span>Banner</span>
+        <input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)}
+          placeholder="https://…" inputMode="url" />
+      </label>
+
+      <label className="field">
+        <span>About you</span>
+        <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={3}
+          placeholder="What you collect, what you are hunting for." />
+      </label>
+
+      <label className="field">
+        <span>Chips</span>
+        <input value={tags} onChange={(e) => setTags(e.target.value)}
+          placeholder="Gunpla, Mumbai, pays fast" />
+        <span className="field__hint">Up to six, separated by commas.</span>
+      </label>
+
+      {flash && <p className="notice notice--ok">{flash}</p>}
+      {error && <ErrorNotice message={error} />}
+
+      <button className="btn" style={{ justifySelf: 'start' }} disabled={busy} onClick={() => void save()}>
+        {busy ? 'Saving…' : 'Save your page'}
+      </button>
+    </div>
   );
 }
 

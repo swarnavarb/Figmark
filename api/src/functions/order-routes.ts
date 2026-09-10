@@ -505,50 +505,6 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/users/{id}/reviews - what is publicly said about someone.
- *
- * Revealed rows only, so a profile never has to re-derive a rule it should not
- * have been handed the rows for.
- *
- * The averages are split by direction because being a good seller and being a
- * good buyer are different claims: one account is both, `buyerTrust` and
- * `sellerTrust` are separate fields for exactly that reason, and blending them
- * would let a prompt-paying buyer carry a shop that never posts anything.
- */
-async function reviewsAbout(request: HttpRequest, _context: InvocationContext) {
-  const repository = await getRepository();
-  const id = request.params.id;
-  if (!id) return error(400, 'invalid_request', 'A user id is required.');
-
-  const all = await repository.listReviewsAbout(id);
-  const visible = all.filter((entry) => reviewRevealed(entry, false));
-  const authors = await repository.listUsersByIds([...new Set(visible.map((entry) => entry.authorId))]);
-  const nameOf = new Map(authors.map((author: User) => [author.id, author.displayName]));
-
-  const inDirection = (direction: string) => {
-    const ratings = visible.filter((entry) => entry.direction === direction).map((entry) => entry.rating);
-    return { average: scoreFrom(ratings), count: ratings.length };
-  };
-
-  return json(200, {
-    reviews: visible.map((entry) => ({
-      id: entry.id,
-      rating: entry.rating,
-      body: entry.body,
-      direction: entry.direction,
-      authorName: nameOf.get(entry.authorId) ?? 'Someone',
-      createdAt: entry.createdAt,
-    })),
-    asSeller: inDirection('buyer_to_seller'),
-    asBuyer: inDirection('seller_to_buyer'),
-    count: visible.length,
-    // Written but not yet visible, so a thin page reads as young rather than
-    // as nobody having bothered.
-    pending: all.length - visible.length,
-  });
-}
-
-/**
  * Largest screenshot the order will carry, as a data URL.
  *
  * A Cosmos item stops at 2 MB and this one shares the order with everything
@@ -698,7 +654,6 @@ export const confirmRoute = handler(confirm);
 export const reviewRoute = handler(review);
 export const orderStateRoute = handler(orderState);
 export const checkoutRoute = handler(checkout);
-export const reviewsAboutRoute = handler(reviewsAbout);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -709,4 +664,3 @@ app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/conf
 app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
 app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state', handler: orderStateRoute });
 app.http('order-checkout', { ...anon, methods: ['GET'], route: 'orders/{id}/checkout', handler: checkoutRoute });
-app.http('user-reviews', { ...anon, methods: ['GET'], route: 'users/{id}/reviews', handler: reviewsAboutRoute });

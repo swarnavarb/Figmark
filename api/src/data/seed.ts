@@ -91,6 +91,10 @@ export function seedUsers(): User[] {
       email: DEMO_EMAIL,
       phone: DEMO_PHONE,
       displayName: 'Arjun Mehta',
+      // The person behind the shop has a page of their own, and a seller
+      // deciding whether to ship to them reads this one, not the storefront.
+      bio: 'Collect 1/7 scale and the odd Gunpla. Pay the same day, always.',
+      tags: ['Scale figures', 'Mumbai', 'Pays fast'],
       isAdmin: false,
       passwordHash: hashPassword(DEMO_PASSWORD),
       verification: verification(true),
@@ -106,6 +110,7 @@ export function seedUsers(): User[] {
         depositHeldMinor: 0,
         dispatchRegion: 'Mumbai, MH',
         followerCount: 14,
+        tags: ['Scale figures', 'Mumbai', 'Ships weekly', 'Own collection'],
         payment: {
           upiId: 'arjuncollects@okhdfcbank',
           accountName: 'Arjun Mehta',
@@ -266,6 +271,7 @@ function storefront(
       depositHeldMinor: score > 80 ? 25_00_000 : 0,
       dispatchRegion: region,
       followerCount: Math.round(completed * 2.4),
+      tags: [region.split(',')[0]!.trim(), score > 80 ? 'Pro seller' : 'Verified', `${completed} sales`],
       // Every seeded shop can be paid directly, or the buy flow has nothing to
       // show: without details there is nowhere to send the money and the
       // direct route is correctly refused.
@@ -674,6 +680,16 @@ export function seedReviews(): Review[] {
       'Paid straight away, no messing about.', -15),
     revealed('rev_3', 'usr_demo', 'usr_tokyoline', 'ord_2002', 'buyer_to_seller', 4,
       'Cards as described. Took a couple of days to post, but well wrapped.', -10),
+
+    /* The shops a buyer actually browses need a seller record of their own, or
+       every storefront reads "unrated" and the credit card looks broken rather
+       than empty. These are the orders where those two are the seller. */
+    revealed('rev_5', 'usr_kaiju', 'usr_demo', 'ord_1002', 'buyer_to_seller', 5,
+      'Third order from them. Consolidated the whole batch and sent one parcel.', -30),
+    revealed('rev_6', 'usr_kaiju', 'usr_demo', 'ord_1001', 'buyer_to_seller', 4,
+      'Statue arrived perfect. Two weeks later than the estimate, which they did warn about.', -20),
+    revealed('rev_7', 'usr_gadgetgrid', 'usr_demo', 'ord_1003', 'buyer_to_seller', 5,
+      'Genuine unit, sealed, and cheaper than anything local. No notes.', -12),
 
     /* Written by the seller and hidden, because the buyer has not answered.
        This is what the demo account sees as "written, and hidden until you

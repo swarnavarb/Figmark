@@ -253,6 +253,8 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           photoUrl: result.storefront?.photoUrl ?? '',
           link: result.storefront?.link ?? '',
           payment: result.storefront?.payment ?? null,
+          coverUrl: result.storefront?.coverUrl ?? '',
+          tags: result.storefront?.tags ?? [],
         });
       })
       .catch((err: unknown) =>
@@ -331,6 +333,26 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
             placeholder="https://…" inputMode="url" />
           <span className="field__hint">
             A link to an image for now — uploads land with blob storage, and this is the field they will fill.
+          </span>
+        </label>
+
+        <label className="field">
+          <span>Banner</span>
+          <input value={draft.coverUrl ?? ''} onChange={(e) => set('coverUrl', e.target.value)}
+            placeholder="https://…" inputMode="url" />
+          <span className="field__hint">
+            The band behind your name. A link for now, same as the picture.
+          </span>
+        </label>
+
+        <label className="field">
+          <span>Chips</span>
+          <input value={(draft.tags ?? []).join(', ')}
+            onChange={(e) => set('tags', e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))}
+            placeholder="Custom painter, Fujian, ships weekly" />
+          <span className="field__hint">
+            Up to six, separated by commas. These are scanned, not read — a paragraph gets skipped,
+            three short facts do not.
           </span>
         </label>
 

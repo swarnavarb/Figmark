@@ -51,6 +51,10 @@ export interface AuthUser {
    * again on every request that acts on it.
    */
   escrowRights: EscrowRights | null;
+  /** This person's own page, as distinct from their shop's. */
+  bio: string;
+  coverUrl: string | null;
+  tags: string[];
 }
 
 export interface LoginRequest {

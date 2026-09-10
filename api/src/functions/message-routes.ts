@@ -243,21 +243,41 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
   if (!found) return error(404, 'not_found', `Nobody holds @${handle}.`);
 
   const { user, isStore }: { user: User; isStore: boolean } = found;
-  const listings = isStore ? await repository.listListings({ sellerId: user.id, limit: 24 }) : [];
+  // Everything they have listed, not one page of it: the shelf is filtered on
+  // the page - all, in stock, on sale, sold - and a filter that only searches
+  // the first two dozen is a filter that lies about the counts beside it.
+  const listings = isStore ? await repository.listListings({ sellerId: user.id, limit: 200 }) : [];
+
+  // A person's page is about them; a shop's is about the shop. The two carry
+  // different names, pictures and words, and reading the wrong set is how a
+  // storefront ends up with somebody's personal bio on it.
+  const shop = isStore ? user.sellerProfile : null;
+
+  const sold = listings.filter((listing) => listing.quantityAvailable === 0).length;
 
   return json(200, {
     handle: handle.toLowerCase(),
     isStore,
-    displayName: isStore ? (user.sellerProfile?.storefrontName ?? user.displayName) : user.displayName,
-    bio: isStore ? (user.sellerProfile?.bio ?? '') : '',
-    photoUrl: isStore ? (user.sellerProfile?.photoUrl ?? null) : null,
-    link: isStore ? (user.sellerProfile?.link ?? null) : null,
-    dispatchRegion: isStore ? (user.sellerProfile?.dispatchRegion ?? '') : '',
-    followerCount: isStore ? (user.sellerProfile?.followerCount ?? 0) : 0,
-    tier: isStore ? (user.sellerProfile?.tier ?? null) : null,
+    displayName: shop?.storefrontName ?? user.displayName,
+    bio: (isStore ? shop?.bio : user.bio) ?? '',
+    photoUrl: shop?.photoUrl ?? null,
+    coverUrl: (isStore ? shop?.coverUrl : user.coverUrl) ?? null,
+    tags: (isStore ? shop?.tags : user.tags) ?? [],
+    link: shop?.link ?? null,
+    dispatchRegion: shop?.dispatchRegion ?? '',
+    followerCount: shop?.followerCount ?? 0,
+    tier: shop?.tier ?? null,
     // The owner's own handle, so a shop page can point at the person behind it.
     ownerHandle: isStore ? (user.username ?? null) : null,
     sellerId: user.id,
+    memberSince: user.createdAt,
+    lastSeenAt: user.lastSeenAt ?? null,
+    /** What the tabs and chips count, so neither has to guess. */
+    counts: {
+      listings: listings.length,
+      onSale: listings.length - sold,
+      sold,
+    },
     listings: listings.map((listing) => ({
       id: listing.id,
       title: listing.title,

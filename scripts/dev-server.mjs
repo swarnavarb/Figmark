@@ -37,9 +37,11 @@ const {
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
-  payRoute, confirmRoute, reviewRoute, orderStateRoute, reviewsAboutRoute, checkoutRoute,
+  payRoute, confirmRoute, reviewRoute, orderStateRoute, checkoutRoute,
   claimPaymentRoute, settleClaimRoute,
 } = await import(new URL('order-routes.js', apiRoot));
+const { creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute } =
+  await import(new URL('profile-routes.js', apiRoot));
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
   acceptDisputeRoute, withdrawDisputeRoute, escalateDisputeRoute,
@@ -122,7 +124,10 @@ const routes = [
   ['POST', '/api/ops/resources/delete', adminDeleteResourceRoute],
   ['GET', '/api/ops/disputes', adminDisputesRoute],
   ['POST', '/api/ops/disputes/:id/resolve', adminResolveRoute],
-  ['GET', '/api/users/:id/reviews', reviewsAboutRoute],
+  ['GET', '/api/users/:id/reviews', tradeReviewsRoute],
+  ['GET', '/api/users/:id/credit', creditRoute],
+  ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],
+  ['POST', '/api/users/:id/page-reviews/new', writePageReviewRoute],
   ['GET', '/api/exporter/lots', exporterLotsRoute],
   ['GET', '/api/exporter/lots/:id', exporterLotRoute],
 ];

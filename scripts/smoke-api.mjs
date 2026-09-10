@@ -43,9 +43,14 @@ const {
 } = await import(new URL('message-routes.js', fns));
 const {
   payRoute: payOrder, confirmRoute: confirmOrder, reviewRoute: reviewOrder,
-  orderStateRoute: orderState, reviewsAboutRoute: reviewsAbout, checkoutRoute: checkout,
+  orderStateRoute: orderState, checkoutRoute: checkout,
   claimPaymentRoute: claimPayment, settleClaimRoute: settleClaim,
 } = await import(new URL('order-routes.js', fns));
+const {
+  creditRoute: credit, pageReviewsRoute: pageReviews,
+  writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
+  saveProfileRoute: saveProfile,
+} = await import(new URL('profile-routes.js', fns));
 const {
   openDisputeRoute: openDispute, readDisputeRoute: readDispute, replyDisputeRoute: replyDispute,
   offerDisputeRoute: offerDispute, acceptDisputeRoute: acceptDispute,
@@ -1832,24 +1837,41 @@ await check('reviewing twice is refused', async () => {
   assert.equal(again.status, 409);
 });
 
+/** The mean of a set of one-to-five ratings, on the nought-to-hundred scale. */
+const meanScore = (ratings) =>
+  ratings.length === 0 ? null : Math.round((ratings.reduce((sum, r) => sum + r, 0) / ratings.length) * 20);
+
 await check('being a good seller and a good buyer are counted separately', async () => {
   // One account is both, so one blended average would let a prompt-paying buyer
   // carry a shop that never posts anything.
+  //
+  // Derived from the rows rather than written out: this used to assert the
+  // literal 80 the fixtures happened to produce, so adding one seeded review
+  // failed a test about separation for reasons that had nothing to do with it.
   const body = (await reviewsAbout(req({ params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
-  // The review just written: 4 out of 5, so 80 out of 100, as a seller.
-  assert.equal(body.asSeller.average, 80);
-  assert.equal(body.asSeller.count, 1);
-  // And their separate standing as a buyer is untouched by it.
-  assert.equal(body.asBuyer.average, 100);
-  assert.equal(body.asBuyer.count, 1);
+  const ratingsIn = (direction) =>
+    body.reviews.filter((entry) => entry.direction === direction).map((entry) => entry.rating);
+
+  const asSeller = ratingsIn('buyer_to_seller');
+  const asBuyer = ratingsIn('seller_to_buyer');
+  assert.ok(asSeller.length > 0 && asBuyer.length > 0, 'this account is rated on both sides');
+
+  assert.equal(body.asSeller.average, meanScore(asSeller));
+  assert.equal(body.asSeller.count, asSeller.length);
+  assert.equal(body.asBuyer.average, meanScore(asBuyer));
+  assert.equal(body.asBuyer.count, asBuyer.length);
+  // The point of the split: neither total contains the other's rows.
+  assert.equal(body.asSeller.count + body.asBuyer.count, body.reviews.length);
 });
 
 await check('the score on the account follows the reviews about it', async () => {
   const kaiju = (await publicProfile(req({ params: { handle: 'kaiju_imports' } }), ctx)).jsonBody;
   assert.equal(kaiju.isStore, true);
-  // Seeded at 91 before anyone rated them; the real rating replaces it.
+  // Seeded at 91 before anyone rated them; the real ratings replace it.
   const seller = (await reviewsAbout(req({ params: { id: kaiju.sellerId } }), ctx)).jsonBody;
-  assert.equal(seller.asSeller.average, 80);
+  const rated = seller.reviews.filter((entry) => entry.direction === 'buyer_to_seller');
+  assert.equal(seller.asSeller.average, meanScore(rated.map((entry) => entry.rating)));
+  assert.notEqual(seller.asSeller.average, 91, 'the seeded figure is not what is shown');
 });
 
 await check('the public list never carries a review still hidden', async () => {
@@ -2006,6 +2028,145 @@ await check('a settled dispute cannot be settled again', async () => {
 });
 
 /* ── operating the marketplace ─────────────────────────────────────────── */
+console.log('\npages, and what is said about them');
+
+await check('a review of a trade carries what it was written about', async () => {
+  const body = (await reviewsAbout(req({ params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  const withItem = body.reviews.find((entry) => entry.item);
+  assert.ok(withItem, 'at least one review names its order');
+  assert.ok(withItem.item.name, 'and what was bought');
+  assert.ok(withItem.item.listingId, 'so the reader can open it');
+  assert.ok(withItem.item.totalMinor > 0, 'a five-star on ₹200 is not a five-star on ₹40,000');
+});
+
+await check("the credit record counts rows rather than reporting a stored grade", async () => {
+  const body = (await credit(req({ params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  assert.ok(body.memberSince, 'how long they have been here');
+  assert.ok(body.asSeller.sold >= 0 && body.asBuyer.bought >= 0);
+  // Praised can never exceed rated: that would mean counting reviews twice.
+  assert.ok(body.asSeller.praised <= body.asSeller.rated);
+  assert.ok(body.asBuyer.praised <= body.asBuyer.rated);
+});
+
+await check('an unrated side reads as unrated, not as nought per cent', async () => {
+  const fresh = await signup(req({
+    body: {
+      displayName: 'Nobody Yet', email: 'nobody@figmark.example',
+      phone: '+919000045711', password: 'longenough1',
+    },
+  }), ctx);
+  const body = (await credit(req({ params: { id: fresh.jsonBody.user.id } }), ctx)).jsonBody;
+  // An account nobody has reviewed is not one everybody disliked.
+  assert.equal(body.asSeller.goodRate, null);
+  assert.equal(body.asBuyer.goodRate, null);
+  assert.equal(body.seller.average, null);
+});
+
+/* Opinions on a page: anybody may leave one, and none of them may move the
+   number that was earned by trading. */
+const opinionAuthor = await signup(req({
+  body: {
+    displayName: 'Passing Visitor', email: 'visitor@figmark.example',
+    phone: '+919000045712', password: 'longenough1',
+  },
+}), ctx);
+const visitorAuth = { authorization: `Bearer ${opinionAuthor.jsonBody.token}` };
+
+await check('a rating outside one to five is refused', async () => {
+  for (const rating of [0, 6, 2.5]) {
+    const bad = await writePageReview(req({
+      headers: visitorAuth, params: { id: 'usr_kaiju' }, body: { rating, body: 'Something' },
+    }), ctx);
+    assert.equal(bad.status, 400, `rating ${rating} should be refused`);
+  }
+});
+
+await check('a rating with nothing said is refused', async () => {
+  const bare = await writePageReview(req({
+    headers: visitorAuth, params: { id: 'usr_kaiju' }, body: { rating: 5, body: '' },
+  }), ctx);
+  assert.equal(bare.status, 400);
+  assert.equal(bare.jsonBody.error, 'invalid_body');
+});
+
+await check('nobody reviews their own page', async () => {
+  const self = await writePageReview(req({
+    headers: auth, params: { id: 'usr_demo' }, body: { rating: 5, body: 'I am wonderful' },
+  }), ctx);
+  assert.equal(self.status, 400);
+  assert.equal(self.jsonBody.error, 'self_review');
+});
+
+await check('anybody can leave one without having bought anything', async () => {
+  const written = await writePageReview(req({
+    headers: visitorAuth, params: { id: 'usr_kaiju' }, body: { rating: 4, body: 'Answers questions quickly.' },
+  }), ctx);
+  assert.equal(written.status, 201);
+  assert.equal(written.jsonBody.review.rating, 4);
+  assert.equal(written.jsonBody.review.authorName, 'Passing Visitor');
+});
+
+await check('writing again replaces it rather than stacking another on', async () => {
+  const again = await writePageReview(req({
+    headers: visitorAuth, params: { id: 'usr_kaiju' }, body: { rating: 5, body: 'Better than I said.' },
+  }), ctx);
+  assert.equal(again.status, 200);
+
+  const body = (await pageReviews(req({ headers: visitorAuth, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  const mine = body.reviews.filter((entry) => entry.mine);
+  assert.equal(mine.length, 1, 'one per person, or the loudest wins');
+  assert.equal(mine[0].rating, 5);
+  assert.equal(body.yours, 5, 'the form knows it is editing, not writing');
+});
+
+await check('and none of it touches the record earned by trading', async () => {
+  // The whole reason the earned number is worth reading. Measured by moving one
+  // and checking the other did not follow, rather than by comparing two totals
+  // that could coincide.
+  const before = (await credit(req({ params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+
+  const second = await signup(req({
+    body: {
+      displayName: 'Another Visitor', email: 'visitor2@figmark.example',
+      phone: '+919000045713', password: 'longenough1',
+    },
+  }), ctx);
+  const wrote = await writePageReview(req({
+    headers: { authorization: `Bearer ${second.jsonBody.token}` },
+    params: { id: 'usr_kaiju' },
+    body: { rating: 1, body: 'Did not care for the packaging.' },
+  }), ctx);
+  assert.equal(wrote.status, 201);
+
+  const after = (await credit(req({ params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+
+  assert.equal(after.page.count, before.page.count + 1, 'the opinion is counted');
+  assert.notEqual(after.page.average, before.page.average, 'and moves its own average');
+  // A one-star from somebody who never bought anything must not touch this.
+  assert.equal(after.seller.count, before.seller.count, 'the trade count is unmoved');
+  assert.equal(after.seller.average, before.seller.average, 'and so is the average');
+  assert.equal(after.asSeller.goodRate, before.asSeller.goodRate, 'and the good-rate with it');
+});
+
+await check('a person can set up their own page, shop or no shop', async () => {
+  const saved = await saveProfile(req({
+    headers: visitorAuth,
+    body: { bio: 'Collect Gunpla. Pay same day.', tags: [' Gunpla ', 'Pune', 'Gunpla'], coverUrl: '' },
+  }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.profile.bio, 'Collect Gunpla. Pay same day.');
+  // Trimmed and deduplicated: chips are scanned, and the same word twice is noise.
+  assert.deepEqual(saved.jsonBody.profile.tags, ['Gunpla', 'Pune']);
+});
+
+await check('a banner that is not a link is refused', async () => {
+  const bad = await saveProfile(req({
+    headers: visitorAuth, body: { coverUrl: 'javascript:alert(1)' },
+  }), ctx);
+  assert.equal(bad.status, 400);
+  assert.equal(bad.jsonBody.error, 'invalid_profile');
+});
+
 console.log('\noperating the marketplace');
 
 await check('every operations route refuses an ordinary account', async () => {

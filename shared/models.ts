@@ -140,6 +140,18 @@ export interface User extends BaseDocument {
   escrowRights?: EscrowRights | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
+  /**
+   * The person's own page, as distinct from their shop's.
+   *
+   * A buyer is somebody a seller decides whether to trust, so they get a page
+   * with the same shape - a banner, a line about themselves, and chips - rather
+   * than a name and nothing. Absent on accounts that predate it.
+   */
+  bio?: string;
+  coverUrl?: string | null;
+  tags?: string[];
+  /** Last seen, so a page can say whether anybody is home. */
+  lastSeenAt?: string | null;
 }
 
 export interface SellerProfile {
@@ -195,6 +207,19 @@ export interface SellerProfile {
    * cannot be offered at all.
    */
   payment?: SellerPaymentDetails | null;
+  /**
+   * The banner behind the shop's name.
+   *
+   * A URL for the same reason the avatar is one - blob storage is not wired,
+   * and the field the page reads does not change when it is.
+   */
+  coverUrl?: string | null;
+  /**
+   * Short facts the shop wants read before anything else: what they do, where
+   * they ship from, how long they have been at it. Chips rather than prose
+   * because they are scanned, not read, and a paragraph gets skipped.
+   */
+  tags?: string[];
 }
 
 /**
@@ -621,6 +646,30 @@ export interface Review extends BaseDocument {
   /** Hidden until both sides submit or the reveal window expires. */
   revealed: boolean;
   revealAt: string;
+}
+
+/**
+ * A review of somebody's page rather than of a trade with them.
+ *
+ * Deliberately a different record from `Review`, and never mixed into the same
+ * average. A transaction review is earned - it exists because money changed
+ * hands and both sides had to write blind. This one is an opinion anybody may
+ * leave, which is worth having and is not the same claim, so it is counted,
+ * shown and labelled separately. Folding the two together would let a shop be
+ * talked up or shouted down by people who never bought anything, and the
+ * verified number is the whole reason the verified number is worth reading.
+ *
+ * One per author per subject, enforced by a unique key on the container.
+ */
+export interface StoreReview extends BaseDocument {
+  /** Partition key: whose page this is about. */
+  subjectId: string;
+  authorId: string;
+  /** Their name as it was when they wrote it. */
+  authorName: string;
+  authorHandle: string | null;
+  rating: number;
+  body: string;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, User,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
@@ -53,6 +53,7 @@ export class MemoryRepository implements Repository {
   private readonly forums = new Map<string, Forum>();
   private readonly messages = new Map<string, Message>();
   private readonly reviews = new Map<string, Review>();
+  private readonly storeReviews = new Map<string, StoreReview>();
   private readonly disputes = new Map<string, Dispute>();
   /** `@username` -> who holds it. Mirrors the reservations in `identifiers`. */
   private readonly handles = new Map<string, { userId: string; isStore: boolean }>();
@@ -374,6 +375,17 @@ export class MemoryRepository implements Repository {
     return [...this.reviews.values()]
       .filter((review) => review.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listStoreReviews(subjectId: string): Promise<StoreReview[]> {
+    return [...this.storeReviews.values()]
+      .filter((review) => review.subjectId === subjectId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async saveStoreReview(review: StoreReview): Promise<StoreReview> {
+    this.storeReviews.set(review.id, review);
+    return review;
   }
 
   async listReviewsForOrder(orderId: string): Promise<Review[]> {

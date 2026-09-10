@@ -3,7 +3,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, User,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import type { CosmosConfig } from '../config.js';
@@ -750,6 +750,21 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
+  async listStoreReviews(subjectId: string): Promise<StoreReview[]> {
+    const { resources } = await this.container('storeReviews')
+      .items.query<StoreReview>(
+        { query: 'SELECT * FROM c ORDER BY c.createdAt DESC' },
+        { partitionKey: subjectId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  async saveStoreReview(review: StoreReview): Promise<StoreReview> {
+    const { resource } = await this.container('storeReviews').items.upsert<StoreReview>(review);
+    return resource!;
   }
 
   async listPostsByAuthor(authorId: string): Promise<Post[]> {

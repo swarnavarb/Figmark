@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Post, Review, User,
+  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Post, Review, StoreReview, User,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -107,6 +107,15 @@ export interface Repository {
    * the rule stays in one place.
    */
   listReviewsAbout(subjectId: string): Promise<Review[]>;
+  /**
+   * Opinions left on somebody's page, newest first.
+   *
+   * Never merged with `listReviewsAbout`: those are earned by a completed
+   * trade, these are not, and the whole value of the first number is that the
+   * second cannot move it.
+   */
+  listStoreReviews(subjectId: string): Promise<StoreReview[]>;
+  saveStoreReview(review: StoreReview): Promise<StoreReview>;
   /** Both sides' reviews of one order — at most two, and usually fewer. */
   listReviewsForOrder(orderId: string): Promise<Review[]>;
   createReview(review: Review): Promise<Review>;

@@ -1223,3 +1223,88 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* The operations console's status line: quiet when the backend is healthy. */
 .ops__status { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); }
 .ops__status p { margin: 0; }
+
+/* ── The page at /<username>, for a shop or a person ────────────────────── */
+
+.storefront { padding-bottom: 90px; }
+/* Every page gets the same silhouette whether or not a banner was set, so the
+   layout does not jump between one shop and the next. */
+.storefront__cover {
+  height: 132px; background: linear-gradient(135deg, var(--surface-2), var(--accent-soft));
+  position: relative; overflow: hidden;
+}
+.storefront__cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.storefront__body { padding: 0 16px; max-width: 1100px; margin: 0 auto; }
+.storefront__head {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start;
+  margin-top: -34px; margin-bottom: 12px;
+}
+.storefront__avatar {
+  width: 76px; height: 76px; border-radius: 50%; overflow: hidden;
+  border: 3px solid var(--bg); background: var(--surface-2); flex: none;
+}
+.storefront__avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.storefront__who { display: grid; gap: 4px; min-width: 0; padding-top: 38px; }
+.storefront__who h1 { margin: 0; font-size: var(--t-lg); }
+.storefront__act { padding-top: 38px; }
+
+.storefront__bio {
+  color: var(--text-dim); font-size: var(--t-sm); line-height: 1.5; margin: 0 0 12px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.storefront__bio.is-open { -webkit-line-clamp: unset; display: block; }
+.storefront__more {
+  background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer;
+  padding: 0 0 0 6px;
+}
+
+/* A chip that states a fact rather than filtering by one. */
+.chips--tight { gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.chip--static { cursor: default; background: var(--surface-2); }
+
+/* The credit record: three cells and a chevron, all of it one button. */
+.credit {
+  display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: center;
+  width: 100%; padding: 14px; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: inherit; font: inherit; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.credit:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.credit__cell { display: grid; gap: 2px; min-width: 0; }
+.credit__grade {
+  font-weight: 750; font-size: var(--t-md); color: var(--accent); text-transform: capitalize;
+}
+.credit__grade--buyer { color: var(--ok); }
+.credit__figure { font-weight: 750; font-size: var(--t-md); }
+.credit__label { font-size: var(--t-xs); color: var(--text-faint); }
+.credit__open { color: var(--text-faint); font-size: 20px; line-height: 1; }
+
+.creditgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.creditcard {
+  display: grid; gap: 6px; padding: 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2);
+}
+.creditcard__rate { font-size: var(--t-xs); color: var(--text-faint); margin-bottom: 4px; }
+
+/* What a review was written about, under the review. */
+.review__item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--border);
+  text-decoration: none; color: inherit; font-size: var(--t-xs);
+}
+.review__item:hover { border-color: var(--border-strong); }
+
+.starpick {
+  background: none; border: 0; cursor: pointer; padding: 0 2px;
+  font-size: 24px; line-height: 1; color: var(--border-strong);
+}
+.starpick.is-on { color: var(--accent); }
+
+@media (max-width: 520px) {
+  .storefront__head { grid-template-columns: auto 1fr; }
+  .storefront__act { grid-column: 1 / -1; padding-top: 0; }
+  .storefront__who { padding-top: 38px; }
+  .creditgrid { grid-template-columns: 1fr; }
+}
