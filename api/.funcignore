@@ -1,4 +1,4 @@
 *.js.map
-src
+/src
 tsconfig.json
 local.settings.json
