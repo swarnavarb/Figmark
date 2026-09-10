@@ -46,10 +46,16 @@ export function ListingPage() {
     }
   }
 
+  // Buying opens the checkout; it does not complete a purchase. The order is
+  // created unpaid, which is what makes the next screen possible at all - how
+  // to pay is a question about a specific order, and the two answers differ in
+  // who ends up holding the money. Landing the buyer on their purchases list
+  // instead skipped that question entirely and left an unpaid order behind
+  // looking like a completed one.
   const buy = () =>
-    run('Order placed — see it under My Purchases.', async () => {
-      await api.order(listing.id, 1);
-      navigate('/me?tab=purchases');
+    run('', async () => {
+      const placed = await api.order(listing.id, 1);
+      navigate(`/order/${placed.order.id}`);
     });
 
   const toggleLike = () =>
@@ -191,8 +197,8 @@ export function ListingPage() {
             )}
 
             <p className="faint">
-              Payment is held in escrow and released once you confirm delivery, or automatically after the
-              dispute window closes.
+              Nothing is charged here. The next screen is where you choose how to pay: directly to the
+              seller, or through an escrow who holds it until you confirm the item arrived.
             </p>
           </div>
 
@@ -274,8 +280,9 @@ function PreOrderPanel({
         </span>
       </div>
       <p className="muted">
-        The seller places the order once enough units are booked. You are charged now and held in
-        escrow; if it does not go ahead, you are refunded in full.
+        The seller places the order once enough units are booked. Paying an escrow — who would hold it
+        until the batch goes ahead — is not built yet, so a pre-order paid directly is money the seller
+        holds before the goods exist. Worth knowing before you book one.
       </p>
 
       <LotMeter filled={preOrder.filledCount} threshold={preOrder.fillThreshold} />

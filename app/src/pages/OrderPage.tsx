@@ -167,7 +167,10 @@ export function OrderPage() {
 function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Promise<void> }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [paying, setPaying] = useState(false);
+  // An unpaid order is a checkout, so it opens as one. There is nothing else to
+  // do on it, and making the buyer press Pay to reach the question of how to pay
+  // put a step in front of the only decision on the screen.
+  const [paying, setPaying] = useState(() => state.actions.includes('pay'));
   const [settling, setSettling] = useState(false);
   const [disputing, setDisputing] = useState(false);
 
