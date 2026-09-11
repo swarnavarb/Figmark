@@ -335,6 +335,57 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-weight: 600;
 }
 
+/* A quieter chip, for the rows that narrow a choice already made rather than
+   competing with it. Three rows of equally loud chips is a wall. */
+.chip--quiet { background: transparent; border-color: transparent; font-size: var(--t-xs); padding: 5px 10px; }
+.chip--quiet:hover { border-color: var(--border); }
+
+/* ── Category headings ─────────────────────────────────────────────────────
+   The top row of the buy page: what a thing is, before how it is sold. A
+   scrolling rail rather than a wrapping set, so the row stays one line on a
+   phone and the order of the headings stays learnable. */
+
+.cats {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  /* The page's side padding, cancelled so the rail bleeds to both edges and
+     reads as scrollable, then given back so nothing starts under the edge. */
+  margin: 0 calc(var(--page-pad) * -1);
+  padding: 2px var(--page-pad) 6px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.cats::-webkit-scrollbar { display: none; }
+
+.cat {
+  flex: none;
+  display: grid;
+  justify-items: center;
+  /* A fixed glyph row, so every glyph sits on the same line however many lines
+     the label below it takes. Centring the pair instead left the two-line
+     headings half a line higher than their neighbours, which reads as a row
+     that was not thought about. */
+  grid-template-rows: 22px auto;
+  align-content: start;
+  gap: 5px;
+  width: 74px;
+  padding: 10px 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.cat:hover { color: var(--text); border-color: var(--border-strong); }
+.cat.is-on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+.cat__glyph { font-size: 19px; line-height: 1; }
+
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 9px;
@@ -358,6 +409,92 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .meter { height: 5px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
 .meter__fill { height: 100%; border-radius: var(--r-pill); background: var(--accent); transition: width 0.3s; }
+
+/* ── The social fill meter ─────────────────────────────────────────────────
+   Two layers on one track: solid is money paid, hatched is a place somebody
+   said they would take if enough others did. 8px rather than 5 because two
+   layers have to be told apart at a glance, and a hatch at 5px is a smudge. */
+
+.meter--social { position: relative; }
+.meter--social .meter__fill { position: absolute; top: 0; bottom: 0; left: 0; height: auto; }
+.meter__fill--booked { background: var(--accent); z-index: 2; }
+.meter__fill--pledged {
+  z-index: 1;
+  background: repeating-linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--accent) 45%, transparent) 0 4px,
+    color-mix(in srgb, var(--accent) 10%, transparent) 4px 9px
+  );
+}
+.meter__fill--booked.is-done { background: var(--ok); }
+/* A campaign that did not make it keeps its shape and loses its colour: the
+   number still happened, it just stopped meaning anything is coming. */
+.meter__fill--booked.is-dead { background: var(--border-strong); }
+.meter__fill--pledged.is-dead {
+  background: repeating-linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--text-faint) 55%, transparent) 0 4px,
+    color-mix(in srgb, var(--text-faint) 16%, transparent) 4px 9px
+  );
+}
+
+.fillblock { display: grid; gap: 8px; }
+.fillblock__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+.gap { font-size: var(--t-sm); font-weight: 700; color: var(--accent); letter-spacing: -0.01em; white-space: nowrap; }
+.gap--warn { color: var(--warn); }
+.gap--ok { color: var(--ok); }
+.gap--dead { color: var(--text-faint); }
+
+.fillkey { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.fillkey span {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: var(--t-xs); color: var(--text-faint);
+}
+.fillkey u { width: 10px; height: 8px; border-radius: 3px; display: block; text-decoration: none; flex: none; }
+.fillkey__booked { background: var(--accent); }
+.fillkey__pledged {
+  background: repeating-linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--accent) 45%, transparent) 0 3px,
+    color-mix(in srgb, var(--accent) 10%, transparent) 3px 7px
+  );
+}
+
+/* Overlapping avatars. A group you can see is a group you can imagine
+   joining, which a bare count never manages. */
+.pile { display: flex; align-items: center; }
+.pile b {
+  width: 26px; height: 26px; flex: none;
+  margin-right: -6px;
+  border: 2px solid var(--surface);
+  border-radius: var(--r-pill);
+  display: grid; place-items: center;
+  font-size: 9.5px; font-weight: 700; letter-spacing: -0.02em;
+  color: #fff;
+}
+/* Dashed: they are in, but they have not paid. The bar says the same thing. */
+.pile b.pile__soft { border-style: dashed; border-color: var(--text-faint); opacity: 0.8; }
+.pile b.pile__more { background: var(--surface-2); color: var(--text-dim); margin-right: 0; font-size: 9.5px; }
+
+/* The roster. One row per person, and one row for everybody who chose to be
+   counted rather than named. */
+.roster { display: grid; }
+.roster__row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.roster__row:last-child { border-bottom: 0; }
+.roster__who { flex: 1; min-width: 0; }
+.roster__name { font-size: var(--t-sm); display: block; }
+.roster__quiet {
+  width: 30px; height: 30px; flex: none;
+  display: grid; place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text-dim);
+  font-size: var(--t-xs); font-weight: 700;
+}
 
 /* ── Stage timeline ────────────────────────────────────────────────────── */
 

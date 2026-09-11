@@ -45,6 +45,8 @@ const {
 } = await import(new URL('want-routes.js', apiRoot));
 const { notificationsRoute, notificationsReadRoute } =
   await import(new URL('notification-routes.js', apiRoot));
+const { preOrderReadRoute, preOrderPledgeRoute } =
+  await import(new URL('preorder-routes.js', apiRoot));
 const { creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute } =
   await import(new URL('profile-routes.js', apiRoot));
 const {
@@ -135,6 +137,8 @@ const routes = [
   ['POST', '/api/wants/:id/offers', wantOfferRoute],
   ['POST', '/api/wants/:id/close', wantCloseRoute],
   ['POST', '/api/wants/:id/me', wantAlsoMeRoute],
+  ['GET', '/api/listings/:id/preorder', preOrderReadRoute],
+  ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
   ['GET', '/api/notifications', notificationsRoute],
   ['POST', '/api/notifications/read', notificationsReadRoute],
   ['GET', '/api/users/:id/reviews', tradeReviewsRoute],

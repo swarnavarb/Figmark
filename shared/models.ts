@@ -361,6 +361,15 @@ export interface Listing extends BaseDocument {
    * not carry it; `sourcingOf` resolves those rather than showing a blank.
    */
   sourcing?: Sourcing;
+  /**
+   * Sold as one assorted lot rather than as a single item.
+   *
+   * A job lot - twelve blind-box figures, a shelf clearance, a box of loose
+   * parts - is a different thing to buy from one named item, and buyers who
+   * want one rarely want the other. Optional because listings written before
+   * this existed are all single items.
+   */
+  bundle?: boolean;
   photos: ListingPhoto[];
   /** Free-text search terms, denormalised for query simplicity. */
   tags: string[];
@@ -374,14 +383,81 @@ export interface Listing extends BaseDocument {
   bumpedAt: string | null;
 }
 
-/** A buyer-facing pre-order campaign attached to one listing. */
+/**
+ * A buyer-facing pre-order campaign attached to one listing.
+ *
+ * Two counters rather than one, because a group-buy has two kinds of member.
+ * `filledCount` is money: units somebody has actually ordered. `pledgedCount`
+ * is intent: units somebody said they would take if enough others did, which
+ * costs nothing and is called in for payment the moment the two together reach
+ * the threshold. The cheap first click is what gets a bar off zero, and a bar
+ * at zero recruits nobody - but a pledge is not a sale and is never counted as
+ * one, which is why they are stored and displayed apart.
+ */
 export interface PreOrder {
-  /** Units that must be booked before the seller places the order. */
+  /** Units that must be committed before the seller places the order. */
   fillThreshold: number;
   /** Units booked so far. Denormalised from orders for cheap list reads. */
   filledCount: number;
+  /**
+   * Units pledged but not yet paid for. Denormalised from the `pledges`
+   * container the same way, and optional because campaigns written before
+   * pledges existed carry no such field.
+   */
+  pledgedCount?: number;
   /** ISO-8601 after which no further pre-bookings are accepted. */
   cutoffAt: string;
+  /**
+   * When the "nearly there" notice went out, so it goes out once.
+   *
+   * The one moment the app is allowed to ask everybody for something. Sending
+   * it on a timer instead would be a countdown, and manufactured urgency would
+   * cost more trust than the extra unit is worth.
+   */
+  nearlyNotifiedAt?: string | null;
+  /** When booked + pledged first reached the threshold. */
+  filledAt?: string | null;
+  /**
+   * The deadline for pledges to become bookings, set when the meter fills.
+   *
+   * A pledge that is never called in is a promise nobody has to keep, which
+   * makes the hatched half of the bar a lie. After this passes the place is
+   * offered to whoever is behind it.
+   */
+  pledgeDueAt?: string | null;
+  /** When the cutoff passed without the meter filling. */
+  closedAt?: string | null;
+}
+
+/**
+ * "I am in, if enough others are."
+ *
+ * A soft commitment on one pre-order: no money moves, nothing is reserved, and
+ * it converts into a real order when the campaign fills. It exists because the
+ * first person to pay into a group-buy is taking the whole risk of it never
+ * happening, and most people will not - so the bar stays at zero and the item
+ * never gets imported, which is a worse outcome for everybody than a softer
+ * first step.
+ */
+export interface Pledge extends BaseDocument {
+  /** Partition key: a campaign and everyone in it are read together. */
+  listingId: string;
+  userId: string;
+  /** Denormalised so the seller can find what was pledged in their shop. */
+  sellerId: string;
+  units: number;
+  /**
+   * Whether this person may be named in the roster.
+   *
+   * Off by default. Being one of twenty is a fact about a group; being named
+   * tells strangers what you buy and roughly what you spend, and that is the
+   * person's call to make rather than a side effect of joining.
+   */
+  listed: boolean;
+  /** Who brought them in, when they arrived through somebody's share link. */
+  broughtBy: string | null;
+  /** The order this became, once the pledge was called in and paid. */
+  convertedOrderId: string | null;
 }
 
 /** Public Q&A on a listing, visible to everyone - distinct from private chat. */
@@ -552,6 +628,15 @@ export interface Order extends BaseDocument {
    */
   stage: FulfilmentStage;
   stageHistory: StageEvent[];
+  /**
+   * Who brought this buyer in, when they arrived through a share link.
+   *
+   * Credit for filling a group-buy, and the only thing that makes sharing one
+   * worth a person's reputation: recruiting for a batch that never ships is
+   * how you lose friends, so whoever did it is recorded next to whether it
+   * shipped.
+   */
+  broughtBy?: string | null;
   /** Set once the order reaches `delivered`; unlocks reviews. */
   completedAt: string | null;
   /**
@@ -955,7 +1040,11 @@ export type NotificationKind =
   | 'dispute_opened'
   | 'dispute_replied'
   | 'dispute_settled'
-  | 'lot_moved';
+  | 'lot_moved'
+  | 'preorder_nearly'
+  | 'preorder_filled'
+  | 'preorder_due'
+  | 'preorder_closed';
 
 /**
  * A shared room.

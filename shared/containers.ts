@@ -155,6 +155,13 @@ export const CONTAINERS = {
       'Opinions left on somebody\'s page, read as "everything said about this account", which is exactly one partition. Separate from `reviews` because these are not earned by a transaction and must never be averaged in with the ones that are - and because the unique key differs: one per author here, one per order there.',
     uniqueKeyPaths: [['/authorId']],
   },
+  pledges: {
+    name: 'pledges',
+    partitionKeyPath: '/listingId',
+    rationale:
+      'A campaign and everyone in it are read together - to draw the meter, to name the roster, and to call the pledges in when it fills - which is exactly one partition. One per person per campaign, enforced by the unique key rather than by remembering to check: a bar anyone can push twice measures enthusiasm, not demand.',
+    uniqueKeyPaths: [['/userId']],
+  },
   comments: {
     name: 'comments',
     partitionKeyPath: '/listingId',

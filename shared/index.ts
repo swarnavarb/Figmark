@@ -1,4 +1,6 @@
 export * from './enums.js';
+export * from './catalog.js';
+export * from './preorder.js';
 export * from './models.js';
 export * from './containers.js';
 export * from './capabilities.js';

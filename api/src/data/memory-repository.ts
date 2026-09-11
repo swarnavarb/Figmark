@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
+import { matchesKind, matchesSearch } from '../../../shared/catalog.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import {
@@ -29,6 +30,7 @@ import {
   seedDisputes,
   seedWants,
   seedWantOffers,
+  seedPledges,
   seedUsers,
 } from './seed.js';
 
@@ -59,6 +61,7 @@ export class MemoryRepository implements Repository {
   private readonly wants = new Map<string, Want>();
   private readonly wantOffers = new Map<string, WantOffer>();
   private readonly wantSeekers = new Map<string, WantSeeker>();
+  private readonly pledges = new Map<string, Pledge>();
   private readonly notifications = new Map<string, Notification>();
   private readonly disputes = new Map<string, Dispute>();
   /** `@username` -> who holds it. Mirrors the reservations in `identifiers`. */
@@ -81,6 +84,7 @@ export class MemoryRepository implements Repository {
     for (const record of seedDisputes()) this.disputes.set(record.id, record);
     for (const record of seedWants()) this.wants.set(record.id, record);
     for (const record of seedWantOffers()) this.wantOffers.set(record.id, record);
+    for (const record of seedPledges()) this.pledges.set(record.id, record);
   }
 
   private indexUser(user: User): void {
@@ -174,10 +178,18 @@ export class MemoryRepository implements Repository {
 
     if (query.sellerId) items = items.filter((l) => l.sellerId === query.sellerId);
     if (query.category) items = items.filter((l) => l.category === query.category);
+    // A provided list is authoritative even when it is empty: an unknown
+    // heading resolves to no categories, and must then match nothing rather
+    // than everything. Silently showing the whole catalog is how a broken
+    // filter looks exactly like a working one.
+    if (query.categories) {
+      const wanted = new Set(query.categories);
+      items = items.filter((l) => wanted.has(l.category));
+    }
     if (query.condition) items = items.filter((l) => l.condition === query.condition);
-    // "pre-order" and "in stock" are now derived, not a stored kind.
-    if (query.kind === 'pre_order') items = items.filter((l) => l.preOrder !== null);
-    if (query.kind === 'in_stock') items = items.filter((l) => l.preOrder === null);
+    // How it is sold is derived from the listing rather than stored, and the
+    // rule lives in shared/catalog so the SQL and this agree by construction.
+    if (query.kind && query.kind !== 'all') items = items.filter((l) => matchesKind(l, query.kind));
     if (query.maxPriceMinor !== undefined) {
       items = items.filter((l) => l.priceMinor <= query.maxPriceMinor!);
     }
@@ -231,6 +243,12 @@ export class MemoryRepository implements Repository {
     return [...this.orders.values()]
       .filter((o) => o.buyerId === buyerId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listOrdersForListing(listingId: string): Promise<Order[]> {
+    return [...this.orders.values()]
+      .filter((order) => order.listingId === listingId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   async createOrder(order: Order): Promise<Order> {
@@ -439,6 +457,35 @@ export class MemoryRepository implements Repository {
     this.wantSeekers.delete(id);
   }
 
+  async listPledges(listingId: string): Promise<Pledge[]> {
+    return [...this.pledges.values()]
+      .filter((pledge) => pledge.listingId === listingId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async savePledge(pledge: Pledge): Promise<Pledge> {
+    this.pledges.set(pledge.id, pledge);
+    return pledge;
+  }
+
+  async deletePledge(id: string): Promise<void> {
+    this.pledges.delete(id);
+  }
+
+  async listPledgedListingIds(userId: string): Promise<string[]> {
+    return [...this.pledges.values()]
+      .filter((pledge) => pledge.userId === userId)
+      .map((pledge) => pledge.listingId);
+  }
+
+  async updatePreOrder(listing: Listing): Promise<Listing> {
+    const stored = this.listings.get(listing.id);
+    if (!stored) return listing;
+    stored.preOrder = listing.preOrder;
+    stored.updatedAt = new Date().toISOString();
+    return stored;
+  }
+
   async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
     return [...this.notifications.values()]
       .filter((entry) => entry.userId === userId)
@@ -608,16 +655,6 @@ const newestFirst = (a: Post, b: Post) => (a.createdAt < b.createdAt ? 1 : -1);
 /** A bump counts as recency without rewriting createdAt. */
 function freshness(listing: Listing): string {
   return listing.bumpedAt && listing.bumpedAt > listing.createdAt ? listing.bumpedAt : listing.createdAt;
-}
-
-function matchesSearch(listing: Listing, term: string): boolean {
-  const needle = term.trim().toLowerCase();
-  if (!needle) return true;
-  const haystack = [listing.title, listing.description, listing.category, ...listing.tags]
-    .join(' ')
-    .toLowerCase();
-  // Every word must appear somewhere, so extra words narrow rather than widen.
-  return needle.split(/\s+/).every((word) => haystack.includes(word));
 }
 
 export function normaliseIdentifier(identifier: string): string {

@@ -7,6 +7,7 @@ import type {
   Lot,
   Order,
   Dispute,
+  Pledge,
   Post,
   Review,
   SellerTrustSignals,
@@ -341,7 +342,9 @@ interface ListingSeed {
   category: string;
   condition: Listing['condition'];
   /** Opt-in demand pooling, shown to buyers. */
-  preOrder?: { fillThreshold: number; filledCount: number; cutoffDays: number };
+  preOrder?: { fillThreshold: number; cutoffDays: number };
+  /** Sold as one assorted lot rather than as a single named item. */
+  bundle?: boolean;
   priceMinor: number;
   quantity: number;
   lotId?: string;
@@ -357,7 +360,7 @@ const LISTINGS: ListingSeed[] = [
     description: 'Factory sealed, sourced direct from the Guangzhou studio. Pre-book against the September lot; ships once the lot clears customs.',
     category: 'Scale figures', condition: 'MISB', priceMinor: 1_45_000,
     quantity: 17, lotId: 'lot_gz_sep', tags: ['resin', 'scale', 'dragon', 'preorder'],
-    preOrder: { fillThreshold: 20, filledCount: 3, cutoffDays: 9 },
+    preOrder: { fillThreshold: 20, cutoffDays: 9 },
     likeCount: 34, viewCount: 412, ageDays: -6,
   },
   {
@@ -400,7 +403,7 @@ const LISTINGS: ListingSeed[] = [
     description: 'Group-buy slot against the October Shenzhen consolidation. Balanced cable included.',
     category: 'Electronics', condition: 'MISB', priceMinor: 54_000,
     quantity: 22, lotId: 'lot_sz_oct', tags: ['audio', 'iem', 'planar', 'preorder'],
-    preOrder: { fillThreshold: 30, filledCount: 8, cutoffDays: 16 },
+    preOrder: { fillThreshold: 12, cutoffDays: 16 },
     likeCount: 29, viewCount: 347, ageDays: -4,
   },
   {
@@ -410,6 +413,31 @@ const LISTINGS: ListingSeed[] = [
     quantity: 3, tags: ['handheld', 'retro', 'gaming'],
     likeCount: 41, viewCount: 512, ageDays: -7,
   },
+  /* Every heading on the buy page needs something behind it. A category chip
+     that always returns nothing reads as a broken filter rather than as an
+     empty shelf, and the two are indistinguishable to somebody browsing. */
+  {
+    id: 'lst_kbeauty', sellerId: 'usr_gadgetgrid', title: 'K-beauty set — cleanser, essence, two sheet masks',
+    description: 'Bought in Seoul, sealed. Expiry printed on each box, all 2027 or later.',
+    category: 'Beauty', condition: 'MISB', priceMinor: 32_000,
+    quantity: 6, tags: ['skincare', 'korea', 'sealed'],
+    likeCount: 12, viewCount: 148, ageDays: -3,
+  },
+  {
+    id: 'lst_canvas_tote', sellerId: 'usr_tokyoline', title: 'Japanese canvas tote — Kyoto maker, unused',
+    description: 'Brought back two, only need one. Tag still on it.',
+    category: 'Bags & watches', condition: 'MIB', priceMinor: 24_000,
+    quantity: 2, tags: ['bag', 'canvas', 'japan'],
+    likeCount: 7, viewCount: 91, ageDays: -8,
+  },
+  {
+    id: 'lst_bulk_gunpla', sellerId: 'usr_tokyoline', title: 'Mixed lot — 9 HG kits, mostly opened boxes',
+    description: 'Clearing a shelf. Some boxes opened and never built, two part-built with the runners kept. Sold as one lot, no splits.',
+    category: 'Model kits', condition: 'BIB', priceMinor: 1_10_000,
+    quantity: 1, bundle: true, tags: ['gunpla', 'bulk', 'clearance'],
+    likeCount: 18, viewCount: 203, ageDays: -2,
+  },
+
   /* The demo account's own listings — this is what "My Listings" shows. */
   {
     id: 'lst_my_statue', sellerId: 'usr_demo', title: 'Garage kit statue — built and painted',
@@ -427,6 +455,26 @@ const LISTINGS: ListingSeed[] = [
   },
 ];
 
+/**
+ * The two pre-order counters, summed from the rows they are a cache of.
+ *
+ * Typed by hand they drift the first time a fixture order or pledge is edited,
+ * and the symptom is a bar in the feed that disagrees with the list of people
+ * on the listing page - which is worse than having no bar, because one of them
+ * is lying and the reader cannot tell which.
+ */
+function seededCounts(listingId: string): { filledCount: number; pledgedCount: number } {
+  const orders = [...seedOrders(), seedLiveSale(), ...seedLotOrders()];
+  return {
+    filledCount: orders
+      .filter((order) => order.listingId === listingId && order.status !== 'cancelled')
+      .reduce((total, order) => total + order.quantity, 0),
+    pledgedCount: seedPledges()
+      .filter((pledge) => pledge.listingId === listingId)
+      .reduce((total, pledge) => total + pledge.units, 0),
+  };
+}
+
 export function seedListings(): Listing[] {
   return LISTINGS.map((entry) => ({
     id: entry.id,
@@ -442,8 +490,8 @@ export function seedListings(): Listing[] {
     preOrder: entry.preOrder
       ? {
           fillThreshold: entry.preOrder.fillThreshold,
-          filledCount: entry.preOrder.filledCount,
           cutoffAt: iso(entry.preOrder.cutoffDays),
+          ...seededCounts(entry.id),
         }
       : null,
     lotId: entry.lotId ?? null,
@@ -451,6 +499,7 @@ export function seedListings(): Listing[] {
     // no batch behind it is stock already on the shelf. Derived rather than
     // stated, so a fixture cannot claim an import it has no batch for.
     sourcing: entry.lotId ? 'import' : 'in_hand',
+    bundle: entry.bundle === true,
     photos: [],
     tags: entry.tags,
     likeCount: entry.likeCount,
@@ -743,6 +792,62 @@ export function seedWants(): Want[] {
     want('wnt_3', 'usr_tokyoline', 'Meiko Tanaka', 'tokyoline',
       'HG Gundam kits, bulk lot for a class', 'Model kits', 12_00_000, null,
       'Twenty or so, any grade, does not matter if boxes are opened. For a workshop.', -1),
+  ];
+}
+
+/**
+ * People already in the two open group-buys.
+ *
+ * Without these the meter demonstrates nothing: a bar at 2 of 20 with nobody
+ * named looks like an item nobody wants rather than a thing you can join. The
+ * units and the naming choices are mixed on purpose, because both halves of the
+ * bar and both privacy answers have to be visible somewhere.
+ *
+ * The counts here are what make one campaign read as filling and the other as
+ * nearly there, which are the two states worth seeing before you have used it.
+ */
+export function seedPledges(): Pledge[] {
+  const at = (listingId: string, sellerId: string) =>
+    (
+      buyerIndex: number,
+      units: number,
+      listed: boolean,
+      days: number,
+      broughtBy: string | null = null,
+    ): Pledge => {
+      const [userId] = LOT_BUYERS[buyerIndex % LOT_BUYERS.length]!;
+      return {
+        id: `pdg_${listingId.replace('lst_', '')}_${buyerIndex}`,
+        listingId,
+        userId,
+        sellerId,
+        units,
+        listed,
+        broughtBy,
+        convertedOrderId: null,
+        createdAt: iso(days),
+        updatedAt: iso(days),
+      };
+    };
+
+  const dragon = at('lst_dragon_knight', 'usr_kaiju');
+  const iem = at('lst_iem_audio', 'usr_gadgetgrid');
+  const [first] = LOT_BUYERS[0]!;
+
+  return [
+    // Filling: 2 booked and 5 pledged against 20, so the card asks for 13.
+    dragon(0, 2, true, -5),
+    dragon(1, 1, true, -4),
+    dragon(2, 1, false, -3),
+    // One of these came in through the first pledger's link, so the credit
+    // line has something true to say the moment anybody looks.
+    dragon(3, 1, true, -2, first),
+    // Nearly there: 1 booked and 10 pledged against 12, so it needs one more.
+    iem(4, 3, true, -6),
+    iem(5, 2, false, -5),
+    iem(6, 2, true, -4),
+    iem(7, 2, true, -3),
+    iem(8, 1, false, -1),
   ];
 }
 

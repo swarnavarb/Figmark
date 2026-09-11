@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS } from '@shared/enums';
+import { CATEGORIES } from '@shared/catalog';
 import { ApiRequestError, api, type WantCard, type WantDetail } from '../api';
 import { EmptyState, ErrorNotice, Modal, PersonLink } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
@@ -19,11 +20,6 @@ import { useSession } from '../session';
  * Which is why an answer is not only "here is one". It is also "I can get
  * this", and on this board that is the answer that matters.
  */
-const CATEGORIES = [
-  'Scale figures', 'Model kits', 'Trading cards', 'Anime merch',
-  'Sneakers', 'Electronics', 'Collectibles',
-];
-
 export function WantedPage() {
   const { user } = useSession();
   const [params, setParams] = useSearchParams();
@@ -249,7 +245,7 @@ function WantBody({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
 function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () => Promise<void> }) {
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
-  const [category, setCategory] = useState(CATEGORIES[0]!);
+  const [category, setCategory] = useState<string>(CATEGORIES[0]!);
   const [budget, setBudget] = useState('');
   const [condition, setCondition] = useState<string>('');
   const [busy, setBusy] = useState(false);

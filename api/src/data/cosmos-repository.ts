@@ -3,9 +3,10 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
+import { matchesSearch } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -33,6 +34,7 @@ import {
   seedDisputes,
   seedWants,
   seedWantOffers,
+  seedPledges,
   seedUsers,
 } from './seed.js';
 
@@ -441,6 +443,7 @@ export class CosmosRepository implements Repository {
       ['disputes', seedDisputes()],
       ['wants', seedWants()],
       ['wantOffers', seedWantOffers()],
+      ['pledges', seedPledges()],
     ] as const;
 
     let added = 0;
@@ -555,6 +558,7 @@ export class CosmosRepository implements Repository {
       ['disputes', seedDisputes()],
       ['wants', seedWants()],
       ['wantOffers', seedWantOffers()],
+      ['pledges', seedPledges()],
     ] as const) {
       for (const item of items) await this.container(name).items.upsert(item);
       written += items.length;
@@ -924,6 +928,46 @@ export class CosmosRepository implements Repository {
     await this.container('wantSeekers').item(id, wantId).delete();
   }
 
+  async listPledges(listingId: string): Promise<Pledge[]> {
+    const { resources } = await this.container('pledges')
+      .items.query<Pledge>({ query: 'SELECT * FROM c ORDER BY c.createdAt ASC' }, { partitionKey: listingId })
+      .fetchAll();
+    return resources;
+  }
+
+  async savePledge(pledge: Pledge): Promise<Pledge> {
+    const { resource } = await this.container('pledges').items.upsert<Pledge>(pledge);
+    return resource!;
+  }
+
+  async deletePledge(id: string, listingId: string): Promise<void> {
+    try {
+      await this.container('pledges').item(id, listingId).delete();
+    } catch (error) {
+      // Leaving is idempotent: a second tap on "I'm in" must not answer 500.
+      if (!isNotFound(error)) throw error;
+    }
+  }
+
+  async listPledgedListingIds(userId: string): Promise<string[]> {
+    // Cross-partition, and small: bounded by how many campaigns one person has
+    // joined, not by how many exist.
+    const { resources } = await this.container('pledges')
+      .items.query<string>({
+        query: 'SELECT VALUE c.listingId FROM c WHERE c.userId = @userId',
+        parameters: [{ name: '@userId', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async updatePreOrder(listing: Listing): Promise<Listing> {
+    const { resource } = await this.container('listings')
+      .item(listing.id, listing.sellerId)
+      .replace({ ...listing, updatedAt: new Date().toISOString() });
+    return (resource as Listing | undefined) ?? listing;
+  }
+
   async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
     const { resources } = await this.container('notifications')
       .items.query<Notification>(
@@ -1154,8 +1198,67 @@ export class CosmosRepository implements Repository {
     }
   }
 
+  /**
+   * The catalog, narrowed.
+   *
+   * Everything a chip can set is pushed into the SQL rather than filtered
+   * afterwards: this used to return the newest hundred listings and ignore the
+   * filters entirely, so every chip on the buy page did nothing in production
+   * while passing every test against the in-memory store.
+   *
+   * One static statement with dead clauses switched off by their own parameter,
+   * rather than a WHERE assembled from whichever filters are set. Assembled SQL
+   * cannot be checked before it is sent, and an unchecked query is exactly how
+   * a reserved word reached production last time.
+   *
+   * Search is the exception and stays in JavaScript: "every one of these words,
+   * across four fields" is not expressible without building the statement from
+   * the term. It therefore searches the window this query returns rather than
+   * all of history, so the window is opened wider when there is a term.
+   */
   async listListings(query: CatalogQuery = {}): Promise<Listing[]> {
-    return this.queryBySeller<Listing>('listings', query);
+    const limit = query.limit ?? (query.search ? 400 : 100);
+    const spec = {
+      query:
+        'SELECT * FROM c WHERE c.status = "active"' +
+        ' AND (@seller = "" OR c.sellerId = @seller)' +
+        ' AND (@cat = "" OR c.category = @cat)' +
+        ' AND (IS_NULL(@cats) OR ARRAY_CONTAINS(@cats, c.category))' +
+        ' AND (@cond = "" OR c.condition = @cond)' +
+        ' AND (@price = 0 OR c.priceMinor <= @price)' +
+        ' AND (@kind = "" OR (@kind = "pre_order" AND IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder))' +
+        ' OR (@kind = "mixed_lot" AND c.bundle = true)' +
+        ' OR (@kind = "in_hand" AND (c.sourcing = "in_hand" OR (NOT IS_DEFINED(c.sourcing) AND NOT IS_DEFINED(c.lotId))))' +
+        ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))' +
+        ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+      parameters: [
+        { name: '@seller', value: query.sellerId ?? '' },
+        { name: '@cat', value: query.category ?? '' },
+        // Null rather than an empty array: absent means every category, and an
+        // empty list means none of them, which is what an unknown heading is.
+        { name: '@cats', value: query.categories ? [...query.categories] : null },
+        { name: '@cond', value: query.condition ?? '' },
+        { name: '@price', value: query.maxPriceMinor ?? 0 },
+        { name: '@kind', value: query.kind && query.kind !== 'all' ? query.kind : '' },
+        { name: '@limit', value: limit },
+      ],
+    };
+
+    const { resources } = await this.container('listings')
+      .items.query<Listing>(spec, query.sellerId ? { partitionKey: query.sellerId } : undefined)
+      .fetchAll();
+
+    const matched = query.search
+      ? resources.filter((listing) => matchesSearch(listing, query.search!))
+      : resources;
+
+    // Followed sellers first. Not expressible in ORDER BY - the ranking is a
+    // fact about the reader, not the row - so it is applied to the window.
+    const followed = new Set(query.followedSellerIds ?? []);
+    if (followed.size === 0) return matched;
+    return [...matched].sort(
+      (a, b) => Number(followed.has(b.sellerId)) - Number(followed.has(a.sellerId)),
+    );
   }
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
@@ -1271,9 +1374,55 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listOrdersForListing(listingId: string): Promise<Order[]> {
+    const { resources } = await this.container('orders')
+      .items.query<Order>({
+        query: 'SELECT * FROM c WHERE c.listingId = @listingId ORDER BY c.createdAt ASC',
+        parameters: [{ name: '@listingId', value: listingId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  /**
+   * Write an order, and move what the order changed.
+   *
+   * Stock and pre-order fill are denormalised onto the listing so the feed can
+   * draw a card without counting orders, and that only holds if placing an
+   * order maintains them. It did not here - only the in-memory store did - so
+   * on the deployed site stock never went down and no pre-order ever filled,
+   * which is the difference between a group-buy and a progress bar that is
+   * always at zero.
+   *
+   * The listing update is deliberately not rolled back if it fails: the order
+   * exists, the money is the buyer's, and losing the order because a counter
+   * could not be written would be the worse half of the trade.
+   */
   async createOrder(order: Order): Promise<Order> {
     const { resource } = await this.container('orders').items.create(order);
-    return resource ?? order;
+    const saved = resource ?? order;
+
+    try {
+      const listing = await this.getListing(order.listingId);
+      if (listing) {
+        const quantityAvailable = Math.max(0, listing.quantityAvailable - order.quantity);
+        await this.container('listings')
+          .item(listing.id, listing.sellerId)
+          .replace({
+            ...listing,
+            quantityAvailable,
+            status: quantityAvailable === 0 ? 'sold_out' : listing.status,
+            preOrder: listing.preOrder
+              ? { ...listing.preOrder, filledCount: listing.preOrder.filledCount + order.quantity }
+              : null,
+            updatedAt: new Date().toISOString(),
+          });
+      }
+    } catch {
+      // See above: the order stands.
+    }
+
+    return saved;
   }
 
   async listComments(listingId: string): Promise<ListingComment[]> {
@@ -1334,10 +1483,7 @@ export class CosmosRepository implements Repository {
     return resources.map((follow) => follow.sellerId);
   }
 
-  private async queryBySeller<T>(
-    name: 'lots' | 'listings',
-    query: CatalogQuery,
-  ): Promise<T[]> {
+  private async queryBySeller<T>(name: 'lots', query: CatalogQuery): Promise<T[]> {
     const limit = query.limit ?? 100;
     const spec = query.sellerId
       ? {

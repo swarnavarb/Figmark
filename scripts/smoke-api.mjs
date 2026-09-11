@@ -52,6 +52,8 @@ const {
 } = await import(new URL('want-routes.js', fns));
 const { notificationsRoute: notifications, notificationsReadRoute: markRead } =
   await import(new URL('notification-routes.js', fns));
+const { preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge } =
+  await import(new URL('preorder-routes.js', fns));
 const {
   creditRoute: credit, pageReviewsRoute: pageReviews,
   writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
@@ -84,6 +86,16 @@ const repository_dispute = async (id) => (await getRepository()).getDisputeById(
 // Fixture buyers have no password, so their notifications are read through the
 // same repository the routes write them to rather than by signing in as them.
 const noticesFor = async (id) => (await getRepository()).listNotifications(id, 40);
+// Campaigns end when a cutoff passes, and a smoke test cannot wait a week for
+// one. Moving the cutoff into the past is the same fact arriving sooner.
+const expireCampaign = async (id) => {
+  const repository = await getRepository();
+  const listing = await repository.getListing(id);
+  await repository.updatePreOrder({
+    ...listing,
+    preOrder: { ...listing.preOrder, cutoffAt: new Date(Date.now() - 1000).toISOString() },
+  });
+};
 const req = ({ headers = {}, body, query = {}, params = {} } = {}) => ({
   headers: new Headers(headers),
   query: new URLSearchParams(query),
@@ -2930,6 +2942,357 @@ await check('deleting an account takes what it made and frees its identifiers', 
     },
   }), ctx);
   assert.equal(reclaimed.status, 201, 'the email, phone and handle are all free again');
+});
+
+/* ── the social fill meter ─────────────────────────────────────────────── */
+console.log('\nfilling a pre-order together');
+
+/**
+ * A campaign of the demo seller's, made here rather than taken from the
+ * fixtures: these checks are about numbers moving, and a fixture another check
+ * has already bought into has numbers that moved for reasons of its own.
+ */
+const openCampaign = async (threshold, title = 'Group-buy fixture') => {
+  const made = await createListing(req({
+    headers: auth,
+    body: {
+      title,
+      priceMinor: 120_000,
+      category: 'Scale figures',
+      preOrder: {
+        fillThreshold: threshold,
+        cutoffAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      },
+      quantityAvailable: 50,
+    },
+  }), ctx);
+  assert.equal(made.status, 201);
+  return made.jsonBody.listing.id;
+};
+
+let buyerSeq = 0;
+const newBuyer = async (name) => {
+  buyerSeq += 1;
+  const made = await signup(req({
+    body: {
+      displayName: name,
+      email: `pledger${buyerSeq}@figmark.example`,
+      phone: `+91900007${String(1000 + buyerSeq).slice(-4)}`,
+      password: 'longenough1',
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  return {
+    id: made.jsonBody.user.id,
+    headers: { authorization: `Bearer ${made.jsonBody.token}` },
+  };
+};
+
+await check('pledging joins the number without paying anything', async () => {
+  const id = await openCampaign(10);
+  const buyer = await newBuyer('Pledger One');
+
+  const joined = await pledge(req({ headers: buyer.headers, params: { id }, body: { units: 2 } }), ctx);
+  assert.equal(joined.status, 200);
+
+  const view = joined.jsonBody.preOrder;
+  assert.equal(view.pledgedCount, 2);
+  // The half that is money has not moved, which is the whole point of it.
+  assert.equal(view.filledCount, 0);
+  assert.equal(view.committed, 2);
+  assert.equal(view.toGo, 8);
+  assert.equal(view.state, 'open');
+  assert.deepEqual(joined.jsonBody.mine, { pledged: true, booked: 0, units: 2, listed: false });
+});
+
+await check('a second tap is leaving, and the number goes back down', async () => {
+  const id = await openCampaign(10);
+  const buyer = await newBuyer('Pledger Two');
+
+  await pledge(req({ headers: buyer.headers, params: { id } }), ctx);
+  const left = await pledge(req({ headers: buyer.headers, params: { id } }), ctx);
+  assert.equal(left.jsonBody.preOrder.pledgedCount, 0);
+  assert.equal(left.jsonBody.mine, null);
+});
+
+await check('nobody pledges their own campaign, and nothing else is one', async () => {
+  const id = await openCampaign(10);
+  const own = await pledge(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(own.status, 400);
+  assert.equal(own.jsonBody.error, 'own_listing');
+
+  // An ordinary listing has no meter to join.
+  const plain = await createListing(req({ headers: auth, body: { title: 'Just a thing', priceMinor: 900 } }), ctx);
+  const buyer = await newBuyer('Pledger Three');
+  const refused = await pledge(req({
+    headers: buyer.headers, params: { id: plain.jsonBody.listing.id },
+  }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'not_a_preorder');
+});
+
+await check('being named is opt in, and being counted is not optional', async () => {
+  const id = await openCampaign(10);
+  const shy = await newBuyer('Shy Pledger');
+  const loud = await newBuyer('Loud Pledger');
+
+  await pledge(req({ headers: shy.headers, params: { id }, body: { units: 1 } }), ctx);
+  await pledge(req({ headers: loud.headers, params: { id }, body: { units: 1, listed: true } }), ctx);
+
+  // A stranger sees the count in full and one name.
+  const outside = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody;
+  assert.equal(outside.preOrder.pledgedCount, 2);
+  assert.deepEqual(outside.people.map((row) => row.ref.name), ['Loud Pledger']);
+  assert.equal(outside.unlisted, 1);
+
+  // ...and the shy one still sees their own place in it.
+  const theirs = (await readPreOrder(req({ headers: shy.headers, params: { id } }), ctx)).jsonBody;
+  assert.ok(theirs.people.some((row) => row.ref.name === 'Shy Pledger'));
+  assert.equal(theirs.unlisted, 0, 'their own row is named to them, so nobody is left uncounted');
+});
+
+await check('nearly there tells everyone who is in, once', async () => {
+  const id = await openCampaign(10);
+  const first = await newBuyer('Nearly One');
+  const second = await newBuyer('Nearly Two');
+
+  await pledge(req({ headers: first.headers, params: { id }, body: { units: 5 } }), ctx);
+  assert.equal((await noticesFor(first.id)).length, 0, 'halfway is not news');
+
+  const near = await pledge(req({ headers: second.headers, params: { id }, body: { units: 4 } }), ctx);
+  assert.equal(near.jsonBody.preOrder.state, 'nearly');
+
+  for (const person of [first, second]) {
+    const notices = (await noticesFor(person.id)).filter((row) => row.kind === 'preorder_nearly');
+    assert.equal(notices.length, 1, `${person.id} should have been told exactly once`);
+    assert.match(notices[0].title, /1 more/);
+    assert.equal(notices[0].link, `/listing/${id}`);
+  }
+
+  // Reading it again must not send it again: a nudge that repeats is a reason
+  // to turn notifications off.
+  await readPreOrder(req({ params: { id } }), ctx);
+  assert.equal((await noticesFor(first.id)).filter((r) => r.kind === 'preorder_nearly').length, 1);
+});
+
+await check('filling calls the pledges in, and says so to the right people', async () => {
+  const id = await openCampaign(4);
+  const pledger = await newBuyer('Filling Pledger');
+  const buyer = await newBuyer('Filling Buyer');
+
+  await pledge(req({ headers: pledger.headers, params: { id }, body: { units: 2 } }), ctx);
+  const bought = await createOrder(req({ headers: buyer.headers, body: { listingId: id, quantity: 2 } }), ctx);
+  assert.equal(bought.status, 201);
+
+  // Read as the buyer, who is always shown their own row whether or not they
+  // asked to be named.
+  const roster = (await readPreOrder(req({ headers: buyer.headers, params: { id } }), ctx)).jsonBody;
+  const view = roster.preOrder;
+  assert.equal(view.filledCount, 2);
+  assert.equal(view.pledgedCount, 2);
+  // An order exists, but the buyer has not paid yet - they choose how on the
+  // next screen. The roster must not say otherwise to the people weighing up
+  // whether to join.
+  const booker = roster.people.find((row) => row.booked);
+  assert.equal(booker.paid, false, 'an unpaid order must not be shown as paid');
+  // Committed, not sold: two of these four are still only promised, and the
+  // state says which.
+  assert.equal(view.state, 'called');
+  assert.ok(view.pledgeDueAt, 'a called-in pledge has a deadline to be called in by');
+
+  // Everybody hears it is happening; only the one who has not paid is billed.
+  for (const person of [pledger, buyer]) {
+    assert.equal((await noticesFor(person.id)).filter((r) => r.kind === 'preorder_filled').length, 1);
+  }
+  assert.equal((await noticesFor(pledger.id)).filter((r) => r.kind === 'preorder_due').length, 1);
+  assert.equal((await noticesFor(buyer.id)).filter((r) => r.kind === 'preorder_due').length, 0);
+});
+
+await check('booking a pledge you already made does not count you twice', async () => {
+  const id = await openCampaign(10);
+  const buyer = await newBuyer('Converting Buyer');
+
+  await pledge(req({ headers: buyer.headers, params: { id }, body: { units: 3 } }), ctx);
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id, quantity: 3 } }), ctx);
+
+  const after = (await readPreOrder(req({ headers: buyer.headers, params: { id } }), ctx)).jsonBody;
+  assert.equal(after.preOrder.filledCount, 3);
+  assert.equal(after.preOrder.pledgedCount, 0, 'the pledge became the order rather than joining it');
+  assert.equal(after.preOrder.committed, 3);
+  assert.deepEqual(after.mine, { pledged: false, booked: 3, units: 3, listed: false });
+});
+
+await check('a campaign that runs out of time says so, and says what happened to the money', async () => {
+  const id = await openCampaign(10);
+  const pledger = await newBuyer('Short Pledger');
+  const buyer = await newBuyer('Short Buyer');
+  await pledge(req({ headers: pledger.headers, params: { id }, body: { units: 1 } }), ctx);
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id, quantity: 1 } }), ctx);
+
+  await expireCampaign(id);
+
+  const closed = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(closed.state, 'closed');
+  assert.ok(closed.closedAt);
+
+  for (const person of [pledger, buyer]) {
+    const notices = (await noticesFor(person.id)).filter((r) => r.kind === 'preorder_closed');
+    assert.equal(notices.length, 1);
+    assert.match(notices[0].title, /8 short/);
+  }
+  // A refund is only mentioned to a campaign that took money.
+  assert.match((await noticesFor(buyer.id)).find((r) => r.kind === 'preorder_closed').body, /refunded/);
+
+  // And a closed campaign takes no more pledges.
+  const late = await newBuyer('Late Pledger');
+  const refused = await pledge(req({ headers: late.headers, params: { id } }), ctx);
+  assert.equal(refused.status, 409);
+});
+
+await check('whoever brought someone in gets the credit, and cannot give it to themselves', async () => {
+  const id = await openCampaign(10);
+  const recruiter = await newBuyer('Recruiter');
+  const recruited = await newBuyer('Recruited');
+
+  await pledge(req({ headers: recruiter.headers, params: { id }, body: { listed: true } }), ctx);
+  await pledge(req({
+    headers: recruited.headers, params: { id }, body: { listed: true, via: recruiter.id },
+  }), ctx);
+
+  const theirs = (await readPreOrder(req({ headers: recruiter.headers, params: { id } }), ctx)).jsonBody;
+  assert.deepEqual(theirs.brought.map((ref) => ref.name), ['Recruited']);
+
+  // Nobody credits themselves, and the seller does not recruit for their own.
+  const selfMade = await newBuyer('Self Made');
+  await pledge(req({
+    headers: selfMade.headers, params: { id }, body: { via: selfMade.id },
+  }), ctx);
+  const sellerId = (await getRepository()).getListing(id).then((l) => l.sellerId);
+  const viaSeller = await newBuyer('Via Seller');
+  await pledge(req({
+    headers: viaSeller.headers, params: { id }, body: { via: await sellerId },
+  }), ctx);
+
+  const own = (await readPreOrder(req({ headers: selfMade.headers, params: { id } }), ctx)).jsonBody;
+  assert.deepEqual(own.brought, []);
+});
+
+await check('the credit follows a pledge into the order it becomes', async () => {
+  const id = await openCampaign(10);
+  const recruiter = await newBuyer('Credit Recruiter');
+  const recruited = await newBuyer('Credit Recruited');
+
+  await pledge(req({ headers: recruited.headers, params: { id }, body: { via: recruiter.id } }), ctx);
+  const bought = await createOrder(req({ headers: recruited.headers, body: { listingId: id } }), ctx);
+  assert.equal(bought.jsonBody.order.broughtBy, recruiter.id, 'paying does not lose the recruiter their credit');
+
+  const theirs = (await readPreOrder(req({ headers: recruiter.headers, params: { id } }), ctx)).jsonBody;
+  assert.deepEqual(theirs.brought.map((ref) => ref.name), ['Credit Recruited']);
+});
+
+await check('the listing page carries the group, not just the counter', async () => {
+  const id = await openCampaign(10, 'Detail campaign');
+  const buyer = await newBuyer('Detail Pledger');
+  await pledge(req({ headers: buyer.headers, params: { id }, body: { listed: true } }), ctx);
+
+  const page = (await listingDetail(req({ params: { id } }), ctx)).jsonBody;
+  assert.equal(page.preOrder.preOrder.pledgedCount, 1);
+  assert.deepEqual(page.preOrder.people.map((row) => row.ref.name), ['Detail Pledger']);
+
+  // An ordinary listing has none of it rather than an empty one.
+  const plain = await createListing(req({ headers: auth, body: { title: 'No meter', priceMinor: 500 } }), ctx);
+  const flat = (await listingDetail(req({ params: { id: plain.jsonBody.listing.id } }), ctx)).jsonBody;
+  assert.equal(flat.preOrder, null);
+});
+
+await check('the bar and the list under it are the same set of people', async () => {
+  // The one way this feature can lie: counters cached on the listing drifting
+  // from the pledges and orders the roster is drawn from. Checked against the
+  // fixtures rather than something built here, because those are the rows that
+  // predate the counters and would drift first.
+  const board = (await feed(req({ query: { kind: 'pre_order' } }), ctx)).jsonBody.listings;
+  assert.ok(board.length > 0, 'the fixtures should have open pre-orders');
+
+  for (const card of board) {
+    const roster = (await readPreOrder(req({ params: { id: card.id } }), ctx)).jsonBody;
+    const view = roster.preOrder;
+
+    assert.equal(view.committed, view.filledCount + view.pledgedCount, card.id);
+
+    const booked = roster.people.filter((row) => row.booked).reduce((n, row) => n + row.units, 0);
+    const pledged = roster.people.filter((row) => !row.booked).reduce((n, row) => n + row.units, 0);
+    // Named people only, so the roster can be short of the count - but never
+    // over it, which would mean somebody is on the list and not in the number.
+    assert.ok(booked <= view.filledCount, `${card.id}: more booked rows than booked units`);
+    assert.ok(pledged <= view.pledgedCount, `${card.id}: more pledged rows than pledged units`);
+    assert.equal(
+      roster.people.length + roster.unlisted >= 1 || view.committed === 0,
+      true,
+      `${card.id}: a committed campaign with nobody in it`,
+    );
+
+    // And the card and the page agree about how far along it is.
+    assert.equal(card.preOrder.filledCount, view.filledCount, `${card.id}: the card disagrees with the page`);
+  }
+});
+
+/* ── browsing by what it is, and how it is sold ────────────────────────── */
+console.log('\nnarrowing the catalog');
+
+await check('a heading narrows to the categories under it', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings;
+  const figures = (await feed(req({ query: { group: 'figures' } }), ctx)).jsonBody.listings;
+
+  assert.ok(figures.length > 0, 'the fixtures should have figures in them');
+  assert.ok(figures.length < all.length, 'a heading that changes nothing is not a filter');
+  for (const listing of figures) {
+    assert.ok(
+      ['Scale figures', 'Anime merch', 'Collectibles'].includes(listing.category),
+      `${listing.category} is not under Figures`,
+    );
+  }
+
+  // An unknown heading matches nothing rather than everything, which is the
+  // failure that would make every chip look broken.
+  assert.equal((await feed(req({ query: { group: 'nonsense' } }), ctx)).jsonBody.listings.length, 0);
+});
+
+await check('the second row says how it is sold, not what it is', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings;
+
+  const preOrders = (await feed(req({ query: { kind: 'pre_order' } }), ctx)).jsonBody.listings;
+  assert.ok(preOrders.length > 0);
+  assert.ok(preOrders.every((listing) => listing.preOrder !== null));
+
+  const inHand = (await feed(req({ query: { kind: 'in_hand' } }), ctx)).jsonBody.listings;
+  assert.ok(inHand.length > 0);
+  assert.ok(inHand.every((listing) => listing.sourcing !== 'import'));
+
+  // 'all' is a real chip rather than the absence of one, and must not narrow.
+  assert.equal((await feed(req({ query: { kind: 'all' } }), ctx)).jsonBody.listings.length, all.length);
+});
+
+await check('a mixed lot is its own kind of thing to buy', async () => {
+  const before = (await feed(req({ query: { kind: 'mixed_lot' } }), ctx)).jsonBody.listings.length;
+  const made = await createListing(req({
+    headers: auth,
+    body: { title: 'Box of loose parts', priceMinor: 45_000, category: 'Model kits', bundle: true },
+  }), ctx);
+  assert.equal(made.jsonBody.listing.bundle, true);
+
+  const after = (await feed(req({ query: { kind: 'mixed_lot' } }), ctx)).jsonBody.listings;
+  assert.equal(after.length, before + 1);
+  assert.ok(after.every((listing) => listing.bundle === true));
+  // ...and it is not quietly also a single item.
+  const singles = (await feed(req({ query: { kind: 'in_hand' } }), ctx)).jsonBody.listings;
+  assert.ok(singles.some((listing) => listing.id === made.jsonBody.listing.id), 'a mixed lot in hand is still in hand');
+});
+
+await check('a category nobody offers cannot be stored as one', async () => {
+  const made = await createListing(req({
+    headers: auth, body: { title: 'Mystery', priceMinor: 100, category: 'Whatever I Typed' },
+  }), ctx);
+  assert.equal(made.jsonBody.listing.category, 'Collectibles');
 });
 
 console.log(`\n${passed} checks passed`);

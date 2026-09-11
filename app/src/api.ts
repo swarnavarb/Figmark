@@ -8,6 +8,7 @@ import type {
 } from '@shared/contracts';
 import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { LotTally } from '@shared/board';
+import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { OrderAction, OrderSide } from '@shared/orders';
 import type { DisputeAction } from '@shared/disputes';
@@ -116,6 +117,28 @@ export interface FeedResponse {
   followedSellerIds: string[];
 }
 
+export type { PreOrderView };
+
+export interface PreOrderMember {
+  ref: PartyRef;
+  units: number;
+  /** They have an order. Whether the money arrived is `paid`. */
+  booked: boolean;
+  paid: boolean;
+  broughtBy: string | null;
+  joinedAt: string;
+}
+
+export interface PreOrderRoster {
+  preOrder: PreOrderView;
+  people: PreOrderMember[];
+  /** In it, but not named: being named is opt in. */
+  unlisted: number;
+  mine: { pledged: boolean; booked: number; units: number; listed: boolean } | null;
+  /** Who this reader brought in, which is the only reason sharing is worth doing. */
+  brought: PartyRef[];
+}
+
 export interface ListingDetail {
   listing: Listing;
   seller: SellerCard | null;
@@ -124,6 +147,8 @@ export interface ListingDetail {
   liked: boolean;
   following: boolean;
   isOwn: boolean;
+  /** Null on anything that is not being pre-ordered. */
+  preOrder: PreOrderRoster | null;
 }
 
 export interface ActivityResponse {
@@ -331,6 +356,8 @@ export interface NewListing {
   lotId?: string | null;
   /** The store to list into; absent means your own. */
   storeId?: string;
+  /** Sold as one assorted lot rather than as a single named item. */
+  bundle?: boolean;
   tags: string[];
 }
 
@@ -626,7 +653,21 @@ export const api = {
     post<{ comment: ListingComment & { author: PartyRef } }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
   follow: (sellerId: string) =>
     post<{ following: boolean }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
-  order: (listingId: string, quantity = 1) => post<{ order: Order }>('/orders', { listingId, quantity }),
+  order: (listingId: string, quantity = 1, via?: string | null) =>
+    post<{ order: Order }>('/orders', { listingId, quantity, via: via ?? undefined }),
+
+  preOrder: (id: string) => request<PreOrderRoster>(`/listings/${encodeURIComponent(id)}/preorder`),
+  /**
+   * Join a pre-order, or leave it.
+   *
+   * A bare call toggles; passing units or a naming choice always joins, so
+   * changing your mind about being named is not a way to leave by accident.
+   */
+  pledge: (id: string, body: { units?: number; listed?: boolean; via?: string | null } = {}) =>
+    post<PreOrderRoster>(`/listings/${encodeURIComponent(id)}/pledge`, {
+      ...body,
+      via: body.via ?? undefined,
+    }),
 
   activity: () => request<ActivityResponse>('/me/activity'),
 

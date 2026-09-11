@@ -100,22 +100,96 @@ check('nothing is ordered by a path excluded from the index', () => {
   assert.deepEqual(offences, [], `ordered by an unindexed path:\n  ${offences.join('\n  ')}`);
 });
 
+/**
+ * One statement, however many source literals it was written across.
+ *
+ * A long query is assembled by concatenating literals, and reading each of
+ * those literals as a statement of its own means the parameters named in the
+ * middle of one are never checked against anything. That is not hypothetical:
+ * the catalog query names six, and five of them sat in fragments this check
+ * used to skip.
+ *
+ * So a statement is the maximal run of literals joined by nothing but `+` and
+ * whitespace, starting at the one that opens it.
+ */
+function statements() {
+  const found = [];
+  const literal = /'((?:[^'\\]|\\.)*)'/g;
+  const pieces = [...source.matchAll(literal)].map((match) => ({
+    text: match[1],
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+
+  for (let i = 0; i < pieces.length; i += 1) {
+    if (!/\bSELECT\b/i.test(pieces[i].text)) continue;
+    let joined = pieces[i].text;
+    let last = i;
+    // Keep absorbing the next literal while only `+` separates them.
+    while (
+      last + 1 < pieces.length &&
+      /^[\s+]*$/.test(source.slice(pieces[last].end, pieces[last + 1].start))
+    ) {
+      last += 1;
+      joined += pieces[last].text;
+    }
+    found.push({ query: joined, end: pieces[last].end });
+    i = last;
+  }
+  return found;
+}
+
+/**
+ * The `parameters: [...]` that belongs to the statement ending at `from`.
+ *
+ * Bracket-counted rather than taken as a fixed slice of source: a parameter's
+ * own value can be an array, so the first `]` is not the end of the list, and a
+ * character window is a number that has to be raised every time a comment is
+ * added. That is not hypothetical either - it was raised once already, and the
+ * next parameter past the edge would simply have stopped being checked.
+ */
+function parameterList(text, from) {
+  const marker = text.indexOf('parameters:', from);
+  // Nothing between the statement and the list but whitespace, punctuation and
+  // comments; anything else means this list belongs to a different query.
+  if (marker === -1 || /['"`]|\bquery:/.test(text.slice(from, marker))) return '';
+
+  const open = text.indexOf('[', marker);
+  if (open === -1) return '';
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    if (text[i] === '[') depth += 1;
+    else if (text[i] === ']') {
+      depth -= 1;
+      if (depth === 0) return text.slice(open, i + 1);
+    }
+  }
+  return text.slice(open);
+}
+
+check('a concatenated query is read as one statement', () => {
+  // The guard on the guard: if the joining above ever stops working, the check
+  // below silently goes back to inspecting fragments.
+  const catalog = statements().find((entry) => entry.query.includes('c.status = "active"'));
+  assert.ok(catalog, 'the catalog query was not found');
+  assert.ok(
+    catalog.query.includes('@cats') && catalog.query.includes('ORDER BY'),
+    `the catalog query was not joined end to end: ${catalog.query.slice(0, 120)}`,
+  );
+});
+
 check('every parameter a query names is actually supplied', () => {
   // A missing parameter is another 400 that no test double would notice: both
   // of them ignore the parameter list entirely.
   const offences = [];
-  for (const match of source.matchAll(/'([^']*(?:SELECT|ORDER BY)[^']*)'/gi)) {
-    const query = match[1];
+  for (const { query, end } of statements()) {
     const placeholders = [...query.matchAll(/@[A-Za-z0-9_]+/g)].map(([name]) => name);
     if (placeholders.length === 0) continue;
 
-    // The names supplied in the window of source that follows the query. A
-    // window rather than a bracket match, because a parameter's own value can
-    // be an array and the first `]` is then not the end of the list.
-    const window = source.slice(match.index, match.index + 600);
+    const window = parameterList(source, end);
     const named = new Set([...window.matchAll(/name:\s*'(@[A-Za-z0-9_]+)'/g)].map(([, name]) => name));
-    for (const placeholder of placeholders) {
-      if (!named.has(placeholder)) offences.push(`${placeholder} in: ${query}`);
+    for (const placeholder of new Set(placeholders)) {
+      if (!named.has(placeholder)) offences.push(`${placeholder} in: ${query.slice(0, 90)}`);
     }
   }
   assert.deepEqual(offences, [], `parameter named but never supplied:\n  ${offences.join('\n  ')}`);

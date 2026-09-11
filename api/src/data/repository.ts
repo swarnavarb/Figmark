@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -35,8 +35,17 @@ export interface CatalogQuery {
   /** Free-text match over title, description and tags. */
   search?: string;
   category?: string;
+  /**
+   * Several categories at once, which is what a broad heading resolves to.
+   *
+   * Separate from `category` rather than replacing it because they answer
+   * different questions - one chip is "sneakers", one heading is "sneakers and
+   * streetwear" - and a caller that means one should not have to wrap it in an
+   * array to say so.
+   */
+  categories?: readonly string[];
   condition?: string;
-  /** 'lot' for open group-buys, 'in_stock' for stock on hand. */
+  /** See CATALOG_KINDS: how it is sold, not what it is. */
   kind?: string;
   maxPriceMinor?: number;
   /** Ranks listings from followed sellers first. */
@@ -97,6 +106,15 @@ export interface Repository {
   /** The lot manifest: every order line in one lot. */
   listOrdersForLot(lotId: string): Promise<Order[]>;
   listOrdersForBuyer(buyerId: string): Promise<Order[]>;
+  /**
+   * Every order against one listing.
+   *
+   * Cross-partition - orders live under their shipment batch - and bounded by
+   * how many people bought one item, not by how many orders exist. Read to
+   * draw a pre-order's roster, which is the one place the buyers of a single
+   * listing are shown as a group.
+   */
+  listOrdersForListing(listingId: string): Promise<Order[]>;
   createOrder(order: Order): Promise<Order>;
 
   /**
@@ -137,6 +155,31 @@ export interface Repository {
    */
   listWantIdsSeekingBy(userId: string): Promise<string[]>;
   deleteWantSeeker(id: string, wantId: string): Promise<void>;
+  /**
+   * Everyone who has pledged to one pre-order.
+   *
+   * Read to draw the meter, to name the roster, and to call the pledges in the
+   * moment it fills - all three want the whole set, which is one partition.
+   */
+  listPledges(listingId: string): Promise<Pledge[]>;
+  savePledge(pledge: Pledge): Promise<Pledge>;
+  deletePledge(id: string, listingId: string): Promise<void>;
+  /**
+   * The listing ids this person has pledged to.
+   *
+   * One query rather than a partition read per card, for the same reason as
+   * `listWantIdsSeekingBy`: the feed needs to know which of fifty cards the
+   * reader is already in, and asking fifty times is fifty times too many.
+   */
+  listPledgedListingIds(userId: string): Promise<string[]>;
+  /**
+   * Rewrite one listing's pre-order block.
+   *
+   * The counters are denormalised onto the listing so the feed can draw a
+   * meter without reading the pledges of every card on the page. That only
+   * holds if there is one way to write them, so this is it.
+   */
+  updatePreOrder(listing: Listing): Promise<Listing>;
   /** Everything waiting for one person, newest first. */
   listNotifications(userId: string, limit?: number): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import { CATEGORIES } from '@shared/catalog';
 import type { Lot } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { NewLotDialog } from '../components/LotFields';
@@ -16,11 +17,6 @@ import { useSession } from '../session';
  * Anything not in a lot is stock already on the shelf.
  */
 type Shape = 'single' | 'lot';
-
-const CATEGORIES = [
-  'Scale figures', 'Model kits', 'Trading cards', 'Anime merch',
-  'Sneakers', 'Electronics', 'Collectibles',
-];
 
 /**
  * List something.
@@ -39,10 +35,11 @@ export function SellPage() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState(CATEGORIES[0]!);
+  const [category, setCategory] = useState<string>(CATEGORIES[0]!);
   const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [bundle, setBundle] = useState(false);
   const [preOrderMode, setPreOrderMode] = useState(false);
   const [fillThreshold, setFillThreshold] = useState('20');
   const [cutoffDays, setCutoffDays] = useState('14');
@@ -98,6 +95,7 @@ export function SellPage() {
         condition,
         priceMinor,
         quantityAvailable: Math.max(1, Number(quantity) || 1),
+        bundle,
         preOrder: preOrderMode
           ? {
               fillThreshold: Math.max(2, Number(fillThreshold) || 2),
@@ -175,6 +173,10 @@ export function SellPage() {
               <select value={category} onChange={(e) => setCategory(e.target.value)}>
                 {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
               </select>
+              <span className="field__hint">
+                Fixed on purpose: one catalog where three sellers type three spellings of the same
+                thing is three categories with a third of the stock each.
+              </span>
             </label>
             <label className="field">
               <span>Condition</span>
@@ -183,6 +185,21 @@ export function SellPage() {
               </select>
             </label>
           </div>
+
+          {/* A job lot is a different thing to buy from one named item, and the
+              people who want one rarely want the other - so buyers can filter
+              it out, which only works if sellers can say it. */}
+          <label className="row" style={{ gap: 9, alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={bundle} onChange={(e) => setBundle(e.target.checked)}
+              style={{ marginTop: 3 }} />
+            <span>
+              <span style={{ fontSize: 'var(--t-sm)' }}>Sold as one mixed lot</span>
+              <span className="field__hint" style={{ display: 'block' }}>
+                An assorted bundle — a shelf clearance, a box of blind-box figures, loose parts —
+                rather than a single named item.
+              </span>
+            </span>
+          </label>
 
           <div className="field-row">
             <label className="field">

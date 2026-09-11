@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
+import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
 import { can } from '../../../shared/stores.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
@@ -8,6 +9,7 @@ import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
 function toSellerCard(user: User) {
@@ -40,9 +42,14 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   const followedSellerIds = viewer ? await repository.listFollowedSellerIds(viewer.id) : [];
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
 
+  // A heading is shorthand for the categories under it, resolved here rather
+  // than stored on the row, so re-housing a category is an edit to one file
+  // instead of a migration.
+  const group = request.query.get('group')?.trim();
   const listings = await repository.listListings({
     search: request.query.get('q') ?? undefined,
     category: request.query.get('category') ?? undefined,
+    categories: group ? categoriesIn(group) : undefined,
     condition: request.query.get('condition') ?? undefined,
     kind: request.query.get('kind') ?? undefined,
     maxPriceMinor: numeric(request.query.get('maxPrice')),
@@ -65,7 +72,9 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
       estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
     })),
     // Facets are derived from the live catalog so the filter chips can never
-    // offer a category that has nothing behind it.
+    // offer a category that has nothing behind it. Note that this narrows with
+    // the filters, which is the point: it answers "what else is in here", not
+    // "what exists somewhere".
     categories: [...new Set(listings.map((l) => l.category))].sort(),
     followedSellerIds,
   });
@@ -105,8 +114,20 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   // buyer gets the dispatch estimate, and their own order's tracking later.
   const lot = listing.lotId ? await repository.getLot(listing.sellerId, listing.lotId) : null;
 
+  // A campaign whose cutoff has passed is noticed by somebody opening it -
+  // there is no scheduler here - and the page needs the roster anyway, so the
+  // read that draws it is the read that settles it.
+  const settled = listing.preOrder
+    ? await reconcilePreOrder(repository, listing)
+    : { listing, pledges: [], orders: [] };
+  const preOrder = listing.preOrder
+    ? await rosterOf(repository, settled.listing, settled.pledges, settled.orders, viewer?.id ?? null)
+    : null;
+
   return json(200, {
-    listing,
+    listing: settled.listing,
+    /** The group behind the meter: counts, roster, and the reader's own place. */
+    preOrder,
     seller: sellers[0] ? toSellerCard(sellers[0]) : null,
     estimatedDispatchAt: lot?.estimatedDispatchAt ?? null,
     comments,
@@ -196,7 +217,11 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     sellerId,
     title,
     description: body.description?.trim() ?? '',
-    category: body.category ?? 'Collectibles',
+    // An unknown category would be a heading nothing can reach and a chip that
+    // never matches, so it falls back rather than being stored as typed.
+    category: body.category && (CATEGORIES as readonly string[]).includes(body.category)
+      ? body.category
+      : 'Collectibles',
     condition: body.condition ?? 'LOOSE',
     status: 'active',
     priceMinor: Math.round(body.priceMinor),
@@ -215,6 +240,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
         : null,
     lotId,
     sourcing,
+    /** Sold as one assorted lot rather than as a single named item. */
+    bundle: body.bundle === true,
     photos: [],
     tags: body.tags ?? [],
     likeCount: 0,
@@ -303,7 +330,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
-  let body: { listingId?: string; quantity?: number };
+  let body: { listingId?: string; quantity?: number; via?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -353,12 +380,43 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
       autoReleaseAt: null,
       disputeId: null,
     },
+    // Whoever brought them in, if they arrived through a share link - or
+    // whoever brought them in when they first pledged, because the credit
+    // belongs to that moment rather than to the click that finally paid.
+    broughtBy: referrer(body.via, user.id, listing.sellerId),
     completedAt: null,
     createdAt: now,
     updatedAt: now,
   };
 
-  return json(201, { order: await repository.createOrder(order) });
+  const placed = await repository.createOrder(order);
+
+  // A pre-order booking is also a pledge being made good. The pledge row is
+  // kept rather than deleted: it carries who brought this person in, and a
+  // recruiter losing their credit the moment their recruit pays would be an
+  // odd way to thank them.
+  if (listing.preOrder) {
+    const pledges = await repository.listPledges(listing.id);
+    const mine = pledges.find((entry) => entry.userId === user.id && entry.convertedOrderId === null);
+    if (mine) {
+      await repository.savePledge({
+        ...mine,
+        convertedOrderId: placed.id,
+        updatedAt: new Date().toISOString(),
+      });
+      if (mine.broughtBy && !placed.broughtBy) {
+        await repository.updateOrder({ ...placed, broughtBy: mine.broughtBy });
+        placed.broughtBy = mine.broughtBy;
+      }
+    }
+
+    // Re-read: createOrder moved the fill counter, so the listing in hand is
+    // one version behind the thing being reconciled.
+    const fresh = await repository.getListing(listing.id);
+    if (fresh) await reconcilePreOrder(repository, fresh, { actorId: user.id });
+  }
+
+  return json(201, { order: placed });
 }
 
 /** GET /api/me/activity - the signed-in account's listings and purchases. */
