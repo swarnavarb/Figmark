@@ -167,7 +167,11 @@ export const CONTAINERS = {
     partitionKeyPath: '/sellerId',
     rationale:
       'A shop reads its own scheduled sales as a list, and the runner that posts them reads one at a time. Both are one partition. Nobody browses other shops\' sale plans, which is the only read this key would make expensive.',
-    excludedPaths: ['/items/*/description/?'],
+    // `[]` for the array, not `*`: a wildcard only ever terminates a Cosmos
+    // indexing path, so `/items/*/description/?` is a syntax error and the
+    // container it is attached to simply never gets created. It failed exactly
+    // that way on the deployed database, and nothing before then said so.
+    excludedPaths: ['/items/[]/description/?'],
     compositeIndexes: [
       [
         { path: '/status', order: 'ascending' },
