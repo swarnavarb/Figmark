@@ -2,12 +2,30 @@ import type React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 /**
- * The three things this app is.
+ * The four things this app is.
  *
- * Buy, sell and the people around it are separate jobs done at separate times,
- * so they get separate homes rather than competing for one navigation bar. The
- * order is deliberate: browsing is what most sessions are.
+ * Buy, sell, the trades in between, and the people around all of it: separate
+ * jobs done at separate times, so they get separate homes rather than competing
+ * for one navigation bar. The order is the order of a transaction - browse,
+ * list, ship, talk - and browsing is what most sessions are.
  */
+/**
+ * Three nodes joined: the trades around one batch.
+ *
+ * Exported because the Services hub leads with the same mark, and a drawn one
+ * rather than an emoji for the same reason every glyph in this bar is drawn -
+ * 🛠 has no colour glyph in half the browsers there are, and lands as a grey
+ * blob in the one place the page is asking somebody to tap.
+ */
+export const SERVICES_GLYPH = (
+  <>
+    <circle cx="12" cy="5.6" r="2.3" />
+    <circle cx="5.6" cy="17" r="2.3" />
+    <circle cx="18.4" cy="17" r="2.3" />
+    <path d="M10.5 7.6 7.1 14.8m6.4-7.2 3.4 7.2M8 17h8" />
+  </>
+);
+
 export const TABS = [
   {
     to: '/',
@@ -25,13 +43,26 @@ export const TABS = [
     label: 'Sell',
     match: (path: string) =>
       path.startsWith('/shop') || path.startsWith('/sell') || path.startsWith('/batches')
-      || path.startsWith('/lot/') || path.startsWith('/packing'),
+      || path.startsWith('/lot/'),
     icon: (
       <>
         <path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" />
         <path d="m4 8.5 8 4.5 8-4.5M12 13v7" />
       </>
     ),
+  },
+  {
+    to: '/services',
+    label: 'Services',
+    // The consoles too: a packing list and an escrow holding are somebody's
+    // job rather than somebody's shop, and the bar should say so while they
+    // are standing in one.
+    match: (path: string) =>
+      path.startsWith('/services') || path.startsWith('/forwarders')
+      || path.startsWith('/escrow') || path.startsWith('/packing'),
+    // A hub of people rather than a briefcase: three nodes joined, which is
+    // what these four jobs are around one batch.
+    icon: SERVICES_GLYPH,
   },
   {
     to: '/social',
@@ -87,7 +118,7 @@ export function TabBar() {
             aria-hidden="true">
             {tab.icon}
           </svg>
-          <span className="tab-item__label">{tab.label}</span>
+          <span>{tab.label}</span>
         </NavLink>
       ))}
     </nav>

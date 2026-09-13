@@ -61,6 +61,12 @@ const {
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
 const { insightsRoute: insights } = await import(new URL('insight-routes.js', fns));
 const {
+  servicesHubRoute: servicesHub, serviceDirectoryRoute: serviceDirectory,
+  offerServiceRoute: offerService, consignmentsRoute: consignments,
+  distributionRoute: distribution, distributionDetailRoute: distributionDetail,
+} = await import(new URL('service-routes.js', fns));
+const { setCrewRoute: setCrew } = await import(new URL('fulfilment-routes.js', fns));
+const {
   creditRoute: credit, pageReviewsRoute: pageReviews,
   writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
   saveProfileRoute: saveProfile,
@@ -84,7 +90,10 @@ const {
   phaseOf, phaseOfCounts, timingsOf,
 } = await import(new URL('../api/dist/shared/insights.js', import.meta.url));
 const { tally: tallyOf } = await import(new URL('../api/dist/shared/board.js', import.meta.url));
-const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL, seedListings, seedReviews } = await import(
+const {
+  DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL, HANDLER_EMAIL,
+  seedListings, seedReviews,
+} = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
 );
 
@@ -3963,6 +3972,278 @@ await check('the money it says is waiting is money that actually landed', async 
   assert.equal(chase.orders, 1);
   assert.equal(chase.who.name, 'Owes For It');
   assert.ok(after.headline.unpaidMinor >= 90_000);
+});
+
+/* ── the trades around the trade ───────────────────────────────────────── */
+console.log('\nthe trades around the trade');
+
+await check('the hub counts what there is to count, and says so where there is not', async () => {
+  const body = (await servicesHub(req(), ctx)).jsonBody;
+  const byKind = Object.fromEntries(body.categories.map((row) => [row.kind, row]));
+
+  // Every job, in the order the goods move.
+  assert.deepEqual(body.categories.map((row) => row.kind), ['exporter', 'forwarder', 'handler', 'escrow']);
+  assert.ok(byKind.forwarder.count >= 3, 'the seeded forwarders should be counted');
+  assert.ok(byKind.handler.count >= 2);
+  assert.ok(byKind.escrow.count >= 1);
+  // "0 exporters" would be a lie about a category that has no roster at all.
+  assert.equal(byKind.exporter.count, null);
+  assert.equal(byKind.exporter.browsable, false);
+});
+
+await check('a private trade has no list, however politely you ask', async () => {
+  const refused = await serviceDirectory(req({ params: { kind: 'exporter' } }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.jsonBody.error, 'not_browsable');
+
+  const nonsense = await serviceDirectory(req({ params: { kind: 'plumber' } }), ctx);
+  assert.equal(nonsense.status, 404);
+});
+
+await check('an unlisted handler is a working handler, not a listed one', async () => {
+  const body = (await serviceDirectory(req({ params: { kind: 'handler' } }), ctx)).jsonBody;
+  const ids = body.providers.map((row) => row.userId);
+  assert.ok(ids.includes('usr_hnd_bombay'), 'the listed ones are on offer');
+  assert.equal(ids.includes('usr_hnd_quiet'), false, 'the private one is not');
+
+  // And nothing in the response leaks the one who opted out.
+  assert.equal(JSON.stringify(body).includes('usr_hnd_quiet'), false);
+  assert.equal(JSON.stringify(body).includes('+919000000203'), false);
+
+  // The directory is browsable signed out: choosing a service is something you
+  // do before committing to anything.
+  const filtered = (await serviceDirectory(req({ params: { kind: 'handler' }, query: { q: 'bengaluru' } }), ctx)).jsonBody;
+  assert.deepEqual(filtered.providers.map((row) => row.userId), ['usr_hnd_southline']);
+});
+
+await check('offering a service puts you on the list, and withdrawing takes you off', async () => {
+  const made = await signup(req({
+    body: {
+      displayName: 'Kochi Parcel Co', email: 'kochi@figmark.example',
+      phone: '+919000078811', password: 'longenough1',
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const theirs = { authorization: `Bearer ${made.jsonBody.token}` };
+
+  const offered = await offerService(req({
+    headers: theirs,
+    body: {
+      kind: 'handler', companyName: 'Kochi Parcel Co', places: ['Kochi', 'Thrissur'],
+      description: 'Same-day breakdown at COK.', contactPhone: '+919000078811',
+    },
+  }), ctx);
+  assert.equal(offered.status, 200, JSON.stringify(offered.jsonBody));
+  assert.deepEqual(offered.jsonBody.profile.cities, ['Kochi', 'Thrissur']);
+
+  const listed = (await serviceDirectory(req({ params: { kind: 'handler' } }), ctx)).jsonBody;
+  assert.ok(listed.providers.some((row) => row.name === 'Kochi Parcel Co'));
+
+  // And it is now one of their own.
+  const hub = (await servicesHub(req({ headers: theirs }), ctx)).jsonBody;
+  assert.deepEqual(hub.mine, ['handler']);
+
+  // Withdrawing is a flag, not a delete: the batches they have already carried
+  // still have to resolve to a name.
+  const withdrawn = await offerService(req({ headers: theirs, body: { kind: 'handler', listed: false } }), ctx);
+  assert.equal(withdrawn.status, 200);
+  assert.equal(withdrawn.jsonBody.profile.companyName, 'Kochi Parcel Co', 'the entry survives');
+  const after = (await serviceDirectory(req({ params: { kind: 'handler' } }), ctx)).jsonBody;
+  assert.equal(after.providers.some((row) => row.name === 'Kochi Parcel Co'), false);
+  // Still theirs, still on their own screen - just not on offer.
+  assert.deepEqual((await servicesHub(req({ headers: theirs }), ctx)).jsonBody.mine, ['handler']);
+});
+
+await check('the two you cannot sign up for, you cannot sign up for', async () => {
+  for (const kind of ['escrow', 'exporter', 'plumber']) {
+    const refused = await offerService(req({ headers: auth, body: { kind } }), ctx);
+    assert.equal(refused.status, 400, `${kind} should not be self-service`);
+    assert.equal(refused.jsonBody.error, 'invalid_service');
+  }
+
+  // Holding other people's money is granted, and the grant is an operator's.
+  const demo = await repository_user('usr_demo');
+  assert.ok(demo.escrowRights, 'the demo account was granted it by the fixture');
+});
+
+await check('a shop names a handler, and the batch turns up on their screen', async () => {
+  const handlerAuth = { authorization: `Bearer ${(await login(req({
+    body: { identifier: HANDLER_EMAIL, password: DEMO_PASSWORD },
+  }), ctx)).jsonBody.token}` };
+
+  const mine = (await distribution(req({ headers: handlerAuth }), ctx)).jsonBody;
+  const open = mine.batches.find((row) => row.lot.id === 'lot_open_24');
+  assert.ok(open, 'the fixture names them on the open batch');
+  assert.equal(open.store.ownerId, 'usr_demo');
+  assert.equal(open.city, 'Mumbai');
+
+  // Parcels, not pieces: three items for one buyer is one job.
+  const board = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.equal(open.parcels, board.customers.length);
+  assert.ok(open.parcels < board.customers.reduce((sum, c) => sum + c.orders.length, 0));
+});
+
+await check('the parcel list is people and never prices', async () => {
+  const handlerAuth = { authorization: `Bearer ${(await login(req({
+    body: { identifier: HANDLER_EMAIL, password: DEMO_PASSWORD },
+  }), ctx)).jsonBody.token}` };
+
+  const body = (await distributionDetail(req({
+    headers: handlerAuth, params: { id: 'lot_open_24' },
+  }), ctx)).jsonBody;
+
+  // The exporter's list is pieces and never customers, because they pack a
+  // crate. This is the mirror: the whole job is which box goes to which person.
+  assert.ok(body.parcels.length > 0);
+  assert.ok(body.parcels.every((parcel) => parcel.name && parcel.name !== 'Unknown'));
+  assert.equal(JSON.stringify(body).includes('priceMinor'), false, 'what it sold for is not theirs');
+  assert.equal(JSON.stringify(body).includes('unitPriceMinor'), false);
+  for (const item of body.parcels[0].items) {
+    assert.deepEqual(
+      Object.keys(item).sort(),
+      ['checkpoints', 'condition', 'id', 'itemName', 'quantity', 'unitWeightGrams'],
+    );
+  }
+});
+
+await check('a handler works the India end, and no earlier', async () => {
+  const handlerAuth = { authorization: `Bearer ${(await login(req({
+    body: { identifier: HANDLER_EMAIL, password: DEMO_PASSWORD },
+  }), ctx)).jsonBody.token}` };
+  const body = (await distributionDetail(req({
+    headers: handlerAuth, params: { id: 'lot_open_24' },
+  }), ctx)).jsonBody;
+  const order = body.parcels[0].items[0];
+
+  // Theirs: everything from the moment it lands.
+  for (const checkpoint of ['india_received', 'ready_to_dispatch', 'packed', 'dispatched']) {
+    const ticked = await setCheckpoint(req({
+      headers: handlerAuth, params: { id: order.id }, body: { checkpoint, on: true },
+    }), ctx);
+    assert.equal(ticked.status, 200, `${checkpoint} is the handler's own work`);
+  }
+
+  // Not theirs: the packing floor in Guangzhou.
+  for (const checkpoint of ['china_received', 'china_packed']) {
+    const refused = await setCheckpoint(req({
+      headers: handlerAuth, params: { id: order.id }, body: { checkpoint, on: true },
+    }), ctx);
+    assert.equal(refused.status, 403, `${checkpoint} happens before they have it`);
+  }
+
+  // And the shop sees the work on its own board: one number, two screens.
+  const owners = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.ok(owners.tally.counts.find((row) => row.checkpoint === 'dispatched').done >= 1);
+});
+
+await check('somebody else’s batch is not on your screen and not yours to tick', async () => {
+  const stranger = await signup(req({
+    body: {
+      displayName: 'Unnamed Handler', email: 'unnamed@figmark.example',
+      phone: '+919000078812', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+
+  assert.deepEqual((await distribution(req({ headers: theirs }), ctx)).jsonBody.batches, []);
+  const refused = await distributionDetail(req({ headers: theirs, params: { id: 'lot_open_24' } }), ctx);
+  assert.equal(refused.status, 403);
+
+  const board = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const tick = await setCheckpoint(req({
+    headers: theirs, params: { id: board.customers[0].orders[0].id },
+    body: { checkpoint: 'dispatched', on: true },
+  }), ctx);
+  assert.equal(tick.status, 403);
+});
+
+await check('naming an exporter on one batch hands over that batch and no other', async () => {
+  const checker = await signup(req({
+    body: {
+      displayName: 'One Run Checker', email: 'checker@figmark.example',
+      phone: '+919000078813', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${checker.jsonBody.token}` };
+  const handle = checker.jsonBody.user.username;
+  assert.ok(handle, 'signup claims a handle');
+
+  // Nothing yet.
+  assert.deepEqual((await exporterLots(req({ headers: theirs }), ctx)).jsonBody.lots, []);
+
+  const named = await setCrew(req({
+    headers: auth, params: { id: 'lot_open_24' }, body: { exporterHandle: `@${handle}` },
+  }), ctx);
+  assert.equal(named.status, 200, JSON.stringify(named.jsonBody));
+  assert.equal(named.jsonBody.lot.exporterUserId, checker.jsonBody.user.id);
+
+  const theirLots = (await exporterLots(req({ headers: theirs }), ctx)).jsonBody.lots;
+  assert.deepEqual(theirLots.map((row) => row.lot.id), ['lot_open_24'], 'that batch, and only it');
+
+  // The packing list, which is pieces and nothing about the buyers.
+  const list = (await exporterLot(req({ headers: theirs, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.ok(list.items.length > 0);
+  assert.equal(JSON.stringify(list).includes('buyerId'), false);
+
+  // Still only the one checkpoint: being named is not being made staff.
+  const refused = await setCheckpoint(req({
+    headers: theirs, params: { id: list.items[0].id }, body: { checkpoint: 'dispatched', on: true },
+  }), ctx);
+  assert.equal(refused.status, 403);
+
+  // A handle nobody answers to is refused rather than stored.
+  const nobody = await setCrew(req({
+    headers: auth, params: { id: 'lot_open_24' }, body: { exporterHandle: '@nobody_at_all' },
+  }), ctx);
+  assert.equal(nobody.status, 404);
+});
+
+await check('a forwarder finally has a screen of their own', async () => {
+  // The directory has existed since the first week and led nowhere: a forwarder
+  // could be listed, chosen and consigned to, and had no way to see any of it.
+  const made = await signup(req({
+    body: {
+      displayName: 'Harbour Air Cargo', email: 'harbour@figmark.example',
+      phone: '+919000078815', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${made.jsonBody.token}` };
+  await offerService(req({
+    headers: theirs,
+    body: { kind: 'forwarder', companyName: 'Harbour Air Cargo', places: ['Guangzhou → Mumbai'] },
+  }), ctx);
+
+  assert.deepEqual((await consignments(req({ headers: theirs }), ctx)).jsonBody.consignments, []);
+
+  const chosen = await setTracking(req({
+    headers: auth, params: { id: 'lot_ship_23' },
+    body: {
+      forwarderUserId: made.jsonBody.user.id, forwarderName: 'Harbour Air Cargo',
+      trackingReference: 'HAC-9931',
+    },
+  }), ctx);
+  assert.equal(chosen.status, 200);
+
+  const rows = (await consignments(req({ headers: theirs }), ctx)).jsonBody.consignments;
+  assert.deepEqual(rows.map((row) => row.lot.id), ['lot_ship_23']);
+  assert.equal(rows[0].lot.trackingReference, 'HAC-9931');
+  // What they quote and load on, and nothing about what it sold for.
+  assert.equal(typeof rows[0].weightGrams, 'number');
+  assert.equal(JSON.stringify(rows).includes('priceMinor'), false);
+});
+
+await check('only the shop that owns a batch may name who works it', async () => {
+  const stranger = await signup(req({
+    body: {
+      displayName: 'Not Their Shop', email: 'notshop@figmark.example',
+      phone: '+919000078814', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+  const refused = await setCrew(req({
+    headers: theirs, params: { id: 'lot_open_24' }, body: { handlerUserId: 'usr_hnd_bombay' },
+  }), ctx);
+  assert.equal(refused.status, 403);
 });
 
 console.log(`\n${passed} checks passed`);

@@ -134,6 +134,12 @@ export interface User extends BaseDocument {
    */
   forwarderProfile: ForwarderProfile | null;
   /**
+   * The India end of the same journey: whoever takes delivery of a batch and
+   * gets the parcels to the buyers. Same account base as the forwarder, for
+   * the same reason - one person is often a seller too.
+   */
+  handlerProfile?: HandlerProfile | null;
+  /**
    * Non-null once the company has granted this seller protected checkout.
    * Absent on every account that has not been granted it, which is most.
    */
@@ -308,6 +314,38 @@ export interface ForwarderProfile {
    */
   trust: TrustSignals;
   /** Withdrawn entries keep their history but stop appearing in search. */
+  listedInDirectory: boolean;
+}
+
+/**
+ * A domestic handler, as the directory and the shops that hire one see it.
+ *
+ * Deliberately the forwarder's shape rather than a clever one: the two jobs are
+ * the same job at opposite ends of the water - take a crate, break it up, get
+ * it where it is going - and a screen that reads one can read the other.
+ *
+ * The one real difference is `listedInDirectory` defaulting to the handler's
+ * own choice rather than to yes. A lot of this work is done by somebody's
+ * cousin with a scooter and a spare room, for two shops they already know, and
+ * a public entry would bring them fifty enquiries they do not want.
+ */
+export interface HandlerProfile {
+  companyName: string;
+  /** URL slug for the public directory entry. */
+  directorySlug: string;
+  description: string;
+  /** Where they take delivery and distribute from, e.g. "Mumbai". */
+  cities: string[];
+  contactEmail: string;
+  contactPhone: string;
+  /** What they charge per parcel handled, in minor units. Indicative. */
+  perParcelFeeMinor: number | null;
+  /**
+   * Ratings from the shops whose batches they have actually distributed - the
+   * same completed-work rule as everywhere else.
+   */
+  trust: TrustSignals;
+  /** A private handler works for shops that already know them. */
   listedInDirectory: boolean;
 }
 
@@ -540,6 +578,30 @@ export interface Lot extends BaseDocument {
   costModel: LotCostModel;
   /** Null until the seller picks a forwarder or enters one manually. */
   forwarder: LotForwarder | null;
+  /**
+   * Who takes the batch in India and gets the parcels out. Null until named,
+   * which is most batches: a shop dispatching its own is the common case.
+   */
+  handler?: LotHandler | null;
+  /**
+   * The exporter named on this batch, if the shop named one.
+   *
+   * Separate from the store-wide `export` right, which stays: that is a
+   * standing arrangement with a supplier who packs everything, and this is one
+   * person asked to check one run before it leaves. Either gets the packing
+   * list; neither gets anything else.
+   */
+  exporterUserId?: string | null;
+}
+
+export interface LotHandler {
+  /** Set when chosen from the directory; null when typed in manually. */
+  handlerUserId: string | null;
+  /** Display name, whether it came from the directory or was entered by hand. */
+  name: string;
+  contact: string | null;
+  /** Where they are taking delivery, when it is worth recording. */
+  city: string | null;
 }
 
 /**

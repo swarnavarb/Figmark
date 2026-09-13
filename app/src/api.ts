@@ -9,6 +9,7 @@ import type {
 import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
+import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { OrderAction, OrderSide } from '@shared/orders';
@@ -636,6 +637,79 @@ export interface InsightsResponse {
   powerSales: { runs: number; posted: number; inWindow: number; handedOver: number };
 }
 
+/* ── Services ──────────────────────────────────────────────────────────── */
+
+/** Somebody offering a service, as the directory shows them. */
+export interface ProviderCard {
+  userId: string;
+  name: string;
+  handle: string | null;
+  /** The route, the cities, or the fee — whatever identifies this kind. */
+  line: string;
+  description: string;
+  contact: string | null;
+  trustScore: number | null;
+  completed: number | null;
+}
+
+export interface ServicesHub {
+  /** Every category, with how many offer it where there is a list. */
+  categories: (ServiceMeta & { count: number | null })[];
+  /** What this account already provides, in the order the goods move. */
+  mine: ServiceKind[];
+}
+
+export interface ServiceDirectory {
+  service: ServiceMeta;
+  providers: ProviderCard[];
+}
+
+/** A batch consigned to this forwarder. */
+export interface ConsignmentRow {
+  store: { ownerId: string; name: string; handle: string | null };
+  lot: {
+    id: string;
+    name: string;
+    stage: FulfilmentStage;
+    origin: string;
+    estimatedDispatchAt: string | null;
+    trackingReference: string | null;
+  };
+  pieces: number;
+  weightGrams: number;
+}
+
+/** A batch this handler has to get out, counted in parcels. */
+export interface DistributionRow {
+  store: { ownerId: string; name: string; handle: string | null };
+  lot: { id: string; name: string; stage: FulfilmentStage; origin: string };
+  city: string | null;
+  parcels: number;
+  dispatched: number;
+  tally: LotTally;
+}
+
+export interface DistributionBatch {
+  store: { ownerId: string; name: string; handle: string | null };
+  lot: { id: string; name: string; stage: FulfilmentStage; origin: string };
+  city: string | null;
+  tally: LotTally;
+  /** One per buyer: the parcel, and what goes in it. */
+  parcels: {
+    buyerId: string;
+    name: string;
+    phone: string | null;
+    items: {
+      id: string;
+      itemName: string;
+      condition: string;
+      quantity: number;
+      unitWeightGrams: number;
+      checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+    }[];
+  }[];
+}
+
 export interface StorefrontDraft {
   storefrontName?: string;
   username?: string;
@@ -822,6 +896,25 @@ export const api = {
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/stage`, { stage, note }),
   setTracking: (id: string, body: { trackingReference?: string; forwarderName?: string; forwarderContact?: string; forwarderUserId?: string }) =>
     post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/tracking`, body),
+
+  services: () => request<ServicesHub>('/services'),
+  serviceDirectory: (kind: ServiceKind, q?: string) =>
+    request<ServiceDirectory>(`/services/${encodeURIComponent(kind)}${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  offerService: (body: {
+    kind: 'forwarder' | 'handler';
+    companyName?: string; description?: string; places?: string[];
+    contactEmail?: string; contactPhone?: string; perParcelFeeMinor?: number | null;
+    listed?: boolean;
+  }) => post<{ kind: ServiceKind; profile: unknown }>('/me/service', body),
+  consignments: () => request<{ consignments: ConsignmentRow[] }>('/me/service/consignments'),
+  distribution: () => request<{ batches: DistributionRow[] }>('/me/service/distribution'),
+  distributionBatch: (id: string) =>
+    request<DistributionBatch>(`/me/service/distribution/${encodeURIComponent(id)}`),
+  /** Name the people working a batch: who checks it, and who gets it out. */
+  setCrew: (id: string, body: {
+    handlerUserId?: string | null; handlerName?: string; handlerContact?: string;
+    handlerCity?: string; exporterUserId?: string | null; exporterHandle?: string | null;
+  }) => post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/crew`, body),
 
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),

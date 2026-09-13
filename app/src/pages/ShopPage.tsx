@@ -1249,14 +1249,14 @@ function ProInsights({ data }: { data: InsightsResponse }) {
                   Average days, across every order you have moved. The long one is where to push.
                 </span>
               </div>
-              <div className="segs">
+              <div className="legs">
                 {measured.map((segment) => (
-                  <div key={segment} className="seg">
-                    <span className="seg__label">{SEGMENT_LABELS[segment]}</span>
-                    <span className="seg__days">{days(timings[segment]!)}</span>
-                    <span className="seg__track">
+                  <div key={segment} className="leg">
+                    <span className="leg__label">{SEGMENT_LABELS[segment]}</span>
+                    <span className="leg__days">{days(timings[segment]!)}</span>
+                    <span className="leg__track">
                       <span
-                        className="seg__fill"
+                        className="leg__fill"
                         style={{ width: `${Math.max(3, (timings[segment]! / slowest) * 100)}%` }}
                       />
                     </span>
@@ -1356,7 +1356,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
                   Customers in each batch, and whether you had seen them before.
                 </span>
               </div>
-              <div className="segs">
+              <div className="legs">
                 {cohorts.map((row, index) => (
                   <div key={`${row.lotName}:${index}`} className="coh">
                     <span className="coh__name">{row.lotName}</span>

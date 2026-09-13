@@ -12,6 +12,9 @@ import { ProfilePage } from './pages/ProfilePage';
 import { SellPage } from './pages/SellPage';
 import { LotBoardPage } from './pages/LotBoardPage';
 import { ShopPage } from './pages/ShopPage';
+import {
+  ConsignmentsPage, DistributionPage, MyServicesPage, ServiceDirectoryPage, ServicesPage,
+} from './pages/ServicesPage';
 import { ChannelPage, SocialPage } from './pages/SocialPage';
 import { ThreadPage } from './pages/MessagesPage';
 import { DisputePage } from './pages/DisputePage';
@@ -50,6 +53,12 @@ function App() {
         <Route path="/shop" element={<ShopPage />} />
         <Route path="/lot/:id" element={<LotBoardPage />} />
         <Route path="/batches" element={<BatchesPage />} />
+        <Route path="/services" element={<ServicesPage />} />
+        <Route path="/services/mine" element={<MyServicesPage />} />
+        <Route path="/services/mine/forwarder" element={<ConsignmentsPage />} />
+        <Route path="/services/mine/handler" element={<DistributionPage />} />
+        {/* Last of the four, so the static paths above win the match. */}
+        <Route path="/services/:kind" element={<ServiceDirectoryPage />} />
         <Route path="/social" element={<SocialPage />} />
         <Route path="/social/c/:id" element={<ChannelPage />} />
         <Route path="/messages/:handle" element={<ThreadPage />} />

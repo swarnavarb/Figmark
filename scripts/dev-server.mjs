@@ -27,6 +27,7 @@ const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
   lotsBoardRoute, lotBoardRoute, setCheckpointRoute, exporterLotsRoute, exporterLotRoute,
+  setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
@@ -51,6 +52,10 @@ const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
 } = await import(new URL('power-sale-routes.js', apiRoot));
 const { insightsRoute } = await import(new URL('insight-routes.js', apiRoot));
+const {
+  servicesHubRoute, serviceDirectoryRoute, offerServiceRoute,
+  consignmentsRoute, distributionRoute, distributionDetailRoute,
+} = await import(new URL('service-routes.js', apiRoot));
 const { creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute } =
   await import(new URL('profile-routes.js', apiRoot));
 const {
@@ -143,6 +148,13 @@ const routes = [
   ['POST', '/api/wants/:id/close', wantCloseRoute],
   ['POST', '/api/wants/:id/me', wantAlsoMeRoute],
   ['GET', '/api/me/insights', insightsRoute],
+  ['GET', '/api/services', servicesHubRoute],
+  ['POST', '/api/me/service', offerServiceRoute],
+  ['GET', '/api/me/service/consignments', consignmentsRoute],
+  ['GET', '/api/me/service/distribution', distributionRoute],
+  ['GET', '/api/me/service/distribution/:id', distributionDetailRoute],
+  ['POST', '/api/lots/:id/crew', setCrewRoute],
+  ['GET', '/api/services/:kind', serviceDirectoryRoute],
   ['GET', '/api/power-sales', powerSalesRoute],
   ['POST', '/api/power-sales/new', powerSaleCreateRoute],
   ['GET', '/api/power-sales/:id', powerSaleReadRoute],

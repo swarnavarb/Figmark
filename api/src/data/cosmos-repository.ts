@@ -16,6 +16,7 @@ import {
   DEMO_PASSWORD,
   DEMO_PHONE,
   ESCROW_EMAIL,
+  HANDLER_EMAIL,
   PACKER_EMAIL,
   seedComments,
   seedFollows,
@@ -655,6 +656,17 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listHandlers(): Promise<User[]> {
+    // Listed ones only. An unlisted handler still works - a shop names them on
+    // a batch by hand - they are simply not on offer to strangers.
+    const { resources } = await this.container('users')
+      .items.query<User>({
+        query: 'SELECT * FROM c WHERE IS_DEFINED(c.handlerProfile) AND c.handlerProfile.listedInDirectory = true',
+      })
+      .fetchAll();
+    return resources.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
   async updateUser(user: User): Promise<User> {
     const { resource } = await this.container('users').items.upsert<User>(user);
     return resource ?? user;
@@ -1180,6 +1192,7 @@ export class CosmosRepository implements Repository {
       { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
       { identifier: ESCROW_EMAIL, label: `the escrow holding the money · ${DEMO_PASSWORD}` },
+      { identifier: HANDLER_EMAIL, label: `the handler getting the parcels out · ${DEMO_PASSWORD}` },
     ];
   }
 

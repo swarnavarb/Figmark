@@ -214,7 +214,7 @@ function Picker({ label, value, onChange, options, empty }: {
   const chosen = options.find((option) => option.value === value);
   return (
     <label className={`picker${value ? ' is-on' : ''}`}>
-      <span className="picker__label">{chosen ? chosen.label : (empty ?? label)}</span>
+      <span>{chosen ? chosen.label : (empty ?? label)}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>
         {empty && <option value="">{empty}</option>}
         {options.map((option) => (

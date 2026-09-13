@@ -4,6 +4,7 @@ import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type Or
 import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
+import { mayTick, type CrewRole } from '../../../shared/services.js';
 import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
 import { DIRECT_LOT_ID, furthestStage, stagesFor } from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
@@ -346,6 +347,96 @@ async function setTracking(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
+ * POST /api/lots/{id}/crew - who else is working this batch.
+ *
+ * The forwarder is set with the tracking, because a tracking number without one
+ * is meaningless. These two are not: an exporter is named before anything
+ * moves, and a handler is named when it is about to land, so they get their own
+ * door rather than riding along with a field neither of them fills in.
+ *
+ * Naming somebody is not making them staff. It grants exactly one thing - the
+ * screen for their half of the job on this batch and no other - which is why a
+ * shop can hand one run to a friend with a warehouse without giving them the
+ * shop.
+ */
+async function setCrew(request: HttpRequest, _context: InvocationContext) {
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A lot id is required.');
+  const { lot } = await ownedLot(request, id);
+
+  let body: {
+    handlerUserId?: string | null;
+    handlerName?: string;
+    handlerContact?: string;
+    handlerCity?: string;
+    exporterUserId?: string | null;
+    /** An @handle instead of an id, which is how a shop knows their supplier. */
+    exporterHandle?: string | null;
+  };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const repository = await getRepository();
+  const next: Lot = { ...lot, updatedAt: new Date().toISOString() };
+
+  if (body.exporterHandle !== undefined) {
+    // A shop knows its supplier by the name it messages them under, not by an
+    // id it has never seen.
+    const handle = body.exporterHandle?.trim().replace(/^@/, '') ?? '';
+    if (!handle) {
+      next.exporterUserId = null;
+    } else {
+      // A shop handle resolves to its owner, which is right: plenty of
+      // suppliers here sell as well as pack.
+      const found = await repository.getByHandle(handle);
+      if (!found) return error(404, 'not_found', `Nobody here goes by @${handle}.`);
+      next.exporterUserId = found.user.id;
+    }
+  } else if (body.exporterUserId !== undefined) {
+    if (body.exporterUserId && !(await repository.getUserById(body.exporterUserId))) {
+      return error(404, 'not_found', 'No such account to check this batch.');
+    }
+    next.exporterUserId = body.exporterUserId || null;
+  }
+
+  // The handler moves as a unit, the way the supplier does: a name clears it,
+  // and naming one from the directory carries their id so the batch turns up on
+  // their own screen rather than only in the shop's notes.
+  if (body.handlerName !== undefined || body.handlerUserId !== undefined) {
+    const named = body.handlerUserId
+      ? await repository.getUserById(body.handlerUserId)
+      : null;
+    if (body.handlerUserId && !named) {
+      return error(404, 'not_found', 'No such account to handle this batch.');
+    }
+
+    const name =
+      body.handlerName?.trim()
+      || named?.handlerProfile?.companyName
+      || named?.displayName
+      || '';
+
+    next.handler = name
+      ? {
+          handlerUserId: named?.id ?? null,
+          name,
+          contact:
+            body.handlerContact?.trim()
+            || named?.handlerProfile?.contactPhone
+            || named?.handlerProfile?.contactEmail
+            || null,
+          city: body.handlerCity?.trim() || named?.handlerProfile?.cities[0] || null,
+        }
+      : null;
+  }
+
+  return json(200, { lot: await repository.updateLot(next) });
+}
+
+/**
  * GET /api/orders/{id} - the buyer's view of one order.
  *
  * Deliberately says nothing about the batch: no lot name, no other buyers, no
@@ -540,13 +631,29 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       return error(403, 'forbidden', 'This action requires one of: sell.');
     }
   } else {
-    // Not theirs to work as a seller - but an exporter packs for this store,
-    // and packing is exactly one checkpoint. Anything else stays refused.
+    // Not theirs to work as a seller. Two other people have business with this
+    // order: whoever packs it in China, and whoever gets it out in India. Each
+    // may tick their own half of the journey and nothing else - the ticks are
+    // the record of work done, so the person who did it is the one who makes
+    // them.
     const owner = await repository.getUserById(order.sellerId);
-    const packer = owner ? can(owner, user.id, 'export') : false;
-    if (!packer) return error(403, 'forbidden', 'That order is not yours to work.');
-    if (checkpoint !== 'china_packed') {
-      return error(403, 'forbidden', 'You can mark items packed, and nothing else.');
+    const lot = await repository.getLot(order.sellerId, order.lotId);
+    const role: CrewRole | null =
+      (owner && can(owner, user.id, 'export')) || lot?.exporterUserId === user.id
+        ? 'exporter'
+        : lot && lot.handler?.handlerUserId === user.id
+          ? 'handler'
+          : null;
+
+    if (!role) return error(403, 'forbidden', 'That order is not yours to work.');
+    if (!mayTick(role, checkpoint)) {
+      return error(
+        403,
+        'forbidden',
+        role === 'exporter'
+          ? 'You can mark items packed, and nothing else.'
+          : 'You can work this batch from the moment it lands, and no earlier.',
+      );
     }
   }
 
@@ -607,9 +714,13 @@ async function exporterLots(request: HttpRequest, _context: InvocationContext) {
     tally: unknown;
   }[] = [];
   for (const owner of await repository.listStoreOwners()) {
-    if (!can(owner, user.id, 'export')) continue;
+    const standing = can(owner, user.id, 'export');
     const lots = await repository.listLots({ sellerId: owner.id });
     for (const lot of lots) {
+      // Two ways to be here: the shop's standing packer, or named on this one
+      // batch. The second is how a shop asks somebody to check a single run
+      // without handing over the rest of the shop.
+      if (!standing && lot.exporterUserId !== user.id) continue;
       // Only what is still on their side of the water.
       if (!PACKABLE_STAGES.includes(lot.stage)) continue;
       const orders = await repository.listOrdersForLot(lot.id);
@@ -677,8 +788,11 @@ async function exporterLot(request: HttpRequest, _context: InvocationContext) {
 /** The store whose lot this is, when the caller packs for it. */
 async function findExportStoreFor(userId: string, lotId: string, repository: Awaited<ReturnType<typeof getRepository>>) {
   for (const owner of await repository.listStoreOwners()) {
-    if (!can(owner, userId, 'export')) continue;
-    if (await repository.getLot(owner.id, lotId)) return owner;
+    const lot = await repository.getLot(owner.id, lotId);
+    if (!lot) continue;
+    // Named on the batch, or packing for the whole shop. Either way it is this
+    // one batch they are being handed.
+    if (lot.exporterUserId === userId || can(owner, userId, 'export')) return owner;
   }
   return null;
 }
@@ -694,10 +808,12 @@ export const lotContentsRoute = handler(lotContents);
 export const assignToLotRoute = handler(assignToLot);
 export const advanceStageRoute = handler(advanceStage);
 export const setTrackingRoute = handler(setTracking);
+export const setCrewRoute = handler(setCrew);
 export const updateLotDetailsRoute = handler(updateLotDetails);
 export const orderTrackingRoute = handler(orderTracking);
 
 const anon = { authLevel: 'anonymous' } as const;
+app.http('lot-crew', { ...anon, methods: ['POST'], route: 'lots/{id}/crew', handler: setCrewRoute });
 app.http('me-lots', { ...anon, methods: ['GET'], route: 'me/lots', handler: myLotsRoute });
 app.http('lot-create', { ...anon, methods: ['POST'], route: 'lots', handler: createLotRoute });
 app.http('lot-contents', { ...anon, methods: ['GET'], route: 'lots/{id}/contents', handler: lotContentsRoute });

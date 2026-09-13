@@ -93,6 +93,7 @@ export interface Repository {
 
   listUsersByIds(ids: readonly string[]): Promise<User[]>;
   listForwarders(): Promise<User[]>;
+  listHandlers(): Promise<User[]>;
 
   listLots(query?: CatalogQuery): Promise<Lot[]>;
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;

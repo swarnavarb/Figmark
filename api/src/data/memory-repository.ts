@@ -12,6 +12,7 @@ import {
   DEMO_PASSWORD,
   DEMO_PHONE,
   ESCROW_EMAIL,
+  HANDLER_EMAIL,
   PACKER_EMAIL,
   seedComments,
   seedFollows,
@@ -138,13 +139,20 @@ export class MemoryRepository implements Repository {
     return [...this.users.values()].filter((u) => u.forwarderProfile?.listedInDirectory);
   }
 
+  async listHandlers(): Promise<User[]> {
+    return [...this.users.values()]
+      .filter((user) => user.handlerProfile?.listedInDirectory)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
   listDemoAccounts(): DemoAccount[] {
-    // The accounts that can actually be signed into: the shop owner, and the
-    // supplier who packs for them.
+    // The accounts that can actually be signed into: the shop, the two people
+    // who work its batches at either end of the water, and the escrow between.
     return [
       { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
       { identifier: ESCROW_EMAIL, label: `the escrow holding the money · ${DEMO_PASSWORD}` },
+      { identifier: HANDLER_EMAIL, label: `the handler getting the parcels out · ${DEMO_PASSWORD}` },
     ];
   }
 
@@ -710,4 +718,4 @@ export function identifiersOf(user: User): string[] {
 const likeKey = (userId: string, listingId: string) => `${userId}::${listingId}`;
 const followKey = (followerId: string, sellerId: string) => `${followerId}::${sellerId}`;
 
-export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE, ESCROW_EMAIL, PACKER_EMAIL };
+export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE, ESCROW_EMAIL, HANDLER_EMAIL, PACKER_EMAIL };

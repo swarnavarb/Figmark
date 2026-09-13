@@ -46,6 +46,15 @@ export const PACKER_EMAIL = 'packer@baiyunhobby.example';
 
 /** The neutral escrow, so their side of a held payment can be signed into. */
 export const ESCROW_EMAIL = 'meera@figmark.in';
+
+/**
+ * The domestic handler, for the same reason as the packer.
+ *
+ * The distribution screen is the India end of the run - fifteen parcels, one
+ * per buyer - and it means nothing seen from the shop's side, because from
+ * there it is a list the shop is not working.
+ */
+export const HANDLER_EMAIL = 'ops@bombayparcel.example';
 export const PACKER_PHONE = '+8613800000024';
 
 const NOW = new Date('2026-09-01T09:00:00.000Z');
@@ -245,6 +254,21 @@ export function seedUsers(): User[] {
         { originCity: 'Guangzhou', destinationCity: 'Delhi', claimedTurnaroundDays: 7, ratePerKgMinor: 72_000, currency: 'INR' },
         { originCity: 'Shanghai', destinationCity: 'Bengaluru', claimedTurnaroundDays: 8, ratePerKgMinor: 68_000, currency: 'INR' },
       ]),
+
+    /* Domestic handlers: the India end. The first is a sign-in account, because
+       a distribution list only means anything from the side that works it. */
+    handler('usr_hnd_bombay', 'Bombay Parcel Works', 'bombay-parcel-works', HANDLER_EMAIL,
+      '+919000000201', ['Mumbai', 'Pune', 'Nashik'], 9_000, 86, 41,
+      'Take delivery at BOM, break the crate down, book domestic courier same day.',
+      true, true),
+    handler('usr_hnd_southline', 'Southline Distribution', 'southline-distribution',
+      'desk@southline.example', '+919000000202', ['Bengaluru', 'Chennai', 'Hyderabad'], 7_500, 79, 23,
+      'South India distribution. Weekend dispatch, cash collection on delivery where a shop wants it.',
+      true),
+    /* Unlisted on purpose: two shops know them, and that is the whole business. */
+    handler('usr_hnd_quiet', 'R. Menon', 'r-menon', 'menon@figmark.example',
+      '+919000000203', ['Kochi'], 6_000, 74, 9,
+      'Works for two shops in Kochi. Not taking new ones.', false),
   ];
 }
 
@@ -309,6 +333,48 @@ function storefront(
     suspended: false,
     createdAt: iso(-200),
     updatedAt: iso(-3),
+  };
+}
+
+/**
+ * A domestic handler, listed or not.
+ *
+ * `listed` is the interesting argument. Plenty of this work is done for two
+ * shops by somebody who has no interest in enquiries from strangers, and a
+ * directory that assumed otherwise would publish their phone number.
+ */
+function handler(
+  id: string, company: string, slug: string, email: string, phone: string,
+  cities: string[], feeMinor: number, score: number, completed: number,
+  description: string, listed: boolean, password = false,
+): User {
+  return {
+    id,
+    username: id.replace('usr_hnd_', ''),
+    email,
+    phone,
+    displayName: company,
+    isAdmin: false,
+    passwordHash: password ? hashPassword(DEMO_PASSWORD) : null,
+    verification: verification(true),
+    buyerTrust: trust(),
+    sellerTrust: sellerTrust(),
+    sellerProfile: null,
+    forwarderProfile: null,
+    handlerProfile: {
+      companyName: company,
+      directorySlug: slug,
+      description,
+      cities,
+      contactEmail: email,
+      contactPhone: phone,
+      perParcelFeeMinor: feeMinor,
+      trust: trust(score, completed),
+      listedInDirectory: listed,
+    },
+    suspended: false,
+    createdAt: iso(-260),
+    updatedAt: iso(-4),
   };
 }
 
@@ -1242,6 +1308,13 @@ export function seedShippedLot(): Lot {
       forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight',
       contact: 'ops@lotusfreight.example', trackingReference: 'LF-2026-09-8841',
     },
+    handler: {
+      handlerUserId: 'usr_hnd_bombay', name: 'Bombay Parcel Works',
+      contact: '+919000000201', city: 'Mumbai',
+    },
+    // Named on this batch rather than granted the run of the shop: the supplier
+    // already holds the store's export right, and this is the other way in.
+    exporterUserId: 'usr_packer',
     costModel: {
       currency: 'INR', goodsCostMinor: 41_20_000, freightMinor: 3_60_000, customsDutyMinor: 6_40_000,
       packagingMinor: 62_000, localShippingMinor: 1_10_000, totalWeightGrams: 17_400,
@@ -1264,6 +1337,10 @@ export function seedOpenLot(): Lot {
     stageHistory: [{ stage: 'ordering', enteredAt: iso(-14), note: 'Lot opened.', recordedBy: 'usr_demo' }],
     estimatedDispatchAt: iso(12),
     forwarder: { forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight', contact: 'ops@lotusfreight.example', trackingReference: null },
+    handler: {
+      handlerUserId: 'usr_hnd_bombay', name: 'Bombay Parcel Works',
+      contact: '+919000000201', city: 'Mumbai',
+    },
     costModel: {
       currency: 'INR', goodsCostMinor: 62_40_000, freightMinor: 4_80_000, customsDutyMinor: 9_10_000,
       packagingMinor: 88_000, localShippingMinor: 1_40_000, totalWeightGrams: 24_800,

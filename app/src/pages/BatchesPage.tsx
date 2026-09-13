@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { LOT_STAGES, LOT_STAGE_LABELS } from '@shared/enums';
 import { nextStage } from '@shared/fulfilment';
 import type { Lot } from '@shared/models';
-import { ApiRequestError, api, type LotContents, type LotDetails, type LotsResponse } from '../api';
+import {
+  ApiRequestError, api,
+  type LotContents, type LotDetails, type LotsResponse, type ProviderCard,
+} from '../api';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatDate, formatMoney, formatWeight } from '../format';
@@ -117,6 +120,105 @@ export function BatchesPage() {
         </>
       )}
     </main>
+  );
+}
+
+/**
+ * Who else is working this batch.
+ *
+ * Naming somebody is not hiring them. It hands over exactly one screen for
+ * exactly this batch - the packing list in China, or the parcel list in India -
+ * which is how most of this work is actually arranged: a supplier who checks
+ * one run, a friend with a warehouse who breaks up one crate.
+ *
+ * The forwarder is set with the tracking, one card up, because a tracking
+ * number without a forwarder means nothing. These two have no such field to
+ * ride along with.
+ */
+function CrewCard({ lot, onSaved }: { lot: Lot; onSaved: () => void }) {
+  const [handlers, setHandlers] = useState<ProviderCard[]>([]);
+  const [choice, setChoice] = useState(lot.handler?.handlerUserId ?? (lot.handler ? 'manual' : ''));
+  const [manualName, setManualName] = useState(lot.handler?.handlerUserId ? '' : lot.handler?.name ?? '');
+  const [exporter, setExporter] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  useEffect(() => {
+    // The public list only. An unlisted handler is named by typing their name,
+    // which is exactly how their shops already reach them.
+    void api
+      .serviceDirectory('handler')
+      .then((result) => setHandlers(result.providers))
+      .catch(() => setHandlers([]));
+  }, []);
+
+  async function save() {
+    setBusy(true);
+    setFlash(null);
+    try {
+      await api.setCrew(lot.id, {
+        handlerUserId: choice === 'manual' || choice === '' ? null : choice,
+        handlerName: choice === 'manual' ? manualName : choice === '' ? '' : undefined,
+        exporterHandle: exporter.trim() ? exporter.trim() : undefined,
+      });
+      setFlash('Saved.');
+      onSaved();
+    } catch (err) {
+      setFlash(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card card--pad stack">
+      <div>
+        <h2>Crew</h2>
+        <span className="field__hint">
+          Who checks this batch before it leaves, and who gets it out when it lands. Each one sees
+          their own screen for this batch and nothing else of yours.
+        </span>
+      </div>
+
+      <label className="field">
+        <span>Exporter — checks the pieces in China</span>
+        <input value={exporter} onChange={(e) => setExporter(e.target.value)}
+          placeholder={lot.exporterUserId ? 'Named. Type another @handle to change it.' : '@their_handle'} />
+        <span className="field__hint">
+          They get a packing list: pieces, counts and weights, never your buyers or prices.
+        </span>
+      </label>
+
+      <label className="field">
+        <span>Handler — takes delivery in India</span>
+        <select value={choice} onChange={(e) => setChoice(e.target.value)}>
+          <option value="">Nobody — you dispatch it yourself</option>
+          {handlers.map((entry) => (
+            <option key={entry.userId} value={entry.userId}>
+              {entry.name} — {entry.line}
+            </option>
+          ))}
+          <option value="manual">Someone not listed…</option>
+        </select>
+      </label>
+
+      {choice === 'manual' && (
+        <label className="field">
+          <span>Their name</span>
+          <input value={manualName} onChange={(e) => setManualName(e.target.value)}
+            placeholder="R. Menon" />
+          <span className="field__hint">
+            A name with no account behind it is a note to yourself — they get no screen.
+          </span>
+        </label>
+      )}
+
+      {flash && <p className={`notice notice--${flash === 'Saved.' ? 'ok' : 'error'}`}>{flash}</p>}
+      <button type="button" className="btn btn--ghost btn--block" disabled={busy}
+        onClick={() => void save()}>
+        {busy ? 'Saving…' : 'Save crew'}
+      </button>
+    </div>
   );
 }
 
@@ -434,6 +536,8 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
               Save tracking
             </button>
           </div>
+
+          <CrewCard lot={lot} onSaved={() => void load()} />
 
           {lot.estimatedDispatchAt && (
             <div className="card card--pad">

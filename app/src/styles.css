@@ -605,9 +605,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ── Forms ─────────────────────────────────────────────────────────────── */
 
 .form { display: grid; gap: 15px; }
-.field { display: grid; gap: 6px; }
+/* min-width:0 on both the field and the control: a <select> is as wide as its
+   longest option unless it is told it may shrink, and one option reading
+   "Bombay Parcel Works — Mumbai · Pune · Nashik" pushed its whole card 150px
+   past the edge of the screen, where the page's own clipping hid it rather
+   than scrolling to it. */
+.field { display: grid; gap: 6px; min-width: 0; }
 .field > span { font-size: var(--t-sm); font-weight: 600; color: var(--text-dim); }
 .field input, .field select, .field textarea {
+  min-width: 0;
+  max-width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2075,18 +2082,20 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent); }
 .ins__meta > :first-child { font-weight: 700; font-size: var(--t-sm); }
 .ins__owed { color: var(--warn); font-weight: 600; }
 
-/* A bar per leg of the journey, scaled against the slowest one. */
-.segs { display: grid; gap: 13px; }
-.seg, .coh { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 10px; }
-.seg__label { min-width: 0; font-size: var(--t-xs); color: var(--text-dim); }
-.seg__days, .coh__count { font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
-.seg__days { font-weight: 650; }
+/* A bar per leg of the journey, scaled against the slowest one. Named `leg`
+   rather than `seg`, which the segmented control above already owns - a second
+   meaning for one class name silently restyled every toggle in the app. */
+.legs { display: grid; gap: 13px; }
+.leg, .coh { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 10px; }
+.leg__label { min-width: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.leg__days, .coh__count { font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.leg__days { font-weight: 650; }
 .coh__count { color: var(--text-faint); }
-.seg__track, .coh__track {
+.leg__track, .coh__track {
   grid-column: 1 / -1; height: 7px; border-radius: var(--r-pill);
   background: var(--surface-2); overflow: hidden;
 }
-.seg__fill {
+.leg__fill {
   display: block; height: 100%; border-radius: var(--r-pill);
   background: linear-gradient(90deg, var(--accent), var(--accent-hover));
 }
@@ -2106,3 +2115,141 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent); }
   font-size: var(--t-xs); font-weight: 650; color: var(--accent); text-decoration: none;
 }
 .drill__more:hover { color: var(--accent-hover); }
+
+/* ── Services ──────────────────────────────────────────────────────────── */
+
+/*
+ * The trades around the trade. One row shape for a category, one for a
+ * provider, one for a job somebody has been given - three, because they are
+ * read in three different frames of mind: browsing, choosing, working.
+ */
+.myservice {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 14px; padding: 14px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--accent-soft), transparent 70%), var(--surface);
+  color: inherit; text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.myservice:hover { border-color: var(--accent); }
+.myservice__glyph { flex: 0 0 auto; color: var(--accent); }
+.myservice__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.myservice__title { font-size: var(--t-md); font-weight: 700; letter-spacing: -0.01em; }
+.myservice__go { flex: 0 0 auto; color: var(--accent); font-weight: 700; }
+
+.svc {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: inherit; text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.svc:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.svc:active { transform: scale(0.995); }
+.svc__glyph {
+  flex: 0 0 auto; width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: var(--r-md); background: var(--surface-2);
+  font-size: 18px; line-height: 1;
+}
+.svc__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.svc__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.svc__name { font-size: var(--t-sm); font-weight: 650; }
+
+/* Somebody offering one. The name and what they cover, then the claim they
+   make about themselves - in that order, because the first two are facts. */
+.provider {
+  display: grid; gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.provider__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.provider__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-md); font-weight: 680; color: var(--text); text-decoration: none;
+}
+a.provider__name:hover { color: var(--accent); }
+.provider__trust { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+.provider__note { margin: 4px 0 0; font-size: var(--t-sm); color: var(--text-dim); }
+.provider__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+
+/* A job somebody has been handed: a batch consigned, or a batch to break up. */
+.jobcard {
+  display: grid; gap: 5px; width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: inherit; text-align: left; font: inherit;
+}
+.jobcard--tap { cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.jobcard--tap:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.jobcard__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.jobcard__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-md); font-weight: 680;
+}
+.jobcard__stats {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  margin-top: 4px; font-size: var(--t-xs); color: var(--text-dim);
+}
+.jobcard__stats b { font-size: var(--t-sm); color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* One parcel: a person, what goes in the box, and the four ticks that are the
+   handler's to make. */
+.parcel {
+  display: grid; gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.parcel--gone { opacity: 0.62; border-color: rgba(78, 192, 125, 0.35); }
+.parcel__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.parcel__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-sm); font-weight: 680;
+}
+.parcel__items { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.parcel__items li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  font-size: var(--t-xs);
+}
+.parcel__items li > :first-child {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Two by two rather than four across: at phone width four pills in a row wrap
+   their own labels onto three lines each, and the one thing a handler does on
+   this screen becomes the hardest thing to hit. */
+.parcel__acts {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+/* Its own control rather than the buy page's filter pill, which is a glyph
+   above a word and stacks its label into three lines at this width. */
+.tickbtn {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--text-dim);
+  font: inherit; font-size: var(--t-xs); font-weight: 600;
+  text-align: center; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.tickbtn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.tickbtn:disabled { opacity: 0.55; cursor: default; }
+.tickbtn.is-on {
+  background: var(--ok-soft); border-color: rgba(78, 192, 125, 0.45); color: var(--ok);
+}
+/* Ticked reads as ticked without a second colour to learn. */
+.tickbtn.is-on::before { content: '✓ '; }
+
+/* Back out of a console without hunting for the bar. */
+.backlink {
+  display: inline-block; margin-bottom: 10px;
+  padding: 0; border: 0; background: none;
+  color: var(--text-dim); font: inherit; font-size: var(--t-sm); text-decoration: none;
+  cursor: pointer;
+}
+.backlink:hover { color: var(--text); }
