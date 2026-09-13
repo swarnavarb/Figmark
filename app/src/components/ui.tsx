@@ -106,13 +106,37 @@ export function LotMeter({ filled, threshold }: { filled: number; threshold: num
   );
 }
 
-/** A single number under a word. The unit both the lot cards and packing use. */
-export function Tile({ value, label, tone }: { value: string; label: string; tone?: 'blue' | 'green' }) {
-  return (
-    <div className={`tile${tone ? ` tile--${tone}` : ''}`}>
+/**
+ * A single number under a word. The unit both the lot cards and packing use.
+ *
+ * Give it an `onClick` and it becomes the door to the rows behind the number:
+ * a count is a question ("which three?") and the tile is where the finger
+ * already is. Without one it stays a plain div rather than a button that goes
+ * nowhere.
+ */
+export function Tile({ value, label, tone, onClick, open }: {
+  value: string;
+  label: string;
+  tone?: 'blue' | 'green';
+  onClick?: () => void;
+  /** Whether the rows behind this number are showing. */
+  open?: boolean;
+}) {
+  const className =
+    `tile${tone ? ` tile--${tone}` : ''}${onClick ? ' tile--tap' : ''}${open ? ' is-open' : ''}`;
+  const body = (
+    <>
       <div className="tile__value">{value}</div>
       <div className="tile__label">{label}</div>
-    </div>
+    </>
+  );
+
+  return onClick ? (
+    <button type="button" className={className} onClick={onClick} aria-expanded={open ?? false}>
+      {body}
+    </button>
+  ) : (
+    <div className={className}>{body}</div>
   );
 }
 

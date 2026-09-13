@@ -6,6 +6,9 @@ import {
   type StorePermission,
 } from '@shared/enums';
 import { countOf, type LotTally } from '@shared/board';
+import {
+  PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
+} from '@shared/insights';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
@@ -13,8 +16,11 @@ import {
   ApiRequestError,
   api,
   type DashboardResponse,
+  type InsightsResponse,
+  type PartyRef,
   type StorefrontDraft,
   type ActivityResponse,
+  type LotBoard,
   type LotSummary,
   type LotsResponse,
   type SaleRow,
@@ -212,7 +218,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         {active === 'payments' && <Payments store={store} />}
         {active === 'lots' && <Lots store={store} />}
         {active === 'packing' && <PackingList storeId={store.ownerId} />}
-        {active === 'analytics' && <Analytics />}
+        {active === 'analytics' && <Analytics store={store} />}
         {active === 'storefront' && <StorefrontEditor />}
         {active === 'people' && <People store={store} onChanged={onChanged} />}
       </div>
@@ -813,6 +819,15 @@ function Lots({ store }: { store: StoreAccess }) {
   );
 }
 
+/** The numbers on a batch card that open the people behind them. */
+type Drill = 'customers' | 'packed' | 'dispatched';
+
+const DRILL_HINTS: Record<Drill, string> = {
+  customers: 'Everyone with something in this batch, most items first.',
+  packed: 'How far each person is, least packed first — that is the work left.',
+  dispatched: 'Who has gone and who is still here.',
+};
+
 /**
  * One consignment: what is in it, where it is, and the two things to do with it.
  *
@@ -828,6 +843,35 @@ function BatchCard({ summary, store, onOpen }: {
   const { lot, tally } = summary;
   const working = lot.stage === 'ordering';
   const board = `/lot/${lot.id}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`;
+  // Read off the same tally the bars below chart, rather than from the stage
+  // the seller last ticked: thirty-three of thirty-four in the warehouse is
+  // "prepping" whatever the lot record says, and a line derived from the same
+  // counts cannot disagree with the bars under it.
+  const phase = phaseOfCounts(tally.counts);
+
+  const [drill, setDrill] = useState<Drill | null>(null);
+  const [people, setPeople] = useState<LotBoard | null>(null);
+  const [peopleError, setPeopleError] = useState<string | null>(null);
+
+  /**
+   * Open the rows behind a number.
+   *
+   * The manifest is fetched the first time one is tapped rather than with the
+   * card: a seller with nine batches would otherwise pay for nine manifests to
+   * see a list of names nobody asked for.
+   */
+  const drillInto = (chip: Drill) => {
+    setDrill((current) => (current === chip ? null : chip));
+    if (people || peopleError) return;
+    void api
+      .lotBoard(lot.id, store.isOwner ? undefined : store.ownerId)
+      .then(setPeople)
+      .catch((err: unknown) =>
+        setPeopleError(
+          err instanceof ApiRequestError ? err.message : 'Could not load who is in this batch.',
+        ),
+      );
+  };
 
   return (
     <article className={`batch${working ? '' : ' batch--moving'}`}>
@@ -850,13 +894,49 @@ function BatchCard({ summary, store, onOpen }: {
         <span style={{ width: `${((LOT_STAGES.indexOf(lot.stage) + 1) / LOT_STAGES.length) * 100}%` }} />
       </div>
 
+      {/* What the parcels are doing, in a sentence. The badge above says what
+          the seller last ticked; this says where the batch actually is. */}
+      <div className="batch__status">
+        <span className={`batch__pip batch__pip--${phase}`} aria-hidden="true" />
+        {PHASE_LABELS[phase]}
+      </div>
+
       {working && summary.orderCount > 0 && (
         <div className="batch__body">
           <div className="tiles">
-            <Tile value={String(tally.customers)} label="Customers" />
-            <Tile value={String(countOf(tally, 'packed').done)} label="Packed" tone="blue" />
-            <Tile value={`${tally.customersDispatched}/${tally.customers}`} label="Dispatched" tone="green" />
+            <Tile
+              value={String(tally.customers)}
+              label="Customers"
+              onClick={() => drillInto('customers')}
+              open={drill === 'customers'}
+            />
+            <Tile
+              value={String(countOf(tally, 'packed').done)}
+              label="Packed"
+              tone="blue"
+              onClick={() => drillInto('packed')}
+              open={drill === 'packed'}
+            />
+            <Tile
+              value={`${tally.customersDispatched}/${tally.customers}`}
+              label="Dispatched"
+              tone="green"
+              onClick={() => drillInto('dispatched')}
+              open={drill === 'dispatched'}
+            />
           </div>
+
+          {drill && (
+            <div className="drill">
+              {peopleError ? (
+                <p className="faint">{peopleError}</p>
+              ) : people ? (
+                <DrillRows board={people} chip={drill} to={board} />
+              ) : (
+                <p className="faint">Loading…</p>
+              )}
+            </div>
+          )}
 
           <div className="bars">
             {tally.progress.map((row) => (
@@ -881,12 +961,73 @@ function BatchCard({ summary, store, onOpen }: {
   );
 }
 
+/**
+ * The people behind one of a batch card's numbers.
+ *
+ * Per person rather than per item, because a parcel goes to a person: "four
+ * packed" is a fact about cardboard, and "Priya 1 of 3" is the thing to do
+ * something about. The per-person counts add back up to the number that was
+ * tapped, so the list can never contradict the tile above it.
+ */
+function DrillRows({ board, chip, to }: { board: LotBoard; chip: Drill; to: string }) {
+  const rows = board.customers.map((customer) => {
+    const ticked = (checkpoint: 'packed' | 'dispatched') =>
+      customer.orders.filter((order) => Boolean(order.checkpoints?.[checkpoint])).length;
+    return {
+      customer,
+      total: Math.max(1, customer.orders.length),
+      packed: ticked('packed'),
+      dispatched: ticked('dispatched'),
+    };
+  });
+
+  // Whichever number was tapped, the rows that still need work come first.
+  if (chip === 'packed') rows.sort((a, b) => a.packed / a.total - b.packed / b.total);
+  else if (chip === 'dispatched') rows.sort((a, b) => a.dispatched / a.total - b.dispatched / b.total);
+  else rows.sort((a, b) => b.total - a.total);
+
+  if (rows.length === 0) return <p className="faint">Nobody has ordered into this batch yet.</p>;
+
+  // Eight, then the board. A batch of forty is a working session, not a
+  // glance, and the screen built for it is one tap away.
+  const shown = rows.slice(0, 8);
+
+  return (
+    <>
+      <span className="faint">{DRILL_HINTS[chip]}</span>
+      {shown.map(({ customer, total, packed, dispatched }) => {
+        const done = chip === 'dispatched' ? dispatched : packed;
+        const tone = done === total ? ' badge--ok' : done === 0 ? '' : ' badge--warn';
+        return (
+          <div key={customer.buyerId} className="drill__row">
+            <span className="drill__name">{customer.name}</span>
+            {chip === 'customers' ? (
+              <span className="badge">{total} item{total === 1 ? '' : 's'}</span>
+            ) : (
+              <span className={`badge${tone}`}>
+                {done}/{total} {chip === 'dispatched' ? 'gone' : 'packed'}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      {rows.length > shown.length && (
+        <Link to={to} className="drill__more">
+          {rows.length - shown.length} more on the packing board →
+        </Link>
+      )}
+    </>
+  );
+}
+
 /* ── Analytics ──────────────────────────────────────────────────────────── */
 
 /** The numbers worth checking, and nothing that cannot be acted on. */
-function Analytics() {
+function Analytics({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<DashboardResponse | null>(null);
+  const [pro, setPro] = useState<InsightsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [proError, setProError] = useState<string | null>(null);
 
   useEffect(() => {
     void api
@@ -896,6 +1037,22 @@ function Analytics() {
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your analytics.'),
       );
   }, []);
+
+  // A second request rather than a bigger first one: the shop figures come
+  // from listings and the consignment figures from the packing board, and one
+  // of them failing is no reason to show neither.
+  useEffect(() => {
+    setPro(null);
+    setProError(null);
+    void api
+      .insights(store.isOwner ? undefined : store.ownerId)
+      .then(setPro)
+      .catch((err: unknown) =>
+        setProError(
+          err instanceof ApiRequestError ? err.message : 'Could not load your consignment figures.',
+        ),
+      );
+  }, [store.ownerId, store.isOwner]);
 
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
@@ -953,7 +1110,358 @@ function Analytics() {
           ))
         )}
       </div>
+
+      {proError && <p className="faint">{proError}</p>}
+      {pro && <ProInsights data={pro} />}
     </div>
+  );
+}
+
+/* ── Pro analytics ──────────────────────────────────────────────────────── */
+
+/**
+ * A stretch of time in the unit that suits it.
+ *
+ * "0.0d" beside a bar is a number that has been rounded until it says nothing.
+ * A leg measured in hours is reported in hours, and one too short to have hours
+ * says so in words.
+ */
+function days(value: number): string {
+  if (value >= 1) return `${value.toFixed(1)}d`;
+  const hours = value * 24;
+  return hours >= 1 ? `${Math.round(hours)}h` : 'same day';
+}
+
+/** A customer's name, linking to their page when they have one. */
+function Person({ who }: { who: PartyRef }) {
+  return who.handle ? (
+    <Link to={`/${who.handle}`} className="ins__who">{who.name}</Link>
+  ) : (
+    <span className="ins__who">{who.name}</span>
+  );
+}
+
+/**
+ * What the consignments have been doing.
+ *
+ * Every figure below is the packing board read a different way - the same
+ * checkpoints the seller ticks on a lot, counted and timed. Nothing here asks
+ * anyone to fill in a second set of numbers, which is why it can be trusted:
+ * a stat nobody maintains is a stat nobody believes.
+ *
+ * Added beneath the shop figures rather than replacing them. Revenue and views
+ * answer "is the shop working"; these answer "where is everything, and who is
+ * waiting", which is the question somebody running an import actually has.
+ */
+function ProInsights({ data }: { data: InsightsResponse }) {
+  const { headline, boxes, timings, perLot, pending, cohorts, top, dormant, bulk, preOrders } = data;
+  const sales = data.powerSales;
+  const quiet =
+    perLot.length === 0 && preOrders.length === 0 && sales.runs === 0 && headline.ordersInFlight === 0;
+
+  // Segment bars are drawn against the slowest leg rather than against a fixed
+  // scale, so the one to fix is the one that fills the row.
+  const measured = SEGMENTS.filter((segment) => timings[segment] !== null);
+  const slowest = Math.max(0.1, ...measured.map((segment) => timings[segment]!));
+
+  return (
+    <>
+      <div className="ins__head">
+        <span className="tag-pro">Pro</span>
+        <div style={{ minWidth: 0 }}>
+          <h2>Consignment analytics</h2>
+          <span className="field__hint">
+            Your packing board, read a different way. Nothing extra to fill in.
+          </span>
+        </div>
+      </div>
+
+      {quiet ? (
+        <EmptyState icon="◷" title="Nothing has moved yet">
+          Open a batch and file some orders into it. These figures are counted off the checkpoints
+          you tick, so they fill themselves in as the consignment travels.
+        </EmptyState>
+      ) : (
+        <>
+          <div className="stats">
+            <Stat
+              label="In flight"
+              value={String(headline.ordersInFlight)}
+              note={`${headline.customers} customer${headline.customers === 1 ? '' : 's'} in all`}
+            />
+            <Stat
+              label="Value moving"
+              value={formatMoney(headline.valueInFlightMinor)}
+              note={`${headline.openLots} batch${headline.openLots === 1 ? '' : 'es'} open`}
+            />
+            <Stat
+              label="Awaiting payment"
+              value={formatMoney(headline.unpaidMinor)}
+              note={
+                headline.oldestWaitingDays > 0
+                  ? `oldest landed ${headline.oldestWaitingDays} days ago`
+                  : 'nothing landed and unpaid'
+              }
+            />
+            <Stat
+              label="Repeat customers"
+              value={String(data.repeat)}
+              note="bought across two batches or more"
+            />
+          </div>
+
+          {boxes.byLot.length > 0 && (
+            <div className="card card--pad stack">
+              <div>
+                <h2>Boxes still to pack</h2>
+                <span className="field__hint">
+                  One parcel per customer per batch, sized off what is in it. A customer drops out
+                  once theirs is packed.
+                </span>
+              </div>
+              <div className="tiles">
+                <Tile value={String(boxes.small)} label="Small" />
+                <Tile value={String(boxes.medium)} label="Medium" tone="blue" />
+                <Tile value={String(boxes.large)} label="Large" tone="green" />
+              </div>
+              {boxes.byLot.map((row) => (
+                <div key={row.lotId} className="ins__row">
+                  <span className="ins__name">{row.lotName}</span>
+                  <span className="faint">
+                    {[
+                      row.small > 0 && `${row.small} small`,
+                      row.medium > 0 && `${row.medium} medium`,
+                      row.large > 0 && `${row.large} large`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {measured.length > 0 && (
+            <div className="card card--pad stack">
+              <div>
+                <h2>Time in each stage</h2>
+                <span className="field__hint">
+                  Average days, across every order you have moved. The long one is where to push.
+                </span>
+              </div>
+              <div className="segs">
+                {measured.map((segment) => (
+                  <div key={segment} className="seg">
+                    <span className="seg__label">{SEGMENT_LABELS[segment]}</span>
+                    <span className="seg__days">{days(timings[segment]!)}</span>
+                    <span className="seg__track">
+                      <span
+                        className="seg__fill"
+                        style={{ width: `${Math.max(3, (timings[segment]! / slowest) * 100)}%` }}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {perLot.length > 0 && (
+            <div className="card card--pad stack">
+              <div>
+                <h2>Batch by batch</h2>
+                <span className="field__hint">
+                  Where each consignment actually is, and what is riding on it.
+                </span>
+              </div>
+              {perLot.map((row) => (
+                <div key={row.lotId} className="ins__lot">
+                  <div className="ins__row">
+                    <span className="ins__name">{row.lotName}</span>
+                    <span className="badge">{row.progress}%</span>
+                  </div>
+                  <span className="faint">{PHASE_LABELS[row.phase]}</span>
+                  <span className="ins__track">
+                    <span className="ins__fill" style={{ width: `${row.progress}%` }} />
+                  </span>
+                  <div className="ins__meta">
+                    <span>{formatMoney(row.valueMinor)}</span>
+                    <span className="faint">
+                      {row.customers} customer{row.customers === 1 ? '' : 's'} · {row.orders} order
+                      {row.orders === 1 ? '' : 's'}
+                    </span>
+                    {row.unpaidMinor > 0 && (
+                      <span className="ins__owed">{formatMoney(row.unpaidMinor)} unpaid</span>
+                    )}
+                    {row.doorToDoor !== null && (
+                      <span className="faint">{days(row.doorToDoor)} door to door</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {pending.length > 0 && (
+            <div className="card card--pad stack">
+              <div>
+                <h2>Landed and not paid for</h2>
+                <span className="field__hint">
+                  In India, waiting on money. Most owed first.
+                </span>
+              </div>
+              {pending.map((row) => (
+                <div key={row.buyerId} className="ins__row">
+                  <span style={{ minWidth: 0 }}>
+                    <Person who={row.who} />
+                    <span className="faint">
+                      {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} ·{' '}
+                      {row.waitingDays === 0
+                        ? 'landed today'
+                        : `waiting ${row.waitingDays} day${row.waitingDays === 1 ? '' : 's'}`}
+                    </span>
+                  </span>
+                  <span className="badge badge--warn">{formatMoney(row.totalMinor)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {top.length > 0 && (
+            <div className="card card--pad stack">
+              <div>
+                <h2>Best customers</h2>
+                <span className="field__hint">By what they have actually spent with you.</span>
+              </div>
+              {top.map((row) => (
+                <div key={row.buyerId} className="ins__row">
+                  <span style={{ minWidth: 0 }}>
+                    <Person who={row.who} />
+                    <span className="faint">
+                      {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} across {row.lots} batch
+                      {row.lots === 1 ? '' : 'es'}
+                    </span>
+                  </span>
+                  <span className="ins__money">{formatMoney(row.totalMinor)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {cohorts.length > 0 && (
+            <div className="card card--pad stack">
+              <div>
+                <h2>New against returning</h2>
+                <span className="field__hint">
+                  Customers in each batch, and whether you had seen them before.
+                </span>
+              </div>
+              <div className="segs">
+                {cohorts.map((row, index) => (
+                  <div key={`${row.lotName}:${index}`} className="coh">
+                    <span className="coh__name">{row.lotName}</span>
+                    <span className="coh__count">
+                      {row.newCount} new · {row.returningCount} back
+                    </span>
+                    <span className="coh__track">
+                      <span className="coh__new" style={{ flexGrow: row.newCount }} />
+                      <span className="coh__old" style={{ flexGrow: row.returningCount }} />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(bulk.length > 0 || dormant.length > 0) && (
+            <div className="card card--pad stack">
+              {bulk.length > 0 && (
+                <>
+                  <div>
+                    <h2>Worth packing together</h2>
+                    <span className="field__hint">
+                      Several items in one batch, going to one person — one parcel, not three.
+                    </span>
+                  </div>
+                  {bulk.map((row) => (
+                    <div key={`${row.buyerId}:${row.lotName}`} className="ins__row">
+                      <span style={{ minWidth: 0 }}>
+                        <Person who={row.who} />
+                        <span className="faint"> · {row.lotName}</span>
+                      </span>
+                      <span className="badge">{row.count} items</span>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {dormant.length > 0 && (
+                <>
+                  <div style={{ marginTop: bulk.length > 0 ? 6 : 0 }}>
+                    <h2>Not seen lately</h2>
+                    <span className="field__hint">
+                      Bought before, nothing in your last three batches.
+                    </span>
+                  </div>
+                  {dormant.map((row) => (
+                    <div key={row.buyerId} className="ins__row">
+                      <span style={{ minWidth: 0 }}>
+                        <Person who={row.who} />
+                        <span className="faint"> · last in {row.lastLotName}</span>
+                      </span>
+                      <span className="badge">{row.lotsAgo} batches ago</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+          {(sales.runs > 0 || preOrders.length > 0) && (
+            <div className="card card--pad stack">
+              <div>
+                <h2>Sales and pre-orders</h2>
+                <span className="field__hint">
+                  What the channel did, and which pre-orders got there.
+                </span>
+              </div>
+
+              {sales.runs > 0 && (
+                <div className="tiles">
+                  <Tile value={String(sales.posted)} label="Items dropped" />
+                  <Tile value={String(sales.inWindow)} label="In the window" tone="blue" />
+                  <Tile value={String(sales.handedOver)} label="Moved to the shop" tone="green" />
+                </div>
+              )}
+
+              {preOrders.map((row) => {
+                const percent = Math.min(
+                  100,
+                  Math.round(((row.booked + row.pledged) / Math.max(1, row.threshold)) * 100),
+                );
+                return (
+                  <div key={row.listingId} className="ins__lot">
+                    <div className="ins__row">
+                      <Link to={`/listing/${row.listingId}`} className="ins__name">{row.title}</Link>
+                      <span className={`badge${row.filled ? ' badge--ok' : row.closedShort ? ' badge--warn' : ''}`}>
+                        {row.filled ? 'Filled' : row.closedShort ? 'Closed short' : `${percent}%`}
+                      </span>
+                    </div>
+                    <span className="ins__track">
+                      <span className="ins__fill" style={{ width: `${percent}%` }} />
+                    </span>
+                    <span className="faint">
+                      {row.booked} paid{row.pledged > 0 && ` · ${row.pledged} pledged`} of{' '}
+                      {row.threshold} needed
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </>
   );
 }
 

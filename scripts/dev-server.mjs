@@ -50,6 +50,7 @@ const { preOrderReadRoute, preOrderPledgeRoute } =
 const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
 } = await import(new URL('power-sale-routes.js', apiRoot));
+const { insightsRoute } = await import(new URL('insight-routes.js', apiRoot));
 const { creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute } =
   await import(new URL('profile-routes.js', apiRoot));
 const {
@@ -141,6 +142,7 @@ const routes = [
   ['POST', '/api/wants/:id/offers', wantOfferRoute],
   ['POST', '/api/wants/:id/close', wantCloseRoute],
   ['POST', '/api/wants/:id/me', wantAlsoMeRoute],
+  ['GET', '/api/me/insights', insightsRoute],
   ['GET', '/api/power-sales', powerSalesRoute],
   ['POST', '/api/power-sales/new', powerSaleCreateRoute],
   ['GET', '/api/power-sales/:id', powerSaleReadRoute],

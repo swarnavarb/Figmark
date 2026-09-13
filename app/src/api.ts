@@ -8,6 +8,7 @@ import type {
 } from '@shared/contracts';
 import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { LotTally } from '@shared/board';
+import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { OrderAction, OrderSide } from '@shared/orders';
@@ -576,6 +577,65 @@ export interface DashboardResponse {
   };
 }
 
+/* ── Pro analytics ─────────────────────────────────────────────────────── */
+
+/**
+ * What the consignments have been doing, read off the packing board.
+ *
+ * The shapes mirror `GET /api/me/insights`. The maths lives in
+ * `@shared/insights`, so the labels a card prints and the numbers the server
+ * computed come from the same file.
+ */
+export interface InsightsResponse {
+  headline: {
+    ordersInFlight: number;
+    valueInFlightMinor: number;
+    unpaidMinor: number;
+    customers: number;
+    openLots: number;
+    oldestWaitingDays: number;
+  };
+  boxes: BoxEstimate;
+  /** Average days per segment, across every order. Null where nothing has. */
+  timings: Timings;
+  perLot: {
+    lotId: string;
+    lotName: string;
+    orders: number;
+    customers: number;
+    valueMinor: number;
+    unpaidMinor: number;
+    /** 0-100, weighted across the checkpoints rather than counting the last. */
+    progress: number;
+    phase: LotPhase;
+    timings: Timings;
+    doorToDoor: number | null;
+  }[];
+  pending: {
+    buyerId: string;
+    who: PartyRef;
+    orders: number;
+    totalMinor: number;
+    waitingDays: number;
+  }[];
+  cohorts: { lotName: string; newCount: number; returningCount: number }[];
+  top: { buyerId: string; who: PartyRef; orders: number; lots: number; totalMinor: number }[];
+  /** How many customers have bought across more than one consignment. */
+  repeat: number;
+  dormant: { buyerId: string; who: PartyRef; lastLotName: string; lotsAgo: number }[];
+  bulk: { buyerId: string; who: PartyRef; lotName: string; count: number }[];
+  preOrders: {
+    listingId: string;
+    title: string;
+    threshold: number;
+    booked: number;
+    pledged: number;
+    filled: boolean;
+    closedShort: boolean;
+  }[];
+  powerSales: { runs: number; posted: number; inWindow: number; handedOver: number };
+}
+
 export interface StorefrontDraft {
   storefrontName?: string;
   username?: string;
@@ -865,6 +925,8 @@ export const api = {
   saveStorefront: (body: StorefrontDraft) =>
     post<{ storefront: SellerProfile }>('/me/storefront/save', body),
   dashboard: () => request<DashboardResponse>('/me/dashboard'),
+  insights: (storeId?: string) =>
+    request<InsightsResponse>(`/me/insights${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
 
   socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),

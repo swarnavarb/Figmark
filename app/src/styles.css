@@ -1265,6 +1265,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .batch__bar { height: 2px; background: var(--surface-2); }
 .batch__bar span { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
 
+/* Where the parcels actually are, in a sentence. A pip rather than a second
+   badge: the stage already has one, and two badges on a card is a quiz. */
+.batch__status {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 14px;
+  font-size: var(--t-xs); color: var(--text-dim);
+}
+.batch__pip {
+  flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-faint);
+}
+.batch__pip--filling, .batch__pip--prepping { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.batch__pip--china_done, .batch__pip--india, .batch__pip--domestic {
+  background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.batch__pip--completed { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+
 .batch__body { display: grid; gap: 12px; padding: 13px 14px; border-top: 1px solid var(--border); }
 .batch__foot {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -1276,6 +1293,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* A line of context that is not a warning: "12 not in a batch" is a fact. */
 .note-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  /* The line inside never wraps, so without this the row's minimum width is
+     the whole sentence - and a grid sizes its column to that, which made the
+     entire Lots tab 711px wide on a 390px screen. */
+  min-width: 0;
   padding: 11px 13px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -1356,6 +1377,34 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--surface-2);
   text-align: center;
 }
+/* A number you can open. It has to look pressable without becoming a button
+   in the visual sense - it is still the figure that matters. */
+.tile--tap {
+  width: 100%; font: inherit; color: inherit; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.tile--tap:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.tile--tap:active { transform: scale(0.98); }
+.tile--tap.is-open { border-color: var(--accent-line); background: var(--accent-soft); }
+
+/* The rows behind a tapped number. */
+.drill {
+  display: grid; gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.drill .faint { margin-bottom: 4px; }
+.drill__row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.drill__row:last-child { border-bottom: none; padding-bottom: 0; }
+.drill__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-sm); font-weight: 600;
+}
+
 .tile--blue { border-color: rgba(94, 141, 255, 0.45); }
 .tile--green { border-color: rgba(78, 192, 125, 0.45); }
 .tile__value { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
@@ -1968,3 +2017,92 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .wantcard .want { border: 0; border-radius: 0; background: none; }
 .alsome--card { margin: 0; padding: 8px 14px 10px; border-top: 1px solid var(--border); }
+
+/* ── Pro analytics ─────────────────────────────────────────────────────── */
+
+/*
+ * The consignment figures, under the shop figures.
+ *
+ * A rule and a badge rather than a separate tab: revenue and these belong to
+ * the same sitting, and a number worth reading is worth reading without
+ * hunting for it. Every row here is a list in miniature - a name, what it is
+ * worth, and a bar for the proportion - so the eye learns one shape and reads
+ * eight cards with it.
+ */
+.ins__head {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--border);
+}
+.tag-pro {
+  flex: 0 0 auto; margin-top: 2px; padding: 3px 9px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  box-shadow: 0 2px 10px rgba(240, 121, 63, 0.3);
+}
+
+.ins__row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.ins__row:last-child { border-bottom: none; padding-bottom: 0; }
+/* The name side truncates; the number side never does - a figure cut in half
+   is worse than no figure. */
+.ins__row > :first-child {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-sm);
+}
+.ins__row > :last-child { flex: 0 0 auto; }
+.ins__name { font-weight: 650; font-size: var(--t-sm); color: var(--text); text-decoration: none; }
+a.ins__name:hover, a.ins__who:hover { color: var(--accent); }
+.ins__who { font-weight: 650; color: var(--text); text-decoration: none; }
+.ins__money { font-weight: 700; font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+
+.ins__lot { display: grid; gap: 5px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.ins__lot:last-child { border-bottom: none; padding-bottom: 0; }
+.ins__lot .ins__row { padding: 0; border-bottom: none; }
+.ins__track {
+  display: block; height: 6px; border-radius: var(--r-pill);
+  background: var(--surface-2); overflow: hidden;
+}
+.ins__fill {
+  display: block; height: 100%; border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover)); transition: width 0.4s;
+}
+.ins__meta {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 10px;
+  font-size: var(--t-xs); font-variant-numeric: tabular-nums;
+}
+.ins__meta > :first-child { font-weight: 700; font-size: var(--t-sm); }
+.ins__owed { color: var(--warn); font-weight: 600; }
+
+/* A bar per leg of the journey, scaled against the slowest one. */
+.segs { display: grid; gap: 13px; }
+.seg, .coh { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 10px; }
+.seg__label { min-width: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.seg__days, .coh__count { font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.seg__days { font-weight: 650; }
+.coh__count { color: var(--text-faint); }
+.seg__track, .coh__track {
+  grid-column: 1 / -1; height: 7px; border-radius: var(--r-pill);
+  background: var(--surface-2); overflow: hidden;
+}
+.seg__fill {
+  display: block; height: 100%; border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+}
+.coh__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-sm); font-weight: 600;
+}
+/* Two shares of one bar. Basis zero so the widths are the counts themselves. */
+.coh__track { display: flex; }
+.coh__track > span { flex-basis: 0; min-width: 0; }
+.coh__new { background: var(--accent); }
+.coh__old { background: var(--ok); }
+
+/* The rest of a long list lives on the screen built for working it. */
+.drill__more {
+  display: block; padding-top: 8px;
+  font-size: var(--t-xs); font-weight: 650; color: var(--accent); text-decoration: none;
+}
+.drill__more:hover { color: var(--accent-hover); }

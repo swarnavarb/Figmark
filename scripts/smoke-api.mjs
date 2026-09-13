@@ -59,6 +59,7 @@ const {
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
 } = await import(new URL('power-sale-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
+const { insightsRoute: insights } = await import(new URL('insight-routes.js', fns));
 const {
   creditRoute: credit, pageReviewsRoute: pageReviews,
   writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
@@ -78,6 +79,11 @@ const {
 } = await import(new URL('admin-routes.js', fns));
 const { isAnnouncement } = await import(new URL('../api/dist/shared/posts.js', import.meta.url));
 const { LOT_STAGES } = await import(new URL('../api/dist/shared/enums.js', import.meta.url));
+const {
+  aggregateBox, boxClassFor, checkpointProgress, doorToDoor, packingEstimate,
+  phaseOf, phaseOfCounts, timingsOf,
+} = await import(new URL('../api/dist/shared/insights.js', import.meta.url));
+const { tally: tallyOf } = await import(new URL('../api/dist/shared/board.js', import.meta.url));
 const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL, seedListings, seedReviews } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
 );
@@ -3742,6 +3748,221 @@ await check('every order a shop has to answer is on one screen', async () => {
   }
   assert.ok(board.answered.some((row) => row.status === 'cancelled'), 'a turned-down order is on the record');
   assert.ok(board.placed.every((row) => row.paymentStatus === 'unpaid'));
+});
+
+/* ── what the consignments have been doing ─────────────────────────────── */
+console.log('\nwhat the consignments have been doing');
+
+/**
+ * The analytics maths, checked away from HTTP.
+ *
+ * Every figure on the Pro panel is one of these functions over rows the
+ * packing board already holds, so the arithmetic is worth pinning down on its
+ * own: a wrong average is not a wrong pixel, and nobody spots it by looking.
+ */
+const day = (n) => new Date(Date.UTC(2026, 0, n)).toISOString();
+const order = (buyerId, itemName, condition, checkpoints = {}, status = 'in_fulfilment') => ({
+  id: `ord_${buyerId}_${itemName}`, buyerId, itemName, condition, status, checkpoints,
+  createdAt: day(1), quantity: 1, unitPriceMinor: 100_00,
+});
+
+await check('the box is guessed from what is going in it', () => {
+  // The keyword lists are AxisTwelve's, from somebody actually packing this
+  // stuff: a Nendoroid goes in a small box and a 1/6 scale does not.
+  assert.equal(boxClassFor({ itemName: 'Nendoroid Guts', condition: 'MISB' }), 'small');
+  assert.equal(boxClassFor({ itemName: 'Hot Toys Batman 1/6', condition: 'MISB' }), 'large');
+  // Out of the box it is smaller, whatever it is.
+  assert.equal(boxClassFor({ itemName: 'Hot Toys Batman 1/6', condition: 'LOOSE' }), 'medium');
+  assert.equal(boxClassFor({ itemName: 'Some unremarkable figure', condition: 'MISB' }), 'medium');
+  // A name we have never seen is not a reason to guess large.
+  assert.equal(boxClassFor({ itemName: '', condition: 'LOOSE' }), 'small');
+
+  // A parcel goes to a person, so several items become one - bigger - box.
+  const small = { itemName: 'Funko Pop! Goku', condition: 'MISB' };
+  assert.equal(aggregateBox([small, small]), 'small');
+  assert.equal(aggregateBox([small, small, small, small]), 'medium');
+  assert.equal(aggregateBox([small, { itemName: 'Sideshow statue', condition: 'MISB' }]), 'large');
+});
+
+await check('a customer whose parcel is packed is no longer a box to pack', () => {
+  const lots = [{ id: 'l1', name: 'One' }];
+  const rows = [
+    order('b1', 'Nendoroid A', 'MISB'),
+    order('b1', 'Nendoroid B', 'MISB'),
+    order('b2', 'Hot Toys Batman', 'MISB'),
+  ];
+
+  const before = packingEstimate(lots, new Map([['l1', rows]]));
+  assert.deepEqual([before.small, before.medium, before.large], [1, 0, 1], 'one parcel each');
+  assert.equal(before.byLot[0].total, 2);
+  assert.equal(before.openLots, 1);
+
+  // The number is work remaining, not work done: packing one takes it off.
+  const packed = rows.map((row) =>
+    row.buyerId === 'b1' ? { ...row, checkpoints: { packed: day(4) } } : row);
+  const after = packingEstimate(lots, new Map([['l1', packed]]));
+  assert.deepEqual([after.small, after.medium, after.large], [0, 0, 1]);
+
+  // A cancelled order is not a box either.
+  const dropped = rows.map((row) =>
+    row.buyerId === 'b2' ? { ...row, status: 'cancelled' } : row);
+  assert.equal(packingEstimate(lots, new Map([['l1', dropped]])).large, 0);
+
+  // And a lot entirely dispatched is not on the list at all.
+  const gone = rows.map((row) => ({ ...row, checkpoints: { packed: day(4), dispatched: day(5) } }));
+  assert.deepEqual(packingEstimate(lots, new Map([['l1', gone]])).byLot, []);
+});
+
+await check('a stage only counts when it actually went forwards', () => {
+  const rows = [order('b1', 'Statue', 'MISB', {
+    china_received: day(2), china_packed: day(3), india_received: day(9),
+    ready_to_dispatch: day(11), dispatched: day(12),
+  })];
+
+  const timings = timingsOf(rows, day(1));
+  // Measured from when the consignment opened, because that is when the shop
+  // started waiting - not from when this one order was placed.
+  assert.equal(timings.toChinaPacked, 2);
+  assert.equal(timings.chinaToIndia, 6);
+  assert.equal(timings.indiaToReady, 2);
+  assert.equal(timings.readyToDispatch, 1);
+  assert.equal(doorToDoor(timings), 11);
+
+  // Checkpoints are not forced to be ticked in order. Somebody catching up out
+  // of sequence must not drag an average below zero.
+  const muddled = [{ ...rows[0], checkpoints: { ...rows[0].checkpoints, india_received: day(2) } }];
+  const off = timingsOf(muddled, day(1));
+  assert.equal(off.chinaToIndia, null, 'a negative leg is no measurement at all');
+  assert.equal(off.indiaToReady, 9);
+  assert.equal(doorToDoor(off), null, 'and door to door cannot be summed without it');
+});
+
+await check('progress is weighted across the journey, not just the last tick', () => {
+  assert.equal(checkpointProgress(order('b1', 'x', 'MISB', {})), 0);
+  assert.equal(checkpointProgress(order('b1', 'x', 'MISB', { china_received: day(2) })), 0.15);
+  // Cleared customs reads as half done rather than sitting at zero until the
+  // final parcel goes out.
+  assert.equal(checkpointProgress(order('b1', 'x', 'MISB', { india_received: day(9) })), 0.5);
+  assert.equal(
+    checkpointProgress(order('b1', 'x', 'MISB', { china_received: day(2), dispatched: day(12) })),
+    1,
+  );
+});
+
+await check('the status line and the counts under it cannot disagree', () => {
+  const rows = [
+    order('b1', 'A', 'MISB', { china_received: day(2), china_packed: day(3) }),
+    order('b2', 'B', 'MISB', { china_received: day(2) }),
+  ];
+
+  // The card derives its line from the tally it charts; the analytics derive
+  // theirs from the orders. Both go through the same function, so a card can
+  // never say one thing while its own bars say another.
+  assert.equal(phaseOf(rows), 'prepping');
+  assert.equal(phaseOfCounts(tallyOf(rows).counts), phaseOf(rows));
+
+  assert.equal(phaseOf([]), 'empty');
+  assert.equal(phaseOfCounts(tallyOf([]).counts), 'empty');
+
+  // "Prepping" is most of it at the China warehouse rather than all of it: a
+  // batch waiting on one straggler is being prepared, not still filling.
+  const most = [
+    order('b1', 'A', 'MISB', { china_received: day(2) }),
+    order('b2', 'B', 'MISB', { china_received: day(2) }),
+    order('b3', 'C', 'MISB', {}),
+  ];
+  assert.equal(phaseOf(most), 'prepping');
+  assert.equal(phaseOfCounts(tallyOf(most).counts), 'prepping');
+  const few = [most[0], { ...most[1], checkpoints: {} }, most[2]];
+  assert.equal(phaseOf(few), 'filling');
+  assert.equal(phaseOfCounts(tallyOf(few).counts), 'filling');
+  // One parcel in India moves the whole batch's story on, because that is the
+  // question being asked: has any of it landed.
+  const landed = [rows[0], { ...rows[1], checkpoints: { india_received: day(9) } }];
+  assert.equal(phaseOf(landed), 'india');
+  assert.equal(phaseOfCounts(tallyOf(landed).counts), 'india');
+
+  const done = rows.map((row) => ({ ...row, checkpoints: { dispatched: day(12) } }));
+  assert.equal(phaseOf(done), 'completed');
+  // A cancelled order must not hold a finished batch open forever.
+  assert.equal(phaseOf([...done, order('b3', 'C', 'MISB', {}, 'cancelled')]), 'completed');
+});
+
+await check('a shop reads its own figures and nobody else reads them', async () => {
+  const mine = await insights(req({ headers: auth }), ctx);
+  assert.equal(mine.status, 200, JSON.stringify(mine.jsonBody));
+  for (const key of ['headline', 'boxes', 'timings', 'perLot', 'pending', 'cohorts', 'top']) {
+    assert.ok(key in mine.jsonBody, `expected ${key} in the response`);
+  }
+
+  const stranger = await signup(req({
+    body: {
+      displayName: 'Nosy Analyst', email: 'nosy-analyst@figmark.example',
+      phone: '+919000078801', password: 'longenough1',
+    },
+  }), ctx);
+  assert.equal(stranger.status, 201, JSON.stringify(stranger.jsonBody));
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+
+  // Their own figures are theirs to read, and they are empty.
+  const own = await insights(req({ headers: theirs }), ctx);
+  assert.equal(own.status, 200);
+  assert.equal(own.jsonBody.perLot.length, 0);
+  assert.equal(own.jsonBody.headline.ordersInFlight, 0);
+
+  // Somebody else's are not, and this is the money screen.
+  const nosy = await insights(req({ headers: theirs, query: { store: 'usr_demo' } }), ctx);
+  assert.equal(nosy.status, 403);
+});
+
+await check('every batch is counted exactly as its own board lists it', async () => {
+  const body = (await insights(req({ headers: auth }), ctx)).jsonBody;
+  const entry = body.perLot.find((row) => row.lotId === 'lot_open_24');
+  assert.ok(entry, 'the open lot should be on the screen');
+
+  const rows = (await (await getRepository()).listOrdersForLot('lot_open_24'))
+    .filter((row) => row.status !== 'cancelled');
+  assert.equal(entry.orders, rows.length);
+  assert.equal(entry.customers, new Set(rows.map((row) => row.buyerId)).size);
+  assert.equal(entry.valueMinor, rows.reduce((sum, row) => sum + row.quantity * row.unitPriceMinor, 0));
+  // The phase on the analytics screen and the phase on the batch card are the
+  // same sentence about the same rows.
+  assert.equal(entry.phase, phaseOfCounts(tallyOf(rows).counts));
+  assert.ok(entry.progress >= 0 && entry.progress <= 100);
+});
+
+await check('the money it says is waiting is money that actually landed', async () => {
+  const listed = await createListing(req({
+    headers: auth,
+    body: { title: 'Landed and unpaid', priceMinor: 45_000, quantityAvailable: 3, lotId: batch.jsonBody.lot.id },
+  }), ctx);
+  assert.equal(listed.status, 201, JSON.stringify(listed.jsonBody));
+
+  const buyer = await newBuyer('Owes For It');
+  const placed = await createOrder(req({
+    headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id, quantity: 2 },
+  }), ctx);
+  assert.equal(placed.status, 201, JSON.stringify(placed.jsonBody));
+  assert.equal(placed.jsonBody.order.paymentStatus, 'unpaid');
+
+  // Unpaid on its own is not a chase: half these people have not been asked for
+  // money yet. It becomes one when the thing is here.
+  const before = (await insights(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(before.pending.some((row) => row.buyerId === buyer.id), false);
+
+  const landed = await setCheckpoint(req({
+    headers: auth, params: { id: placed.jsonBody.order.id },
+    body: { checkpoint: 'india_received', on: true },
+  }), ctx);
+  assert.equal(landed.status, 200, JSON.stringify(landed.jsonBody));
+
+  const after = (await insights(req({ headers: auth }), ctx)).jsonBody;
+  const chase = after.pending.find((row) => row.buyerId === buyer.id);
+  assert.ok(chase, 'somebody whose parcel is here and who has not paid is a chase');
+  assert.equal(chase.totalMinor, 90_000, 'two of them, at the price they were sold for');
+  assert.equal(chase.orders, 1);
+  assert.equal(chase.who.name, 'Owes For It');
+  assert.ok(after.headline.unpaidMinor >= 90_000);
 });
 
 console.log(`\n${passed} checks passed`);
