@@ -9,6 +9,7 @@ import {
   ApiRequestError, api,
   type Checkout, type EscrowOption, type EvidenceDraft, type OrderState, type OrderTracking,
 } from '../api';
+import { Ladder } from './BatchesPage';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { formatDate, formatMoney, timeAgo } from '../format';
 
@@ -83,22 +84,45 @@ export function OrderPage() {
         <div className="card card--pad stack">
           <h2>Where it is</h2>
 
-          <ol className="track" style={{ flexWrap: 'wrap' }}>
-            {stages.map((stage, index) => (
-              <li key={stage}
-                className={`track__step${index < currentIndex ? ' is-done' : ''}${index === currentIndex ? ' is-current' : ''}`}>
-                <span className="track__dot" aria-hidden="true" />
-                <span>{labelFor(stage)}</span>
-              </li>
-            ))}
-          </ol>
+          {/* The batch's own ladder, in the seller's words, when there is a
+              batch. An item waiting for one gets what has actually happened
+              and a line saying what it is waiting for - not five hollow
+              circles implying a journey nobody has booked. */}
+          {data.route ? (
+            <>
+              <span className="field__hint">
+                Travelling in {data.route.lotName} · lot #{data.route.lotNumber} · {data.route.name}
+              </span>
+              <Ladder steps={data.route.steps} current={data.route.currentStep} />
+            </>
+          ) : (
+            <>
+              <ol className="track" style={{ flexWrap: 'wrap' }}>
+                {stages.map((stage, index) => (
+                  <li key={stage}
+                    className={`track__step${index < currentIndex ? ' is-done' : ''}${index === currentIndex ? ' is-current' : ''}`}>
+                    <span className="track__dot" aria-hidden="true" />
+                    <span>{labelFor(stage)}</span>
+                  </li>
+                ))}
+              </ol>
+              {data.awaitingLot && (
+                <p className="notice notice--warn">
+                  Not in a batch yet. The rest of the journey appears once the seller files this into
+                  one — there is nothing further to show until they do.
+                </p>
+              )}
+            </>
+          )}
 
           <div className="detail__section" style={{ marginTop: 8 }}>
             <h3>History</h3>
             {history.map((event, index) => (
               <div key={`${event.stage}-${event.enteredAt}-${index}`} className="comment">
                 <div className="comment__head">
-                  <span className="comment__who">{labelFor(event.stage)}</span>
+                  {/* The step as the seller wrote it, where there is one: their
+                      words are what the buyer has been reading all along. */}
+                  <span className="comment__who">{event.step ?? labelFor(event.stage)}</span>
                   <span className="faint">{formatDate(event.enteredAt)}</span>
                 </div>
                 {event.note && <p className="muted">{event.note}</p>}

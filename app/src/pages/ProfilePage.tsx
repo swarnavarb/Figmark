@@ -3,10 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type ActivityResponse } from '../api';
+import { ApiRequestError, api, type ActivityResponse, type ItemGroup } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { Ladder } from './BatchesPage';
 
 type Tab = 'listings' | 'purchases' | 'sales' | 'following' | 'settings';
 
@@ -32,6 +33,99 @@ function waitingOn(data: ActivityResponse, userId: string) {
     if (order.escrow.state === 'disputed') return true;
     return actionsFor(order, userId).some((action) => action === 'pay' || action === 'confirm');
   });
+}
+
+/**
+ * Everything the buyer is waiting on, grouped by the batch it travels in.
+ *
+ * Three items in one consignment are one journey, so they are one timeline and
+ * one card. Drawing the same nine steps three times was the old behaviour, and
+ * it made a buyer with a good month look like a buyer with a problem.
+ *
+ * The batch is the unit of grouping because it is the unit of truth: the seller
+ * moves the batch and every item in it moves, so a per-item timeline could only
+ * ever repeat what the batch already said.
+ */
+function MyItems() {
+  const [groups, setGroups] = useState<ItemGroup[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .myItems()
+      .then((result) => setGroups(result.groups))
+      .catch((err: unknown) =>
+        setError(err instanceof ApiRequestError ? err.message : 'Could not load your items.'),
+      );
+  }, []);
+
+  if (error) return <ErrorNotice message={error} />;
+  if (groups === null) return <p className="muted">Loading…</p>;
+  if (groups.length === 0) {
+    return (
+      <EmptyState icon="◫" title="No purchases yet">
+        Anything you buy shows up here with its tracking.
+      </EmptyState>
+    );
+  }
+
+  return (
+    <div className="stack">
+      {groups.map((group) => {
+        const showing = open === group.key;
+        const step = group.lot ? group.lot.steps[group.lot.currentStep] : null;
+        return (
+          <article key={group.key} className="itemgroup">
+            <div className="itemgroup__top">
+              <span className="itemgroup__name">
+                {group.lot ? `Lot #${group.lot.number}` : group.kind === 'awaiting' ? 'Waiting for a batch' : 'Shipped direct'}
+              </span>
+              <span className="badge">
+                {group.items.length} item{group.items.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <span className="faint">
+              {group.lot ? `${group.lot.name} · ` : ''}{group.sellerName}
+            </span>
+
+            <ul className="itemgroup__items">
+              {group.items.map((item) => (
+                <li key={item.id}>
+                  <Link to={`/order/${item.id}`}>{item.itemName}</Link>
+                  {item.quantity > 1 && <span className="faint"> ×{item.quantity}</span>}
+                </li>
+              ))}
+            </ul>
+
+            {group.lot ? (
+              <>
+                <div className="itemgroup__status">
+                  <span className="faint">Status</span>
+                  <strong>{step?.name ?? 'Not started'}</strong>
+                </div>
+                <button type="button" className="btn btn--quiet btn--sm"
+                  onClick={() => setOpen(showing ? null : group.key)}>
+                  {showing ? 'Hide' : 'Track'}
+                </button>
+                {showing && <Ladder steps={group.lot.steps} current={group.lot.currentStep} />}
+                {showing && group.lot.trackingReference && (
+                  <span className="faint">Tracking: {group.lot.trackingReference}</span>
+                )}
+              </>
+            ) : group.kind === 'awaiting' ? (
+              <p className="notice notice--warn">
+                Not in a batch yet. The seller adds it to one when the next run is packed, and the
+                tracking appears here the moment they do.
+              </p>
+            ) : (
+              <span className="faint">Sent to you directly — no consignment to track.</span>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -196,7 +290,9 @@ export function ProfilePage() {
             ))}
           </div>
         )
-      ) : tab === 'purchases' || tab === 'sales' ? (
+      ) : tab === 'purchases' ? (
+        <MyItems />
+      ) : tab === 'sales' ? (
         (tab === 'sales' ? data.sales : data.orders).length === 0 ? (
           <EmptyState icon="◫" title={tab === 'sales' ? 'No sales yet' : 'No purchases yet'}>
             {tab === 'sales'

@@ -1,3 +1,5 @@
+import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
+import type { TrackingRoute } from '../../../shared/routes.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
@@ -49,6 +51,7 @@ export class MemoryRepository implements Repository {
   /** Normalised email/phone -> user id. Mirrors the `identifiers` container. */
   private readonly identifiers = new Map<string, string>();
   private readonly lots = new Map<string, Lot>();
+  private readonly routes = new Map<string, TrackingRoute>();
   private readonly listings = new Map<string, Listing>();
   private readonly orders = new Map<string, Order>();
   private readonly comments = new Map<string, ListingComment>();
@@ -137,6 +140,47 @@ export class MemoryRepository implements Repository {
 
   async listForwarders(): Promise<User[]> {
     return [...this.users.values()].filter((u) => u.forwarderProfile?.listedInDirectory);
+  }
+
+  async listRoutes(sellerId: string): Promise<TrackingRoute[]> {
+    return [...this.routes.values()]
+      .filter((route) => route.sellerId === sellerId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getRoute(sellerId: string, routeId: string): Promise<TrackingRoute | null> {
+    const route = this.routes.get(routeId);
+    return route && route.sellerId === sellerId ? route : null;
+  }
+
+  async saveRoute(route: TrackingRoute): Promise<TrackingRoute> {
+    this.routes.set(route.id, route);
+    return route;
+  }
+
+  async deleteRoute(sellerId: string, routeId: string): Promise<boolean> {
+    const route = this.routes.get(routeId);
+    if (!route || route.sellerId !== sellerId) return false;
+    this.routes.delete(routeId);
+    return true;
+  }
+
+  async listOrdersAwaitingLot(sellerId: string): Promise<Order[]> {
+    return [...this.orders.values()]
+      .filter((order) =>
+        order.sellerId === sellerId
+        && order.lotId === AWAITING_LOT_ID
+        && order.status !== 'cancelled')
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async moveOrderToLot(order: Order, _fromLotId: string): Promise<Order> {
+    // One map keyed by id here, so the partition move Cosmos has to perform is
+    // a plain write - which is exactly why the two implementations need their
+    // own version of this rather than sharing `updateOrder`.
+    const moved = { ...order, updatedAt: new Date().toISOString() };
+    this.orders.set(moved.id, moved);
+    return moved;
   }
 
   async listHandlers(): Promise<User[]> {

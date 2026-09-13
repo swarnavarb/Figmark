@@ -67,6 +67,11 @@ const {
 } = await import(new URL('service-routes.js', fns));
 const { setCrewRoute: setCrew } = await import(new URL('fulfilment-routes.js', fns));
 const {
+  listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
+  lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
+  myItemsRoute: myItems,
+} = await import(new URL('tracking-routes.js', fns));
+const {
   creditRoute: credit, pageReviewsRoute: pageReviews,
   writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
   saveProfileRoute: saveProfile,
@@ -4244,6 +4249,345 @@ await check('only the shop that owns a batch may name who works it', async () =>
     headers: theirs, params: { id: 'lot_open_24' }, body: { handlerUserId: 'usr_hnd_bombay' },
   }), ctx);
   assert.equal(refused.status, 403);
+});
+
+/* ── a batch that travels a route ──────────────────────────────────────── */
+console.log('\na batch that travels a route');
+
+let routeFixture;
+let routedLot;
+let earlyOrder;
+let earlyBuyer;
+
+/** An import listed with no batch behind it yet, which is the normal case. */
+const waitingItem = async (title) => {
+  const made = await createListing(req({
+    headers: auth,
+    body: { title, priceMinor: 30_000, quantityAvailable: 5, sourcing: 'import', category: 'Scale figures' },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  return made.jsonBody.listing.id;
+};
+
+await check('a route is a ladder you write once and reuse', async () => {
+  const before = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
+  // The ladder this app has always had is offered by name rather than assumed,
+  // and the builder opens with something to edit rather than an empty list.
+  assert.equal(before.builtIn.steps.length, 7);
+  assert.ok(before.suggested.length >= 9);
+
+  const made = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Guangzhou air',
+      steps: [
+        { name: 'Order placed' },
+        { name: 'At the China warehouse', description: 'Counted and photographed' },
+        { name: 'Flown' },
+        { name: 'Customs' },
+        { name: 'Delivered' },
+      ],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const route = made.jsonBody.route;
+  assert.equal(route.steps.length, 5);
+  assert.deepEqual(route.steps.map((step) => step.position), [0, 1, 2, 3, 4]);
+  assert.equal(route.steps[1].description, 'Counted and photographed');
+
+  // One step is a status, not a journey.
+  const thin = await saveRoute(req({ headers: auth, body: { name: 'Nope', steps: [{ name: 'Sent' }] } }), ctx);
+  assert.equal(thin.status, 400);
+  // And a blank step is dropped rather than stored, so the count is what shows.
+  const padded = await saveRoute(req({
+    headers: auth, body: { name: 'Padded', steps: [{ name: 'One' }, { name: '  ' }, { name: 'Two' }] },
+  }), ctx);
+  assert.equal(padded.jsonBody.route.steps.length, 2);
+
+  const after = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(after.routes.some((row) => row.id === route.id));
+
+  // Correcting one keeps its identity, so the batches that named it still can.
+  const fixed = await saveRoute(req({
+    headers: auth,
+    body: { id: route.id, name: 'Guangzhou air express', steps: route.steps },
+  }), ctx);
+  assert.equal(fixed.status, 200);
+  assert.equal(fixed.jsonBody.route.id, route.id);
+
+  routeFixture = fixed.jsonBody.route;
+});
+
+await check('a batch carries a copy of its route, not a pointer to one', async () => {
+  const made = await createLot(req({
+    headers: auth,
+    body: { name: 'Route batch', origin: 'Guangzhou, CN', routeId: routeFixture.id },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const lot = made.jsonBody.lot;
+  assert.equal(lot.route.name, 'Guangzhou air express');
+  assert.equal(lot.route.steps.length, 5);
+  assert.equal(lot.currentStep, 0);
+  // A number a person can say out loud, derived rather than invented.
+  assert.match(lot.lotNumber, /^\d\d-[A-Z0-9]{4}$/);
+
+  // Renaming the template must not rewrite a timeline a buyer has been reading
+  // for three weeks.
+  await saveRoute(req({
+    headers: auth,
+    body: {
+      id: routeFixture.id, name: 'Renamed entirely',
+      steps: [{ name: 'Something' }, { name: 'Else' }],
+    },
+  }), ctx);
+  const still = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.equal(still.route.name, 'Guangzhou air express');
+  assert.equal(still.route.steps.length, 5);
+
+  // A batch created against a route that does not exist is not created at all.
+  const nonsense = await createLot(req({
+    headers: auth, body: { name: 'Ghost route', routeId: 'rt_nope' },
+  }), ctx);
+  assert.equal(nonsense.status, 404);
+
+  routedLot = lot;
+});
+
+await check('a batch with no route of its own travels the one that has always been here', async () => {
+  const made = await createLot(req({ headers: auth, body: { name: 'Plain batch' } }), ctx);
+  assert.equal(made.status, 201);
+  const body = (await lotContents(req({ headers: auth, params: { id: made.jsonBody.lot.id } }), ctx)).jsonBody;
+  assert.equal(body.route.steps.length, 7, 'the seven stages, spelled out');
+  assert.equal(body.route.steps[0].name, 'Ordering');
+  assert.equal(body.lot.stage, 'ordering', 'and the coarse stage still agrees with it');
+});
+
+await check('an item sold before its batch waits for one, and says so', async () => {
+  const listing = await waitingItem('Sold before the run');
+  const buyer = await newBuyer('Early Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listing } }), ctx);
+  assert.equal(placed.status, 201, JSON.stringify(placed.jsonBody));
+
+  // Not filed as a domestic sale, which is what used to happen: the buyer was
+  // shown a three-step timeline for something crossing an ocean.
+  assert.equal(placed.jsonBody.order.lotId, 'awaiting_lot');
+
+  const tracking = (await orderTracking(req({
+    headers: buyer.headers, params: { id: placed.jsonBody.order.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.awaitingLot, true);
+  assert.equal(tracking.route, null, 'no batch, no route to read');
+  // Two steps and then it stops, rather than five hollow circles implying a
+  // journey nobody has booked.
+  assert.deepEqual(tracking.stages, ['ordering', 'china_wh_received']);
+
+  earlyOrder = placed.jsonBody.order;
+  earlyBuyer = buyer;
+});
+
+await check('the list of what can go in a batch is only what could', async () => {
+  const body = (await lotCandidates(req({
+    headers: auth, params: { id: routedLot.id },
+  }), ctx)).jsonBody;
+  const ids = body.items.map((item) => item.id);
+  assert.ok(ids.includes(earlyOrder.id), 'an import with no batch is a candidate');
+  assert.ok(body.items.every((item) => item.buyerName && item.buyerName !== 'Unknown'));
+
+  // A domestic sale is never going in a crate.
+  const shelf = await createListing(req({
+    headers: auth, body: { title: 'Off the shelf', priceMinor: 4_000, sourcing: 'in_hand' },
+  }), ctx);
+  const buyer = await newBuyer('Domestic Buyer');
+  const direct = await createOrder(req({
+    headers: buyer.headers, body: { listingId: shelf.jsonBody.listing.id },
+  }), ctx);
+  assert.equal(direct.jsonBody.order.lotId, 'direct');
+  const again = (await lotCandidates(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(again.items.some((item) => item.id === direct.jsonBody.order.id), false);
+
+  // And the search is by item or by customer, because that is how a seller
+  // looks for one.
+  const found = (await lotCandidates(req({
+    headers: auth, params: { id: routedLot.id }, query: { q: 'early buyer' },
+  }), ctx)).jsonBody;
+  assert.deepEqual(found.items.map((item) => item.id), [earlyOrder.id]);
+});
+
+await check('filling a batch moves the item into it, and tells the buyer', async () => {
+  const second = await waitingItem('Second in the run');
+  const other = await newBuyer('Second Buyer');
+  const alsoPlaced = await createOrder(req({ headers: other.headers, body: { listingId: second } }), ctx);
+
+  const added = await addItems(req({
+    headers: auth, params: { id: routedLot.id },
+    body: { orderIds: [earlyOrder.id, alsoPlaced.jsonBody.order.id] },
+  }), ctx);
+  assert.equal(added.status, 200, JSON.stringify(added.jsonBody));
+  assert.equal(added.jsonBody.added, 2);
+
+  const body = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(body.items.length, 2);
+  assert.ok(body.items.every((item) => item.buyerName !== 'Unknown'), 'with who bought each');
+
+  // The buyer's own timeline is now the batch's, in the seller's words.
+  const tracking = (await orderTracking(req({
+    headers: earlyBuyer.headers, params: { id: earlyOrder.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.awaitingLot, false);
+  assert.equal(tracking.route.name, 'Guangzhou air express');
+  assert.equal(tracking.route.steps.length, 5);
+  assert.ok(
+    tracking.order.stageHistory.some((event) => (event.note ?? '').includes('Route batch')),
+    'and their history says where it went rather than silently growing five steps',
+  );
+
+  // Adding the same item twice does nothing: it is already in a batch.
+  const again = await addItems(req({
+    headers: auth, params: { id: routedLot.id }, body: { orderIds: [earlyOrder.id] },
+  }), ctx);
+  assert.equal(again.jsonBody.added, 0);
+});
+
+await check('one click moves the batch, and every item in it', async () => {
+  const before = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(before.route.currentStep, 0);
+
+  const moved = await stepLot(req({
+    headers: auth, params: { id: routedLot.id }, body: { note: 'Counted at the warehouse.' },
+  }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  assert.equal(moved.jsonBody.ordersUpdated, 2, 'thirty-four items would be one click too');
+
+  const after = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(after.route.currentStep, 1);
+  assert.equal(after.route.steps[after.route.currentStep].name, 'At the China warehouse');
+
+  // Every buyer, without the seller touching a single item.
+  const tracking = (await orderTracking(req({
+    headers: earlyBuyer.headers, params: { id: earlyOrder.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.route.currentStep, 1);
+  const last = tracking.order.stageHistory[tracking.order.stageHistory.length - 1];
+  assert.equal(last.step, 'At the China warehouse', 'in the words the seller wrote');
+  assert.equal(last.note, 'Counted at the warehouse.');
+
+  // And they were told, which is the notification the product is really for.
+  const told = await noticesFor(earlyBuyer.id);
+  assert.ok(told.some((row) => row.kind === 'lot_moved' && row.title.includes('At the China warehouse')));
+});
+
+await check('a batch can be stepped back, and not past its own end', async () => {
+  // The commonest correction on any board is a button pressed once too often,
+  // and twenty buyers have already been told.
+  const back = await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 0 } }), ctx);
+  assert.equal(back.status, 200);
+  assert.equal((await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody.route.currentStep, 0);
+
+  // Walk it to the end, then try to walk off it.
+  for (let i = 0; i < 4; i += 1) {
+    const step = await stepLot(req({ headers: auth, params: { id: routedLot.id } }), ctx);
+    assert.equal(step.status, 200, `step ${i} should move`);
+  }
+  const end = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(end.route.currentStep, 4);
+  assert.equal(end.lot.status, 'closed', 'the last step closes it');
+
+  const past = await stepLot(req({ headers: auth, params: { id: routedLot.id } }), ctx);
+  assert.equal(past.status, 409);
+
+  // The items finished with it.
+  const tracking = (await orderTracking(req({
+    headers: earlyBuyer.headers, params: { id: earlyOrder.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.order.status, 'delivered');
+  assert.ok(tracking.order.completedAt);
+});
+
+await check('a batch is only steppable by the shop that owns it', async () => {
+  const stranger = await signup(req({
+    body: {
+      displayName: 'Not This Shop', email: 'notthisshop@figmark.example',
+      phone: '+919000078821', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+
+  for (const call of [
+    () => stepLot(req({ headers: theirs, params: { id: routedLot.id } }), ctx),
+    () => addItems(req({ headers: theirs, params: { id: routedLot.id }, body: { orderIds: ['x'] } }), ctx),
+    () => lotCandidates(req({ headers: theirs, params: { id: routedLot.id } }), ctx),
+  ]) {
+    const refused = await call();
+    assert.equal(refused.status, 403);
+  }
+
+  // And somebody else's template is not theirs to edit or delete.
+  assert.equal((await deleteRoute(req({ headers: theirs, params: { id: routeFixture.id } }), ctx)).status, 404);
+  const hijack = await saveRoute(req({
+    headers: theirs, body: { id: routeFixture.id, name: 'Mine now', steps: [{ name: 'A' }, { name: 'B' }] },
+  }), ctx);
+  assert.equal(hijack.status, 404);
+});
+
+await check('the buyer sees one timeline per batch, not one per item', async () => {
+  const body = (await myItems(req({ headers: earlyBuyer.headers }), ctx)).jsonBody;
+  const group = body.groups.find((row) => row.lot?.id === routedLot.id);
+  assert.ok(group, 'their item is grouped under the batch it travels in');
+  assert.equal(group.kind, 'lot');
+  assert.equal(group.lot.steps.length, 5);
+  assert.equal(group.lot.currentStep, 4);
+  // One card, one ladder, however many of their items are in it.
+  assert.ok(group.items.length >= 1);
+  assert.ok(group.sellerName);
+
+  // A second item in the same batch joins the same group rather than making
+  // a second identical timeline.
+  const extra = await waitingItem('Also theirs');
+  const alsoPlaced = await createOrder(req({ headers: earlyBuyer.headers, body: { listingId: extra } }), ctx);
+  await addItems(req({
+    headers: auth, params: { id: routedLot.id }, body: { orderIds: [alsoPlaced.jsonBody.order.id] },
+  }), ctx);
+
+  const after = (await myItems(req({ headers: earlyBuyer.headers }), ctx)).jsonBody;
+  const groups = after.groups.filter((row) => row.lot?.id === routedLot.id);
+  assert.equal(groups.length, 1, 'one group, two items');
+  assert.equal(groups[0].items.length, group.items.length + 1);
+
+  // What is waiting sorts first: it is the only thing a buyer might act on.
+  const waiting = after.groups.find((row) => row.kind === 'awaiting');
+  if (waiting) assert.equal(after.groups[0].kind, 'awaiting');
+});
+
+await check('the two ways to move a batch cannot disagree about where it is', async () => {
+  // `advanceStage` names one of the seven fixed stages and the route screen
+  // names a step. They are two doors onto one lot, so both have to set its
+  // position - otherwise a batch advanced through the old door reads as still
+  // at step zero and every buyer in it is told nothing happened.
+  const made = await createLot(req({ headers: auth, body: { name: 'Two doors' } }), ctx);
+  const id = made.jsonBody.lot.id;
+
+  const moved = await advanceStage(req({
+    headers: auth, params: { id }, body: { stage: 'india_received' },
+  }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+
+  const body = (await lotContents(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  assert.equal(body.lot.stage, 'india_received');
+  assert.equal(body.route.steps[body.route.currentStep].name, 'India received / customs');
+  // And the history says what happened in the same words the ladder shows.
+  const last = body.lot.stageHistory[body.lot.stageHistory.length - 1];
+  assert.equal(last.step, 'India received / customs');
+});
+
+await check('a route can be dropped, and the batches on it carry on', async () => {
+  const gone = await deleteRoute(req({ headers: auth, params: { id: routeFixture.id } }), ctx);
+  assert.equal(gone.status, 200);
+  assert.equal((await listRoutes(req({ headers: auth }), ctx)).jsonBody.routes.some((r) => r.id === routeFixture.id), false);
+
+  // The batch carries its own copy, which is the reason it carries one.
+  const still = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(still.route.steps.length, 5);
+  assert.equal(still.route.name, 'Guangzhou air express');
 });
 
 console.log(`\n${passed} checks passed`);

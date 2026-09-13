@@ -1,3 +1,4 @@
+import type { LotRoute } from './routes.js';
 import type {
   ConditionTag,
   FulfilmentStage,
@@ -548,6 +549,15 @@ export interface StageEvent {
   note: string | null;
   /** User id that recorded the transition. */
   recordedBy: string;
+  /**
+   * The route step this was, in the seller's own words.
+   *
+   * `stage` is the coarse summary and stays, because everything written before
+   * routes existed reads it. This is what actually happened - "Indian customs"
+   * rather than "India received / customs" - and a history that has it shows
+   * it. Absent on every event recorded before routes, which read the stage.
+   */
+  step?: string;
 }
 
 /**
@@ -592,6 +602,25 @@ export interface Lot extends BaseDocument {
    * list; neither gets anything else.
    */
   exporterUserId?: string | null;
+  /**
+   * The short number people actually use for this batch.
+   *
+   * Derived from the id, so it needs no counter and no lock, and stored rather
+   * than recomputed so it cannot change under a buyer who wrote it down.
+   * Absent on batches opened before it existed, which read it from their id.
+   */
+  lotNumber?: string;
+  /**
+   * The ladder this batch travels, snapshotted from the seller's template.
+   *
+   * A copy rather than a reference: a route is a template, and editing the
+   * template must not rewrite the timeline a buyer has been reading for three
+   * weeks. Absent means the built-in ladder, which is the seven stages this
+   * app has always had.
+   */
+  route?: LotRoute | null;
+  /** How far along that ladder, as an index. Absent reads from `stage`. */
+  currentStep?: number;
 }
 
 export interface LotHandler {

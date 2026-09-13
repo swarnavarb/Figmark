@@ -5,8 +5,14 @@ import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
 import { mayTick, type CrewRole } from '../../../shared/services.js';
+import {
+  BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
+  routeOf, stepForStage, type LotRoute,
+} from '../../../shared/routes.js';
 import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
-import { DIRECT_LOT_ID, furthestStage, stagesFor } from '../../../shared/fulfilment.js';
+import {
+  awaitingLot, furthestStage, inLot, stagesFor,
+} from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
@@ -137,7 +143,17 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
 
-  let body: LotDetailsBody & { forwarderUserId?: string; forwarderName?: string; forwarderContact?: string };
+  let body: LotDetailsBody & {
+    forwarderUserId?: string; forwarderName?: string; forwarderContact?: string;
+    /** A saved template to travel, or steps written here and now. */
+    routeId?: string;
+    routeName?: string;
+    routeSteps?: { id?: string; name?: string; description?: string }[];
+    /** Who checks it before it leaves, and who gets it out when it lands. */
+    exporterHandle?: string;
+    handlerUserId?: string;
+    handlerName?: string;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -146,17 +162,78 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
   const name = body.name?.trim();
   if (!name) return error(400, 'invalid_lot', 'Give the batch a name you will recognise.');
 
+  const repository = await getRepository();
+
+  /* The ladder this batch travels, settled before anything is written: a batch
+     created against a template that turns out not to exist should not exist
+     either, tracking whatever the fallback happened to be. */
+  let route: LotRoute = BUILT_IN_ROUTE;
+  if (body.routeId) {
+    const template = await repository.getRoute(user.id, body.routeId);
+    if (!template) return error(404, 'not_found', 'No such route.');
+    // A copy, so editing the template later cannot rewrite this batch's
+    // timeline under a buyer who has been reading it for three weeks.
+    route = { routeId: template.id, name: template.name, steps: template.steps };
+  } else if (body.routeSteps && body.routeSteps.length > 0) {
+    const steps = normaliseSteps(body.routeSteps);
+    if (steps.length < 2) return error(400, 'invalid_route', 'A route needs at least two steps.');
+    route = { routeId: null, name: body.routeName?.trim() || 'Route', steps };
+  }
+
+  const id = `lot_${randomUUID().slice(0, 12)}`;
   const now = new Date().toISOString();
+  const first = route.steps[0]!;
+
+  /* The two people who work it, named up front rather than found later on a
+     different screen: naming them is part of opening a batch, and a form that
+     asks afterwards is a form most sellers never come back to. */
+  let exporterUserId: string | null = null;
+  if (body.exporterHandle?.trim()) {
+    const found = await repository.getByHandle(body.exporterHandle.trim().replace(/^@/, ''));
+    if (!found) return error(404, 'not_found', `Nobody here goes by ${body.exporterHandle}.`);
+    exporterUserId = found.user.id;
+  }
+  let handlerNamed: Lot['handler'] = null;
+  if (body.handlerUserId || body.handlerName?.trim()) {
+    const named = body.handlerUserId ? await repository.getUserById(body.handlerUserId) : null;
+    if (body.handlerUserId && !named) {
+      return error(404, 'not_found', 'No such account to handle this batch.');
+    }
+    const handlerName = body.handlerName?.trim()
+      || named?.handlerProfile?.companyName || named?.displayName || '';
+    if (handlerName) {
+      handlerNamed = {
+        handlerUserId: named?.id ?? null,
+        name: handlerName,
+        contact: named?.handlerProfile?.contactPhone || named?.handlerProfile?.contactEmail || null,
+        city: named?.handlerProfile?.cities[0] ?? null,
+      };
+    }
+  }
+
   const lot: Lot = {
-    id: `lot_${randomUUID().slice(0, 12)}`,
+    id,
     sellerId: user.id,
     name,
+    lotNumber: lotNumberFrom(id, now),
+    route,
+    currentStep: 0,
+    exporterUserId,
+    handler: handlerNamed,
     description: body.description?.trim() ?? '',
     origin: body.origin?.trim() ?? '',
     supplier: supplierFrom(body),
     status: 'open',
-    stage: 'ordering',
-    stageHistory: [{ stage: 'ordering', enteredAt: now, note: 'Batch opened.', recordedBy: user.id }],
+    stage: coarseStage(route, 0),
+    stageHistory: [
+      {
+        stage: coarseStage(route, 0),
+        step: first.name,
+        enteredAt: now,
+        note: 'Batch opened.',
+        recordedBy: user.id,
+      },
+    ],
     estimatedDispatchAt: body.estimatedDispatchAt ?? null,
     // Either picked from the directory or typed in; both are the same shape.
     forwarder: body.forwarderName
@@ -175,12 +252,11 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   };
 
-  const repository = await getRepository();
   return json(201, { lot: await repository.createLot(lot) });
 }
 
 /** Loads a lot and refuses anyone who is not its owner. */
-async function ownedLot(request: HttpRequest, lotId: string): Promise<{ lot: Lot; userId: string }> {
+export async function ownedLot(request: HttpRequest, lotId: string): Promise<{ lot: Lot; userId: string }> {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
@@ -202,10 +278,39 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
     repository.listOrdersForLot(id),
   ]);
 
+  // Who bought each item, because a manifest of anonymous rows is not something
+  // a person can work from - and because the handler downstream gets the same
+  // names, so the two screens agree about whose parcel is whose.
+  const buyers = await repository.listUsersByIds([...new Set(orders.map((o) => o.buyerId))]);
+  const byId = new Map(buyers.map((buyer) => [buyer.id, buyer]));
+  const route = routeOf(lot);
+  const step = currentStepOf(lot);
+
   return json(200, {
     lot,
     listings,
     orders,
+    /** The ladder and where along it, resolved once for every screen that reads it. */
+    route: {
+      name: route.name,
+      routeId: route.routeId,
+      steps: route.steps,
+      currentStep: step,
+      /** Once the batch is with the seller, items are finished one at a time. */
+      atSeller: atSellerYet(lot),
+      lotNumber: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
+    },
+    items: orders.map((order) => ({
+      id: order.id,
+      itemName: order.itemName,
+      condition: order.condition,
+      quantity: order.quantity,
+      status: order.status,
+      buyerId: order.buyerId,
+      buyerName: byId.get(order.buyerId)?.displayName ?? 'Unknown',
+      buyerHandle: byId.get(order.buyerId)?.username ?? null,
+      checkpoints: order.checkpoints ?? {},
+    })),
     totals: {
       lines: orders.length,
       units: orders.reduce((sum, o) => sum + o.quantity, 0),
@@ -267,13 +372,26 @@ async function advanceStage(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'stage_not_forward', 'A batch can only move forward through its stages.');
   }
 
+  // One lot, one position. This route names a stage and the route screen names
+  // a step, and they are two doors onto the same thing: a lot advanced through
+  // here without moving its step would read as still at the start, and every
+  // buyer in it would be told nothing had happened.
+  const route = routeOf(lot);
+  const step = stepForStage(route, target);
   const now = new Date().toISOString();
-  const event: StageEvent = { stage: target, enteredAt: now, note: body.note?.trim() || null, recordedBy: userId };
+  const event: StageEvent = {
+    stage: target,
+    step: route.steps[step]?.name,
+    enteredAt: now,
+    note: body.note?.trim() || null,
+    recordedBy: userId,
+  };
 
   const repository = await getRepository();
   const updated = await repository.updateLot({
     ...lot,
     stage: target,
+    currentStep: step,
     stageHistory: [...lot.stageHistory, event],
     status: target === 'delivered' ? 'closed' : lot.status,
     updatedAt: now,
@@ -456,13 +574,30 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
     throw AuthError.forbidden('That order is not yours.');
   }
 
-  const lot = order.lotId === DIRECT_LOT_ID ? null : await repository.getLot(order.sellerId, order.lotId);
+  const lot = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
   const sellers = await repository.listUsersByIds([order.sellerId]);
+
+  /* The timeline the buyer reads is the batch's route, in the seller's own
+     words. Without a batch there is no route to read, and the honest answer is
+     what has happened plus the fact that it is waiting for one - not five
+     hollow circles implying a journey nobody has booked yet. */
+  const route = lot ? routeOf(lot) : null;
 
   return json(200, {
     order,
     stages: stagesFor(order),
     currentStage: furthestStage(order),
+    route: route
+      ? {
+          name: route.name,
+          steps: route.steps,
+          currentStep: currentStepOf(lot!),
+          lotName: lot!.name,
+          lotNumber: lot!.lotNumber ?? lotNumberFrom(lot!.id, lot!.createdAt),
+        }
+      : null,
+    /** True while it is sold, bound for a batch, and not in one. */
+    awaitingLot: awaitingLot(order),
     sellerName: sellers[0]?.sellerProfile?.storefrontName ?? sellers[0]?.displayName ?? 'Seller',
     // The only two things the batch contributes to the buyer's view.
     trackingReference: lot?.forwarder?.trackingReference ?? null,

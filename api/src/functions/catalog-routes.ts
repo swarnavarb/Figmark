@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { Sourcing } from '../../../shared/enums.js';
 import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
 import { can } from '../../../shared/stores.js';
-import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulfilment.js';
 import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
@@ -395,9 +395,12 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const now2 = new Date().toISOString();
   const order: Order = {
     id: `ord_${randomUUID().slice(0, 12)}`,
-    // Inherits the item's shipment batch if it has one; otherwise it is a
-    // direct domestic sale and tracks against the short vocabulary.
-    lotId: listing.lotId ?? DIRECT_LOT_ID,
+    // Inherits the item's batch if it has one. Otherwise it depends on what
+    // the item is: a domestic sale tracks against the short vocabulary and
+    // never joins a batch, while an import sold before its run is opened waits
+    // for one - and has to be findable on the screen where a shop fills it.
+    lotId: listing.lotId
+      ?? (sourcingOf(listing) === 'import' ? AWAITING_LOT_ID : DIRECT_LOT_ID),
     sellerId: listing.sellerId,
     buyerId: user.id,
     listingId: listing.id,

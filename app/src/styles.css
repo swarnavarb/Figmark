@@ -2253,3 +2253,144 @@ a.provider__name:hover { color: var(--accent); }
   cursor: pointer;
 }
 .backlink:hover { color: var(--text); }
+
+/* ── Routes, ladders and the items that ride them ──────────────────────── */
+
+/*
+ * One ladder, drawn the same way for the seller working a batch and the buyer
+ * watching it. Three states and no key: a tick for done, a dot for here, and
+ * nothing for what has not happened - which is the point, because an empty
+ * circle is a promise and a blank is a fact.
+ */
+.ladder { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.ladder__row {
+  position: relative;
+  display: grid; grid-template-columns: 20px 1fr; align-items: baseline; gap: 10px;
+  padding: 7px 0;
+  font-size: var(--t-sm); color: var(--text-faint);
+}
+/* The line joining the rungs, drawn behind the dots rather than between them so
+   it cannot fall out of step with a list that is being reordered. */
+.ladder__row::before {
+  content: ''; position: absolute; left: 9px; top: 0; bottom: 0;
+  width: 1px; background: var(--border);
+}
+.ladder__row:first-child::before { top: 50%; }
+.ladder__row:last-child::before { bottom: 50%; }
+.ladder__dot {
+  position: relative; z-index: 1;
+  width: 19px; height: 19px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 10px; line-height: 1;
+}
+.ladder__name { min-width: 0; }
+.ladder__row.is-done { color: var(--text-dim); }
+.ladder__row.is-done .ladder__dot { border-color: var(--ok); color: var(--ok); }
+.ladder__row.is-current { color: var(--text); font-weight: 650; }
+.ladder__row.is-current .ladder__dot {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
+}
+/* A preview in a form is a list, not a progress bar: nothing has happened yet. */
+.ladder--preview .ladder__row { color: var(--text-dim); padding: 5px 0; }
+
+/* The builder. A grip, a number, a name, and three small buttons. */
+.steps { display: grid; gap: 8px; }
+/* The name gets its own row. On one line with the handle, the number and three
+   buttons beside it, a 390px screen left about 160px for the text - and
+   "Received at international warehouse" in 160px is a step nobody can read
+   back, which is the one thing this editor exists to let them do. */
+.step {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  grid-template-areas: 'grip no . acts' 'name name name name';
+  align-items: center; gap: 6px 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.step__grip { grid-area: grip; }
+.step__no { grid-area: no; }
+.step__acts { grid-area: acts; }
+.step__name { grid-area: name; }
+.step.is-dragging { opacity: 0.5; }
+.step.is-over { border-color: var(--accent); box-shadow: 0 -2px 0 var(--accent) inset; }
+/* Only the grip drags, so tapping into the field to rename a step does not
+   pick the row up instead. */
+.step__grip { cursor: grab; color: var(--text-faint); user-select: none; }
+.step__grip:active { cursor: grabbing; }
+.step__no {
+  width: 18px; text-align: center;
+  font-size: var(--t-xs); color: var(--text-faint); font-variant-numeric: tabular-nums;
+}
+.step__name {
+  min-width: 0; width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: var(--surface-2); font-size: var(--t-sm);
+}
+.step__name:focus { border-color: var(--accent-line); outline: none; }
+.step__acts { display: flex; gap: 2px; }
+.iconbtn {
+  width: 26px; height: 26px; padding: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text-dim);
+  font-size: 10px; cursor: pointer;
+}
+.iconbtn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.iconbtn:disabled { opacity: 0.35; cursor: default; }
+.iconbtn--danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+
+/* One item in a batch, and who is waiting for it. */
+.lotitem {
+  display: grid; gap: 3px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.lotitem:last-of-type { border-bottom: none; }
+.lotitem--gone { opacity: 0.6; }
+.lotitem__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.lotitem__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-sm); font-weight: 650;
+}
+.lotitem__acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+
+/* Picking items into a batch, in place rather than in a dialog: the list you
+   are filling is the context for what you are adding to it. */
+.picker-panel {
+  padding: 12px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.picker-panel .search { max-width: none; }
+
+/* The buyer's view: one card per batch, whatever is in it. */
+.itemgroup {
+  display: grid; gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.itemgroup__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.itemgroup__name { font-size: var(--t-md); font-weight: 680; letter-spacing: -0.01em; }
+.itemgroup__items { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 3px; font-size: var(--t-sm); }
+.itemgroup__items a { color: var(--text); text-decoration: none; }
+.itemgroup__items a:hover { color: var(--accent); }
+.itemgroup__status {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border);
+  font-size: var(--t-sm);
+}
+
+/* Fields that are not decisions, folded away on the form that opens a batch. */
+.extras {
+  padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.extras > summary {
+  cursor: pointer; font-size: var(--t-sm); font-weight: 600; color: var(--text-dim);
+}
+.extras > summary:hover { color: var(--text); }
+.extras[open] > summary { margin-bottom: 12px; }

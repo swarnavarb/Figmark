@@ -19,13 +19,46 @@ import type { Order } from './models.js';
  */
 export const DIRECT_LOT_ID = 'direct';
 
+/**
+ * An import that has been sold and has no batch behind it yet.
+ *
+ * Distinct from `direct`, and the distinction is the whole point: a direct sale
+ * ships off a shelf and will never be in a batch, while this one is waiting for
+ * the next run to be opened. Filed under `direct` - which is what happened
+ * before this existed - the buyer was shown a three-step domestic timeline for
+ * something crossing an ocean, and the item was invisible to the screen where
+ * a shop fills a batch.
+ */
+export const AWAITING_LOT_ID = 'awaiting_lot';
+
 export function isDirect(order: Pick<Order, 'lotId'>): boolean {
   return order.lotId === DIRECT_LOT_ID;
 }
 
+/** Sold, bound for a batch, not yet in one. */
+export function awaitingLot(order: Pick<Order, 'lotId'>): boolean {
+  return order.lotId === AWAITING_LOT_ID;
+}
+
+/** In a real batch, as opposed to either sentinel. */
+export function inLot(order: Pick<Order, 'lotId'>): boolean {
+  return !isDirect(order) && !awaitingLot(order);
+}
+
+/**
+ * How far an item with no batch can honestly be tracked.
+ *
+ * Two steps, and then it stops. Everything after "received at the warehouse"
+ * is a fact about a consignment, and this item is not in one - so the timeline
+ * ends here and the screen says why, rather than drawing five hollow circles
+ * that imply a journey nobody has booked.
+ */
+export const PRE_LOT_STAGES: readonly LotStage[] = ['ordering', 'china_wh_received'];
+
 /** The stage vocabulary an order is tracked against. */
 export function stagesFor(order: Pick<Order, 'lotId'>): readonly FulfilmentStage[] {
-  return isDirect(order) ? DIRECT_STAGES : LOT_STAGES;
+  if (isDirect(order)) return DIRECT_STAGES;
+  return awaitingLot(order) ? PRE_LOT_STAGES : LOT_STAGES;
 }
 
 export function labelFor(stage: FulfilmentStage): string {
@@ -80,12 +113,14 @@ export type { DirectStage, FulfilmentStage, LotStage };
 /**
  * How a listing is sourced.
  *
- * The batch is the answer: an import travels in a consignment, so an item in a
- * batch is imported and one without a batch ships from the seller's shelf. A
- * stored value is honoured only where it agrees - a listing written before the
- * rule that claims an import with no batch behind it is treated as in hand,
- * which promises the buyer less rather than more.
+ * A batch settles it: an item in one is an import, whatever anybody typed. With
+ * no batch the stored answer stands, because filing an item into a batch is
+ * bookkeeping a shop does weeks after the item went up - the listing route has
+ * allowed an import to wait for its batch for some time, and reading that back
+ * as "in hand" was this function telling the buyer the opposite of what the
+ * seller said, on a screen the seller could not correct.
  */
 export function sourcingOf(listing: { sourcing?: Sourcing; lotId: string | null }): Sourcing {
-  return listing.lotId ? 'import' : 'in_hand';
+  if (listing.lotId) return 'import';
+  return listing.sourcing === 'import' ? 'import' : 'in_hand';
 }

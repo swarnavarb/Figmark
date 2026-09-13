@@ -1,3 +1,5 @@
+import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
+import type { TrackingRoute } from '../../../shared/routes.js';
 import { CosmosClient, type Container, type ContainerRequest, type Database } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
@@ -654,6 +656,76 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources;
+  }
+
+  async listRoutes(sellerId: string): Promise<TrackingRoute[]> {
+    const { resources } = await this.container('routes')
+      .items.query<TrackingRoute>(
+        {
+          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId ORDER BY c.name ASC',
+          parameters: [{ name: '@sellerId', value: sellerId }],
+        },
+        { partitionKey: sellerId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  async getRoute(sellerId: string, routeId: string): Promise<TrackingRoute | null> {
+    try {
+      const { resource } = await this.container('routes').item(routeId, sellerId).read<TrackingRoute>();
+      return resource ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveRoute(route: TrackingRoute): Promise<TrackingRoute> {
+    const { resource } = await this.container('routes').items.upsert<TrackingRoute>(route);
+    return resource ?? route;
+  }
+
+  async deleteRoute(sellerId: string, routeId: string): Promise<boolean> {
+    try {
+      await this.container('routes').item(routeId, sellerId).delete();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async listOrdersAwaitingLot(sellerId: string): Promise<Order[]> {
+    // Single-partition: every waiting item is filed under the one sentinel, so
+    // "what is there to put in this batch" is a cheap read however many shops
+    // are using the app.
+    const { resources } = await this.container('orders')
+      .items.query<Order>(
+        {
+          query:
+            'SELECT * FROM c WHERE c.lotId = @lotId AND c.sellerId = @sellerId'
+            + ' AND c.status != "cancelled" ORDER BY c.createdAt ASC',
+          parameters: [
+            { name: '@lotId', value: AWAITING_LOT_ID },
+            { name: '@sellerId', value: sellerId },
+          ],
+        },
+        { partitionKey: AWAITING_LOT_ID },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  async moveOrderToLot(order: Order, fromLotId: string): Promise<Order> {
+    // `lotId` is the partition key, so this is not an update. Create in the new
+    // partition first: if the delete then fails the item is in two batches,
+    // which a manifest makes obvious - the other order would leave it in none,
+    // which nothing would.
+    const moved: Order = { ...order, updatedAt: new Date().toISOString() };
+    const { resource } = await this.container('orders').items.upsert<Order>(moved);
+    if (fromLotId !== moved.lotId) {
+      await this.container('orders').item(moved.id, fromLotId).delete().catch(() => undefined);
+    }
+    return (resource as Order | undefined) ?? moved;
   }
 
   async listHandlers(): Promise<User[]> {

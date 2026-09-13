@@ -10,9 +10,19 @@ import { ErrorNotice } from './ui';
  * editable afterwards, so having two definitions of what a batch has would only
  * be an opportunity for them to disagree.
  */
-export function LotDetailFields({ value, onChange }: {
+export function LotDetailFields({ value, onChange, compact = false }: {
   value: LotDetails;
   onChange: (next: LotDetails) => void;
+  /**
+   * Fold everything but the name and the origin away.
+   *
+   * Opening a batch is four decisions - what it is called, where it comes from,
+   * who works it, and the route it climbs - and the supplier's invoice
+   * reference is not one of them. It is still here, one tap away, and still the
+   * same single definition of what a batch has: the edit screen asks for none
+   * of this and gets all of it.
+   */
+  compact?: boolean;
 }) {
   const set = <K extends keyof LotDetails>(key: K, next: LotDetails[K]) =>
     onChange({ ...value, [key]: next });
@@ -26,19 +36,19 @@ export function LotDetailFields({ value, onChange }: {
         <span className="field__hint">The only thing you must fill in. Buyers never see it.</span>
       </label>
 
-      <div className="field-row">
-        <label className="field">
-          <span>Origin</span>
-          <input value={value.origin ?? ''} onChange={(e) => set('origin', e.target.value)}
-            placeholder="Guangzhou, CN" />
-        </label>
-        <label className="field">
-          <span>Est. dispatch</span>
-          <input type="date" value={(value.estimatedDispatchAt ?? '').slice(0, 10)}
-            onChange={(e) => set('estimatedDispatchAt', e.target.value ? new Date(e.target.value).toISOString() : null)} />
-          <span className="field__hint">Buyers see this date on their order.</span>
-        </label>
-      </div>
+      <label className="field">
+        <span>Lot origin</span>
+        <input value={value.origin ?? ''} onChange={(e) => set('origin', e.target.value)}
+          placeholder="Guangzhou, CN" />
+      </label>
+
+      <Extras compact={compact}>
+      <label className="field">
+        <span>Est. dispatch</span>
+        <input type="date" value={(value.estimatedDispatchAt ?? '').slice(0, 10)}
+          onChange={(e) => set('estimatedDispatchAt', e.target.value ? new Date(e.target.value).toISOString() : null)} />
+        <span className="field__hint">Buyers see this date on their order.</span>
+      </label>
 
       <label className="field">
         <span>Notes</span>
@@ -72,7 +82,22 @@ export function LotDetailFields({ value, onChange }: {
           </label>
         </div>
       </div>
+      </Extras>
     </>
+  );
+}
+
+/**
+ * The fields that are not decisions, folded away when the screen is a form
+ * somebody is filling in for the first time and left open when it is not.
+ */
+function Extras({ compact, children }: { compact: boolean; children: ReactNode }) {
+  if (!compact) return <>{children}</>;
+  return (
+    <details className="extras">
+      <summary>Supplier, notes and dates</summary>
+      <div className="stack">{children}</div>
+    </details>
   );
 }
 

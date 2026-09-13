@@ -162,6 +162,14 @@ export const CONTAINERS = {
       'A campaign and everyone in it are read together - to draw the meter, to name the roster, and to call the pledges in when it fills - which is exactly one partition. One per person per campaign, enforced by the unique key rather than by remembering to check: a bar anyone can push twice measures enthusiasm, not demand.',
     uniqueKeyPaths: [['/userId']],
   },
+  routes: {
+    name: 'routes',
+    partitionKeyPath: '/sellerId',
+    rationale:
+      'A route is a template a shop writes once and reuses on every batch, so the only read is "show me mine" - one partition, a handful of documents, never browsed by anyone else. The steps ride inside the document rather than in a container of their own: they are only ever read as a whole list, in order, and a second container would buy nothing but a join.',
+    // Step descriptions are prose nobody queries by.
+    excludedPaths: ['/steps/[]/description/?'],
+  },
   powerSales: {
     name: 'powerSales',
     partitionKeyPath: '/sellerId',

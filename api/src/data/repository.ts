@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { TrackingRoute } from '../../../shared/routes.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
   Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
@@ -97,6 +98,23 @@ export interface Repository {
 
   listLots(query?: CatalogQuery): Promise<Lot[]>;
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;
+
+  /** The route templates a shop has written. */
+  listRoutes(sellerId: string): Promise<TrackingRoute[]>;
+  getRoute(sellerId: string, routeId: string): Promise<TrackingRoute | null>;
+  saveRoute(route: TrackingRoute): Promise<TrackingRoute>;
+  deleteRoute(sellerId: string, routeId: string): Promise<boolean>;
+
+  /** Sold, bound for a batch, not yet in one. */
+  listOrdersAwaitingLot(sellerId: string): Promise<Order[]>;
+  /**
+   * Move an order into a batch.
+   *
+   * Its own method because `lotId` is the partition key: a replace would write
+   * into a partition the document is not in, so this is a create in the new one
+   * and a delete from the old.
+   */
+  moveOrderToLot(order: Order, fromLotId: string): Promise<Order>;
   listListings(query?: CatalogQuery): Promise<Listing[]>;
 
   /* Shipment batches (seller-side). */
