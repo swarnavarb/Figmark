@@ -335,10 +335,77 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-weight: 600;
 }
 
-/* A quieter chip, for the rows that narrow a choice already made rather than
-   competing with it. Three rows of equally loud chips is a wall. */
-.chip--quiet { background: transparent; border-color: transparent; font-size: var(--t-xs); padding: 5px 10px; }
-.chip--quiet:hover { border-color: var(--border); }
+/* ── Filter pickers ────────────────────────────────────────────────────────
+   Sort, price, condition: one choice out of many each. As chips they were a
+   dozen equally loud buttons wrapped over four rows, of which one could be on.
+   As pickers they are three controls that say what they are currently set to,
+   and the list itself is the platform's. */
+
+.filters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  margin: 0 calc(var(--page-pad) * -1);
+  padding: 2px var(--page-pad);
+  scrollbar-width: none;
+}
+.filters::-webkit-scrollbar { display: none; }
+
+.picker {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 26px 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.picker:hover { color: var(--text); border-color: var(--border-strong); }
+.picker.is-on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); font-weight: 600; }
+
+/* The chevron, drawn rather than typed so it lines up at every size. */
+.picker::after {
+  content: '';
+  position: absolute;
+  right: 11px;
+  width: 7px; height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  opacity: 0.75;
+}
+
+/* The real control, laid over the pill it is drawn as. Invisible rather than
+   replaced: it is what opens the platform's own picker, takes focus, and is
+   read out by a screen reader. */
+.picker select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.filters__clear {
+  flex: none;
+  border: 0; background: none; padding: 6px 4px;
+  color: var(--text-faint); font-size: var(--t-sm); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.filters__clear:hover { color: var(--text); }
 
 /* ── Category headings ─────────────────────────────────────────────────────
    The top row of the buy page: what a thing is, before how it is sold. A
@@ -732,13 +799,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ── Bottom tabs ───────────────────────────────────────────────────────── */
 
 /*
- * A raised, notched bar. The active tab is a lifted panel and its neighbours
- * curve away from it, so the selection reads as the surface the page sits on
- * rather than a button that happens to be highlighted.
+ * A soft pill slides under the current tab. One element that moves, which is
+ * what makes the change feel continuous rather than cut.
  *
- * The indicator is one element that slides, which is what makes the change feel
- * continuous; the inward curves either side of it are radial gradients on its
- * own pseudo-elements, so they travel with it and can never fall out of sync.
+ * It replaced a notched bar whose inward curves were radial gradients on two
+ * pseudo-elements: clever, and on a real phone a pair of grey blocks either
+ * side of the active tab. A shape that only holds together at one background
+ * colour is the wrong shape for the one thing that is on screen all the time.
  */
 /*
  * Named `tabbar`, not `tabs`: the profile page already had a `.tabs` strip with
@@ -752,62 +819,61 @@ button, input, select, textarea { font: inherit; color: inherit; }
   z-index: 40;
   display: flex;
   isolation: isolate;
-  background: var(--surface);
+  /* Translucent over a blur, so content scrolling underneath stays legible as
+     a hint of movement rather than being cut off by a solid slab. */
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding: 6px 8px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
 }
 
-.tabbar__indicator {
+/* Slides under the current tab. One rounded rectangle, no cut-outs: the shape
+   that has to survive every background and pixel ratio is the simple one. */
+.tabbar__pill {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  background: var(--surface-2);
-  border-top: 1px solid var(--accent);
-  border-radius: 18px 18px 0 0;
+  top: 6px;
+  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  left: 8px;
+  /* Two paddings narrower than the tab it sits under, so it reads as a
+     highlight around the label rather than as a block butted against its
+     neighbours. */
+  margin-right: 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 14px;
   z-index: -1;
-  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* The two inward curves that make the raised tab look cut out of the row. */
-.tabbar__indicator::before,
-.tabbar__indicator::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  width: 18px;
-  height: 18px;
-  background: radial-gradient(circle at 0 100%, transparent 0 18px, var(--surface-2) 18px);
-}
-.tabbar__indicator::before { left: -18px; transform: scaleX(-1); }
-.tabbar__indicator::after { right: -18px; }
 
 .tab-item {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 3px;
-  padding: 9px 4px 10px;
+  padding: 8px 4px;
   color: var(--text-faint);
   text-decoration: none;
   font-size: var(--t-xs);
   font-weight: 600;
-  /* Only colour and lift animate; the surface behind is the indicator's job. */
+  letter-spacing: 0.01em;
   transition: color 0.24s ease;
 }
 .tab-item__glyph {
-  font-size: 21px;
-  line-height: 1.15;
-  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  display: block;
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.tab-item.is-on { color: var(--text); }
-.tab-item.is-on .tab-item__glyph { transform: translateY(-2px) scale(1.12); }
+.tab-item.is-on { color: var(--accent); font-weight: 700; }
+.tab-item.is-on .tab-item__glyph { transform: translateY(-1px); stroke-width: 2; }
 
 /* The bar is fixed, so every page needs room under it to finish scrolling. */
 .shell--tabbed .page { padding-bottom: 96px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .tabbar__indicator,
+  .tabbar__pill,
   .tab-item,
   .tab-item__glyph { transition: none; }
 }

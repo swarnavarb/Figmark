@@ -1218,6 +1218,10 @@ export class CosmosRepository implements Repository {
    */
   async listListings(query: CatalogQuery = {}): Promise<Listing[]> {
     const limit = query.limit ?? (query.search ? 400 : 100);
+    // Followed-first is not expressible in SQL - the ranking is a fact about
+    // the reader, not the row - and it is only wanted while the reader has not
+    // asked for an order of their own.
+    const ranked = !query.sort || query.sort === 'newest';
     const spec = {
       query:
         'SELECT * FROM c WHERE c.status = "active"' +
@@ -1230,7 +1234,7 @@ export class CosmosRepository implements Repository {
         ' OR (@kind = "mixed_lot" AND c.bundle = true)' +
         ' OR (@kind = "in_hand" AND (c.sourcing = "in_hand" OR (NOT IS_DEFINED(c.sourcing) AND NOT IS_DEFINED(c.lotId))))' +
         ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))' +
-        ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+        catalogOrder(query.sort),
       parameters: [
         { name: '@seller', value: query.sellerId ?? '' },
         { name: '@cat', value: query.category ?? '' },
@@ -1252,10 +1256,8 @@ export class CosmosRepository implements Repository {
       ? resources.filter((listing) => matchesSearch(listing, query.search!))
       : resources;
 
-    // Followed sellers first. Not expressible in ORDER BY - the ranking is a
-    // fact about the reader, not the row - so it is applied to the window.
     const followed = new Set(query.followedSellerIds ?? []);
-    if (followed.size === 0) return matched;
+    if (!ranked || followed.size === 0) return matched;
     return [...matched].sort(
       (a, b) => Number(followed.has(b.sellerId)) - Number(followed.has(a.sellerId)),
     );
@@ -1503,6 +1505,28 @@ export class CosmosRepository implements Repository {
       .fetchAll();
     return resources;
   }
+}
+
+/**
+ * The tail of the catalog query, one complete clause per sort.
+ *
+ * Whole literals rather than an ORDER BY assembled from a column name and a
+ * direction: an ORDER BY over a path excluded from the index is refused at
+ * query time rather than merely being slow, and a literal is the only form the
+ * static check can read. Every path here is indexed and present on every
+ * listing - a document missing the ordered path is dropped from the result set
+ * entirely, which would turn a sort into a silent filter.
+ */
+const CATALOG_ORDER: Record<string, string> = {
+  newest: ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+  price_asc: ' ORDER BY c.priceMinor ASC OFFSET 0 LIMIT @limit',
+  price_desc: ' ORDER BY c.priceMinor DESC OFFSET 0 LIMIT @limit',
+  popular: ' ORDER BY c.likeCount DESC OFFSET 0 LIMIT @limit',
+};
+
+/** The clause for one sort, falling back to newest for anything unrecognised. */
+function catalogOrder(sort: string | undefined): string {
+  return (sort && CATALOG_ORDER[sort]) || CATALOG_ORDER.newest!;
 }
 
 /** An `identifiers` document: the id is the normalised email or phone. */

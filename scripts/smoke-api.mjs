@@ -73,7 +73,7 @@ const {
 } = await import(new URL('admin-routes.js', fns));
 const { isAnnouncement } = await import(new URL('../api/dist/shared/posts.js', import.meta.url));
 const { LOT_STAGES } = await import(new URL('../api/dist/shared/enums.js', import.meta.url));
-const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL } = await import(
+const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL, seedListings, seedReviews } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
 );
 
@@ -3233,6 +3233,37 @@ await check('the bar and the list under it are the same set of people', async ()
 
     // And the card and the page agree about how far along it is.
     assert.equal(card.preOrder.filledCount, view.filledCount, `${card.id}: the card disagrees with the page`);
+  }
+});
+
+await check('the fixtures do not expire while nobody is looking', async () => {
+  // Every date in the seed hangs off a frozen clock so two workers cannot
+  // produce two different manifests. Deadlines cannot: a pre-order cutoff and a
+  // review's reveal window mean nothing except relative to today, and fixed
+  // ones lapsed twelve days after they were written - the campaign closed
+  // itself, the hidden review revealed itself, and a suite that was green on
+  // Friday failed on Sunday with nothing changed.
+  // The seeded ones only: other checks in this file close campaigns on purpose
+  // to see what closing does.
+  const seeded = new Set(seedListings().map((listing) => listing.id));
+  const open = (await feed(req({ query: { kind: 'pre_order' } }), ctx)).jsonBody.listings
+    .filter((listing) => seeded.has(listing.id));
+  assert.ok(open.length > 0, 'the fixtures should have open pre-orders');
+  for (const listing of open) {
+    assert.ok(
+      Date.parse(listing.preOrder.cutoffAt) > Date.now(),
+      `${listing.id} closed on ${listing.preOrder.cutoffAt}, so the fixture demonstrates nothing`,
+    );
+  }
+
+  // And every review the seed writes as unrevealed still has a window open.
+  // Read from the seed rather than from the store: checks above this one answer
+  // that review on purpose, which reveals it, correctly.
+  for (const review of seedReviews().filter((entry) => !entry.revealed)) {
+    assert.ok(
+      Date.parse(review.revealAt) > Date.now(),
+      `${review.id} would reveal itself on ${review.revealAt}, so the fixture demonstrates nothing`,
+    );
   }
 });
 

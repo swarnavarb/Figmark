@@ -47,6 +47,8 @@ export interface CatalogQuery {
   condition?: string;
   /** See CATALOG_KINDS: how it is sold, not what it is. */
   kind?: string;
+  /** See CATALOG_SORTS. Absent means newest first. */
+  sort?: string;
   maxPriceMinor?: number;
   /** Ranks listings from followed sellers first. */
   followedSellerIds?: readonly string[];

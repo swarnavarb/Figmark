@@ -52,6 +52,22 @@ const NOW = new Date('2026-09-01T09:00:00.000Z');
 const iso = (days = 0, hours = 0) =>
   new Date(NOW.getTime() + days * 86_400_000 + hours * 3_600_000).toISOString();
 
+/**
+ * A date the fixtures need to stay in the future, measured from the real clock.
+ *
+ * Everything else here hangs off a frozen `NOW` so the same seed cannot produce
+ * two different manifests on two workers. Deadlines are the exception: a
+ * pre-order cutoff and a review's reveal window are only meaningful relative to
+ * today, and a fixed one lapses while nobody is looking. That is not a theory -
+ * the fixture pre-order closed itself and the "hidden until you answer" review
+ * revealed itself, twelve days after the date they were written against, and
+ * the suite that was green on Friday failed on Sunday having changed nothing.
+ *
+ * Nothing counts these or asserts their value; what the fixtures claim is that
+ * one is still open and one is still waiting, which is a claim about now.
+ */
+const soon = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
+
 /** Phone and email verified so the demo account can transact; nothing heavier. */
 function verification(transactable: boolean): VerificationState {
   const state = transactable ? 'verified' : 'unverified';
@@ -490,7 +506,7 @@ export function seedListings(): Listing[] {
     preOrder: entry.preOrder
       ? {
           fillThreshold: entry.preOrder.fillThreshold,
-          cutoffAt: iso(entry.preOrder.cutoffDays),
+          cutoffAt: soon(entry.preOrder.cutoffDays),
           ...seededCounts(entry.id),
         }
       : null,
@@ -757,7 +773,7 @@ export function seedReviews(): Review[] {
       // is ordinary, and dated so it is genuinely waiting rather than expired -
       // a lapsed window reveals a review on its own, correctly, and that would
       // demonstrate the opposite of what this fixture is for.
-      revealAt: iso(11),
+      revealAt: soon(11),
       createdAt: iso(-3), updatedAt: iso(-3),
     },
   ];
@@ -778,7 +794,7 @@ export function seedWants(): Want[] {
   ): Want => ({
     id, buyerId, buyerName, buyerHandle, title, details, category,
     budgetMinor, currency: 'INR', condition, status: 'open', offerCount,
-    expiresAt: iso(30 + days), closedAt: null,
+    expiresAt: soon(30 + days), closedAt: null,
     createdAt: iso(days), updatedAt: iso(days),
   });
 

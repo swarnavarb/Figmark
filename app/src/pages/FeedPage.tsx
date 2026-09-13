@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
-import { CATALOG_KINDS, CATALOG_KIND_LABELS, CATEGORY_GROUPS } from '@shared/catalog';
+import {
+  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS,
+} from '@shared/catalog';
 import { preOrderView } from '@shared/preorder';
 import { sourcingOf } from '@shared/fulfilment';
 import { api, type FeedListing, type FeedResponse } from '../api';
@@ -24,7 +26,6 @@ const PRICE_BANDS = [
  * follows surface first.
  */
 export function FeedPage() {
-  const { user } = useSession();
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState<FeedResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,13 +36,14 @@ export function FeedPage() {
   const category = params.get('category') ?? '';
   const condition = params.get('condition') ?? '';
   const kind = params.get('kind') ?? '';
+  const sort = params.get('sort') ?? 'newest';
   const maxPrice = params.get('maxPrice') ?? '';
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     void api
-      .feed({ q: search, group, category, condition, kind, maxPrice })
+      .feed({ q: search, group, category, condition, kind, sort, maxPrice })
       .then((result) => {
         if (cancelled) return;
         setData(result);
@@ -52,7 +54,7 @@ export function FeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [search, group, category, condition, kind, maxPrice]);
+  }, [search, group, category, condition, kind, sort, maxPrice]);
 
   /** Selecting an active filter clears it, so chips toggle. */
   const toggle = useCallback(
@@ -100,22 +102,21 @@ export function FeedPage() {
     [params, setParams],
   );
 
+  /** Sets a filter, or clears it when the empty option is chosen. */
+  const set = useCallback(
+    (key: string, value: string) => {
+      const next = new URLSearchParams(params);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      setParams(next, { replace: true });
+    },
+    [params, setParams],
+  );
+
   const activeFilters = [group, category, condition, kind, maxPrice].filter(Boolean).length;
 
   return (
     <main className="page">
-      <div className="page__head">
-        <div>
-          <h1>{search ? `Results for “${search}”` : 'Browse'}</h1>
-          <p className="muted">
-            {user
-              ? 'Sellers you follow appear first. Everything else is newest first.'
-              : 'Sign in to follow sellers and personalise this feed.'}
-          </p>
-        </div>
-        {data && <span className="muted">{data.listings.length} listings</span>}
-      </div>
-
       {/* Two rows, and deliberately not one. The first says what a thing is,
           the second says how it is being sold; they answer different questions
           and a single row that mixes them makes both harder to read. */}
@@ -145,36 +146,34 @@ export function FeedPage() {
           ))}
         </div>
 
-        {/* Everything else, one row down: these narrow what the two rows above
-            have already chosen rather than competing with them. */}
-        <div className="chips">
-          {PRICE_BANDS.map((band) => (
-            <button key={band.value} className={`chip chip--quiet${maxPrice === band.value ? ' is-on' : ''}`}
-              onClick={() => toggle('maxPrice', band.value)}>
-              {band.label}
+        {/* The long tail, as controls rather than chips. Sort, price and
+            condition are one choice out of many each, and a chip row for that
+            is a wall of options where only one can be on - twelve of them
+            wrapped into four ragged rows and pushed the first item off the
+            screen. A select says "one of these" in the width of one. */}
+        <div className="filters">
+          <Picker label="Sort" value={sort} onChange={(value) => set('sort', value)}
+            options={CATALOG_SORTS.map((entry) => ({ value: entry, label: CATALOG_SORT_LABELS[entry] }))} />
+          <Picker label="Price" value={maxPrice} onChange={(value) => set('maxPrice', value)}
+            empty="Any price" options={PRICE_BANDS} />
+          <Picker label="Condition" value={condition} onChange={(value) => set('condition', value)}
+            empty="Any condition"
+            options={CONDITION_TAGS.map((tag) => ({ value: tag, label: tag }))} />
+          {/* Only what is actually on screen, so it can never offer a category
+              with nothing behind it. */}
+          {data && data.categories.length > 1 && (
+            <Picker label="Type" value={category} onChange={(value) => set('category', value)}
+              empty="Any type"
+              options={data.categories.map((entry) => ({ value: entry, label: entry }))} />
+          )}
+          {activeFilters > 0 && (
+            <button type="button" className="filters__clear" onClick={() => setParams(
+              search ? new URLSearchParams({ q: search }) : new URLSearchParams(), { replace: true },
+            )}>
+              Clear
             </button>
-          ))}
-          {CONDITION_TAGS.map((tag) => (
-            <button key={tag} className={`chip chip--quiet${condition === tag ? ' is-on' : ''}`}
-              onClick={() => toggle('condition', tag)}>
-              {tag}
-            </button>
-          ))}
+          )}
         </div>
-
-        {/* The categories actually present in what is on screen, so a heading
-            can be narrowed further without offering a chip that has nothing
-            behind it. */}
-        {data && data.categories.length > 1 && (
-          <div className="chips">
-            {data.categories.map((entry) => (
-              <button key={entry} className={`chip chip--quiet${category === entry ? ' is-on' : ''}`}
-                onClick={() => toggle('category', entry)}>
-                {entry}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {error && <ErrorNotice message={error} />}
@@ -193,6 +192,36 @@ export function FeedPage() {
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * One choice out of a list, in the width of one chip.
+ *
+ * A native select rather than a custom menu: on a phone it opens the platform's
+ * own picker, which is a better list than anything built here, and it is
+ * reachable by keyboard and screen reader without a line of code. The chevron
+ * and the pill are ours; the list is the operating system's.
+ */
+function Picker({ label, value, onChange, options, empty }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: readonly { value: string; label: string }[];
+  /** The "no choice" row. Omitted when one of the options is always on. */
+  empty?: string;
+}) {
+  const chosen = options.find((option) => option.value === value);
+  return (
+    <label className={`picker${value ? ' is-on' : ''}`}>
+      <span className="picker__label">{chosen ? chosen.label : (empty ?? label)}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>
+        {empty && <option value="">{empty}</option>}
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

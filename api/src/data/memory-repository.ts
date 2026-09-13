@@ -197,11 +197,25 @@ export class MemoryRepository implements Repository {
 
     const followed = new Set(query.followedSellerIds ?? []);
     items.sort((a, b) => {
-      // Followed sellers first - the seed of the personalised feed. Everything
-      // else falls back to recency, with a bump counting as recency.
-      const followRank = Number(followed.has(b.sellerId)) - Number(followed.has(a.sellerId));
-      if (followRank !== 0) return followRank;
-      return freshness(b).localeCompare(freshness(a));
+      // Followed sellers first - the seed of the personalised feed - but only
+      // while the reader has not asked for an order of their own. Someone who
+      // picked "cheapest first" wants the cheapest, not the cheapest among the
+      // people they follow.
+      if (!query.sort || query.sort === 'newest') {
+        const followRank = Number(followed.has(b.sellerId)) - Number(followed.has(a.sellerId));
+        if (followRank !== 0) return followRank;
+      }
+      switch (query.sort) {
+        case 'price_asc':
+          return a.priceMinor - b.priceMinor;
+        case 'price_desc':
+          return b.priceMinor - a.priceMinor;
+        case 'popular':
+          return b.likeCount - a.likeCount;
+        default:
+          // Recency, with a bump counting as recency.
+          return freshness(b).localeCompare(freshness(a));
+      }
     });
 
     return query.limit ? items.slice(0, query.limit) : items;

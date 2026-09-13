@@ -89,6 +89,25 @@ export const CATALOG_KIND_LABELS: Record<CatalogKind, string> = {
   in_hand: 'In hand',
 };
 
+/**
+ * How the results are ordered.
+ *
+ * Four, all of them over a field every listing carries. "Closing soon" is
+ * deliberately absent: it only means anything for a pre-order, and a sort that
+ * quietly hides two thirds of the catalog is a filter wearing a sort's clothes.
+ * Urgency on this marketplace belongs to the fill meter, which counts real
+ * shortfalls against a real cutoff.
+ */
+export const CATALOG_SORTS = ['newest', 'price_asc', 'price_desc', 'popular'] as const;
+export type CatalogSort = (typeof CATALOG_SORTS)[number];
+
+export const CATALOG_SORT_LABELS: Record<CatalogSort, string> = {
+  newest: 'Newest',
+  price_asc: 'Cheapest first',
+  price_desc: 'Dearest first',
+  popular: 'Most saved',
+};
+
 /** What a listing needs to carry for a kind to match it. */
 interface KindShape {
   preOrder: unknown;

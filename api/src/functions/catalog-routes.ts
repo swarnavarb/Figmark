@@ -52,6 +52,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     categories: group ? categoriesIn(group) : undefined,
     condition: request.query.get('condition') ?? undefined,
     kind: request.query.get('kind') ?? undefined,
+    sort: request.query.get('sort') ?? undefined,
     maxPriceMinor: numeric(request.query.get('maxPrice')),
     followedSellerIds,
   });
