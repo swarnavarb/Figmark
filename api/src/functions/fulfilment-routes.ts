@@ -95,7 +95,12 @@ async function myLots(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
 
-  const lots = await repository.listLots({ sellerId: user.id });
+  // A manager works the shop's consignments, not their own, where the shop has
+  // granted them that.
+  const sellerId = await lotsStoreFor(request, user, request.query.get('store') ?? undefined);
+  if (!sellerId) return error(403, 'forbidden', 'You cannot work the lots in that store.');
+
+  const lots = await repository.listLots({ sellerId });
   const withContents = await Promise.all(
     lots.map(async (lot) => {
       const [listings, orders] = await Promise.all([
@@ -109,12 +114,20 @@ async function myLots(request: HttpRequest, _context: InvocationContext) {
         unitCount: orders.reduce((sum, order) => sum + order.quantity, 0),
         weightGrams: orders.reduce((sum, o) => sum + o.quantity * o.unitWeightGrams, 0),
         valueMinor: orders.reduce((sum, o) => sum + o.quantity * o.unitPriceMinor, 0),
+        // The packing tally, off the orders already in hand. Managing a batch
+        // and tracking one were two screens asking for the same rows twice;
+        // this is the same answer at no extra cost.
+        tally: tally(orders),
       };
     }),
   );
 
+  // Most recently touched first: the batch that just moved is the batch being
+  // worked. Creation order would put a quiet old one above it.
+  withContents.sort((a, b) => (a.lot.updatedAt < b.lot.updatedAt ? 1 : -1));
+
   // Listings not yet in any batch: the seller's to-do list.
-  const all = await repository.listListings({ sellerId: user.id });
+  const all = await repository.listListings({ sellerId });
   return json(200, { lots: withContents, unassigned: all.filter((l) => l.lotId === null) });
 }
 

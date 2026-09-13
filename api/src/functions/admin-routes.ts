@@ -95,7 +95,7 @@ async function userDetail(request: HttpRequest, _context: InvocationContext) {
   if (!user) return error(404, 'not_found', 'No such account.');
 
   const [listings, lots, posts, purchases, sales, reviewsAbout] = await Promise.all([
-    repository.listListings({ sellerId: id }),
+    repository.listListings({ sellerId: id, includeHidden: true }),
     repository.listLots({ sellerId: id }),
     repository.listPostsByAuthor(id),
     repository.listOrdersForBuyer(id),
@@ -199,7 +199,7 @@ async function deleteAccount(request: HttpRequest, _context: InvocationContext) 
   // counterparty's record too, and erasing one side of a completed transaction
   // takes the other side's history with it.
   const [listings, lots, posts] = await Promise.all([
-    repository.listListings({ sellerId: id }),
+    repository.listListings({ sellerId: id, includeHidden: true }),
     repository.listLots({ sellerId: id }),
     repository.listPostsByAuthor(id),
   ]);

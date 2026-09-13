@@ -1246,7 +1246,11 @@ export class CosmosRepository implements Repository {
     const ranked = !query.sort || query.sort === 'newest';
     const spec = {
       query:
-        'SELECT * FROM c WHERE c.status = "active"' +
+        // The operations console passes @all, because it deletes what an
+        // account made and cannot do that from a filtered list. Everybody else
+        // gets the catalog: active, and not hidden behind a members' window.
+        'SELECT * FROM c WHERE (@all = true OR c.status = "active")' +
+        ' AND (@all = true OR NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)' +
         ' AND (@seller = "" OR c.sellerId = @seller)' +
         ' AND (@cat = "" OR c.category = @cat)' +
         ' AND (IS_NULL(@cats) OR ARRAY_CONTAINS(@cats, c.category))' +
@@ -1258,6 +1262,7 @@ export class CosmosRepository implements Repository {
         ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))' +
         catalogOrder(query.sort),
       parameters: [
+        { name: '@all', value: query.includeHidden === true },
         { name: '@seller', value: query.sellerId ?? '' },
         { name: '@cat', value: query.category ?? '' },
         // Null rather than an empty array: absent means every category, and an

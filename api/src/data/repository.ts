@@ -49,6 +49,15 @@ export interface CatalogQuery {
   kind?: string;
   /** See CATALOG_SORTS. Absent means newest first. */
   sort?: string;
+  /**
+   * Everything this seller has, whatever state it is in.
+   *
+   * For the operations console, which has to see what an account actually holds
+   * before deleting it. Every other caller wants the catalog: active, and not
+   * hidden behind a members' window. Deleting an account by way of a filtered
+   * list is how a row outlives the account that made it.
+   */
+  includeHidden?: boolean;
   maxPriceMinor?: number;
   /** Ranks listings from followed sellers first. */
   followedSellerIds?: readonly string[];

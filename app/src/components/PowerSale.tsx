@@ -100,11 +100,23 @@ export function PowerSalePanel({ storeId }: { storeId: string }) {
   );
 }
 
+/**
+ * A run, collapsed to one line until it is asked for.
+ *
+ * A shop with four sales scheduled wants to know two things at a glance: is it
+ * running, and when is it over. Everything else - which item is live, what it
+ * costs, how long its window has left - is the answer to a question they are
+ * only sometimes asking, so it waits behind a tap.
+ *
+ * Open by default while it is running, because that is the one a shop is
+ * actually watching.
+ */
 function SaleCard({ sale, storeId, onChanged }: {
   sale: PowerSaleView;
   storeId: string;
   onChanged: () => void | Promise<void>;
 }) {
+  const [open, setOpen] = useState(sale.status === 'running');
   const [busy, setBusy] = useState(false);
   const live = sale.status === 'running' || sale.status === 'scheduled';
 
@@ -118,64 +130,126 @@ function SaleCard({ sale, storeId, onChanged }: {
     }
   }
 
+  const pct = Math.round((sale.posted / Math.max(1, sale.total)) * 100);
+
   return (
-    <article className="card card--pad stack" style={{ gap: 11 }}>
-      <div className="row row--between">
-        <div style={{ minWidth: 0 }}>
-          <span className="card__title">{sale.name}</span>
+    <article className={`runcard${open ? ' is-open' : ''}`}>
+      <button type="button" className="runcard__head" onClick={() => setOpen((was) => !was)}
+        aria-expanded={open}>
+        <span className="runcard__chevron" aria-hidden="true" />
+        <span className="runcard__title">
+          <span className="runcard__name">{sale.name}</span>
           <span className="faint">
-            {sale.posted} of {sale.total} posted · one every {sale.everyMinutes} min ·{' '}
-            {sale.windowMinutes} min at the members&rsquo; price
+            {sale.posted} of {sale.total} out
+            {sale.status === 'done' && ' · all public'}
+            {sale.status === 'cancelled' && ' · stopped'}
           </span>
-        </div>
-        <span className={`badge ${STATUS_TONE[sale.status]}`}>{STATUS_LABEL[sale.status]}</span>
-      </div>
-
-      {/* How far through it is, at a glance. The same bar as everywhere else. */}
-      <div className="meter">
-        <div className="meter__fill" style={{ width: `${Math.round((sale.posted / Math.max(1, sale.total)) * 100)}%` }} />
-      </div>
-
-      <div className="runlist">
-        {sale.items.map((item) => (
-          <div key={item.id} className="runlist__row">
-            <span className="runlist__dot" data-state={item.postedAt ? (item.liftedAt ? 'done' : 'live') : 'waiting'} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {item.listingId ? (
-                <Link to={`/listing/${item.listingId}`} className="runlist__name personlink">{item.title}</Link>
-              ) : (
-                <span className="runlist__name">{item.title}</span>
-              )}
-              <span className="faint">
-                {formatMoney(item.priceMinor)} for members · {formatMoney(item.listPriceMinor)} after
-                {item.quantity > 1 && ` · ${item.quantity} up`}
-                {item.allowMultiple && ' · multiples allowed'}
-              </span>
-            </div>
-            <span className={`badge${item.liftedAt ? '' : item.postedAt ? ' badge--accent' : ''}`}>
-              {item.liftedAt
-                ? 'Public price'
-                : item.postedAt
-                  ? `${item.windowLeft} min left`
-                  : 'Queued'}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="row row--between">
-        <span className="faint">
-          {sale.openedAt
-            ? `Opened ${timeAgo(sale.openedAt)}`
-            : `Opens ${new Date(sale.openingAt).toLocaleString()}`}
         </span>
-        {live && (
-          <button className="btn btn--ghost btn--sm" onClick={() => void stop()} disabled={busy}>
-            Stop it
-          </button>
-        )}
+        <span className="runcard__right">
+          {/* The one number worth carrying on a collapsed row: when it is over. */}
+          {sale.finishesAt
+            ? <Countdown to={sale.finishesAt} />
+            : <span className={`badge ${STATUS_TONE[sale.status]}`}>{STATUS_LABEL[sale.status]}</span>}
+        </span>
+      </button>
+
+      <div className="runcard__bar" aria-hidden="true">
+        <span style={{ width: `${pct}%` }} />
       </div>
+
+      {open && (
+        <div className="runcard__body">
+          <div className="row row--between">
+            <span className="faint">
+              one every {sale.everyMinutes} min · {sale.windowMinutes} min at the members&rsquo; price
+            </span>
+            <span className={`badge ${STATUS_TONE[sale.status]}`}>{STATUS_LABEL[sale.status]}</span>
+          </div>
+
+          <div className="runlist">
+            {sale.items.map((item) => (
+              <div key={item.id} className="runlist__row">
+                <span className="runlist__dot" data-state={item.postedAt ? (item.liftedAt ? 'done' : 'live') : 'waiting'} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {item.listingId ? (
+                    <Link to={`/listing/${item.listingId}`} className="runlist__name personlink">{item.title}</Link>
+                  ) : (
+                    <span className="runlist__name">{item.title}</span>
+                  )}
+                  <span className="faint">
+                    {formatMoney(item.priceMinor)} for members · {formatMoney(item.listPriceMinor)} after
+                    {item.quantity > 1 && ` · ${item.quantity} up`}
+                    {item.allowMultiple && ' · multiples allowed'}
+                  </span>
+                </div>
+                <span className={`badge${item.liftedAt ? ' badge--ok' : item.postedAt ? ' badge--accent' : ''}`}>
+                  {item.liftedAt
+                    ? 'In the shop'
+                    : item.postedAt
+                      ? `${item.windowLeft} min left`
+                      : 'Queued'}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="row row--between">
+            <span className="faint">
+              {sale.openedAt
+                ? `Opened ${timeAgo(sale.openedAt)}`
+                : `Opens ${new Date(sale.openingAt).toLocaleString()}`}
+            </span>
+            {live && (
+              <button className="btn btn--ghost btn--sm" onClick={() => void stop()} disabled={busy}>
+                Stop it
+              </button>
+            )}
+          </div>
+
+          <p className="faint">
+            Items are in your channel only while their window is open. Each one joins the buy page
+            and your own grid the moment its window closes.
+          </p>
+        </div>
+      )}
     </article>
+  );
+}
+
+/**
+ * Time left, ticking.
+ *
+ * The deadline comes from the server, because the schedule is the server's: a
+ * browser left open overnight with a stale copy would count down to the wrong
+ * minute. Only the ticking is local.
+ */
+function Countdown({ to }: { to: string }) {
+  const [left, setLeft] = useState(() => Date.parse(to) - Date.now());
+
+  useEffect(() => {
+    setLeft(Date.parse(to) - Date.now());
+    // A minute apart once there is more than an hour on it: a second hand on a
+    // four-hour countdown is motion for its own sake, and a render a second for
+    // every card on the screen.
+    const step = Date.parse(to) - Date.now() > 3_600_000 ? 30_000 : 1_000;
+    const timer = window.setInterval(() => setLeft(Date.parse(to) - Date.now()), step);
+    return () => window.clearInterval(timer);
+  }, [to]);
+
+  if (left <= 0) return <span className="countdown countdown--done">handing over…</span>;
+
+  const total = Math.floor(left / 1000);
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+
+  return (
+    <span className="countdown" title={`All public by ${new Date(to).toLocaleString()}`}>
+      <span className="countdown__value">
+        {hours > 0 ? `${hours}h ${String(mins).padStart(2, '0')}m` : `${mins}m ${String(secs).padStart(2, '0')}s`}
+      </span>
+      <span className="countdown__label">to all public</span>
+    </span>
   );
 }
 

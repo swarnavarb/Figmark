@@ -88,6 +88,11 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     lotId: null,
     sourcing: 'in_hand',
     bundle: false,
+    // Out of the catalog while the window is open. The people in the room can
+    // buy it from the post that dropped it; nobody else can find it. That is
+    // the members' window - without this it is a price difference anyone
+    // browsing the buy page could take, which is not the same thing at all.
+    unlisted: true,
     photos: [],
     tags: [],
     likeCount: 0,
@@ -98,15 +103,42 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
   };
 }
 
+/** When the nth item is due out, counting from the opening message. */
+function dueAt(sale: PowerSale, index: number): number {
+  return Date.parse(sale.openingAt) + minutes(sale.leadMinutes ?? 0) + minutes(sale.everyMinutes) * index;
+}
+
+/**
+ * When the last item hands over, and the whole run is public.
+ *
+ * The one number a shop actually wants off a collapsed card: not how far
+ * through it is, but when it is over. Computed from the schedule rather than
+ * ticked down client-side, because the schedule is the server's - a browser
+ * left open overnight with a stale copy would count down to the wrong minute.
+ *
+ * Null once nothing is left to hand over.
+ */
+export function finishesAt(sale: PowerSale): string | null {
+  if (sale.status === 'done' || sale.status === 'cancelled') return null;
+
+  let last = 0;
+  sale.items.forEach((item, index) => {
+    if (item.liftedAt) return;
+    // Posted: its window is already running. Queued: it starts when its turn
+    // comes, which is the schedule plus its place in the queue.
+    const closes = item.windowEndsAt
+      ? Date.parse(item.windowEndsAt)
+      : dueAt(sale, index) + minutes(sale.windowMinutes);
+    if (closes > last) last = closes;
+  });
+
+  return last === 0 ? null : new Date(last).toISOString();
+}
+
 /** How much longer the members' price holds, in whole minutes. Never negative. */
 export function windowLeftMinutes(item: PowerSaleItem, now = new Date()): number {
   if (!item.windowEndsAt || item.liftedAt) return 0;
   return Math.max(0, Math.ceil((Date.parse(item.windowEndsAt) - now.getTime()) / 60_000));
-}
-
-/** When the nth item is due out, counting from the opening message. */
-function dueAt(sale: PowerSale, index: number): number {
-  return Date.parse(sale.openingAt) + minutes(sale.leadMinutes ?? 0) + minutes(sale.everyMinutes) * index;
 }
 
 /**
@@ -156,10 +188,14 @@ export async function advancePowerSale(
     if (!item.windowEndsAt || Date.parse(item.windowEndsAt) > now.getTime()) continue;
 
     const listing = await repository.getListing(item.listingId);
-    if (listing && listing.priceMinor !== item.listPriceMinor) {
+    if (listing) {
+      // The handover: the price goes up to what everybody else pays, and the
+      // item joins the catalog and the shop's own grid. Same listing, same id -
+      // a bookmark made during the sale still opens the thing it pointed at.
       await repository.updateListing({
         ...listing,
         priceMinor: item.listPriceMinor,
+        unlisted: false,
         updatedAt: stamp,
       });
     }
@@ -205,6 +241,31 @@ export async function advancePowerSale(
   if (!changed) return sale;
   sale.updatedAt = stamp;
   return repository.savePowerSale(sale);
+}
+
+/**
+ * End a run early, handing every item it has already posted to the catalog.
+ *
+ * Stopping a sale must not strand what it dropped. An unlisted item whose run
+ * was cancelled is reachable only by whoever still has the post in their
+ * scroll - invisible to the shop's own grid, unfindable on the buy page, and
+ * priced for a window that will never close.
+ */
+export async function releaseItems(repository: Repo, sale: PowerSale, now = new Date()): Promise<void> {
+  const stamp = now.toISOString();
+  for (const item of sale.items) {
+    if (!item.listingId || item.liftedAt) continue;
+    const listing = await repository.getListing(item.listingId);
+    if (!listing) continue;
+    await repository.updateListing({
+      ...listing,
+      priceMinor: item.listPriceMinor,
+      unlisted: false,
+      updatedAt: stamp,
+    });
+    item.liftedAt = stamp;
+    item.windowEndsAt = item.windowEndsAt ?? stamp;
+  }
 }
 
 /** Advance a shop's live sales, and hand back the list. */

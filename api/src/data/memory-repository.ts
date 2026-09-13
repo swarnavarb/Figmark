@@ -175,7 +175,13 @@ export class MemoryRepository implements Repository {
   }
 
   async listListings(query: CatalogQuery = {}): Promise<Listing[]> {
-    let items = [...this.listings.values()].filter((l) => l.status === 'active');
+    // Unlisted items are reachable by id and absent from every list: a sale
+    // item is buyable from the channel post that dropped it, and nowhere else,
+    // until its members' window closes. The operations console is the one
+    // caller that has to see them, because it deletes what an account made.
+    let items = [...this.listings.values()].filter(
+      (l) => query.includeHidden || (l.status === 'active' && !l.unlisted),
+    );
 
     if (query.sellerId) items = items.filter((l) => l.sellerId === query.sellerId);
     if (query.category) items = items.filter((l) => l.category === query.category);

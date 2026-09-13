@@ -362,6 +362,20 @@ export interface Listing extends BaseDocument {
    */
   sourcing?: Sourcing;
   /**
+   * Reachable, but not in the catalog.
+   *
+   * An item a scheduled sale has just dropped into a channel: it exists, it has
+   * a page, and the people in that room can buy it - but it is not on the buy
+   * page and not in the shop's own grid. That is the whole bargain of the
+   * members' window. When the window closes the flag comes off and it becomes
+   * an ordinary listing at the ordinary price, on the same id, so a bookmark
+   * made during the sale still works.
+   *
+   * Optional because every listing written before scheduled sales existed is in
+   * the catalog by definition.
+   */
+  unlisted?: boolean;
+  /**
    * Sold as one assorted lot rather than as a single item.
    *
    * A job lot - twelve blind-box figures, a shelf clearance, a box of loose

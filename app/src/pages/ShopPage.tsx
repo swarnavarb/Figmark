@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  CHECKPOINT_COUNT_LABELS, LOT_CARD_LABELS, STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
+  CHECKPOINT_COUNT_LABELS, LOT_CARD_LABELS, LOT_STAGES, LOT_STAGE_LABELS,
+  STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
 } from '@shared/enums';
 import { countOf, type LotTally } from '@shared/board';
@@ -14,14 +15,15 @@ import {
   type DashboardResponse,
   type StorefrontDraft,
   type ActivityResponse,
-  type BoardLot,
-  type LotsBoard,
+  type LotSummary,
+  type LotsResponse,
   type SaleRow,
   type SalesResponse,
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, Modal, Thumb, Tile } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
 import { PackingList } from './ExporterPage';
+import { BatchDetail, NewBatchForm } from './BatchesPage';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
@@ -208,7 +210,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       <div className="tab-view" key={`${store.ownerId}:${active}`}>
         {active === 'items' && <MyItems store={store} />}
         {active === 'payments' && <Payments store={store} />}
-        {active === 'lots' && <Tracking store={store} />}
+        {active === 'lots' && <Lots store={store} />}
         {active === 'packing' && <PackingList storeId={store.ownerId} />}
         {active === 'analytics' && <Analytics />}
         {active === 'storefront' && <StorefrontEditor />}
@@ -511,9 +513,6 @@ function MyItems({ store }: { store: StoreAccess }) {
         </EmptyState>
       ) : (
         <>
-          <div className="row">
-            <Link to="/batches" className="btn btn--ghost btn--sm">Manage batches</Link>
-          </div>
           <div className="grid">
             {mine.map((listing) => (
               <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
@@ -740,15 +739,27 @@ function RejectOrder({ row, onClose, onDone }: {
   );
 }
 
-function Tracking({ store }: { store: StoreAccess }) {
-  const [data, setData] = useState<LotsBoard | null>(null);
+/**
+ * Consignments: opening them, filling them, and watching them move.
+ *
+ * These were two screens - "Manage batches" out on its own page, and a tracking
+ * board in here - asking the database for the same rows twice and disagreeing
+ * about what a batch card looks like. A batch is one object with one lifecycle;
+ * splitting "administer it" from "watch it" put a trip out of the tab between a
+ * seller and the thing they were already looking at.
+ */
+function Lots({ store }: { store: StoreAccess }) {
+  const [data, setData] = useState<LotsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setError(null);
     try {
-      setData(await api.lotsBoard(store.isOwner ? undefined : store.ownerId));
+      setData(await api.myLots(store.isOwner ? undefined : store.ownerId));
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your batches.');
     }
   }, [store.ownerId, store.isOwner]);
 
@@ -756,87 +767,117 @@ function Tracking({ store }: { store: StoreAccess }) {
     void load();
   }, [load]);
 
+  if (openId) {
+    return <BatchDetail lotId={openId} onBack={() => { setOpenId(null); void load(); }} />;
+  }
+
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
-  if (data.lots.length === 0) {
-    return (
-      <EmptyState title="No lots yet">
-        A lot is one consignment. Open one from <Link to="/batches">Manage batches</Link>, or when you list
-        an imported item.
-      </EmptyState>
-    );
-  }
 
   return (
     <div className="stack">
-      {data.lots.map(({ lot, tally }) => (
-        <LotCard key={lot.id} lot={lot} tally={tally} store={store} />
-      ))}
+      {creating ? (
+        <NewBatchForm onDone={() => { setCreating(false); void load(); }} onCancel={() => setCreating(false)} />
+      ) : (
+        <button type="button" className="btn" style={{ justifySelf: 'start' }} onClick={() => setCreating(true)}>
+          <Icon name="plus" size={15} /> New batch
+        </button>
+      )}
+
+      {/* Items with nowhere to travel. Not an error - most items never need a
+          batch - but a seller who meant to file one wants to see it. */}
+      {data.unassigned.length > 0 && (
+        <div className="note-row">
+          <div style={{ minWidth: 0 }}>
+            <span className="card__title">{data.unassigned.length} not in a batch</span>
+            <span className="faint">
+              {data.unassigned.slice(0, 3).map((listing) => listing.title).join(' · ')}
+              {data.unassigned.length > 3 && ` and ${data.unassigned.length - 3} more`}
+            </span>
+          </div>
+          <span className="badge">Untracked</span>
+        </div>
+      )}
+
+      {data.lots.length === 0 ? (
+        <EmptyState icon="◲" title="No batches yet">
+          A batch is one consignment. Open one for your next run, then file the items travelling in
+          it — buyers never see the batch, only the tracking it produces.
+        </EmptyState>
+      ) : (
+        data.lots.map((summary) => (
+          <BatchCard key={summary.lot.id} summary={summary} store={store} onOpen={() => setOpenId(summary.lot.id)} />
+        ))
+      )}
     </div>
   );
 }
 
 /**
- * One lot at a glance.
+ * One consignment: what is in it, where it is, and the two things to do with it.
  *
- * The open lot is worth the whole card; a lot already on its way is a single
- * line, because the thing you do with it is open it, not read it. The arrow is
- * the way in either way.
+ * The counts collapse once it has left: a batch in transit is a tracking
+ * number and a stage, and the packing figures it was worked by are history the
+ * moment it is on a plane.
  */
-function LotCard({ lot, tally, store }: { lot: BoardLot; tally: LotTally; store: StoreAccess }) {
+function BatchCard({ summary, store, onOpen }: {
+  summary: LotSummary;
+  store: StoreAccess;
+  onOpen: () => void;
+}) {
+  const { lot, tally } = summary;
   const working = lot.stage === 'ordering';
-  const to = `/lot/${lot.id}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`;
-
-  if (!working) {
-    return (
-      <div className="lotcard lotcard--moving">
-        <div className="lotcard__head">
-          <span className="lotcard__name">{lot.name}</span>
-          <span className="lotcard__state">{LOT_CARD_LABELS[lot.stage as keyof typeof LOT_CARD_LABELS]}</span>
-        </div>
-        <Link to={to} className="lotcard__go" aria-label={`Open ${lot.name}`}>→</Link>
-      </div>
-    );
-  }
+  const board = `/lot/${lot.id}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`;
 
   return (
-    <div className="lotcard">
-      <div className="lotcard__head">
-        <span className="lotcard__name">{lot.name}</span>
-        <span className="lotcard__state">
-          {LOT_CARD_LABELS[lot.stage as keyof typeof LOT_CARD_LABELS]} — {tally.orders} orders
+    <article className={`batch${working ? '' : ' batch--moving'}`}>
+      <button type="button" className="batch__head" onClick={onOpen}>
+        <span className="batch__title">
+          <span className="batch__name">{lot.name}</span>
+          <span className="faint">
+            {LOT_CARD_LABELS[lot.stage as keyof typeof LOT_CARD_LABELS]}
+            {summary.listingCount > 0 && ` · ${summary.listingCount} items`}
+            {summary.orderCount > 0 && ` · ${summary.orderCount} orders`}
+            {lot.forwarder?.trackingReference && ` · ${lot.forwarder.trackingReference}`}
+          </span>
         </span>
-        <Link to={to} className="lotcard__go" aria-label={`Open ${lot.name}`}>→</Link>
+        <span className={`badge badge--${lot.stage === 'delivered' ? 'ok' : 'warn'}`}>
+          {LOT_STAGE_LABELS[lot.stage]}
+        </span>
+      </button>
+
+      <div className="batch__bar" aria-hidden="true">
+        <span style={{ width: `${((LOT_STAGES.indexOf(lot.stage) + 1) / LOT_STAGES.length) * 100}%` }} />
       </div>
 
-      <div className="lotcard__body">
-        <div className="tiles tiles--big">
-          <Tile value={String(tally.customers)} label="Customers" />
-          <Tile value={String(tally.orders)} label="Orders" />
-        </div>
+      {working && summary.orderCount > 0 && (
+        <div className="batch__body">
+          <div className="tiles">
+            <Tile value={String(tally.customers)} label="Customers" />
+            <Tile value={String(countOf(tally, 'packed').done)} label="Packed" tone="blue" />
+            <Tile value={`${tally.customersDispatched}/${tally.customers}`} label="Dispatched" tone="green" />
+          </div>
 
-        <div className="tiles">
-          <Tile value={String(countOf(tally, 'ready_to_dispatch').done)} label="Ready to dispatch" tone="blue" />
-          <Tile value={String(countOf(tally, 'packed').done)} label="Packed" tone="blue" />
-          <Tile value={`${tally.customersDispatched}/${tally.customers}`} label="Dispatched" tone="green" />
+          <div className="bars">
+            {tally.progress.map((row) => (
+              <div key={row.checkpoint} className="bar">
+                <span className="bar__label">{CHECKPOINT_COUNT_LABELS[row.checkpoint]}</span>
+                <span className="bar__track">
+                  <span className="bar__fill"
+                    style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }} />
+                </span>
+                <span className="bar__count">{row.done}/{row.total}</span>
+              </div>
+            ))}
+          </div>
         </div>
+      )}
 
-        <div className="bars">
-          {tally.progress.map((row) => (
-            <div key={row.checkpoint} className="bar">
-              <span className="bar__label">{CHECKPOINT_COUNT_LABELS[row.checkpoint]}</span>
-              <span className="bar__track">
-                <span
-                  className="bar__fill"
-                  style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }}
-                />
-              </span>
-              <span className="bar__count">{row.done}/{row.total}</span>
-            </div>
-          ))}
-        </div>
+      <div className="batch__foot">
+        <button type="button" className="btn btn--quiet btn--sm" onClick={onOpen}>Edit batch</button>
+        <Link to={board} className="btn btn--ghost btn--sm">Packing board →</Link>
       </div>
-    </div>
+    </article>
   );
 }
 

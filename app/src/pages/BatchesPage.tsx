@@ -134,7 +134,7 @@ function StageTrack({ stage }: { stage: Lot['stage'] }) {
   );
 }
 
-function NewBatchForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+export function NewBatchForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const [details, setDetails] = useState<LotDetails>(emptyLotDetails);
   const [forwarderName, setForwarderName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -228,7 +228,7 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
 }
 
 /** One batch: what's in it, how to move it, and where the tracking goes. */
-function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
+export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
   const [data, setData] = useState<LotContents | null>(null);
   const [unassigned, setUnassigned] = useState<LotsResponse['unassigned']>([]);
   const [error, setError] = useState<string | null>(null);

@@ -13,6 +13,8 @@ import {
   MIN_WINDOW_MINUTES,
   advanceAll,
   advancePowerSale,
+  finishesAt,
+  releaseItems,
   windowLeftMinutes,
 } from './power-sale.js';
 
@@ -91,6 +93,8 @@ function card(sale: PowerSale, now = new Date()) {
     closingBody: sale.closingBody,
     openedAt: sale.openedAt,
     closedAt: sale.closedAt,
+    /** When the last item hands over and the whole run is public. */
+    finishesAt: finishesAt(sale),
     posted,
     total: sale.items.length,
     items: sale.items.map((item) => ({
@@ -274,6 +278,10 @@ async function stop(request: HttpRequest, _context: InvocationContext) {
   if (sale.status === 'done' || sale.status === 'cancelled') {
     return error(409, 'already_over', 'That sale is already over.');
   }
+
+  // Whatever it already dropped goes to the catalog rather than being stranded
+  // out of it, priced for a window that will never close.
+  await releaseItems(repository, sale);
 
   const now = new Date().toISOString();
   sale.status = 'cancelled';

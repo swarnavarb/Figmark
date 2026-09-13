@@ -3414,6 +3414,91 @@ await check('a run posts its opening message and its first item', async () => {
   assert.ok(first.windowLeft > 0, 'the window is open');
 });
 
+await check('a live sale item is in the channel and nowhere else', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Members only',
+      openingBody: 'Starting now.',
+      everyMinutes: 1,
+      windowMinutes: 60,
+      items: [saleItem('Hidden while the window is open', 20_000, 30_000)],
+    },
+  }), ctx);
+  const item = made.jsonBody.sale.items[0];
+  assert.ok(item.listingId);
+
+  // Buyable by whoever is in the room: the page resolves, at the members' price.
+  const page = (await listingDetail(req({ params: { id: item.listingId } }), ctx)).jsonBody;
+  assert.equal(page.listing.priceMinor, 20_000);
+  assert.equal(page.listing.unlisted, true);
+
+  // And absent from every list. That is the whole bargain of the window - a
+  // price anybody browsing the buy page could take is not a members' price.
+  const catalog = (await feed(req(), ctx)).jsonBody.listings;
+  assert.ok(!catalog.some((listing) => listing.id === item.listingId), 'not on the buy page');
+
+  const mine = (await myActivity(req({ headers: auth }), ctx)).jsonBody.listings;
+  assert.ok(!mine.some((listing) => listing.id === item.listingId), "not in the shop's own grid");
+
+  // Searching for it by name does not surface it either.
+  const searched = (await feed(req({ query: { q: 'Hidden while' } }), ctx)).jsonBody.listings;
+  assert.equal(searched.length, 0);
+});
+
+await check('stopping a run hands over what it already dropped', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      openingBody: 'Short one.',
+      everyMinutes: 60,
+      windowMinutes: 60,
+      items: [saleItem('Dropped then stopped', 15_000, 21_000), saleItem('Never dropped', 15_000, 21_000)],
+    },
+  }), ctx);
+  const sale = made.jsonBody.sale;
+  const dropped = sale.items[0];
+  assert.ok(dropped.listingId);
+
+  await stopPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx);
+
+  // Stranding it would leave an item nobody can find, priced for a window that
+  // will never close.
+  const page = (await listingDetail(req({ params: { id: dropped.listingId } }), ctx)).jsonBody;
+  assert.equal(page.listing.unlisted, false);
+  assert.equal(page.listing.priceMinor, 21_000);
+  const catalog = (await feed(req(), ctx)).jsonBody.listings;
+  assert.ok(catalog.some((listing) => listing.id === dropped.listingId), 'it is on the buy page now');
+});
+
+await check('a run says when the last item hands over', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      openingBody: 'Three of them.',
+      leadMinutes: 0,
+      everyMinutes: 10,
+      windowMinutes: 30,
+      items: [
+        saleItem('One', 10_000, 14_000),
+        saleItem('Two', 10_000, 14_000),
+        saleItem('Three', 10_000, 14_000),
+      ],
+    },
+  }), ctx);
+  const sale = made.jsonBody.sale;
+
+  // The third is due at +20 minutes and its window shuts 30 after that, so the
+  // whole run is public about fifty minutes from now.
+  const minutesOut = (Date.parse(sale.finishesAt) - Date.now()) / 60_000;
+  assert.ok(minutesOut > 45 && minutesOut < 55, `expected about 50 minutes, got ${minutesOut}`);
+
+  // And nothing to count down to once it is over.
+  await stopPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx);
+  const stopped = (await readPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx)).jsonBody.sale;
+  assert.equal(stopped.finishesAt, null);
+});
+
 await check('an item nobody has taken goes public at the higher price', async () => {
   const made = await schedulePowerSale(req({
     headers: auth,
@@ -3447,6 +3532,11 @@ await check('an item nobody has taken goes public at the higher price', async ()
   const listed = (await listingDetail(req({ params: { id: item.listingId } }), ctx)).jsonBody;
   assert.equal(listed.listing.id, item.listingId);
   assert.equal(listed.listing.priceMinor, 44_000);
+
+  // And it joins the catalog, which is what "moves to the shop" means.
+  assert.equal(listed.listing.unlisted, false);
+  const catalog = (await feed(req(), ctx)).jsonBody.listings;
+  assert.ok(catalog.some((entry) => entry.id === item.listingId), 'it is on the buy page now');
 });
 
 await check('a members-only price has to actually be one', async () => {
@@ -3495,6 +3585,49 @@ await check('stopping a run leaves what it already said', async () => {
   assert.equal(after, posted);
   const again = await stopPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx);
   assert.equal(again.status, 409);
+});
+
+await check('deleting an account takes its hidden listings too', async () => {
+  // A sale item mid-window is out of every catalog, which is the point - but
+  // the operations console deletes what an account made, and a filtered list is
+  // how a row outlives the account that wrote it.
+  const seller = await signup(req({
+    body: {
+      displayName: 'Briefly Selling', username: 'briefly_selling',
+      email: 'briefly@figmark.example', phone: '+919000078801', password: 'longenough1',
+    },
+  }), ctx);
+  assert.equal(seller.status, 201, JSON.stringify(seller.jsonBody));
+  const theirs = { authorization: `Bearer ${seller.jsonBody.token}` };
+  const shop = await saveStorefront(req({
+    headers: theirs, body: { storefrontName: 'Briefly', username: 'briefly_shop' },
+  }), ctx);
+  assert.equal(shop.status, 200, JSON.stringify(shop.jsonBody));
+
+  const run = await schedulePowerSale(req({
+    headers: theirs,
+    body: {
+      openingBody: 'One item, starting now.',
+      everyMinutes: 1,
+      windowMinutes: 60,
+      items: [{
+        title: 'Hidden at deletion time', priceMinor: 11_000, listPriceMinor: 16_000,
+        category: 'Scale figures', condition: 'MISB', quantity: 1,
+      }],
+    },
+  }), ctx);
+  assert.equal(run.status, 201, JSON.stringify(run.jsonBody));
+  const hidden = run.jsonBody.sale.items[0].listingId;
+  assert.ok(hidden);
+  assert.equal((await listingDetail(req({ params: { id: hidden } }), ctx)).jsonBody.listing.unlisted, true);
+
+  const id = seller.jsonBody.user.id;
+  const seen = (await adminUser(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  assert.ok(seen.listings.some((listing) => listing.id === hidden), 'an operator sees it');
+
+  const deleted = await adminDeleteUser(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(deleted.status, 200);
+  assert.equal((await listingDetail(req({ params: { id: hidden } }), ctx)).status, 404, 'and it goes with them');
 });
 
 await check('a run belongs to the shop that scheduled it', async () => {

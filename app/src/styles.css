@@ -1084,6 +1084,79 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ── A scheduled run ───────────────────────────────────────────────────── */
 
+/* Collapsed to one line by default. A shop with four sales scheduled wants two
+   things at a glance - is it running, when is it over - and the rest is an
+   answer to a question they are only sometimes asking. */
+.runcard {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  overflow: hidden;
+  transition: border-color 0.18s;
+}
+.runcard.is-open { border-color: var(--border-strong); }
+
+.runcard__head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.runcard__head:hover { background: var(--surface-2); }
+
+.runcard__chevron {
+  width: 7px; height: 7px; flex: none;
+  border-right: 1.6px solid var(--text-faint);
+  border-bottom: 1.6px solid var(--text-faint);
+  transform: rotate(-45deg);
+  margin-left: 2px;
+  transition: transform 0.22s ease;
+}
+.runcard.is-open .runcard__chevron { transform: rotate(45deg); }
+
+.runcard__title { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.runcard__name {
+  font-size: var(--t-base);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.runcard__right { flex: none; }
+
+/* A hairline of progress along the card's own edge, so a collapsed row still
+   says how far through it is without spending a line on it. */
+.runcard__bar { height: 2px; background: var(--surface-2); }
+.runcard__bar span { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
+
+.runcard__body {
+  display: grid;
+  gap: 11px;
+  padding: 13px 14px 14px;
+  border-top: 1px solid var(--border);
+  animation: tab-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The countdown to everything being public. Tabular figures so the digits do
+   not shuffle sideways on every tick. */
+.countdown { display: grid; justify-items: end; gap: 1px; line-height: 1.15; }
+.countdown__value {
+  font-size: var(--t-sm);
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.countdown__label { font-size: 10px; color: var(--text-faint); letter-spacing: 0.02em; }
+.countdown--done { font-size: var(--t-xs); color: var(--ok); font-weight: 650; }
+
 .runlist { display: grid; gap: 0; }
 .runlist__row {
   display: flex; align-items: center; gap: 10px;
@@ -1158,6 +1231,57 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .sections::-webkit-scrollbar { display: none; }
 .sections .chip { flex: none; }
+
+/* ── A consignment ─────────────────────────────────────────────────────────
+   One card for the whole life of a batch: opening it, filling it, watching it
+   move. It replaced two - an admin card on its own page and a tracking card in
+   the sell tab - that described the same object and agreed about none of it. */
+
+.batch {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  overflow: hidden;
+}
+/* On its way: the packing figures it was worked by are history the moment it
+   is on a plane, so the card is a name, a stage and a tracking number. */
+.batch--moving { border-color: rgba(224, 165, 60, 0.3); }
+
+.batch__head {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0; background: none; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.batch__head:hover { background: var(--surface-2); }
+.batch__title { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.batch__name {
+  font-size: var(--t-base); font-weight: 650; letter-spacing: -0.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.batch__bar { height: 2px; background: var(--surface-2); }
+.batch__bar span { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
+
+.batch__body { display: grid; gap: 12px; padding: 13px 14px; border-top: 1px solid var(--border); }
+.batch__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 12px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* A line of context that is not a warning: "12 not in a batch" is a fact. */
+.note-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.note-row .faint { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Lot cards (tracking) ──────────────────────────────────────────────── */
 

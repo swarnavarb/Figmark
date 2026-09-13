@@ -170,6 +170,8 @@ export interface LotSummary {
   unitCount: number;
   weightGrams: number;
   valueMinor: number;
+  /** The packing tally, from the same orders the counts above came from. */
+  tally: LotTally;
 }
 
 export interface LotsResponse {
@@ -333,6 +335,8 @@ export interface PowerSaleView {
   closingBody: string;
   openedAt: string | null;
   closedAt: string | null;
+  /** When the last item hands over and the whole run is public. */
+  finishesAt: string | null;
   posted: number;
   total: number;
   items: PowerSaleItemView[];
@@ -744,7 +748,8 @@ export const api = {
 
   activity: () => request<ActivityResponse>('/me/activity'),
 
-  myLots: () => request<LotsResponse>('/me/lots'),
+  myLots: (storeId?: string) =>
+    request<LotsResponse>(`/me/lots${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
   createLot: (
     body: LotDetails & { forwarderUserId?: string; forwarderName?: string; forwarderContact?: string },
   ) => post<{ lot: Lot }>('/lots', body),
