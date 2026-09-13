@@ -1044,7 +1044,86 @@ export type NotificationKind =
   | 'preorder_nearly'
   | 'preorder_filled'
   | 'preorder_due'
-  | 'preorder_closed';
+  | 'preorder_closed'
+  | 'sale_opened'
+  | 'sale_item'
+  | 'order_rejected';
+
+/**
+ * A run of channel posts that sells things, on a timer the shop sets.
+ *
+ * The shape a group-buy shop already works in: a message to the followers
+ * saying the sale starts, then items posted one at a time so the channel has a
+ * rhythm to it, then a message saying it is over. What it replaces is a person
+ * sitting with a phone for two hours doing exactly that by hand.
+ *
+ * Each item opens at a members' price for a window the shop sets. When the
+ * window closes the item is not gone - it is listed publicly at the ordinary
+ * price, so the window is a reward for being in the channel rather than a
+ * penalty for missing it. Nothing is destroyed by being late.
+ */
+export interface PowerSale extends BaseDocument {
+  /** Partition key: a shop reads its own sales as a list. */
+  sellerId: string;
+  name: string;
+  status: PowerSaleStatus;
+  /** The message that opens it, posted to the channel. */
+  openingBody: string;
+  /** When that message goes out. In the past means "as soon as anyone looks". */
+  openingAt: string;
+  /**
+   * Minutes between the opening message and the first item.
+   *
+   * Its own number rather than reusing the gap between items, because they are
+   * different decisions: how long to let a room read "we are starting" is not
+   * the same question as how fast to drop things once it has. Zero means the
+   * first item goes out with the announcement.
+   */
+  leadMinutes: number;
+  /** Minutes between one item and the next. */
+  everyMinutes: number;
+  /** Minutes each item stays at the members' price. */
+  windowMinutes: number;
+  /** Posted once the last item has gone out. Optional; empty means none. */
+  closingBody: string;
+  items: PowerSaleItem[];
+  /** Set when the opening message actually went out. */
+  openedAt: string | null;
+  /** Set when the closing message went out, or when it was cancelled. */
+  closedAt: string | null;
+}
+
+export type PowerSaleStatus = 'draft' | 'scheduled' | 'running' | 'done' | 'cancelled';
+
+/** One item in a run, and what happened to it. */
+export interface PowerSaleItem {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  condition: ConditionTag;
+  /** What members pay while the window is open. */
+  priceMinor: number;
+  /**
+   * What it costs once the window closes.
+   *
+   * Never below the members' price: the window has to be worth being in the
+   * channel for, and a "discount" that is the same number as the public price
+   * is a lie told to people who trusted the shop enough to follow it.
+   */
+  listPriceMinor: number;
+  quantity: number;
+  /** Whether one buyer may take more than one of it. */
+  allowMultiple: boolean;
+  /** When the runner posted it to the channel. */
+  postedAt: string | null;
+  /** When the members' price stops. */
+  windowEndsAt: string | null;
+  /** Set when the window closed and the price went up. */
+  liftedAt: string | null;
+  /** The listing this became, once posted. */
+  listingId: string | null;
+}
 
 /**
  * A shared room.

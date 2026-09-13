@@ -1,3 +1,4 @@
+import type React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 /**
@@ -65,9 +66,13 @@ export function TabBar() {
 
   return (
     <nav className="tabbar" aria-label="Sections">
+      {/* Position and width both come from the index and the tab count, in CSS,
+          against the bar's padding box. Sizing it as a percentage of the whole
+          bar instead put it eight pixels past the right edge on the last tab -
+          enough to make the page scroll sideways. */}
       <span
         className="tabbar__pill"
-        style={{ transform: `translateX(${activeIndex * 100}%)`, width: `${100 / TABS.length}%` }}
+        style={{ '--i': activeIndex, '--tabs': TABS.length } as React.CSSProperties}
         aria-hidden="true"
       />
       {TABS.map((tab, index) => (

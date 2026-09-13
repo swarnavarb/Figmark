@@ -55,6 +55,11 @@ const { notificationsRoute: notifications, notificationsReadRoute: markRead } =
 const { preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge } =
   await import(new URL('preorder-routes.js', fns));
 const {
+  powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSale,
+  powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
+} = await import(new URL('power-sale-routes.js', fns));
+const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
+const {
   creditRoute: credit, pageReviewsRoute: pageReviews,
   writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
   saveProfileRoute: saveProfile,
@@ -91,7 +96,7 @@ const noticesFor = async (id) => (await getRepository()).listNotifications(id, 4
 const expireCampaign = async (id) => {
   const repository = await getRepository();
   const listing = await repository.getListing(id);
-  await repository.updatePreOrder({
+  await repository.updateListing({
     ...listing,
     preOrder: { ...listing.preOrder, cutoffAt: new Date(Date.now() - 1000).toISOString() },
   });
@@ -551,24 +556,67 @@ await check('an item with no batch behind it is in hand', async () => {
   assert.equal(quiet.jsonBody.listing.sourcing, 'in_hand');
 });
 
-await check('an import with no lot is refused, not quietly downgraded', async () => {
-  // The lot carries the stages a buyer waits on, so an imported item outside
-  // one has no tracking to give them. Saying so beats publishing a listing that
-  // claims an import and can never move.
-  const refused = await createListing(req({
-    headers: auth, body: { title: 'Import with nowhere to go', priceMinor: 5000, sourcing: 'import' },
+await check('an import can wait for its batch, and promises nothing until it has one', async () => {
+  // Filing an item into a batch is bookkeeping a shop does when the batch is
+  // being packed, often weeks after the item went up. Refusing the listing
+  // until then made shops either misdescribe the sourcing or not list at all.
+  const waiting = await createListing(req({
+    headers: auth, body: { title: 'Coming in the next run', priceMinor: 5000, sourcing: 'import' },
   }), ctx);
-  assert.equal(refused.status, 400);
-  assert.match(refused.jsonBody.message, /has to go in a lot/);
+  assert.equal(waiting.status, 201);
+  assert.equal(waiting.jsonBody.listing.sourcing, 'import');
+  assert.equal(waiting.jsonBody.listing.lotId, null);
+
+  // What it must not do is promise a date nothing can keep.
+  const page = (await listingDetail(req({ params: { id: waiting.jsonBody.listing.id } }), ctx)).jsonBody;
+  assert.equal(page.estimatedDispatchAt, null, 'an unfiled import has no dispatch date to give');
 });
 
-await check('no listing anywhere claims an import without a batch', async () => {
-  // The invariant, asserted across the whole catalog rather than one listing:
-  // sourcing follows the batch, both ways.
+await check('listing it can tell the channel and the feed at the same time', async () => {
+  const before = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  const made = await createListing(req({
+    headers: auth,
+    body: { title: 'Shared as it went up', priceMinor: 7_500, shareToChannel: true, shareToFeed: true },
+  }), ctx);
+  assert.equal(made.status, 201);
+
+  // One post, not two: a shop's channel is the record of everything it said,
+  // so a post that reaches the feed is already in the room.
+  const after = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.equal(after.posts.length, before.posts.length + 1, 'the channel heard about it, once');
+  assert.ok(
+    after.posts.some((card) => card.post.listingId === made.jsonBody.listing.id),
+    'and the post points at the item',
+  );
+
+  const feedPosts = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts;
+  assert.ok(
+    feedPosts.some((card) => card.post.listingId === made.jsonBody.listing.id),
+    'the feed heard about it too',
+  );
+
+  // Channel only stays in the channel, which is the whole reason the two are
+  // different choices.
+  const quiet = await createListing(req({
+    headers: auth, body: { title: 'Told the room only', priceMinor: 4_000, shareToChannel: true },
+  }), ctx);
+  const quietFeed = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts;
+  assert.ok(!quietFeed.some((card) => card.post.listingId === quiet.jsonBody.listing.id));
+});
+
+await check('an item in a batch is always an import, and never the reverse by accident', async () => {
+  // The invariant that still holds now a batch can be chosen later: a batch
+  // means import. The other direction is the seller's to state - an import
+  // waiting to be filed says so and simply has no dispatch date yet.
   const body = (await feed(req({ headers: auth }), ctx)).jsonBody;
   for (const listing of body.listings) {
-    const expected = listing.lotId ? 'import' : 'in_hand';
-    assert.equal(listing.sourcing, expected, `${listing.title} says ${listing.sourcing}`);
+    if (listing.lotId) {
+      assert.equal(listing.sourcing, 'import', `${listing.title} is in a batch but says ${listing.sourcing}`);
+    }
+    // And nothing promises a dispatch date it has no batch to get one from.
+    if (!listing.lotId) {
+      assert.equal(listing.estimatedDispatchAt, null, `${listing.title} has no batch but names a date`);
+    }
   }
 });
 
@@ -3324,6 +3372,243 @@ await check('a category nobody offers cannot be stored as one', async () => {
     headers: auth, body: { title: 'Mystery', priceMinor: 100, category: 'Whatever I Typed' },
   }), ctx);
   assert.equal(made.jsonBody.listing.category, 'Collectibles');
+});
+
+/* ── power selling ─────────────────────────────────────────────────────── */
+console.log('\nselling on a timer');
+
+const saleItem = (title, price, after, extra = {}) => ({
+  title, priceMinor: price, listPriceMinor: after,
+  category: 'Scale figures', condition: 'MISB', quantity: 1, ...extra,
+});
+
+await check('a run posts its opening message and its first item', async () => {
+  const before = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Friday drop',
+      openingBody: 'Friday drop starts now — an hour on each piece.',
+      closingBody: "That's the lot.",
+      everyMinutes: 1,
+      windowMinutes: 60,
+      items: [saleItem('First piece', 50_000, 65_000), saleItem('Second piece', 40_000, 52_000)],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+
+  const sale = made.jsonBody.sale;
+  assert.equal(sale.status, 'running', 'starting now means starting now');
+  assert.equal(sale.posted, 1, 'one item out, not both — a quiet night must not arrive as one scroll');
+
+  const after = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  // The opening message and the first item.
+  assert.equal(after.posts.length, before.posts.length + 2);
+
+  // The item is a real listing, open at the members' price.
+  const first = sale.items[0];
+  assert.ok(first.listingId);
+  const listed = (await listingDetail(req({ params: { id: first.listingId } }), ctx)).jsonBody;
+  assert.equal(listed.listing.priceMinor, 50_000);
+  assert.ok(first.windowLeft > 0, 'the window is open');
+});
+
+await check('an item nobody has taken goes public at the higher price', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Short window',
+      openingBody: 'One piece, five minutes.',
+      closingBody: 'Done.',
+      everyMinutes: 1,
+      // The floor, so the window can be run out inside a test rather than
+      // waited out.
+      windowMinutes: 5,
+      items: [saleItem('Ends quickly', 30_000, 44_000)],
+    },
+  }), ctx);
+  const sale = made.jsonBody.sale;
+  const item = sale.items[0];
+  assert.ok(item.listingId);
+
+  // Wind the window back rather than sleeping for it.
+  const repository = await getRepository();
+  const stored = await repository.getPowerSale('usr_demo', sale.id);
+  stored.items[0].windowEndsAt = new Date(Date.now() - 1000).toISOString();
+  await repository.savePowerSale(stored);
+
+  const again = (await readPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx)).jsonBody.sale;
+  assert.ok(again.items[0].liftedAt, 'the window closed');
+  assert.equal(again.status, 'done', 'and with nothing left queued, so is the run');
+
+  // Same listing, new price. Not a second listing: somebody who bookmarked it
+  // should find the item, not a dead link beside a fresh one.
+  const listed = (await listingDetail(req({ params: { id: item.listingId } }), ctx)).jsonBody;
+  assert.equal(listed.listing.id, item.listingId);
+  assert.equal(listed.listing.priceMinor, 44_000);
+});
+
+await check('a members-only price has to actually be one', async () => {
+  const same = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      openingBody: 'Starting.',
+      items: [saleItem('No discount at all', 20_000, 20_000)],
+    },
+  }), ctx);
+  assert.equal(same.status, 400);
+  assert.match(same.jsonBody.message, /above the members/);
+});
+
+await check('a run needs something to say and something to sell', async () => {
+  const silent = await schedulePowerSale(req({
+    headers: auth, body: { items: [saleItem('Lonely', 100, 200)] },
+  }), ctx);
+  assert.equal(silent.status, 400);
+
+  const empty = await schedulePowerSale(req({
+    headers: auth, body: { openingBody: 'Starting now.', items: [] },
+  }), ctx);
+  assert.equal(empty.status, 400);
+});
+
+await check('stopping a run leaves what it already said', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      openingBody: 'Long one.',
+      everyMinutes: 60,
+      windowMinutes: 60,
+      items: [saleItem('One', 10_000, 15_000), saleItem('Two', 10_000, 15_000)],
+    },
+  }), ctx);
+  const sale = made.jsonBody.sale;
+  const posted = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody.posts.length;
+
+  const stopped = await stopPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx);
+  assert.equal(stopped.status, 200);
+  assert.equal(stopped.jsonBody.sale.status, 'cancelled');
+
+  // Nothing is un-said, and nothing further goes out.
+  const after = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody.posts.length;
+  assert.equal(after, posted);
+  const again = await stopPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx);
+  assert.equal(again.status, 409);
+});
+
+await check('a run belongs to the shop that scheduled it', async () => {
+  const stranger = await signup(req({
+    body: { displayName: 'Not A Seller', email: 'nps@figmark.example', phone: '+919000077771', password: 'longenough1' },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+  // No storefront, so there is no shop to run one in.
+  const refused = await powerSales(req({ headers: theirs }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'no_storefront');
+
+  // And somebody else's shop is not theirs to post in.
+  const nosy = await powerSales(req({ headers: theirs, query: { store: 'usr_kaiju' } }), ctx);
+  assert.equal(nosy.status, 403);
+});
+
+/* ── turning an order down ─────────────────────────────────────────────── */
+console.log('\nwhen the shop cannot serve it');
+
+await check('a seller can turn an order down, and the stock comes back', async () => {
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Only one of these', priceMinor: 9_000, quantityAvailable: 1 },
+  }), ctx);
+  const id = listed.jsonBody.listing.id;
+
+  const buyer = await signup(req({
+    body: { displayName: 'Turned Down', email: 'td@figmark.example', phone: '+919000077772', password: 'longenough1' },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${buyer.jsonBody.token}` };
+  const placed = await createOrder(req({ headers: theirs, body: { listingId: id } }), ctx);
+  assert.equal(placed.status, 201);
+
+  // Sold out while it was held.
+  const soldOut = (await listingDetail(req({ params: { id } }), ctx)).jsonBody.listing;
+  assert.equal(soldOut.quantityAvailable, 0);
+
+  // A reason is required: the buyer is owed one.
+  const bare = await rejectOrder(req({
+    headers: auth, params: { id: placed.jsonBody.order.id }, body: { reason: '' },
+  }), ctx);
+  assert.equal(bare.status, 400);
+
+  const turned = await rejectOrder(req({
+    headers: auth, params: { id: placed.jsonBody.order.id },
+    body: { reason: 'Sold the last one this morning — sorry.' },
+  }), ctx);
+  assert.equal(turned.status, 200);
+  assert.equal(turned.jsonBody.order.status, 'cancelled');
+
+  // The unit goes back, and so does the listing.
+  const back = (await listingDetail(req({ params: { id } }), ctx)).jsonBody.listing;
+  assert.equal(back.quantityAvailable, 1);
+  assert.equal(back.status, 'active');
+
+  // And they are told, in the seller's own words.
+  const told = (await noticesFor(buyer.jsonBody.user.id)).filter((row) => row.kind === 'order_rejected');
+  assert.equal(told.length, 1);
+  assert.match(told[0].body, /Sold the last one/);
+});
+
+await check('a rejected pre-order gives its place back too', async () => {
+  const id = await openCampaign(10);
+  const buyer = await newBuyer('Rejected Booker');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: id, quantity: 2 } }), ctx);
+
+  const filled = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(filled.filledCount, 2);
+
+  await rejectOrder(req({
+    headers: auth, params: { id: placed.jsonBody.order.id },
+    body: { reason: 'The supplier pulled this line.' },
+  }), ctx);
+
+  const after = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(after.filledCount, 0, 'a cancelled order must not hold a place nobody can take');
+});
+
+await check('the buyer cannot turn down their own order, and neither side can once money is held', async () => {
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Held money', priceMinor: 12_000, quantityAvailable: 2 },
+  }), ctx);
+  const buyer = await newBuyer('Escrowed Buyer');
+  const placed = await createOrder(req({
+    headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id },
+  }), ctx);
+  const orderId = placed.jsonBody.order.id;
+
+  // The buyer is a party to it, but rejecting is the seller's word.
+  const wrongSide = await rejectOrder(req({
+    headers: buyer.headers, params: { id: orderId }, body: { reason: 'Changed my mind.' },
+  }), ctx);
+  assert.equal(wrongSide.status, 409);
+
+  // Once an escrow holds it, this is a refund or a dispute - different rules.
+  await payOrder(req({
+    headers: buyer.headers, params: { id: orderId },
+    body: { protection: true, escrowAgentId: 'usr_escrow_meera' },
+  }), ctx);
+  const tooLate = await rejectOrder(req({
+    headers: auth, params: { id: orderId }, body: { reason: 'Cannot serve it after all.' },
+  }), ctx);
+  assert.equal(tooLate.status, 409);
+});
+
+await check('every order a shop has to answer is on one screen', async () => {
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  // Three piles, and they need three different things: money confirmed,
+  // servability confirmed, and a record of what was already said.
+  for (const pile of ['waiting', 'placed', 'answered']) {
+    assert.ok(Array.isArray(board[pile]), `${pile} should be a list`);
+  }
+  assert.ok(board.answered.some((row) => row.status === 'cancelled'), 'a turned-down order is on the record');
+  assert.ok(board.placed.every((row) => row.paymentStatus === 'unpaid'));
 });
 
 console.log(`\n${passed} checks passed`);

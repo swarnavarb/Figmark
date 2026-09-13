@@ -288,8 +288,77 @@ export interface SaleRow {
   currency: string;
   buyer: PartyRef;
   paymentStatus: string;
+  status: string;
   claim: PaymentClaim | null;
   createdAt: string;
+}
+
+/** Everything a shop's payments screen has to answer, in three piles. */
+export interface SalesResponse {
+  /** They say they have paid. Waiting on a yes or no about the money. */
+  waiting: SaleRow[];
+  /** Ordered, not yet paid. Waiting to hear whether it can be served at all. */
+  placed: SaleRow[];
+  /** Already answered, most recent first. */
+  answered: SaleRow[];
+}
+
+/* ── Power selling ─────────────────────────────────────────────────────── */
+
+/** One item in a scheduled run, and what has happened to it. */
+export interface PowerSaleItemView {
+  id: string;
+  title: string;
+  priceMinor: number;
+  listPriceMinor: number;
+  quantity: number;
+  allowMultiple: boolean;
+  postedAt: string | null;
+  windowEndsAt: string | null;
+  liftedAt: string | null;
+  listingId: string | null;
+  /** Minutes of members' price left, computed server-side. */
+  windowLeft: number;
+}
+
+export interface PowerSaleView {
+  id: string;
+  name: string;
+  status: 'draft' | 'scheduled' | 'running' | 'done' | 'cancelled';
+  openingBody: string;
+  openingAt: string;
+  leadMinutes: number;
+  everyMinutes: number;
+  windowMinutes: number;
+  closingBody: string;
+  openedAt: string | null;
+  closedAt: string | null;
+  posted: number;
+  total: number;
+  items: PowerSaleItemView[];
+  createdAt: string;
+}
+
+/** A run as the builder submits it. */
+export interface PowerSaleDraft {
+  storeId?: string;
+  name: string;
+  openingBody: string;
+  openingAt: string | null;
+  leadMinutes: number;
+  everyMinutes: number;
+  windowMinutes: number;
+  closingBody: string;
+  items: {
+    title: string;
+    description: string;
+    category: string;
+    condition: string;
+    priceMinor: number;
+    listPriceMinor: number;
+    quantity: number;
+    allowMultiple: boolean;
+  }[];
 }
 
 export interface EscrowHolding {
@@ -358,6 +427,10 @@ export interface NewListing {
   storeId?: string;
   /** Sold as one assorted lot rather than as a single named item. */
   bundle?: boolean;
+  /** Tell the shop's followers, in its own channel. */
+  shareToChannel?: boolean;
+  /** Tell everyone, in the feed. Implies the channel — it is the same post. */
+  shareToFeed?: boolean;
   tags: string[];
 }
 
@@ -693,8 +766,26 @@ export const api = {
   settleClaim: (id: string, body: { accept: boolean; reason?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/settle-claim`, body),
   sales: (storeId?: string) =>
-    request<{ waiting: SaleRow[]; answered: SaleRow[] }>(
-      `/me/sales${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
+    request<SalesResponse>(`/me/sales${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+
+  /** The seller cannot serve an order. Puts the stock and the place back. */
+  rejectOrder: (id: string, reason: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reject`, { reason }),
+
+  powerSales: (storeId?: string) =>
+    request<{ sales: PowerSaleView[] }>(
+      `/power-sales${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
+    ),
+  createPowerSale: (draft: PowerSaleDraft) =>
+    post<{ sale: PowerSaleView }>('/power-sales/new', draft),
+  powerSale: (id: string, storeId?: string) =>
+    request<{ sale: PowerSaleView }>(
+      `/power-sales/${encodeURIComponent(id)}${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
+    ),
+  stopPowerSale: (id: string, storeId?: string) =>
+    post<{ sale: PowerSaleView }>(
+      `/power-sales/${encodeURIComponent(id)}/stop${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
+      {},
     ),
   payOrder: (id: string, protection: boolean, escrowAgentId?: string) =>
     post<{ order: Order; simulatedPayment: boolean }>(

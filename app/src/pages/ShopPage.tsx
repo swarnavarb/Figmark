@@ -17,18 +17,20 @@ import {
   type BoardLot,
   type LotsBoard,
   type SaleRow,
+  type SalesResponse,
 } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, Thumb, Tile } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, Modal, Thumb, Tile } from '../components/ui';
+import { PowerSalePanel } from '../components/PowerSale';
 import { PackingList } from './ExporterPage';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Section = 'items' | 'payments' | 'tracking' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'lots' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
   { id: 'payments', label: 'Payments' },
-  { id: 'tracking', label: 'Tracking' },
+  { id: 'lots', label: 'Lots' },
   { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
@@ -69,14 +71,20 @@ export function ShopPage() {
   if (stores.length === 0) {
     return (
       <main className="page tab-view">
+        <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start', marginBottom: 12 }}
+          onClick={() => setOpening(false)}>
+          <Icon name="back" size={14} /> Back
+        </button>
         <div className="page__head">
           <div>
-            <h1>Open a storefront</h1>
+            <h1>Open your storefront</h1>
             <p className="muted">
-              A name, a picture and a line about what you sell. You can change all of it later.
+              A name, a handle and a line about what you sell. Everything here can change later.
             </p>
           </div>
         </div>
+        {/* Saving is what makes the account a shop, so it lands straight back
+            in the sell tab - now as the console rather than this door. */}
         <StorefrontEditor onSaved={() => { setOpening(false); void load(); }} />
       </main>
     );
@@ -96,39 +104,28 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
   const { user } = useSession();
   return (
     <main className="page tab-view">
-      <div className="page__head">
-        <div>
-          <h1>Sell</h1>
-          <p className="muted">Everything is listed from a storefront. Opening one takes a minute.</p>
-        </div>
-      </div>
-
-      <div className="doors">
-        <button type="button" className="door" onClick={onOpen}>
-          <span className="door__glyph" aria-hidden="true">🏬</span>
-          <span className="door__title">Open a storefront</span>
-          <span className="door__note">
-            A username buyers can find you at, a name they follow, lot tracking, analytics, and people
-            you can bring in to help run it.
-          </span>
+      <div className="gate">
+        <span className="gate__mark" aria-hidden="true">🏬</span>
+        <h1 className="gate__title">Open your storefront</h1>
+        <p className="gate__note">
+          Everything on Figmark is sold from a shop — a name buyers follow, a handle they can find
+          you at, and a channel to sell in. It takes about a minute, and you can change all of it
+          afterwards.
+        </p>
+        <button type="button" className="btn btn--lg gate__go" onClick={onOpen}>
+          Open your storefront
         </button>
       </div>
 
       {/* Somebody may hold money for other people's trades without selling a
-          thing themselves, and their console has to be reachable. */}
+          thing themselves. Hiding this would strand them in a tab with one
+          door they do not want - it is a different role, not a second option
+          for a new seller. */}
       {user?.escrowRights && (
-        <Link to="/escrow" className="door" style={{ marginTop: 14 }}>
-          <span className="door__glyph" aria-hidden="true">🔒</span>
-          <span className="door__title">Escrow</span>
-          <span className="door__note">
-            Payments buyers have asked you to hold, and the disputes waiting on your decision.
-          </span>
+        <Link to="/escrow" className="btn btn--quiet" style={{ justifySelf: 'center', marginTop: 18 }}>
+          🔒 Open the escrow console instead
         </Link>
       )}
-
-      <p className="notice notice--info" style={{ marginTop: 16 }}>
-        Already helping run someone else's shop? It shows up here once they add you.
-      </p>
     </main>
   );
 }
@@ -154,7 +151,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     // the API checks rather than on a wider one.
     if (entry.id === 'payments') return store.permissions.includes('admin');
     if (entry.id === 'analytics') return store.permissions.includes('analytics');
-    if (entry.id === 'tracking') return store.permissions.includes('lots');
+    if (entry.id === 'lots') return store.permissions.includes('lots');
     if (entry.id === 'packing') return store.permissions.includes('export');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     return true;
@@ -171,16 +168,11 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
             {store.permissions.length} of {STORE_PERMISSIONS.length} rights.
           </p>
         </div>
-        <div className="row">
-          {user?.escrowRights && (
-            <Link to="/escrow" className="btn btn--ghost">🔒 Escrow</Link>
-          )}
-          {store.permissions.includes('listings') && (
-            <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn">
-              <Icon name="plus" size={15} /> List an item
-            </Link>
-          )}
-        </div>
+        {/* No "list an item" here: the Items tab opens with that door, and the
+            same button twice on one screen is one too many. */}
+        {user?.escrowRights && (
+          <Link to="/escrow" className="btn btn--ghost btn--sm">🔒 Escrow</Link>
+        )}
       </div>
 
       {stores.length > 1 && (
@@ -196,11 +188,13 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </label>
       )}
 
-      <div className="chips" style={{ marginBottom: 18 }}>
+      <div className="sections" role="tablist" aria-label="Shop sections">
         {visible.map((entry) => (
           <button
             key={entry.id}
             type="button"
+            role="tab"
+            aria-selected={active === entry.id}
             className={`chip${active === entry.id ? ' is-on' : ''}`}
             onClick={() => setSection(entry.id)}
           >
@@ -214,7 +208,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       <div className="tab-view" key={`${store.ownerId}:${active}`}>
         {active === 'items' && <MyItems store={store} />}
         {active === 'payments' && <Payments store={store} />}
-        {active === 'tracking' && <Tracking store={store} />}
+        {active === 'lots' && <Tracking store={store} />}
         {active === 'packing' && <PackingList storeId={store.ownerId} />}
         {active === 'analytics' && <Analytics />}
         {active === 'storefront' && <StorefrontEditor />}
@@ -461,6 +455,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
 function MyItems({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'stock' | 'power'>('stock');
 
   useEffect(() => {
     void api
@@ -472,68 +467,86 @@ function MyItems({ store }: { store: StoreAccess }) {
   }, []);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <p className="muted">Loading…</p>;
+
+  const mine = data?.listings.filter((listing) => listing.sellerId === store.ownerId) ?? [];
 
   return (
     <div className="stack">
-      {/* No second "list an item" here: the console header already carries it,
-          and two of the same button on one screen is one too many. */}
-      <div className="row">
-        <Link to="/batches" className="btn btn--ghost btn--sm">Manage batches</Link>
+      {/* Two ways to sell, and they are genuinely different jobs. One item put
+          up for whoever finds it, or a run of them dropped into the channel on
+          a timer. Both are here because a shop does both, at different hours. */}
+      <div className="doors doors--two">
+        <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="door">
+          <span className="door__glyph" aria-hidden="true">🏷️</span>
+          <span className="door__title">List an item</span>
+          <span className="door__note">One thing, up for anyone browsing.</span>
+        </Link>
+
+        <button type="button" className="door door--pro" onClick={() => setMode('power')}>
+          <span className="door__flag">Pro</span>
+          <span className="door__glyph" aria-hidden="true">⚡</span>
+          <span className="door__title">Start power selling</span>
+          <span className="door__note">A whole sale, on a timer, in your channel.</span>
+        </button>
       </div>
 
-      {data.listings.length === 0 ? (
+      <div className="seg" role="tablist" aria-label="Items view">
+        <button type="button" role="tab" aria-selected={mode === 'stock'}
+          className={mode === 'stock' ? 'is-on' : ''} onClick={() => setMode('stock')}>
+          Your stock{mine.length > 0 ? ` · ${mine.length}` : ''}
+        </button>
+        <button type="button" role="tab" aria-selected={mode === 'power'}
+          className={mode === 'power' ? 'is-on' : ''} onClick={() => setMode('power')}>
+          Scheduled sales
+        </button>
+      </div>
+
+      {mode === 'power' ? (
+        <PowerSalePanel storeId={store.ownerId} />
+      ) : !data ? (
+        <p className="muted">Loading…</p>
+      ) : mine.length === 0 ? (
         <EmptyState title="Nothing listed yet">
           Everything you list goes out under {store.name}. It takes about a minute.
         </EmptyState>
       ) : (
-        <div className="grid">
-          {data.listings.map((listing) => (
-            <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
-              <Thumb seed={listing.id} label={listing.title}>
-                <div className="thumb__badges">
-                  <span className="badge badge--solid">{listing.condition}</span>
+        <>
+          <div className="row">
+            <Link to="/batches" className="btn btn--ghost btn--sm">Manage batches</Link>
+          </div>
+          <div className="grid">
+            {mine.map((listing) => (
+              <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
+                <Thumb seed={listing.id} label={listing.title}>
+                  <div className="thumb__badges">
+                    <span className="badge badge--solid">{listing.condition}</span>
+                  </div>
+                </Thumb>
+                <div className="listing__body">
+                  <span className="listing__title">{listing.title}</span>
+                  <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                  <div className="listing__meta">
+                    {/* An item with no batch is not a problem to fix - most
+                        never need one. It says which it is and stops there. */}
+                    <span className={`badge${listing.lotId ? '' : ' badge--quiet'}`}>
+                      {listing.lotId ? 'In a batch' : 'No batch'}
+                    </span>
+                    <span className="faint">{listing.viewCount} views</span>
+                  </div>
                 </div>
-              </Thumb>
-              <div className="listing__body">
-                <span className="listing__title">{listing.title}</span>
-                <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-                <div className="listing__meta">
-                  <span className="badge">{listing.lotId ? 'In a batch' : 'No batch'}</span>
-                  <span className="faint">{listing.viewCount} views</span>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-/* ── Tracking ───────────────────────────────────────────────────────────── */
-
-/**
- * The lot board.
- *
- * One card per lot: who is in it, how much is in it, and how far each piece has
- * physically got. Every number is a count of orders past a checkpoint rather
- * than a state stored on the lot, because a crate does not arrive all at once -
- * thirty-three of thirty-four land and one is still with the supplier, and that
- * is exactly the thing worth seeing.
- */
-/**
- * Payments a buyer says they have sent.
- *
- * A direct sale ends here: somebody transferred money outside this app and the
- * only person who can confirm it landed is the one whose account it landed in.
- * So this is a queue of decisions rather than a feed of notifications — what is
- * waiting on this shop first, then what it has already answered, because a
- * denial the seller regrets should still be findable afterwards.
- */
 function Payments({ store }: { store: StoreAccess }) {
-  const [data, setData] = useState<{ waiting: SaleRow[]; answered: SaleRow[] } | null>(null);
+  const [data, setData] = useState<SalesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<SaleRow | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -551,40 +564,87 @@ function Payments({ store }: { store: StoreAccess }) {
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
 
-  if (data.waiting.length === 0 && data.answered.length === 0) {
+  const nothing = data.waiting.length === 0 && data.placed.length === 0 && data.answered.length === 0;
+  if (nothing) {
     return (
-      <EmptyState title="No payments to check">
-        When a buyer pays you directly and says so, it lands here for you to confirm.
+      <EmptyState title="Nothing waiting on you">
+        Every order lands here. You confirm the money arrived, or say you cannot serve it — and
+        either way the buyer hears from you rather than wondering.
       </EmptyState>
     );
   }
 
   return (
     <div className="stack">
+      {/* Money first: somebody has sent it and is waiting to hear. */}
       {data.waiting.length > 0 && (
-        <>
-          <h2 style={{ margin: 0 }}>Waiting on you</h2>
+        <section className="stack" style={{ gap: 8 }}>
+          <h2 className="sechead">
+            They say they have paid
+            <span className="badge badge--warn">{data.waiting.length}</span>
+          </h2>
           {data.waiting.map((row) => (
-            <Link key={row.id} to={`/order/${row.id}`} className="card card--pad salerow">
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 650 }}>{row.itemName}</div>
-                <span className="faint">
-                  {row.buyer.name} · said paid {timeAgo(row.claim?.claimedAt ?? row.createdAt)}
-                  {row.claim?.reference ? ` · ${row.claim.reference}` : ''}
-                </span>
-              </div>
-              <div className="row" style={{ alignItems: 'center' }}>
+            <div key={row.id} className="card card--pad stack" style={{ gap: 10 }}>
+              <div className="salerow">
+                <div style={{ minWidth: 0 }}>
+                  <Link to={`/order/${row.id}`} className="card__title">{row.itemName}</Link>
+                  <span className="faint">
+                    {row.buyer.name} · said paid {timeAgo(row.claim?.claimedAt ?? row.createdAt)}
+                    {row.claim?.reference ? ` · ${row.claim.reference}` : ''}
+                  </span>
+                </div>
                 <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
-                <span className="badge badge--warn">check it</span>
               </div>
-            </Link>
+              <div className="row">
+                {/* Confirming money is a decision about a specific transfer in a
+                    specific bank account, so it belongs on the order where the
+                    reference and the screenshot are. */}
+                <Link to={`/order/${row.id}`} className="btn btn--sm">Check the payment</Link>
+                <button type="button" className="btn btn--ghost btn--sm"
+                  onClick={() => setRejecting(row)}>
+                  Can&rsquo;t serve it
+                </button>
+              </div>
+            </div>
           ))}
-        </>
+        </section>
+      )}
+
+      {/* Then orders that have not been paid yet. The seller's answer here is
+          not about money at all - it is whether this can be served. */}
+      {data.placed.length > 0 && (
+        <section className="stack" style={{ gap: 8 }}>
+          <h2 className="sechead">
+            Ordered, not paid yet
+            <span className="badge">{data.placed.length}</span>
+          </h2>
+          {data.placed.map((row) => (
+            <div key={row.id} className="card card--pad stack" style={{ gap: 10 }}>
+              <div className="salerow">
+                <div style={{ minWidth: 0 }}>
+                  <Link to={`/order/${row.id}`} className="card__title">{row.itemName}</Link>
+                  <span className="faint">
+                    {row.buyer.name} · ordered {timeAgo(row.createdAt)}
+                    {row.quantity > 1 && ` · ${row.quantity} units`}
+                  </span>
+                </div>
+                <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
+              </div>
+              <div className="row row--between">
+                <span className="faint">Waiting on them to pay.</span>
+                <button type="button" className="btn btn--ghost btn--sm"
+                  onClick={() => setRejecting(row)}>
+                  Can&rsquo;t serve it
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
       )}
 
       {data.answered.length > 0 && (
-        <>
-          <h2 style={{ marginBottom: 0 }}>Already answered</h2>
+        <section className="stack" style={{ gap: 8 }}>
+          <h2 className="sechead">Already answered</h2>
           {data.answered.map((row) => (
             <Link key={row.id} to={`/order/${row.id}`} className="card card--pad salerow">
               <div style={{ minWidth: 0 }}>
@@ -595,15 +655,88 @@ function Payments({ store }: { store: StoreAccess }) {
               </div>
               <div className="row" style={{ alignItems: 'center' }}>
                 <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
-                <span className={`badge badge--${row.claim?.decision === 'accepted' ? 'ok' : 'warn'}`}>
-                  {row.claim?.decision === 'accepted' ? 'received' : 'not received'}
+                <span className={`badge badge--${
+                  row.status === 'cancelled' ? 'danger' : row.claim?.decision === 'accepted' ? 'ok' : 'warn'
+                }`}>
+                  {row.status === 'cancelled'
+                    ? 'turned down'
+                    : row.claim?.decision === 'accepted'
+                      ? 'received'
+                      : 'not received'}
                 </span>
               </div>
             </Link>
           ))}
-        </>
+        </section>
+      )}
+
+      {rejecting && (
+        <RejectOrder
+          row={rejecting}
+          onClose={() => setRejecting(null)}
+          onDone={() => { setRejecting(null); void load(); }}
+        />
       )}
     </div>
+  );
+}
+
+/**
+ * Turning an order down.
+ *
+ * Every order is a promise made before anything moves, and sometimes it cannot
+ * be kept: the stock went, the supplier pulled the line, the batch will not
+ * fill. The reason is required because the buyer is owed one - they may have
+ * already sent money - and because "cancelled" with no explanation is how a
+ * shop loses somebody who would otherwise have waited.
+ */
+function RejectOrder({ row, onClose, onDone }: {
+  row: SaleRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.rejectOrder(row.id, reason.trim());
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not turn that down.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Turn this order down" onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        <p className="muted">
+          {row.itemName} — {row.buyer.name}, {formatMoney(row.totalMinor, row.currency)}.
+        </p>
+        <label className="field">
+          <span>Why</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3}
+            placeholder="Sold the last one this morning — sorry. Happy to put you first on the next run." />
+          <span className="field__hint">
+            They see this word for word. If they have already sent money, say what happens to it.
+          </span>
+        </label>
+        {error && <p className="notice notice--error">{error}</p>}
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          The stock goes back on sale and, if they paid, the payment is marked for refund. This
+          cannot be undone — a new order would have to be placed.
+        </p>
+        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
+          {busy ? 'Sending…' : 'Turn it down'}
+        </button>
+      </form>
+    </Modal>
   );
 }
 

@@ -162,6 +162,19 @@ export const CONTAINERS = {
       'A campaign and everyone in it are read together - to draw the meter, to name the roster, and to call the pledges in when it fills - which is exactly one partition. One per person per campaign, enforced by the unique key rather than by remembering to check: a bar anyone can push twice measures enthusiasm, not demand.',
     uniqueKeyPaths: [['/userId']],
   },
+  powerSales: {
+    name: 'powerSales',
+    partitionKeyPath: '/sellerId',
+    rationale:
+      'A shop reads its own scheduled sales as a list, and the runner that posts them reads one at a time. Both are one partition. Nobody browses other shops\' sale plans, which is the only read this key would make expensive.',
+    excludedPaths: ['/items/*/description/?'],
+    compositeIndexes: [
+      [
+        { path: '/status', order: 'ascending' },
+        { path: '/openingAt', order: 'ascending' },
+      ],
+    ],
+  },
   comments: {
     name: 'comments',
     partitionKeyPath: '/listingId',

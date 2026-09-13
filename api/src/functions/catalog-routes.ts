@@ -148,6 +148,10 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     preOrder?: { fillThreshold: number; cutoffAt: string };
     /** The store to list into; absent means the caller's own. */
     storeId?: string;
+    /** Announce it in the shop's channel, to its followers. */
+    shareToChannel?: boolean;
+    /** Announce it in the feed, to everyone. */
+    shareToFeed?: boolean;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -197,20 +201,16 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     lotId = lot.id;
   }
 
-  // An import is a consignment, so it travels in one: a batch is what carries
-  // the stages a buyer waits on, and an imported item outside one has nowhere
-  // for its tracking to come from. So the batch decides the sourcing, and
-  // claiming an import without one is refused rather than quietly downgraded -
-  // a listing that says "import" and can never move is worse than being told to
-  // open a batch first.
-  if (!lotId && body.sourcing === 'import') {
-    return error(
-      400,
-      'invalid_listing',
-      'An imported item has to go in a lot. Create one, or list this as in hand.',
-    );
-  }
-  const sourcing: Sourcing = lotId ? 'import' : 'in_hand';
+  // An import travels in a consignment, and the consignment is what carries the
+  // stages a buyer waits on - but it does not have to exist yet. Filing an item
+  // into a batch is bookkeeping the shop does when the batch is actually being
+  // packed, often weeks after the item went up, and refusing the listing until
+  // then meant the shop either lied about sourcing or did not list at all.
+  //
+  // So an import may wait for its batch. What it must not do is hide that: the
+  // item says "import" with no dispatch estimate until it is filed, which is
+  // the truth, rather than a date nothing can keep.
+  const sourcing: Sourcing = lotId ? 'import' : (body.sourcing === 'import' ? 'import' : 'in_hand');
 
   const now = new Date().toISOString();
   const listing: Listing = {
@@ -252,7 +252,47 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     updatedAt: now,
   };
 
-  return json(201, { listing: await repository.createListing(listing) });
+  const created = await repository.createListing(listing);
+
+  // Telling people is part of listing, not a second job to remember. The
+  // channel is where a shop's followers already are; the feed is everybody.
+  // Both are opt-in per listing, because a shop that posts every item to
+  // everything is a shop people mute.
+  if (body.shareToChannel || body.shareToFeed) {
+    const shop = await repository.getUserById(sellerId);
+    const name = shop?.sellerProfile?.storefrontName ?? user.displayName;
+    const now2 = new Date().toISOString();
+    try {
+      await repository.createPost({
+        id: `pst_${randomUUID().slice(0, 12)}`,
+        channelId: sellerId,
+        channel: 'seller',
+        kind: 'sale',
+        authorId: user.id,
+        authorName: name,
+        body: listing.title,
+        listingId: created.id,
+        photoUrl: null,
+        likeCount: 0,
+        replyCount: 0,
+        voice: 'store',
+        // One post, not two. A shop's channel is the record of everything it
+        // said, so a post that reaches the feed is already in the channel -
+        // writing both would put the same item in the room twice.
+        reach: body.shareToFeed ? 'feed' : 'channel',
+        // A new item is news to the people who follow the shop for exactly
+        // this.
+        announcement: true,
+        createdAt: now2,
+        updatedAt: now2,
+      });
+    } catch {
+      // The item is listed either way. Losing the listing because a post
+      // failed would be the worse half of the trade.
+    }
+  }
+
+  return json(201, { listing: created });
 }
 
 /** POST /api/listings/{id}/like - toggle a bookmark. */

@@ -321,20 +321,32 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     currency: order.currency,
     buyer: buyers.get(order.buyerId) ?? personRef(null),
     paymentStatus: order.paymentStatus,
+    status: order.status,
     claim: order.paymentClaim ?? null,
     createdAt: order.createdAt,
   });
 
-  const waiting = orders.filter((order) => order.paymentStatus === 'claimed');
+  // Three piles, because they need three different things from the seller.
+  // Somebody who has said they paid is waiting on a yes or no about money.
+  // Somebody who has only ordered is waiting to hear whether it can be served
+  // at all - that used to be invisible here, so an order the shop could not
+  // fill simply sat there and the buyer found out by never receiving anything.
+  const waiting = orders
+    .filter((order) => order.paymentStatus === 'claimed' && order.status !== 'cancelled')
+    .sort((a, b) => (a.paymentClaim?.claimedAt ?? '').localeCompare(b.paymentClaim?.claimedAt ?? ''));
+
+  const placed = orders
+    .filter((order) => order.status === 'pending_payment' && order.paymentStatus === 'unpaid')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
   const answered = orders
-    .filter((order) => order.paymentClaim?.decision)
-    .sort((a, b) => (b.paymentClaim!.decidedAt ?? '').localeCompare(a.paymentClaim!.decidedAt ?? ''))
-    .slice(0, 10);
+    .filter((order) => order.paymentClaim?.decision || order.status === 'cancelled')
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 12);
 
   return json(200, {
-    waiting: waiting
-      .sort((a, b) => (a.paymentClaim?.claimedAt ?? '').localeCompare(b.paymentClaim?.claimedAt ?? ''))
-      .map(row),
+    waiting: waiting.map(row),
+    placed: placed.map(row),
     answered: answered.map(row),
   });
 }

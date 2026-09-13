@@ -668,7 +668,92 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
 
 export const payRoute = handler(pay);
 export const claimPaymentRoute = handler(claimPayment);
+/**
+ * POST /api/orders/{id}/reject - the seller cannot serve this order.
+ *
+ * Every order on this marketplace is a promise made before anything moves: the
+ * stock may have gone, the supplier may have pulled the line, the batch may not
+ * fill. The seller needs a way to say so that is not silence, and the buyer
+ * needs it to be a thing that happened rather than an order that quietly never
+ * arrives.
+ *
+ * It puts back everything the order took: the stock, and the place it held in a
+ * pre-order. Refused once money is being held, because that is a refund or a
+ * dispute - different rules, different screen, and an escrow that can be
+ * emptied by one side calling it off is not an escrow.
+ */
+async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('reject')) {
+    return error(409, 'cannot_reject', 'This order has gone too far to be called off here.');
+  }
+
+  let body: { reason?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  const reason = (body.reason ?? '').trim();
+  // Somebody is waiting on an item, and possibly on money they have already
+  // sent. A rejection they cannot understand is one they cannot act on.
+  if (reason.length < 4) {
+    return error(400, 'no_reason', 'Say why, so the buyer knows where they stand.');
+  }
+
+  const now = new Date().toISOString();
+  order.status = 'cancelled';
+  // Any claim on it is answered by the same act: the order is off, so the
+  // money - if it was sent - is going back rather than being confirmed.
+  if (order.paymentClaim && !order.paymentClaim.decision) {
+    order.paymentClaim.decision = 'denied';
+    order.paymentClaim.decidedAt = now;
+    order.paymentClaim.decidedReason = reason;
+  }
+  if (order.paymentStatus === 'paid' || order.paymentStatus === 'claimed') {
+    order.paymentStatus = 'refunded';
+  }
+  order.updatedAt = now;
+  note(order, `Seller could not serve this order: ${reason}`, user.id);
+  await repository.updateOrder(order);
+
+  // Put back what the order took. A cancelled order that still holds a unit is
+  // stock nobody can buy and a pre-order that can never fill.
+  const listing = await repository.getListing(order.listingId);
+  if (listing) {
+    await repository.updateListing({
+      ...listing,
+      quantityAvailable: listing.quantityAvailable + order.quantity,
+      status: listing.status === 'sold_out' ? 'active' : listing.status,
+      preOrder: listing.preOrder
+        ? {
+            ...listing.preOrder,
+            filledCount: Math.max(0, listing.preOrder.filledCount - order.quantity),
+          }
+        : null,
+      updatedAt: now,
+    });
+  }
+
+  await notify(repository, [order.buyerId], {
+    kind: 'order_rejected',
+    title: `${order.itemName} could not be sold to you`,
+    body: reason,
+    link: `/order/${order.id}`,
+  });
+
+  return json(200, { order });
+}
+
 export const settleClaimRoute = handler(settleClaim);
+export const rejectOrderRoute = handler(rejectOrder);
 export const confirmRoute = handler(confirm);
 export const reviewRoute = handler(review);
 export const orderStateRoute = handler(orderState);
@@ -679,6 +764,7 @@ const anon = { authLevel: 'anonymous' } as const;
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });
 app.http('order-claim-payment', { ...anon, methods: ['POST'], route: 'orders/{id}/claim-payment', handler: claimPaymentRoute });
 app.http('order-settle-claim', { ...anon, methods: ['POST'], route: 'orders/{id}/settle-claim', handler: settleClaimRoute });
+app.http('order-reject', { ...anon, methods: ['POST'], route: 'orders/{id}/reject', handler: rejectOrderRoute });
 app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/confirm', handler: confirmRoute });
 app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
 app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state', handler: orderStateRoute });

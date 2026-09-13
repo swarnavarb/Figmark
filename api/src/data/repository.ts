@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -175,13 +175,23 @@ export interface Repository {
    */
   listPledgedListingIds(userId: string): Promise<string[]>;
   /**
-   * Rewrite one listing's pre-order block.
+   * Rewrite one listing, whole.
    *
-   * The counters are denormalised onto the listing so the feed can draw a
-   * meter without reading the pledges of every card on the page. That only
-   * holds if there is one way to write them, so this is it.
+   * One way to write a listing after it exists, because several would drift:
+   * this was `updatePreOrder` and the in-memory version copied only the
+   * pre-order block across, so a price change made through it was written on
+   * Cosmos and silently dropped in every test.
    */
-  updatePreOrder(listing: Listing): Promise<Listing>;
+  updateListing(listing: Listing): Promise<Listing>;
+  /**
+   * A shop's scheduled sales, newest first.
+   *
+   * One partition. The runner that posts them reads the same list, because
+   * there is no scheduler here: a sale is advanced by somebody looking at it.
+   */
+  listPowerSales(sellerId: string): Promise<PowerSale[]>;
+  getPowerSale(sellerId: string, id: string): Promise<PowerSale | null>;
+  savePowerSale(sale: PowerSale): Promise<PowerSale>;
   /** Everything waiting for one person, newest first. */
   listNotifications(userId: string, limit?: number): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;
@@ -230,6 +240,15 @@ export interface Repository {
   /** Toggles a follow. Returns the resulting state. */
   toggleFollow(followerId: string, sellerId: string): Promise<boolean>;
   listFollowedSellerIds(followerId: string): Promise<string[]>;
+  /**
+   * Who follows one shop.
+   *
+   * The reverse of the read `follows` is partitioned for, so it is
+   * cross-partition and bounded by a shop's follower count rather than by how
+   * many follows exist. Read when the shop has something to tell them, which is
+   * rare and deliberate - not on any page render.
+   */
+  listFollowerIds(sellerId: string): Promise<string[]>;
 
   /** Saves an edited account - the storefront editor is the only caller. */
   updateUser(user: User): Promise<User>;

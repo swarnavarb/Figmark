@@ -40,6 +40,8 @@ export function SellPage() {
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [bundle, setBundle] = useState(false);
+  const [shareToChannel, setShareToChannel] = useState(true);
+  const [shareToFeed, setShareToFeed] = useState(false);
   const [preOrderMode, setPreOrderMode] = useState(false);
   const [fillThreshold, setFillThreshold] = useState('20');
   const [cutoffDays, setCutoffDays] = useState('14');
@@ -79,7 +81,9 @@ export function SellPage() {
 
   const priceMinor = Math.round(Number(price || 0) * 100);
   // A lot listing needs a lot; there is nothing to publish into otherwise.
-  const canPublish = title.trim().length > 2 && priceMinor > 0 && (shape === 'single' || lotId !== '');
+  // A batch is bookkeeping the shop does when the batch is packed, which is
+  // usually long after the item goes up. Nothing waits on it.
+  const canPublish = title.trim().length > 2 && priceMinor > 0;
   // The lot is the answer: in one means import, out of one means in hand.
   const effectiveSourcing: Sourcing = shape === 'lot' ? 'import' : 'in_hand';
 
@@ -96,6 +100,8 @@ export function SellPage() {
         priceMinor,
         quantityAvailable: Math.max(1, Number(quantity) || 1),
         bundle,
+        shareToChannel,
+        shareToFeed,
         preOrder: preOrderMode
           ? {
               fillThreshold: Math.max(2, Number(fillThreshold) || 2),
@@ -201,6 +207,33 @@ export function SellPage() {
             </span>
           </label>
 
+          {/* Telling people is part of listing, not a second job to remember
+              afterwards - which is how a shop ends up with a channel nobody
+              reads because nothing is ever posted in it. */}
+          <div className="field">
+            <span>Tell people</span>
+            <label className="row" style={{ gap: 9, alignItems: 'flex-start' }}>
+              <input type="checkbox" checked={shareToChannel} style={{ marginTop: 3 }}
+                onChange={(e) => setShareToChannel(e.target.checked)} />
+              <span>
+                <span style={{ fontSize: 'var(--t-sm)' }}>Post it in your channel</span>
+                <span className="field__hint" style={{ display: 'block' }}>
+                  Your followers see it in the room. Nobody else does.
+                </span>
+              </span>
+            </label>
+            <label className="row" style={{ gap: 9, alignItems: 'flex-start', marginTop: 8 }}>
+              <input type="checkbox" checked={shareToFeed} style={{ marginTop: 3 }}
+                onChange={(e) => setShareToFeed(e.target.checked)} />
+              <span>
+                <span style={{ fontSize: 'var(--t-sm)' }}>Post it in the feed</span>
+                <span className="field__hint" style={{ display: 'block' }}>
+                  Everyone who follows you sees it in their feed as well.
+                </span>
+              </span>
+            </label>
+          </div>
+
           <div className="field-row">
             <label className="field">
               <span>Price (₹)</span>
@@ -273,24 +306,27 @@ export function SellPage() {
               </p>
             ) : (
               <label className="field">
-                <span>Lot</span>
-                {lots.length > 0 ? (
-                  <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
-                    {lots.map((lot) => (
-                      <option key={lot.id} value={lot.id}>
-                        {lot.name}{lot.origin ? ` — ${lot.origin}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="field__hint">
-                    You have no open lots yet. Every imported item travels in one, so create a lot and this
-                    item goes straight into it.
-                  </span>
-                )}
+                <span>Batch</span>
+                {/* Filing an item into a batch is bookkeeping done when the
+                    batch is actually being packed, often weeks after the item
+                    went up. Requiring it here made shops either misdescribe the
+                    sourcing or not list at all, so "later" is a real answer. */}
+                <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
+                  <option value="">File it into a batch later</option>
+                  {lots.map((lot) => (
+                    <option key={lot.id} value={lot.id}>
+                      {lot.name}{lot.origin ? ` — ${lot.origin}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <span className="field__hint">
+                  {lotId
+                    ? 'Buyers follow this batch through customs and get its dispatch estimate.'
+                    : 'It goes up as an import with no dispatch date until you file it — any time, from Items.'}
+                </span>
                 <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start', marginTop: 8 }}
                   onClick={() => setCreatingLot(true)}>
-                  <Icon name="plus" size={14} /> New lot
+                  + New batch
                 </button>
               </label>
             )}

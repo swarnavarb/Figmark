@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import { matchesKind, matchesSearch } from '../../../shared/catalog.js';
@@ -62,6 +62,7 @@ export class MemoryRepository implements Repository {
   private readonly wantOffers = new Map<string, WantOffer>();
   private readonly wantSeekers = new Map<string, WantSeeker>();
   private readonly pledges = new Map<string, Pledge>();
+  private readonly powerSales = new Map<string, PowerSale>();
   private readonly notifications = new Map<string, Notification>();
   private readonly disputes = new Map<string, Dispute>();
   /** `@username` -> who holds it. Mirrors the reservations in `identifiers`. */
@@ -366,6 +367,10 @@ export class MemoryRepository implements Repository {
     return [...this.follows.values()].filter((f) => f.followerId === followerId).map((f) => f.sellerId);
   }
 
+  async listFollowerIds(sellerId: string): Promise<string[]> {
+    return [...this.follows.values()].filter((f) => f.sellerId === sellerId).map((f) => f.followerId);
+  }
+
   async updateUser(user: User): Promise<User> {
     this.indexUser(user);
     return user;
@@ -492,12 +497,26 @@ export class MemoryRepository implements Repository {
       .map((pledge) => pledge.listingId);
   }
 
-  async updatePreOrder(listing: Listing): Promise<Listing> {
-    const stored = this.listings.get(listing.id);
-    if (!stored) return listing;
-    stored.preOrder = listing.preOrder;
-    stored.updatedAt = new Date().toISOString();
-    return stored;
+  async updateListing(listing: Listing): Promise<Listing> {
+    const updated = { ...listing, updatedAt: new Date().toISOString() };
+    this.listings.set(listing.id, updated);
+    return updated;
+  }
+
+  async listPowerSales(sellerId: string): Promise<PowerSale[]> {
+    return [...this.powerSales.values()]
+      .filter((sale) => sale.sellerId === sellerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getPowerSale(sellerId: string, id: string): Promise<PowerSale | null> {
+    const sale = this.powerSales.get(id);
+    return sale && sale.sellerId === sellerId ? sale : null;
+  }
+
+  async savePowerSale(sale: PowerSale): Promise<PowerSale> {
+    this.powerSales.set(sale.id, sale);
+    return sale;
   }
 
   async listNotifications(userId: string, limit = 40): Promise<Notification[]> {

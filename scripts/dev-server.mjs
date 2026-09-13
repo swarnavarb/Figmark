@@ -38,7 +38,7 @@ const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUserna
   await import(new URL('message-routes.js', apiRoot));
 const {
   payRoute, confirmRoute, reviewRoute, orderStateRoute, checkoutRoute,
-  claimPaymentRoute, settleClaimRoute,
+  claimPaymentRoute, settleClaimRoute, rejectOrderRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
@@ -47,6 +47,9 @@ const { notificationsRoute, notificationsReadRoute } =
   await import(new URL('notification-routes.js', apiRoot));
 const { preOrderReadRoute, preOrderPledgeRoute } =
   await import(new URL('preorder-routes.js', apiRoot));
+const {
+  powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
+} = await import(new URL('power-sale-routes.js', apiRoot));
 const { creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute } =
   await import(new URL('profile-routes.js', apiRoot));
 const {
@@ -112,6 +115,7 @@ const routes = [
   ['POST', '/api/orders/:id/pay', payRoute],
   ['POST', '/api/orders/:id/claim-payment', claimPaymentRoute],
   ['POST', '/api/orders/:id/settle-claim', settleClaimRoute],
+  ['POST', '/api/orders/:id/reject', rejectOrderRoute],
   ['POST', '/api/orders/:id/confirm', confirmRoute],
   ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],
@@ -137,6 +141,10 @@ const routes = [
   ['POST', '/api/wants/:id/offers', wantOfferRoute],
   ['POST', '/api/wants/:id/close', wantCloseRoute],
   ['POST', '/api/wants/:id/me', wantAlsoMeRoute],
+  ['GET', '/api/power-sales', powerSalesRoute],
+  ['POST', '/api/power-sales/new', powerSaleCreateRoute],
+  ['GET', '/api/power-sales/:id', powerSaleReadRoute],
+  ['POST', '/api/power-sales/:id/stop', powerSaleStopRoute],
   ['GET', '/api/listings/:id/preorder', preOrderReadRoute],
   ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
   ['GET', '/api/notifications', notificationsRoute],

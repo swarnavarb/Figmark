@@ -3,7 +3,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
 import { matchesSearch } from '../../../shared/catalog.js';
@@ -961,11 +961,33 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
-  async updatePreOrder(listing: Listing): Promise<Listing> {
+  async updateListing(listing: Listing): Promise<Listing> {
     const { resource } = await this.container('listings')
       .item(listing.id, listing.sellerId)
       .replace({ ...listing, updatedAt: new Date().toISOString() });
     return (resource as Listing | undefined) ?? listing;
+  }
+
+  async listPowerSales(sellerId: string): Promise<PowerSale[]> {
+    const { resources } = await this.container('powerSales')
+      .items.query<PowerSale>({ query: 'SELECT * FROM c ORDER BY c.createdAt DESC' }, { partitionKey: sellerId })
+      .fetchAll();
+    return resources;
+  }
+
+  async getPowerSale(sellerId: string, id: string): Promise<PowerSale | null> {
+    try {
+      const { resource } = await this.container('powerSales').item(id, sellerId).read<PowerSale>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async savePowerSale(sale: PowerSale): Promise<PowerSale> {
+    const { resource } = await this.container('powerSales').items.upsert<PowerSale>(sale);
+    return resource!;
   }
 
   async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
@@ -1483,6 +1505,16 @@ export class CosmosRepository implements Repository {
       .items.query<Follow>({ query: 'SELECT * FROM c' }, { partitionKey: followerId })
       .fetchAll();
     return resources.map((follow) => follow.sellerId);
+  }
+
+  async listFollowerIds(sellerId: string): Promise<string[]> {
+    const { resources } = await this.container('follows')
+      .items.query<string>({
+        query: 'SELECT VALUE c.followerId FROM c WHERE c.sellerId = @sellerId',
+        parameters: [{ name: '@sellerId', value: sellerId }],
+      })
+      .fetchAll();
+    return resources;
   }
 
   private async queryBySeller<T>(name: 'lots', query: CatalogQuery): Promise<T[]> {

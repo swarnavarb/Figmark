@@ -179,7 +179,7 @@ export async function reconcilePreOrder(
 
   if (!changed) return { listing, pledges, orders };
 
-  const saved = await repository.updatePreOrder({ ...listing, preOrder: next });
+  const saved = await repository.updateListing({ ...listing, preOrder: next });
   return { listing: saved, pledges, orders };
 }
 
