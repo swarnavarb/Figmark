@@ -1,39 +1,102 @@
 /* ==========================================================================
    Figmark design system
-   One accent, semantic status colours, a single type scale, and cards as the
-   core unit. Every page composes these tokens rather than inventing its own.
+
+   Bold first impression, controlled experience. Six brand hues over a deep
+   navy stage: colour arrives at real scale in the places that sell (heroes,
+   category nav, selected state, empty states, celebration) and then gets out
+   of the way so a long session on the console does not tire the eye.
+
+   The rhythm is COLOUR -> NEUTRAL -> PRODUCT -> COLOUR, never colour on
+   colour. Every hue below is paired with the ink that actually passes
+   contrast on it, which is why violet carries white and everything else
+   carries navy: violet is the one hue dark enough to need it.
    ========================================================================== */
 
 :root {
   color-scheme: dark;
 
-  /* Surfaces, darkest to lightest */
-  --bg: #121215;
-  --surface: #1a1a1f;
-  --surface-2: #212128;
-  --surface-hover: #26262e;
-  --border: #2e2e37;
-  --border-strong: #3d3d48;
+  /* ── The stage. Deep navy, not grey: it makes the hues sing. ─────────── */
+  --bg: #080B12;
+  --surface: #0F1420;
+  --surface-2: #171D2A;
+  --surface-hover: #202A3C;
+  --border: #232C3E;
+  --border-strong: #33405A;
 
   /* Text */
-  --text: #ededf0;
-  --text-dim: #a1a1ab;
-  --text-faint: #6e6e7a;
+  --text: #F2F5FA;
+  --text-dim: #9FB0C9;
+  --text-faint: #6B7C96;
 
-  /* The single accent. Every primary action uses this and nothing else. */
-  --accent: #f0793f;
-  --accent-hover: #ff8b50;
-  --accent-ink: #1a0f08;
-  --accent-soft: rgba(240, 121, 63, 0.14);
-  --accent-line: rgba(240, 121, 63, 0.35);
+  /* ── The six brand hues ───────────────────────────────────────────────
+     Each carries the ink that passes AA on it, plus a soft wash for fills
+     and a line for borders. `-text` exists only where the hue is too dark
+     to read as small text on navy. */
+  --violet: #7C3AED;
+  --violet-lit: #8B5CF6;
+  --violet-ink: #FFFFFF;
+  --violet-text: #A78BFA;          /* 6.2:1 on --surface-2; the raw violet is 3.0 */
+  --violet-soft: rgba(124, 58, 237, 0.18);
+  --violet-line: rgba(124, 58, 237, 0.45);
 
-  /* Semantic status. Identical mapping on every page. */
-  --ok: #4ec07d;
-  --ok-soft: rgba(78, 192, 125, 0.14);
-  --warn: #e0a53c;
-  --warn-soft: rgba(224, 165, 60, 0.14);
-  --danger: #e56a5a;
-  --danger-soft: rgba(229, 106, 90, 0.14);
+  --coral: #FF5A5F;
+  --coral-ink: #2A0709;
+  --coral-soft: rgba(255, 90, 95, 0.16);
+  --coral-line: rgba(255, 90, 95, 0.42);
+
+  --aqua: #06D6E7;
+  --aqua-ink: #002229;
+  --aqua-soft: rgba(6, 214, 231, 0.15);
+  --aqua-line: rgba(6, 214, 231, 0.40);
+
+  --blue: #3B82F6;
+  --blue-ink: #FFFFFF;
+  --blue-text: #60A5FA;
+  --blue-soft: rgba(59, 130, 246, 0.17);
+  --blue-line: rgba(59, 130, 246, 0.42);
+
+  --pink: #EC4899;
+  --pink-ink: #FFFFFF;
+  --pink-text: #F472B6;
+  --pink-soft: rgba(236, 72, 153, 0.17);
+  --pink-line: rgba(236, 72, 153, 0.42);
+
+  --lime: #A3E635;
+  --lime-ink: #16250A;
+  --lime-soft: rgba(163, 230, 53, 0.15);
+  --lime-line: rgba(163, 230, 53, 0.40);
+
+  /* ── The primary accent is violet. Every primary action uses this. ───── */
+  --accent: var(--violet);
+  --accent-hover: var(--violet-lit);
+  --accent-ink: var(--violet-ink);
+  --accent-text: var(--violet-text);
+  --accent-soft: var(--violet-soft);
+  --accent-line: var(--violet-line);
+
+  /* ── Semantic status. Identical mapping on every page. ───────────────── */
+  --ok: #34D399;
+  --ok-ink: #04251A;
+  --ok-soft: rgba(52, 211, 153, 0.15);
+  --warn: #FBBF24;
+  --warn-ink: #2B1D00;
+  --warn-soft: rgba(251, 191, 36, 0.15);
+  --danger: #F43F5E;
+  /* The signal red is too light to carry white button text (3.67:1), so a
+     solid destructive control uses a deeper one. Named separately rather
+     than darkened at the call site, so every such control agrees. */
+  --danger-solid: #E11D48;
+  --danger-ink: #FFFFFF;
+  --danger-text: #FB7185;
+  --danger-soft: rgba(244, 63, 94, 0.16);
+
+  /* ── Gradients. Used at scale, never on every component. ─────────────── */
+  --grad-hero: linear-gradient(135deg, #7C3AED 0%, #EC4899 52%, #FF5A5F 100%);
+  --grad-cool: linear-gradient(135deg, #7C3AED 0%, #06D6E7 100%);
+  --grad-blue: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
+  --grad-warm: linear-gradient(135deg, #EC4899 0%, #FF5A5F 100%);
+  --grad-sea:  linear-gradient(135deg, #06D6E7 0%, #3B82F6 100%);
+  --grad-play: linear-gradient(135deg, #A3E635 0%, #06D6E7 100%);
 
   /* One type scale */
   --t-xs: 11.5px;
@@ -44,16 +107,39 @@
   --t-xl: 26px;
   --t-2xl: 34px;
 
-  /* One spacing and shape scale */
+  /* ── One spacing scale. 4px base, eight steps. ───────────────────────── */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 72px;
+
+  /* Shape */
   --r-sm: 8px;
-  /* The page's side padding, named so a full-bleed row can cancel it exactly
-     rather than guessing at the number. */
-  --page-pad: 20px;
+  /* The page's side gutter, named so a full-bleed row can cancel it exactly
+     rather than guessing at the number. Tight on a phone on purpose: the
+     goal is maximum useful content area, and components keep their own
+     internal padding so text never runs to the glass. */
+  --page-pad: 10px;
   --r-md: 12px;
   --r-lg: 16px;
   --r-pill: 999px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.35);
+  /* Coloured elevation: a lift that carries the hue of what it lifts. */
+  --shadow-violet: 0 6px 24px rgba(124, 58, 237, 0.35);
   --nav-h: 62px;
+
+  /* Motion. Two durations, one curve, everywhere. */
+  --dur-1: 140ms;
+  --dur-2: 240ms;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (min-width: 720px) {
+  :root { --page-pad: 24px; }
 }
 
 * { box-sizing: border-box; }
@@ -87,9 +173,91 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .faint { color: var(--text-faint); font-size: var(--t-xs); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--t-sm); }
 
+/* ── Full bleed ────────────────────────────────────────────────────────────
+ *
+ * Cancels the page gutter exactly, so hero art, product media and feeds can
+ * run to the glass while the text around them keeps its inset. Named after
+ * what it does rather than where it is used, because six screens want it.
+ */
+.bleed {
+  margin-inline: calc(var(--page-pad) * -1);
+  width: calc(100% + var(--page-pad) * 2);
+}
+
+/* ── Colour blocks ─────────────────────────────────────────────────────────
+ *
+ * The loud half of the rhythm. One of these opens a screen, the neutral
+ * surface takes over underneath, and the next one is a scroll away: colour,
+ * then neutral, then product, rather than colour on colour on colour.
+ *
+ * The wash is a soft radial pair rather than a flat fill, so a large area
+ * has some atmosphere in it instead of reading as a printed rectangle.
+ */
+.block {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  padding: var(--s5) var(--s4);
+  color: #fff;
+}
+.bleed.block { border-radius: 0; }
+.block::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--block-grad, var(--grad-hero));
+}
+/* A second, softer light over the top so the gradient is not a flat ramp. */
+.block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(120% 90% at 12% 0%, rgba(255, 255, 255, 0.22), transparent 58%),
+    radial-gradient(90% 80% at 100% 100%, rgba(0, 0, 0, 0.26), transparent 62%);
+  pointer-events: none;
+}
+.block--cool { --block-grad: var(--grad-cool); }
+.block--blue { --block-grad: var(--grad-blue); }
+.block--warm { --block-grad: var(--grad-warm); }
+.block--sea  { --block-grad: var(--grad-sea); }
+.block--play { --block-grad: var(--grad-play); color: var(--lime-ink); }
+.block__title {
+  font-size: var(--t-xl);
+  font-weight: 760;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.block__sub { margin-top: var(--s2); font-size: var(--t-base); opacity: 0.92; max-width: 52ch; }
+.block__acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s4); }
+/* On colour, the button borrows the surface rather than the accent: an
+   accent-coloured button on an accent-coloured field is invisible. */
+.block .btn--oncolour {
+  background: #fff;
+  color: #10131C;
+  border-color: transparent;
+  font-weight: 700;
+}
+.block .btn--oncolour:hover { background: rgba(255, 255, 255, 0.88); }
+.block .btn--onglass {
+  /* A dark scrim, not a light one: white on a white-ish veil over coral was
+     about 2:1. Darkening the button instead keeps the label readable
+     wherever it lands on the ramp. */
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(8px);
+  box-shadow: none;
+}
+.block .btn--onglass:hover { background: rgba(0, 0, 0, 0.4); border-color: #fff; }
+
 /* ── App shell ─────────────────────────────────────────────────────────── */
 
-.shell { min-height: 100vh; display: flex; flex-direction: column; }
+.shell { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
 
 .nav {
   position: sticky;
@@ -106,11 +274,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
+/* The first coloured thing anyone sees, so it carries the full brand ramp
+   rather than one hue. */
 .brand__mark {
   width: 30px; height: 30px; flex: none;
   border-radius: 9px;
-  background: linear-gradient(140deg, var(--accent), #b8451c);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  background: var(--grad-hero);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset, 0 3px 12px rgba(124, 58, 237, 0.42);
 }
 .brand__name { font-size: var(--t-md); font-weight: 700; letter-spacing: -0.02em; }
 
@@ -127,15 +297,29 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .nav__link:hover { background: var(--surface-2); color: var(--text); }
 /* Colour only, no filled background: "+ Sell" is the one button in the nav,
    and an active-page pill sitting next to it read as a second one. */
-.nav__link.is-active { color: var(--accent); }
+.nav__link.is-active { color: var(--accent-text); }
 
+/*
+ * The page's own box.
+ *
+ * The gutter comes from --page-pad, which is 10px on a phone and 24px from
+ * 720px up, and the side inset also respects a display cutout so a landscape
+ * notch never clips a row. The max width opens up on a large screen rather
+ * than holding every screen at one number: a console with a table in it has
+ * real use for 1360px, and the reading-width cap belongs on the prose inside
+ * a page, not on the page.
+ */
 .page {
   flex: 1;
   width: 100%;
-  max-width: 1180px;
+  max-width: var(--page-max, 1180px);
   margin: 0 auto;
-  padding: 28px var(--page-pad) 72px;
+  padding-block: 28px 72px;
+  padding-left: max(var(--page-pad), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--page-pad), env(safe-area-inset-right, 0px));
 }
+
+@media (min-width: 1280px) { :root { --page-max: 1360px; } }
 
 .page__head {
   display: flex;
@@ -176,19 +360,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 9px 16px;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
-  /* A shallow gradient and a lit top edge. Flat orange reads as a placeholder;
-     two stops and a highlight read as a control. */
-  background: linear-gradient(180deg, var(--accent-hover), var(--accent));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 2px rgba(0, 0, 0, 0.35);
+  /* The primary action carries the brand gradient, not a flat fill: this is
+     the one control on a neutral screen that is allowed to be loud, and it
+     is what the eye should find first. */
+  background: var(--grad-blue);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 2px 10px rgba(124, 58, 237, 0.34);
   color: var(--accent-ink);
   font-size: var(--t-sm);
   font-weight: 650;
   letter-spacing: -0.005em;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.06s;
+  transition: filter var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
+    transform 60ms var(--ease);
 }
-.btn:hover:not(:disabled) { background: linear-gradient(180deg, #ff9860, var(--accent-hover)); }
-.btn:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25); }
+.btn:hover:not(:disabled) { filter: saturate(1.16) brightness(1.1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), var(--shadow-violet); }
+.btn:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn--ghost { background: var(--surface); border-color: var(--border-strong); color: var(--text); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); }
@@ -216,7 +403,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: background 0.15s, color 0.15s;
 }
 .seg button:hover { color: var(--text); }
-.seg button.is-on { background: var(--surface); color: var(--text); border-color: var(--border); }
+/* Selected is vibrant, not merely lighter. A filter you have chosen should be
+   obvious from across the room, which is most of what a filter row is for. */
+.seg button.is-on {
+  background: var(--grad-blue);
+  color: var(--accent-ink);
+  border-color: transparent;
+  font-weight: 650;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4);
+}
 
 /* ── Dialog ────────────────────────────────────────────────────────────── */
 
@@ -264,11 +459,33 @@ button, input, select, textarea { font: inherit; color: inherit; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 .card--pad { padding: 18px; }
-.card--link { transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s; }
+.card--link {
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+/* Lifting a card brings a wash of the accent up with it, so hover is a little
+   warmer rather than merely a little higher. */
 .card--link:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-line);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow), var(--shadow-violet), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.card--link:active { transform: translateY(-1px); }
+
+/* The picture grows very slightly inside its own frame on hover. The card
+   moves, the image breathes: two speeds, which is what reads as depth. */
+.card--link .thumb { overflow: hidden; }
+.card--link .thumb__img,
+.card--link .thumb > span {
+  transition: transform var(--dur-2) var(--ease);
+}
+.card--link:hover .thumb__img,
+.card--link:hover .thumb > span { transform: scale(1.04); }
+
+@media (prefers-reduced-motion: reduce) {
+  .card--link, .card--link:hover,
+  .card--link .thumb__img, .card--link:hover .thumb__img,
+  .card--link .thumb > span, .card--link:hover .thumb > span { transition: none; transform: none; }
 }
 
 /* A block, whether it is a div or a link: swapping one for the other must not
@@ -309,7 +526,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: background 0.15s, color 0.15s;
 }
 .thumb__like:hover { background: rgba(0, 0, 0, 0.65); }
-.thumb__like.is-on { color: var(--accent); }
+.thumb__like.is-on { color: var(--coral); background: rgba(0, 0, 0, 0.6); }
+/* A saved item gets one quick beat of feedback. Scale only, 220ms, once. */
+.thumb__like.is-on svg { animation: like-pop var(--dur-2) var(--ease); }
+@keyframes like-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.32); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .thumb__like.is-on svg { animation: none; } }
 
 .listing__body { padding: 12px 14px 14px; display: grid; gap: 7px; }
 .listing__title {
@@ -343,11 +568,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 .chip:hover { color: var(--text); border-color: var(--border-strong); }
+/* Chosen means filled, not tinted. A 14%-opacity wash reads as "slightly
+   different"; a solid vibrant pill reads as "this one". */
 .chip.is-on {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--accent);
-  font-weight: 600;
+  background: var(--grad-blue);
+  border-color: transparent;
+  color: var(--accent-ink);
+  font-weight: 650;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.38);
 }
 
 /* ── Filter pickers ────────────────────────────────────────────────────────
@@ -384,7 +612,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 .picker:hover { color: var(--text); border-color: var(--border-strong); }
-.picker.is-on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); font-weight: 600; }
+.picker.is-on {
+  background: var(--grad-blue);
+  border-color: transparent;
+  color: var(--accent-ink);
+  font-weight: 650;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.34);
+}
 
 /* The chevron, drawn rather than typed so it lines up at every size. */
 .picker::after {
@@ -462,11 +696,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
   line-height: 1.25;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  transition: border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
 }
-.cat:hover { color: var(--text); border-color: var(--border-strong); }
-.cat.is-on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
-.cat__glyph { font-size: 19px; line-height: 1; }
+.cat:hover { color: var(--text); border-color: var(--border-strong); transform: translateY(-1px); }
+.cat__glyph { display: block; color: var(--cat-hue, var(--text-dim)); transition: color var(--dur-1) var(--ease); }
+
+/* Each heading owns a hue. Resting, only the mark carries it, so the row reads
+   as six colours over one surface rather than six coloured boxes. Chosen, the
+   whole tile fills with that hue's gradient and the mark turns to its ink. */
+.cat--violet { --cat-hue: var(--violet-text); --cat-grad: var(--grad-blue); --cat-ink: var(--violet-ink); --cat-glow: rgba(124, 58, 237, 0.42); }
+.cat--coral  { --cat-hue: var(--coral);  --cat-grad: var(--grad-warm); --cat-ink: #fff;             --cat-glow: rgba(255, 90, 95, 0.4); }
+.cat--aqua   { --cat-hue: var(--aqua);   --cat-grad: var(--grad-sea);  --cat-ink: var(--aqua-ink);  --cat-glow: rgba(6, 214, 231, 0.36); }
+.cat--blue   { --cat-hue: var(--blue-text); --cat-grad: var(--grad-sea); --cat-ink: var(--aqua-ink); --cat-glow: rgba(59, 130, 246, 0.4); }
+.cat--pink   { --cat-hue: var(--pink-text); --cat-grad: var(--grad-warm); --cat-ink: #fff;          --cat-glow: rgba(236, 72, 153, 0.42); }
+.cat--lime   { --cat-hue: var(--lime);   --cat-grad: var(--grad-play); --cat-ink: var(--lime-ink);  --cat-glow: rgba(163, 230, 53, 0.34); }
+
+.cat.is-on {
+  background: var(--cat-grad, var(--grad-blue));
+  border-color: transparent;
+  color: var(--cat-ink, #fff);
+  font-weight: 700;
+  box-shadow: 0 4px 16px var(--cat-glow, rgba(124, 58, 237, 0.4));
+}
+.cat.is-on .cat__glyph { color: var(--cat-ink, #fff); }
 
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -479,18 +733,58 @@ button, input, select, textarea { font: inherit; color: inherit; }
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.badge--ok { background: var(--ok-soft); color: var(--ok); }
-.badge--warn { background: var(--warn-soft); color: var(--warn); }
-.badge--danger { background: var(--danger-soft); color: var(--danger); }
-.badge--accent { background: var(--accent-soft); color: var(--accent); }
+/* Each tone gets a hairline in its own hue as well as a wash, so a badge
+   reads as an object rather than as tinted text. `-text` variants are used
+   wherever the raw hue is too dark to pass on navy: violet is 3.0:1, its
+   lighter tint is 6.2. */
+.badge--ok { background: var(--ok-soft); color: var(--ok); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.3); }
+.badge--warn { background: var(--warn-soft); color: var(--warn); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
+.badge--danger { background: var(--danger-soft); color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.32); }
+.badge--accent { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.badge--aqua { background: var(--aqua-soft); color: var(--aqua); box-shadow: inset 0 0 0 1px var(--aqua-line); }
+.badge--pink { background: var(--pink-soft); color: var(--pink-text); box-shadow: inset 0 0 0 1px var(--pink-line); }
+.badge--lime { background: var(--lime-soft); color: var(--lime); box-shadow: inset 0 0 0 1px var(--lime-line); }
+.badge--coral { background: var(--coral-soft); color: var(--coral); box-shadow: inset 0 0 0 1px var(--coral-line); }
+/* The loud one: a count or a live state that has to be seen, not scanned. */
+.badge--hot { background: var(--grad-warm); color: #fff; box-shadow: 0 2px 8px rgba(236, 72, 153, 0.45); }
 .badge--solid { background: rgba(0, 0, 0, 0.55); color: #fff; backdrop-filter: blur(6px); }
 
 .badges { display: flex; flex-wrap: wrap; gap: 5px; }
 
 /* ── Lot fill meter ────────────────────────────────────────────────────── */
 
-.meter { height: 5px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
-.meter__fill { height: 100%; border-radius: var(--r-pill); background: var(--accent); transition: width 0.3s; }
+/*
+ * The fill gets more energetic the closer the lot is to going.
+ *
+ * Empty is a calm blue-violet; as pledges land it warms through pink toward
+ * coral, and a full lot lights up in lime and holds there. The gradient is
+ * painted at a fixed width and revealed by a transform rather than by
+ * animating `width`, which was thrashing layout on every frame.
+ */
+.meter {
+  position: relative;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.meter__fill {
+  height: 100%;
+  width: 100%;
+  border-radius: var(--r-pill);
+  background: var(--grad-blue);
+  transform-origin: left center;
+  /* Defaults to 1, not 0. Two other meters in the app size themselves with an
+     inline width instead of this variable - the batch stage bar and the
+     social fill meter - and a default of 0 scaled both of them to nothing. */
+  transform: scaleX(var(--fill, 1));
+  transition: transform var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
+}
+.meter.is-warm .meter__fill { background: var(--grad-warm); }
+.meter.is-hot .meter__fill { background: linear-gradient(135deg, #FF5A5F, #FBBF24); }
+.meter.is-full .meter__fill { background: var(--grad-play); }
+.meter.is-full { box-shadow: inset 0 0 0 1px var(--lime-line), 0 0 14px rgba(163, 230, 53, 0.3); }
 
 /* ── The social fill meter ─────────────────────────────────────────────────
    Two layers on one track: solid is money paid, hatched is a place somebody
@@ -523,7 +817,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .fillblock { display: grid; gap: 8px; }
 .fillblock__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
-.gap { font-size: var(--t-sm); font-weight: 700; color: var(--accent); letter-spacing: -0.01em; white-space: nowrap; }
+.gap { font-size: var(--t-sm); font-weight: 700; color: var(--accent-text); letter-spacing: -0.01em; white-space: nowrap; }
 .gap--warn { color: var(--warn); }
 .gap--ok { color: var(--ok); }
 .gap--dead { color: var(--text-faint); }
@@ -596,13 +890,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
   content: ''; position: absolute; top: 4px; left: 0; right: 0;
   height: 2px; background: var(--surface-2);
 }
-.track__step.is-done::before, .track__step.is-current::before { background: var(--accent); }
+.track__step.is-done::before, .track__step.is-current::before { background: var(--grad-sea); }
 .track__dot {
   position: absolute; top: 0; left: 0; width: 10px; height: 10px;
   border-radius: 50%; background: var(--surface-2);
 }
-.track__step.is-done .track__dot { background: var(--accent); }
-.track__step.is-current .track__dot { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.track__step.is-done .track__dot { background: var(--aqua); }
+/* Where the thing actually is: the one lit dot on the line, with a halo so it
+   is findable without reading a single label. */
+.track__step.is-current .track__dot {
+  background: var(--violet);
+  box-shadow: 0 0 0 4px var(--accent-soft), 0 0 12px rgba(124, 58, 237, 0.7);
+}
 .track__step.is-current { color: var(--text); font-weight: 600; }
 
 /* ── Forms ─────────────────────────────────────────────────────────────── */
@@ -653,21 +952,29 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-left-width: 3px;
 }
 .notice--standing.notice--error { border-left-color: var(--danger); }
-.notice--error { background: var(--danger-soft); border-color: rgba(229, 106, 90, 0.3); color: var(--danger); }
-.notice--ok { background: var(--ok-soft); border-color: rgba(78, 192, 125, 0.3); color: var(--ok); }
-.notice--info { background: var(--surface-2); border-color: var(--border); color: var(--text-dim); }
-.notice--warn { background: var(--warn-soft); border-color: rgba(224, 165, 60, 0.3); color: var(--warn); }
+.notice--error { background: var(--danger-soft); border-color: rgba(244, 63, 94, 0.34); color: var(--danger-text); }
+.notice--ok { background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.34); color: var(--ok); }
+.notice--info { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-text); }
+.notice--warn { background: var(--warn-soft); border-color: rgba(251, 191, 36, 0.34); color: var(--warn); }
 
 /* ── Auth page ─────────────────────────────────────────────────────────── */
 
+/*
+ * The first screen anyone ever sees, so it is the one that has to say what
+ * kind of place this is before a word is read. Three coloured lights over the
+ * navy rather than one: violet top left, aqua right, coral low, wide and soft
+ * enough that they read as atmosphere rather than as three blobs.
+ */
 .auth {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 32px 20px;
+  padding: var(--s6) var(--s5);
   background:
-    radial-gradient(900px 500px at 15% -10%, rgba(240, 121, 63, 0.13), transparent 60%),
-    radial-gradient(700px 420px at 95% 105%, rgba(240, 121, 63, 0.07), transparent 55%),
+    radial-gradient(760px 520px at 8% -12%, rgba(124, 58, 237, 0.42), transparent 62%),
+    radial-gradient(620px 460px at 102% 6%, rgba(6, 214, 231, 0.20), transparent 58%),
+    radial-gradient(800px 500px at 72% 108%, rgba(236, 72, 153, 0.30), transparent 60%),
     var(--bg);
 }
 .auth__panel { width: 100%; max-width: 412px; }
@@ -675,7 +982,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .auth__brand h1 { font-size: var(--t-2xl); }
 .auth__tag { color: var(--text-dim); font-size: var(--t-sm); margin-top: 4px; }
 
-.auth__card { padding: 26px; }
+.auth__card {
+  padding: 26px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border-color: var(--border-strong);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
 .auth__switch {
   display: flex; gap: 3px; padding: 3px; margin-bottom: 20px;
   background: var(--surface-2); border-radius: var(--r-sm);
@@ -685,7 +999,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: transparent; color: var(--text-dim);
   font-size: var(--t-sm); font-weight: 600; cursor: pointer;
 }
-.auth__switch button.is-on { background: var(--surface-hover); color: var(--text); }
+.auth__switch button.is-on {
+  background: var(--grad-blue);
+  color: var(--accent-ink);
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4);
+}
 
 .auth__demo {
   margin-top: 18px; padding: 13px;
@@ -696,13 +1014,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .auth__demo code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--t-xs);
-  background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color: var(--accent);
+  background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color: var(--accent-text);
 }
 
 /* ── Listing detail ────────────────────────────────────────────────────── */
 
 .detail { display: grid; gap: 26px; grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); align-items: start; }
-.detail__hero { aspect-ratio: 4 / 3; border-radius: var(--r-lg); font-size: 64px; }
+/*
+ * The picture is the product, so on a phone it runs to the glass: no gutter,
+ * no radius, a taller crop. The page gets its inset back immediately below.
+ * On a wide screen it is a framed object in a two-column layout instead,
+ * because there the surrounding space is doing useful work.
+ */
+.detail__hero {
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-lg);
+  font-size: 64px;
+}
+@media (max-width: 719px) {
+  .detail__hero {
+    margin-inline: calc(var(--page-pad) * -1);
+    width: calc(100% + var(--page-pad) * 2);
+    border-radius: 0;
+    aspect-ratio: 1 / 1;
+  }
+}
 .detail__price { font-size: var(--t-2xl); font-weight: 700; letter-spacing: -0.03em; }
 .detail__section { display: grid; gap: 12px; }
 .detail__section + .detail__section { margin-top: 26px; padding-top: 26px; border-top: 1px solid var(--border); }
@@ -720,7 +1056,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* A button that has to read as a link, because what it does is navigate. */
 .linklike {
   border: 0; padding: 0; background: none; font: inherit;
-  color: var(--accent); text-decoration: underline; cursor: pointer;
+  color: var(--accent-text); text-decoration: underline; cursor: pointer;
 }
 
 .avatar {
@@ -728,7 +1064,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: grid; place-items: center;
   border-radius: var(--r-pill);
   font-size: var(--t-sm); font-weight: 700; color: #fff;
+  background: var(--surface-2);
 }
+
+/*
+ * Marks in the brand's own hues.
+ *
+ * Shared by avatars and by the pledger pile on a fill meter, because they are
+ * the same object: somebody's initials in the colour that person always gets.
+ * Each carries the ink that passes on it, which is why half are white and
+ * half are near-black.
+ */
+.avatar--violet, .pledger--violet { background: var(--violet); color: var(--violet-ink); }
+.avatar--coral,  .pledger--coral  { background: var(--coral);  color: var(--coral-ink); }
+.avatar--aqua,   .pledger--aqua   { background: var(--aqua);   color: var(--aqua-ink); }
+.avatar--blue,   .pledger--blue   { background: var(--blue);   color: var(--blue-ink); }
+.avatar--pink,   .pledger--pink   { background: var(--pink);   color: var(--pink-ink); }
+.avatar--lime,   .pledger--lime   { background: var(--lime);   color: var(--lime-ink); }
 
 .comment { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .comment:last-child { border-bottom: 0; }
@@ -746,9 +1098,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ── Empty state ───────────────────────────────────────────────────────── */
 
-.empty { display: grid; gap: 8px; place-items: center; padding: 56px 20px; text-align: center; }
-.empty__icon { font-size: 30px; opacity: 0.5; }
-.empty h3 { font-size: var(--t-md); }
+/*
+ * Nothing here yet, said with some warmth.
+ *
+ * An empty screen is often somebody's first look at a section, so it is a bad
+ * place to show them grey. The mark sits on a soft coloured aura with the
+ * gradient behind it, which costs nothing and turns a dead end into a place
+ * that looks like it is waiting for something.
+ */
+.empty {
+  display: grid; gap: var(--s2); place-items: center;
+  padding: var(--s7) var(--s5); text-align: center;
+}
+.empty__icon {
+  width: 60px; height: 60px;
+  display: grid; place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--grad-cool);
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+  box-shadow: 0 8px 28px rgba(124, 58, 237, 0.34);
+  margin-bottom: var(--s1);
+}
+.empty h3 { font-size: var(--t-lg); letter-spacing: -0.02em; }
+.empty .muted { max-width: 44ch; }
 
 /* ── Tabs ──────────────────────────────────────────────────────────────── */
 
@@ -769,7 +1143,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
 .tab:hover { color: var(--text); }
-.tab.is-on { color: var(--accent); border-bottom-color: var(--accent); }
+.tab.is-on { color: var(--accent-text); border-bottom-color: var(--accent); }
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
 
@@ -877,12 +1251,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
      by the padding and made the page scroll sideways. */
   width: calc((100% - 16px) / var(--tabs, 3));
   left: calc(8px + var(--i, 0) * (100% - 16px) / var(--tabs, 3));
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
+  /* The pill carries the current section's own hue, set by the bar from the
+     active index. A washed-out tint said "something is selected"; a solid
+     gradient says which, and gives each section an identity you learn. */
+  background: var(--tab-grad, var(--grad-blue));
+  border: 0;
   border-radius: 14px;
   z-index: -1;
-  transition: left 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 4px 16px var(--tab-glow, rgba(124, 58, 237, 0.42));
+  transition: left 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    background var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
+
+/* One hue per section, so the bar is a colour cue as well as a label. */
+.tabbar[data-tab="0"] { --tab-grad: var(--grad-blue); --tab-glow: rgba(124, 58, 237, 0.42); }
+.tabbar[data-tab="1"] { --tab-grad: var(--grad-sea);  --tab-glow: rgba(6, 214, 231, 0.36); }
+.tabbar[data-tab="2"] { --tab-grad: var(--grad-play); --tab-glow: rgba(163, 230, 53, 0.34); }
+.tabbar[data-tab="3"] { --tab-grad: var(--grad-warm); --tab-glow: rgba(236, 72, 153, 0.40); }
 
 .tab-item {
   flex: 1;
@@ -903,8 +1288,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: block;
   transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.tab-item.is-on { color: var(--accent); font-weight: 700; }
-.tab-item.is-on .tab-item__glyph { transform: translateY(-1px); stroke-width: 2; }
+/* On a filled pill the label is ink on colour, not the accent on the page. */
+.tab-item.is-on { color: var(--tab-ink, #fff); font-weight: 700; }
+.tabbar[data-tab="1"] .tab-item.is-on { --tab-ink: var(--aqua-ink); }
+.tabbar[data-tab="2"] .tab-item.is-on { --tab-ink: var(--lime-ink); }
+.tab-item.is-on .tab-item__glyph { transform: translateY(-1px); stroke-width: 2.1; }
 
 /* The bar is fixed, so every page needs room under it to finish scrolling. */
 .shell--tabbed .page { padding-bottom: 96px; }
@@ -957,7 +1345,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pill.is-on {
   background: var(--accent-soft);
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   transform: translateY(-1px);
 }
 .pill__glyph { font-size: 17px; line-height: 1; }
@@ -1160,7 +1548,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .countdown__value {
   font-size: var(--t-sm);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -1256,7 +1644,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 /* On its way: the packing figures it was worked by are history the moment it
    is on a plane, so the card is a name, a stage and a tracking number. */
-.batch--moving { border-color: rgba(224, 165, 60, 0.3); }
+.batch--moving { border-color: rgba(251, 191, 36, 0.3); }
 
 .batch__head {
   display: flex; align-items: center; gap: 10px;
@@ -1323,8 +1711,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   overflow: hidden;
 }
 /* A lot already on its way is one line: the thing you do with it is open it. */
-.lotcard--moving { display: flex; align-items: stretch; border-color: rgba(224, 165, 60, 0.35); }
-.lotcard--moving .lotcard__head { background: rgba(224, 165, 60, 0.08); }
+.lotcard--moving { display: flex; align-items: stretch; border-color: rgba(251, 191, 36, 0.35); }
+.lotcard--moving .lotcard__head { background: rgba(251, 191, 36, 0.08); }
 
 /* Name and state share a column so the arrow keeps its width and the state
    truncates against the whole card rather than against whatever is left after
@@ -1415,8 +1803,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: var(--t-sm); font-weight: 600;
 }
 
-.tile--blue { border-color: rgba(94, 141, 255, 0.45); }
-.tile--green { border-color: rgba(78, 192, 125, 0.45); }
+.tile--blue { border-color: rgba(59, 130, 246, 0.45); }
+.tile--green { border-color: rgba(52, 211, 153, 0.45); }
 .tile__value { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
 .tiles--big .tile__value { font-size: 34px; }
 .tile__label {
@@ -1442,8 +1830,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .bands { display: grid; gap: 2px; border-radius: var(--r-md); overflow: hidden; }
 .band { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 11px 13px; }
-.band--china { background: rgba(229, 106, 90, 0.16); }
-.band--india { background: rgba(78, 192, 125, 0.14); }
+.band--china { background: rgba(244, 63, 94, 0.16); }
+.band--india { background: rgba(52, 211, 153, 0.14); }
 .band__side {
   font-size: 10.5px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--text-dim);
@@ -1498,7 +1886,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .tick:hover { border-color: var(--border-strong); color: var(--text); }
-.tick.is-on { background: var(--ok-soft); border-color: rgba(78, 192, 125, 0.45); color: var(--ok); }
+.tick.is-on { background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.45); color: var(--ok); }
 
 /* ── Messages ──────────────────────────────────────────────────────────── */
 
@@ -1536,13 +1924,32 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 /* Yours in the accent, on the right: the same rule every messenger uses, and
    the reason a thread can be read without reading the names. */
+/*
+ * Yours is the brand gradient rather than a wash of it.
+ *
+ * A 14%-opacity tint was the same move the whole app was making everywhere at
+ * once, so a thread read as faintly orange rather than as two people talking.
+ * A solid ramp on one side and a plain surface on the other separates them at
+ * a glance, which is the entire job of the treatment.
+ */
 .bubble--mine {
   justify-self: end;
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
+  background: var(--grad-blue);
+  border-color: transparent;
+  color: var(--accent-ink);
+  box-shadow: 0 2px 12px rgba(124, 58, 237, 0.3);
   border-bottom-left-radius: var(--r-md);
   border-bottom-right-radius: var(--r-sm);
 }
+.bubble--mine .bubble__meta { color: rgba(255, 255, 255, 0.72); }
+
+/* A message arrives rather than appearing: 8px and a fade, once, fast. */
+.bubble { animation: msg-in var(--dur-2) var(--ease); }
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .bubble { animation: none; } }
 .bubble__body { font-size: var(--t-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 .bubble__meta { margin-top: 4px; font-size: var(--t-xs); color: var(--text-faint); }
 
@@ -1577,7 +1984,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: var(--r-md);
   background: var(--surface);
 }
-.packcard.is-packed { border-color: rgba(78, 192, 125, 0.45); background: var(--ok-soft); }
+.packcard.is-packed { border-color: rgba(52, 211, 153, 0.45); background: var(--ok-soft); }
 .packcard__name { font-weight: 650; font-size: var(--t-sm); overflow-wrap: anywhere; }
 .packcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .packcard__state { font-size: var(--t-xs); color: var(--text-faint); }
@@ -1599,7 +2006,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .packbtn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
 /* Also matched while hovered: a piece that is packed must not read as unpacked
    simply because the finger that packed it is still on the button. */
-.packbtn.is-on, .packbtn.is-on:hover { background: var(--ok); border-color: var(--ok); color: #0d1b12; }
+.packbtn.is-on, .packbtn.is-on:hover { background: var(--ok); border-color: var(--ok); color: var(--ok-ink); }
 .packbtn:disabled { opacity: 0.55; cursor: progress; }
 
 /* ── A username's page ─────────────────────────────────────────────────── */
@@ -1668,7 +2075,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* Destructive actions get their own colour. Nothing else in the app uses it,
    so it never reads as "the primary button here happens to be red". */
-.btn--danger { background: var(--danger); border-color: var(--danger); color: #1b0c0a; font-weight: 700; }
+.btn--danger { background: var(--danger-solid); border-color: var(--danger-solid); color: var(--danger-ink); font-weight: 700; box-shadow: 0 2px 10px rgba(225, 29, 72, 0.36); }
 .btn--danger:hover:not(:disabled) { filter: brightness(1.08); }
 .btn--danger:disabled { opacity: 0.45; }
 
@@ -1776,19 +2183,47 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .storefront { padding-bottom: 90px; }
 /* Every page gets the same silhouette whether or not a banner was set, so the
    layout does not jump between one shop and the next. */
+/*
+ * The cover is the loudest surface a seller owns, so an unset one is a full
+ * brand gradient rather than a grey slab. The hue is picked per shop from the
+ * six, so two storefronts side by side in a feed do not look like the same
+ * shop, and a shop keeps its colour every time you come back.
+ */
 .storefront__cover {
-  height: 132px; background: linear-gradient(135deg, var(--surface-2), var(--accent-soft));
+  height: 176px;
   position: relative; overflow: hidden;
+  background: var(--sf-grad, var(--grad-hero));
 }
+.storefront__cover::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(90% 80% at 14% 0%, rgba(255, 255, 255, 0.24), transparent 56%),
+    linear-gradient(0deg, rgba(8, 11, 18, 0.72), transparent 62%);
+  pointer-events: none;
+}
+.storefront__cover--violet { --sf-grad: var(--grad-blue); }
+.storefront__cover--coral  { --sf-grad: var(--grad-warm); }
+.storefront__cover--aqua   { --sf-grad: var(--grad-sea); }
+.storefront__cover--blue   { --sf-grad: var(--grad-cool); }
+.storefront__cover--pink   { --sf-grad: var(--grad-hero); }
+.storefront__cover--lime   { --sf-grad: var(--grad-play); }
+/* A real banner wins: the seller's own photo is better than any gradient. */
+.storefront__cover:has(img)::after {
+  background: linear-gradient(0deg, rgba(8, 11, 18, 0.78), transparent 58%);
+}
+
+@media (min-width: 720px) { .storefront__cover { height: 232px; } }
 .storefront__cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.storefront__body { padding: 0 16px; max-width: 1100px; margin: 0 auto; }
+.storefront__body { padding: 0 var(--page-pad); max-width: 1100px; margin: 0 auto; }
 .storefront__head {
   display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start;
   margin-top: -34px; margin-bottom: 12px;
 }
 .storefront__avatar {
-  width: 76px; height: 76px; border-radius: 50%; overflow: hidden;
+  width: 84px; height: 84px; border-radius: 50%; overflow: hidden;
   border: 3px solid var(--bg); background: var(--surface-2); flex: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 .storefront__avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .storefront__who { display: grid; gap: 4px; min-width: 0; padding-top: 38px; }
@@ -1801,7 +2236,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .storefront__bio.is-open { -webkit-line-clamp: unset; display: block; }
 .storefront__more {
-  background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer;
+  background: none; border: 0; color: var(--accent-text); font: inherit; cursor: pointer;
   padding: 0 0 0 6px;
 }
 
@@ -1820,7 +2255,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .credit:hover { border-color: var(--border-strong); background: var(--surface-hover); }
 .credit__cell { display: grid; gap: 2px; min-width: 0; }
 .credit__grade {
-  font-weight: 750; font-size: var(--t-md); color: var(--accent); text-transform: capitalize;
+  font-weight: 750; font-size: var(--t-md); color: var(--accent-text); text-transform: capitalize;
 }
 .credit__grade--buyer { color: var(--ok); }
 .credit__figure { font-weight: 750; font-size: var(--t-md); }
@@ -1847,7 +2282,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: none; border: 0; cursor: pointer; padding: 0 2px;
   font-size: 24px; line-height: 1; color: var(--border-strong);
 }
-.starpick.is-on { color: var(--accent); }
+.starpick.is-on { color: var(--accent-text); }
 
 @media (max-width: 520px) {
   .storefront__head { grid-template-columns: auto 1fr; }
@@ -1859,7 +2294,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* A name that is an address. Underlined on hover only, so a screen full of
    them reads as prose rather than as a list of links. */
 .personlink {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
@@ -2047,7 +2482,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   flex: 0 0 auto; margin-top: 2px; padding: 3px 9px; border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--accent-hover));
-  box-shadow: 0 2px 10px rgba(240, 121, 63, 0.3);
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.3);
 }
 
 .ins__row {
@@ -2063,7 +2498,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .ins__row > :last-child { flex: 0 0 auto; }
 .ins__name { font-weight: 650; font-size: var(--t-sm); color: var(--text); text-decoration: none; }
-a.ins__name:hover, a.ins__who:hover { color: var(--accent); }
+a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 .ins__who { font-weight: 650; color: var(--text); text-decoration: none; }
 .ins__money { font-weight: 700; font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
 
@@ -2115,7 +2550,7 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent); }
 /* The rest of a long list lives on the screen built for working it. */
 .drill__more {
   display: block; padding-top: 8px;
-  font-size: var(--t-xs); font-weight: 650; color: var(--accent); text-decoration: none;
+  font-size: var(--t-xs); font-weight: 650; color: var(--accent-text); text-decoration: none;
 }
 .drill__more:hover { color: var(--accent-hover); }
 
@@ -2135,10 +2570,10 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent); }
   transition: border-color 0.15s, background 0.15s;
 }
 .myservice:hover { border-color: var(--accent); }
-.myservice__glyph { flex: 0 0 auto; color: var(--accent); }
+.myservice__glyph { flex: 0 0 auto; color: var(--accent-text); }
 .myservice__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .myservice__title { font-size: var(--t-md); font-weight: 700; letter-spacing: -0.01em; }
-.myservice__go { flex: 0 0 auto; color: var(--accent); font-weight: 700; }
+.myservice__go { flex: 0 0 auto; color: var(--accent-text); font-weight: 700; }
 
 .svc {
   display: flex; align-items: center; gap: 12px;
@@ -2172,7 +2607,7 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent); }
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--t-md); font-weight: 680; color: var(--text); text-decoration: none;
 }
-a.provider__name:hover { color: var(--accent); }
+a.provider__name:hover { color: var(--accent-text); }
 .provider__trust { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 .provider__note { margin: 4px 0 0; font-size: var(--t-sm); color: var(--text-dim); }
 .provider__foot {
@@ -2208,7 +2643,7 @@ a.provider__name:hover { color: var(--accent); }
   border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface);
 }
-.parcel--gone { opacity: 0.62; border-color: rgba(78, 192, 125, 0.35); }
+.parcel--gone { opacity: 0.62; border-color: rgba(52, 211, 153, 0.35); }
 .parcel__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .parcel__name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2243,14 +2678,14 @@ a.provider__name:hover { color: var(--accent); }
 .tickbtn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
 .tickbtn:disabled { opacity: 0.55; cursor: default; }
 .tickbtn.is-on {
-  background: var(--ok-soft); border-color: rgba(78, 192, 125, 0.45); color: var(--ok);
+  background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.45); color: var(--ok);
 }
 /* Ticked reads as ticked without a second colour to learn. */
 .tickbtn.is-on::before { content: '✓ '; }
 /* The batch control is a door, not a tick: it says where the item went and
    goes there, so it carries an arrow rather than a checkmark. */
 .tickbtn--link {
-  background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent);
+  background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-text);
 }
 .tickbtn--link:hover { border-color: var(--accent); color: var(--accent-hover); }
 
@@ -2298,7 +2733,7 @@ a.provider__name:hover { color: var(--accent); }
 .ladder__row.is-done .ladder__dot { border-color: var(--ok); color: var(--ok); }
 .ladder__row.is-current { color: var(--text); font-weight: 650; }
 .ladder__row.is-current .ladder__dot {
-  border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
+  border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft);
 }
 /* A preview in a form is a list, not a progress bar: nothing has happened yet. */
 .ladder--preview .ladder__row { color: var(--text-dim); padding: 5px 0; }
@@ -2385,7 +2820,7 @@ a.provider__name:hover { color: var(--accent); }
 .itemgroup__name { font-size: var(--t-md); font-weight: 680; letter-spacing: -0.01em; }
 .itemgroup__items { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 3px; font-size: var(--t-sm); }
 .itemgroup__items a { color: var(--text); text-decoration: none; }
-.itemgroup__items a:hover { color: var(--accent); }
+.itemgroup__items a:hover { color: var(--accent-text); }
 .itemgroup__status {
   display: flex; align-items: baseline; gap: 8px;
   margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border);
@@ -2428,7 +2863,7 @@ a.provider__name:hover { color: var(--accent); }
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--t-md); font-weight: 680; color: var(--text); text-decoration: none;
 }
-a.order__name:hover { color: var(--accent); }
+a.order__name:hover { color: var(--accent-text); }
 .order__facts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .order__acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
 /* The lot control is a link where the batch exists and a button where it does
@@ -2446,8 +2881,8 @@ a.order__name:hover { color: var(--accent); }
   background: var(--surface-2); color: var(--text-dim);
   font-size: var(--t-xs); font-weight: 600; white-space: nowrap;
 }
-.chipfact.is-yes { border-color: rgba(78, 192, 125, 0.4); color: var(--ok); background: var(--ok-soft); }
-.chipfact.is-wait { border-color: rgba(224, 165, 60, 0.4); color: var(--warn); background: var(--warn-soft); }
+.chipfact.is-yes { border-color: rgba(52, 211, 153, 0.4); color: var(--ok); background: var(--ok-soft); }
+.chipfact.is-wait { border-color: rgba(251, 191, 36, 0.4); color: var(--warn); background: var(--warn-soft); }
 
 /* Where the batch is on its own route, then what the parcels are doing. */
 .batch__status strong { color: var(--text); font-weight: 650; }
@@ -2519,3 +2954,45 @@ a.order__name:hover { color: var(--accent); }
 
 /* A listing's own picture, where one was uploaded. */
 .thumb__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+
+/* ── The catalogue hero ─────────────────────────────────────────────────────
+ *
+ * The loudest thing in the app, and deliberately the only one of its size.
+ * It runs to the glass on a phone so the first viewport is unmistakably
+ * colourful, then hands over to a neutral page for the actual browsing. It
+ * is suppressed the moment a search or filter is on, because somebody
+ * looking for a thing does not want a poster in the way.
+ */
+.hero {
+  margin-bottom: var(--s5);
+  /* Sized so the category rail and the top of the first product row still
+     clear the fold on a 390x844 phone. Impact matters, but a first viewport
+     with no product in it is a poster, not a marketplace. */
+  padding: var(--s5) var(--s4);
+  display: flex;
+  align-items: flex-end;
+}
+.hero__body { max-width: 40ch; }
+.hero__eyebrow {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.86;
+  margin-bottom: var(--s2);
+}
+.hero .block__title { font-size: clamp(23px, 5.6vw, 40px); }
+.hero .block__sub { font-size: var(--t-sm); margin-top: var(--s1); }
+.hero .block__acts { margin-top: var(--s3); }
+
+@media (min-width: 720px) {
+  .hero {
+    border-radius: var(--r-lg);
+    margin-inline: 0;
+    width: 100%;
+    padding: var(--s7) var(--s6);
+    min-height: 240px;
+  }
+  .hero .block__sub { font-size: var(--t-base); }
+}

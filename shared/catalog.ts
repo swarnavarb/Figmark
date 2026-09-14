@@ -48,8 +48,23 @@ export type Category = (typeof CATEGORIES)[number];
 export interface CategoryGroup {
   id: string;
   label: string;
-  /** A glyph, not an icon set: one character costs nothing to ship. */
+  /**
+   * A glyph, not an icon set: one character costs nothing to ship.
+   *
+   * Kept as the fallback and for anywhere text-only. The buy page draws these
+   * as vectors instead, because a colour emoji is a different typeface on
+   * every platform and lands as somebody else's palette in the one row that
+   * is supposed to introduce ours.
+   */
   glyph: string;
+  /**
+   * Which brand hue this heading owns.
+   *
+   * Presentational, and here rather than in the app so the rail, the chips on
+   * a listing and any future category page all reach for the same answer. A
+   * heading keeps its colour everywhere, which is what makes it learnable.
+   */
+  hue: 'violet' | 'coral' | 'aqua' | 'blue' | 'pink' | 'lime';
   members: readonly string[];
 }
 
@@ -58,13 +73,14 @@ export const CATEGORY_GROUPS: readonly CategoryGroup[] = [
     id: 'figures',
     label: 'Figures',
     glyph: '🧸',
+    hue: 'violet',
     members: ['Scale figures', 'Anime merch', 'Collectibles'],
   },
-  { id: 'models', label: 'Model kits', glyph: '🤖', members: ['Model kits'] },
-  { id: 'cards', label: 'Cards', glyph: '🃏', members: ['Trading cards'] },
-  { id: 'wear', label: 'Sneakers & wear', glyph: '👟', members: ['Sneakers', 'Streetwear'] },
-  { id: 'tech', label: 'Electronics', glyph: '🎧', members: ['Electronics'] },
-  { id: 'beauty', label: 'Beauty & bags', glyph: '💄', members: ['Beauty', 'Bags & watches'] },
+  { id: 'models', label: 'Model kits', glyph: '🤖', hue: 'aqua', members: ['Model kits'] },
+  { id: 'cards', label: 'Cards', glyph: '🃏', hue: 'pink', members: ['Trading cards'] },
+  { id: 'wear', label: 'Sneakers & wear', glyph: '👟', hue: 'lime', members: ['Sneakers', 'Streetwear'] },
+  { id: 'tech', label: 'Electronics', glyph: '🎧', hue: 'blue', members: ['Electronics'] },
+  { id: 'beauty', label: 'Beauty & bags', glyph: '💄', hue: 'coral', members: ['Beauty', 'Bags & watches'] },
 ];
 
 /** The categories under one heading, or an empty list for an unknown one. */

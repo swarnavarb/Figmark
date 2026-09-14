@@ -1,7 +1,7 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { gradientFor, hueFor, initialsOf } from '../format';
+import { brandHueFor, gradientFor, initialsOf } from '../format';
 
 /** Inline icons. Kept as a small set so no icon dependency is needed. */
 export function Icon({ name, size = 16 }: { name: 'search' | 'heart' | 'plus' | 'back' | 'check'; size?: number }) {
@@ -72,16 +72,18 @@ export function leadPhoto(listing: { photos?: { url?: string; isPrimary?: boolea
   return photos.find((photo) => photo.isPrimary) ?? photos[0] ?? null;
 }
 
+/**
+ * Somebody's mark.
+ *
+ * One of the six brand hues rather than an arbitrary one, so a conversation
+ * list reads as Figmark's colours and not as a bag of random circles. Stable
+ * per name, so a person is the same colour everywhere they appear.
+ */
 export function Avatar({ name, size = 38 }: { name: string; size?: number }) {
   return (
     <div
-      className="avatar"
-      style={{
-        width: size,
-        height: size,
-        background: `hsl(${hueFor(name)} 40% 34%)`,
-        fontSize: size < 32 ? 11 : 13,
-      }}
+      className={`avatar avatar--${brandHueFor(name)}`}
+      style={{ width: size, height: size, fontSize: size < 32 ? 11 : 13 }}
     >
       {initialsOf(name)}
     </div>
@@ -113,12 +115,33 @@ export function ErrorNotice({ message }: { message: string }) {
   return <p className="notice notice--error">{message}</p>;
 }
 
-/** Live fill progress for a group-buy lot. */
+/**
+ * Live fill progress for a group-buy lot.
+ *
+ * The bar gets warmer as the lot fills and lights up when it is there: a run
+ * at 29 of 30 should feel different from one at 3 of 30, and the number alone
+ * was not carrying that. The thresholds are coarse on purpose - four states
+ * rather than a continuous ramp, so the change is something you notice rather
+ * than something only a colour picker could find.
+ */
+export function fillToneOf(percent: number): string {
+  if (percent >= 100) return ' is-full';
+  if (percent >= 80) return ' is-hot';
+  if (percent >= 45) return ' is-warm';
+  return '';
+}
+
 export function LotMeter({ filled, threshold }: { filled: number; threshold: number }) {
   const percent = Math.min(100, Math.round((filled / Math.max(1, threshold)) * 100));
   return (
-    <div className="meter" role="img" aria-label={`${percent}% filled`}>
-      <div className="meter__fill" style={{ width: `${percent}%` }} />
+    <div
+      className={`meter${fillToneOf(percent)}`}
+      role="img"
+      aria-label={`${percent}% filled`}
+    >
+      {/* Scaled rather than resized: animating width relayouts the page on
+          every frame, and a transform does not. */}
+      <div className="meter__fill" style={{ '--fill': percent / 100 } as CSSProperties} />
     </div>
   );
 }

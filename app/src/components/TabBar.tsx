@@ -96,7 +96,10 @@ export function TabBar() {
   const activeIndex = Math.max(0, TABS.findIndex((tab) => tab.match(pathname)));
 
   return (
-    <nav className="tabbar" aria-label="Sections">
+    // The active index is published to CSS so the bar can carry that section's
+    // hue: Buy is violet, Sell aqua, Services lime, Social pink. Four colours
+    // people learn without being told, on the one element always on screen.
+    <nav className="tabbar" aria-label="Sections" data-tab={activeIndex}>
       {/* Position and width both come from the index and the tab count, in CSS,
           against the bar's padding box. Sizing it as a percentage of the whole
           bar instead put it eight pixels past the right edge on the last tab -

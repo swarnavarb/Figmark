@@ -8,6 +8,7 @@ import { preOrderView } from '@shared/preorder';
 import { sourcingOf } from '@shared/fulfilment';
 import { api, type FeedListing, type FeedResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon, Thumb, TrustBadge, leadPhoto } from '../components/ui';
+import { CategoryIcon } from '../components/CategoryIcon';
 import { FillGap, FillKey, FillMeter } from '../components/FillMeter';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -117,20 +118,50 @@ export function FeedPage() {
 
   return (
     <main className="page">
+      {/* The two seconds before anyone reads anything.
+       *
+       * A full-bleed colour block at the top of the catalogue, and then the
+       * page goes quiet: colour, then neutral, then product. It is skipped
+       * once a search or a filter is running, because at that point somebody
+       * is looking for something and the hero is in the way. */}
+      {!search && activeFilters === 0 && (
+        <header className="block bleed hero">
+          <div className="hero__body">
+            <p className="hero__eyebrow">Group buys from China, landed in India</p>
+            <h1 className="block__title">
+              The good stuff, split with people who want it too.
+            </h1>
+            <p className="block__sub">
+              Join a lot, pay once it fills, track the whole crossing from the warehouse
+              to your door.
+            </p>
+            <div className="block__acts">
+              <a className="btn btn--oncolour" href="#catalogue">Browse the catalogue</a>
+              <Link className="btn btn--onglass" to="/social">See what is filling</Link>
+            </div>
+          </div>
+        </header>
+      )}
+
       {/* Two rows, and deliberately not one. The first says what a thing is,
           the second says how it is being sold; they answer different questions
           and a single row that mixes them makes both harder to read. */}
-      <div className="stack" style={{ marginBottom: 22 }}>
+      <div className="stack" id="catalogue" style={{ marginBottom: 22 }}>
+        {/* Every heading owns a hue, carried on the tile as a tint and on the
+            chosen one as a full gradient. The rail is the first colour on the
+            screen after the hero, and the thing that says at a glance what
+            kind of place this is. */}
         <div className="cats" role="tablist" aria-label="Categories">
           <button type="button" role="tab" aria-selected={group === ''}
-            className={`cat${group === '' ? ' is-on' : ''}`} onClick={() => chooseGroup('')}>
-            <span className="cat__glyph" aria-hidden="true">✳</span>
+            className={`cat cat--violet${group === '' ? ' is-on' : ''}`} onClick={() => chooseGroup('')}>
+            <CategoryIcon id="everything" />
             Everything
           </button>
           {CATEGORY_GROUPS.map((entry) => (
             <button key={entry.id} type="button" role="tab" aria-selected={group === entry.id}
-              className={`cat${group === entry.id ? ' is-on' : ''}`} onClick={() => chooseGroup(entry.id)}>
-              <span className="cat__glyph" aria-hidden="true">{entry.glyph}</span>
+              className={`cat cat--${entry.hue}${group === entry.id ? ' is-on' : ''}`}
+              onClick={() => chooseGroup(entry.id)}>
+              <CategoryIcon id={entry.id} />
               {entry.label}
             </button>
           ))}

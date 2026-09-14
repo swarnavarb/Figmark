@@ -6,7 +6,7 @@ import {
   type Credit, type PageReviews, type PublicProfile, type ReviewsAbout,
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from '../components/ui';
-import { formatDate, formatMoney, timeAgo } from '../format';
+import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { MessageButton } from './MessagesPage';
 import { Stars } from './OrderPage';
@@ -103,9 +103,10 @@ export function ProfileByHandlePage() {
 
   return (
     <main className="storefront">
-      {/* The banner. A shop that has not set one still gets a band rather than
-          a hard edge, so every page has the same silhouette. */}
-      <div className="storefront__cover">
+      {/* The banner. A shop that has not set one gets a full brand gradient in
+          its own hue rather than a grey band, so every storefront opens with
+          colour and two shops never look like the same shop. */}
+      <div className={`storefront__cover storefront__cover--${brandHueFor(data.handle ?? data.displayName)}`}>
         {data.coverUrl && <img src={data.coverUrl} alt="" />}
       </div>
 

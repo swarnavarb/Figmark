@@ -39,22 +39,63 @@ export function timeAgo(iso: string): string {
  * A stable colour per id, so a listing or seller keeps the same placeholder
  * every time it renders.
  *
- * Constrained to a warm band around the accent rather than the full wheel:
- * a grid of unrelated hues reads as noise and fights the single-accent rule.
- * Saturation and lightness are fixed at the call site for the same reason.
+ * This used to be pinned to a 42-degree warm band on the theory that a grid of
+ * unrelated hues reads as noise. In practice it meant every unphotographed
+ * item in the catalogue was the same brown, so the one screen that is supposed
+ * to sell looked like a wall of mud. The band is now the whole wheel, and what
+ * keeps it from being noise is that saturation and lightness are fixed: the
+ * hues differ, the weight does not, so the grid still reads as one set.
  */
-const HUE_START = 6;
-const HUE_SPREAD = 42;
-
-export function hueFor(seed: string): number {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) % 4096;
-  return HUE_START + (hash % HUE_SPREAD);
+/** FNV-1a. Cheap, and it actually avalanches, which the old `*31 % 4096` did not. */
+function hash32(seed: string): number {
+  let hash = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash;
 }
 
+export function hueFor(seed: string): number {
+  // The fractional part of n times the golden ratio is equidistributed, so
+  // ids land evenly right around the wheel. Multiplying by the golden angle
+  // and taking it mod 360 instead - the obvious-looking version - clumps
+  // badly: on the real catalogue it put four of eight items in green and
+  // produced no warm hue at all.
+  return ((hash32(seed) * 0.6180339887498949) % 1) * 360;
+}
+
+/**
+ * The square an item without a photo gets.
+ *
+ * Two stops thirty degrees apart rather than one flat colour, lit from the
+ * top left, so a grid of these reads as a set of objects under one light
+ * rather than a set of swatches.
+ */
 export function gradientFor(seed: string): string {
   const hue = hueFor(seed);
-  return `linear-gradient(140deg, hsl(${hue} 38% 30%), hsl(${hue + 14} 44% 17%))`;
+  // Deep and saturated rather than bright. A placeholder is the backdrop an
+  // item would have been photographed against, not the item: at full
+  // brightness a grid of these is a wall of neon slabs competing with the
+  // products, which is the opposite of the job. Dark enough that the
+  // initials, the badge and the price all still read on top.
+  return `linear-gradient(145deg, hsl(${hue} 58% 34%), hsl(${(hue + 34) % 360} 64% 19%))`;
+}
+
+/**
+ * The six brand hues, for the places that should look like Figmark rather
+ * than like a random colour: avatars, category nav, channel marks.
+ *
+ * Drawn from the palette instead of the wheel on purpose. An avatar in an
+ * arbitrary hue is just a coloured circle; an avatar in one of six known hues
+ * is part of an identity, and six is enough that a conversation list still
+ * looks varied.
+ */
+export const BRAND_HUES = ['violet', 'coral', 'aqua', 'blue', 'pink', 'lime'] as const;
+export type BrandHue = (typeof BRAND_HUES)[number];
+
+export function brandHueFor(seed: string): BrandHue {
+  return BRAND_HUES[hash32(seed) % BRAND_HUES.length]!;
 }
 
 export function initialsOf(name: string): string {

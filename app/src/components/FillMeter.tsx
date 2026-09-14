@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { PreOrderMember, PreOrderView } from '../api';
-import { daysUntil, formatDate, hueFor, initialsOf } from '../format';
+import { brandHueFor, daysUntil, formatDate, initialsOf } from '../format';
 
 /**
  * The fill meter, as a group rather than a progress bar.
@@ -115,8 +115,7 @@ export function FacePile({ people, unlisted, max = 5 }: {
       {shown.map((person, index) => (
         <b
           key={`${person.ref.name}-${index}`}
-          className={person.booked ? undefined : 'pile__soft'}
-          style={{ background: `hsl(${hueFor(person.ref.name)} 40% 34%)` }}
+          className={`pledger pledger--${brandHueFor(person.ref.name)}${person.booked ? '' : ' pile__soft'}`}
           title={`${person.ref.name} · ${person.booked ? 'booked' : 'in if it fills'}`}
         >
           {initialsOf(person.ref.name)}
