@@ -2,7 +2,9 @@ import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-bl
 import { DefaultAzureCredential } from '@azure/identity';
 import { PHOTO_CONTAINER_NAME } from '../../../shared/containers.js';
 import type { StorageConfig } from '../config.js';
-import type { PhotoStore, StorageStatus } from './types.js';
+import { randomUUID } from 'node:crypto';
+import { extensionFor } from './memory-store.js';
+import type { PhotoStore, StoredPhoto, StorageStatus } from './types.js';
 
 /** Azure Blob Storage implementation for listing and condition photos. */
 export class BlobPhotoStore implements PhotoStore {
@@ -51,6 +53,31 @@ export class BlobPhotoStore implements PhotoStore {
 
   urlFor(blobName: string): string | null {
     return `${this.client.url.replace(/\/$/, '')}/${PHOTO_CONTAINER_NAME}/${encodeURIComponent(blobName)}`;
+  }
+
+  async upload(bytes: Uint8Array, contentType: string): Promise<StoredPhoto> {
+    const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
+    const blob = this.client
+      .getContainerClient(PHOTO_CONTAINER_NAME)
+      .getBlockBlobClient(blobName);
+    await blob.uploadData(bytes, { blobHTTPHeaders: { blobContentType: contentType } });
+    // The container is public-read, so the storage URL is the fast path and
+    // this app never has to proxy the bytes.
+    return { blobName, url: this.urlFor(blobName)! };
+  }
+
+  async read(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    try {
+      const blob = this.client.getContainerClient(PHOTO_CONTAINER_NAME).getBlockBlobClient(blobName);
+      const buffer = await blob.downloadToBuffer();
+      const properties = await blob.getProperties();
+      return {
+        bytes: new Uint8Array(buffer),
+        contentType: properties.contentType ?? 'image/jpeg',
+      };
+    } catch {
+      return null;
+    }
   }
 }
 

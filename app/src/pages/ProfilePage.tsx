@@ -4,7 +4,7 @@ import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api, type ActivityResponse, type ItemGroup } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { Ladder } from './BatchesPage';
@@ -275,7 +275,7 @@ export function ProfilePage() {
           <div className="grid">
             {data.listings.map((listing) => (
               <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
-                <Thumb seed={listing.id} label={listing.title}>
+                <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                   <div className="thumb__badges">
                     <span className="badge badge--solid">{listing.condition}</span>
                     <span className={`badge badge--${listing.status === 'active' ? 'ok' : 'warn'}`}>{listing.status}</span>

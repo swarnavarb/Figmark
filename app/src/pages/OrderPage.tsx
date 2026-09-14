@@ -88,31 +88,42 @@ export function OrderPage() {
               batch. An item waiting for one gets what has actually happened
               and a line saying what it is waiting for - not five hollow
               circles implying a journey nobody has booked. */}
-          {data.route ? (
+          {data.awaitingLot || data.route ? (
             <>
-              <span className="field__hint">
-                Travelling in {data.route.lotName} · lot #{data.route.lotNumber} · {data.route.name}
-              </span>
-              <Ladder steps={data.route.steps} current={data.route.currentStep} />
-            </>
-          ) : (
-            <>
-              <ol className="track" style={{ flexWrap: 'wrap' }}>
-                {stages.map((stage, index) => (
-                  <li key={stage}
-                    className={`track__step${index < currentIndex ? ' is-done' : ''}${index === currentIndex ? ' is-current' : ''}`}>
-                    <span className="track__dot" aria-hidden="true" />
-                    <span>{labelFor(stage)}</span>
-                  </li>
-                ))}
-              </ol>
-              {data.awaitingLot && (
+              {/* The first half of the journey, in whatever words the shop
+                  uses. It is the same ladder either way - what changes is
+                  whether there is a second half to draw under it. */}
+              <Ladder
+                steps={data.preLot.steps}
+                current={data.route ? data.preLot.steps.length : data.preLot.currentStep}
+              />
+
+              {data.route ? (
+                <>
+                  <span className="field__hint" style={{ marginTop: 4 }}>
+                    Travelling in {data.route.lotName} · lot #{data.route.lotNumber} ·{' '}
+                    {data.route.name}
+                  </span>
+                  <Ladder steps={data.route.steps} current={data.route.currentStep} />
+                </>
+              ) : (
                 <p className="notice notice--warn">
-                  Not in a batch yet. The rest of the journey appears once the seller files this into
-                  one — there is nothing further to show until they do.
+                  <strong>Not added to any lot yet.</strong> Your order is waiting to be added to an
+                  international shipment. The rest of the journey appears the moment the seller files
+                  it into one.
                 </p>
               )}
             </>
+          ) : (
+            <ol className="track" style={{ flexWrap: 'wrap' }}>
+              {stages.map((stage, index) => (
+                <li key={stage}
+                  className={`track__step${index < currentIndex ? ' is-done' : ''}${index === currentIndex ? ' is-current' : ''}`}>
+                  <span className="track__dot" aria-hidden="true" />
+                  <span>{labelFor(stage)}</span>
+                </li>
+              ))}
+            </ol>
           )}
 
           <div className="detail__section" style={{ marginTop: 8 }}>

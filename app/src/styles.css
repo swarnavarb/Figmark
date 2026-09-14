@@ -202,6 +202,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .seg { display: flex; gap: 4px; padding: 4px; background: var(--surface-2); border-radius: var(--r-md); }
 .seg button {
   flex: 1;
+  /* A flex child will not shrink below its own content without this, so three
+     tabs with real words in them pushed a 390px screen to 463. */
+  min-width: 0;
   padding: 8px 12px;
   border: 1px solid transparent;
   border-radius: calc(var(--r-md) - 4px);
@@ -2244,6 +2247,12 @@ a.provider__name:hover { color: var(--accent); }
 }
 /* Ticked reads as ticked without a second colour to learn. */
 .tickbtn.is-on::before { content: '✓ '; }
+/* The batch control is a door, not a tick: it says where the item went and
+   goes there, so it carries an arrow rather than a checkmark. */
+.tickbtn--link {
+  background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent);
+}
+.tickbtn--link:hover { border-color: var(--accent); color: var(--accent-hover); }
 
 /* Back out of a console without hunting for the bar. */
 .backlink {
@@ -2394,3 +2403,119 @@ a.provider__name:hover { color: var(--accent); }
 }
 .extras > summary:hover { color: var(--text); }
 .extras[open] > summary { margin-bottom: 12px; }
+
+/* ── Orders, templates and photos ──────────────────────────────────────── */
+
+/*
+ * One purchase, with everything it needs answering about. A shop works forty
+ * of these in a sitting, so it is a row of facts and two controls rather than
+ * a panel: the two controls are the two things actually done from here, and
+ * everything else opens the screen that owns it.
+ */
+.order {
+  /* The title never wraps, so without this the card's minimum width is the
+     whole title and the grid sizes its column to the longest one on the
+     screen - which put a 390px page at 463. */
+  min-width: 0;
+  display: grid; gap: 5px;
+  padding: 13px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.order__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.order__name {
+  flex: 1 1 auto;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-md); font-weight: 680; color: var(--text); text-decoration: none;
+}
+a.order__name:hover { color: var(--accent); }
+.order__facts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.order__acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+/* The lot control is a link where the batch exists and a button where it does
+   not, so it is styled by what it looks like rather than what it is. */
+.order__acts .tickbtn { display: block; text-decoration: none; }
+.order__foot {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--border);
+}
+
+/* A fact about an order: true, waiting, or neither. Not a button. */
+.chipfact {
+  padding: 3px 8px;
+  border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text-dim);
+  font-size: var(--t-xs); font-weight: 600; white-space: nowrap;
+}
+.chipfact.is-yes { border-color: rgba(78, 192, 125, 0.4); color: var(--ok); background: var(--ok-soft); }
+.chipfact.is-wait { border-color: rgba(224, 165, 60, 0.4); color: var(--warn); background: var(--warn-soft); }
+
+/* Where the batch is on its own route, then what the parcels are doing. */
+.batch__status strong { color: var(--text); font-weight: 650; }
+.batch__no {
+  margin-right: 7px; padding: 1px 6px;
+  border-radius: var(--r-sm); background: var(--surface-2);
+  font-size: var(--t-xs); color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+.batch__crew { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 14px 10px; }
+
+/* A template: what it fills in, and the journey it sets up. */
+.tplcard {
+  display: grid; gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.tplcard__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tplcard__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-md); font-weight: 680;
+}
+.tplcard__body {
+  margin: 6px 0 0; padding: 8px 10px;
+  border-radius: var(--r-sm); background: var(--surface-2);
+  font-size: var(--t-xs); color: var(--text-dim); white-space: pre-wrap;
+}
+.tplcard__foot {
+  display: flex; gap: 6px;
+  margin-top: 8px; padding-top: 9px; border-top: 1px solid var(--border);
+}
+
+/* The Quick Post row, first in the form because it fills in what is below it. */
+.quickpost {
+  display: grid; gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-md);
+  background: var(--accent-soft);
+}
+
+/* Photos. Square tiles that wrap, because the phone is where these are taken. */
+.photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.photo {
+  position: relative;
+  width: 96px; height: 96px; margin: 0;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); overflow: hidden;
+}
+.photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo.is-primary { border-color: var(--accent); }
+.photo figcaption {
+  position: absolute; top: 4px; left: 4px;
+  padding: 1px 6px; border-radius: var(--r-pill);
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 10px; font-weight: 700;
+}
+.photo__acts {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; justify-content: center; gap: 2px;
+  padding: 3px; background: rgba(0, 0, 0, 0.6);
+}
+.photo__acts .iconbtn { width: 20px; height: 20px; font-size: 9px; }
+.photo--add {
+  display: grid; place-items: center; gap: 2px;
+  border-style: dashed; color: var(--text-dim); cursor: pointer; font: inherit;
+}
+.photo--add:hover { border-color: var(--accent); color: var(--text); }
+.photo--add > span:first-child { font-size: 22px; line-height: 1; }
+
+/* A listing's own picture, where one was uploaded. */
+.thumb__img { width: 100%; height: 100%; object-fit: cover; display: block; }

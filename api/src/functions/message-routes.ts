@@ -288,6 +288,9 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
       sourcing: listing.sourcing,
       quantityAvailable: listing.quantityAvailable,
       likeCount: listing.likeCount,
+      // The picture, so a shop's grid looks like its shop rather than like a
+      // wall of generated squares.
+      photos: listing.photos ?? [],
     })),
   });
 }

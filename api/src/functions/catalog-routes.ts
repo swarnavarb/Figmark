@@ -4,6 +4,7 @@ import type { Sourcing } from '../../../shared/enums.js';
 import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulfilment.js';
+import { normaliseSteps } from '../../../shared/routes.js';
 import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
@@ -152,6 +153,9 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     shareToChannel?: boolean;
     /** Announce it in the feed, to everyone. */
     shareToFeed?: boolean;
+    /** The before-lot ladder from the Quick Post template, if it had one. */
+    preLotSteps?: { id?: string; name?: string; description?: string }[];
+    preLotName?: string;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -212,6 +216,14 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // the truth, rather than a date nothing can keep.
   const sourcing: Sourcing = lotId ? 'import' : (body.sourcing === 'import' ? 'import' : 'in_hand');
 
+  /* A template's before-lot ladder, snapshotted onto the listing so editing the
+     template later cannot rewrite what a buyer of this item reads. Two steps or
+     none: one step before the wall says nothing. */
+  const preLotSteps = normaliseSteps(body.preLotSteps ?? []);
+  const preLot = preLotSteps.length >= 2
+    ? { routeId: null, name: body.preLotName?.trim() || 'Before the batch', steps: preLotSteps }
+    : null;
+
   const now = new Date().toISOString();
   const listing: Listing = {
     id: `lst_${randomUUID().slice(0, 12)}`,
@@ -243,7 +255,24 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     sourcing,
     /** Sold as one assorted lot rather than as a single named item. */
     bundle: body.bundle === true,
-    photos: [],
+    /* Photos as the manager arranged them: at most six, first one primary
+       unless the seller said otherwise. The cap is here rather than in the
+       browser because a document with forty images in it is the kind of thing
+       that only fails in production. */
+    photos: (body.photos ?? [])
+      .slice(0, 6)
+      .map((photo, index, all) => ({
+        blobName: photo.blobName ?? '',
+        url: photo.url,
+        imageHash: null,
+        isPrimary: all.some((row) => row.isPrimary) ? photo.isPrimary === true : index === 0,
+      }))
+      .filter((photo) => photo.blobName || photo.url),
+    /* The two ladders, from the Quick Post template the seller listed with.
+       The before-lot one is copied because a buyer will read it; the after-lot
+       one is a pointer, because nothing is travelling it yet. */
+    preLotRoute: preLot,
+    lotRouteId: body.lotRouteId ?? null,
     tags: body.tags ?? [],
     likeCount: 0,
     viewCount: 0,
@@ -413,6 +442,10 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     status: 'pending_payment',
     paymentStatus: 'unpaid',
     stage: listing.lotId ? 'ordering' : 'preparing',
+    // Copied from the listing, for the same reason a batch copies its route:
+    // the template is a template, and editing it must not rewrite a timeline
+    // somebody is already reading.
+    preLotRoute: listing.preLotRoute ?? null,
     stageHistory: [
       { stage: listing.lotId ? 'ordering' : 'preparing', enteredAt: now2, note: 'Order placed.', recordedBy: user.id },
     ],

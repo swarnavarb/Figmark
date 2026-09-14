@@ -3,11 +3,41 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
 import type { Lot } from '@shared/models';
-import { ApiRequestError, api } from '../api';
+import type { RouteStep } from '@shared/routes';
+import { fillFrom, type PostTemplate } from '@shared/templates';
+import { PhotoManager } from '../components/PhotoManager';
+import { ApiRequestError, api, type PhotoDraft } from '../api';
 import { NewLotDialog } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
+
+/**
+ * The template this browser used last.
+ *
+ * A convenience for one person at one keyboard, so it lives in their browser
+ * rather than on their account: nothing else needs to know, and a shop's two
+ * people may well list different things. Wrapped because storage throws in a
+ * private window rather than returning null, and a listing screen that will
+ * not open is a worse outcome than a dropdown that starts at the top.
+ */
+const LAST_TEMPLATE_KEY = 'figmark.lastTemplate';
+
+function lastTemplate(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_TEMPLATE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function rememberTemplate(id: string): void {
+  try {
+    window.localStorage.setItem(LAST_TEMPLATE_KEY, id);
+  } catch {
+    /* A private window. The dropdown just starts at the top next time. */
+  }
+}
 
 /**
  * How the item is being sold, which is the same question as where it is.
@@ -16,7 +46,16 @@ import { useSession } from '../session';
  * waits on, so an imported item outside one has no tracking to give them.
  * Anything not in a lot is stock already on the shelf.
  */
-type Shape = 'single' | 'lot';
+/**
+ * What kind of thing is being listed.
+ *
+ * `waiting` is the one that was missing, and it is the common case in this
+ * trade: an import sold before the run that will carry it has been opened. The
+ * API has accepted it since routes landed - the form simply had no way to say
+ * it, so every such item went up as a domestic sale and its buyer was shown a
+ * three-step timeline for something crossing an ocean.
+ */
+type Shape = 'single' | 'waiting' | 'lot';
 
 /**
  * List something.
@@ -49,6 +88,15 @@ export function SellPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /* Quick Post is on by default and remembers the last template used, because
+     a shop lists forty of the same kind of thing a month and typing the same
+     category, tags and two lines each time is how a listing screen becomes a
+     chore. Everything it fills in stays editable. */
+  const [quickPost, setQuickPost] = useState(true);
+  const [templates, setTemplates] = useState<PostTemplate[]>([]);
+  const [templateId, setTemplateId] = useState<string>(() => lastTemplate() ?? '');
+  const [photos, setPhotos] = useState<PhotoDraft[]>([]);
+  const [preLot, setPreLot] = useState<RouteStep[] | null>(null);
   const [shape, setShape] = useState<Shape>('single');
   const [lots, setLots] = useState<Lot[]>([]);
   const [lotId, setLotId] = useState('');
@@ -72,6 +120,45 @@ export function SellPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .templates()
+      .then((result) => {
+        if (cancelled) return;
+        setTemplates(result.templates);
+        // The last one used, when it still exists; otherwise the first.
+        const remembered = result.templates.find((row) => row.id === lastTemplate());
+        const chosen = remembered ?? result.templates[0];
+        if (chosen) {
+          setTemplateId(chosen.id);
+          applyTemplate(chosen);
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+    // Once: re-applying on every render would undo edits as they were typed.
+  }, []);
+
+  /** Fill the form in from a template, leaving everything editable. */
+  function applyTemplate(template: PostTemplate) {
+    const fill = fillFrom(template);
+    if (fill.category) setCategory(fill.category);
+    if (fill.tags) setTags(fill.tags);
+    if (fill.condition) setCondition(fill.condition);
+    if (fill.description) setDescription(fill.description);
+    setPreLot(template.preLotRoute?.steps ?? null);
+    // A batch named by the template wins; otherwise the template's own answer
+    // about what it lists, which is the thing a shop should not have to repeat
+    // forty times a month.
+    if (fill.lotId) {
+      setLotId(fill.lotId);
+      setShape('lot');
+    } else {
+      setShape(fill.sourcing === 'import' ? 'waiting' : 'single');
+    }
+  }
+
   function lotCreated(lot: Lot) {
     setLots((current) => [lot, ...current]);
     setLotId(lot.id);
@@ -85,7 +172,8 @@ export function SellPage() {
   // usually long after the item goes up. Nothing waits on it.
   const canPublish = title.trim().length > 2 && priceMinor > 0;
   // The lot is the answer: in one means import, out of one means in hand.
-  const effectiveSourcing: Sourcing = shape === 'lot' ? 'import' : 'in_hand';
+  const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
+  const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;
 
   async function publish(event: FormEvent) {
     event.preventDefault();
@@ -112,7 +200,18 @@ export function SellPage() {
         lotId: shape === 'lot' ? lotId : null,
         ...(storeId ? { storeId } : {}),
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+        photos: photos.map((photo) => ({
+          blobName: photo.blobName,
+          url: photo.url,
+          isPrimary: photo.isPrimary,
+        })),
+        ...(quickPost && preLot
+          ? { preLotSteps: preLot.map((step) => ({ name: step.name, description: step.description })) }
+          : {}),
+        ...(quickPost && chosenTemplate?.lotRouteId ? { lotRouteId: chosenTemplate.lotRouteId } : {}),
       });
+      // Remembered for the next item, which is the point of a template.
+      if (quickPost && templateId) rememberTemplate(templateId);
       navigate(`/listing/${result.listing.id}`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not publish this listing.');
@@ -161,6 +260,45 @@ export function SellPage() {
 
       <div className="detail">
         <form className="form" onSubmit={publish}>
+          {/* First, because it fills in most of what is below it. On by
+              default and remembering the last one used: a template nobody has
+              to go and switch on is a template that gets used. */}
+          <div className="quickpost">
+            <label className="tick">
+              <input type="checkbox" checked={quickPost}
+                onChange={(e) => setQuickPost(e.target.checked)} />
+              <span>
+                Quick Post
+                <span className="faint"> — fill this in from a template.</span>
+              </span>
+            </label>
+
+            {quickPost && (
+              templates.length === 0 ? (
+                <span className="field__hint">
+                  No templates yet. Make one from <Link to="/shop">Items</Link> and the next listing
+                  starts half-written.
+                </span>
+              ) : (
+                <label className="field">
+                  <span>Template</span>
+                  <select value={templateId} onChange={(e) => {
+                    setTemplateId(e.target.value);
+                    const picked = templates.find((row) => row.id === e.target.value);
+                    if (picked) applyTemplate(picked);
+                  }}>
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>{template.name}</option>
+                    ))}
+                  </select>
+                  <span className="field__hint">
+                    Everything it fills in stays editable — change anything before you publish.
+                  </span>
+                </label>
+              )
+            )}
+          </div>
+
           <label className="field">
             <span>Title</span>
             <input value={title} onChange={(e) => setTitle(e.target.value)}
@@ -172,6 +310,8 @@ export function SellPage() {
             <textarea value={description} onChange={(e) => setDescription(e.target.value)}
               placeholder="Condition, what's included, where it ships from…" />
           </label>
+
+          <PhotoManager photos={photos} onChange={setPhotos} />
 
           <div className="field-row">
             <label className="field">
@@ -293,6 +433,10 @@ export function SellPage() {
                 className={shape === 'single' ? 'is-on' : ''} onClick={() => setShape('single')}>
                 In hand
               </button>
+              <button type="button" role="radio" aria-checked={shape === 'waiting'}
+                className={shape === 'waiting' ? 'is-on' : ''} onClick={() => setShape('waiting')}>
+                Import — batch later
+              </button>
               <button type="button" role="radio" aria-checked={shape === 'lot'}
                 className={shape === 'lot' ? 'is-on' : ''} onClick={() => setShape('lot')}>
                 Import — in a lot
@@ -303,6 +447,11 @@ export function SellPage() {
               <p className="field__hint">
                 Ships from your shelf. Buyers see <strong>{SOURCING_LABELS.in_hand}</strong> and expect it to go
                 out straight away.
+              </p>
+            ) : shape === 'waiting' ? (
+              <p className="field__hint">
+                It goes up as an import with no dispatch date. When it sells it lands on your Orders
+                screen waiting for a batch — file it into one there, any time.
               </p>
             ) : (
               <label className="field">

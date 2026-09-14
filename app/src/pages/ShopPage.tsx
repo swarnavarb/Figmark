@@ -6,9 +6,15 @@ import {
   type StorePermission,
 } from '@shared/enums';
 import { countOf, type LotTally } from '@shared/board';
+import { CATEGORIES } from '@shared/catalog';
+import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
+import type { RouteStep } from '@shared/routes';
+import { BUILT_IN_PRE_LOT_ROUTE, preLotRouteOf, type PostTemplate } from '@shared/templates';
+import { RouteBuilder } from '../components/RouteBuilder';
 import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
+import { currentStepName, routeOf } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
@@ -25,8 +31,10 @@ import {
   type LotsResponse,
   type SaleRow,
   type SalesResponse,
+  type ProviderCard,
+  type RoutesResponse,
 } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, Modal, Thumb, Tile } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
 import { PackingList } from './ExporterPage';
 import { BatchDetail, NewBatchForm } from './BatchesPage';
@@ -37,8 +45,12 @@ type Section = 'items' | 'payments' | 'lots' | 'packing' | 'analytics' | 'storef
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
-  { id: 'payments', label: 'Payments' },
-  { id: 'lots', label: 'Lots' },
+  // Payments was too narrow a name for what this screen does: money is one of
+  // six things an order needs answering about, and the other five had nowhere
+  // to live. The id stays `payments` - it is the identity, and renaming it
+  // would only be a way to break the rights that reference it.
+  { id: 'payments', label: 'Orders' },
+  { id: 'lots', label: 'Track' },
   { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
@@ -215,7 +227,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           content underneath a static frame. */}
       <div className="tab-view" key={`${store.ownerId}:${active}`}>
         {active === 'items' && <MyItems store={store} />}
-        {active === 'payments' && <Payments store={store} />}
+        {active === 'payments' && <Orders store={store} />}
         {active === 'lots' && <Lots store={store} />}
         {active === 'packing' && <PackingList storeId={store.ownerId} />}
         {active === 'analytics' && <Analytics store={store} />}
@@ -463,7 +475,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
 function MyItems({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'stock' | 'power'>('stock');
+  const [mode, setMode] = useState<'stock' | 'power' | 'templates'>('stock');
 
   useEffect(() => {
     void api
@@ -507,9 +519,15 @@ function MyItems({ store }: { store: StoreAccess }) {
           className={mode === 'power' ? 'is-on' : ''} onClick={() => setMode('power')}>
           Scheduled sales
         </button>
+        <button type="button" role="tab" aria-selected={mode === 'templates'}
+          className={mode === 'templates' ? 'is-on' : ''} onClick={() => setMode('templates')}>
+          Templates
+        </button>
       </div>
 
-      {mode === 'power' ? (
+      {mode === 'templates' ? (
+        <TemplatesPanel store={store} />
+      ) : mode === 'power' ? (
         <PowerSalePanel storeId={store.ownerId} />
       ) : !data ? (
         <p className="muted">Loading…</p>
@@ -522,7 +540,7 @@ function MyItems({ store }: { store: StoreAccess }) {
           <div className="grid">
             {mine.map((listing) => (
               <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
-                <Thumb seed={listing.id} label={listing.title}>
+                <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                   <div className="thumb__badges">
                     <span className="badge badge--solid">{listing.condition}</span>
                   </div>
@@ -548,17 +566,36 @@ function MyItems({ store }: { store: StoreAccess }) {
   );
 }
 
-function Payments({ store }: { store: StoreAccess }) {
+/** What a seller can be looking for on this screen. */
+type OrderFilter = 'all' | 'answer' | 'nolot';
+
+/**
+ * Every customer purchase, one card each.
+ *
+ * This was the Payments screen, and payments was too narrow a name for it.
+ * Money is one of six things an order needs answering about and the other five
+ * had nowhere to live: whether the piece has reached the warehouse, whether it
+ * is in a batch, which batch, where that batch has got to, and whether the
+ * buyer has been told any of it. Those answers were spread across three
+ * screens, so the normal working day was a tour.
+ *
+ * Nothing that answered a payment has been taken away. It is on the card now,
+ * next to the rest of what the order needs.
+ */
+function Orders({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<SalesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<SaleRow | null>(null);
+  const [filing, setFiling] = useState<SaleRow | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [filter, setFilter] = useState<OrderFilter>('all');
 
   const load = useCallback(async () => {
     setError(null);
     try {
       setData(await api.sales(store.ownerId));
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load payments.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your orders.');
     }
   }, [store.ownerId]);
 
@@ -566,113 +603,74 @@ function Payments({ store }: { store: StoreAccess }) {
     void load();
   }, [load]);
 
-  if (error) return <ErrorNotice message={error} />;
+  /** The one tick this screen makes. Everything else opens something. */
+  async function markWarehouse(row: SaleRow, on: boolean) {
+    setBusy(row.id);
+    setError(null);
+    try {
+      await api.setCheckpoint(row.id, 'china_received', on);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (error && !data) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
 
-  const nothing = data.waiting.length === 0 && data.placed.length === 0 && data.answered.length === 0;
-  if (nothing) {
+  const needsAnswer = new Set([...data.waiting, ...data.placed].map((row) => row.id));
+  const shown = data.orders.filter((row) =>
+    filter === 'all'
+      ? true
+      : filter === 'answer'
+        ? needsAnswer.has(row.id)
+        : row.awaitingLot);
+
+  if (data.orders.length === 0) {
     return (
-      <EmptyState title="Nothing waiting on you">
-        Every order lands here. You confirm the money arrived, or say you cannot serve it — and
-        either way the buyer hears from you rather than wondering.
+      <EmptyState title="No orders yet">
+        Every purchase lands here — the money, the warehouse, the batch it travels in, and the one
+        tick that tells the buyer it has arrived.
       </EmptyState>
     );
   }
 
   return (
     <div className="stack">
-      {/* Money first: somebody has sent it and is waiting to hear. */}
-      {data.waiting.length > 0 && (
-        <section className="stack" style={{ gap: 8 }}>
-          <h2 className="sechead">
-            They say they have paid
-            <span className="badge badge--warn">{data.waiting.length}</span>
-          </h2>
-          {data.waiting.map((row) => (
-            <div key={row.id} className="card card--pad stack" style={{ gap: 10 }}>
-              <div className="salerow">
-                <div style={{ minWidth: 0 }}>
-                  <Link to={`/order/${row.id}`} className="card__title">{row.itemName}</Link>
-                  <span className="faint">
-                    {row.buyer.name} · said paid {timeAgo(row.claim?.claimedAt ?? row.createdAt)}
-                    {row.claim?.reference ? ` · ${row.claim.reference}` : ''}
-                  </span>
-                </div>
-                <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
-              </div>
-              <div className="row">
-                {/* Confirming money is a decision about a specific transfer in a
-                    specific bank account, so it belongs on the order where the
-                    reference and the screenshot are. */}
-                <Link to={`/order/${row.id}`} className="btn btn--sm">Check the payment</Link>
-                <button type="button" className="btn btn--ghost btn--sm"
-                  onClick={() => setRejecting(row)}>
-                  Can&rsquo;t serve it
-                </button>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
+      {error && <ErrorNotice message={error} />}
 
-      {/* Then orders that have not been paid yet. The seller's answer here is
-          not about money at all - it is whether this can be served. */}
-      {data.placed.length > 0 && (
-        <section className="stack" style={{ gap: 8 }}>
-          <h2 className="sechead">
-            Ordered, not paid yet
-            <span className="badge">{data.placed.length}</span>
-          </h2>
-          {data.placed.map((row) => (
-            <div key={row.id} className="card card--pad stack" style={{ gap: 10 }}>
-              <div className="salerow">
-                <div style={{ minWidth: 0 }}>
-                  <Link to={`/order/${row.id}`} className="card__title">{row.itemName}</Link>
-                  <span className="faint">
-                    {row.buyer.name} · ordered {timeAgo(row.createdAt)}
-                    {row.quantity > 1 && ` · ${row.quantity} units`}
-                  </span>
-                </div>
-                <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
-              </div>
-              <div className="row row--between">
-                <span className="faint">Waiting on them to pay.</span>
-                <button type="button" className="btn btn--ghost btn--sm"
-                  onClick={() => setRejecting(row)}>
-                  Can&rsquo;t serve it
-                </button>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
+      <div className="seg" role="tablist" aria-label="Which orders">
+        {([
+          ['all', `All ${data.orders.length}`],
+          ['answer', `To answer ${needsAnswer.size}`],
+          ['nolot', `No batch ${data.orders.filter((row) => row.awaitingLot).length}`],
+        ] as [OrderFilter, string][]).map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={filter === id}
+            className={filter === id ? 'is-on' : ''} onClick={() => setFilter(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {data.answered.length > 0 && (
-        <section className="stack" style={{ gap: 8 }}>
-          <h2 className="sechead">Already answered</h2>
-          {data.answered.map((row) => (
-            <Link key={row.id} to={`/order/${row.id}`} className="card card--pad salerow">
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 650 }}>{row.itemName}</div>
-                <span className="faint">
-                  {row.buyer.name} · {timeAgo(row.claim?.decidedAt ?? row.createdAt)}
-                </span>
-              </div>
-              <div className="row" style={{ alignItems: 'center' }}>
-                <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
-                <span className={`badge badge--${
-                  row.status === 'cancelled' ? 'danger' : row.claim?.decision === 'accepted' ? 'ok' : 'warn'
-                }`}>
-                  {row.status === 'cancelled'
-                    ? 'turned down'
-                    : row.claim?.decision === 'accepted'
-                      ? 'received'
-                      : 'not received'}
-                </span>
-              </div>
-            </Link>
-          ))}
-        </section>
+      {shown.length === 0 ? (
+        <p className="muted">
+          {filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a batch.'}
+        </p>
+      ) : (
+        shown.map((row) => (
+          <OrderCard
+            key={row.id}
+            row={row}
+            store={store}
+            busy={busy === row.id}
+            needsAnswer={needsAnswer.has(row.id)}
+            onWarehouse={(on) => void markWarehouse(row, on)}
+            onFile={() => setFiling(row)}
+            onReject={() => setRejecting(row)}
+          />
+        ))
       )}
 
       {rejecting && (
@@ -682,7 +680,549 @@ function Payments({ store }: { store: StoreAccess }) {
           onDone={() => { setRejecting(null); void load(); }}
         />
       )}
+
+      {filing && (
+        <FileIntoLot
+          row={filing}
+          store={store}
+          onClose={() => setFiling(null)}
+          onDone={() => { setFiling(null); void load(); }}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── Quick Post templates ───────────────────────────────────────────────── */
+
+/**
+ * The stationery a shop lists from.
+ *
+ * A shop that sells Marvel Legends lists forty of them a month, and every one
+ * has the same category, the same three tags, the same two lines about
+ * condition and shipping, and the same journey. Typing that forty times is how
+ * a listing screen becomes a chore - and a chore is how a shop ends up with
+ * forty listings that describe themselves forty different ways.
+ *
+ * A template is not a kind of listing and it is not attached to one. It fills
+ * the form in and gets out of the way; every field it touches stays editable,
+ * which is the difference between a template and a straitjacket.
+ */
+function TemplatesPanel({ store }: { store: StoreAccess }) {
+  const [templates, setTemplates] = useState<PostTemplate[] | null>(null);
+  const [editing, setEditing] = useState<PostTemplate | 'new' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setTemplates((await api.templates()).templates);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your templates.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function remove(template: PostTemplate) {
+    setBusy(template.id);
+    try {
+      await api.deleteTemplate(template.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not delete.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (error) return <ErrorNotice message={error} />;
+  if (templates === null) return <p className="muted">Loading…</p>;
+
+  if (editing) {
+    return (
+      <TemplateForm
+        store={store}
+        template={editing === 'new' ? null : editing}
+        onCancel={() => setEditing(null)}
+        onSaved={() => { setEditing(null); void load(); }}
+      />
+    );
+  }
+
+  return (
+    <div className="stack">
+      <button type="button" className="btn" style={{ justifySelf: 'start' }}
+        onClick={() => setEditing('new')}>
+        <Icon name="plus" size={15} /> Create template
+      </button>
+
+      {templates.length === 0 ? (
+        <EmptyState icon="◫" title="No templates yet">
+          Make one for the kind of thing you list most. The next item starts half-written — category,
+          tags, your usual two lines, and the journey it will travel.
+        </EmptyState>
+      ) : (
+        templates.map((template) => (
+          <article key={template.id} className="tplcard">
+            <div className="tplcard__top">
+              <span className="tplcard__name">{template.name}</span>
+              <span className="badge">{template.category || 'No category'}</span>
+            </div>
+            <span className="faint">
+              {[
+                template.tags.length > 0 ? template.tags.join(', ') : null,
+                template.condition,
+                template.defaultLotId ? 'Goes into a batch' : 'No batch',
+              ].filter(Boolean).join(' · ')}
+            </span>
+            <span className="faint">
+              Before the batch: {preLotRouteOf(template).steps.length} steps · after:{' '}
+              {template.lotRouteName ?? 'China → India'}
+            </span>
+            {template.description && <p className="tplcard__body">{template.description}</p>}
+            <div className="tplcard__foot">
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(template)}>
+                Edit
+              </button>
+              <button type="button" className="btn btn--ghost btn--sm" disabled={busy === template.id}
+                onClick={() => void remove(template)}>
+                Delete
+              </button>
+            </div>
+          </article>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** Write one, or correct one. The same form either way. */
+function TemplateForm({ store, template, onCancel, onSaved }: {
+  store: StoreAccess;
+  template: PostTemplate | null;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(template?.name ?? '');
+  const [category, setCategory] = useState(template?.category ?? CATEGORIES[0]!);
+  const [tags, setTags] = useState((template?.tags ?? []).join(', '));
+  const [condition, setCondition] = useState(template?.condition ?? '');
+  const [sourcing, setSourcing] = useState<Sourcing>(template?.sourcing ?? 'in_hand');
+  const [description, setDescription] = useState(template?.description ?? '');
+  const [defaultLotId, setDefaultLotId] = useState(template?.defaultLotId ?? '');
+  const [lotRouteId, setLotRouteId] = useState(template?.lotRouteId ?? '');
+  const [preSteps, setPreSteps] = useState<RouteStep[]>(
+    template?.preLotRoute?.steps ?? BUILT_IN_PRE_LOT_ROUTE.steps,
+  );
+  const [lots, setLots] = useState<LotSummary[]>([]);
+  const [routes, setRoutes] = useState<RoutesResponse | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.myLots(store.isOwner ? undefined : store.ownerId)
+      .then((result) => setLots(result.lots)).catch(() => setLots([]));
+    void api.routes().then(setRoutes).catch(() => setRoutes(null));
+  }, [store.ownerId, store.isOwner]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.saveTemplate({
+        ...(template ? { id: template.id } : {}),
+        name: name.trim(),
+        category,
+        tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+        condition: condition || null,
+        sourcing,
+        description: description.trim(),
+        defaultLotId: defaultLotId || null,
+        lotRouteId: lotRouteId || null,
+        preLotSteps: preSteps
+          .filter((step) => step.name.trim())
+          .map((step) => ({ name: step.name, description: step.description })),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="card card--pad form" onSubmit={submit}>
+      <h2>{template ? 'Edit template' : 'New template'}</h2>
+
+      <label className="field">
+        <span>Template name *</span>
+        <input value={name} onChange={(e) => setName(e.target.value)}
+          placeholder="Marvel Standard" required autoFocus />
+        <span className="field__hint">What you will pick it by. Buyers never see it.</span>
+      </label>
+
+      <div className="field-row">
+        <label className="field">
+          <span>Category</span>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Condition</span>
+          <select value={condition} onChange={(e) => setCondition(e.target.value)}>
+            <option value="">Ask each time</option>
+            {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <label className="field">
+        <span>Tags</span>
+        <input value={tags} onChange={(e) => setTags(e.target.value)}
+          placeholder="Marvel, Action figure, 1/12" />
+        <span className="field__hint">Comma separated.</span>
+      </label>
+
+      <div className="field">
+        <span>What this lists</span>
+        <div className="seg" role="radiogroup" aria-label="What this template lists">
+          <button type="button" role="radio" aria-checked={sourcing === 'in_hand'}
+            className={sourcing === 'in_hand' ? 'is-on' : ''} onClick={() => setSourcing('in_hand')}>
+            In hand
+          </button>
+          <button type="button" role="radio" aria-checked={sourcing === 'import'}
+            className={sourcing === 'import' ? 'is-on' : ''} onClick={() => setSourcing('import')}>
+            Imports
+          </button>
+        </div>
+        <span className="field__hint">
+          An import sold before its run is opened waits on the Orders screen until you file it into
+          one. Say it here and you never have to say it again.
+        </span>
+      </div>
+
+      <label className="field">
+        <span>Description</span>
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+          placeholder={'Original Marvel Legends figure.\nCondition: MISB.\nShipping extra as applicable.'} />
+        <span className="field__hint">The lines you write every time. Editable on every listing.</span>
+      </label>
+
+      <label className="field">
+        <span>Default batch</span>
+        <select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
+          <option value="">No batch — filed after it sells</option>
+          {lots.map(({ lot }) => (
+            <option key={lot.id} value={lot.id}>
+              {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
+            </option>
+          ))}
+        </select>
+        <span className="field__hint">
+          Most items are sold first and filed into a run later, which is what the Orders screen is
+          for. Pick one only if the run is already open.
+        </span>
+      </label>
+
+      {/* The two ladders. Before the batch is what a buyer reads while they
+          wait for one; after it is the route the batch itself will travel. */}
+      <div className="card card--pad stack" style={{ background: 'var(--surface-2)' }}>
+        <div>
+          <div style={{ fontWeight: 600 }}>Tracking</div>
+          <span className="field__hint">
+            What a buyer of this item reads. The first list runs until it is in a batch; after that
+            the batch's own route takes over.
+          </span>
+        </div>
+
+        <div className="field">
+          <span>Before the batch</span>
+          <RouteBuilder steps={preSteps} onChange={setPreSteps} />
+        </div>
+
+        <label className="field">
+          <span>After it joins a batch</span>
+          <select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)}>
+            <option value="">
+              {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
+            </option>
+            {(routes?.routes ?? []).map((route) => (
+              <option key={route.id} value={route.id}>
+                {route.name} — {route.steps.length} steps
+              </option>
+            ))}
+          </select>
+          <span className="field__hint">
+            Pre-selected when you open a batch for one of these items.
+          </span>
+        </label>
+      </div>
+
+      {error && <ErrorNotice message={error} />}
+      <div className="row">
+        <button type="submit" className="btn" disabled={busy || !name.trim()}>
+          {busy ? 'Saving…' : 'Save template'}
+        </button>
+        <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/** The payment words a seller uses, rather than the ones the model stores. */
+const PAYMENT_WORDS: Record<string, string> = {
+  unpaid: 'Not paid',
+  claimed: 'Says paid',
+  paid: 'Paid',
+  refunded: 'Refunded',
+};
+
+const ESCROW_WORDS: Record<string, string> = {
+  none: 'No escrow',
+  held: 'Held',
+  released: 'Released',
+  refunded: 'Refunded',
+  disputed: 'In dispute',
+};
+
+/**
+ * One purchase, with everything it needs answering about.
+ *
+ * Compact on purpose: a shop works forty of these in a sitting, so the card is
+ * a row of facts and two controls, not a panel. The two controls are the two
+ * things that are actually done from here - the warehouse tick and the batch -
+ * and everything else opens the screen that owns it.
+ */
+function OrderCard({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject }: {
+  row: SaleRow;
+  store: StoreAccess;
+  busy: boolean;
+  needsAnswer: boolean;
+  onWarehouse: (on: boolean) => void;
+  onFile: () => void;
+  onReject: () => void;
+}) {
+  const received = Boolean(row.chinaReceivedAt);
+  const lotHref = row.lotId
+    ? `/lot/${row.lotId}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`
+    : null;
+
+  return (
+    <article className="order">
+      <div className="order__top">
+        <Link to={`/order/${row.id}`} className="order__name">{row.itemName}</Link>
+        <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
+      </div>
+      <span className="faint">
+        Ordered by {row.buyer.handle ? <Link to={`/${row.buyer.handle}`}>{row.buyer.name}</Link> : row.buyer.name}
+        {row.quantity > 1 && ` · ${row.quantity} units`} · {timeAgo(row.createdAt)}
+      </span>
+
+      <div className="order__facts">
+        <span className={`chipfact${row.inHand ? ' is-yes' : ''}`}>
+          {row.inHand ? 'In hand' : 'Import'}
+        </span>
+        <span className={`chipfact${row.paymentStatus === 'paid' ? ' is-yes' : row.paymentStatus === 'claimed' ? ' is-wait' : ''}`}>
+          {PAYMENT_WORDS[row.paymentStatus] ?? row.paymentStatus}
+        </span>
+        <span className={`chipfact${row.escrowState === 'released' ? ' is-yes' : row.escrowState === 'held' ? ' is-wait' : ''}`}>
+          {ESCROW_WORDS[row.escrowState] ?? row.escrowState}
+        </span>
+        {row.lotStep && <span className="chipfact is-yes">{row.lotStep}</span>}
+      </div>
+
+      {/* The two things done from this screen. A domestic sale has neither: it
+          never goes near a warehouse and never joins a batch. */}
+      {!row.inHand && (
+        <div className="order__acts">
+          <button type="button" disabled={busy} aria-pressed={received}
+            className={`tickbtn${received ? ' is-on' : ''}`}
+            onClick={() => onWarehouse(!received)}>
+            China WH received
+          </button>
+
+          {lotHref ? (
+            <Link to={lotHref} className="tickbtn tickbtn--link">
+              {row.lotNumber ? `LOT ${row.lotNumber}` : row.lotName} →
+            </Link>
+          ) : (
+            <button type="button" className="tickbtn" onClick={onFile}>+ Add to a lot</button>
+          )}
+        </div>
+      )}
+
+      <div className="order__foot">
+        <Link to={`/order/${row.id}`} className="btn btn--quiet btn--sm">View tracking</Link>
+        {needsAnswer && (
+          <>
+            {row.paymentStatus === 'claimed' && (
+              <Link to={`/order/${row.id}`} className="btn btn--sm">Check the payment</Link>
+            )}
+            <button type="button" className="btn btn--ghost btn--sm" onClick={onReject}>
+              Can&rsquo;t serve it
+            </button>
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
+
+/**
+ * Put this order in a batch: an existing one, or one opened here.
+ *
+ * Opened here is the case worth designing for. A shop sells an item, the run it
+ * belongs in does not exist yet, and the batch screen is two taps away and
+ * asks for eight things - so the batch gets opened later, or never, and the
+ * buyer waits without a timeline. This asks for a name and a route and does
+ * both jobs in one request.
+ */
+function FileIntoLot({ row, store, onClose, onDone }: {
+  row: SaleRow;
+  store: StoreAccess;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [lots, setLots] = useState<LotSummary[] | null>(null);
+  const [routes, setRoutes] = useState<RoutesResponse | null>(null);
+  const [mode, setMode] = useState<'existing' | 'new'>('existing');
+  const [lotId, setLotId] = useState('');
+  const [name, setName] = useState('');
+  const [origin, setOrigin] = useState('');
+  const [exporter, setExporter] = useState('');
+  const [handlerId, setHandlerId] = useState('');
+  const [handlers, setHandlers] = useState<ProviderCard[]>([]);
+  // The template's answer, pre-selected: picking the template once should be
+  // the last time anybody thinks about this item's tracking.
+  const [routeId, setRouteId] = useState(row.lotRouteId ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.myLots(store.isOwner ? undefined : store.ownerId)
+      .then((result) => {
+        setLots(result.lots);
+        setLotId(result.lots[0]?.lot.id ?? '');
+        // No batches yet means there is nothing to pick, so the form opens on
+        // the door that works.
+        if (result.lots.length === 0) setMode('new');
+      })
+      .catch(() => setLots([]));
+    void api.routes().then(setRoutes).catch(() => setRoutes(null));
+    void api.serviceDirectory('handler').then((r) => setHandlers(r.providers)).catch(() => setHandlers([]));
+  }, [store.ownerId, store.isOwner]);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.assignOrderToLot(row.id, mode === 'existing'
+        ? { lotId }
+        : {
+            newLot: {
+              name: name.trim() || `Batch for ${row.itemName}`,
+              origin: origin.trim(),
+              exporterHandle: exporter.trim() || undefined,
+              handlerUserId: handlerId || undefined,
+              routeId: routeId || undefined,
+            },
+          });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={`Add ${row.itemName} to a lot`} onClose={onClose}>
+      <div className="stack">
+        <div className="seg" role="radiogroup" aria-label="Which lot">
+          <button type="button" role="radio" aria-checked={mode === 'existing'}
+            disabled={(lots?.length ?? 0) === 0}
+            className={mode === 'existing' ? 'is-on' : ''} onClick={() => setMode('existing')}>
+            Existing lot
+          </button>
+          <button type="button" role="radio" aria-checked={mode === 'new'}
+            className={mode === 'new' ? 'is-on' : ''} onClick={() => setMode('new')}>
+            New lot
+          </button>
+        </div>
+
+        {mode === 'existing' ? (
+          lots === null ? (
+            <p className="muted">Loading…</p>
+          ) : lots.length === 0 ? (
+            <p className="muted">No batches open yet. Make one.</p>
+          ) : (
+            <label className="field">
+              <span>Lot</span>
+              <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
+                {lots.map(({ lot }) => (
+                  <option key={lot.id} value={lot.id}>
+                    {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )
+        ) : (
+          <>
+            <label className="field">
+              <span>Lot name</span>
+              <input value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="September import" autoFocus />
+            </label>
+            <label className="field">
+              <span>Origin</span>
+              <input value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="China" />
+            </label>
+            <label className="field">
+              <span>Exporter (optional)</span>
+              <input value={exporter} onChange={(e) => setExporter(e.target.value)} placeholder="@their_handle" />
+            </label>
+            <label className="field">
+              <span>Domestic handler (optional)</span>
+              <select value={handlerId} onChange={(e) => setHandlerId(e.target.value)}>
+                <option value="">Nobody — you dispatch it yourself</option>
+                {handlers.map((entry) => (
+                  <option key={entry.userId} value={entry.userId}>{entry.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Tracking template</span>
+              <select value={routeId} onChange={(e) => setRouteId(e.target.value)}>
+                <option value="">
+                  {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
+                </option>
+                {(routes?.routes ?? []).map((route) => (
+                  <option key={route.id} value={route.id}>
+                    {route.name} — {route.steps.length} steps
+                  </option>
+                ))}
+              </select>
+              <span className="field__hint">
+                Every item in this batch travels these steps, and the buyer reads them.
+              </span>
+            </label>
+          </>
+        )}
+
+        {error && <ErrorNotice message={error} />}
+        <button type="button" className="btn btn--block" disabled={busy || (mode === 'existing' && !lotId)}
+          onClick={() => void submit()}>
+          {busy ? 'Filing…' : mode === 'existing' ? 'Add to lot' : 'Create lot & add order'}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -877,12 +1417,17 @@ function BatchCard({ summary, store, onOpen }: {
     <article className={`batch${working ? '' : ' batch--moving'}`}>
       <button type="button" className="batch__head" onClick={onOpen}>
         <span className="batch__title">
-          <span className="batch__name">{lot.name}</span>
+          <span className="batch__name">
+            {lot.lotNumber && <span className="batch__no">LOT {lot.lotNumber}</span>}
+            {lot.name}
+          </span>
           <span className="faint">
-            {LOT_CARD_LABELS[lot.stage as keyof typeof LOT_CARD_LABELS]}
-            {summary.listingCount > 0 && ` · ${summary.listingCount} items`}
-            {summary.orderCount > 0 && ` · ${summary.orderCount} orders`}
-            {lot.forwarder?.trackingReference && ` · ${lot.forwarder.trackingReference}`}
+            {[
+              lot.origin || null,
+              summary.orderCount > 0 ? `${summary.orderCount} items` : null,
+              routeOf(lot).name,
+              lot.forwarder?.trackingReference ?? null,
+            ].filter(Boolean).join(' · ')}
           </span>
         </span>
         <span className={`badge badge--${lot.stage === 'delivered' ? 'ok' : 'warn'}`}>
@@ -894,12 +1439,20 @@ function BatchCard({ summary, store, onOpen }: {
         <span style={{ width: `${((LOT_STAGES.indexOf(lot.stage) + 1) / LOT_STAGES.length) * 100}%` }} />
       </div>
 
-      {/* What the parcels are doing, in a sentence. The badge above says what
-          the seller last ticked; this says where the batch actually is. */}
+      {/* Where the batch is on its own route, in the seller's words, and then
+          what the parcels inside it are doing - which is not the same question
+          and does not always have the same answer. */}
       <div className="batch__status">
         <span className={`batch__pip batch__pip--${phase}`} aria-hidden="true" />
-        {PHASE_LABELS[phase]}
+        <strong>{currentStepName(lot)}</strong>
+        <span className="faint">· {PHASE_LABELS[phase]}</span>
       </div>
+      {(lot.exporterUserId || lot.handler?.name) && (
+        <div className="batch__crew">
+          {lot.exporterUserId && <span className="chipfact">Exporter named</span>}
+          {lot.handler?.name && <span className="chipfact">Handler: {lot.handler.name}</span>}
+        </div>
+      )}
 
       {working && summary.orderCount > 0 && (
         <div className="batch__body">

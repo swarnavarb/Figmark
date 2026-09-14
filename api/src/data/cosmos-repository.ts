@@ -1,5 +1,6 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
+import type { PostTemplate } from '../../../shared/templates.js';
 import { CosmosClient, type Container, type ContainerRequest, type Database } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
@@ -656,6 +657,44 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources;
+  }
+
+  async listTemplates(sellerId: string): Promise<PostTemplate[]> {
+    const { resources } = await this.container('postTemplates')
+      .items.query<PostTemplate>(
+        {
+          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId ORDER BY c.name ASC',
+          parameters: [{ name: '@sellerId', value: sellerId }],
+        },
+        { partitionKey: sellerId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  async getTemplate(sellerId: string, templateId: string): Promise<PostTemplate | null> {
+    try {
+      const { resource } = await this.container('postTemplates')
+        .item(templateId, sellerId)
+        .read<PostTemplate>();
+      return resource ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveTemplate(template: PostTemplate): Promise<PostTemplate> {
+    const { resource } = await this.container('postTemplates').items.upsert<PostTemplate>(template);
+    return resource ?? template;
+  }
+
+  async deleteTemplate(sellerId: string, templateId: string): Promise<boolean> {
+    try {
+      await this.container('postTemplates').item(templateId, sellerId).delete();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async listRoutes(sellerId: string): Promise<TrackingRoute[]> {

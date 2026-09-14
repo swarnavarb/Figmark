@@ -170,6 +170,13 @@ export const CONTAINERS = {
     // Step descriptions are prose nobody queries by.
     excludedPaths: ['/steps/[]/description/?'],
   },
+  postTemplates: {
+    name: 'postTemplates',
+    partitionKeyPath: '/sellerId',
+    rationale:
+      'A shop writes a handful of these and reads all of them every time it lists an item, which is one partition and one query. Nobody else ever reads somebody\'s templates - they are the shop\'s own stationery, not a catalog.',
+    excludedPaths: ['/description/?', '/preLotRoute/*'],
+  },
   powerSales: {
     name: 'powerSales',
     partitionKeyPath: '/sellerId',

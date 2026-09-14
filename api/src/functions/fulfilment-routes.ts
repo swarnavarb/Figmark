@@ -5,6 +5,7 @@ import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
 import { mayTick, type CrewRole } from '../../../shared/services.js';
+import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
   routeOf, stepForStage, type LotRoute,
@@ -139,44 +140,63 @@ async function myLots(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** POST /api/lots - open a new shipment batch. */
-async function createLot(request: HttpRequest, _context: InvocationContext) {
-  const auth = await getAuthService();
-  const user = await auth.requireCapability(request, ['sell']);
+/**
+ * What opening a batch needs to know.
+ *
+ * Shared by `POST /api/lots` and by the Orders screen, which opens a batch and
+ * puts one order in it in a single move - so the rules about what a batch is
+ * when it is created live in one place rather than in two that drift.
+ */
+export interface NewLotBody {
+  name?: string;
+  description?: string;
+  origin?: string;
+  estimatedDispatchAt?: string | null;
+  supplierName?: string;
+  supplierContact?: string;
+  supplierReference?: string;
+  forwarderUserId?: string;
+  forwarderName?: string;
+  forwarderContact?: string;
+  /** A saved template to travel, or steps written here and now. */
+  routeId?: string;
+  routeName?: string;
+  routeSteps?: { id?: string; name?: string; description?: string }[];
+  /** Who checks it before it leaves, and who gets it out when it lands. */
+  exporterHandle?: string;
+  handlerUserId?: string;
+  handlerName?: string;
+}
 
-  let body: LotDetailsBody & {
-    forwarderUserId?: string; forwarderName?: string; forwarderContact?: string;
-    /** A saved template to travel, or steps written here and now. */
-    routeId?: string;
-    routeName?: string;
-    routeSteps?: { id?: string; name?: string; description?: string }[];
-    /** Who checks it before it leaves, and who gets it out when it lands. */
-    exporterHandle?: string;
-    handlerUserId?: string;
-    handlerName?: string;
-  };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return error(400, 'invalid_body', 'Request body must be JSON.');
-  }
+/** Either the new batch, or the refusal to return to the caller. */
+export type LotOrRefusal =
+  | { lot: Lot; refusal: null }
+  | { lot: null; refusal: { status: number; code: string; message: string } };
+
+export async function buildLot(
+  userId: string,
+  body: NewLotBody,
+  repository: Awaited<ReturnType<typeof getRepository>>,
+): Promise<LotOrRefusal> {
+  const refuse = (status: number, code: string, message: string): LotOrRefusal =>
+    ({ lot: null, refusal: { status, code, message } });
+
   const name = body.name?.trim();
-  if (!name) return error(400, 'invalid_lot', 'Give the batch a name you will recognise.');
-
-  const repository = await getRepository();
+  if (!name) return refuse(400, 'invalid_lot', 'Give the batch a name you will recognise.');
 
   /* The ladder this batch travels, settled before anything is written: a batch
      created against a template that turns out not to exist should not exist
      either, tracking whatever the fallback happened to be. */
   let route: LotRoute = BUILT_IN_ROUTE;
   if (body.routeId) {
-    const template = await repository.getRoute(user.id, body.routeId);
-    if (!template) return error(404, 'not_found', 'No such route.');
+    const template = await repository.getRoute(userId, body.routeId);
+    if (!template) return refuse(404, 'not_found', 'No such route.');
     // A copy, so editing the template later cannot rewrite this batch's
     // timeline under a buyer who has been reading it for three weeks.
     route = { routeId: template.id, name: template.name, steps: template.steps };
   } else if (body.routeSteps && body.routeSteps.length > 0) {
     const steps = normaliseSteps(body.routeSteps);
-    if (steps.length < 2) return error(400, 'invalid_route', 'A route needs at least two steps.');
+    if (steps.length < 2) return refuse(400, 'invalid_route', 'A route needs at least two steps.');
     route = { routeId: null, name: body.routeName?.trim() || 'Route', steps };
   }
 
@@ -190,14 +210,14 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
   let exporterUserId: string | null = null;
   if (body.exporterHandle?.trim()) {
     const found = await repository.getByHandle(body.exporterHandle.trim().replace(/^@/, ''));
-    if (!found) return error(404, 'not_found', `Nobody here goes by ${body.exporterHandle}.`);
+    if (!found) return refuse(404, 'not_found', `Nobody here goes by ${body.exporterHandle}.`);
     exporterUserId = found.user.id;
   }
   let handlerNamed: Lot['handler'] = null;
   if (body.handlerUserId || body.handlerName?.trim()) {
     const named = body.handlerUserId ? await repository.getUserById(body.handlerUserId) : null;
     if (body.handlerUserId && !named) {
-      return error(404, 'not_found', 'No such account to handle this batch.');
+      return refuse(404, 'not_found', 'No such account to handle this batch.');
     }
     const handlerName = body.handlerName?.trim()
       || named?.handlerProfile?.companyName || named?.displayName || '';
@@ -213,7 +233,7 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
 
   const lot: Lot = {
     id,
-    sellerId: user.id,
+    sellerId: userId,
     name,
     lotNumber: lotNumberFrom(id, now),
     route,
@@ -231,7 +251,7 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
         step: first.name,
         enteredAt: now,
         note: 'Batch opened.',
-        recordedBy: user.id,
+        recordedBy: userId,
       },
     ],
     estimatedDispatchAt: body.estimatedDispatchAt ?? null,
@@ -252,7 +272,24 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   };
 
-  return json(201, { lot: await repository.createLot(lot) });
+  return { lot: await repository.createLot(lot), refusal: null };
+}
+
+async function createLot(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+
+  let body: NewLotBody;
+  try {
+    body = (await request.json()) as NewLotBody;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const repository = await getRepository();
+  const made = await buildLot(user.id, body, repository);
+  if (made.refusal) return error(made.refusal.status, made.refusal.code, made.refusal.message);
+  return json(201, { lot: made.lot });
 }
 
 /** Loads a lot and refuses anyone who is not its owner. */
@@ -583,10 +620,17 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
      hollow circles implying a journey nobody has booked yet. */
   const route = lot ? routeOf(lot) : null;
 
+  /* The first half of the journey, in whatever words the shop's template used.
+     Shown above the join once there is a batch, and on its own - ending at a
+     wall rather than at five hollow circles - while there is not. */
+  const before = preLotRouteOf(order);
+  const beforeReached = order.checkpoints?.china_received ? 1 : 0;
+
   return json(200, {
     order,
     stages: stagesFor(order),
     currentStage: furthestStage(order),
+    preLot: { name: before.name, steps: before.steps, currentStep: beforeReached },
     route: route
       ? {
           name: route.name,

@@ -1,6 +1,8 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { LOT_STAGES, LOT_STAGE_LABELS, STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
-import type { SellerProfile } from '../../../shared/models.js';
+import type { Lot, SellerProfile } from '../../../shared/models.js';
+import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
+import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
@@ -313,18 +315,58 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     buyers.set(order.buyerId, personRef(await repository.getUserById(order.buyerId)));
   }
 
-  const row = (order: (typeof orders)[number]) => ({
-    id: order.id,
-    itemName: order.itemName,
-    quantity: order.quantity,
-    totalMinor: order.unitPriceMinor * order.quantity,
-    currency: order.currency,
-    buyer: buyers.get(order.buyerId) ?? personRef(null),
-    paymentStatus: order.paymentStatus,
-    status: order.status,
-    claim: order.paymentClaim ?? null,
-    createdAt: order.createdAt,
-  });
+  /* Every batch these orders ride in, read once rather than per row: a shop
+     with forty orders in three batches should not make forty lookups to put
+     three numbers on cards. */
+  const lots = new Map<string, Lot | null>();
+  for (const order of orders) {
+    if (!inLot(order) || lots.has(order.lotId)) continue;
+    lots.set(order.lotId, await repository.getLot(storeId, order.lotId));
+  }
+
+  /* The listings behind the orders still waiting for a batch, so the "add to a
+     lot" screen can pre-select the route the Quick Post template set up for
+     them. One query for the shop rather than one per order. */
+  const listings = new Map(
+    (await repository.listListings({ sellerId: storeId, includeHidden: true }))
+      .map((listing) => [listing.id, listing]),
+  );
+
+  const row = (order: (typeof orders)[number]) => {
+    const lot = inLot(order) ? lots.get(order.lotId) ?? null : null;
+    return {
+      id: order.id,
+      itemName: order.itemName,
+      quantity: order.quantity,
+      totalMinor: order.unitPriceMinor * order.quantity,
+      currency: order.currency,
+      buyer: buyers.get(order.buyerId) ?? personRef(null),
+      paymentStatus: order.paymentStatus,
+      status: order.status,
+      claim: order.paymentClaim ?? null,
+      createdAt: order.createdAt,
+      /* Everything the order card shows, so one screen answers "where is this
+         and what does it need" without opening anything. */
+      escrowState: order.escrow.state,
+      /** A domestic sale is in hand by definition: there is nothing to import. */
+      inHand: isDirect(order),
+      awaitingLot: awaitingLot(order),
+      lotId: lot?.id ?? null,
+      lotName: lot?.name ?? null,
+      lotNumber: lot ? lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt) : null,
+      lotStep: lot ? routeOf(lot).steps[currentStepOf(lot)]?.name ?? null : null,
+      /** The one tick a seller makes from this screen. */
+      chinaReceivedAt: order.checkpoints?.china_received ?? null,
+      /**
+       * The route the item's template said a batch carrying it should travel.
+       *
+       * Pre-selected when the seller opens a batch from this order, which is
+       * the last link in the chain a Quick Post template sets up: pick the
+       * template once, and the buyer's whole journey is configured.
+       */
+      lotRouteId: listings.get(order.listingId)?.lotRouteId ?? null,
+    };
+  };
 
   // Three piles, because they need three different things from the seller.
   // Somebody who has said they paid is waiting on a yes or no about money.
@@ -348,6 +390,13 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     waiting: waiting.map(row),
     placed: placed.map(row),
     answered: answered.map(row),
+    /* Every purchase, newest first. The three piles above are the ones that
+       need an answer about money; this is the shop's whole book, which is what
+       the seller is actually working from. */
+    orders: orders
+      .filter((order) => order.status !== 'cancelled')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map(row),
   });
 }
 

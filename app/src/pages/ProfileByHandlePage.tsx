@@ -5,7 +5,7 @@ import {
   ApiRequestError, api,
   type Credit, type PageReviews, type PublicProfile, type ReviewsAbout,
 } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Modal, PersonLink, Thumb } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { MessageButton } from './MessagesPage';
@@ -241,7 +241,7 @@ export function ProfileByHandlePage() {
                 <div className="grid">
                   {shown.map((listing) => (
                     <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
-                      <Thumb seed={listing.id} label={listing.title}>
+                      <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                         <div className="thumb__badges">
                           <span className="badge badge--solid">{listing.condition}</span>
                         </div>

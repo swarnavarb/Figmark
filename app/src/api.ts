@@ -11,6 +11,7 @@ import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, TrackingRoute } from '@shared/routes';
+import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { OrderAction, OrderSide } from '@shared/orders';
@@ -206,6 +207,8 @@ export interface OrderTracking {
     lotName: string;
     lotNumber: string;
   } | null;
+  /** The ladder before any batch, in the words the shop's template used. */
+  preLot: { name: string; steps: RouteStep[]; currentStep: number };
   /** Sold, bound for a batch, not in one - so the timeline stops early. */
   awaitingLot: boolean;
   sellerName: string;
@@ -310,16 +313,28 @@ export interface SaleRow {
   status: string;
   claim: PaymentClaim | null;
   createdAt: string;
+  /* Everything the order card shows, so one screen answers "where is this and
+     what does it need" without opening anything. */
+  escrowState: string;
+  inHand: boolean;
+  awaitingLot: boolean;
+  lotId: string | null;
+  lotName: string | null;
+  lotNumber: string | null;
+  lotStep: string | null;
+  /** When the seller ticked it received at the China warehouse. */
+  chinaReceivedAt: string | null;
+  /** The route its Quick Post template set up for the batch that will carry it. */
+  lotRouteId: string | null;
 }
 
 /** Everything a shop's payments screen has to answer, in three piles. */
 export interface SalesResponse {
-  /** They say they have paid. Waiting on a yes or no about the money. */
   waiting: SaleRow[];
-  /** Ordered, not yet paid. Waiting to hear whether it can be served at all. */
   placed: SaleRow[];
-  /** Already answered, most recent first. */
   answered: SaleRow[];
+  /** Every purchase, newest first: the shop's whole book. */
+  orders: SaleRow[];
 }
 
 /* ── Power selling ─────────────────────────────────────────────────────── */
@@ -453,6 +468,13 @@ export interface NewListing {
   /** Tell everyone, in the feed. Implies the channel — it is the same post. */
   shareToFeed?: boolean;
   tags: string[];
+  /** In the order the manager arranged them; the first leads unless told otherwise. */
+  photos?: { blobName: string; url: string; isPrimary: boolean }[];
+  /** The before-lot ladder a Quick Post template gave it. */
+  preLotSteps?: { name: string; description?: string }[];
+  preLotName?: string;
+  /** The route template a batch made from this item should travel. */
+  lotRouteId?: string | null;
 }
 
 /** Everything about a batch that can be set when opening it, and corrected later. */
@@ -796,6 +818,20 @@ export interface ItemGroup {
   }[];
 }
 
+/* ── Quick Post templates and photos ───────────────────────────────────── */
+
+/** A photo as the manager holds it: uploaded, or a link somebody pasted. */
+export interface PhotoDraft {
+  blobName: string;
+  url: string;
+  isPrimary: boolean;
+}
+
+export interface StoredPhoto {
+  blobName: string;
+  url: string;
+}
+
 export interface StorefrontDraft {
   storefrontName?: string;
   username?: string;
@@ -894,6 +930,7 @@ export interface PublicProfile {
   listings: {
     id: string; title: string; priceMinor: number; currency: string; condition: string;
     lotId: string | null; sourcing?: string; quantityAvailable: number; likeCount: number;
+    photos?: { url?: string; isPrimary?: boolean }[];
   }[];
 }
 
@@ -1021,6 +1058,21 @@ export const api = {
   stepLot: (id: string, body: { to?: number; note?: string } = {}) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
+
+  templates: () => request<{ templates: PostTemplate[] }>('/templates'),
+  saveTemplate: (body: {
+    id?: string; name: string; category?: string; tags?: string[];
+    condition?: string | null; sourcing?: string; description?: string; defaultLotId?: string | null;
+    preLotSteps?: { name: string; description?: string }[]; preLotName?: string;
+    lotRouteId?: string | null;
+  }) => post<{ template: PostTemplate }>('/templates/new', body),
+  deleteTemplate: (id: string) =>
+    post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
+  /** A picture in, a URL out. The browser shrinks it before it gets here. */
+  uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
+  /** File one order into a batch - an existing one, or one opened here. */
+  assignOrderToLot: (id: string, body: { lotId?: string; newLot?: Record<string, unknown> }) =>
+    post<{ order: Order; lot: Lot }>(`/orders/${encodeURIComponent(id)}/lot`, body),
 
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),

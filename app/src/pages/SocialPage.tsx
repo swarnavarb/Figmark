@@ -9,7 +9,7 @@ import {
   type PostCard,
 } from '../api';
 import type { StoreAccess } from '@shared/stores';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb} from '../components/ui';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';

@@ -57,6 +57,10 @@ const {
   lotCandidatesRoute, addItemsRoute, stepLotRoute, myItemsRoute,
 } = await import(new URL('tracking-routes.js', apiRoot));
 const {
+  listTemplatesRoute, saveTemplateRoute, deleteTemplateRoute,
+  uploadRoute, photoRoute, assignOrderToLotRoute,
+} = await import(new URL('template-routes.js', apiRoot));
+const {
   servicesHubRoute, serviceDirectoryRoute, offerServiceRoute,
   consignmentsRoute, distributionRoute, distributionDetailRoute,
 } = await import(new URL('service-routes.js', apiRoot));
@@ -159,6 +163,12 @@ const routes = [
   ['POST', '/api/lots/:id/items', addItemsRoute],
   ['POST', '/api/lots/:id/step', stepLotRoute],
   ['GET', '/api/me/items', myItemsRoute],
+  ['GET', '/api/templates', listTemplatesRoute],
+  ['POST', '/api/templates/new', saveTemplateRoute],
+  ['POST', '/api/templates/:id/delete', deleteTemplateRoute],
+  ['POST', '/api/uploads', uploadRoute],
+  ['GET', '/api/photos/:name', photoRoute],
+  ['POST', '/api/orders/:id/lot', assignOrderToLotRoute],
   ['GET', '/api/services', servicesHubRoute],
   ['POST', '/api/me/service', offerServiceRoute],
   ['GET', '/api/me/service/consignments', consignmentsRoute],
@@ -262,11 +272,18 @@ const server = createServer((request, response) => {
         { error: console.error, log: () => {}, warn: console.warn, info: () => {} },
       );
 
-      const headers = { 'Content-Type': 'application/json' };
+      // Not every route answers with JSON: a photo comes back as bytes with
+      // its own content type, the way the Functions host would send it.
+      const binary = result.body instanceof Buffer || result.body instanceof Uint8Array;
+      const headers = binary
+        ? { ...(result.headers ?? {}) }
+        : { 'Content-Type': 'application/json' };
       const cookies = setCookiesOf(result);
       if (cookies.length > 0) headers['Set-Cookie'] = cookies;
       response.writeHead(result.status ?? 200, headers);
-      response.end(JSON.stringify(result.jsonBody ?? null));
+      if (binary) response.end(Buffer.from(result.body));
+      else if (result.jsonBody === undefined && typeof result.body === 'string') response.end(result.body);
+      else response.end(JSON.stringify(result.jsonBody ?? null));
       return;
     }
 

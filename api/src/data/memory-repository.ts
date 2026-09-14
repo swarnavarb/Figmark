@@ -1,5 +1,6 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
+import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
@@ -52,6 +53,7 @@ export class MemoryRepository implements Repository {
   private readonly identifiers = new Map<string, string>();
   private readonly lots = new Map<string, Lot>();
   private readonly routes = new Map<string, TrackingRoute>();
+  private readonly templates = new Map<string, PostTemplate>();
   private readonly listings = new Map<string, Listing>();
   private readonly orders = new Map<string, Order>();
   private readonly comments = new Map<string, ListingComment>();
@@ -140,6 +142,29 @@ export class MemoryRepository implements Repository {
 
   async listForwarders(): Promise<User[]> {
     return [...this.users.values()].filter((u) => u.forwarderProfile?.listedInDirectory);
+  }
+
+  async listTemplates(sellerId: string): Promise<PostTemplate[]> {
+    return [...this.templates.values()]
+      .filter((template) => template.sellerId === sellerId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getTemplate(sellerId: string, templateId: string): Promise<PostTemplate | null> {
+    const template = this.templates.get(templateId);
+    return template && template.sellerId === sellerId ? template : null;
+  }
+
+  async saveTemplate(template: PostTemplate): Promise<PostTemplate> {
+    this.templates.set(template.id, template);
+    return template;
+  }
+
+  async deleteTemplate(sellerId: string, templateId: string): Promise<boolean> {
+    const template = this.templates.get(templateId);
+    if (!template || template.sellerId !== sellerId) return false;
+    this.templates.delete(templateId);
+    return true;
   }
 
   async listRoutes(sellerId: string): Promise<TrackingRoute[]> {

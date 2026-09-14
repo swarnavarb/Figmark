@@ -41,18 +41,35 @@ export function Icon({ name, size = 16 }: { name: 'search' | 'heart' | 'plus' | 
  * would fail to load, each listing gets a stable gradient keyed off its id with
  * its initials on top. Deterministic, so the grid looks intentional.
  */
-export function Thumb({ seed, label, className = 'thumb', children }: {
+/**
+ * The picture on a listing, or a stand-in for one.
+ *
+ * Every screen that shows an item goes through here, which is why the photo
+ * belongs here too: one place decides what an item looks like, so an item with
+ * a photo has it everywhere and one without gets the same generated square it
+ * always had rather than a broken image or a hole.
+ */
+export function Thumb({ seed, label, photo, className = 'thumb', children }: {
   seed: string;
   label: string;
+  /** The listing's leading photo, when it has one. */
+  photo?: { url?: string } | null;
   className?: string;
   children?: ReactNode;
 }) {
   return (
-    <div className={className} style={{ background: gradientFor(seed) }}>
-      <span>{initialsOf(label)}</span>
+    <div className={className} style={photo?.url ? undefined : { background: gradientFor(seed) }}>
+      {photo?.url ? <img className="thumb__img" src={photo.url} alt={label} loading="lazy" />
+        : <span>{initialsOf(label)}</span>}
       {children}
     </div>
   );
+}
+
+/** The photo a listing leads with: the primary one, or simply the first. */
+export function leadPhoto(listing: { photos?: { url?: string; isPrimary?: boolean }[] }) {
+  const photos = listing.photos ?? [];
+  return photos.find((photo) => photo.isPrimary) ?? photos[0] ?? null;
 }
 
 export function Avatar({ name, size = 38 }: { name: string; size?: number }) {

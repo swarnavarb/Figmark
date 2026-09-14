@@ -72,6 +72,11 @@ const {
   myItemsRoute: myItems,
 } = await import(new URL('tracking-routes.js', fns));
 const {
+  listTemplatesRoute: listTemplates, saveTemplateRoute: saveTemplate,
+  deleteTemplateRoute: deleteTemplate, uploadRoute: upload, photoRoute,
+  assignOrderToLotRoute: assignOrderToLot,
+} = await import(new URL('template-routes.js', fns));
+const {
   creditRoute: credit, pageReviewsRoute: pageReviews,
   writePageReviewRoute: writePageReview, tradeReviewsRoute: reviewsAbout,
   saveProfileRoute: saveProfile,
@@ -4588,6 +4593,317 @@ await check('a route can be dropped, and the batches on it carry on', async () =
   const still = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
   assert.equal(still.route.steps.length, 5);
   assert.equal(still.route.name, 'Guangzhou air express');
+});
+
+/* ── the order in front of you ─────────────────────────────────────────── */
+console.log('\nthe order in front of you');
+
+let templateFixture;
+let photoFixture;
+let templatedOrder;
+let templatedBuyer;
+
+await check('a Quick Post template is the stationery, not a straitjacket', async () => {
+  const made = await saveTemplate(req({
+    headers: auth,
+    body: {
+      name: 'Marvel Standard',
+      category: 'Scale figures',
+      sourcing: 'import',
+      tags: ['Marvel', ' Action figure ', ''],
+      condition: 'MISB',
+      description: 'Original Marvel Legends figure.\nCondition: MISB.',
+      preLotSteps: [{ name: 'Order placed' }, { name: 'At our Guangzhou desk' }],
+      preLotName: 'China standard',
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const template = made.jsonBody.template;
+  assert.deepEqual(template.tags, ['Marvel', 'Action figure'], 'blanks dropped, spaces trimmed');
+  assert.equal(template.sourcing, 'import', 'and it knows what kind of thing it lists');
+  assert.equal(template.condition, 'MISB');
+  assert.equal(template.preLotRoute.steps.length, 2);
+  assert.equal(template.preLotRoute.name, 'China standard');
+
+  // A condition nobody grades by is not stored as one.
+  const odd = await saveTemplate(req({
+    headers: auth, body: { name: 'Odd', condition: 'PRISTINE-ISH' },
+  }), ctx);
+  assert.equal(odd.jsonBody.template.condition, null);
+
+  // Correcting one keeps its identity, so the listings made from it still say
+  // where they came from.
+  const fixed = await saveTemplate(req({
+    headers: auth, body: { id: template.id, name: 'Marvel Standard v2', category: 'Scale figures' },
+  }), ctx);
+  assert.equal(fixed.status, 200);
+  assert.equal(fixed.jsonBody.template.id, template.id);
+
+  const mine = (await listTemplates(req({ headers: auth }), ctx)).jsonBody.templates;
+  assert.ok(mine.some((row) => row.id === template.id));
+
+  templateFixture = fixed.jsonBody.template;
+});
+
+await check('somebody else’s stationery is not yours to read or edit', async () => {
+  const stranger = await signup(req({
+    body: {
+      displayName: 'Other Shop', email: 'othershop@figmark.example',
+      phone: '+919000078831', password: 'longenough1',
+    },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+
+  assert.deepEqual((await listTemplates(req({ headers: theirs }), ctx)).jsonBody.templates, []);
+  const hijack = await saveTemplate(req({
+    headers: theirs, body: { id: templateFixture.id, name: 'Mine now' },
+  }), ctx);
+  assert.equal(hijack.status, 404);
+  assert.equal((await deleteTemplate(req({ headers: theirs, params: { id: templateFixture.id } }), ctx)).status, 404);
+});
+
+await check('a photo goes in and comes back out', async () => {
+  // One transparent pixel, which is a real PNG and small enough to read.
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const stored = await upload(req({ headers: auth, body: { dataUrl: pixel } }), ctx);
+  assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
+  assert.ok(stored.jsonBody.blobName.endsWith('.png'));
+  assert.ok(stored.jsonBody.url.includes(stored.jsonBody.blobName));
+
+  const served = await photoRoute(req({ params: { name: stored.jsonBody.blobName } }), ctx);
+  assert.equal(served.status, 200);
+  assert.equal(served.headers['Content-Type'], 'image/png');
+  assert.ok(served.body.length > 0);
+
+  // Not an image, not a data URL, and far too big are three different refusals.
+  assert.equal((await upload(req({ headers: auth, body: { dataUrl: 'https://example.com/x.png' } }), ctx)).status, 400);
+  assert.equal((await upload(req({
+    headers: auth, body: { dataUrl: 'data:application/pdf;base64,AAAA' },
+  }), ctx)).status, 400);
+  const huge = `data:image/jpeg;base64,${'A'.repeat(1_400_000)}`;
+  const refused = await upload(req({ headers: auth, body: { dataUrl: huge } }), ctx);
+  assert.equal(refused.status, 413);
+
+  photoFixture = stored.jsonBody;
+});
+
+await check('a listing keeps its photos, in order, with one leading', async () => {
+  const made = await createListing(req({
+    headers: auth,
+    body: {
+      title: 'Photographed item', priceMinor: 20_000,
+      photos: [
+        { blobName: 'a.jpg', url: '/api/photos/a.jpg', isPrimary: false },
+        { blobName: photoFixture.blobName, url: photoFixture.url, isPrimary: true },
+      ],
+    },
+  }), ctx);
+  assert.equal(made.status, 201);
+  const photos = made.jsonBody.listing.photos;
+  assert.equal(photos.length, 2);
+  assert.equal(photos[0].url, '/api/photos/a.jpg', 'the order the seller arranged');
+  assert.equal(photos[1].isPrimary, true, 'and the one they chose to lead');
+
+  // Nobody said which leads, so the first does.
+  const quiet = await createListing(req({
+    headers: auth,
+    body: {
+      title: 'Unchosen', priceMinor: 20_000,
+      photos: [{ blobName: 'x.jpg', url: '/x.jpg', isPrimary: false }, { blobName: 'y.jpg', url: '/y.jpg', isPrimary: false }],
+    },
+  }), ctx);
+  assert.equal(quiet.jsonBody.listing.photos[0].isPrimary, true);
+
+  // Six is the cap, because a document with forty images in it fails in
+  // production and nowhere else.
+  const many = await createListing(req({
+    headers: auth,
+    body: {
+      title: 'Too many', priceMinor: 20_000,
+      photos: Array.from({ length: 9 }, (_, i) => ({ blobName: `${i}.jpg`, url: `/${i}.jpg`, isPrimary: false })),
+    },
+  }), ctx);
+  assert.equal(many.jsonBody.listing.photos.length, 6);
+});
+
+await check('a template’s ladder travels to the listing, and then to the order', async () => {
+  const listed = await createListing(req({
+    headers: auth,
+    body: {
+      title: 'Listed from a template', priceMinor: 25_000, sourcing: 'import',
+      preLotSteps: [{ name: 'Order placed' }, { name: 'At our Guangzhou desk' }],
+      preLotName: 'China standard',
+    },
+  }), ctx);
+  assert.equal(listed.status, 201);
+  assert.equal(listed.jsonBody.listing.preLotRoute.steps.length, 2);
+
+  const buyer = await newBuyer('Template Buyer');
+  const placed = await createOrder(req({
+    headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id },
+  }), ctx);
+  assert.equal(placed.status, 201);
+
+  const tracking = (await orderTracking(req({
+    headers: buyer.headers, params: { id: placed.jsonBody.order.id },
+  }), ctx)).jsonBody;
+  // The shop's own words, before any batch exists.
+  assert.equal(tracking.preLot.name, 'China standard');
+  assert.equal(tracking.preLot.steps[1].name, 'At our Guangzhou desk');
+  assert.equal(tracking.preLot.currentStep, 0, 'nothing has reached the warehouse yet');
+  assert.equal(tracking.awaitingLot, true);
+  assert.equal(tracking.route, null);
+
+  templatedOrder = placed.jsonBody.order;
+  templatedBuyer = buyer;
+});
+
+await check('the warehouse tick moves the buyer’s timeline, without anyone editing it', async () => {
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: templatedOrder.id },
+    body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+
+  const tracking = (await orderTracking(req({
+    headers: templatedBuyer.headers, params: { id: templatedOrder.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.preLot.currentStep, 1, 'the second step is where it is now');
+
+  // And the seller's own screen shows the same fact.
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  const row = board.orders.find((entry) => entry.id === templatedOrder.id);
+  assert.ok(row, 'every purchase is on the orders screen');
+  assert.ok(row.chinaReceivedAt, 'ticked, with when');
+  assert.equal(row.awaitingLot, true);
+  assert.equal(row.lotNumber, null);
+});
+
+await check('the order card carries everything it needs answering about', async () => {
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(Array.isArray(board.orders));
+  const row = board.orders[0];
+  for (const key of [
+    'itemName', 'buyer', 'inHand', 'awaitingLot', 'lotId', 'lotNumber', 'lotStep',
+    'paymentStatus', 'escrowState', 'chinaReceivedAt',
+  ]) {
+    assert.ok(key in row, `an order card needs ${key}`);
+  }
+  // The three piles that need an answer about money are still there: this
+  // screen replaced nothing, it absorbed it.
+  for (const pile of ['waiting', 'placed', 'answered']) {
+    assert.ok(Array.isArray(board[pile]), `${pile} should still be a list`);
+  }
+});
+
+await check('the template picks the batch route too, so nobody picks it twice', async () => {
+  // The last link: choose the template once when listing, and the batch opened
+  // from that order already knows which ladder it should travel.
+  const route = await saveRoute(req({
+    headers: auth,
+    body: { name: 'Nine step run', steps: [{ name: 'One' }, { name: 'Two' }, { name: 'Three' }] },
+  }), ctx);
+  const withRoute = await saveTemplate(req({
+    headers: auth,
+    body: { name: 'Routed template', sourcing: 'import', lotRouteId: route.jsonBody.route.id },
+  }), ctx);
+  assert.equal(withRoute.jsonBody.template.lotRouteName, 'Nine step run');
+
+  const listed = await createListing(req({
+    headers: auth,
+    body: {
+      title: 'Routed item', priceMinor: 12_000, sourcing: 'import',
+      lotRouteId: route.jsonBody.route.id,
+    },
+  }), ctx);
+  const buyer = await newBuyer('Routed Buyer');
+  const placed = await createOrder(req({
+    headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id },
+  }), ctx);
+
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  const row = board.orders.find((entry) => entry.id === placed.jsonBody.order.id);
+  assert.equal(row.lotRouteId, route.jsonBody.route.id, 'the order card carries it through');
+});
+
+await check('one order, one move: a batch opened and the order filed into it', async () => {
+  const filed = await assignOrderToLot(req({
+    headers: auth, params: { id: templatedOrder.id },
+    body: {
+      newLot: {
+        name: 'Opened from an order', origin: 'Guangzhou, CN',
+        routeId: undefined,
+      },
+    },
+  }), ctx);
+  assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
+  assert.equal(filed.jsonBody.order.lotId, filed.jsonBody.lot.id);
+  assert.ok(filed.jsonBody.lot.lotNumber, 'and the batch has a number people can say');
+
+  // The buyer's timeline is now both halves: the shop's own words, then the
+  // batch's route.
+  const tracking = (await orderTracking(req({
+    headers: templatedBuyer.headers, params: { id: templatedOrder.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.awaitingLot, false);
+  assert.equal(tracking.preLot.steps[1].name, 'At our Guangzhou desk');
+  assert.ok(tracking.route.steps.length >= 2);
+
+  // Filing it twice is refused rather than silently moving it.
+  const again = await assignOrderToLot(req({
+    headers: auth, params: { id: templatedOrder.id }, body: { lotId: filed.jsonBody.lot.id },
+  }), ctx);
+  assert.equal(again.status, 409);
+
+  // A batch that does not exist does not quietly become a new one.
+  const other = await newBuyer('Another Waiting');
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Waiting too', priceMinor: 9_000, sourcing: 'import' },
+  }), ctx);
+  const order = await createOrder(req({
+    headers: other.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx);
+  const nowhere = await assignOrderToLot(req({
+    headers: auth, params: { id: order.jsonBody.order.id }, body: { lotId: 'lot_nope' },
+  }), ctx);
+  assert.equal(nowhere.status, 404);
+});
+
+await check('a domestic sale is not something to file into a crate', async () => {
+  const shelf = await createListing(req({
+    headers: auth, body: { title: 'Straight off the shelf', priceMinor: 3_000, sourcing: 'in_hand' },
+  }), ctx);
+  const buyer = await newBuyer('Local Buyer');
+  const placed = await createOrder(req({
+    headers: buyer.headers, body: { listingId: shelf.jsonBody.listing.id },
+  }), ctx);
+
+  const refused = await assignOrderToLot(req({
+    headers: auth, params: { id: placed.jsonBody.order.id }, body: { lotId: 'anything' },
+  }), ctx);
+  assert.equal(refused.status, 409);
+  assert.match(refused.jsonBody.message, /domestic/i);
+
+  // And the card says so rather than offering a control that cannot work.
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  const row = board.orders.find((entry) => entry.id === placed.jsonBody.order.id);
+  assert.equal(row.inHand, true);
+  assert.equal(row.awaitingLot, false);
+});
+
+await check('only the shop that sold it may file it, or tick it', async () => {
+  const stranger = await signup(req({
+    body: {
+      displayName: 'Passing Stranger', email: 'passing-by@figmark.example',
+      phone: '+919000078832', password: 'longenough1',
+    },
+  }), ctx);
+  assert.equal(stranger.status, 201, JSON.stringify(stranger.jsonBody));
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+  const refused = await assignOrderToLot(req({
+    headers: theirs, params: { id: templatedOrder.id }, body: { lotId: 'x' },
+  }), ctx);
+  assert.equal(refused.status, 403);
 });
 
 console.log(`\n${passed} checks passed`);

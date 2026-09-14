@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { FillBlock } from '../components/FillMeter';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -100,7 +100,7 @@ export function ListingPage() {
 
       <div className="detail">
         <div>
-          <Thumb seed={listing.id} label={listing.title} className="thumb detail__hero">
+          <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb detail__hero">
             <div className="thumb__badges">
               <span className="badge badge--solid">{listing.condition}</span>
               {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}

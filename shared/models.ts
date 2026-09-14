@@ -357,6 +357,15 @@ export interface HandlerProfile {
 export interface ListingPhoto {
   /** Blob name within the storage container; not a full URL. */
   blobName: string;
+  /**
+   * Where to fetch it.
+   *
+   * Uploads go to the photo store and come back with a path this app serves.
+   * A shop that already has its pictures somewhere - a channel post, a supplier
+   * page - pastes the link instead, and both kinds sit in the same list in the
+   * same order. Absent on rows written before photos could be uploaded at all.
+   */
+  url?: string;
   /** Perceptual hash, reserved for reverse-image search. */
   imageHash: string | null;
   isPrimary: boolean;
@@ -424,6 +433,23 @@ export interface Listing extends BaseDocument {
    */
   bundle?: boolean;
   photos: ListingPhoto[];
+  /**
+   * The ladder a buyer reads before this item is in a batch.
+   *
+   * Set from the Quick Post template it was listed with, and snapshotted onto
+   * the order at purchase for the same reason a lot snapshots its route: the
+   * template is a template, and editing it must not rewrite a timeline
+   * somebody is already reading. Absent means the built-in two steps.
+   */
+  preLotRoute?: LotRoute | null;
+  /**
+   * The route template a batch made from this item should travel.
+   *
+   * A pointer rather than a copy, because nothing is travelling it yet - it is
+   * a suggestion the "add to a lot" screen pre-selects when the seller opens
+   * the run this item will go in.
+   */
+  lotRouteId?: string | null;
   /** Free-text search terms, denormalised for query simplicity. */
   tags: string[];
   /** Bookmark count. Cheap signal, feeds the relevance ranking later. */
@@ -742,6 +768,14 @@ export interface Order extends BaseDocument {
    * shipped.
    */
   broughtBy?: string | null;
+  /**
+   * The ladder this item read before it joined a batch.
+   *
+   * Copied from the listing at purchase. Once the item is in a batch the
+   * batch's route takes over and this stays as the first half of the journey,
+   * which is what the buyer's timeline shows above the join.
+   */
+  preLotRoute?: LotRoute | null;
   /** Set once the order reaches `delivered`; unlocks reviews. */
   completedAt: string | null;
   /**

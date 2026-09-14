@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { TrackingRoute } from '../../../shared/routes.js';
+import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
   Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
@@ -98,6 +99,12 @@ export interface Repository {
 
   listLots(query?: CatalogQuery): Promise<Lot[]>;
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;
+
+  /** The Quick Post templates a shop lists from. */
+  listTemplates(sellerId: string): Promise<PostTemplate[]>;
+  getTemplate(sellerId: string, templateId: string): Promise<PostTemplate | null>;
+  saveTemplate(template: PostTemplate): Promise<PostTemplate>;
+  deleteTemplate(sellerId: string, templateId: string): Promise<boolean>;
 
   /** The route templates a shop has written. */
   listRoutes(sellerId: string): Promise<TrackingRoute[]>;

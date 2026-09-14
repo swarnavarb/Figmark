@@ -7,7 +7,7 @@ import {
 import { preOrderView } from '@shared/preorder';
 import { sourcingOf } from '@shared/fulfilment';
 import { api, type FeedListing, type FeedResponse } from '../api';
-import { EmptyState, ErrorNotice, Icon, Thumb, TrustBadge } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { FillGap, FillKey, FillMeter } from '../components/FillMeter';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -251,7 +251,7 @@ function ListingCard({ listing }: { listing: FeedListing }) {
 
   return (
     <Link to={`/listing/${listing.id}`} className="card card--link">
-      <Thumb seed={listing.id} label={listing.title}>
+      <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
         {user && (
           <button type="button" className={`thumb__like${liked ? ' is-on' : ''}`} onClick={toggleLike}
             aria-label={liked ? 'Remove bookmark' : 'Bookmark'} aria-pressed={liked}>
