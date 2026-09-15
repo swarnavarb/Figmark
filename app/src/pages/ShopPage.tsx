@@ -125,7 +125,7 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
   return (
     <main className="page tab-view">
       <div className="gate">
-        <span className="gate__mark" aria-hidden="true">🏬</span>
+        <span className="gate__mark" aria-hidden="true">{<Icon name="bank" size={19} />}</span>
         <h1 className="gate__title">Open your storefront</h1>
         <p className="gate__note">
           Everything on Figmark is sold from a shop — a name buyers follow, a handle they can find
@@ -143,7 +143,7 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
           for a new seller. */}
       {user?.escrowRights && (
         <Link to="/escrow" className="btn btn--quiet" style={{ justifySelf: 'center', marginTop: 18 }}>
-          🔒 Open the escrow console instead
+          {<Icon name="lock" size={13} />} Open the escrow console instead
         </Link>
       )}
     </main>
@@ -191,7 +191,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         {/* No "list an item" here: the Items tab opens with that door, and the
             same button twice on one screen is one too many. */}
         {user?.escrowRights && (
-          <Link to="/escrow" className="btn btn--ghost btn--sm">🔒 Escrow</Link>
+          <Link to="/escrow" className="btn btn--ghost btn--sm">{<Icon name="lock" size={13} />} Escrow</Link>
         )}
       </div>
 
@@ -497,14 +497,14 @@ function MyItems({ store }: { store: StoreAccess }) {
           a timer. Both are here because a shop does both, at different hours. */}
       <div className="doors doors--two">
         <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="door">
-          <span className="door__glyph" aria-hidden="true">🏷️</span>
+          <span className="door__glyph" aria-hidden="true">{<Icon name="tag" size={19} />}️</span>
           <span className="door__title">List an item</span>
           <span className="door__note">One thing, up for anyone browsing.</span>
         </Link>
 
         <button type="button" className="door door--pro" onClick={() => setMode('power')}>
           <span className="door__flag">Pro</span>
-          <span className="door__glyph" aria-hidden="true">⚡</span>
+          <span className="door__glyph" aria-hidden="true">{<Icon name="bolt" size={19} />}</span>
           <span className="door__title">Start power selling</span>
           <span className="door__note">A whole sale, on a timer, in your channel.</span>
         </button>
@@ -659,8 +659,9 @@ function Orders({ store }: { store: StoreAccess }) {
           {filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a batch.'}
         </p>
       ) : (
-        shown.map((row) => (
-          <OrderCard
+        <div className="orows">
+          {shown.map((row) => (
+          <OrderRow
             key={row.id}
             row={row}
             store={store}
@@ -670,7 +671,8 @@ function Orders({ store }: { store: StoreAccess }) {
             onFile={() => setFiling(row)}
             onReject={() => setRejecting(row)}
           />
-        ))
+          ))}
+        </div>
       )}
 
       {rejecting && (
@@ -992,14 +994,36 @@ const ESCROW_WORDS: Record<string, string> = {
 };
 
 /**
- * One purchase, with everything it needs answering about.
+ * The one state worth colouring the edge of a row with.
  *
- * Compact on purpose: a shop works forty of these in a sitting, so the card is
- * a row of facts and two controls, not a panel. The two controls are the two
- * things that are actually done from here - the warehouse tick and the batch -
- * and everything else opens the screen that owns it.
+ * A queue is read down its left edge before any word in it is, so the stripe
+ * has to answer the only question a shop is asking while scrolling: does this
+ * one need me. Disputes first, then anything waiting on an answer, then money
+ * that has landed, then everything quietly in progress.
  */
-function OrderCard({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject }: {
+function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: string } {
+  if (row.escrowState === 'disputed') return { tone: 'danger', label: 'In dispute' };
+  if (needsAnswer) return { tone: 'warn', label: PAYMENT_WORDS[row.paymentStatus] ?? 'To answer' };
+  if (row.paymentStatus === 'paid') return { tone: 'ok', label: 'Paid' };
+  if (row.paymentStatus === 'refunded') return { tone: 'quiet', label: 'Refunded' };
+  return { tone: 'quiet', label: PAYMENT_WORDS[row.paymentStatus] ?? row.paymentStatus };
+}
+
+/**
+ * One purchase, as a row rather than a card.
+ *
+ * This was a 219px card 1140px wide, which put four orders on a desktop screen
+ * and made reviewing thirty-eight of them ten screens of scrolling. A shop
+ * works this list in a sitting, so it is a table now: the facts on one line,
+ * the state in the edge, and the two controls that are actually used from here
+ * kept on the row rather than promoted to full-width buttons.
+ *
+ * The actions stay in the markup at every width instead of appearing on hover,
+ * because hover does not exist on the device most of this app is read on.
+ * They are quiet until the row is under the pointer, which is a different
+ * thing from being absent.
+ */
+function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject }: {
   row: SaleRow;
   store: StoreAccess;
   busy: boolean;
@@ -1012,63 +1036,60 @@ function OrderCard({ row, store, busy, needsAnswer, onWarehouse, onFile, onRejec
   const lotHref = row.lotId
     ? `/lot/${row.lotId}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`
     : null;
+  const { tone, label } = orderTone(row, needsAnswer);
 
   return (
-    <article className="order">
-      <div className="order__top">
-        <Link to={`/order/${row.id}`} className="order__name">{row.itemName}</Link>
-        <strong>{formatMoney(row.totalMinor, row.currency)}</strong>
-      </div>
-      <span className="faint">
-        Ordered by {row.buyer.handle ? <Link to={`/${row.buyer.handle}`}>{row.buyer.name}</Link> : row.buyer.name}
-        {row.quantity > 1 && ` · ${row.quantity} units`} · {timeAgo(row.createdAt)}
-      </span>
+    <article className={`orow orow--${tone}${busy ? ' is-busy' : ''}`}>
+      <span className="orow__stripe" aria-hidden="true" />
 
-      <div className="order__facts">
-        <span className={`chipfact${row.inHand ? ' is-yes' : ''}`}>
-          {row.inHand ? 'In hand' : 'Import'}
-        </span>
-        <span className={`chipfact${row.paymentStatus === 'paid' ? ' is-yes' : row.paymentStatus === 'claimed' ? ' is-wait' : ''}`}>
-          {PAYMENT_WORDS[row.paymentStatus] ?? row.paymentStatus}
-        </span>
-        <span className={`chipfact${row.escrowState === 'released' ? ' is-yes' : row.escrowState === 'held' ? ' is-wait' : ''}`}>
-          {ESCROW_WORDS[row.escrowState] ?? row.escrowState}
-        </span>
-        {row.lotStep && <span className="chipfact is-yes">{row.lotStep}</span>}
-      </div>
-
-      {/* The two things done from this screen. A domestic sale has neither: it
-          never goes near a warehouse and never joins a batch. */}
-      {!row.inHand && (
-        <div className="order__acts">
-          <button type="button" disabled={busy} aria-pressed={received}
-            className={`tickbtn${received ? ' is-on' : ''}`}
-            onClick={() => onWarehouse(!received)}>
-            China WH received
-          </button>
-
-          {lotHref ? (
-            <Link to={lotHref} className="tickbtn tickbtn--link">
-              {row.lotNumber ? `LOT ${row.lotNumber}` : row.lotName} →
-            </Link>
-          ) : (
-            <button type="button" className="tickbtn" onClick={onFile}>+ Add to a lot</button>
+      <div className="orow__main">
+        <Link to={`/order/${row.id}`} className="orow__name">{row.itemName}</Link>
+        <div className="orow__meta">
+          <span>{row.buyer.handle
+            ? <Link to={`/${row.buyer.handle}`} className="orow__buyer">{row.buyer.name}</Link>
+            : row.buyer.name}
+          </span>
+          <span>{timeAgo(row.createdAt)}</span>
+          {row.quantity > 1 && <span>{row.quantity} units</span>}
+          {!row.inHand && (
+            lotHref
+              ? <Link to={lotHref} className="orow__lot">{row.lotNumber ? `LOT ${row.lotNumber}` : row.lotName}</Link>
+              : <span className="orow__lot orow__lot--none">no batch</span>
           )}
+          {row.lotStep && <span className="orow__step">{row.lotStep}</span>}
         </div>
-      )}
+      </div>
 
-      <div className="order__foot">
-        <Link to={`/order/${row.id}`} className="btn btn--quiet btn--sm">View tracking</Link>
-        {needsAnswer && (
+      <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>
+      <span className="orow__price">{formatMoney(row.totalMinor, row.currency)}</span>
+
+      <div className="orow__acts">
+        {/* A domestic sale has neither of these: it never goes near a
+            warehouse and never joins a batch. */}
+        {!row.inHand && (
           <>
-            {row.paymentStatus === 'claimed' && (
-              <Link to={`/order/${row.id}`} className="btn btn--sm">Check the payment</Link>
-            )}
-            <button type="button" className="btn btn--ghost btn--sm" onClick={onReject}>
-              Can&rsquo;t serve it
+            <button type="button" disabled={busy} aria-pressed={received}
+              className={`orow__act${received ? ' is-on' : ''}`}
+              title={received ? 'Received at the China warehouse' : 'Mark received at the China warehouse'}
+              onClick={() => onWarehouse(!received)}>
+              <Icon name={received ? 'check' : 'box'} size={15} />
             </button>
+            {!lotHref && (
+              <button type="button" className="orow__act" title="Add to a batch" onClick={onFile}>
+                <Icon name="plus" size={15} />
+              </button>
+            )}
           </>
         )}
+        {needsAnswer && (
+          <button type="button" className="orow__act orow__act--danger"
+            title="Can't serve it" onClick={onReject}>
+            <Icon name="close" size={15} />
+          </button>
+        )}
+        <Link to={`/order/${row.id}`} className="orow__act" title="Open the order">
+          <Icon name="right" size={15} />
+        </Link>
       </div>
     </article>
   );

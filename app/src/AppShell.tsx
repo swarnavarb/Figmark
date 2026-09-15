@@ -64,7 +64,7 @@ export function AppShell() {
       </header>
 
       {sessionsInsecure && (
-        <div className="page" style={{ paddingBottom: 0 }}>
+        <div className="page page--notice">
           <p className="notice notice--error notice--standing">
             Sessions are signed with the development key published in this repository, so they can be
             forged. Set <code>AUTH_SESSION_SECRET</code> in the app settings before any real user data.
@@ -76,7 +76,7 @@ export function AppShell() {
           nowhere else, which makes it look like a bug in that screen. Name it
           where every screen can see it. */}
       {missingContainers.length > 0 && (
-        <div className="page" style={{ paddingBottom: 0 }}>
+        <div className="page page--notice">
           <p className="notice notice--error notice--standing">
             The database is missing {missingContainers.length === 1 ? 'a container' : 'containers'}:{' '}
             <code>{missingContainers.join(', ')}</code>. Anything that reads {missingContainers.length === 1 ? 'it' : 'them'} will
@@ -86,7 +86,7 @@ export function AppShell() {
       )}
 
       {warning && (
-        <div className="page" style={{ paddingBottom: 0 }}>
+        <div className="page page--notice">
           <p className="notice notice--info notice--standing">{warning}</p>
         </div>
       )}

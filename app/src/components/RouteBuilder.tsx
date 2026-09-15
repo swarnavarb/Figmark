@@ -1,4 +1,5 @@
 import { useState, type DragEvent } from 'react';
+import { Icon } from './Icon';
 import { stepId, type RouteStep } from '@shared/routes';
 
 /**
@@ -58,7 +59,7 @@ export function RouteBuilder({ steps, onChange }: {
             onDragEnd={() => { setDragging(null); setOver(null); }}
             aria-hidden="true"
           >
-            ☰
+            <Icon name="grip" size={15} />
           </span>
 
           <span className="step__no">{index + 1}</span>
@@ -74,12 +75,12 @@ export function RouteBuilder({ steps, onChange }: {
 
           <span className="step__acts">
             <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
-              disabled={index === 0} onClick={() => move(index, index - 1)}>▲</button>
+              disabled={index === 0} onClick={() => move(index, index - 1)}><Icon name="up" size={13} /></button>
             <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
-              disabled={index === steps.length - 1} onClick={() => move(index, index + 1)}>▼</button>
+              disabled={index === steps.length - 1} onClick={() => move(index, index + 1)}><Icon name="down" size={13} /></button>
             <button type="button" className="iconbtn iconbtn--danger"
               aria-label={`Delete step ${index + 1}`}
-              onClick={() => commit(steps.filter((_, i) => i !== index))}>✕</button>
+              onClick={() => commit(steps.filter((_, i) => i !== index))}><Icon name="close" size={13} /></button>
           </span>
         </div>
       ))}

@@ -249,7 +249,7 @@ export function ListingPage() {
                   happens to own it — so the message goes to the shop's handle. */}
               {user && !data.isOwn && seller.username && (
                 <Link to={`/messages/${encodeURIComponent(seller.username)}`} className="btn btn--quiet btn--block">
-                  💬 Message {seller.storefrontName}
+                  {<Icon name="message" size={15} />} Message {seller.storefrontName}
                 </Link>
               )}
             </div>

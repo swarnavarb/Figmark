@@ -78,7 +78,7 @@ export function PowerSalePanel({ storeId }: { storeId: string }) {
       )}
 
       {sales && sales.length === 0 && (
-        <EmptyState icon="⚡" title="No sales scheduled">
+        <EmptyState icon={<Icon name="bolt" size={26} />} title="No sales scheduled">
           Write the message that opens it, add what you are selling, and set how far apart the
           posts go out. It runs itself from there.
         </EmptyState>

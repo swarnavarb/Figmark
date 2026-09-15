@@ -85,7 +85,7 @@ export function ServicesPage() {
         {(hub?.categories ?? SERVICE_ORDER.map((kind) => ({ ...SERVICES[kind], count: null }))).map(
           (category) => (
             <Link key={category.kind} to={`/services/${category.kind}`} className="svc">
-              <span className="svc__glyph" aria-hidden="true">{category.glyph}</span>
+              <span className="svc__glyph"><Icon name={category.icon} size={22} /></span>
               <span className="svc__body">
                 <span className="svc__top">
                   <span className="svc__name">{category.plural}</span>
@@ -165,7 +165,7 @@ export function ServiceDirectoryPage() {
 
       <div className="note-row" style={{ marginBottom: 16 }}>
         <div style={{ minWidth: 0 }}>
-          <span className="card__title">{meta.glyph} How you become one</span>
+          <span className="card__title"><Icon name={meta.icon} size={15} /> How you become one</span>
           <span className="faint">{ENTRY_NOTE[meta.entry]}</span>
         </div>
       </div>
@@ -198,7 +198,7 @@ export function ServiceDirectoryPage() {
           {providers === null ? (
             <p className="muted">Loading…</p>
           ) : providers.length === 0 ? (
-            <EmptyState icon={meta.glyph} title="Nobody here yet">
+            <EmptyState icon={<Icon name={meta.icon} size={26} />} title="Nobody here yet">
               {query ? 'Try a different city or name.' : ENTRY_NOTE[meta.entry]}
             </EmptyState>
           ) : (
@@ -298,7 +298,7 @@ export function MyServicesPage() {
           ) : (
             hub.mine.map((kind) => (
               <Link key={kind} to={SERVICES[kind].console} className="svc">
-                <span className="svc__glyph" aria-hidden="true">{SERVICES[kind].glyph}</span>
+                <span className="svc__glyph"><Icon name={SERVICES[kind].icon} size={22} /></span>
                 <span className="svc__body">
                   <span className="svc__top">
                     <span className="svc__name">{SERVICES[kind].label}</span>

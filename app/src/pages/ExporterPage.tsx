@@ -177,7 +177,7 @@ export function PackingLotPage() {
           className="btn btn--quiet btn--sm"
           style={{ justifySelf: 'start', marginTop: 12 }}
         >
-          💬 Message {data.store.name}
+          {<Icon name="message" size={15} />} Message {data.store.name}
         </Link>
       )}
 

@@ -9,7 +9,8 @@ import {
   type PostCard,
 } from '../api';
 import type { StoreAccess } from '@shared/stores';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb} from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import type { IconName } from '../components/Icon';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
@@ -18,12 +19,12 @@ import { useSession } from '../session';
 
 type View = 'feed' | 'channels' | 'wanted' | 'forums' | 'messages';
 
-const VIEWS: { id: View; label: string; glyph: string; hint: string }[] = [
-  { id: 'feed', label: 'Feed', glyph: '✳️', hint: 'Everything from the people and shops you follow' },
-  { id: 'channels', label: 'Channels', glyph: '💬', hint: 'One thread per seller' },
-  { id: 'wanted', label: 'Wanted', glyph: '🔎', hint: 'What people are hunting for' },
-  { id: 'forums', label: 'Forums', glyph: '🏛️', hint: 'Shared rooms' },
-  { id: 'messages', label: 'Messages', glyph: '✉️', hint: 'Talk to anyone with a username' },
+const VIEWS: { id: View; label: string; icon: IconName; hint: string }[] = [
+  { id: 'feed', label: 'Feed', icon: 'spark', hint: 'Everything from the people and shops you follow' },
+  { id: 'channels', label: 'Channels', icon: 'message', hint: 'One thread per seller' },
+  { id: 'wanted', label: 'Wanted', icon: 'search', hint: 'What people are hunting for' },
+  { id: 'forums', label: 'Forums', icon: 'forum', hint: 'Shared rooms' },
+  { id: 'messages', label: 'Messages', icon: 'mail', hint: 'Talk to anyone with a username' },
 ];
 
 /**
@@ -64,7 +65,7 @@ export function SocialPage() {
             aria-pressed={view === entry.id}
             onClick={() => setView(entry.id)}
           >
-            <span className="pill__glyph" aria-hidden="true">{entry.glyph}</span>
+            <span className="pill__glyph"><Icon name={entry.icon} size={19} /></span>
             <span className="pill__label">{entry.label}</span>
           </button>
         ))}
@@ -174,7 +175,7 @@ function Channels() {
               <span className="faint">{row.lastPostAt ? timeAgo(row.lastPostAt) : ''}</span>
             </div>
             <span className="channel__last">
-              {row.lastPostKind === 'sale' && '🏷️ '}
+              {row.lastPostKind === 'sale' && <Icon name="tag" size={12} />}
               {row.lastPost ?? (row.mine ? 'Say something to your followers' : 'No posts yet')}
             </span>
           </div>
@@ -416,7 +417,7 @@ function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
       {asShop && !isForum && (
         <label className="saybar__announce">
           <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
-          <span>📣 Send as an announcement</span>
+          <span><Icon name="megaphone" size={14} /> Send as an announcement</span>
           <span className="faint">
             {announce ? 'Pinned to the Announcements list.' : 'Just a message in the room.'}
           </span>
@@ -429,7 +430,7 @@ function ChannelComposer({ channelId, isForum, asShop, shareable, onPosted }: {
         {asShop && !isForum && (
           <button type="button" className="saybar__attach" aria-label="Share one of your items"
             onClick={() => setPicking(!picking)}>
-            🏷️
+            <Icon name="tag" size={18} />
           </button>
         )}
         <textarea
@@ -648,8 +649,8 @@ function PostView({ card }: { card: PostCard }) {
               what the name did, and losing that path was not the point. */}
           <PersonLink party={author} className="post__name">{post.authorName}</PersonLink>
           <span className="faint">
-            {post.kind === 'sale' && '🏷️ For sale · '}
-            {post.kind === 'thread' && '🏛️ Forum · '}
+            {post.kind === 'sale' && <><Icon name="tag" size={12} /> For sale · </>}
+            {post.kind === 'thread' && <><Icon name="forum" size={12} /> Forum · </>}
             <Link to={`/social/c/${post.channelId}`} className="personlink">their feed</Link>
             {' · '}
             {timeAgo(post.createdAt)}
@@ -672,7 +673,7 @@ function PostView({ card }: { card: PostCard }) {
       )}
 
       <div className="post__foot">
-        <span>♥ {post.likeCount}</span>
+        <span><Icon name="heart" size={12} /> {post.likeCount}</span>
         <span>{post.replyCount} replies</span>
       </div>
     </article>

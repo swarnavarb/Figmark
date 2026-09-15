@@ -199,6 +199,14 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.map': 'application/json; charset=utf-8',
+  // The vendored typefaces. Without this they were served as
+  // application/octet-stream, which some engines refuse to parse as a font.
+  '.woff2': 'font/woff2',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
 };
 
 function matchRoute(method, pathname) {

@@ -161,7 +161,7 @@ function CustomerCard({ customer, busy, onToggle }: {
           {customer.orders.length === 1 ? 'order' : 'orders'}
         </span>
         <span className="cust__track">
-          🚚 {customer.trackingReference ?? 'None yet'}
+          {<Icon name="truck" size={19} />} {customer.trackingReference ?? 'None yet'}
         </span>
       </div>
 

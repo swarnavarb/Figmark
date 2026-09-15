@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { ApiRequestError, api, type PhotoDraft } from '../api';
+import { Icon } from './Icon';
 
 /** What a photo is shrunk to before it leaves the browser. */
 const MAX_EDGE = 1400;
@@ -126,13 +127,13 @@ export function PhotoManager({ photos, onChange }: {
             {photo.isPrimary && <figcaption>Main</figcaption>}
             <div className="photo__acts">
               <button type="button" className="iconbtn" aria-label={`Move photo ${index + 1} left`}
-                disabled={index === 0} onClick={() => move(index, index - 1)}>◀</button>
+                disabled={index === 0} onClick={() => move(index, index - 1)}><Icon name="left" size={13} /></button>
               <button type="button" className="iconbtn" aria-label={`Make photo ${index + 1} the main one`}
-                onClick={() => commit(photos.map((row, i) => ({ ...row, isPrimary: i === index })))}>★</button>
+                onClick={() => commit(photos.map((row, i) => ({ ...row, isPrimary: i === index })))}><Icon name="star" size={13} /></button>
               <button type="button" className="iconbtn" aria-label={`Move photo ${index + 1} right`}
-                disabled={index === photos.length - 1} onClick={() => move(index, index + 1)}>▶</button>
+                disabled={index === photos.length - 1} onClick={() => move(index, index + 1)}><Icon name="right" size={13} /></button>
               <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete photo ${index + 1}`}
-                onClick={() => commit(photos.filter((_, i) => i !== index))}>✕</button>
+                onClick={() => commit(photos.filter((_, i) => i !== index))}><Icon name="close" size={13} /></button>
             </div>
           </figure>
         ))}

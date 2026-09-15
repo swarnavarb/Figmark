@@ -40,7 +40,14 @@ export interface ServiceMeta {
   kind: ServiceKind;
   label: string;
   plural: string;
+  /**
+   * The emoji this service used to be drawn with. Kept for anywhere that can
+   * only carry text, and no longer what the UI renders: colour emoji are a
+   * different typeface on every platform and carry somebody else's palette.
+   */
   glyph: string;
+  /** The drawn mark, by name in the app's own icon set. */
+  icon: 'plane' | 'box' | 'lock' | 'search';
   /** What they do, in the words a seller would use. */
   blurb: string;
   /** The longer version, on the category's own screen. */
@@ -58,6 +65,7 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     label: 'Freight forwarder',
     plural: 'Freight forwarders',
     glyph: '✈',
+    icon: 'plane',
     blurb: 'Consolidates the crate and flies it China → India.',
     detail:
       'They take the batch from the supplier or the China warehouse and get it to India: '
@@ -72,6 +80,7 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     label: 'Domestic handler',
     plural: 'Domestic handlers',
     glyph: '📦',
+    icon: 'box',
     blurb: 'Takes delivery in India and gets every parcel to its buyer.',
     detail:
       'The India end of the run. They receive the batch when it lands, split it into one parcel '
@@ -86,6 +95,7 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     label: 'Escrow',
     plural: 'Escrow agents',
     glyph: '🔒',
+    icon: 'lock',
     blurb: 'Holds the money until the buyer has the thing.',
     detail:
       'A person, not a company account: the buyer picks one at checkout, they hold the payment '
@@ -100,6 +110,7 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     label: 'Exporter',
     plural: 'Exporters',
     glyph: '🔍',
+    icon: 'search',
     blurb: 'Checks every piece in China before the batch leaves.',
     detail:
       'Named by a shop on a batch, and only that batch. They work from a packing list - pieces, '

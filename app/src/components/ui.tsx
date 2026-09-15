@@ -3,36 +3,14 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { brandHueFor, gradientFor, initialsOf } from '../format';
 
-/** Inline icons. Kept as a small set so no icon dependency is needed. */
-export function Icon({ name, size = 16 }: { name: 'search' | 'heart' | 'plus' | 'back' | 'check'; size?: number }) {
-  const paths: Record<string, ReactNode> = {
-    search: (
-      <>
-        <circle cx="11" cy="11" r="7" />
-        <path d="m20 20-3.5-3.5" />
-      </>
-    ),
-    heart: <path d="M12 20s-7-4.5-7-9a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 4.5-7 9-7 9Z" />,
-    plus: <path d="M12 5v14M5 12h14" />,
-    back: <path d="M15 19l-7-7 7-7" />,
-    check: <path d="m5 13 4 4L19 7" />,
-  };
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill={name === 'heart' ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {paths[name]}
-    </svg>
-  );
-}
+/*
+ * Icons live in their own file now, and this re-export is what keeps every
+ * existing `import { Icon } from '../components/ui'` working while the set
+ * grew from five glyphs to thirty-odd. One family, one stroke, one place.
+ */
+export { Icon } from './Icon';
+import { Icon } from './Icon';
+export type { IconName } from './Icon';
 
 /**
  * Stand-in for a listing photo.
@@ -95,16 +73,27 @@ export function TrustBadge({ score, tier }: { score: number; tier?: string }) {
   const tone = score >= 80 ? 'ok' : score >= 50 ? 'warn' : 'danger';
   return (
     <span className={`badge badge--${tone}`} title={`Trust score ${score} of 100`}>
-      ★ {score}
+      <Icon name="star" size={11} /> {score}
       {tier === 'pro' && ' · Pro'}
     </span>
   );
 }
 
-export function EmptyState({ icon = '◍', title, children }: { icon?: string; title: string; children?: ReactNode }) {
+/**
+ * Nothing here yet.
+ *
+ * Takes a node rather than a character, so callers can hand it a drawn icon.
+ * The default is the six-point spark the "everything" tile uses, which is the
+ * nearest thing this app has to a shrug.
+ */
+export function EmptyState({ icon, title, children }: {
+  icon?: ReactNode;
+  title: string;
+  children?: ReactNode;
+}) {
   return (
     <div className="empty">
-      <div className="empty__icon">{icon}</div>
+      <div className="empty__icon">{icon ?? <Icon name="spark" size={26} />}</div>
       <h3>{title}</h3>
       {children && <p className="muted">{children}</p>}
     </div>
@@ -215,7 +204,7 @@ export function Modal({ title, onClose, children }: {
         <div className="row row--between" style={{ marginBottom: 10 }}>
           <h2 className="modal__title" style={{ margin: 0 }}>{title}</h2>
           <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close">
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
         {children}

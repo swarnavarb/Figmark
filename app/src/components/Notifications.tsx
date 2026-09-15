@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type AppNotification } from '../api';
+import { Icon } from './Icon';
 import { timeAgo } from '../format';
 
 /**
@@ -67,7 +68,7 @@ export function Notifications() {
       <button type="button" className="bell__button" aria-label={
         unread > 0 ? `${unread} unread notifications` : 'Notifications'
       } onClick={() => setOpen(!open)}>
-        🔔
+        {<Icon name="bell" size={18} />}
         {unread > 0 && <span className="bell__dot">{unread > 9 ? '9+' : unread}</span>}
       </button>
 
