@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps, routeOf, stepId, type LotRoute, type RouteStep, type StepSide, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, normaliseSteps, routeOf, stepId, type LotRoute, type RouteStep, type StepSide, type TrackingRoute,
 } from '../../../shared/routes.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -231,7 +231,9 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
       stage: coarseStage(route, index),
       step: route.steps[index]?.name,
       enteredAt: now,
-      note: `Added to ${lot.name}.`,
+      kind: 'joined',
+      lot: lotRefOf(lot),
+      note: null,
       recordedBy: userId,
     };
     const moved = await repository.moveOrderToLot(

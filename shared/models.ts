@@ -568,6 +568,20 @@ export interface Follow extends BaseDocument {
 /* Lots (group-buys)                                                          */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * What kind of thing happened.
+ *
+ * Joining a lot is not a step and never was. It can happen before the item is
+ * even listed, the moment it is bought, halfway through the journey, or twice
+ * when a shop re-files a piece into a later run - so it cannot be a rung on a
+ * ladder, and writing it as one put "Added to lot" in the middle of routes
+ * where the item had been in the lot from the start.
+ *
+ * It is an event instead, recorded where it actually happened, and the
+ * timeline draws it between the rungs it fell between.
+ */
+export type StageEventKind = 'step' | 'note' | 'joined' | 'moved';
+
 /** One recorded stage transition, powering the buyer-visible timeline. */
 export interface StageEvent {
   stage: FulfilmentStage;
@@ -584,6 +598,20 @@ export interface StageEvent {
    * it. Absent on every event recorded before routes, which read the stage.
    */
   step?: string;
+  /**
+   * Absent on everything recorded before this existed, which is why nothing
+   * reads it directly: `kindOf` answers for those too.
+   */
+  kind?: StageEventKind;
+  /**
+   * The lot this event put the item into, on a `joined` or a `moved`.
+   *
+   * Named rather than referenced, like the route a lot carries: the buyer read
+   * "Lot 24" at the time and renaming the lot afterwards must not rewrite what
+   * they were told. `from` is the lot it left, on a move.
+   */
+  lot?: { id: string; name: string; number: string } | null;
+  from?: { id: string; name: string; number: string } | null;
 }
 
 /**

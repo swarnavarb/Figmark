@@ -4,8 +4,8 @@ import type { Sourcing } from '../../../shared/enums.js';
 import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulfilment.js';
-import { normaliseSteps } from '../../../shared/routes.js';
-import type { Listing, ListingComment, Order, User } from '../../../shared/models.js';
+import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
+import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -422,6 +422,30 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const now = new Date().toISOString();
   const amountMinor = listing.priceMinor * quantity;
   const now2 = new Date().toISOString();
+
+  /*
+   * An item can already be in a lot before anybody buys it - the shop opened
+   * the run first and listed against it - and then the very first thing its
+   * buyer should read is which shipment it is travelling with, before the
+   * order was even placed. So the join is recorded as the opening event, not
+   * inferred from `lotId` by whoever draws the timeline later.
+   */
+  const bornInLot = listing.lotId ? await repository.getLot(listing.sellerId, listing.lotId) : null;
+  const joined: StageEvent[] = bornInLot
+    ? [{
+        stage: 'ordering',
+        enteredAt: now2,
+        kind: 'joined',
+        lot: {
+          id: bornInLot.id,
+          name: bornInLot.name,
+          number: bornInLot.lotNumber ?? lotNumberFrom(bornInLot.id, bornInLot.createdAt),
+        },
+        note: null,
+        recordedBy: user.id,
+      }]
+    : [];
+
   const order: Order = {
     id: `ord_${randomUUID().slice(0, 12)}`,
     // Inherits the item's lot if it has one. Otherwise it depends on what
@@ -447,7 +471,14 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // somebody is already reading.
     preLotRoute: listing.preLotRoute ?? null,
     stageHistory: [
-      { stage: listing.lotId ? 'ordering' : 'preparing', enteredAt: now2, note: 'Order placed.', recordedBy: user.id },
+      ...joined,
+      {
+        stage: listing.lotId ? 'ordering' : 'preparing',
+        enteredAt: now2,
+        kind: 'step',
+        note: 'Order placed.',
+        recordedBy: user.id,
+      },
     ],
     escrow: {
       state: 'none',

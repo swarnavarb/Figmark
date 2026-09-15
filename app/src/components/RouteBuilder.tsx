@@ -106,16 +106,20 @@ export function RouteBuilder({ steps, onChange, split = false }: {
   return (
     <div className="steps steps--split">
       <Half side="pre" title="Before it joins a lot"
-        hint="What happens to one order on its own. The buyer reads these while they wait."
+        hint="Written about one item on its own — what its buyer reads before a lot carries it."
         rows={rows('pre')} onAdd={() => add('pre')} {...shared}
         onDropEnd={(from) => move(from, steps.filter((step) => step.side !== 'post').length, 'pre')} />
 
+      {/* Where the hand-over usually falls, not where it must: an item can be
+          in a lot before it is listed, or join halfway down. The timeline draws
+          the join where it actually happened; this split only says which steps
+          are written about one item on its own. */}
       <div className="joinline">
-        <span>from here, pieces travel together as one lot</span>
+        <span>usually joins a lot around here</span>
       </div>
 
       <Half side="post" title="After it joins a lot"
-        hint="What happens to the whole lot. Moving the lot forward moves every item in it."
+        hint="Written about the whole lot. Moving the lot forward moves every item in it."
         rows={post} onAdd={() => add('post')} {...shared}
         onDropEnd={(from) => move(from, steps.length, 'post')}
         empty="Nothing below the line, so this route never joins a lot — which is right for a courier run where every order travels on its own." />

@@ -549,15 +549,18 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
  * own. Before that the ticks would be a lie - nothing can be packed while it is
  * over the Bay of Bengal - so they are not offered.
  */
-function LotItemRow({ item, steps, atSeller, busy, onTick, onMove, onNote }: {
+function LotItemRow({ item, steps, others, atSeller, busy, onTick, onMove, onNote, onRelot }: {
   item: LotItem;
   /** The lot's route, which is the ladder this item rides. */
   steps: RouteStep[];
+  /** The shop's other open lots, for an item that has to ride a different one. */
+  others: { id: string; name: string; lotNumber?: string | null }[];
   atSeller: boolean;
   busy: boolean;
   onTick: (checkpoint: OrderCheckpoint, on: boolean) => void;
   onMove: (to: number) => void | Promise<void>;
   onNote: (note: string, at: number) => void | Promise<void>;
+  onRelot: (lotId: string) => void | Promise<void>;
 }) {
   const gone = Boolean(item.checkpoints.dispatched);
   /** Folded away by default: thirty-four open ladders is not a manifest. */
@@ -602,15 +605,38 @@ function LotItemRow({ item, steps, atSeller, busy, onTick, onMove, onNote }: {
       </button>
 
       {open && (
-        <Ladder
-          steps={steps}
-          current={item.currentStep}
-          history={item.history}
-          busy={busy}
-          whose={`Only ${item.buyerName} reads this one.`}
-          onMove={onMove}
-          onNote={onNote}
-        />
+        <>
+          <Ladder
+            steps={steps}
+            current={item.currentStep}
+            history={item.history}
+            busy={busy}
+            whose={`Only ${item.buyerName} reads this one.`}
+            onMove={onMove}
+            onNote={onNote}
+          />
+
+          {/* A piece that missed the cut-off rides the next run. It goes on the
+              item rather than on the lot because that is the decision: this
+              one, not this crate. */}
+          {others.length > 0 && (
+            <label className="field field--inline">
+              <span>Move to another lot</span>
+              <select value="" disabled={busy}
+                onChange={(event) => event.target.value && onRelot(event.target.value)}>
+                <option value="">Stays in this lot</option>
+                {others.map((lot) => (
+                  <option key={lot.id} value={lot.id}>
+                    {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
+                  </option>
+                ))}
+              </select>
+              <span className="field__hint">
+                It starts this lot's route where the lot is, and {item.buyerName} is told.
+              </span>
+            </label>
+          )}
+        </>
       )}
     </div>
   );
@@ -714,6 +740,7 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
 export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
   const [data, setData] = useState<LotContents | null>(null);
   const [unassigned, setUnassigned] = useState<LotsResponse['unassigned']>([]);
+  const [siblings, setSiblings] = useState<LotsResponse['lots']>([]);
   const [error, setError] = useState<string | null>(null);
   const [tracking, setTracking] = useState('');
   const [busy, setBusy] = useState(false);
@@ -729,6 +756,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
       const [contents, lots] = await Promise.all([api.lotContents(lotId), api.myLots()]);
       setData(contents);
       setUnassigned(lots.unassigned);
+      setSiblings(lots.lots);
       setTracking(contents.lot.forwarder?.trackingReference ?? '');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load this lot.');
@@ -743,6 +771,10 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
 
   const { lot, listings, orders, totals, route, items } = data;
+  /** Somewhere else an item could ride: any open lot of this shop but this one. */
+  const others = siblings
+    .map((entry) => entry.lot)
+    .filter((entry) => entry.id !== lot.id && entry.status !== 'closed');
   const nextStep = route.steps[route.currentStep + 1] ?? null;
 
   async function run(label: string, fn: () => Promise<void>) {
@@ -828,6 +860,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                   key={item.id}
                   item={item}
                   steps={route.steps}
+                  others={others}
                   atSeller={route.atSeller}
                   busy={busy}
                   onTick={(checkpoint, on) =>
@@ -837,6 +870,9 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                       api.stepItem(item.id, { to }).then(() => {}))}
                   onNote={(text, at) =>
                     run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
+                  onRelot={(lotId) =>
+                    run('Item moved to another lot.', () =>
+                      api.assignOrderToLot(item.id, { lotId }).then(() => {}))}
                 />
               ))
             )}

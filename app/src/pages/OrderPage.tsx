@@ -100,15 +100,19 @@ export function OrderPage() {
                * Once there is a lot, the lot's route is the whole
                * journey and the only thing worth drawing. */
               <>
-                {/* With what the seller actually said along the way. The
-                    ladder is unchanged - the notes hang off the rungs they
-                    were written at, which is where they were meant to be
-                    read. */}
-                <Ladder steps={data.route.steps} current={data.route.currentStep}
-                  history={data.order.stageHistory} />
+                {/* Which shipment it is in, before the journey rather than
+                    after it: for an item bought into a lot that is the first
+                    thing its buyer wants, and the timeline below is the
+                    answer to the second. */}
                 <span className="field__hint">
                   Travelling in {data.route.lotName} · lot #{data.route.lotNumber}
                 </span>
+                {/* With what the seller actually said along the way. The
+                    ladder is unchanged - the notes and the hand-overs hang off
+                    the rungs they happened at, which is where they were meant
+                    to be read. */}
+                <Ladder steps={data.route.steps} current={data.route.currentStep}
+                  history={data.order.stageHistory} />
               </>
             ) : (
               <>

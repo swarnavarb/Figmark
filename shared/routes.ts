@@ -259,15 +259,18 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
 /**
  * What the builder opens with.
  *
- * Nine steps rather than the built-in seven, because this is what sellers
- * actually describe when asked: the two extra are the waits - the flight, and
- * the item sitting in a warehouse before it has a lot at all - which the
+ * Eight steps rather than the built-in seven, because this is what sellers
+ * actually describe when asked: the extra is the flight itself, which the
  * seven-stage ladder folded into its neighbours and buyers asked about anyway.
+ *
+ * "Added to lot" used to be on this list and is not a step. An item can be in
+ * a lot before it is listed, join one the moment it is bought, join halfway
+ * through, or be re-filed into a later run - none of which a fixed rung can
+ * describe. It is an event now, drawn where it happened.
  */
 export const SUGGESTED_STEPS: readonly string[] = [
   'Order placed',
   'Received at international warehouse',
-  'Added to lot',
   'Dispatched from China',
   'International transit',
   'Indian customs',
@@ -337,7 +340,7 @@ export function currentStepOf(lot: Pick<Lot, 'route' | 'currentStep' | 'stage'>)
  * For a nine-step route it is an approximation, and it is meant to be: a stage
  * is a summary, and the route beside it is the precise answer.
  */
-export function coarseStage(route: LotRoute, index: number): LotStage {
+export function coarseStage(route: HasSteps, index: number): LotStage {
   const steps = Math.max(1, route.steps.length);
   const clamped = Math.max(0, Math.min(steps - 1, index));
   // The last step is always delivered, whatever the arithmetic says: a route
@@ -360,7 +363,7 @@ export function coarseStage(route: LotRoute, index: number): LotStage {
  * The first step that reaches the stage, so advancing to `india_received`
  * lands on "Indian customs" rather than halfway through the leg before it.
  */
-export function stepForStage(route: LotRoute, stage: LotStage): number {
+export function stepForStage(route: HasSteps, stage: LotStage): number {
   const target = LOT_STAGES.indexOf(stage);
   for (let index = 0; index < route.steps.length; index += 1) {
     if (LOT_STAGES.indexOf(coarseStage(route, index)) >= target) return index;
@@ -403,4 +406,13 @@ export function lotNumberFrom(id: string, createdAt: string): string {
   const year = new Date(createdAt).getUTCFullYear() % 100;
   const tail = id.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase();
   return `${year}-${tail}`;
+}
+
+/** A lot as an event names it: enough to read it back, never a pointer. */
+export function lotRefOf(lot: { id: string; name: string; lotNumber?: string | null; createdAt: string }) {
+  return {
+    id: lot.id,
+    name: lot.name,
+    number: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
+  };
 }

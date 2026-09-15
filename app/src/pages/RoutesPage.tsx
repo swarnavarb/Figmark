@@ -84,8 +84,14 @@ function RouteRow({ name, steps, to, note }: {
       <span className="rrow__body">
         <span className="rrow__name">{name}</span>
         <span className="rrow__sum">
-          {steps.length} steps
-          {join < steps.length ? ` · joins a lot after step ${join}` : ' · never joins a lot'}
+          {/* Where the route expects the hand-over, not where it happened: an
+              item can be in a lot before it is listed, or join halfway. The
+              split says which steps are written for one item on its own. */}
+          {join === 0
+            ? `${steps.length} steps, all with the lot`
+            : join >= steps.length
+              ? `${steps.length} steps, never joins a lot`
+              : `${join} step${join === 1 ? '' : 's'} alone, then ${steps.length - join} with the lot`}
         </span>
         {note && <span className="rrow__note">{note}</span>}
       </span>

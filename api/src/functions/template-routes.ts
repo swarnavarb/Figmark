@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
-import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
+import { inLot, isDirect } from '../../../shared/fulfilment.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
-import { coarseStage, currentStepOf, normaliseSteps, routeOf } from '../../../shared/routes.js';
+import { coarseStage, currentStepOf, lotRefOf, normaliseSteps, routeOf } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -221,18 +221,24 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
   const order = await repository.getOrder(orderId);
   if (!order) return error(404, 'not_found', 'No such order.');
   if (order.sellerId !== user.id) return error(403, 'forbidden', 'That order is not yours.');
-  if (order.lotId !== AWAITING_LOT_ID) {
-    return error(
-      409,
-      'already_filed',
-      order.lotId === 'direct'
-        ? 'That is a domestic sale. It is not travelling in a lot.'
-        : 'That item is already in a lot.',
-    );
+  if (isDirect(order)) {
+    return error(409, 'already_filed', 'That is a domestic sale. It is not travelling in a lot.');
   }
+
+  /*
+   * An item already in a lot may be moved to another one, which is a thing
+   * shops do: a piece misses the cut-off and rides the next run instead. It
+   * used to be refused, and the only way to do it was to tell the buyer
+   * nothing and hope they did not look.
+   */
+  const previous = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
+  const was = previous ? lotRefOf(previous) : null;
 
   let lot = body.lotId ? await repository.getLot(user.id, body.lotId) : null;
   if (body.lotId && !lot) return error(404, 'not_found', 'No such lot.');
+  if (lot && lot.id === order.lotId) {
+    return error(409, 'already_filed', 'That item is already in that lot.');
+  }
 
   if (!lot) {
     if (!body.newLot) return error(400, 'invalid_request', 'Pick a lot, or describe a new one.');
@@ -248,7 +254,10 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
     stage: coarseStage(route, index),
     step: route.steps[index]?.name,
     enteredAt: now,
-    note: `Added to ${lot.name}.`,
+    kind: was ? 'moved' : 'joined',
+    lot: lotRefOf(lot),
+    from: was,
+    note: null,
     recordedBy: user.id,
   };
 
@@ -257,11 +266,14 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
       ...order,
       lotId: lot.id,
       stage: coarseStage(route, index),
+      // Its own position goes with it: the item now rides this lot's ladder,
+      // and a place on the last one means nothing here.
+      currentStep: index,
       stageHistory: [...order.stageHistory, event],
       status: order.status === 'cancelled' ? order.status : 'in_fulfilment',
       updatedAt: now,
     },
-    AWAITING_LOT_ID,
+    order.lotId,
   );
 
   await notify(
@@ -269,8 +281,10 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
     [moved.buyerId],
     {
       kind: 'lot_moved',
-      title: `Your item is in ${lot.name}`,
-      body: `It now travels with the lot: ${route.name}.`,
+      title: was ? `Your item moved to ${lot.name}` : `Your item is in ${lot.name}`,
+      body: was
+        ? `It travels with ${lot.name} now instead of ${was.name}.`
+        : `It now travels with the lot: ${route.name}.`,
       link: '/me?tab=purchases',
     },
     { except: user.id },

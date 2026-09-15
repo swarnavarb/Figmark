@@ -4280,7 +4280,10 @@ await check('a route is a ladder you write once and reuse', async () => {
   // The ladder this app has always had is offered by name rather than assumed,
   // and the builder opens with something to edit rather than an empty list.
   assert.equal(before.builtIn.steps.length, 7);
-  assert.ok(before.suggested.length >= 9);
+  assert.ok(before.suggested.length >= 8);
+  // Joining a lot is not one of them: it can happen before the item is listed,
+  // when it sells, or halfway down, so it is an event and never a rung.
+  assert.ok(!before.suggested.some((step) => /added to (a )?lot/i.test(step.name)));
 
   const made = await saveRoute(req({
     headers: auth,
@@ -4442,10 +4445,12 @@ await check('filling a lot moves the item into it, and tells the buyer', async (
   assert.equal(tracking.awaitingLot, false);
   assert.equal(tracking.route.name, 'Guangzhou air express');
   assert.equal(tracking.route.steps.length, 5);
-  assert.ok(
-    tracking.order.stageHistory.some((event) => (event.note ?? '').includes('Route lot')),
-    'and their history says where it went rather than silently growing five steps',
-  );
+  // Joining is an event carrying the lot it names, not a sentence to grep and
+  // not a rung: the timeline draws it where it happened.
+  const join = tracking.order.stageHistory.find((event) => event.kind === 'joined');
+  assert.ok(join, 'their history says where it went rather than silently growing five steps');
+  assert.equal(join.lot.name, 'Route lot');
+  assert.ok(join.lot.number, 'and names it the way a person would say it');
 
   // Adding the same item twice does nothing: it is already in a lot.
   const again = await addItems(req({
@@ -4985,6 +4990,102 @@ await check('one order, one move: a lot opened and the order filed into it', asy
     headers: auth, params: { id: order.jsonBody.order.id }, body: { lotId: 'lot_nope' },
   }), ctx);
   assert.equal(nowhere.status, 404);
+});
+
+await check('an item bought into a lot says so before it says anything else', async () => {
+  // A shop can open the run first and list against it, so the item is in a lot
+  // before anybody buys it. Then the first thing its buyer should read is which
+  // shipment it travels with - not "added to a lot" halfway down a ladder it
+  // was never off.
+  const lot = await createLot(req({
+    headers: auth, body: { name: 'Listed against this one', origin: 'Guangzhou, CN' },
+  }), ctx);
+  const lotId = lot.jsonBody.lot.id;
+
+  const listing = await createListing(req({
+    headers: auth,
+    body: { title: 'Born in a lot', priceMinor: 12_000, sourcing: 'import', lotId },
+  }), ctx);
+  const buyer = await newBuyer('Bought Into A Lot');
+  const placed = await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx);
+  assert.equal(placed.status, 201, JSON.stringify(placed.jsonBody));
+
+  const history = placed.jsonBody.order.stageHistory;
+  assert.equal(history[0].kind, 'joined', 'the lot comes first');
+  assert.equal(history[0].lot.id, lotId);
+  assert.equal(history[0].lot.name, 'Listed against this one');
+  assert.ok(history[0].lot.number);
+  assert.equal(history[1].note, 'Order placed.', 'and the order after it');
+
+  // And the buyer reads it on their own timeline, not only in the seller's copy.
+  const tracking = (await orderTracking(req({
+    headers: buyer.headers, params: { id: placed.jsonBody.order.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.order.stageHistory[0].kind, 'joined');
+  assert.equal(tracking.route.lotName, 'Listed against this one');
+});
+
+await check('an item can be moved to another lot, and the timeline says so', async () => {
+  // A piece misses the cut-off and rides the next run. It used to be refused,
+  // and the only way to do it was to tell the buyer nothing.
+  const first = await createLot(req({
+    headers: auth, body: { name: 'Missed the cut-off', origin: 'Guangzhou, CN' },
+  }), ctx);
+  const second = await createLot(req({
+    headers: auth, body: { name: 'The next run', origin: 'Guangzhou, CN' },
+  }), ctx);
+
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Re-filed piece', priceMinor: 7_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('Moved Between Lots');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+
+  const filed = await assignOrderToLot(req({
+    headers: auth, params: { id: order.id }, body: { lotId: first.jsonBody.lot.id },
+  }), ctx);
+  assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
+  assert.equal(filed.jsonBody.order.stageHistory.at(-1).kind, 'joined');
+
+  const moved = await assignOrderToLot(req({
+    headers: auth, params: { id: order.id }, body: { lotId: second.jsonBody.lot.id },
+  }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  assert.equal(moved.jsonBody.order.lotId, second.jsonBody.lot.id);
+
+  const event = moved.jsonBody.order.stageHistory.at(-1);
+  assert.equal(event.kind, 'moved');
+  assert.equal(event.lot.name, 'The next run');
+  assert.equal(event.from.name, 'Missed the cut-off', 'and where it came from');
+
+  // Both lots are on the buyer's record, in the order they happened, so the
+  // move reads as a move rather than as the first lot quietly disappearing.
+  const tracking = (await orderTracking(req({
+    headers: buyer.headers, params: { id: order.id },
+  }), ctx)).jsonBody;
+  const lots = tracking.order.stageHistory.filter((row) => row.kind === 'joined' || row.kind === 'moved');
+  assert.deepEqual(lots.map((row) => row.lot.name), ['Missed the cut-off', 'The next run']);
+  assert.equal(tracking.route.lotName, 'The next run');
+
+  // It is off the first lot's manifest and on the second's.
+  const before = (await lotContents(req({
+    headers: auth, params: { id: first.jsonBody.lot.id },
+  }), ctx)).jsonBody;
+  const after = (await lotContents(req({
+    headers: auth, params: { id: second.jsonBody.lot.id },
+  }), ctx)).jsonBody;
+  assert.ok(!before.items.some((row) => row.id === order.id));
+  assert.ok(after.items.some((row) => row.id === order.id));
+
+  // Moving it into the lot it is already in is not a move.
+  const nowhere = await assignOrderToLot(req({
+    headers: auth, params: { id: order.id }, body: { lotId: second.jsonBody.lot.id },
+  }), ctx);
+  assert.equal(nowhere.status, 409);
 });
 
 await check('a domestic sale is not something to file into a crate', async () => {

@@ -8,7 +8,7 @@ import {
   type LotStage,
   type Sourcing,
 } from './enums.js';
-import type { Order } from './models.js';
+import type { Order, StageEvent, StageEventKind } from './models.js';
 
 /**
  * Partition key for an order with no shipment lot behind it.
@@ -123,4 +123,30 @@ export type { DirectStage, FulfilmentStage, LotStage };
 export function sourcingOf(listing: { sourcing?: Sourcing; lotId: string | null }): Sourcing {
   if (listing.lotId) return 'import';
   return listing.sourcing === 'import' ? 'import' : 'in_hand';
+}
+
+/**
+ * What kind of event this is, for a history that may predate the field.
+ *
+ * Everything written before `kind` existed was either a step transition or a
+ * step transition carrying a note, and both read correctly as what they were:
+ * the lot events are the new thing, and they always carry the field.
+ */
+export function kindOf(event: Pick<StageEvent, 'kind' | 'note'>): StageEventKind {
+  return event.kind ?? (event.note ? 'note' : 'step');
+}
+
+/** True for the events that say the item changed hands between lots. */
+export function isLotEvent(event: Pick<StageEvent, 'kind' | 'note'>): boolean {
+  const kind = kindOf(event);
+  return kind === 'joined' || kind === 'moved';
+}
+
+/** The lot an item is travelling with, as its own history last recorded it. */
+export function lotOf(history: readonly StageEvent[]): StageEvent['lot'] {
+  for (let at = history.length - 1; at >= 0; at -= 1) {
+    const event = history[at]!;
+    if (isLotEvent(event) && event.lot) return event.lot;
+  }
+  return null;
 }

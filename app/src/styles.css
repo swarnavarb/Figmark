@@ -1104,6 +1104,9 @@ code, kbd, samp, pre {
    is not. */
 .field__hint a { color: var(--accent-text); text-decoration: underline; }
 .field-row { display: grid; gap: 15px; grid-template-columns: 1fr 1fr; }
+/* A field tucked inside a row of a list rather than standing in a form. */
+.field--inline { gap: 5px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.field--inline > span:first-child { font-size: var(--t-xs); color: var(--text-dim); }
 
 .notice {
   padding: 10px 13px;
@@ -2937,6 +2940,20 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 .ladder__note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ladder__note-when { font-size: var(--t-2xs); color: var(--text-faint); }
+
+/* The hand-over into a lot. Not a rung - it is the one thing on this ladder
+   that happened to the item rather than along the route, so it is drawn
+   across the line rather than hanging off it. */
+.ladder__lot {
+  display: flex; align-items: baseline; gap: 7px;
+  margin-top: 5px; padding: 7px 10px;
+  border: 1px solid var(--aqua-line); border-radius: var(--r-sm);
+  background: var(--aqua-soft);
+  font-size: var(--t-xs); color: var(--text);
+}
+.ladder__lot svg { flex: 0 0 auto; color: var(--aqua); transform: translateY(2px); }
+.ladder__lot-text { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.ladder__lot strong { font-weight: var(--w-semi); }
 
 /* The controls take no space until they are wanted, so a nine-step ladder is a
    ladder rather than nine rows of buttons nobody is going to press. Collapsed

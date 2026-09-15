@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { isLotEvent, kindOf } from '@shared/fulfilment';
+import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
-import { stepStateAt, type RouteStep } from '@shared/routes';
+import { stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
 import { Icon } from './Icon';
 
 /**
@@ -61,10 +63,34 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose }:
               {step.description && <span className="faint">{step.description}</span>}
 
               {said.map((event, at) => (
-                <span key={`${event.enteredAt}-${at}`} className="ladder__note">
-                  <span className="ladder__note-text">{event.note}</span>
-                  <span className="ladder__note-when">{when(event.enteredAt)}</span>
-                </span>
+                isLotEvent(event)
+                  /* Joining a lot is not a rung, so it is not drawn as one: it
+                     is a hand-over, marked where it actually happened - which
+                     may be before the item was listed, at the moment it sold,
+                     or halfway down the ladder. */
+                  ? (
+                    <span key={`${event.enteredAt}-${at}`} className="ladder__lot">
+                      <Icon name="box" size={13} />
+                      <span className="ladder__lot-text">
+                        {kindOf(event) === 'moved' && event.from
+                          ? <>Moved to <strong>{event.lot?.name}</strong> from {event.from.name}</>
+                          /* Tense from where the journey actually is, so an
+                             item still waiting reads as a promise and one
+                             already moving reads as a fact. */
+                          : index >= current
+                            ? <>Will be shipped with <strong>{event.lot?.name}</strong></>
+                            : <>Travelling with <strong>{event.lot?.name}</strong></>}
+                        {event.lot?.number && <span className="faint"> · LOT {event.lot.number}</span>}
+                      </span>
+                      <span className="ladder__note-when">{when(event.enteredAt)}</span>
+                    </span>
+                  )
+                  : (
+                    <span key={`${event.enteredAt}-${at}`} className="ladder__note">
+                      <span className="ladder__note-text">{event.note}</span>
+                      <span className="ladder__note-when">{when(event.enteredAt)}</span>
+                    </span>
+                  )
               ))}
 
               {/* The affordance that makes "between the steps" a place you can
@@ -126,8 +152,13 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose }:
  *
  * By the step name it was recorded against, because that is what was written
  * at the time - a route renamed since should not silently re-file six weeks of
- * history. Events from before routes existed carry no step name and land on
- * the first rung, which is where they read least wrongly.
+ * history.
+ *
+ * An event whose step is not on this ladder still happened, and there are two
+ * ordinary ways to have one: an item that joined a lot after reading a
+ * different ladder first, and history from before routes existed. Those fall
+ * back to the rung their coarse stage implies, which is roughly where they
+ * belong rather than bunched at the top pretending to be the beginning.
  */
 function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, StageEvent[]> {
   const index = new Map<string, number>();
@@ -135,8 +166,9 @@ function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, Sta
 
   const out = new Map<number, StageEvent[]>();
   for (const event of history) {
-    if (!event.note) continue;
-    const at = (event.step ? index.get(event.step) : undefined) ?? 0;
+    if (!event.note && !isLotEvent(event)) continue;
+    const named = event.step ? index.get(event.step) : undefined;
+    const at = named ?? stepForStage({ steps }, event.stage as LotStage);
     const existing = out.get(at);
     if (existing) existing.push(event);
     else out.set(at, [event]);
