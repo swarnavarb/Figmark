@@ -29,7 +29,7 @@ export function RoutesPage() {
 
   return (
     <main className="page">
-      <Link to="/lots" className="backlink">
+      <Link to="/shop?tab=lots" className="backlink">
         <Icon name="back" size={14} /> Track
       </Link>
 

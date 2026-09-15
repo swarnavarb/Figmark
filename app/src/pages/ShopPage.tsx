@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   CHECKPOINT_COUNT_LABELS, LOT_CARD_LABELS, LOT_STAGES, LOT_STAGE_LABELS,
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
@@ -159,7 +159,21 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
 function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: () => void | Promise<void> }) {
   const { user } = useSession();
   const [storeId, setStoreId] = useState(stores[0]!.ownerId);
-  const [section, setSection] = useState<Section>('items');
+  /*
+   * The open section lives in the URL, not in this component.
+   *
+   * Because leaving the console and coming back is normal - Routes, a lot, an
+   * order - and a tab held in state puts you back on Items every time, which
+   * reads as the app having forgotten what you were doing.
+   */
+  const [params, setParams] = useSearchParams();
+  const section = (params.get('tab') ?? 'items') as Section;
+  const setSection = (next: Section) =>
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      copy.set('tab', next);
+      return copy;
+    }, { replace: true });
 
   const store = stores.find((entry) => entry.ownerId === storeId) ?? stores[0]!;
   // A section nobody may open should not be offered: a tab that answers 403 is
@@ -1377,9 +1391,17 @@ function Lots({ store }: { store: StoreAccess }) {
           onCancel={() => setCreating(false)}
         />
       ) : (
-        <button type="button" className="btn" style={{ justifySelf: 'start' }} onClick={() => setCreating(true)}>
-          <Icon name="plus" size={15} /> New lot
-        </button>
+        /* Two decisions, and the second is the rarer one: a lot is opened
+           weekly, a route is written once and then reused by every lot after
+           it. So routes sit beside the button rather than inside it. */
+        <div className="row row--tight" style={{ justifySelf: 'start' }}>
+          <button type="button" className="btn" onClick={() => setCreating(true)}>
+            <Icon name="plus" size={15} /> New lot
+          </button>
+          <Link to="/routes" className="btn btn--quiet">
+            <Icon name="truck" size={15} /> Routes
+          </Link>
+        </div>
       )}
 
       {/* Items with nowhere to travel. Not an error - most items never need a
