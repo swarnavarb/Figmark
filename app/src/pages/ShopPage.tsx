@@ -1477,7 +1477,6 @@ function LotCard({ summary, store, onOpen }: {
   onOpen: () => void;
 }) {
   const { lot, tally } = summary;
-  const working = lot.stage === 'ordering';
   const board = `/lot/${lot.id}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`;
   // Read off the same tally the bars below chart, rather than from the stage
   // the seller last ticked: thirty-three of thirty-four in the warehouse is
@@ -1485,6 +1484,15 @@ function LotCard({ summary, store, onOpen }: {
   // counts cannot disagree with the bars under it.
   const phase = phaseOfCounts(tally.counts);
 
+  /*
+   * Open or shut, and nothing else decides it.
+   *
+   * The counts used to be hidden once the lot left "ordering", so two lots on
+   * one screen were two different components: one a header, one a dashboard,
+   * and no way to tell which you would get. A card is one shape; how much of
+   * it you are looking at is your choice.
+   */
+  const [open, setOpen] = useState(false);
   const [drill, setDrill] = useState<Drill | null>(null);
   const [people, setPeople] = useState<LotBoard | null>(null);
   const [peopleError, setPeopleError] = useState<string | null>(null);
@@ -1510,8 +1518,8 @@ function LotCard({ summary, store, onOpen }: {
   };
 
   return (
-    <article className={`lot${working ? '' : ' lot--moving'}`}>
-      <button type="button" className="lot__head" onClick={onOpen}>
+    <article className={`lot${lot.stage === 'ordering' ? '' : ' lot--moving'}`}>
+      <div className="lot__head">
         <span className="lot__title">
           <span className="lot__name">
             {lot.lotNumber && <span className="lot__no">LOT {lot.lotNumber}</span>}
@@ -1529,7 +1537,12 @@ function LotCard({ summary, store, onOpen }: {
         <span className={`badge badge--${lot.stage === 'delivered' ? 'ok' : 'warn'}`}>
           {LOT_STAGE_LABELS[lot.stage]}
         </span>
-      </button>
+        {/* The way in. A card is a summary you read; this is the lot you work. */}
+        <button type="button" className="lot__enter" onClick={onOpen}
+          aria-label={`Open ${lot.name}`}>
+          <Icon name="right" size={18} />
+        </button>
+      </div>
 
       <div className="lot__bar" aria-hidden="true">
         <span style={{ width: `${((LOT_STAGES.indexOf(lot.stage) + 1) / LOT_STAGES.length) * 100}%` }} />
@@ -1550,7 +1563,19 @@ function LotCard({ summary, store, onOpen }: {
         </div>
       )}
 
-      {working && summary.orderCount > 0 && (
+      {/* Everything a lot card can say, once it is asked. Shut by default
+          because a seller with nine lots is looking for one of them. */}
+      <button type="button" className="lot__more" aria-expanded={open}
+        onClick={() => setOpen(!open)}>
+        <Icon name={open ? 'down' : 'right'} size={13} />
+        {open ? 'Less' : `${tally.customers} ${tally.customers === 1 ? 'customer' : 'customers'} · ${countOf(tally, 'packed').done} packed · ${tally.customersDispatched} sent`}
+      </button>
+
+      {open && summary.orderCount === 0 && (
+        <p className="lot__empty">Nothing in this lot yet.</p>
+      )}
+
+      {open && summary.orderCount > 0 && (
         <div className="lot__body">
           <div className="tiles">
             <Tile

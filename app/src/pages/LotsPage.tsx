@@ -5,13 +5,14 @@ import { WAITING_FOR_LOT, sideOf, suggestLotName, type RouteStep } from '@shared
 import type { Lot } from '@shared/models';
 import {
   ApiRequestError, api,
-  type LotContents, type LotDetails, type LotRouteView, type LotsResponse, type ProviderCard,
-  type RoutesResponse, type CandidateItem, type LotItem,
+  type LotBoard, type LotContents, type LotDetails, type LotRouteView, type LotsResponse,
+  type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { RouteBuilder } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
+import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
-import { EmptyState, ErrorNotice, Icon } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, type IconName } from '../components/ui';
 import { formatDate, formatMoney, formatWeight } from '../format';
 
 /**
@@ -142,104 +143,191 @@ export function LotsPage() {
 }
 
 /**
- * Who else is working this lot.
+ * Who moves this lot, and how to reach them.
  *
- * Naming somebody is not hiring them. It hands over exactly one screen for
- * exactly this lot - the packing list in China, or the parcel list in India -
- * which is how most of this work is actually arranged: a supplier who checks
- * one run, a friend with a warehouse who breaks up one crate.
+ * Three roles and one shape for all of them: a name, optionally an account
+ * here behind it, and the details. Tagging somebody is not hiring them - it
+ * hands over exactly one screen for exactly this lot, which is how most of
+ * this work is actually arranged: a supplier you buy one run from, a friend
+ * with a warehouse who breaks up one crate.
  *
- * The forwarder is set with the tracking, one card up, because a tracking
- * number without a forwarder means nothing. These two have no such field to
- * ride along with.
+ * The name works on its own. A shop already dealing with someone off-platform
+ * types it in and the lot behaves identically; the handle is what turns a name
+ * into somebody who can see the lot they are working.
  */
-function CrewCard({ lot, onSaved }: { lot: Lot; onSaved: () => void }) {
+function CrewCard({ lot, busy, onRun }: {
+  lot: Lot;
+  busy: boolean;
+  onRun: (label: string, fn: () => Promise<void>) => Promise<void>;
+}) {
   const [handlers, setHandlers] = useState<ProviderCard[]>([]);
+  const [forwarders, setForwarders] = useState<ProviderCard[]>([]);
+
+  const [supplierName, setSupplierName] = useState(lot.supplier?.name ?? '');
+  const [supplierHandle, setSupplierHandle] = useState('');
+  const [supplierContact, setSupplierContact] = useState(lot.supplier?.contact ?? '');
+  const [supplierReference, setSupplierReference] = useState(lot.supplier?.reference ?? '');
+
+  const [forwarderPick, setForwarderPick] = useState(lot.forwarder?.forwarderUserId ?? '');
+  const [forwarderName, setForwarderName] = useState(lot.forwarder?.name ?? '');
+  const [tracking, setTracking] = useState(lot.forwarder?.trackingReference ?? '');
+
   const [choice, setChoice] = useState(lot.handler?.handlerUserId ?? (lot.handler ? 'manual' : ''));
   const [manualName, setManualName] = useState(lot.handler?.handlerUserId ? '' : lot.handler?.name ?? '');
   const [exporter, setExporter] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [flash, setFlash] = useState<string | null>(null);
 
   useEffect(() => {
-    // The public list only. An unlisted handler is named by typing their name,
-    // which is exactly how their shops already reach them.
-    void api
-      .serviceDirectory('handler')
-      .then((result) => setHandlers(result.providers))
-      .catch(() => setHandlers([]));
+    // The public lists only. An unlisted forwarder or handler still works - a
+    // shop names them by typing - they are simply not on offer to strangers.
+    void api.serviceDirectory('handler')
+      .then((result) => setHandlers(result.providers)).catch(() => setHandlers([]));
+    void api.serviceDirectory('forwarder')
+      .then((result) => setForwarders(result.providers)).catch(() => setForwarders([]));
   }, []);
 
-  async function save() {
-    setBusy(true);
-    setFlash(null);
-    try {
-      await api.setCrew(lot.id, {
-        handlerUserId: choice === 'manual' || choice === '' ? null : choice,
-        handlerName: choice === 'manual' ? manualName : choice === '' ? '' : undefined,
-        exporterHandle: exporter.trim() ? exporter.trim() : undefined,
-      });
-      setFlash('Saved.');
-      onSaved();
-    } catch (err) {
-      setFlash(err instanceof ApiRequestError ? err.message : 'That did not save.');
-    } finally {
-      setBusy(false);
-    }
-  }
+  const picked = forwarders.find((row) => row.userId === forwarderPick) ?? null;
 
   return (
-    <div className="card card--pad stack">
-      <div>
-        <h2>Crew</h2>
-        <span className="field__hint">
-          Who checks this lot before it leaves, and who gets it out when it lands. Each one sees
-          their own screen for this lot and nothing else of yours.
-        </span>
-      </div>
-
-      <label className="field">
-        <span>Exporter — checks the pieces in China</span>
-        <input value={exporter} onChange={(e) => setExporter(e.target.value)}
-          placeholder={lot.exporterUserId ? 'Named. Type another @handle to change it.' : '@their_handle'} />
-        <span className="field__hint">
-          They get a packing list: pieces, counts and weights, never your buyers or prices.
-        </span>
-      </label>
-
-      <label className="field">
-        <span>Handler — takes delivery in India</span>
-        <select value={choice} onChange={(e) => setChoice(e.target.value)}>
-          <option value="">Nobody — you dispatch it yourself</option>
-          {handlers.map((entry) => (
-            <option key={entry.userId} value={entry.userId}>
-              {entry.name} — {entry.line}
-            </option>
-          ))}
-          <option value="manual">Someone not listed…</option>
-        </select>
-      </label>
-
-      {choice === 'manual' && (
+    <div className="stack">
+      <div className="card card--pad stack">
+        <div>
+          <h2>Supplier</h2>
+          <span className="field__hint">Who you bought this run from. Buyers never see it.</span>
+        </div>
         <label className="field">
-          <span>Their name</span>
-          <input value={manualName} onChange={(e) => setManualName(e.target.value)}
-            placeholder="R. Menon" />
+          <span>Name</span>
+          <input value={supplierName} onChange={(e) => setSupplierName(e.target.value)}
+            placeholder="Guangzhou Toys Ltd" />
+        </label>
+        <label className="field">
+          <span>Their handle here</span>
+          <input value={supplierHandle} onChange={(e) => setSupplierHandle(e.target.value)}
+            placeholder={lot.supplier?.supplierUserId ? 'Tagged. Type another to change it.' : '@their_handle'} />
           <span className="field__hint">
-            A name with no account behind it is a note to yourself — they get no screen.
+            Optional. Tag them and they see this lot on their own screen.
           </span>
         </label>
-      )}
+        <div className="field-row">
+          <label className="field">
+            <span>Contact</span>
+            <input value={supplierContact} onChange={(e) => setSupplierContact(e.target.value)}
+              placeholder="WeChat, phone or email" />
+          </label>
+          <label className="field">
+            <span>Their reference</span>
+            <input value={supplierReference} onChange={(e) => setSupplierReference(e.target.value)}
+              placeholder="Invoice or order no." />
+          </label>
+        </div>
+        <button type="button" className="btn btn--ghost btn--block" disabled={busy}
+          onClick={() => void onRun('Supplier saved.', () =>
+            api.updateLotDetails(lot.id, {
+              name: lot.name,
+              supplierName,
+              supplierHandle,
+              supplierContact,
+              supplierReference,
+            }).then(() => {}))}>
+          Save supplier
+        </button>
+      </div>
 
-      {flash && <p className={`notice notice--${flash === 'Saved.' ? 'ok' : 'error'}`}>{flash}</p>}
-      <button type="button" className="btn btn--ghost btn--block" disabled={busy}
-        onClick={() => void save()}>
-        {busy ? 'Saving…' : 'Save crew'}
-      </button>
+      <div className="card card--pad stack">
+        <div>
+          <h2>Freight forwarder</h2>
+          <span className="field__hint">
+            Who moves the lot, as opposed to who you bought it from. Their tracking reference
+            shows on every buyer's order in this lot.
+          </span>
+        </div>
+        <label className="field">
+          <span>From the directory</span>
+          <select value={forwarderPick} onChange={(e) => {
+            setForwarderPick(e.target.value);
+            const row = forwarders.find((entry) => entry.userId === e.target.value);
+            if (row) setForwarderName(row.name);
+          }}>
+            <option value="">Someone not listed — I will type their name</option>
+            {forwarders.map((row) => (
+              <option key={row.userId} value={row.userId}>{row.name} — {row.line}</option>
+            ))}
+          </select>
+        </label>
+        {picked?.handle && <span className="faint">@{picked.handle}</span>}
+        <label className="field">
+          <span>Name</span>
+          <input value={forwarderName} onChange={(e) => setForwarderName(e.target.value)}
+            placeholder="Lotus Freight, or your own" />
+        </label>
+        <label className="field">
+          <span>Tracking reference</span>
+          <input value={tracking} onChange={(e) => setTracking(e.target.value)}
+            placeholder="SSC-2026-08-4471" />
+        </label>
+        <button type="button" className="btn btn--ghost btn--block" disabled={busy || !forwarderName.trim()}
+          onClick={() => void onRun('Forwarder saved.', () =>
+            api.setTracking(lot.id, {
+              trackingReference: tracking,
+              forwarderName: forwarderName.trim(),
+              forwarderUserId: forwarderPick || undefined,
+            }).then(() => {}))}>
+          Save forwarder
+        </button>
+      </div>
+
+      <div className="card card--pad stack">
+        <div>
+          <h2>Exporter and handler</h2>
+          <span className="field__hint">
+            Who checks this lot before it leaves, and who gets it out when it lands. Each one sees
+            their own screen for this lot and nothing else of yours.
+          </span>
+        </div>
+
+        <label className="field">
+          <span>Exporter — checks the pieces in China</span>
+          <input value={exporter} onChange={(e) => setExporter(e.target.value)}
+            placeholder={lot.exporterUserId ? 'Named. Type another @handle to change it.' : '@their_handle'} />
+          <span className="field__hint">
+            They get a packing list: pieces, counts and weights, never your buyers or prices.
+          </span>
+        </label>
+
+        <label className="field">
+          <span>Handler — takes delivery in India</span>
+          <select value={choice} onChange={(e) => setChoice(e.target.value)}>
+            <option value="">Nobody — you dispatch it yourself</option>
+            {handlers.map((entry) => (
+              <option key={entry.userId} value={entry.userId}>{entry.name} — {entry.line}</option>
+            ))}
+            <option value="manual">Someone not listed…</option>
+          </select>
+        </label>
+
+        {choice === 'manual' && (
+          <label className="field">
+            <span>Their name</span>
+            <input value={manualName} onChange={(e) => setManualName(e.target.value)}
+              placeholder="R. Menon" />
+            <span className="field__hint">
+              A name with no account behind it is a note to yourself — they get no screen.
+            </span>
+          </label>
+        )}
+
+        <button type="button" className="btn btn--ghost btn--block" disabled={busy}
+          onClick={() => void onRun('Crew saved.', () =>
+            api.setCrew(lot.id, {
+              handlerUserId: choice === 'manual' || choice === '' ? null : choice,
+              handlerName: choice === 'manual' ? manualName : choice === '' ? '' : undefined,
+              exporterHandle: exporter.trim() ? exporter.trim() : undefined,
+            }).then(() => {}))}>
+          Save crew
+        </button>
+      </div>
     </div>
   );
 }
-
 function StageBadge({ stage }: { stage: Lot['stage'] }) {
   const done = stage === 'delivered';
   return <span className={`badge badge--${done ? 'ok' : 'warn'}`}>{LOT_STAGE_LABELS[stage]}</span>;
@@ -830,20 +918,41 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
 }
 
 /** One lot: what's in it, how to move it, and where the tracking goes. */
+/** Which face of a lot you are looking at. */
+type LotSection = 'people' | 'tracking' | 'crew' | 'settings';
+
+const LOT_SECTIONS: { id: LotSection; label: string; icon: IconName; hint: string }[] = [
+  { id: 'people', label: 'People', icon: 'users', hint: 'Who is waiting for what' },
+  { id: 'tracking', label: 'Tracking', icon: 'truck', hint: 'Where it is, what is in it' },
+  { id: 'crew', label: 'Crew', icon: 'plane', hint: 'Who moves it' },
+  { id: 'settings', label: 'Settings', icon: 'tag', hint: 'Its name and its route' },
+];
+
+/**
+ * One lot, in four faces.
+ *
+ * It used to be one scroll with everything on it - the manifest, the ladder,
+ * the forwarder, the crew, the listings - which is four jobs stacked into a
+ * page nobody could find anything on. They are four questions with four
+ * answers, and a lot is worked one question at a time.
+ */
 export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
   const [data, setData] = useState<LotContents | null>(null);
   const [unassigned, setUnassigned] = useState<LotsResponse['unassigned']>([]);
   const [siblings, setSiblings] = useState<LotsResponse['lots']>([]);
   const [error, setError] = useState<string | null>(null);
-  const [tracking, setTracking] = useState('');
   const [busy, setBusy] = useState(false);
   /* Whether it worked is decided where it happened, not guessed from the
      wording afterwards - which is what a growing regular expression over
      every success message had become. */
   const [flash, setFlash] = useState<{ text: string; ok: boolean } | null>(null);
+  const [section, setSection] = useState<LotSection>('tracking');
   const [editing, setEditing] = useState(false);
   const [rerouting, setRerouting] = useState(false);
   const [adding, setAdding] = useState(false);
+  /* The customer board, fetched the first time somebody asks for it: a seller
+     opening a lot to move it on should not pay for a manifest of names. */
+  const [people, setPeople] = useState<LotBoard | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -851,36 +960,40 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
       setData(contents);
       setUnassigned(lots.unassigned);
       setSiblings(lots.lots);
-      setTracking(contents.lot.forwarder?.trackingReference ?? '');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load this lot.');
     }
   }, [lotId]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
-  if (error) return <main className="page"><ErrorNotice message={error} /></main>;
+  useEffect(() => {
+    if (section !== 'people' || people) return;
+    void api.lotBoard(lotId)
+      .then(setPeople)
+      .catch((err: unknown) =>
+        setError(err instanceof ApiRequestError ? err.message : 'Could not load who is in this lot.'));
+  }, [section, people, lotId]);
+
+  if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
   if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
 
-  const { lot, listings, orders, totals, route, items } = data;
+  const { lot, listings, totals, route, items } = data;
   /** Somewhere else an item could ride: any open lot of this shop but this one. */
   const others = siblings
     .map((entry) => entry.lot)
     .filter((entry) => entry.id !== lot.id && entry.status !== 'closed');
+
   /*
    * The lot's own ladder: the half of the route that happens to the whole
    * consignment. The other half happens to one item at a time, before it is
-   * in here, and a lot claiming "received at the international warehouse" was
-   * claiming something only a parcel can do.
-   *
-   * `lotStep` is -1 while the lot is open and filling - it has taken none of
-   * its own steps yet.
+   * in here. `lotStep` is -1 while the lot is open and filling.
    */
   const lotSteps = route.steps.slice(route.offset);
   const lotStep = route.currentStep - route.offset;
   const nextStep = lotSteps[lotStep + 1] ?? null;
+  const status = lotStep < 0 ? 'Filling' : lotSteps[lotStep]?.name ?? 'Not started';
+  const done = lotStep >= lotSteps.length - 1;
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true);
@@ -888,6 +1001,9 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
     try {
       await fn();
       await load();
+      // The board is a second read of the same lot, so a tick that changes one
+      // must not leave the other showing what it used to say.
+      setPeople(null);
       setFlash({ text: label, ok: true });
     } catch (err) {
       setFlash({
@@ -901,153 +1017,63 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
 
   return (
     <main className="page">
-      <button className="btn btn--quiet" onClick={onBack} style={{ marginBottom: 16 }}>
+      <button className="backlink" onClick={onBack}>
         <Icon name="back" size={14} /> All lots
       </button>
 
-      <div className="page__head">
-        <div style={{ minWidth: 0 }}>
-          <span className="faint">LOT #{route.lotNumber}</span>
-          <h1>{lot.name}</h1>
-          <p className="muted">
-            {[
-              lot.origin,
-              lot.exporterUserId ? 'Exporter named' : null,
-              lot.handler?.name ? `Handler: ${lot.handler.name}` : null,
-              route.name,
-            ].filter(Boolean).join(' · ')}
-          </p>
+      {/* The lot, said once and properly: what it is called, which one it is,
+          and what it is doing. Everything else is a section below. */}
+      <header className="lothero">
+        <h1 className="lothero__name">{lot.name}</h1>
+        <div className="lothero__ids">
+          <span className="lothero__id">LOT {route.lotNumber}</span>
+          <span className={`lothero__state lothero__state--${done ? 'done' : lotStep < 0 ? 'filling' : 'moving'}`}>
+            {status}
+          </span>
         </div>
-        <div className="row row--tight">
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>
-            Rename &amp; details
-          </button>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRerouting(true)}>
-            Change route
-          </button>
-          <StageBadge stage={lot.stage} />
+        <p className="lothero__line">
+          {[
+            lot.origin || null,
+            `${items.length} ${items.length === 1 ? 'item' : 'items'}`,
+            totals.weightGrams > 0 ? formatWeight(totals.weightGrams) : null,
+            totals.valueMinor > 0 ? formatMoney(totals.valueMinor) : null,
+            route.name,
+          ].filter(Boolean).join(' · ')}
+        </p>
+        <div className="lothero__bar" aria-hidden="true">
+          <span style={{ width: `${((lotStep + 1) / Math.max(1, lotSteps.length)) * 100}%` }} />
         </div>
-      </div>
+      </header>
 
-      {editing && (
-        <EditLotDialog lot={lot} onCancel={() => setEditing(false)}
-          onSaved={() => { setEditing(false); void load(); }} />
+      <nav className="lotnav" aria-label="This lot">
+        {LOT_SECTIONS.map((entry) => (
+          <button key={entry.id} type="button"
+            className={`lotnav__tab${section === entry.id ? ' is-on' : ''}`}
+            aria-current={section === entry.id}
+            onClick={() => setSection(entry.id)}>
+            <Icon name={entry.icon} size={16} />
+            <span className="lotnav__label">{entry.label}</span>
+            <span className="lotnav__hint">{entry.hint}</span>
+          </button>
+        ))}
+      </nav>
+
+      {flash && <p className={`notice notice--${flash.ok ? 'ok' : 'error'}`}>{flash.text}</p>}
+      {error && data && <ErrorNotice message={error} />}
+
+      {section === 'people' && (
+        people
+          ? <LotPeople board={people} onChanged={setPeople} onError={setError} />
+          : <p className="muted">Loading…</p>
       )}
 
-      {rerouting && (
-        <ChangeRouteDialog
-          lot={lot}
-          current={route}
-          onCancel={() => setRerouting(false)}
-          onSaved={() => { setRerouting(false); void load(); }}
-        />
-      )}
-
-      {flash && (
-        <p className={`notice notice--${flash.ok ? 'ok' : 'error'}`}>{flash.text}</p>
-      )}
-
-      <div className="detail" style={{ marginTop: 18 }}>
+      {section === 'tracking' && (
         <div className="stack">
           <div className="card card--pad stack">
-            <div className="row row--between">
-              <h2>Items ({items.length})</h2>
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setAdding(true)}>
-                + Add items
-              </button>
-            </div>
-            <span className="field__hint">
-              Every item here travels the lot's route. Move the lot and all {items.length} move
-              with it.
-            </span>
-
-            {adding && (
-              <AddItemsPanel
-                lotId={lot.id}
-                onClose={() => setAdding(false)}
-                onAdded={() => { setAdding(false); void load(); }}
-              />
-            )}
-
-            {items.length === 0 ? (
-              <p className="muted">
-                Nothing in this lot yet. Add the items your customers have already bought.
-              </p>
-            ) : (
-              items.map((item) => (
-                <LotItemRow
-                  key={item.id}
-                  item={item}
-                  steps={route.steps}
-                  others={others}
-                  atSeller={route.atSeller}
-                  busy={busy}
-                  onTick={(checkpoint, on) =>
-                    run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
-                  onMove={(to) =>
-                    run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
-                      api.stepItem(item.id, { to }).then(() => {}))}
-                  onNote={(text, at) =>
-                    run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
-                  onRelot={(lotId) =>
-                    run('Item moved to another lot.', () =>
-                      api.assignOrderToLot(item.id, { lotId }).then(() => {}))}
-                />
-              ))
-            )}
-
-            <span className="faint">
-              {totals.units} units
-              {totals.weightGrams > 0 && ` · ${formatWeight(totals.weightGrams)}`}
-              {totals.valueMinor > 0 && ` · ${formatMoney(totals.valueMinor)}`}
-            </span>
-          </div>
-
-          <div className="card card--pad stack">
             <div>
-              <h2>Listings travelling in it</h2>
-              <span className="field__hint">
-                The catalog side: anything bought from one of these goes straight into this lot,
-                rather than waiting to be added by hand.
-              </span>
-            </div>
-            {listings.length === 0 ? (
-              <p className="muted">Nothing tagged in yet.</p>
-            ) : (
-              listings.map((listing) => (
-                <div key={listing.id} className="row row--between" style={{ paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: 'var(--t-sm)' }}>{listing.title}</span>
-                  <button className="btn btn--quiet" disabled={busy}
-                    onClick={() => void run('Removed from lot.', () => api.assignToLot(lot.id, [listing.id], true).then(() => {}))}>
-                    Remove
-                  </button>
-                </div>
-              ))
-            )}
-
-            {unassigned.length > 0 && (
-              <>
-                <h3 style={{ marginTop: 10 }}>Add an item</h3>
-                {unassigned.map((listing) => (
-                  <div key={listing.id} className="row row--between">
-                    <span className="muted">{listing.title}</span>
-                    <button className="btn btn--ghost" disabled={busy}
-                      onClick={() => void run('Added to lot.', () => api.assignToLot(lot.id, [listing.id]).then(() => {}))}>
-                      Add
-                    </button>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-
-        <aside className="stack">
-          <div className="card card--pad stack">
-            <div>
-              <span className="faint">Current status</span>
+              <span className="faint">Where the lot is</span>
               <div className="card__title">
-                {lotStep < 0 ? 'Filling — nothing dispatched yet' : lotSteps[lotStep]?.name ?? 'Not started'}
+                {lotStep < 0 ? 'Filling — nothing dispatched yet' : status}
               </div>
               <span className="field__hint">
                 {route.name}
@@ -1055,10 +1081,6 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               </span>
             </div>
 
-            {/* The timeline, editable in place. Every rung moves the lot -
-                forwards because that is the work, backwards because the
-                commonest correction on any board is a button pressed once too
-                many and twenty buyers have already been told. */}
             {/* Sliced, and every index translated back before it leaves: the
                 store keeps one position into the whole route, so nothing
                 downstream has to know this screen shows half of it. */}
@@ -1083,49 +1105,151 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                 Move to {nextStep.name}
               </button>
             ) : (
-              <p className="notice notice--ok">
-                {lotSteps[lotStep]?.name ?? 'Delivered'}. Nothing further to do.
-              </p>
+              <p className="notice notice--ok">{status}. Nothing further to do.</p>
             )}
           </div>
 
           <div className="card card--pad stack">
-            <h2>Forwarder</h2>
-            {lot.forwarder ? (
-              <>
-                <div className="card__title">{lot.forwarder.name}</div>
-                {lot.forwarder.contact && <span className="faint">{lot.forwarder.contact}</span>}
-              </>
-            ) : (
-              <p className="muted">None set. Add tracking below and name the forwarder.</p>
-            )}
+            <div className="row row--between">
+              <h2>In this lot ({items.length})</h2>
+              <span className="faint">{totals.units} units</span>
+            </div>
+            <span className="field__hint">
+              Every item here travels the lot's route. Move the lot and all {items.length} move
+              with it.
+            </span>
 
-            <label className="field">
-              <span>Tracking reference</span>
-              <input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="SSC-2026-08-4471" />
-              <span className="field__hint">Shown on every buyer's order in this lot.</span>
-            </label>
-            <button className="btn btn--ghost btn--block" disabled={busy}
-              onClick={() => void run('Tracking saved.', () =>
-                api.setTracking(lot.id, {
-                  trackingReference: tracking,
-                  forwarderName: lot.forwarder?.name ?? 'Own forwarder',
-                }).then(() => {}))}>
-              Save tracking
-            </button>
+            {items.length === 0 ? (
+              <p className="muted">
+                Nothing in this lot yet. Add the items your customers have already bought.
+              </p>
+            ) : (
+              items.map((item) => (
+                <LotItemRow
+                  key={item.id}
+                  item={item}
+                  steps={route.steps}
+                  others={others}
+                  atSeller={route.atSeller}
+                  busy={busy}
+                  onTick={(checkpoint, on) =>
+                    run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
+                  onMove={(to) =>
+                    run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
+                      api.stepItem(item.id, { to }).then(() => {}))}
+                  onNote={(text, at) =>
+                    run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
+                  onRelot={(to) =>
+                    run('Item moved to another lot.', () =>
+                      api.assignOrderToLot(item.id, { lotId: to }).then(() => {}))}
+                />
+              ))
+            )}
           </div>
 
-          <CrewCard lot={lot} onSaved={() => void load()} />
+          {/* Sold, bound for a lot, in none - which before this screen existed
+              was a list nobody could see. Shut, because most of the time there
+              is nothing in it. */}
+          <div className="card card--pad stack">
+            <button type="button" className="disclose" aria-expanded={adding}
+              onClick={() => setAdding(!adding)}>
+              <Icon name={adding ? 'down' : 'right'} size={14} />
+              Not in any lot
+              <span className="faint">{adding ? 'hide' : 'add them to this one'}</span>
+            </button>
+            {adding && (
+              <AddItemsPanel
+                lotId={lot.id}
+                onClose={() => setAdding(false)}
+                onAdded={() => { setAdding(false); void load(); }}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
-          {lot.estimatedDispatchAt && (
-            <div className="card card--pad">
-              <span className="faint">Estimated dispatch</span>
-              <div className="card__title">{formatDate(lot.estimatedDispatchAt)}</div>
-              <p className="faint" style={{ marginTop: 6 }}>Buyers see this on their order.</p>
+      {section === 'crew' && (
+        <CrewCard lot={lot} busy={busy} onRun={run} />
+      )}
+
+      {section === 'settings' && (
+        <div className="stack">
+          <div className="card card--pad stack">
+            <div>
+              <h2>This lot</h2>
+              <span className="field__hint">
+                What it is called and where it comes from. Buyers see the lot number, never
+                the name.
+              </span>
             </div>
-          )}
-        </aside>
-      </div>
+            <div className="row row--tight">
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>
+                Rename &amp; details
+              </button>
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRerouting(true)}>
+                Change route
+              </button>
+            </div>
+            <dl className="factlist">
+              <div><dt>Route</dt><dd>{route.name} · {route.steps.length} steps</dd></div>
+              <div><dt>Origin</dt><dd>{lot.origin || 'Not set'}</dd></div>
+              <div><dt>Est. dispatch</dt>
+                <dd>{lot.estimatedDispatchAt ? formatDate(lot.estimatedDispatchAt) : 'Not set'}</dd></div>
+            </dl>
+          </div>
+
+          <div className="card card--pad stack">
+            <div>
+              <h2>Listings travelling in it</h2>
+              <span className="field__hint">
+                The catalog side: anything bought from one of these goes straight into this lot,
+                rather than waiting to be added by hand.
+              </span>
+            </div>
+            {listings.length === 0 ? (
+              <p className="muted">Nothing tagged in yet.</p>
+            ) : (
+              listings.map((listing) => (
+                <div key={listing.id} className="row row--between tagrow">
+                  <span className="tagrow__name">{listing.title}</span>
+                  <button className="btn btn--quiet btn--sm" disabled={busy}
+                    onClick={() => void run('Removed from lot.', () =>
+                      api.assignToLot(lot.id, [listing.id], true).then(() => {}))}>
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
+
+            {unassigned.length > 0 && (
+              <>
+                <h3 className="settings__sub">Tag one in</h3>
+                {unassigned.map((listing) => (
+                  <div key={listing.id} className="row row--between tagrow">
+                    <span className="tagrow__name muted">{listing.title}</span>
+                    <button className="btn btn--ghost btn--sm" disabled={busy}
+                      onClick={() => void run('Added to lot.', () =>
+                        api.assignToLot(lot.id, [listing.id]).then(() => {}))}>
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <EditLotDialog lot={lot} onCancel={() => setEditing(false)}
+          onSaved={() => { setEditing(false); void load(); }} />
+      )}
+
+      {rerouting && (
+        <ChangeRouteDialog lot={lot} current={route}
+          onCancel={() => setRerouting(false)}
+          onSaved={() => { setRerouting(false); void load(); }} />
+      )}
     </main>
   );
 }

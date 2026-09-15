@@ -699,6 +699,15 @@ export interface LotSupplier {
   contact: string | null;
   /** Their order or invoice reference. */
   reference: string | null;
+  /**
+   * Their account here, when they have one.
+   *
+   * Optional for the same reason the forwarder's is: a shop already buying
+   * from someone off-platform types the name in and the lot behaves
+   * identically. Tagging them is what turns a name into somebody who can see
+   * the lot they are supplying.
+   */
+  supplierUserId?: string | null;
 }
 
 /**

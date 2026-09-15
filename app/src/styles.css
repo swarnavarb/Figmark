@@ -1837,11 +1837,21 @@ code, kbd, samp, pre {
   display: flex; align-items: center; gap: 10px;
   width: 100%;
   padding: 13px 14px;
-  border: 0; background: none; color: inherit; font: inherit;
-  text-align: left; cursor: pointer;
+  text-align: left;
 }
-.lot__head:hover { background: var(--surface-2); }
 .lot__title { flex: 1; min-width: 0; display: grid; gap: 1px; }
+/* The way into the lot. A card is a summary you read; the arrow is the lot
+   you work, and it is the same arrow on every card whatever stage it is at. */
+.lot__enter {
+  flex: 0 0 auto;
+  width: 30px; height: 30px; padding: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 50%;
+  background: var(--surface-2); color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.lot__enter:hover { color: var(--accent-text); border-color: var(--accent-line); }
 .lot__name {
   font-size: var(--t-base); font-weight: var(--w-semi); letter-spacing: -0.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1867,6 +1877,21 @@ code, kbd, samp, pre {
 }
 .lot__pip--completed { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 
+/* One line that says what is inside, and opens the rest. Every card has it,
+   whatever stage the lot is at: a card that changes shape as its lot moves is
+   two components wearing one name. */
+.lot__more {
+  display: flex; align-items: center; gap: 7px;
+  width: 100%; padding: 9px 14px;
+  border: 0; border-top: 1px solid var(--border); background: none;
+  color: var(--text-dim); font: inherit; font-size: var(--t-xs);
+  text-align: left; cursor: pointer;
+}
+.lot__more:hover { color: var(--text); background: var(--surface-2); }
+.lot__empty {
+  margin: 0; padding: 0 14px 12px;
+  font-size: var(--t-xs); color: var(--text-faint);
+}
 .lot__body { display: grid; gap: 12px; padding: 13px 14px; border-top: 1px solid var(--border); }
 .lot__foot {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -1874,6 +1899,94 @@ code, kbd, samp, pre {
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
+
+/*
+ * The lot, said once and properly.
+ *
+ * Its name is the biggest thing on the screen because it is what the seller
+ * came looking for; the number is underneath because it is what they will read
+ * out to somebody else; the state is beside it because it is the one thing
+ * they came to change.
+ */
+.lothero { display: grid; gap: 7px; margin-bottom: 16px; }
+.lothero__name {
+  margin: 0;
+  font-size: var(--t-2xl); font-weight: var(--w-bold); letter-spacing: -0.025em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.lothero__ids { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lothero__id {
+  padding: 3px 9px;
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  background: var(--surface-2);
+  font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em;
+  color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+.lothero__state {
+  padding: 3px 10px; border-radius: 999px;
+  font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.lothero__state--filling { background: var(--warn-soft); color: var(--warn); }
+.lothero__state--moving { background: var(--accent-soft); color: var(--accent-text); }
+.lothero__state--done { background: var(--ok-soft); color: var(--ok); }
+.lothero__line { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.lothero__bar { height: 3px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.lothero__bar span {
+  display: block; height: 100%;
+  background: var(--grad-blue);
+  transition: width var(--dur-2) var(--ease);
+}
+
+/*
+ * Four faces of one lot.
+ *
+ * A grid rather than a scrolling strip of chips: these are four places to go,
+ * not four filters over one list, and each says what is behind it because
+ * "Crew" alone is a word a seller has to guess at once.
+ */
+.lotnav {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+  margin-bottom: 16px;
+}
+.lotnav__tab {
+  display: grid; gap: 2px; min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: var(--text-dim);
+  font: inherit; text-align: left; cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.lotnav__tab:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.lotnav__tab.is-on {
+  border-color: var(--accent-line); background: var(--accent-soft); color: var(--text);
+}
+.lotnav__tab svg { color: var(--text-faint); }
+.lotnav__tab.is-on svg { color: var(--accent-text); }
+.lotnav__label { font-size: var(--t-sm); font-weight: var(--w-semi); }
+.lotnav__hint {
+  font-size: var(--t-2xs); color: var(--text-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (min-width: 720px) {
+  .lotnav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Facts about a lot, as a list rather than as sentences. */
+.factlist { display: grid; gap: 7px; margin: 0; }
+.factlist > div {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  font-size: var(--t-sm);
+}
+.factlist dt { color: var(--text-faint); font-size: var(--t-xs); }
+.factlist dd { margin: 0; min-width: 0; text-align: right; overflow-wrap: anywhere; }
+
+/* One listing tagged into a lot, and the button that untags it. */
+.tagrow { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.tagrow:last-of-type { border-bottom: none; padding-bottom: 0; }
+.tagrow__name { min-width: 0; font-size: var(--t-sm); overflow-wrap: anywhere; }
+.settings__sub { margin: 10px 0 0; font-size: var(--t-sm); color: var(--text-dim); }
 
 /* A line of context that is not a warning: "12 not in a lot" is a fact. */
 .note-row {

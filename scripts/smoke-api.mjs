@@ -531,6 +531,26 @@ await check('every detail can be corrected afterwards', async () => {
   assert.equal(edited.jsonBody.lot.supplier.name, 'Yiwu Trading');
   // Untouched keys stay as they were: editing the origin must not blank notes.
   assert.equal(edited.jsonBody.lot.description, 'smoke');
+
+  /* A supplier can have an account behind the name, the way the forwarder and
+     the handler already can - which is what turns a name typed into a box into
+     somebody who can see the lot they are supplying. */
+  const tagged = await updateLotDetails(req({
+    headers: auth, params: { id },
+    body: { supplierName: 'Yiwu Trading', supplierHandle: '@tokyoline', supplierContact: 'wechat: yiwu' },
+  }), ctx);
+  assert.equal(tagged.status, 200, JSON.stringify(tagged.jsonBody));
+  assert.equal(tagged.jsonBody.lot.supplier.supplierUserId, 'usr_tokyoline');
+  assert.equal(tagged.jsonBody.lot.supplier.contact, 'wechat: yiwu');
+  assert.equal(tagged.jsonBody.lot.name, 'Renamed consignment', 'and naming one renames nothing');
+
+  // A handle nobody answers to is refused rather than silently dropped: a tag
+  // that quietly did nothing is worse than one that failed.
+  const nobody = await updateLotDetails(req({
+    headers: auth, params: { id },
+    body: { supplierName: 'Yiwu Trading', supplierHandle: '@nobody_at_all' },
+  }), ctx);
+  assert.equal(nobody.status, 404);
 });
 
 await check('a lot cannot be renamed to nothing, or by someone else', async () => {

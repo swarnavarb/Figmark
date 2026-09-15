@@ -43,19 +43,38 @@ interface LotDetailsBody {
   origin?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
+  /** Their account here, by handle. Empty clears the tag and keeps the name. */
+  supplierHandle?: string;
   supplierContact?: string;
   supplierReference?: string;
 }
 
 /** Null unless a supplier was actually named; a contact alone is not one. */
-function supplierFrom(body: LotDetailsBody): LotSupplier | null {
+function supplierFrom(body: LotDetailsBody, supplierUserId?: string | null): LotSupplier | null {
   const name = body.supplierName?.trim();
-  if (!name) return null;
+  if (!name && !supplierUserId) return null;
   return {
-    name,
+    name: name || '',
     contact: body.supplierContact?.trim() || null,
     reference: body.supplierReference?.trim() || null,
+    supplierUserId: supplierUserId ?? null,
   };
+}
+
+/**
+ * The account behind a handle somebody typed, or a refusal.
+ *
+ * `null` for an empty field, which means "no account behind this name" rather
+ * than an error: naming a supplier who is not here is the common case.
+ */
+async function userForHandle(
+  handle: string | undefined,
+  repository: Awaited<ReturnType<typeof getRepository>>,
+): Promise<{ id: string | null; missing: string | null }> {
+  const wanted = handle?.trim().replace(/^@/, '');
+  if (!wanted) return { id: null, missing: null };
+  const found = await repository.getByHandle(wanted);
+  return found ? { id: found.user.id, missing: null } : { id: null, missing: wanted };
 }
 
 /**
@@ -92,7 +111,16 @@ async function updateLotDetails(request: HttpRequest, _context: InvocationContex
   if (body.origin !== undefined) lot.origin = body.origin.trim();
   if (body.estimatedDispatchAt !== undefined) lot.estimatedDispatchAt = body.estimatedDispatchAt;
   // The supplier moves as a unit: naming one sets it, clearing the name drops it.
-  if (body.supplierName !== undefined) lot.supplier = supplierFrom(body);
+  if (body.supplierName !== undefined || body.supplierHandle !== undefined) {
+    const tagged = await userForHandle(body.supplierHandle, repository);
+    if (tagged.missing) {
+      return error(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
+    }
+    lot.supplier = supplierFrom(
+      { ...body, supplierName: body.supplierName ?? lot.supplier?.name },
+      tagged.id ?? (body.supplierHandle === undefined ? lot.supplier?.supplierUserId ?? null : null),
+    );
+  }
 
   lot.updatedAt = new Date().toISOString();
   return json(200, { lot: await repository.updateLot(lot) });
@@ -153,6 +181,8 @@ export interface NewLotBody {
   origin?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
+  /** Their account here, by handle. Empty clears the tag and keeps the name. */
+  supplierHandle?: string;
   supplierContact?: string;
   supplierReference?: string;
   forwarderUserId?: string;

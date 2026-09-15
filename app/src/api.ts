@@ -493,6 +493,8 @@ export interface LotDetails {
   origin?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
+  /** Their account here, by handle. Empty clears the tag and keeps the name. */
+  supplierHandle?: string;
   supplierContact?: string;
   supplierReference?: string;
 }
