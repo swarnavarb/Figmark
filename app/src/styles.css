@@ -3618,3 +3618,62 @@ a.order__name:hover { color: var(--accent-text); }
   font-size: var(--t-2xs); color: var(--text-faint);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* The batch's sayable identifier, beside the name it was given. Both, because
+   a list elsewhere may refer to either and they have to be recognisably the
+   same batch. */
+.lothead__no {
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+  font-weight: var(--w-medium);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+/* A labelled toggle on an order row.
+ *
+ * The warehouse tick and the batch action carry their word with them. They
+ * were bare icons with a `title`, which is invisible on touch: the device
+ * this is worked on has no hover, so the tooltip never fires and the control
+ * is a glyph nobody can identify. Two extra words per row is the right price
+ * for knowing what the control does.
+ */
+.orow__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: var(--t-2xs);
+  font-weight: var(--w-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease);
+}
+.orow__toggle:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.orow__toggle.is-on {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: rgba(52, 211, 153, 0.34);
+}
+.orow__toggle:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* On a phone the label is what survives; the row gives it its own line
+   rather than squeezing it against the price. */
+@media (max-width: 599px) {
+  .orow__acts { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+  .orow__toggle { height: 26px; }
+}

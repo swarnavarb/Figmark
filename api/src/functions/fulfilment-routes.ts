@@ -760,6 +760,11 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
     lot: {
       id: lot.id,
       name: lot.name,
+      /* The sayable identifier, as three sibling endpoints already send it.
+         Without it this screen was the only place a batch appeared under its
+         name alone, so a row elsewhere reading "LOT 26-832C" looked like a
+         link to a different batch entirely. */
+      lotNumber: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
       stage: lot.stage,
       status: lot.status,
       origin: lot.origin ?? '',

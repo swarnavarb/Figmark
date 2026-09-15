@@ -1053,7 +1053,11 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
           {row.quantity > 1 && <span>{row.quantity} units</span>}
           {!row.inHand && (
             lotHref
-              ? <Link to={lotHref} className="orow__lot">{row.lotNumber ? `LOT ${row.lotNumber}` : row.lotName}</Link>
+              /* The batch by the name the seller gave it, which is what the
+                 lot page is headed with. Showing the generated number here
+                 and the name over there gave one batch two labels and made
+                 the link look like it went somewhere else. */
+              ? <Link to={lotHref} className="orow__lot">{row.lotName ?? `LOT ${row.lotNumber}`}</Link>
               : <span className="orow__lot orow__lot--none">no batch</span>
           )}
           {row.lotStep && <span className="orow__step">{row.lotStep}</span>}
@@ -1068,26 +1072,36 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
             warehouse and never joins a batch. */}
         {!row.inHand && (
           <>
+            {/* Labelled, not a bare tick. This was a full-width button reading
+                "China WH received" before the row rewrite, and shrinking it to
+                an icon with a `title` left it undiscoverable on the device most
+                of this is used on: touch has no hover, so the tooltip never
+                appears and the control becomes a mystery glyph. */}
             <button type="button" disabled={busy} aria-pressed={received}
-              className={`orow__act${received ? ' is-on' : ''}`}
-              title={received ? 'Received at the China warehouse' : 'Mark received at the China warehouse'}
+              className={`orow__toggle${received ? ' is-on' : ''}`}
+              aria-label={received
+                ? 'Received at the China warehouse. Tap to undo.'
+                : 'Mark received at the China warehouse'}
               onClick={() => onWarehouse(!received)}>
-              <Icon name={received ? 'check' : 'box'} size={15} />
+              <Icon name={received ? 'check' : 'box'} size={13} />
+              <span>China WH</span>
             </button>
             {!lotHref && (
-              <button type="button" className="orow__act" title="Add to a batch" onClick={onFile}>
-                <Icon name="plus" size={15} />
+              <button type="button" className="orow__toggle" aria-label="Add this order to a batch"
+                onClick={onFile}>
+                <Icon name="plus" size={13} />
+                <span>Batch</span>
               </button>
             )}
           </>
         )}
         {needsAnswer && (
           <button type="button" className="orow__act orow__act--danger"
-            title="Can't serve it" onClick={onReject}>
+            aria-label="Can't serve this order" onClick={onReject}>
             <Icon name="close" size={15} />
           </button>
         )}
-        <Link to={`/order/${row.id}`} className="orow__act" title="Open the order">
+        <Link to={`/order/${row.id}`} className="orow__act" aria-label="Open this order">
           <Icon name="right" size={15} />
         </Link>
       </div>

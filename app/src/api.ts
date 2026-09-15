@@ -850,6 +850,8 @@ export interface StorefrontDraft {
 export interface BoardLot {
   id: string;
   name: string;
+  /** The short sayable identifier, e.g. "26-832C". */
+  lotNumber?: string | null;
   stage: FulfilmentStage;
   status: string;
   origin: string;
