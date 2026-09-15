@@ -4336,7 +4336,10 @@ await check('a lot carries a copy of its route, not a pointer to one', async () 
   const lot = made.jsonBody.lot;
   assert.equal(lot.route.name, 'Guangzhou air express');
   assert.equal(lot.route.steps.length, 5);
-  assert.equal(lot.currentStep, 0);
+  // Not step zero: that is an item step on this route, and a crate nobody has
+  // touched has taken none of its own. It opens one short of its first.
+  assert.equal(lot.currentStep, 1);
+  assert.equal(lot.stage, 'ordering', 'and reads as what it is: filling');
   // A number a person can say out loud, derived rather than invented.
   assert.match(lot.lotNumber, /^\d\d-[A-Z0-9]{4}$/);
 
@@ -4461,30 +4464,35 @@ await check('filling a lot moves the item into it, and tells the buyer', async (
 
 await check('one click moves the lot, and every item in it', async () => {
   const before = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(before.route.currentStep, 0);
+  // Filling: one short of its own first step, having taken none of them.
+  assert.equal(before.route.offset, 2);
+  assert.equal(before.route.currentStep, before.route.offset - 1);
 
   const moved = await stepLot(req({
-    headers: auth, params: { id: routedLot.id }, body: { note: 'Counted at the warehouse.' },
+    headers: auth, params: { id: routedLot.id }, body: { note: 'On the Thursday flight.' },
   }), ctx);
   assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
   assert.equal(moved.jsonBody.ordersUpdated, 2, 'thirty-four items would be one click too');
 
   const after = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(after.route.currentStep, 1);
-  assert.equal(after.route.steps[after.route.currentStep].name, 'At the China warehouse');
+  assert.equal(after.route.currentStep, 2);
+  assert.equal(
+    after.route.steps[after.route.currentStep].name, 'Flown',
+    'the first step of the lot\'s own half, not the warehouse arrival its items make',
+  );
 
   // Every buyer, without the seller touching a single item.
   const tracking = (await orderTracking(req({
     headers: earlyBuyer.headers, params: { id: earlyOrder.id },
   }), ctx)).jsonBody;
-  assert.equal(tracking.route.currentStep, 1);
+  assert.equal(tracking.route.currentStep, 2);
   const last = tracking.order.stageHistory[tracking.order.stageHistory.length - 1];
-  assert.equal(last.step, 'At the China warehouse', 'in the words the seller wrote');
-  assert.equal(last.note, 'Counted at the warehouse.');
+  assert.equal(last.step, 'Flown', 'in the words the seller wrote');
+  assert.equal(last.note, 'On the Thursday flight.');
 
   // And they were told, which is the notification the product is really for.
   const told = await noticesFor(earlyBuyer.id);
-  assert.ok(told.some((row) => row.kind === 'lot_moved' && row.title.includes('At the China warehouse')));
+  assert.ok(told.some((row) => row.kind === 'lot_moved' && row.title.includes('Flown')));
 });
 
 await check('a seller can say something without moving the lot', async () => {
@@ -4498,10 +4506,10 @@ await check('a seller can say something without moving the lot', async () => {
   assert.equal(said.jsonBody.ordersUpdated, 2, 'every buyer in the lot, not just the lot');
 
   const after = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(after.route.currentStep, 1, 'and the lot has not moved');
+  assert.equal(after.route.currentStep, 2, 'and the lot has not moved');
   const last = after.history[after.history.length - 1];
   assert.equal(last.note, 'Still waiting on the airline — booked for Thursday.');
-  assert.equal(last.step, 'At the China warehouse', 'filed at the step it was written at');
+  assert.equal(last.step, 'Flown', 'filed at the step it was written at');
 
   // The buyer reads it on their own timeline, at the same rung.
   const tracking = (await orderTracking(req({
@@ -4509,7 +4517,7 @@ await check('a seller can say something without moving the lot', async () => {
   }), ctx)).jsonBody;
   const theirs = tracking.order.stageHistory[tracking.order.stageHistory.length - 1];
   assert.equal(theirs.note, 'Still waiting on the airline — booked for Thursday.');
-  assert.equal(tracking.route.currentStep, 1, 'a note is not a move');
+  assert.equal(tracking.route.currentStep, 2, 'a note is not a move');
 
   // Written against a step the lot has not reached yet: a seller saying what
   // is coming files it on the rung it is about, not on the one they are on.
@@ -4521,7 +4529,7 @@ await check('a seller can say something without moving the lot', async () => {
   const filed = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
   const written = filed.history[filed.history.length - 1];
   assert.equal(written.step, filed.route.steps[2].name);
-  assert.equal(filed.route.currentStep, 1, 'and writing ahead is still not moving');
+  assert.equal(filed.route.currentStep, 2, 'and writing ahead is still not moving');
 
   // A step off the end of the route is clamped rather than refused: the note
   // is the point, and there is always a rung it belongs nearest to.
@@ -4552,7 +4560,7 @@ await check('one item can travel differently from the rest of its lot', async ()
   assert.equal(held.status, 200, JSON.stringify(held.jsonBody));
 
   const board = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(board.route.currentStep, 1, 'the lot itself is where it was');
+  assert.equal(board.route.currentStep, 2, 'the lot itself is where it was');
   const row = board.items.find((item) => item.id === earlyOrder.id);
   assert.equal(row.currentStep, 3);
   assert.equal(row.ownStep, true, 'and the screen says so rather than implying it');
@@ -4582,12 +4590,12 @@ await check('one item can travel differently from the rest of its lot', async ()
 
   // Moving the lot brings the stray item back in line, rather than leaving it
   // stuck at a position nobody remembers setting.
-  await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 2 } }), ctx);
+  await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 4 } }), ctx);
   const synced = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(synced.items.find((item) => item.id === earlyOrder.id).currentStep, 2);
+  assert.equal(synced.items.find((item) => item.id === earlyOrder.id).currentStep, 4);
   assert.equal(synced.items.find((item) => item.id === earlyOrder.id).ownStep, false);
 
-  await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 1 } }), ctx);
+  await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 2 } }), ctx);
 });
 
 await check('somebody else’s item is not theirs to move or annotate', async () => {
@@ -4604,20 +4612,37 @@ await check('somebody else’s item is not theirs to move or annotate', async ()
   assert.equal(refusedNote.status, 403);
 });
 
-await check('a lot can be stepped back, and not past its own end', async () => {
-  // The commonest correction on any board is a button pressed once too often,
-  // and twenty buyers have already been told.
-  const back = await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 0 } }), ctx);
+await check('a lot walks its own half of the route, and neither end past it', async () => {
+  const board = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  const { offset } = board.route;
+  assert.ok(offset > 0, 'this route has a pre-lot half');
+
+  /* The floor: one short of the lot's own first step, which is where a lot
+     sits while it is filling. The commonest correction on any board is a
+     button pressed once too often, so back is allowed - but only to there. */
+  const back = await stepLot(req({
+    headers: auth, params: { id: routedLot.id }, body: { to: offset - 1 },
+  }), ctx);
   assert.equal(back.status, 200);
-  assert.equal((await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody.route.currentStep, 0);
+  assert.equal(
+    (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody.route.currentStep,
+    offset - 1,
+  );
+
+  // Below it is the half that happens to one item at a time, and a crate
+  // cannot be "received at the warehouse".
+  const tooFar = await stepLot(req({
+    headers: auth, params: { id: routedLot.id }, body: { to: 0 } }), ctx);
+  assert.equal(tooFar.status, 409, 'a lot cannot be stepped into an item step');
 
   // Walk it to the end, then try to walk off it.
-  for (let i = 0; i < 4; i += 1) {
+  const steps = board.route.steps.length - offset;
+  for (let i = 0; i < steps; i += 1) {
     const step = await stepLot(req({ headers: auth, params: { id: routedLot.id } }), ctx);
     assert.equal(step.status, 200, `step ${i} should move`);
   }
   const end = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(end.route.currentStep, 4);
+  assert.equal(end.route.currentStep, end.route.steps.length - 1);
   assert.equal(end.lot.status, 'closed', 'the last step closes it');
 
   const past = await stepLot(req({ headers: auth, params: { id: routedLot.id } }), ctx);
@@ -5239,6 +5264,96 @@ await check('a lot is named by the person opening it, never by the first thing i
     }), ctx);
     assert.equal(refused.status, 400, `"${name}" is not a name`);
   }
+});
+
+await check('a lot never carries a step that happens to one item', async () => {
+  /* The complaint that started this: the lot screen listed "received at
+     international warehouse", which is something a parcel does before it is in
+     the crate. The same step cannot be at item level and lot level at once. */
+  const route = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Two halves',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Received at international warehouse', side: 'pre' },
+        { name: 'Dispatched from China', side: 'post' },
+        { name: 'Indian customs', side: 'post' },
+        { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  const opened = await createLot(req({
+    headers: auth,
+    body: { name: 'Halved', origin: 'Guangzhou, CN', routeId: route.jsonBody.route.id },
+  }), ctx);
+  const lotId = opened.jsonBody.lot.id;
+
+  const board = (await lotContents(req({ headers: auth, params: { id: lotId } }), ctx)).jsonBody;
+  assert.equal(board.route.offset, 2, 'the lot half starts after the two item steps');
+  const lotSteps = board.route.steps.slice(board.route.offset).map((step) => step.name);
+  assert.deepEqual(lotSteps, ['Dispatched from China', 'Indian customs', 'Delivered']);
+  assert.ok(
+    !lotSteps.some((name) => /warehouse|order placed/i.test(name)),
+    'and nothing an item does on its own is among them',
+  );
+
+  // Filling: below its own first step, and saying so rather than borrowing the
+  // name of the item step it happens to sit above.
+  assert.equal(board.route.currentStep, board.route.offset - 1);
+  assert.equal(opened.jsonBody.lot.stage, 'ordering');
+
+  // The first move lands on the lot's own first step, not on an item's.
+  await stepLot(req({ headers: auth, params: { id: lotId } }), ctx);
+  const moved = (await lotContents(req({ headers: auth, params: { id: lotId } }), ctx)).jsonBody;
+  assert.equal(moved.route.steps[moved.route.currentStep].name, 'Dispatched from China');
+});
+
+await check('an item counted into the warehouse has done it, and says so', async () => {
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Counted in', priceMinor: 8_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('Counted In');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+
+  // With no lot yet: the arrival is done, and what is in progress is the wait.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  const waiting = (await orderTracking(req({
+    headers: buyer.headers, params: { id: order.id },
+  }), ctx)).jsonBody;
+  assert.equal(waiting.awaitingLot, true);
+  assert.equal(
+    waiting.preLot.currentStep, waiting.preLot.steps.length - 1,
+    'the arrival it has made is the last thing on its own ladder',
+  );
+  assert.equal(waiting.preLot.waitingForLot, true, 'and the wait is what is left');
+
+  // Filed into a lot afterwards: the join is recorded where the item was, so
+  // "travelling with" falls after the arrival rather than above it.
+  const lot = await createLot(req({
+    headers: auth, body: { name: 'Takes counted items', origin: 'Guangzhou, CN' },
+  }), ctx);
+  await assignOrderToLot(req({
+    headers: auth, params: { id: order.id }, body: { lotId: lot.jsonBody.lot.id },
+  }), ctx);
+
+  const after = (await orderTracking(req({
+    headers: buyer.headers, params: { id: order.id },
+  }), ctx)).jsonBody;
+  const join = after.order.stageHistory.find((event) => event.kind === 'joined');
+  const names = after.route.steps.map((step) => step.name);
+  assert.equal(
+    names.indexOf(join.step), after.route.steps.length - names.length + names.indexOf(join.step),
+  );
+  assert.ok(
+    names.indexOf(join.step) > 0,
+    'filed at the step the item had reached, not at the lot\'s step zero',
+  );
+  assert.equal(after.route.waitingForLot, true, 'still waiting on the crate, and still saying so');
 });
 
 await check('a domestic sale is not something to file into a crate', async () => {

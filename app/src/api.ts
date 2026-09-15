@@ -213,7 +213,11 @@ export interface OrderTracking {
     lotNumber: string;
   } | null;
   /** The ladder before any lot, in the words the shop's template used. */
-  preLot: { name: string; steps: RouteStep[]; currentStep: number };
+  preLot: {
+    name: string; steps: RouteStep[]; currentStep: number;
+    /** Everything it does alone is done; the wait for a lot is what is left. */
+    waitingForLot: boolean;
+  };
   /** Sold, bound for a lot, not in one - so the timeline stops early. */
   awaitingLot: boolean;
   sellerName: string;
@@ -799,6 +803,8 @@ export interface LotItem {
   currentStep: number;
   /** True when the seller moved this one item away from the rest of the lot. */
   ownStep: boolean;
+  /** Done travelling alone, and the lot has not moved yet. */
+  waitingForLot: boolean;
   /** This item's own history, which is what its buyer reads. */
   history: StageEvent[];
 }
@@ -806,8 +812,18 @@ export interface LotItem {
 export interface LotRouteView {
   name: string;
   routeId: string | null;
+  /** The whole route, both halves. Items travel all of it; the lot does not. */
   steps: RouteStep[];
+  /** Where the lot is, as an index into the whole route. */
   currentStep: number;
+  /**
+   * Where the lot's own half starts.
+   *
+   * A lot never gets "received at the international warehouse" - its items do,
+   * before they are in it. So the lot's screen draws `steps.slice(offset)`,
+   * and a lot at `offset - 1` is open and filling, nothing dispatched.
+   */
+  offset: number;
   /** Once the lot is with the seller, items are finished one at a time. */
   atSeller: boolean;
   lotNumber: string;

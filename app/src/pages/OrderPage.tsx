@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { isLotEvent, labelFor } from '@shared/fulfilment';
-import { WAITING_FOR_LOT } from '@shared/routes';
+import { WAITING_FOR_A_LOT, WAITING_FOR_LOT } from '@shared/routes';
 import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
 import { reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS } from '@shared/enums';
@@ -141,7 +141,8 @@ export function OrderPage() {
             ) : (
               <>
                 <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
-                  history={data.order.stageHistory} />
+                  history={data.order.stageHistory}
+                  waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
                 <p className="notice notice--warn">
                   <strong>Not in a shipment yet.</strong> The seller groups orders into one
                   shipment before it leaves. The rest of the journey appears as soon as yours

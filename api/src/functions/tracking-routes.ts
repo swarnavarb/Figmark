@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StepSide, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StepSide, type TrackingRoute,
 } from '../../../shared/routes.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -221,6 +221,10 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
   for (const orderId of wanted) {
     const order = await repository.getOrder(orderId);
     if (!order) continue;
+    /* Filed where the item is, not where the lot is. A parcel already counted
+       into the warehouse joined its lot there, and recording the lot's own
+       step put "travelling with lot" above an arrival that happened first. */
+    const at = itemStepOn(route, index, undefined, Boolean(order.checkpoints?.china_received));
     // Somebody else's item, a domestic sale, or one already riding in a lot:
     // all three are refusals, and none of them is worth failing the whole
     // request over when the other nine are fine.
@@ -228,8 +232,8 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
     if (order.lotId !== AWAITING_LOT_ID) continue;
 
     const event: StageEvent = {
-      stage: coarseStage(route, index),
-      step: route.steps[index]?.name,
+      stage: coarseStage(route, at),
+      step: route.steps[at]?.name,
       enteredAt: now,
       kind: 'joined',
       lot: lotRefOf(lot),
@@ -240,7 +244,8 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
       {
         ...order,
         lotId: lot.id,
-        stage: coarseStage(route, index),
+        stage: coarseStage(route, at),
+        currentStep: at,
         stageHistory: [...order.stageHistory, event],
         status: order.status === 'cancelled' ? order.status : 'in_fulfilment',
         updatedAt: now,
@@ -296,7 +301,11 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   const from = currentStepOf(lot);
   const target = typeof body.to === 'number' ? Math.trunc(body.to) : from + 1;
 
-  if (target < 0 || target >= route.steps.length) {
+  /* A lot may not be stepped into the half of the route that happens to one
+     item at a time. The floor is one short of its own first step, which is
+     where a lot sits while it is still filling. */
+  const floor = Math.max(0, lotOffset(route) - 1);
+  if (target < floor || target >= route.steps.length) {
     return error(409, 'no_such_step', 'That lot is at the end of its route.');
   }
   if (target === from) return json(200, { lot, ordersUpdated: 0 });
@@ -401,9 +410,14 @@ async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'same_route', 'That lot already travels that route.');
   }
 
-  // Carried across by the stage the two ladders share, so a lot halfway to
-  // India stays halfway to India rather than starting again.
-  const at = stepForStage(next, coarseStage(before, currentStepOf(lot)));
+  /* Carried across by the stage the two ladders share, so a lot halfway to
+     India stays halfway to India rather than starting again - except a lot
+     still filling, which has taken none of its own steps and should be still
+     filling on the new ladder rather than mapped onto one. */
+  const was = currentStepOf(lot);
+  const at = was < lotOffset(before)
+    ? Math.max(0, lotOffset(next) - 1)
+    : stepForStage(next, coarseStage(before, was));
   const stage = coarseStage(next, at);
   const now = new Date().toISOString();
   const event: StageEvent = {
@@ -669,7 +683,15 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   const rows = [...groups].map(([key, items]) => {
     const lot = lots.get(key) ?? null;
     const route = lot ? routeOf(lot) : null;
-    const index = lot ? currentStepOf(lot) : 0;
+    /* One ladder for the group, at the furthest of the items sharing it: a
+       buyer whose parcel is already counted into the warehouse should not read
+       a summary that has forgotten it. */
+    const index = lot && route
+      ? Math.max(...items.map((order) => itemStepOn(
+          route, currentStepOf(lot), order.currentStep,
+          Boolean(order.checkpoints?.china_received),
+        )))
+      : 0;
     const seller = byId.get(items[0]!.sellerId);
     return {
       key,

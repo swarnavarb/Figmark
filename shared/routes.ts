@@ -100,6 +100,44 @@ export function joinIndexOf(route: HasSteps): number {
   return at === -1 ? route.steps.length : at;
 }
 
+/**
+ * Where a lot's own ladder starts inside the route.
+ *
+ * A lot never gets "received at the international warehouse" - its items do,
+ * one at a time, before they are in it. The route's two halves are exactly
+ * this distinction, so the lot's timeline is the second half of it and the
+ * item's timeline is the whole thing.
+ *
+ * A route with no lot steps at all (a courier run, where every parcel travels
+ * alone) leaves a lot nothing to show, so it shows the whole route: that lot
+ * is a contradiction the seller made, and an empty screen explains it worse
+ * than a full one.
+ */
+export function lotOffset(route: HasSteps): number {
+  const at = joinIndexOf(route);
+  return at >= route.steps.length ? 0 : at;
+}
+
+/**
+ * Where an item is on its lot's route.
+ *
+ * Three answers, and the furthest of them wins: the lot's own position, the
+ * item's when it has been moved on its own, and the floor set by what the item
+ * has physically done. The floor matters because a parcel counted into the
+ * warehouse has finished travelling alone whether or not the crate has moved,
+ * and a timeline that forgot it would rewind under its buyer.
+ */
+export function itemStepOn(
+  route: HasSteps,
+  lotStep: number,
+  own: number | undefined,
+  received: boolean,
+): number {
+  const alone = received ? Math.max(0, lotOffset(route) - 1) : 0;
+  const at = Math.max(own ?? lotStep, alone);
+  return Math.max(0, Math.min(route.steps.length - 1, at));
+}
+
 /** A reusable ladder, saved under the seller who wrote it. */
 export interface TrackingRoute extends BaseDocument {
   /** Partition key. A route belongs to one shop, like everything else here. */
@@ -378,10 +416,18 @@ export function stepStateAt(index: number, current: number): StepState {
   return index === current ? 'current' : 'todo';
 }
 
-/** The step a lot is on, for a card that has room for one line. */
+/**
+ * The step a lot is on, for a card that has room for one line.
+ *
+ * A lot below its own first step has not taken one: it is open and filling,
+ * and naming the item step it happens to sit above would put "received at the
+ * international warehouse" on a card for a crate nobody has touched.
+ */
 export function currentStepName(lot: Pick<Lot, 'route' | 'currentStep' | 'stage'>): string {
   const route = routeOf(lot);
-  return route.steps[currentStepOf(lot)]?.name ?? 'Not started';
+  const at = currentStepOf(lot);
+  if (at < lotOffset(route)) return 'Filling';
+  return route.steps[at]?.name ?? 'Not started';
 }
 
 /** Whether the lot has reached the point where items are worked one by one. */
@@ -425,6 +471,9 @@ export function lotRefOf(lot: { id: string; name: string; lotNumber?: string | n
  * is how a support message starts.
  */
 export const WAITING_FOR_LOT = 'Prepping for dispatch from the warehouse';
+
+/** The same wait, before the item has a lot at all to be prepped into. */
+export const WAITING_FOR_A_LOT = 'Waiting for a shipment to travel in';
 
 /**
  * A name to open a lot under, when the seller has not thought of one.

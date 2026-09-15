@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import { inLot, isDirect } from '../../../shared/fulfilment.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
-import { coarseStage, currentStepOf, lotRefOf, normaliseSteps, routeOf } from '../../../shared/routes.js';
+import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -248,7 +248,14 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
   }
 
   const route = routeOf(lot);
-  const index = currentStepOf(lot);
+  /* Filed where the item is, not where the lot is. A parcel already counted
+     into the warehouse joined its lot there, and recording the lot's own step
+     put "travelling with lot" above an arrival that happened first. A move
+     between lots starts fresh on the new lot's ladder, so only the checkpoint
+     floors it. */
+  const index = itemStepOn(
+    route, currentStepOf(lot), undefined, Boolean(order.checkpoints?.china_received),
+  );
   const now = new Date().toISOString();
   const event: StageEvent = {
     stage: coarseStage(route, index),

@@ -8,7 +8,7 @@ import { mayTick, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
-  joinIndexOf, routeOf, stepForStage, type LotRoute, type StepSide,
+  itemStepOn, joinIndexOf, lotOffset, routeOf, stepForStage, type LotRoute, type StepSide,
 } from '../../../shared/routes.js';
 import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
 import {
@@ -202,7 +202,20 @@ export async function buildLot(
 
   const id = `lot_${randomUUID().slice(0, 12)}`;
   const now = new Date().toISOString();
-  const first = route.steps[0]!;
+  /*
+   * A new lot has not taken any of its own steps yet.
+   *
+   * It used to open at step zero, which on any route with a pre-lot half is a
+   * step that happens to one item - so a crate nobody had touched claimed the
+   * first parcel's order had been placed. It opens one short of its own first
+   * step instead: open, filling, nothing dispatched.
+   */
+  const opensAt = Math.max(0, lotOffset(route) - 1);
+  /* Its coarse stage is the beginning, not whatever the step it sits above
+     happens to mean. `currentStep` says where on the ladder it is; `stage` is
+     the one-word summary older screens read, and the summary of a lot nobody
+     has dispatched is that it is being ordered. */
+  const opensAs = coarseStage(route, 0);
 
   /* The two people who work it, named up front rather than found later on a
      different screen: naming them is part of opening a lot, and a form that
@@ -237,19 +250,21 @@ export async function buildLot(
     name,
     lotNumber: lotNumberFrom(id, now),
     route,
-    currentStep: 0,
+    currentStep: opensAt,
     exporterUserId,
     handler: handlerNamed,
     description: body.description?.trim() ?? '',
     origin: body.origin?.trim() ?? '',
     supplier: supplierFrom(body),
     status: 'open',
-    stage: coarseStage(route, 0),
+    stage: opensAs,
     stageHistory: [
       {
-        stage: coarseStage(route, 0),
-        step: first.name,
+        stage: opensAs,
+        // No step: opening a lot is not one of the lot's steps, it is the
+        // thing that has to happen before the first of them can.
         enteredAt: now,
+        kind: 'note',
         note: 'Lot opened.',
         recordedBy: userId,
       },
@@ -333,6 +348,14 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
       routeId: route.routeId,
       steps: route.steps,
       currentStep: step,
+      /**
+       * Where the lot's own half of the route starts.
+       *
+       * The lot's screen draws from here on: a lot never gets "received at the
+       * warehouse", its items do. The items' own ladders still draw the whole
+       * route, because an item travels both halves.
+       */
+      offset: lotOffset(route),
       /** Once the lot is with the seller, items are finished one at a time. */
       atSeller: atSellerYet(lot),
       lotNumber: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
@@ -349,10 +372,16 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
       buyerName: byId.get(order.buyerId)?.displayName ?? 'Unknown',
       buyerHandle: byId.get(order.buyerId)?.username ?? null,
       checkpoints: order.checkpoints ?? {},
-      /** Where this one is, which is the lot's position unless it was moved alone. */
-      currentStep: order.currentStep ?? step,
+      /** Where this item is on the lot's route: the lot's, its own, or what it has done. */
+      currentStep: itemStepOn(
+        route, step, order.currentStep, Boolean(order.checkpoints?.china_received),
+      ),
       /** True only when it was: the screen says so rather than implying it. */
       ownStep: typeof order.currentStep === 'number' && order.currentStep !== step,
+      /** Done travelling alone, and the lot has not moved: a real place to be. */
+      waitingForLot: Boolean(order.checkpoints?.china_received)
+        && step < lotOffset(route)
+        && lotOffset(route) < route.steps.length,
       history: order.stageHistory,
     })),
     totals: {
@@ -633,35 +662,29 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
      same two events, and drawing both put "at the China warehouse" on the
      screen twice, ticked in one ladder and hollow in the other. */
   const before = preLotRouteOf(order);
-  const beforeReached = order.checkpoints?.china_received ? 1 : 0;
-
-  /* Where the item is on its lot's ladder.
-   *
-   * The lot's own position is the floor, not the answer. A seller ticks
-   * "China WH received" per item, and an item that has landed is past that
-   * step whether or not the whole lot has been moved on yet. Taking the
-   * furthest of the two is what stops the timeline contradicting the tick
-   * the seller just made. */
   /*
-   * The warehouse tick means the item has finished travelling alone, so it
-   * sits on the last step before the lot takes over - read off the route's own
-   * hand-over rather than off the seven coarse stages.
+   * A checkpoint that has been ticked has happened.
    *
-   * The coarse mapping used to answer this and it overshot: on an eight-step
-   * route the first step whose stage reached `china_wh_received` was
-   * "Dispatched from China", so ticking a parcel into the warehouse told its
-   * buyer the crate had left the country. A route is the seller's own list and
-   * only it knows where the item stops being one item.
+   * It used to be handed over as the current step, so an item counted into the
+   * warehouse showed that arrival as in progress - a fact drawn as a promise.
+   * The arrival is done; what is actually in progress is the wait for a lot,
+   * and that is what the screen says.
    */
-  const reached = route && order.checkpoints?.china_received
-    ? Math.max(0, Math.min(route.steps.length - 1, joinIndexOf(route) - 1))
-    : 0;
-  /* The item's own position wins over the lot's when it has one: a piece
-     pulled for inspection while the crate cleared is genuinely somewhere
-     else, and telling its buyer otherwise is the one lie this screen must
-     never tell. The checkpoint stays a floor either way. */
+  const beforeDone = Boolean(order.checkpoints?.china_received);
+  const beforeReached = beforeDone ? before.steps.length - 1 : 0;
+
+  /*
+   * Where the item is on its lot's ladder: the lot's position, its own when it
+   * has been moved alone, and the floor set by what it has physically done -
+   * furthest wins. A piece pulled for inspection while the crate cleared is
+   * genuinely somewhere else, and telling its buyer otherwise is the one lie
+   * this screen must never tell.
+   */
   const position = route
-    ? Math.max(order.currentStep ?? currentStepOf(lot!), reached)
+    ? itemStepOn(
+        route, currentStepOf(lot!), order.currentStep,
+        Boolean(order.checkpoints?.china_received),
+      )
     : 0;
 
   /*
@@ -682,7 +705,13 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
     order,
     stages: stagesFor(order),
     currentStage: furthestStage(order),
-    preLot: { name: before.name, steps: before.steps, currentStep: beforeReached },
+    preLot: {
+      name: before.name,
+      steps: before.steps,
+      currentStep: beforeReached,
+      /** Everything it does alone is done; the wait for a lot is what is left. */
+      waitingForLot: beforeDone && !route,
+    },
     route: route
       ? {
           name: route.name,

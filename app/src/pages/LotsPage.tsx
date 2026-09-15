@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { CHECKPOINT_COUNT_LABELS, LOT_STAGES, LOT_STAGE_LABELS, type OrderCheckpoint } from '@shared/enums';
-import { sideOf, suggestLotName, type RouteStep } from '@shared/routes';
+import { WAITING_FOR_LOT, sideOf, suggestLotName, type RouteStep } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import {
   ApiRequestError, api,
@@ -702,6 +702,7 @@ function LotItemRow({ item, steps, others, atSeller, busy, onTick, onMove, onNot
             steps={steps}
             current={item.currentStep}
             history={item.history}
+            waitingFor={item.waitingForLot ? WAITING_FOR_LOT : null}
             busy={busy}
             whose={`Only ${item.buyerName} reads this one.`}
             onMove={onMove}
@@ -868,7 +869,18 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   const others = siblings
     .map((entry) => entry.lot)
     .filter((entry) => entry.id !== lot.id && entry.status !== 'closed');
-  const nextStep = route.steps[route.currentStep + 1] ?? null;
+  /*
+   * The lot's own ladder: the half of the route that happens to the whole
+   * consignment. The other half happens to one item at a time, before it is
+   * in here, and a lot claiming "received at the international warehouse" was
+   * claiming something only a parcel can do.
+   *
+   * `lotStep` is -1 while the lot is open and filling - it has taken none of
+   * its own steps yet.
+   */
+  const lotSteps = route.steps.slice(route.offset);
+  const lotStep = route.currentStep - route.offset;
+  const nextStep = lotSteps[lotStep + 1] ?? null;
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true);
@@ -1034,26 +1046,34 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
           <div className="card card--pad stack">
             <div>
               <span className="faint">Current status</span>
-              <div className="card__title">{route.steps[route.currentStep]?.name ?? 'Not started'}</div>
-              <span className="field__hint">{route.name}</span>
+              <div className="card__title">
+                {lotStep < 0 ? 'Filling — nothing dispatched yet' : lotSteps[lotStep]?.name ?? 'Not started'}
+              </div>
+              <span className="field__hint">
+                {route.name}
+                {route.offset > 0 && ` · the ${route.offset} steps before this happen to each item`}
+              </span>
             </div>
 
             {/* The timeline, editable in place. Every rung moves the lot -
                 forwards because that is the work, backwards because the
                 commonest correction on any board is a button pressed once too
                 many and twenty buyers have already been told. */}
+            {/* Sliced, and every index translated back before it leaves: the
+                store keeps one position into the whole route, so nothing
+                downstream has to know this screen shows half of it. */}
             <Ladder
-              steps={route.steps}
-              current={route.currentStep}
+              steps={lotSteps}
+              current={lotStep}
               history={data.history}
               busy={busy}
               whose={items.length === 0
                 ? 'Nothing is riding in this lot yet, so this is a note to yourself.'
                 : `Every one of the ${items.length} buyers in this lot reads it.`}
-              onMove={(to) => run(`Now: ${route.steps[to]?.name ?? 'moved'}.`, () =>
-                api.stepLot(lot.id, { to }).then(() => {}))}
+              onMove={(to) => run(`Now: ${lotSteps[to]?.name ?? 'moved'}.`, () =>
+                api.stepLot(lot.id, { to: to + route.offset }).then(() => {}))}
               onNote={(text, at) => run('Note added.', () =>
-                api.noteOnLot(lot.id, text, at).then(() => {}))}
+                api.noteOnLot(lot.id, text, at + route.offset).then(() => {}))}
             />
 
             {nextStep ? (
@@ -1064,7 +1084,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               </button>
             ) : (
               <p className="notice notice--ok">
-                {route.steps[route.currentStep]?.name ?? 'Delivered'}. Nothing further to do.
+                {lotSteps[lotStep]?.name ?? 'Delivered'}. Nothing further to do.
               </p>
             )}
           </div>
