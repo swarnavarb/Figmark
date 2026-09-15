@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { joinIndexOf, sideOf, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
@@ -115,8 +115,36 @@ function RouteRow({ name, steps, to, note }: {
 export function RouteEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const editing = id && id !== 'new' ? id : null;
+  return (
+    <main className="page">
+      <Link to="/routes" className="backlink">
+        <Icon name="back" size={14} /> Routes
+      </Link>
+      <RouteEditor
+        editing={id && id !== 'new' ? id : null}
+        onSaved={() => navigate('/routes')}
+        onCancel={() => navigate('/routes')}
+      />
+    </main>
+  );
+}
 
+/**
+ * Writing or correcting one route, wherever that is being done.
+ *
+ * Its own component because a shop is asked for its route twice: once on the
+ * way in, while opening the storefront, and every time after that from the
+ * route library. Two copies of this would be two answers to "what is a route",
+ * and the one on the way in would be the worse of them.
+ */
+export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel' }: {
+  editing: string | null;
+  onSaved: () => void;
+  onCancel: () => void;
+  /** Said above the shapes, for somebody meeting routes for the first time. */
+  intro?: ReactNode;
+  cancelLabel?: string;
+}) {
   const [library, setLibrary] = useState<RoutesResponse | null>(null);
   const [name, setName] = useState('');
   const [steps, setSteps] = useState<RouteStep[]>([]);
@@ -166,7 +194,7 @@ export function RouteEditorPage() {
             side: sideOf(step, index),
           })),
       });
-      navigate('/routes');
+      onSaved();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that route.');
     } finally {
@@ -179,15 +207,13 @@ export function RouteEditorPage() {
   /* Nothing chosen yet: offer the shapes rather than an empty list. */
   if (!started) {
     return (
-      <main className="page">
-        <Link to="/routes" className="backlink">
-          <Icon name="back" size={14} /> Routes
-        </Link>
-
-        <div className="page__head"><div>
-          <h1>New route</h1>
-          <p className="muted">Start from a shape close to yours. Everything is editable after.</p>
-        </div></div>
+      <>
+        {intro ?? (
+          <div className="page__head"><div>
+            <h1>New route</h1>
+            <p className="muted">Start from a shape close to yours. Everything is editable after.</p>
+          </div></div>
+        )}
 
         {error && <ErrorNotice message={error} />}
         {!library && !error && <SkeletonRows count={5} />}
@@ -216,40 +242,39 @@ export function RouteEditorPage() {
             </button>
           </div>
         )}
-      </main>
+
+        <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }}
+          onClick={onCancel}>
+          {cancelLabel}
+        </button>
+      </>
     );
   }
 
   return (
-    <main className="page">
-      <Link to="/routes" className="backlink">
-        <Icon name="back" size={14} /> Routes
-      </Link>
+    <form className="card card--pad form" onSubmit={save}>
+      <h2>{editing ? 'Edit route' : 'New route'}</h2>
 
-      <form className="card card--pad form" onSubmit={save}>
-        <h2>{editing ? 'Edit route' : 'New route'}</h2>
+      <label className="field">
+        <span>Call it</span>
+        <input value={name} onChange={(event) => setName(event.target.value)}
+          placeholder="Guangzhou air express" required autoFocus />
+        <span className="field__hint">For your own lists. Buyers see the steps, not this.</span>
+      </label>
 
-        <label className="field">
-          <span>Call it</span>
-          <input value={name} onChange={(event) => setName(event.target.value)}
-            placeholder="Guangzhou air express" required autoFocus />
-          <span className="field__hint">For your own lists. Buyers see the steps, not this.</span>
-        </label>
+      <RouteBuilder steps={steps} onChange={setSteps} split />
 
-        <RouteBuilder steps={steps} onChange={setSteps} split />
+      {error && <ErrorNotice message={error} />}
 
-        {error && <ErrorNotice message={error} />}
-
-        <div className="row">
-          <button type="submit" className="btn" disabled={busy || named < 2 || !name.trim()}>
-            {busy ? 'Saving…' : 'Save route'}
-          </button>
-          <Link to="/routes" className="btn btn--quiet">Cancel</Link>
-        </div>
-        {named < 2 && (
-          <span className="field__hint">A route needs at least two named steps.</span>
-        )}
-      </form>
-    </main>
+      <div className="row">
+        <button type="submit" className="btn" disabled={busy || named < 2 || !name.trim()}>
+          {busy ? 'Saving…' : 'Save route'}
+        </button>
+        <button type="button" className="btn btn--quiet" onClick={onCancel}>{cancelLabel}</button>
+      </div>
+      {named < 2 && (
+        <span className="field__hint">A route needs at least two named steps.</span>
+      )}
+    </form>
   );
 }

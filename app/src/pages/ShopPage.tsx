@@ -10,6 +10,7 @@ import { CATEGORIES } from '@shared/catalog';
 import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
+import { RouteEditor } from './RoutesPage';
 import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
@@ -68,6 +69,8 @@ export function ShopPage() {
   const [stores, setStores] = useState<StoreAccess[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  /** The one question after the shop exists: how does your stock travel? */
+  const [routing, setRouting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -84,9 +87,32 @@ export function ShopPage() {
   if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
   if (!stores) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
 
-  if (stores.length === 0 && !opening) {
+  if (stores.length === 0 && !opening && !routing) {
     return <ShopStart onOpen={() => setOpening(true)} />;
   }
+  /*
+   * Opened, and now asked the one question a shop cannot answer later without
+   * having already got it wrong: how does your stock actually travel?
+   *
+   * Here rather than buried in a settings screen, because the route is what
+   * every buyer of this shop will read for six weeks, and a shop that never
+   * finds the screen ships everybody the built-in seven words. Skippable,
+   * because a shop that does not know yet should not be held at the door.
+   */
+  if (routing) {
+    return (
+      <main className="page tab-view">
+        <RouteEditor
+          editing={null}
+          intro={<RouteIntro />}
+          cancelLabel="Skip for now"
+          onSaved={() => { setRouting(false); void load(); }}
+          onCancel={() => { setRouting(false); void load(); }}
+        />
+      </main>
+    );
+  }
+
   if (stores.length === 0) {
     return (
       <main className="page tab-view">
@@ -102,14 +128,45 @@ export function ShopPage() {
             </p>
           </div>
         </div>
-        {/* Saving is what makes the account a shop, so it lands straight back
-            in the sell tab - now as the console rather than this door. */}
-        <StorefrontEditor onSaved={() => { setOpening(false); void load(); }} />
+        {/* Saving is what makes the account a shop. Then one more question,
+            before the console, about how the stock travels. */}
+        <StorefrontEditor onSaved={() => { setOpening(false); setRouting(true); }} />
       </main>
     );
   }
 
   return <ShopConsole stores={stores} onChanged={load} />;
+}
+
+/**
+ * What a route is, for somebody meeting one for the first time.
+ *
+ * Said in the words of the thing it produces rather than in the words of the
+ * feature: a seller does not want "a configurable fulfilment pipeline", they
+ * want their buyers to stop asking where it is.
+ */
+function RouteIntro() {
+  return (
+    <div className="stack" style={{ marginBottom: 18 }}>
+      <div className="page__head"><div>
+        <h1>How does your stock travel?</h1>
+        <p className="muted">
+          A route is the list of steps your buyers read as their tracking — in your words, not
+          ours. Write it once and every shipment you open uses it.
+        </p>
+      </div></div>
+      <div className="notice notice--info">
+        <strong>Why it is worth a minute.</strong> Buyers ask "where is it?" because nothing
+        told them. A route answers before they ask: they see the same steps you work, ticked as
+        you tick them, from the day they order to the day it lands. You can change it whenever
+        the way you ship changes.
+      </div>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Start from a shape close to yours — everything in it is editable — or skip and do it
+        later from Track → Routes.
+      </p>
+    </div>
+  );
 }
 
 /**
