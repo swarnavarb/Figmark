@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { CHECKPOINT_COUNT_LABELS, LOT_STAGES, LOT_STAGE_LABELS, type OrderCheckpoint } from '@shared/enums';
-import { stepStateAt, type RouteStep } from '@shared/routes';
+import { sideOf, type RouteStep } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import {
   ApiRequestError, api,
@@ -9,18 +9,19 @@ import {
   type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { RouteBuilder } from '../components/RouteBuilder';
+import { Ladder } from '../components/Ladder';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatDate, formatMoney, formatWeight } from '../format';
 
 /**
- * The seller's shipment batches.
+ * The seller's shipment lots.
  *
- * A batch is bookkeeping, not a product: it says which of your items travel in
- * one consignment. Buyers never see one - advancing a batch's stage is what
+ * A lot is bookkeeping, not a product: it says which of your items travel in
+ * one consignment. Buyers never see one - advancing a lot's stage is what
  * writes the tracking they do see, on their own order.
  */
-export function BatchesPage() {
+export function LotsPage() {
   const [data, setData] = useState<LotsResponse | null>(null);
   const [openLotId, setOpenLotId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +32,7 @@ export function BatchesPage() {
       setData(await api.myLots());
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your batches.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.');
     }
   }, []);
 
@@ -40,28 +41,36 @@ export function BatchesPage() {
   }, [load]);
 
   if (openLotId) {
-    return <BatchDetail lotId={openLotId} onBack={() => { setOpenLotId(null); void load(); }} />;
+    return <LotDetail lotId={openLotId} onBack={() => { setOpenLotId(null); void load(); }} />;
   }
 
   return (
     <main className="page">
       <div className="page__head">
         <div>
-          <h1>My batches</h1>
+          <h1>My lots</h1>
           <p className="muted">
-            Group the items travelling in one consignment. Moving a batch forward updates the tracking every
-            buyer in it sees — they never see the batch itself.
+            Group the items travelling in one consignment. Moving a lot forward updates the tracking every
+            buyer in it sees — they never see the lot itself.
           </p>
         </div>
-        <button className="btn" onClick={() => setCreating(true)}>
-          <Icon name="plus" size={15} /> New batch
-        </button>
+        {/* Two decisions, and the second is the rarer one: a lot is opened
+            weekly, a route is written once and then reused by every lot after
+            it. So routes sit beside the button rather than inside it. */}
+        <div className="row row--tight">
+          <Link to="/routes" className="btn btn--quiet">
+            <Icon name="truck" size={15} /> Routes
+          </Link>
+          <button className="btn" onClick={() => setCreating(true)}>
+            <Icon name="plus" size={15} /> New lot
+          </button>
+        </div>
       </div>
 
       {error && <ErrorNotice message={error} />}
       {creating && (
-        <NewBatchForm
-          suggestedName={`Batch ${(data?.lots.length ?? 0) + 1}`}
+        <NewLotForm
+          suggestedName={`Lot ${(data?.lots.length ?? 0) + 1}`}
           onDone={() => { setCreating(false); void load(); }}
           onCancel={() => setCreating(false)}
         />
@@ -75,7 +84,7 @@ export function BatchesPage() {
             <div className="card card--pad" style={{ marginBottom: 22 }}>
               <div className="row row--between">
                 <div>
-                  <div className="card__title">{data.unassigned.length} listings not in a batch</div>
+                  <div className="card__title">{data.unassigned.length} listings not in a lot</div>
                   <span className="faint">
                     {data.unassigned.map((l) => l.title).slice(0, 3).join(' · ')}
                     {data.unassigned.length > 3 && ` and ${data.unassigned.length - 3} more`}
@@ -84,13 +93,13 @@ export function BatchesPage() {
                 <span className="badge badge--warn">Untracked</span>
               </div>
               <p className="muted" style={{ marginTop: 10 }}>
-                Buyers of these see “Preparing” until you tag them into a batch. Open a batch below to add them.
+                Buyers of these see “Preparing” until you tag them into a lot. Open a lot below to add them.
               </p>
             </div>
           )}
 
           {data.lots.length === 0 ? (
-            <EmptyState icon="◲" title="No batches yet">
+            <EmptyState icon="◲" title="No lots yet">
               Open one for your next consignment, then tag the items travelling in it.
             </EmptyState>
           ) : (
@@ -133,10 +142,10 @@ export function BatchesPage() {
 }
 
 /**
- * Who else is working this batch.
+ * Who else is working this lot.
  *
  * Naming somebody is not hiring them. It hands over exactly one screen for
- * exactly this batch - the packing list in China, or the parcel list in India -
+ * exactly this lot - the packing list in China, or the parcel list in India -
  * which is how most of this work is actually arranged: a supplier who checks
  * one run, a friend with a warehouse who breaks up one crate.
  *
@@ -184,8 +193,8 @@ function CrewCard({ lot, onSaved }: { lot: Lot; onSaved: () => void }) {
       <div>
         <h2>Crew</h2>
         <span className="field__hint">
-          Who checks this batch before it leaves, and who gets it out when it lands. Each one sees
-          their own screen for this batch and nothing else of yours.
+          Who checks this lot before it leaves, and who gets it out when it lands. Each one sees
+          their own screen for this lot and nothing else of yours.
         </span>
       </div>
 
@@ -246,22 +255,22 @@ function StageTrack({ stage }: { stage: Lot['stage'] }) {
 }
 
 /**
- * Open a batch.
+ * Open a lot.
  *
- * Everything a batch needs to start travelling, on one screen: what it is
+ * Everything a lot needs to start travelling, on one screen: what it is
  * called, where it is coming from, who works it at either end, and the ladder
  * it climbs. The ladder is the new part and the important one - it is what the
  * buyer will read for the next six weeks, in the seller's own words rather than
  * in seven fixed ones that fit nobody's actual route.
  *
- * The number is not asked for. It is derived from the batch's own id the moment
+ * The number is not asked for. It is derived from the lot's own id the moment
  * it exists, which is one fewer thing to invent and one fewer thing to collide.
  */
 /**
  * A route in one line: how many steps, and where it starts and ends.
  *
  * Enough to choose between two routes without opening either. The full ladder
- * is on the batch once it exists, and on the route itself in the library.
+ * is on the lot once it exists, and on the route itself in the library.
  */
 function summarise(steps: readonly { name: string }[]): string {
   if (steps.length === 0) return 'No steps yet';
@@ -270,7 +279,7 @@ function summarise(steps: readonly { name: string }[]): string {
   return `${steps.length} steps · ${first} → ${last}`;
 }
 
-export function NewBatchForm({ onDone, onCancel, suggestedName }: {
+export function NewLotForm({ onDone, onCancel, suggestedName }: {
   onDone: () => void;
   onCancel: () => void;
   /** What to call it if the seller does not care, which is most of the time. */
@@ -323,7 +332,9 @@ export function NewBatchForm({ onDone, onCancel, suggestedName }: {
       if (mode === 'new' && saveTemplate) {
         const saved = await api.saveRoute({
           name: routeName.trim() || 'My route',
-          steps: named.map((step) => ({ name: step.name, description: step.description })),
+          steps: named.map((step, index) => ({
+            name: step.name, description: step.description, side: sideOf(step, index),
+          })),
         });
         chosenId = saved.route.id;
       }
@@ -331,7 +342,7 @@ export function NewBatchForm({ onDone, onCancel, suggestedName }: {
       await api.createLot({
         ...details,
         name: details.name.trim(),
-        // Either a directory forwarder or one you already work with; the batch
+        // Either a directory forwarder or one you already work with; the lot
         // does not care which, and neither does the buyer's tracking.
         forwarderName: forwarderName.trim() || undefined,
         exporterHandle: exporterHandle.trim() || undefined,
@@ -342,40 +353,42 @@ export function NewBatchForm({ onDone, onCancel, suggestedName }: {
             ? { routeId: chosenId }
             : {
                 routeName: routeName.trim() || 'My route',
-                routeSteps: named.map((step) => ({ name: step.name, description: step.description })),
+                routeSteps: named.map((step, index) => ({
+                  name: step.name, description: step.description, side: sideOf(step, index),
+                })),
               }),
       });
       onDone();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not create the batch.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not create the lot.');
     } finally {
       setBusy(false);
     }
   }
 
   // The same fields as the popup in the sell flow, deliberately: one definition
-  // of what a batch has, so the two screens cannot drift apart.
+  // of what a lot has, so the two screens cannot drift apart.
   return (
     <form className="card card--pad form" onSubmit={submit} style={{ marginBottom: 22 }}>
-      <h2>New batch</h2>
+      <h2>New lot</h2>
       <p className="muted" style={{ marginTop: -6 }}>
-        A batch is one shipment. Name it, say how it travels, then file orders into it.
+        A lot is one shipment. Name it, say how it travels, then file orders into it.
       </p>
 
       <label className="field">
         <span>Name it</span>
         <input value={details.name} onChange={(e) => setDetails({ ...details, name: e.target.value })}
           placeholder="Guangzhou run — October" required autoFocus />
-        <span className="field__hint">For your own lists. Buyers see the batch number, not this.</span>
+        <span className="field__hint">For your own lists. Buyers see the lot number, not this.</span>
       </label>
 
       {/* The one decision worth making here. Presented as things you can
           read rather than as a picker plus a preview plus a mode toggle: a
           seller choosing a route wants to see the route. */}
       <fieldset className="pickset">
-        <legend>How this batch travels</legend>
+        <legend>How this lot travels</legend>
         <span className="field__hint">
-          Every item in the batch follows these steps, and buyers read them as their tracking.
+          Every item in the lot follows these steps, and buyers read them as their tracking.
         </span>
 
         {library && (
@@ -416,22 +429,22 @@ export function NewBatchForm({ onDone, onCancel, suggestedName }: {
               <input value={routeName} onChange={(e) => setRouteName(e.target.value)}
                 placeholder="Guangzhou air express" />
             </label>
-            <RouteBuilder steps={steps} onChange={setSteps} />
+            <RouteBuilder steps={steps} onChange={setSteps} split />
             <label className="tick">
               <input type="checkbox" checked={saveTemplate}
                 onChange={(e) => setSaveTemplate(e.target.checked)} />
               <span>
                 Save it
-                <span className="faint"> — so the next batch can pick it instead of retyping it.</span>
+                <span className="faint"> — so the next lot can pick it instead of retyping it.</span>
               </span>
             </label>
           </div>
         )}
       </fieldset>
 
-      {/* Nobody, a forwarder, an exporter and a handler are all things a batch
+      {/* Nobody, a forwarder, an exporter and a handler are all things a lot
           may acquire later, and none of them stop it existing. They were four
-          fields between "New batch" and the button that makes one. */}
+          fields between "New lot" and the button that makes one. */}
       <button type="button" className="disclose" aria-expanded={more}
         onClick={() => setMore(!more)}>
         <Icon name={more ? 'down' : 'right'} size={14} />
@@ -445,7 +458,7 @@ export function NewBatchForm({ onDone, onCancel, suggestedName }: {
             <span>Forwarder</span>
             <input value={forwarderName} onChange={(e) => setForwarderName(e.target.value)}
               placeholder="Lotus Freight, or your own" />
-            <span className="field__hint">Who moves the batch, as opposed to who you bought it from.</span>
+            <span className="field__hint">Who moves the lot, as opposed to who you bought it from.</span>
           </label>
 
           <label className="field">
@@ -453,7 +466,7 @@ export function NewBatchForm({ onDone, onCancel, suggestedName }: {
             <input value={exporterHandle} onChange={(e) => setExporterHandle(e.target.value)}
               placeholder="@their_handle" />
             <span className="field__hint">
-              Who checks the pieces before the batch leaves. They get a packing list for this batch only.
+              Who checks the pieces before the lot leaves. They get a packing list for this lot only.
             </span>
           </label>
 
@@ -474,7 +487,7 @@ export function NewBatchForm({ onDone, onCancel, suggestedName }: {
       <div className="row">
         <button type="submit" className="btn"
           disabled={busy || !details.name.trim() || (mode === 'new' && named.length < 2)}>
-          {busy ? 'Opening…' : 'Open the batch'}
+          {busy ? 'Opening…' : 'Open the lot'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
       </div>
@@ -483,9 +496,9 @@ export function NewBatchForm({ onDone, onCancel, suggestedName }: {
 }
 
 /**
- * Correct a batch's details after the fact.
+ * Correct a lot's details after the fact.
  *
- * Everything set when the batch was opened - including from the popup in the
+ * Everything set when the lot was opened - including from the popup in the
  * sell flow, where a seller is in a hurry - is editable here, which is what
  * makes it reasonable to ask for only a name up front.
  */
@@ -513,7 +526,7 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
   }
 
   return (
-    <Modal title="Batch details" onClose={onCancel}>
+    <Modal title="Lot details" onClose={onCancel}>
       <form className="form" onSubmit={submit}>
         <LotDetailFields value={details} onChange={setDetails} />
         {error && <ErrorNotice message={error} />}
@@ -529,51 +542,32 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
 }
 
 /**
- * A route, drawn.
+ * One item in a lot, and the buyer waiting for it.
  *
- * Done, here, still to come - three states and no more, because a timeline that
- * needs a key is a timeline nobody reads. The same ladder is drawn for the
- * seller working it and the buyer watching it, from the same steps, so the two
- * cannot describe the batch differently.
- */
-export function Ladder({ steps, current }: { steps: RouteStep[]; current: number }) {
-  return (
-    <ol className="ladder">
-      {steps.map((step, index) => {
-        const state = stepStateAt(index, current);
-        return (
-          <li key={step.id} className={`ladder__row is-${state}`}>
-            <span className="ladder__dot" aria-hidden="true">
-              {state === 'done' ? '✓' : state === 'current' ? '●' : ''}
-            </span>
-            <span className="ladder__name">{step.name}</span>
-            {step.description && <span className="faint">{step.description}</span>}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-/**
- * One item in a batch, and the buyer waiting for it.
- *
- * Once the batch is with the seller it stops being one object: the crate is
+ * Once the lot is with the seller it stops being one object: the crate is
  * open, thirty-four parcels are on the floor, and each one is finished on its
  * own. Before that the ticks would be a lie - nothing can be packed while it is
  * over the Bay of Bengal - so they are not offered.
  */
-function LotItemRow({ item, atSeller, busy, onTick }: {
+function LotItemRow({ item, steps, atSeller, busy, onTick, onMove, onNote }: {
   item: LotItem;
+  /** The lot's route, which is the ladder this item rides. */
+  steps: RouteStep[];
   atSeller: boolean;
   busy: boolean;
   onTick: (checkpoint: OrderCheckpoint, on: boolean) => void;
+  onMove: (to: number) => void | Promise<void>;
+  onNote: (note: string, at: number) => void | Promise<void>;
 }) {
   const gone = Boolean(item.checkpoints.dispatched);
+  /** Folded away by default: thirty-four open ladders is not a manifest. */
+  const [open, setOpen] = useState(false);
+
   return (
     <div className={`lotitem${gone ? ' lotitem--gone' : ''}`}>
       <div className="lotitem__top">
         <span className="lotitem__name">{item.itemName}</span>
+        {item.ownStep && <span className="badge badge--warn">Own timeline</span>}
         <span className="badge">{item.condition}</span>
       </div>
       <span className="faint">
@@ -595,14 +589,37 @@ function LotItemRow({ item, atSeller, busy, onTick }: {
           })}
         </div>
       )}
+
+      {/* One item's own timeline. Almost always the lot's, which is why it is
+          closed: it is opened for the exception - the piece pulled at customs
+          while the rest of the crate cleared - and that exception is exactly
+          what nobody could tell its buyer before. */}
+      <button type="button" className="disclose disclose--sm" aria-expanded={open}
+        onClick={() => setOpen(!open)}>
+        <Icon name={open ? 'down' : 'right'} size={13} />
+        {steps[item.currentStep]?.name ?? 'Tracking'}
+        <span className="faint">{open ? 'hide' : 'note, or move this one alone'}</span>
+      </button>
+
+      {open && (
+        <Ladder
+          steps={steps}
+          current={item.currentStep}
+          history={item.history}
+          busy={busy}
+          whose={`Only ${item.buyerName} reads this one.`}
+          onMove={onMove}
+          onNote={onNote}
+        />
+      )}
     </div>
   );
 }
 
 /**
- * What can go in this batch.
+ * What can go in this lot.
  *
- * Everything the shop has sold that is bound for a batch and is not in one -
+ * Everything the shop has sold that is bound for a lot and is not in one -
  * which, before this screen existed, was a list nobody could see. An item sold
  * three weeks before the run was opened simply sat there, and the buyer was
  * shown a domestic timeline for something that had not been bought yet.
@@ -667,7 +684,7 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
         <p className="muted">
           {query
             ? 'Nothing matches that.'
-            : 'Nothing waiting. Items appear here when somebody buys an import that has no batch yet.'}
+            : 'Nothing waiting. Items appear here when somebody buys an import that has no lot yet.'}
         </p>
       ) : (
         items.map((item) => {
@@ -693,15 +710,17 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
   );
 }
 
-/** One batch: what's in it, how to move it, and where the tracking goes. */
-export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
+/** One lot: what's in it, how to move it, and where the tracking goes. */
+export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
   const [data, setData] = useState<LotContents | null>(null);
   const [unassigned, setUnassigned] = useState<LotsResponse['unassigned']>([]);
   const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState('');
   const [tracking, setTracking] = useState('');
   const [busy, setBusy] = useState(false);
-  const [flash, setFlash] = useState<string | null>(null);
+  /* Whether it worked is decided where it happened, not guessed from the
+     wording afterwards - which is what a growing regular expression over
+     every success message had become. */
+  const [flash, setFlash] = useState<{ text: string; ok: boolean } | null>(null);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
 
@@ -712,7 +731,7 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
       setUnassigned(lots.unassigned);
       setTracking(contents.lot.forwarder?.trackingReference ?? '');
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load this batch.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load this lot.');
     }
   }, [lotId]);
 
@@ -732,9 +751,12 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
     try {
       await fn();
       await load();
-      setFlash(label);
+      setFlash({ text: label, ok: true });
     } catch (err) {
-      setFlash(err instanceof ApiRequestError ? err.message : 'Something went wrong.');
+      setFlash({
+        text: err instanceof ApiRequestError ? err.message : 'Something went wrong.',
+        ok: false,
+      });
     } finally {
       setBusy(false);
     }
@@ -743,7 +765,7 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
   return (
     <main className="page">
       <button className="btn btn--quiet" onClick={onBack} style={{ marginBottom: 16 }}>
-        <Icon name="back" size={14} /> All batches
+        <Icon name="back" size={14} /> All lots
       </button>
 
       <div className="page__head">
@@ -771,9 +793,7 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
       )}
 
       {flash && (
-        <p className={`notice notice--${/^(Now|Added|Tracking|Item|Stepped|Saved)/.test(flash) ? 'ok' : 'error'}`}>
-          {flash}
-        </p>
+        <p className={`notice notice--${flash.ok ? 'ok' : 'error'}`}>{flash.text}</p>
       )}
 
       <div className="detail" style={{ marginTop: 18 }}>
@@ -786,7 +806,7 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
               </button>
             </div>
             <span className="field__hint">
-              Every item here travels the batch's route. Move the batch and all {items.length} move
+              Every item here travels the lot's route. Move the lot and all {items.length} move
               with it.
             </span>
 
@@ -800,17 +820,23 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
 
             {items.length === 0 ? (
               <p className="muted">
-                Nothing in this batch yet. Add the items your customers have already bought.
+                Nothing in this lot yet. Add the items your customers have already bought.
               </p>
             ) : (
               items.map((item) => (
                 <LotItemRow
                   key={item.id}
                   item={item}
+                  steps={route.steps}
                   atSeller={route.atSeller}
                   busy={busy}
                   onTick={(checkpoint, on) =>
                     run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
+                  onMove={(to) =>
+                    run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
+                      api.stepItem(item.id, { to }).then(() => {}))}
+                  onNote={(text, at) =>
+                    run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
                 />
               ))
             )}
@@ -826,7 +852,7 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
             <div>
               <h2>Listings travelling in it</h2>
               <span className="field__hint">
-                The catalog side: anything bought from one of these goes straight into this batch,
+                The catalog side: anything bought from one of these goes straight into this lot,
                 rather than waiting to be added by hand.
               </span>
             </div>
@@ -837,7 +863,7 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
                 <div key={listing.id} className="row row--between" style={{ paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
                   <span style={{ fontSize: 'var(--t-sm)' }}>{listing.title}</span>
                   <button className="btn btn--quiet" disabled={busy}
-                    onClick={() => void run('Removed from batch.', () => api.assignToLot(lot.id, [listing.id], true).then(() => {}))}>
+                    onClick={() => void run('Removed from lot.', () => api.assignToLot(lot.id, [listing.id], true).then(() => {}))}>
                     Remove
                   </button>
                 </div>
@@ -851,7 +877,7 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
                   <div key={listing.id} className="row row--between">
                     <span className="muted">{listing.title}</span>
                     <button className="btn btn--ghost" disabled={busy}
-                      onClick={() => void run('Added to batch.', () => api.assignToLot(lot.id, [listing.id]).then(() => {}))}>
+                      onClick={() => void run('Added to lot.', () => api.assignToLot(lot.id, [listing.id]).then(() => {}))}>
                       Add
                     </button>
                   </div>
@@ -869,41 +895,34 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
               <span className="field__hint">{route.name}</span>
             </div>
 
-            <Ladder steps={route.steps} current={route.currentStep} />
+            {/* The timeline, editable in place. Every rung moves the lot -
+                forwards because that is the work, backwards because the
+                commonest correction on any board is a button pressed once too
+                many and twenty buyers have already been told. */}
+            <Ladder
+              steps={route.steps}
+              current={route.currentStep}
+              history={data.history}
+              busy={busy}
+              whose={items.length === 0
+                ? 'Nothing is riding in this lot yet, so this is a note to yourself.'
+                : `Every one of the ${items.length} buyers in this lot reads it.`}
+              onMove={(to) => run(`Now: ${route.steps[to]?.name ?? 'moved'}.`, () =>
+                api.stepLot(lot.id, { to }).then(() => {}))}
+              onNote={(text, at) => run('Note added.', () =>
+                api.noteOnLot(lot.id, text, at).then(() => {}))}
+            />
 
             {nextStep ? (
-              <>
-                <label className="field">
-                  <span>Note (optional)</span>
-                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="All units checked in" />
-                </label>
-                <button className="btn btn--block" disabled={busy}
-                  onClick={() => void run(`Now: ${nextStep.name}.`, async () => {
-                    await api.stepLot(lot.id, { note: note || undefined });
-                    setNote('');
-                  })}>
-                  Move to next step
-                </button>
-                <p className="faint">
-                  {items.length === 0
-                    ? 'Nothing riding in this batch yet, so this only moves the batch itself.'
-                    : `${nextStep.name} — and ${items.length} item${items.length === 1 ? '' : 's'} move with it.`}
-                </p>
-              </>
+              <button className="btn btn--block" disabled={busy}
+                onClick={() => void run(`Now: ${nextStep.name}.`, () =>
+                  api.stepLot(lot.id, {}).then(() => {}))}>
+                Move to {nextStep.name}
+              </button>
             ) : (
               <p className="notice notice--ok">
                 {route.steps[route.currentStep]?.name ?? 'Delivered'}. Nothing further to do.
               </p>
-            )}
-
-            {/* The commonest correction on any board is a button pressed once
-                too many, and twenty buyers have already been told. */}
-            {route.currentStep > 0 && (
-              <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
-                onClick={() => void run('Stepped back.', () =>
-                  api.stepLot(lot.id, { to: route.currentStep - 1 }).then(() => {}))}>
-                Step back
-              </button>
             )}
           </div>
 
@@ -921,7 +940,7 @@ export function BatchDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
             <label className="field">
               <span>Tracking reference</span>
               <input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="SSC-2026-08-4471" />
-              <span className="field__hint">Shown on every buyer's order in this batch.</span>
+              <span className="field__hint">Shown on every buyer's order in this lot.</span>
             </label>
             <button className="btn btn--ghost btn--block" disabled={busy}
               onClick={() => void run('Tracking saved.', () =>

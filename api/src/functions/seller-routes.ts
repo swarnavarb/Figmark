@@ -315,8 +315,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     buyers.set(order.buyerId, personRef(await repository.getUserById(order.buyerId)));
   }
 
-  /* Every batch these orders ride in, read once rather than per row: a shop
-     with forty orders in three batches should not make forty lookups to put
+  /* Every lot these orders ride in, read once rather than per row: a shop
+     with forty orders in three lots should not make forty lookups to put
      three numbers on cards. */
   const lots = new Map<string, Lot | null>();
   for (const order of orders) {
@@ -324,7 +324,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     lots.set(order.lotId, await repository.getLot(storeId, order.lotId));
   }
 
-  /* The listings behind the orders still waiting for a batch, so the "add to a
+  /* The listings behind the orders still waiting for a lot, so the "add to a
      lot" screen can pre-select the route the Quick Post template set up for
      them. One query for the shop rather than one per order. */
   const listings = new Map(
@@ -358,9 +358,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       /** The one tick a seller makes from this screen. */
       chinaReceivedAt: order.checkpoints?.china_received ?? null,
       /**
-       * The route the item's template said a batch carrying it should travel.
+       * The route the item's template said a lot carrying it should travel.
        *
-       * Pre-selected when the seller opens a batch from this order, which is
+       * Pre-selected when the seller opens a lot from this order, which is
        * the last link in the chain a Quick Post template sets up: pick the
        * template once, and the buyer's whole journey is configured.
        */

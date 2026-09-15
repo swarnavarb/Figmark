@@ -69,6 +69,7 @@ const { setCrewRoute: setCrew } = await import(new URL('fulfilment-routes.js', f
 const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
   lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
+  noteOnLotRoute: noteOnLot, stepItemRoute: stepItem,
   myItemsRoute: myItems,
 } = await import(new URL('tracking-routes.js', fns));
 const {
@@ -326,7 +327,7 @@ await check('pre-orders carry their own fill counts', async () => {
   assert.ok(body.listings.every((l) => typeof l.preOrder.fillThreshold === 'number'));
 });
 
-await check('the feed never exposes a shipment batch to buyers', async () => {
+await check('the feed never exposes a shipment lot to buyers', async () => {
   const body = (await feed(req({ headers: auth }), ctx)).jsonBody;
   // lotId is on the listing document, but no lot object may ride along.
   assert.ok(body.listings.every((l) => !('lot' in l)), 'feed cards must not carry a lot');
@@ -353,7 +354,7 @@ await check('followed sellers rank first for a signed-in viewer', async () => {
 /* ── listing detail and social ─────────────────────────────────────────── */
 console.log('\nlisting detail and social');
 
-await check('detail includes seller and comments but never the batch', async () => {
+await check('detail includes seller and comments but never the lot', async () => {
   const body = (await listingDetail(req({ params: { id: 'lst_dragon_knight' } }), ctx)).jsonBody;
   assert.equal(body.seller.storefrontName, 'Kaiju Imports');
   assert.equal(body.comments.length, 2);
@@ -487,10 +488,10 @@ await check('filters forwarders by route', async () => {
   assert.equal(body.forwarders[0].companyName, 'Silk Route Cargo');
 });
 
-/* ── shipment batches ──────────────────────────────────────────────────── */
-console.log('\nshipment batches');
+/* ── shipment lots ──────────────────────────────────────────────────── */
+console.log('\nshipment lots');
 
-const batch = await createLot(req({
+const lot = await createLot(req({
   headers: auth,
   body: {
     name: 'Test consignment', description: 'smoke',
@@ -500,14 +501,14 @@ const batch = await createLot(req({
   },
 }), ctx);
 
-await check('a batch carries its origin and supplier', () => {
-  assert.equal(batch.jsonBody.lot.origin, 'Guangzhou, CN');
-  assert.equal(batch.jsonBody.lot.supplier.name, 'Baiyun Hobby');
-  assert.equal(batch.jsonBody.lot.supplier.reference, 'BH-1');
+await check('a lot carries its origin and supplier', () => {
+  assert.equal(lot.jsonBody.lot.origin, 'Guangzhou, CN');
+  assert.equal(lot.jsonBody.lot.supplier.name, 'Baiyun Hobby');
+  assert.equal(lot.jsonBody.lot.supplier.reference, 'BH-1');
 });
 
-await check('the name is the only field a batch insists on', async () => {
-  const bare = await createLot(req({ headers: auth, body: { name: 'Bare batch' } }), ctx);
+await check('the name is the only field a lot insists on', async () => {
+  const bare = await createLot(req({ headers: auth, body: { name: 'Bare lot' } }), ctx);
   assert.equal(bare.status, 201);
   assert.equal(bare.jsonBody.lot.origin, '');
   // A contact with nobody attached to it is not a supplier.
@@ -519,7 +520,7 @@ await check('the name is the only field a batch insists on', async () => {
 });
 
 await check('every detail can be corrected afterwards', async () => {
-  const id = batch.jsonBody.lot.id;
+  const id = lot.jsonBody.lot.id;
   const edited = await updateLotDetails(req({
     headers: auth, params: { id },
     body: { name: 'Renamed consignment', origin: 'Yiwu, CN', supplierName: 'Yiwu Trading' },
@@ -532,12 +533,12 @@ await check('every detail can be corrected afterwards', async () => {
   assert.equal(edited.jsonBody.lot.description, 'smoke');
 });
 
-await check('a batch cannot be renamed to nothing, or by someone else', async () => {
-  const id = batch.jsonBody.lot.id;
+await check('a lot cannot be renamed to nothing, or by someone else', async () => {
+  const id = lot.jsonBody.lot.id;
   const blank = await updateLotDetails(req({ headers: auth, params: { id }, body: { name: '  ' } }), ctx);
   assert.equal(blank.status, 400);
 
-  // A batch is read from its owner's partition, so another seller's id does not
+  // A lot is read from its owner's partition, so another seller's id does not
   // resolve at all - it is not found rather than forbidden.
   const stranger = await signup(req({
     body: { displayName: 'Other Seller', email: 'other@figmark.example', phone: '+919000077777', password: 'longenough1' },
@@ -549,19 +550,19 @@ await check('a batch cannot be renamed to nothing, or by someone else', async ()
   assert.equal(theirs.status, 404);
 });
 
-await check('an item can be filed into a batch as it is listed', async () => {
-  const id = batch.jsonBody.lot.id;
+await check('an item can be filed into a lot as it is listed', async () => {
+  const id = lot.jsonBody.lot.id;
   const listed = await createListing(req({
     headers: auth,
-    body: { title: 'Straight into the batch', priceMinor: 90_000, lotId: id },
+    body: { title: 'Straight into the lot', priceMinor: 90_000, lotId: id },
   }), ctx);
   assert.equal(listed.status, 201);
   assert.equal(listed.jsonBody.listing.lotId, id);
-  // A batch is a consignment of imports, so it settles the sourcing itself.
+  // A lot is a consignment of imports, so it settles the sourcing itself.
   assert.equal(listed.jsonBody.listing.sourcing, 'import');
 });
 
-await check('someone else\'s batch is not a place to file things', async () => {
+await check('someone else\'s lot is not a place to file things', async () => {
   const refused = await createListing(req({
     headers: auth,
     body: { title: 'Nice try', priceMinor: 1000, lotId: 'lot_gz_sep' },
@@ -569,7 +570,7 @@ await check('someone else\'s batch is not a place to file things', async () => {
   assert.equal(refused.status, 404);
 });
 
-await check('an item with no batch behind it is in hand', async () => {
+await check('an item with no lot behind it is in hand', async () => {
   const single = await createListing(req({
     headers: auth, body: { title: 'Off my own shelf', priceMinor: 5000, sourcing: 'in_hand' },
   }), ctx);
@@ -581,8 +582,8 @@ await check('an item with no batch behind it is in hand', async () => {
   assert.equal(quiet.jsonBody.listing.sourcing, 'in_hand');
 });
 
-await check('an import can wait for its batch, and promises nothing until it has one', async () => {
-  // Filing an item into a batch is bookkeeping a shop does when the batch is
+await check('an import can wait for its lot, and promises nothing until it has one', async () => {
+  // Filing an item into a lot is bookkeeping a shop does when the lot is
   // being packed, often weeks after the item went up. Refusing the listing
   // until then made shops either misdescribe the sourcing or not list at all.
   const waiting = await createListing(req({
@@ -629,47 +630,47 @@ await check('listing it can tell the channel and the feed at the same time', asy
   assert.ok(!quietFeed.some((card) => card.post.listingId === quiet.jsonBody.listing.id));
 });
 
-await check('an item in a batch is always an import, and never the reverse by accident', async () => {
-  // The invariant that still holds now a batch can be chosen later: a batch
+await check('an item in a lot is always an import, and never the reverse by accident', async () => {
+  // The invariant that still holds now a lot can be chosen later: a lot
   // means import. The other direction is the seller's to state - an import
   // waiting to be filed says so and simply has no dispatch date yet.
   const body = (await feed(req({ headers: auth }), ctx)).jsonBody;
   for (const listing of body.listings) {
     if (listing.lotId) {
-      assert.equal(listing.sourcing, 'import', `${listing.title} is in a batch but says ${listing.sourcing}`);
+      assert.equal(listing.sourcing, 'import', `${listing.title} is in a lot but says ${listing.sourcing}`);
     }
-    // And nothing promises a dispatch date it has no batch to get one from.
+    // And nothing promises a dispatch date it has no lot to get one from.
     if (!listing.lotId) {
-      assert.equal(listing.estimatedDispatchAt, null, `${listing.title} has no batch but names a date`);
+      assert.equal(listing.estimatedDispatchAt, null, `${listing.title} has no lot but names a date`);
     }
   }
 });
 
-await check('a seller can open a batch', () => {
-  assert.equal(batch.status, 201);
-  assert.equal(batch.jsonBody.lot.sellerId, 'usr_demo');
-  assert.equal(batch.jsonBody.lot.stage, 'ordering');
+await check('a seller can open a lot', () => {
+  assert.equal(lot.status, 201);
+  assert.equal(lot.jsonBody.lot.sellerId, 'usr_demo');
+  assert.equal(lot.jsonBody.lot.stage, 'ordering');
 });
 
-const batchId = batch.jsonBody.lot.id;
+const lotId = lot.jsonBody.lot.id;
 
-await check('lists the seller\'s batches and unassigned listings', async () => {
+await check('lists the seller\'s lots and unassigned listings', async () => {
   const body = (await myLots(req({ headers: auth }), ctx)).jsonBody;
-  assert.ok(body.lots.some((entry) => entry.lot.id === batchId));
+  assert.ok(body.lots.some((entry) => entry.lot.id === lotId));
   assert.ok(Array.isArray(body.unassigned));
 });
 
-await check('items can be tagged into and out of a batch', async () => {
-  const added = await assignToLot(req({ headers: auth, params: { id: batchId }, body: { listingIds: ['lst_my_cards'] } }), ctx);
+await check('items can be tagged into and out of a lot', async () => {
+  const added = await assignToLot(req({ headers: auth, params: { id: lotId }, body: { listingIds: ['lst_my_cards'] } }), ctx);
   assert.equal(added.jsonBody.changed, 1);
-  const contents = (await lotContents(req({ headers: auth, params: { id: batchId } }), ctx)).jsonBody;
+  const contents = (await lotContents(req({ headers: auth, params: { id: lotId } }), ctx)).jsonBody;
   assert.ok(contents.listings.some((l) => l.id === 'lst_my_cards'));
 
-  const removed = await assignToLot(req({ headers: auth, params: { id: batchId }, body: { listingIds: ['lst_my_cards'], remove: true } }), ctx);
+  const removed = await assignToLot(req({ headers: auth, params: { id: lotId }, body: { listingIds: ['lst_my_cards'], remove: true } }), ctx);
   assert.equal(removed.jsonBody.changed, 1);
 });
 
-await check("a seller cannot touch someone else's batch", async () => {
+await check("a seller cannot touch someone else's lot", async () => {
   for (const call of [
     lotContents(req({ headers: auth, params: { id: 'lot_gz_sep' } }), ctx),
     advanceStage(req({ headers: auth, params: { id: 'lot_gz_sep' }, body: { stage: 'qc_repack' } }), ctx),
@@ -679,24 +680,24 @@ await check("a seller cannot touch someone else's batch", async () => {
 });
 
 await check('stages only move forward', async () => {
-  const back = await advanceStage(req({ headers: auth, params: { id: batchId }, body: { stage: 'ordering' } }), ctx);
+  const back = await advanceStage(req({ headers: auth, params: { id: lotId }, body: { stage: 'ordering' } }), ctx);
   assert.equal(back.status, 409);
-  const bogus = await advanceStage(req({ headers: auth, params: { id: batchId }, body: { stage: 'teleported' } }), ctx);
+  const bogus = await advanceStage(req({ headers: auth, params: { id: lotId }, body: { stage: 'teleported' } }), ctx);
   assert.equal(bogus.status, 400);
 });
 
-await check('advancing a batch writes tracking onto every order in it', async () => {
-  // Put a real order in the batch first.
-  await assignToLot(req({ headers: auth, params: { id: batchId }, body: { listingIds: [published.jsonBody.listing.id] } }), ctx);
+await check('advancing a lot writes tracking onto every order in it', async () => {
+  // Put a real order in the lot first.
+  await assignToLot(req({ headers: auth, params: { id: lotId }, body: { listingIds: [published.jsonBody.listing.id] } }), ctx);
   const buyer = await signup(req({
     body: { displayName: 'Buyer Two', email: 'b2@figmark.example', phone: '+919000054321', password: 'longenough1' },
   }), ctx);
   const buyerAuth = { authorization: `Bearer ${buyer.jsonBody.token}` };
   const placed = await createOrder(req({ headers: buyerAuth, body: { listingId: published.jsonBody.listing.id } }), ctx);
   assert.equal(placed.status, 201);
-  assert.equal(placed.jsonBody.order.lotId, batchId, 'the order inherits the item\'s batch');
+  assert.equal(placed.jsonBody.order.lotId, lotId, 'the order inherits the item\'s lot');
 
-  const moved = await advanceStage(req({ headers: auth, params: { id: batchId }, body: { stage: 'china_wh_received', note: 'Checked in' } }), ctx);
+  const moved = await advanceStage(req({ headers: auth, params: { id: lotId }, body: { stage: 'china_wh_received', note: 'Checked in' } }), ctx);
   assert.equal(moved.status, 200);
   assert.ok(moved.jsonBody.ordersUpdated >= 1);
 
@@ -705,18 +706,18 @@ await check('advancing a batch writes tracking onto every order in it', async ()
   assert.ok(tracked.order.stageHistory.some((e) => e.note === 'Checked in'));
 });
 
-await check("the buyer's order view never names the batch", async () => {
+await check("the buyer's order view never names the lot", async () => {
   const buyer = await login(req({ body: { identifier: 'b2@figmark.example', password: 'longenough1' } }), ctx);
   const orders = (await myActivity(req({ headers: { authorization: `Bearer ${buyer.jsonBody.token}` } }), ctx)).jsonBody.orders;
   const view = (await orderTracking(req({ headers: { authorization: `Bearer ${buyer.jsonBody.token}` }, params: { id: orders[0].id } }), ctx)).jsonBody;
   assert.ok(!('lot' in view), 'no lot object');
-  assert.ok(!JSON.stringify(view).includes('Test consignment'), 'the batch name must not leak');
+  assert.ok(!JSON.stringify(view).includes('Test consignment'), 'the lot name must not leak');
   // But the two facts it does contribute are present.
   assert.ok('trackingReference' in view && 'estimatedDispatchAt' in view);
 });
 
 await check('tracking reference reaches the buyer', async () => {
-  await setTracking(req({ headers: auth, params: { id: batchId }, body: { trackingReference: 'TF-999' } }), ctx);
+  await setTracking(req({ headers: auth, params: { id: lotId }, body: { trackingReference: 'TF-999' } }), ctx);
   const buyer = await login(req({ body: { identifier: 'b2@figmark.example', password: 'longenough1' } }), ctx);
   const orders = (await myActivity(req({ headers: { authorization: `Bearer ${buyer.jsonBody.token}` } }), ctx)).jsonBody.orders;
   const view = (await orderTracking(req({ headers: { authorization: `Bearer ${buyer.jsonBody.token}` }, params: { id: orders[0].id } }), ctx)).jsonBody;
@@ -726,7 +727,7 @@ await check('tracking reference reaches the buyer', async () => {
 await check('a direct sale tracks against the short vocabulary', async () => {
   const buyer = await login(req({ body: { identifier: 'b2@figmark.example', password: 'longenough1' } }), ctx);
   const buyerAuth = { authorization: `Bearer ${buyer.jsonBody.token}` };
-  // lst_handheld is not in any batch.
+  // lst_handheld is not in any lot.
   const placed = await createOrder(req({ headers: buyerAuth, body: { listingId: 'lst_handheld' } }), ctx);
   const view = (await orderTracking(req({ headers: buyerAuth, params: { id: placed.jsonBody.order.id } }), ctx)).jsonBody;
   assert.deepEqual(view.stages, ['preparing', 'dispatched', 'delivered']);
@@ -871,7 +872,7 @@ await check('a follower may speak in a shop\'s room, as themselves', async () =>
   const theirs = { authorization: `Bearer ${visitor.jsonBody.token}` };
 
   const said = await createPost(req({
-    headers: theirs, body: { body: 'Is the September batch still open?', channelId: 'usr_kaiju' },
+    headers: theirs, body: { body: 'Is the September lot still open?', channelId: 'usr_kaiju' },
   }), ctx);
   assert.equal(said.status, 201);
   assert.equal(said.jsonBody.post.channelId, 'usr_kaiju');
@@ -933,7 +934,7 @@ await check('a shop chooses which of its messages is an announcement', async () 
 
   const news = await createPost(req({
     headers: auth,
-    body: { body: 'Batch closes Friday.', channelId: 'usr_demo', announcement: true },
+    body: { body: 'Lot closes Friday.', channelId: 'usr_demo', announcement: true },
   }), ctx);
   assert.equal(news.jsonBody.post.announcement, true);
 });
@@ -1026,7 +1027,7 @@ await check('a channel thread is that channel and nothing else', async () => {
 });
 
 await check('posting an update goes to your own channel, never anyone else\'s', async () => {
-  const created = await createPost(req({ headers: auth, body: { body: 'Fresh batch landing Friday.' } }), ctx);
+  const created = await createPost(req({ headers: auth, body: { body: 'Fresh lot landing Friday.' } }), ctx);
   assert.equal(created.status, 201);
   // The channel is taken from the session, so there is no field to point it
   // at another seller in the first place.
@@ -1034,7 +1035,7 @@ await check('posting an update goes to your own channel, never anyone else\'s', 
   assert.equal(created.jsonBody.post.kind, 'update');
 
   const mine = await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx);
-  assert.ok(mine.jsonBody.posts.some((card) => card.post.body === 'Fresh batch landing Friday.'));
+  assert.ok(mine.jsonBody.posts.some((card) => card.post.body === 'Fresh lot landing Friday.'));
 });
 
 await check('a sale post must point at an item you actually sell', async () => {
@@ -1646,18 +1647,18 @@ await check('the checkout offers the escrows who could be neutral in this trade'
   assert.equal(meera.feeMinor, 480);
 });
 
-await check('the batch suggests the escrow the rest of it already uses', async () => {
+await check('the lot suggests the escrow the rest of it already uses', async () => {
   // ord_2003 and ord_2004 are both in lot_my_batch and both held by Kaiju, so
-  // a third order in that batch should be pointed at them. Thirty buyers each
+  // a third order in that lot should be pointed at them. Thirty buyers each
   // picking a different holder turns one conversation into thirty.
   const listed = await createListing(req({
-    headers: auth, body: { title: 'Third in the batch', priceMinor: 40_000, lotId: 'lot_my_batch', sourcing: 'import' },
+    headers: auth, body: { title: 'Third in the lot', priceMinor: 40_000, lotId: 'lot_my_batch', sourcing: 'import' },
   }), ctx);
   assert.equal(listed.status, 201);
 
   const buyer = await signup(req({
     body: {
-      displayName: 'Batch Buyer', email: 'batch@figmark.example',
+      displayName: 'Lot Buyer', email: 'lot@figmark.example',
       phone: '+919000045511', password: 'longenough1',
     },
   }), ctx);
@@ -1668,9 +1669,9 @@ await check('the batch suggests the escrow the rest of it already uses', async (
   assert.equal(placed.status, 201);
 
   const body = (await checkout(req({ headers: theirs, params: { id: placed.jsonBody.order.id } }), ctx)).jsonBody;
-  assert.ok(body.suggested, 'the batch has an escrow to suggest');
+  assert.ok(body.suggested, 'the lot has an escrow to suggest');
   assert.equal(body.suggested.agentId, 'usr_kaiju');
-  assert.match(body.suggested.because, /2 other orders in this batch already use them/);
+  assert.match(body.suggested.because, /2 other orders in this lot already use them/);
 });
 
 await check('the suggestion reads correctly for a single other order', async () => {
@@ -1679,7 +1680,7 @@ await check('the suggestion reads correctly for a single other order', async () 
   if (body.suggested) assert.match(body.suggested.because, /already uses? them\./);
 });
 
-await check('a direct sale has no batch, so nothing to agree with', async () => {
+await check('a direct sale has no lot, so nothing to agree with', async () => {
   const body = (await checkout(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).jsonBody;
   // ord_1003 rides in lot_sz_oct, whose other orders carry no escrow.
   assert.equal(body.suggested, null);
@@ -2782,26 +2783,26 @@ await check('a claimed payment tells the seller, and nobody else', async () => {
   assert.match(answered.notifications[0].body, /Nothing against that reference/);
 });
 
-await check('a batch moving tells everybody who bought into it', async () => {
+await check('a lot moving tells everybody who bought into it', async () => {
   // The notification this whole product is for: twenty people paid weeks ago
   // and cannot know it cleared customs unless somebody tells them.
-  // Read who is actually in the batch rather than naming fixture ids, which is
+  // Read who is actually in the lot rather than naming fixture ids, which is
   // how the last version of this failed for a reason unrelated to notifying.
   const inLot = await (await getRepository()).listOrdersForLot('lot_my_batch');
   const buyerIds = [...new Set(inLot.map((order) => order.buyerId))];
-  assert.ok(buyerIds.length > 0, 'somebody bought into this batch');
+  assert.ok(buyerIds.length > 0, 'somebody bought into this lot');
 
   const before = await Promise.all(
     buyerIds.map(async (id) => (await noticesFor(id)).length),
   );
 
-  // Whatever comes next from where the batch actually is: earlier tests move
+  // Whatever comes next from where the lot actually is: earlier tests move
   // it, and a hard-coded stage fails for a reason that has nothing to do with
   // whether anybody was told.
   const lot = await (await getRepository()).getLot('usr_demo', 'lot_my_batch');
   const stages = LOT_STAGES;
   const next = stages[stages.indexOf(lot.stage) + 1];
-  assert.ok(next, 'the batch has somewhere left to go');
+  assert.ok(next, 'the lot has somewhere left to go');
 
   const moved = await advanceStage(req({
     headers: auth, params: { id: 'lot_my_batch' }, body: { stage: next },
@@ -2817,7 +2818,7 @@ await check('a batch moving tells everybody who bought into it', async () => {
 
   const one = (await noticesFor(buyerIds[0]))[0];
   assert.equal(one.kind, 'lot_moved');
-  // To their own purchases, not to the seller's view of the batch, which
+  // To their own purchases, not to the seller's view of the lot, which
   // shows them everybody else's orders.
   assert.equal(one.link, '/me?tab=purchases');
 });
@@ -3884,7 +3885,7 @@ await check('the status line and the counts under it cannot disagree', () => {
   assert.equal(phaseOfCounts(tallyOf([]).counts), 'empty');
 
   // "Prepping" is most of it at the China warehouse rather than all of it: a
-  // batch waiting on one straggler is being prepared, not still filling.
+  // lot waiting on one straggler is being prepared, not still filling.
   const most = [
     order('b1', 'A', 'MISB', { china_received: day(2) }),
     order('b2', 'B', 'MISB', { china_received: day(2) }),
@@ -3895,7 +3896,7 @@ await check('the status line and the counts under it cannot disagree', () => {
   const few = [most[0], { ...most[1], checkpoints: {} }, most[2]];
   assert.equal(phaseOf(few), 'filling');
   assert.equal(phaseOfCounts(tallyOf(few).counts), 'filling');
-  // One parcel in India moves the whole batch's story on, because that is the
+  // One parcel in India moves the whole lot's story on, because that is the
   // question being asked: has any of it landed.
   const landed = [rows[0], { ...rows[1], checkpoints: { india_received: day(9) } }];
   assert.equal(phaseOf(landed), 'india');
@@ -3903,7 +3904,7 @@ await check('the status line and the counts under it cannot disagree', () => {
 
   const done = rows.map((row) => ({ ...row, checkpoints: { dispatched: day(12) } }));
   assert.equal(phaseOf(done), 'completed');
-  // A cancelled order must not hold a finished batch open forever.
+  // A cancelled order must not hold a finished lot open forever.
   assert.equal(phaseOf([...done, order('b3', 'C', 'MISB', {}, 'cancelled')]), 'completed');
 });
 
@@ -3934,7 +3935,7 @@ await check('a shop reads its own figures and nobody else reads them', async () 
   assert.equal(nosy.status, 403);
 });
 
-await check('every batch is counted exactly as its own board lists it', async () => {
+await check('every lot is counted exactly as its own board lists it', async () => {
   const body = (await insights(req({ headers: auth }), ctx)).jsonBody;
   const entry = body.perLot.find((row) => row.lotId === 'lot_open_24');
   assert.ok(entry, 'the open lot should be on the screen');
@@ -3944,7 +3945,7 @@ await check('every batch is counted exactly as its own board lists it', async ()
   assert.equal(entry.orders, rows.length);
   assert.equal(entry.customers, new Set(rows.map((row) => row.buyerId)).size);
   assert.equal(entry.valueMinor, rows.reduce((sum, row) => sum + row.quantity * row.unitPriceMinor, 0));
-  // The phase on the analytics screen and the phase on the batch card are the
+  // The phase on the analytics screen and the phase on the lot card are the
   // same sentence about the same rows.
   assert.equal(entry.phase, phaseOfCounts(tallyOf(rows).counts));
   assert.ok(entry.progress >= 0 && entry.progress <= 100);
@@ -3953,7 +3954,7 @@ await check('every batch is counted exactly as its own board lists it', async ()
 await check('the money it says is waiting is money that actually landed', async () => {
   const listed = await createListing(req({
     headers: auth,
-    body: { title: 'Landed and unpaid', priceMinor: 45_000, quantityAvailable: 3, lotId: batch.jsonBody.lot.id },
+    body: { title: 'Landed and unpaid', priceMinor: 45_000, quantityAvailable: 3, lotId: lot.jsonBody.lot.id },
   }), ctx);
   assert.equal(listed.status, 201, JSON.stringify(listed.jsonBody));
 
@@ -4053,7 +4054,7 @@ await check('offering a service puts you on the list, and withdrawing takes you 
   const hub = (await servicesHub(req({ headers: theirs }), ctx)).jsonBody;
   assert.deepEqual(hub.mine, ['handler']);
 
-  // Withdrawing is a flag, not a delete: the batches they have already carried
+  // Withdrawing is a flag, not a delete: the lots they have already carried
   // still have to resolve to a name.
   const withdrawn = await offerService(req({ headers: theirs, body: { kind: 'handler', listed: false } }), ctx);
   assert.equal(withdrawn.status, 200);
@@ -4076,14 +4077,14 @@ await check('the two you cannot sign up for, you cannot sign up for', async () =
   assert.ok(demo.escrowRights, 'the demo account was granted it by the fixture');
 });
 
-await check('a shop names a handler, and the batch turns up on their screen', async () => {
+await check('a shop names a handler, and the lot turns up on their screen', async () => {
   const handlerAuth = { authorization: `Bearer ${(await login(req({
     body: { identifier: HANDLER_EMAIL, password: DEMO_PASSWORD },
   }), ctx)).jsonBody.token}` };
 
   const mine = (await distribution(req({ headers: handlerAuth }), ctx)).jsonBody;
-  const open = mine.batches.find((row) => row.lot.id === 'lot_open_24');
-  assert.ok(open, 'the fixture names them on the open batch');
+  const open = mine.lots.find((row) => row.lot.id === 'lot_open_24');
+  assert.ok(open, 'the fixture names them on the open lot');
   assert.equal(open.store.ownerId, 'usr_demo');
   assert.equal(open.city, 'Mumbai');
 
@@ -4146,7 +4147,7 @@ await check('a handler works the India end, and no earlier', async () => {
   assert.ok(owners.tally.counts.find((row) => row.checkpoint === 'dispatched').done >= 1);
 });
 
-await check('somebody else’s batch is not on your screen and not yours to tick', async () => {
+await check('somebody else’s lot is not on your screen and not yours to tick', async () => {
   const stranger = await signup(req({
     body: {
       displayName: 'Unnamed Handler', email: 'unnamed@figmark.example',
@@ -4155,7 +4156,7 @@ await check('somebody else’s batch is not on your screen and not yours to tick
   }), ctx);
   const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
 
-  assert.deepEqual((await distribution(req({ headers: theirs }), ctx)).jsonBody.batches, []);
+  assert.deepEqual((await distribution(req({ headers: theirs }), ctx)).jsonBody.lots, []);
   const refused = await distributionDetail(req({ headers: theirs, params: { id: 'lot_open_24' } }), ctx);
   assert.equal(refused.status, 403);
 
@@ -4167,7 +4168,7 @@ await check('somebody else’s batch is not on your screen and not yours to tick
   assert.equal(tick.status, 403);
 });
 
-await check('naming an exporter on one batch hands over that batch and no other', async () => {
+await check('naming an exporter on one lot hands over that lot and no other', async () => {
   const checker = await signup(req({
     body: {
       displayName: 'One Run Checker', email: 'checker@figmark.example',
@@ -4188,7 +4189,7 @@ await check('naming an exporter on one batch hands over that batch and no other'
   assert.equal(named.jsonBody.lot.exporterUserId, checker.jsonBody.user.id);
 
   const theirLots = (await exporterLots(req({ headers: theirs }), ctx)).jsonBody.lots;
-  assert.deepEqual(theirLots.map((row) => row.lot.id), ['lot_open_24'], 'that batch, and only it');
+  assert.deepEqual(theirLots.map((row) => row.lot.id), ['lot_open_24'], 'that lot, and only it');
 
   // The packing list, which is pieces and nothing about the buyers.
   const list = (await exporterLot(req({ headers: theirs, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
@@ -4242,7 +4243,7 @@ await check('a forwarder finally has a screen of their own', async () => {
   assert.equal(JSON.stringify(rows).includes('priceMinor'), false);
 });
 
-await check('only the shop that owns a batch may name who works it', async () => {
+await check('only the shop that owns a lot may name who works it', async () => {
   const stranger = await signup(req({
     body: {
       displayName: 'Not Their Shop', email: 'notshop@figmark.example',
@@ -4256,15 +4257,15 @@ await check('only the shop that owns a batch may name who works it', async () =>
   assert.equal(refused.status, 403);
 });
 
-/* ── a batch that travels a route ──────────────────────────────────────── */
-console.log('\na batch that travels a route');
+/* ── a lot that travels a route ──────────────────────────────────────── */
+console.log('\na lot that travels a route');
 
 let routeFixture;
 let routedLot;
 let earlyOrder;
 let earlyBuyer;
 
-/** An import listed with no batch behind it yet, which is the normal case. */
+/** An import listed with no lot behind it yet, which is the normal case. */
 const waitingItem = async (title) => {
   const made = await createListing(req({
     headers: auth,
@@ -4312,7 +4313,7 @@ await check('a route is a ladder you write once and reuse', async () => {
   const after = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(after.routes.some((row) => row.id === route.id));
 
-  // Correcting one keeps its identity, so the batches that named it still can.
+  // Correcting one keeps its identity, so the lots that named it still can.
   const fixed = await saveRoute(req({
     headers: auth,
     body: { id: route.id, name: 'Guangzhou air express', steps: route.steps },
@@ -4323,10 +4324,10 @@ await check('a route is a ladder you write once and reuse', async () => {
   routeFixture = fixed.jsonBody.route;
 });
 
-await check('a batch carries a copy of its route, not a pointer to one', async () => {
+await check('a lot carries a copy of its route, not a pointer to one', async () => {
   const made = await createLot(req({
     headers: auth,
-    body: { name: 'Route batch', origin: 'Guangzhou, CN', routeId: routeFixture.id },
+    body: { name: 'Route lot', origin: 'Guangzhou, CN', routeId: routeFixture.id },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const lot = made.jsonBody.lot;
@@ -4349,7 +4350,7 @@ await check('a batch carries a copy of its route, not a pointer to one', async (
   assert.equal(still.route.name, 'Guangzhou air express');
   assert.equal(still.route.steps.length, 5);
 
-  // A batch created against a route that does not exist is not created at all.
+  // A lot created against a route that does not exist is not created at all.
   const nonsense = await createLot(req({
     headers: auth, body: { name: 'Ghost route', routeId: 'rt_nope' },
   }), ctx);
@@ -4358,8 +4359,8 @@ await check('a batch carries a copy of its route, not a pointer to one', async (
   routedLot = lot;
 });
 
-await check('a batch with no route of its own travels the one that has always been here', async () => {
-  const made = await createLot(req({ headers: auth, body: { name: 'Plain batch' } }), ctx);
+await check('a lot with no route of its own travels the one that has always been here', async () => {
+  const made = await createLot(req({ headers: auth, body: { name: 'Plain lot' } }), ctx);
   assert.equal(made.status, 201);
   const body = (await lotContents(req({ headers: auth, params: { id: made.jsonBody.lot.id } }), ctx)).jsonBody;
   assert.equal(body.route.steps.length, 7, 'the seven stages, spelled out');
@@ -4367,7 +4368,7 @@ await check('a batch with no route of its own travels the one that has always be
   assert.equal(body.lot.stage, 'ordering', 'and the coarse stage still agrees with it');
 });
 
-await check('an item sold before its batch waits for one, and says so', async () => {
+await check('an item sold before its lot waits for one, and says so', async () => {
   const listing = await waitingItem('Sold before the run');
   const buyer = await newBuyer('Early Buyer');
   const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listing } }), ctx);
@@ -4381,7 +4382,7 @@ await check('an item sold before its batch waits for one, and says so', async ()
     headers: buyer.headers, params: { id: placed.jsonBody.order.id },
   }), ctx)).jsonBody;
   assert.equal(tracking.awaitingLot, true);
-  assert.equal(tracking.route, null, 'no batch, no route to read');
+  assert.equal(tracking.route, null, 'no lot, no route to read');
   // Two steps and then it stops, rather than five hollow circles implying a
   // journey nobody has booked.
   assert.deepEqual(tracking.stages, ['ordering', 'china_wh_received']);
@@ -4390,12 +4391,12 @@ await check('an item sold before its batch waits for one, and says so', async ()
   earlyBuyer = buyer;
 });
 
-await check('the list of what can go in a batch is only what could', async () => {
+await check('the list of what can go in a lot is only what could', async () => {
   const body = (await lotCandidates(req({
     headers: auth, params: { id: routedLot.id },
   }), ctx)).jsonBody;
   const ids = body.items.map((item) => item.id);
-  assert.ok(ids.includes(earlyOrder.id), 'an import with no batch is a candidate');
+  assert.ok(ids.includes(earlyOrder.id), 'an import with no lot is a candidate');
   assert.ok(body.items.every((item) => item.buyerName && item.buyerName !== 'Unknown'));
 
   // A domestic sale is never going in a crate.
@@ -4418,7 +4419,7 @@ await check('the list of what can go in a batch is only what could', async () =>
   assert.deepEqual(found.items.map((item) => item.id), [earlyOrder.id]);
 });
 
-await check('filling a batch moves the item into it, and tells the buyer', async () => {
+await check('filling a lot moves the item into it, and tells the buyer', async () => {
   const second = await waitingItem('Second in the run');
   const other = await newBuyer('Second Buyer');
   const alsoPlaced = await createOrder(req({ headers: other.headers, body: { listingId: second } }), ctx);
@@ -4434,7 +4435,7 @@ await check('filling a batch moves the item into it, and tells the buyer', async
   assert.equal(body.items.length, 2);
   assert.ok(body.items.every((item) => item.buyerName !== 'Unknown'), 'with who bought each');
 
-  // The buyer's own timeline is now the batch's, in the seller's words.
+  // The buyer's own timeline is now the lot's, in the seller's words.
   const tracking = (await orderTracking(req({
     headers: earlyBuyer.headers, params: { id: earlyOrder.id },
   }), ctx)).jsonBody;
@@ -4442,18 +4443,18 @@ await check('filling a batch moves the item into it, and tells the buyer', async
   assert.equal(tracking.route.name, 'Guangzhou air express');
   assert.equal(tracking.route.steps.length, 5);
   assert.ok(
-    tracking.order.stageHistory.some((event) => (event.note ?? '').includes('Route batch')),
+    tracking.order.stageHistory.some((event) => (event.note ?? '').includes('Route lot')),
     'and their history says where it went rather than silently growing five steps',
   );
 
-  // Adding the same item twice does nothing: it is already in a batch.
+  // Adding the same item twice does nothing: it is already in a lot.
   const again = await addItems(req({
     headers: auth, params: { id: routedLot.id }, body: { orderIds: [earlyOrder.id] },
   }), ctx);
   assert.equal(again.jsonBody.added, 0);
 });
 
-await check('one click moves the batch, and every item in it', async () => {
+await check('one click moves the lot, and every item in it', async () => {
   const before = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
   assert.equal(before.route.currentStep, 0);
 
@@ -4481,7 +4482,124 @@ await check('one click moves the batch, and every item in it', async () => {
   assert.ok(told.some((row) => row.kind === 'lot_moved' && row.title.includes('At the China warehouse')));
 });
 
-await check('a batch can be stepped back, and not past its own end', async () => {
+await check('a seller can say something without moving the lot', async () => {
+  // What actually happens between two steps: a crate sits at the forwarder for
+  // nine days and the honest thing to tell twenty buyers is not a step.
+  const said = await noteOnLot(req({
+    headers: auth, params: { id: routedLot.id },
+    body: { note: 'Still waiting on the airline — booked for Thursday.' },
+  }), ctx);
+  assert.equal(said.status, 200, JSON.stringify(said.jsonBody));
+  assert.equal(said.jsonBody.ordersUpdated, 2, 'every buyer in the lot, not just the lot');
+
+  const after = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(after.route.currentStep, 1, 'and the lot has not moved');
+  const last = after.history[after.history.length - 1];
+  assert.equal(last.note, 'Still waiting on the airline — booked for Thursday.');
+  assert.equal(last.step, 'At the China warehouse', 'filed at the step it was written at');
+
+  // The buyer reads it on their own timeline, at the same rung.
+  const tracking = (await orderTracking(req({
+    headers: earlyBuyer.headers, params: { id: earlyOrder.id },
+  }), ctx)).jsonBody;
+  const theirs = tracking.order.stageHistory[tracking.order.stageHistory.length - 1];
+  assert.equal(theirs.note, 'Still waiting on the airline — booked for Thursday.');
+  assert.equal(tracking.route.currentStep, 1, 'a note is not a move');
+
+  // Written against a step the lot has not reached yet: a seller saying what
+  // is coming files it on the rung it is about, not on the one they are on.
+  const ahead = await noteOnLot(req({
+    headers: auth, params: { id: routedLot.id },
+    body: { note: 'Booked on Thursday’s flight.', at: 2 },
+  }), ctx);
+  assert.equal(ahead.status, 200);
+  const filed = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  const written = filed.history[filed.history.length - 1];
+  assert.equal(written.step, filed.route.steps[2].name);
+  assert.equal(filed.route.currentStep, 1, 'and writing ahead is still not moving');
+
+  // A step off the end of the route is clamped rather than refused: the note
+  // is the point, and there is always a rung it belongs nearest to.
+  const far = await noteOnLot(req({
+    headers: auth, params: { id: routedLot.id }, body: { note: 'Last word.', at: 99 },
+  }), ctx);
+  assert.equal(far.status, 200);
+  const clamped = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(
+    clamped.history[clamped.history.length - 1].step,
+    clamped.route.steps[clamped.route.steps.length - 1].name,
+  );
+
+  // An empty note is not a note.
+  const blank = await noteOnLot(req({
+    headers: auth, params: { id: routedLot.id }, body: { note: '   ' },
+  }), ctx);
+  assert.equal(blank.status, 400);
+});
+
+await check('one item can travel differently from the rest of its lot', async () => {
+  // Thirty-three pieces cleared and one was pulled for inspection. The lot has
+  // not moved, and neither has the truth for thirty-three people.
+  const held = await stepItem(req({
+    headers: auth, params: { id: earlyOrder.id },
+    body: { to: 3, note: 'Pulled for inspection at customs.' },
+  }), ctx);
+  assert.equal(held.status, 200, JSON.stringify(held.jsonBody));
+
+  const board = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(board.route.currentStep, 1, 'the lot itself is where it was');
+  const row = board.items.find((item) => item.id === earlyOrder.id);
+  assert.equal(row.currentStep, 3);
+  assert.equal(row.ownStep, true, 'and the screen says so rather than implying it');
+  assert.ok(board.items.some((item) => item.id !== earlyOrder.id && item.ownStep === false));
+
+  // Its buyer reads its position, not the lot's.
+  const mine = (await orderTracking(req({
+    headers: earlyBuyer.headers, params: { id: earlyOrder.id },
+  }), ctx)).jsonBody;
+  assert.equal(mine.route.currentStep, 3);
+  assert.equal(
+    mine.order.stageHistory[mine.order.stageHistory.length - 1].note,
+    'Pulled for inspection at customs.',
+  );
+
+  // A note on one item alone, with no move.
+  const noted = await stepItem(req({
+    headers: auth, params: { id: earlyOrder.id }, body: { note: 'Released, back on the next flight.' },
+  }), ctx);
+  assert.equal(noted.status, 200);
+  const stillThere = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(stillThere.items.find((item) => item.id === earlyOrder.id).currentStep, 3);
+
+  // Neither a note nor a step is nothing to record.
+  const nothing = await stepItem(req({ headers: auth, params: { id: earlyOrder.id }, body: {} }), ctx);
+  assert.equal(nothing.status, 400);
+
+  // Moving the lot brings the stray item back in line, rather than leaving it
+  // stuck at a position nobody remembers setting.
+  await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 2 } }), ctx);
+  const synced = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(synced.items.find((item) => item.id === earlyOrder.id).currentStep, 2);
+  assert.equal(synced.items.find((item) => item.id === earlyOrder.id).ownStep, false);
+
+  await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 1 } }), ctx);
+});
+
+await check('somebody else’s item is not theirs to move or annotate', async () => {
+  const stranger = await newBuyer('Not The Shop');
+  for (const body of [{ to: 2 }, { note: 'mine now' }]) {
+    const refused = await stepItem(req({
+      headers: stranger.headers, params: { id: earlyOrder.id }, body,
+    }), ctx);
+    assert.equal(refused.status, 403);
+  }
+  const refusedNote = await noteOnLot(req({
+    headers: stranger.headers, params: { id: routedLot.id }, body: { note: 'mine now' },
+  }), ctx);
+  assert.equal(refusedNote.status, 403);
+});
+
+await check('a lot can be stepped back, and not past its own end', async () => {
   // The commonest correction on any board is a button pressed once too often,
   // and twenty buyers have already been told.
   const back = await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 0 } }), ctx);
@@ -4508,7 +4626,7 @@ await check('a batch can be stepped back, and not past its own end', async () =>
   assert.ok(tracking.order.completedAt);
 });
 
-await check('a batch is only steppable by the shop that owns it', async () => {
+await check('a lot is only steppable by the shop that owns it', async () => {
   const stranger = await signup(req({
     body: {
       displayName: 'Not This Shop', email: 'notthisshop@figmark.example',
@@ -4534,10 +4652,10 @@ await check('a batch is only steppable by the shop that owns it', async () => {
   assert.equal(hijack.status, 404);
 });
 
-await check('the buyer sees one timeline per batch, not one per item', async () => {
+await check('the buyer sees one timeline per lot, not one per item', async () => {
   const body = (await myItems(req({ headers: earlyBuyer.headers }), ctx)).jsonBody;
   const group = body.groups.find((row) => row.lot?.id === routedLot.id);
-  assert.ok(group, 'their item is grouped under the batch it travels in');
+  assert.ok(group, 'their item is grouped under the lot it travels in');
   assert.equal(group.kind, 'lot');
   assert.equal(group.lot.steps.length, 5);
   assert.equal(group.lot.currentStep, 4);
@@ -4545,7 +4663,7 @@ await check('the buyer sees one timeline per batch, not one per item', async () 
   assert.ok(group.items.length >= 1);
   assert.ok(group.sellerName);
 
-  // A second item in the same batch joins the same group rather than making
+  // A second item in the same lot joins the same group rather than making
   // a second identical timeline.
   const extra = await waitingItem('Also theirs');
   const alsoPlaced = await createOrder(req({ headers: earlyBuyer.headers, body: { listingId: extra } }), ctx);
@@ -4563,10 +4681,10 @@ await check('the buyer sees one timeline per batch, not one per item', async () 
   if (waiting) assert.equal(after.groups[0].kind, 'awaiting');
 });
 
-await check('the two ways to move a batch cannot disagree about where it is', async () => {
+await check('the two ways to move a lot cannot disagree about where it is', async () => {
   // `advanceStage` names one of the seven fixed stages and the route screen
   // names a step. They are two doors onto one lot, so both have to set its
-  // position - otherwise a batch advanced through the old door reads as still
+  // position - otherwise a lot advanced through the old door reads as still
   // at step zero and every buyer in it is told nothing happened.
   const made = await createLot(req({ headers: auth, body: { name: 'Two doors' } }), ctx);
   const id = made.jsonBody.lot.id;
@@ -4584,12 +4702,12 @@ await check('the two ways to move a batch cannot disagree about where it is', as
   assert.equal(last.step, 'India received / customs');
 });
 
-await check('a route can be dropped, and the batches on it carry on', async () => {
+await check('a route can be dropped, and the lots on it carry on', async () => {
   const gone = await deleteRoute(req({ headers: auth, params: { id: routeFixture.id } }), ctx);
   assert.equal(gone.status, 200);
   assert.equal((await listRoutes(req({ headers: auth }), ctx)).jsonBody.routes.some((r) => r.id === routeFixture.id), false);
 
-  // The batch carries its own copy, which is the reason it carries one.
+  // The lot carries its own copy, which is the reason it carries one.
   const still = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
   assert.equal(still.route.steps.length, 5);
   assert.equal(still.route.name, 'Guangzhou air express');
@@ -4747,7 +4865,7 @@ await check('a template’s ladder travels to the listing, and then to the order
   const tracking = (await orderTracking(req({
     headers: buyer.headers, params: { id: placed.jsonBody.order.id },
   }), ctx)).jsonBody;
-  // The shop's own words, before any batch exists.
+  // The shop's own words, before any lot exists.
   assert.equal(tracking.preLot.name, 'China standard');
   assert.equal(tracking.preLot.steps[1].name, 'At our Guangzhou desk');
   assert.equal(tracking.preLot.currentStep, 0, 'nothing has reached the warehouse yet');
@@ -4796,8 +4914,8 @@ await check('the order card carries everything it needs answering about', async 
   }
 });
 
-await check('the template picks the batch route too, so nobody picks it twice', async () => {
-  // The last link: choose the template once when listing, and the batch opened
+await check('the template picks the lot route too, so nobody picks it twice', async () => {
+  // The last link: choose the template once when listing, and the lot opened
   // from that order already knows which ladder it should travel.
   const route = await saveRoute(req({
     headers: auth,
@@ -4826,7 +4944,7 @@ await check('the template picks the batch route too, so nobody picks it twice', 
   assert.equal(row.lotRouteId, route.jsonBody.route.id, 'the order card carries it through');
 });
 
-await check('one order, one move: a batch opened and the order filed into it', async () => {
+await check('one order, one move: a lot opened and the order filed into it', async () => {
   const filed = await assignOrderToLot(req({
     headers: auth, params: { id: templatedOrder.id },
     body: {
@@ -4838,10 +4956,10 @@ await check('one order, one move: a batch opened and the order filed into it', a
   }), ctx);
   assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
   assert.equal(filed.jsonBody.order.lotId, filed.jsonBody.lot.id);
-  assert.ok(filed.jsonBody.lot.lotNumber, 'and the batch has a number people can say');
+  assert.ok(filed.jsonBody.lot.lotNumber, 'and the lot has a number people can say');
 
   // The buyer's timeline is now both halves: the shop's own words, then the
-  // batch's route.
+  // lot's route.
   const tracking = (await orderTracking(req({
     headers: templatedBuyer.headers, params: { id: templatedOrder.id },
   }), ctx)).jsonBody;
@@ -4855,7 +4973,7 @@ await check('one order, one move: a batch opened and the order filed into it', a
   }), ctx);
   assert.equal(again.status, 409);
 
-  // A batch that does not exist does not quietly become a new one.
+  // A lot that does not exist does not quietly become a new one.
   const other = await newBuyer('Another Waiting');
   const listing = await createListing(req({
     headers: auth, body: { title: 'Waiting too', priceMinor: 9_000, sourcing: 'import' },

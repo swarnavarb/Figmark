@@ -10,7 +10,7 @@ import {
   ApiRequestError,
   api,
   type ConsignmentRow,
-  type DistributionBatch,
+  type DistributionLot,
   type DistributionRow,
   type ProviderCard,
   type ServicesHub,
@@ -22,7 +22,7 @@ import { useSession } from '../session';
 /**
  * The trades around the trade.
  *
- * A batch of figures reaches a buyer in Kochi because four different people
+ * A lot of figures reaches a buyer in Kochi because four different people
  * each did one job: somebody checked the pieces in Guangzhou, somebody flew the
  * crate, somebody took delivery in Mumbai and broke it into fifteen parcels,
  * and somebody held the money until each one arrived. Three of those four were
@@ -172,8 +172,8 @@ export function ServiceDirectoryPage() {
 
       {!meta.browsable ? (
         <EmptyState icon="🔒" title="There is no list">
-          {meta.plural} are named by a shop on one batch, so nobody is on offer here. If a shop has
-          named you, the batch is waiting under My service.
+          {meta.plural} are named by a shop on one lot, so nobody is on offer here. If a shop has
+          named you, the lot is waiting under My service.
         </EmptyState>
       ) : (
         <>
@@ -278,7 +278,7 @@ export function MyServicesPage() {
         <div>
           <h1>My service</h1>
           <p className="muted">
-            What you do for other people’s batches, and the screen for doing it.
+            What you do for other people’s lots, and the screen for doing it.
           </p>
         </div>
       </div>
@@ -292,7 +292,7 @@ export function MyServicesPage() {
           {hub.mine.length === 0 ? (
             <EmptyState icon="◍" title="You don’t provide one yet">
               Freight forwarding and domestic handling are open to anyone — put yourself on the list
-              and shops can name you on a batch. Escrow is granted by Figmark, and an exporter is
+              and shops can name you on a lot. Escrow is granted by Figmark, and an exporter is
               named by a shop on one run.
             </EmptyState>
           ) : (
@@ -450,7 +450,7 @@ export function ConsignmentsPage() {
       <div className="page__head">
         <div>
           <h1>Consigned to you</h1>
-          <p className="muted">Batches a shop has named you on. Weight and pieces, as loaded.</p>
+          <p className="muted">Lots a shop has named you on. Weight and pieces, as loaded.</p>
         </div>
       </div>
 
@@ -460,7 +460,7 @@ export function ConsignmentsPage() {
         <p className="muted">Loading…</p>
       ) : rows.length === 0 ? (
         <EmptyState icon="✈" title="Nothing consigned yet">
-          When a shop picks you on a batch it turns up here, with what it weighs.
+          When a shop picks you on a lot it turns up here, with what it weighs.
         </EmptyState>
       ) : (
         <div className="stack">
@@ -493,7 +493,7 @@ export function ConsignmentsPage() {
 
 /* ── The handler's console ──────────────────────────────────────────────── */
 
-/** The batches this handler has to get out, counted in parcels. */
+/** The lots this handler has to get out, counted in parcels. */
 export function DistributionPage() {
   const [rows, setRows] = useState<DistributionRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -501,9 +501,9 @@ export function DistributionPage() {
 
   const load = useCallback(async () => {
     try {
-      setRows((await api.distribution()).batches);
+      setRows((await api.distribution()).lots);
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your batches.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.');
     }
   }, []);
 
@@ -522,7 +522,7 @@ export function DistributionPage() {
         <div>
           <h1>To distribute</h1>
           <p className="muted">
-            Batches named to you. Counted in parcels, not pieces — three items for one buyer is one
+            Lots named to you. Counted in parcels, not pieces — three items for one buyer is one
             job.
           </p>
         </div>
@@ -534,7 +534,7 @@ export function DistributionPage() {
         <p className="muted">Loading…</p>
       ) : rows.length === 0 ? (
         <EmptyState icon="📦" title="Nothing to hand out yet">
-          When a shop names you on a batch it lands here, with the parcels to make up.
+          When a shop names you on a lot it lands here, with the parcels to make up.
         </EmptyState>
       ) : (
         <div className="stack">
@@ -564,7 +564,7 @@ export function DistributionPage() {
 }
 
 /**
- * One batch as parcels to send.
+ * One lot as parcels to send.
  *
  * The mirror image of the exporter's packing list. Theirs is pieces and never
  * customers, because they pack a crate; a handler's entire job is which box
@@ -572,15 +572,15 @@ export function DistributionPage() {
  * prices, which stay between the shop and its buyer.
  */
 function DistributionDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
-  const [data, setData] = useState<DistributionBatch | null>(null);
+  const [data, setData] = useState<DistributionLot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setData(await api.distributionBatch(lotId));
+      setData(await api.distributionLot(lotId));
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load that batch.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load that lot.');
     }
   }, [lotId]);
 

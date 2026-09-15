@@ -947,7 +947,7 @@ code, kbd, samp, pre {
   background: var(--grad-blue);
   transform-origin: left center;
   /* Defaults to 1, not 0. Two other meters in the app size themselves with an
-     inline width instead of this variable - the batch stage bar and the
+     inline width instead of this variable - the lot stage bar and the
      social fill meter - and a default of 0 scaled both of them to nothing. */
   transform: scaleX(var(--fill, 1));
   transition: transform var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
@@ -1100,6 +1100,9 @@ code, kbd, samp, pre {
 }
 .field textarea { resize: vertical; min-height: 92px; line-height: 1.55; }
 .field__hint { font-size: var(--t-xs); color: var(--text-faint); }
+/* A link in a hint is still a link: the sentence is quiet, the way out of it
+   is not. */
+.field__hint a { color: var(--accent-text); text-decoration: underline; }
 .field-row { display: grid; gap: 15px; grid-template-columns: 1fr 1fr; }
 
 .notice {
@@ -1217,6 +1220,7 @@ code, kbd, samp, pre {
 .stack { display: grid; gap: 14px; }
 .row { display: flex; align-items: center; gap: 10px; }
 .row--between { justify-content: space-between; }
+.row--tight { gap: 7px; flex-shrink: 0; }
 .spread { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 
 .kv { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: var(--t-sm); }
@@ -1764,7 +1768,7 @@ code, kbd, samp, pre {
   background: var(--surface-2);
 }
 
-/* A badge that is a fact rather than a status: "no batch" is not a warning. */
+/* A badge that is a fact rather than a status: "no lot" is not a warning. */
 .badge--quiet { background: transparent; border: 1px solid var(--border); color: var(--text-faint); }
 .door {
   display: grid;
@@ -1811,11 +1815,11 @@ code, kbd, samp, pre {
 .sections .chip { flex: none; }
 
 /* ── A consignment ─────────────────────────────────────────────────────────
-   One card for the whole life of a batch: opening it, filling it, watching it
+   One card for the whole life of a lot: opening it, filling it, watching it
    move. It replaced two - an admin card on its own page and a tracking card in
    the sell tab - that described the same object and agreed about none of it. */
 
-.batch {
+.lot {
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--surface);
@@ -1824,51 +1828,51 @@ code, kbd, samp, pre {
 }
 /* On its way: the packing figures it was worked by are history the moment it
    is on a plane, so the card is a name, a stage and a tracking number. */
-.batch--moving { border-color: rgba(251, 191, 36, 0.3); }
+.lot--moving { border-color: rgba(251, 191, 36, 0.3); }
 
-.batch__head {
+.lot__head {
   display: flex; align-items: center; gap: 10px;
   width: 100%;
   padding: 13px 14px;
   border: 0; background: none; color: inherit; font: inherit;
   text-align: left; cursor: pointer;
 }
-.batch__head:hover { background: var(--surface-2); }
-.batch__title { flex: 1; min-width: 0; display: grid; gap: 1px; }
-.batch__name {
+.lot__head:hover { background: var(--surface-2); }
+.lot__title { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.lot__name {
   font-size: var(--t-base); font-weight: var(--w-semi); letter-spacing: -0.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.batch__bar { height: 2px; background: var(--surface-2); }
-.batch__bar span { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
+.lot__bar { height: 2px; background: var(--surface-2); }
+.lot__bar span { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
 
 /* Where the parcels actually are, in a sentence. A pip rather than a second
    badge: the stage already has one, and two badges on a card is a quiz. */
-.batch__status {
+.lot__status {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 14px;
   font-size: var(--t-xs); color: var(--text-dim);
 }
-.batch__pip {
+.lot__pip {
   flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
   background: var(--text-faint);
 }
-.batch__pip--filling, .batch__pip--prepping { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
-.batch__pip--china_done, .batch__pip--india, .batch__pip--domestic {
+.lot__pip--filling, .lot__pip--prepping { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.lot__pip--china_done, .lot__pip--india, .lot__pip--domestic {
   background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.batch__pip--completed { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.lot__pip--completed { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 
-.batch__body { display: grid; gap: 12px; padding: 13px 14px; border-top: 1px solid var(--border); }
-.batch__foot {
+.lot__body { display: grid; gap: 12px; padding: 13px 14px; border-top: 1px solid var(--border); }
+.lot__foot {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 9px 12px 10px;
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
 
-/* A line of context that is not a warning: "12 not in a batch" is a fact. */
+/* A line of context that is not a warning: "12 not in a lot" is a fact. */
 .note-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   /* The line inside never wraps, so without this the row's minimum width is
@@ -2792,7 +2796,7 @@ a.provider__name:hover { color: var(--accent-text); }
   margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border);
 }
 
-/* A job somebody has been handed: a batch consigned, or a batch to break up. */
+/* A job somebody has been handed: a lot consigned, or a lot to break up. */
 .jobcard {
   display: grid; gap: 5px; width: 100%;
   padding: 14px;
@@ -2859,7 +2863,7 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 /* Ticked reads as ticked without a second colour to learn. */
 .tickbtn.is-on::before { content: '✓ '; }
-/* The batch control is a door, not a tick: it says where the item went and
+/* The lot control is a door, not a tick: it says where the item went and
    goes there, so it carries an arrow rather than a checkmark. */
 .tickbtn--link {
   background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-text);
@@ -2868,7 +2872,7 @@ a.provider__name:hover { color: var(--accent-text); }
 
 /* Back out of a console without hunting for the bar. */
 .backlink {
-  display: inline-block; margin-bottom: 10px;
+  display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px;
   padding: 0; border: 0; background: none;
   color: var(--text-dim); font: inherit; font-size: var(--t-sm); text-decoration: none;
   cursor: pointer;
@@ -2878,7 +2882,7 @@ a.provider__name:hover { color: var(--accent-text); }
 /* ── Routes, ladders and the items that ride them ──────────────────────── */
 
 /*
- * One ladder, drawn the same way for the seller working a batch and the buyer
+ * One ladder, drawn the same way for the seller working a lot and the buyer
  * watching it. Three states and no key: a tick for done, a dot for here, and
  * nothing for what has not happened - which is the point, because an empty
  * circle is a promise and a blank is a fact.
@@ -2915,7 +2919,68 @@ a.provider__name:hover { color: var(--accent-text); }
 /* A preview in a form is a list, not a progress bar: nothing has happened yet. */
 .ladder--preview .ladder__row { color: var(--text-dim); padding: 5px 0; }
 
-/* The builder. A grip, a number, a name, and three small buttons. */
+/*
+ * The ladder with what was actually said on it.
+ *
+ * A rung stops being one line and becomes a small stack - the step, what it
+ * means, and every note written while the lot sat there - so the answer to
+ * "what is happening" and the answer to "why is it taking so long" are read in
+ * the same place rather than in two.
+ */
+.ladder__body { display: grid; gap: 3px; min-width: 0; }
+.ladder__note {
+  display: grid; gap: 2px;
+  margin-top: 4px; padding: 7px 9px;
+  border-left: 2px solid var(--accent-line); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface-2);
+  font-size: var(--t-xs); color: var(--text-dim);
+}
+.ladder__note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ladder__note-when { font-size: var(--t-2xs); color: var(--text-faint); }
+
+/* The controls take no space until they are wanted, so a nine-step ladder is a
+   ladder rather than nine rows of buttons nobody is going to press. Collapsed
+   rather than hidden, because a button removed from the flow is a button the
+   keyboard cannot reach. */
+.ladder--live .ladder__row { padding: 8px 0; }
+.ladder__acts {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  max-height: 0; overflow: hidden; opacity: 0;
+  transition: max-height var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
+}
+.ladder__row:hover > .ladder__body > .ladder__acts,
+.ladder__row:focus-within > .ladder__body > .ladder__acts,
+.ladder__row.is-current > .ladder__body > .ladder__acts {
+  max-height: 80px; margin-top: 6px; opacity: 1;
+}
+.ladder__act {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: none; color: var(--text-faint);
+  font: inherit; font-size: var(--t-2xs); cursor: pointer;
+}
+.ladder__act:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.ladder__act:disabled { cursor: default; }
+.ladder__act--move { color: var(--accent-text); border-color: var(--accent-line); }
+/* Touch has no hover, so on a phone every rung simply shows its controls. */
+@media (hover: none) {
+  .ladder__acts { max-height: 80px; margin-top: 6px; opacity: 1; }
+}
+
+.ladder__write { display: grid; gap: 7px; margin-top: 6px; }
+.ladder__write textarea {
+  width: 100%; min-width: 0; resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text);
+  font: inherit; font-size: var(--t-sm);
+}
+.ladder__write textarea:focus { outline: none; border-color: var(--accent); }
+.ladder__write-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ladder__write-acts .field__hint { flex: 1 1 140px; min-width: 0; }
+
+/* The builder. A grip, a number, a name, a description and small buttons. */
 .steps { display: grid; gap: 8px; }
 /* The name gets its own row. On one line with the handle, the number and three
    buttons beside it, a 390px screen left about 160px for the text - and
@@ -2924,7 +2989,7 @@ a.provider__name:hover { color: var(--accent-text); }
 .step {
   display: grid;
   grid-template-columns: auto auto 1fr auto;
-  grid-template-areas: 'grip no . acts' 'name name name name';
+  grid-template-areas: 'grip no . acts' 'name name name name' 'desc desc desc desc';
   align-items: center; gap: 6px 8px;
   padding: 8px 9px;
   border: 1px solid var(--border); border-radius: var(--r-sm);
@@ -2934,6 +2999,80 @@ a.provider__name:hover { color: var(--accent-text); }
 .step__no { grid-area: no; }
 .step__acts { grid-area: acts; }
 .step__name { grid-area: name; }
+.step__desc { grid-area: desc; }
+/* Quieter than the name, because it is the sentence under it: the seller reads
+   the ladder by its names and only drops into the descriptions to correct one. */
+.step__desc {
+  min-width: 0; width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-dim); font-size: var(--t-xs);
+}
+.step__desc:hover { background: var(--surface-2); }
+.step__desc:focus {
+  background: var(--surface-2); border-color: var(--accent-line); outline: none;
+  color: var(--text);
+}
+
+/*
+ * The split builder: one list of steps, two halves on the screen.
+ *
+ * The halves are not two lists. A step's side is a property of the step, so
+ * dragging one across the divider is the same operation as dragging it up a
+ * place - which is what keeps the two ladders from ever overlapping the way
+ * the separate pre-lot template used to.
+ */
+.steps--split { gap: 0; }
+.stepsec { display: grid; gap: 8px; padding: 2px 0 14px; }
+.stepsec__head { display: grid; gap: 2px; }
+.stepsec__head h3 {
+  margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi);
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim);
+}
+.stepsec__none {
+  margin: 0; padding: 10px 12px;
+  border: 1px dashed var(--border); border-radius: var(--r-sm);
+  font-size: var(--t-xs); color: var(--text-faint);
+}
+
+/* Where the item stops travelling alone. Drawn, because it is the one thing on
+   this screen a seller has to understand before the rest of it means anything. */
+.joinline {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
+  margin: 2px 0 16px;
+  font-size: var(--t-2xs); letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--accent-text);
+}
+.joinline::before, .joinline::after {
+  content: ''; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-line), transparent);
+}
+.joinline span { min-width: 0; text-align: center; }
+
+/*
+ * The route library: a shape you can read, not a name in a dropdown.
+ *
+ * A seller choosing between "Courier, end to end" and "Supplier to forwarder"
+ * is choosing between two journeys, and the difference lives in the step count
+ * and where the hand-over falls - so both are on the row.
+ */
+.rlist { display: grid; gap: 8px; }
+.rrow {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 13px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: var(--text);
+  font: inherit; text-align: left; text-decoration: none; cursor: pointer;
+}
+.rrow:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.rrow--fixed { cursor: default; background: var(--surface-2); }
+.rrow--fixed:hover { border-color: var(--border); background: var(--surface-2); }
+.rrow__body { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.rrow__name { font-weight: var(--w-semi); font-size: var(--t-base); }
+.rrow__sum {
+  font-size: var(--t-xs); color: var(--accent-text); font-variant-numeric: tabular-nums;
+}
+.rrow__note { font-size: var(--t-xs); color: var(--text-faint); }
 .step.is-dragging { opacity: 0.5; }
 .step.is-over { border-color: var(--accent); box-shadow: 0 -2px 0 var(--accent) inset; }
 /* Only the grip drags, so tapping into the field to rename a step does not
@@ -2963,7 +3102,7 @@ a.provider__name:hover { color: var(--accent-text); }
 .iconbtn:disabled { opacity: 0.35; cursor: default; }
 .iconbtn--danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
 
-/* One item in a batch, and who is waiting for it. */
+/* One item in a lot, and who is waiting for it. */
 .lotitem {
   display: grid; gap: 3px;
   padding: 10px 0; border-bottom: 1px solid var(--border);
@@ -2977,7 +3116,7 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 .lotitem__acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
 
-/* Picking items into a batch, in place rather than in a dialog: the list you
+/* Picking items into a lot, in place rather than in a dialog: the list you
    are filling is the context for what you are adding to it. */
 .picker-panel {
   padding: 12px;
@@ -2986,7 +3125,7 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 .picker-panel .search { max-width: none; }
 
-/* The buyer's view: one card per batch, whatever is in it. */
+/* The buyer's view: one card per lot, whatever is in it. */
 .itemgroup {
   display: grid; gap: 6px;
   padding: 14px;
@@ -3004,7 +3143,7 @@ a.provider__name:hover { color: var(--accent-text); }
   font-size: var(--t-sm);
 }
 
-/* Fields that are not decisions, folded away on the form that opens a batch. */
+/* Fields that are not decisions, folded away on the form that opens a lot. */
 .extras {
   padding: 10px 12px;
   border: 1px solid var(--border); border-radius: var(--r-md);
@@ -3043,7 +3182,7 @@ a.provider__name:hover { color: var(--accent-text); }
 a.order__name:hover { color: var(--accent-text); }
 .order__facts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .order__acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
-/* The lot control is a link where the batch exists and a button where it does
+/* The lot control is a link where the lot exists and a button where it does
    not, so it is styled by what it looks like rather than what it is. */
 .order__acts .tickbtn { display: block; text-decoration: none; }
 .order__foot {
@@ -3061,14 +3200,14 @@ a.order__name:hover { color: var(--accent-text); }
 .chipfact.is-yes { border-color: rgba(52, 211, 153, 0.4); color: var(--ok); background: var(--ok-soft); }
 .chipfact.is-wait { border-color: rgba(251, 191, 36, 0.4); color: var(--warn); background: var(--warn-soft); }
 
-/* Where the batch is on its own route, then what the parcels are doing. */
-.batch__status strong { color: var(--text); font-weight: var(--w-semi); }
-.batch__no {
+/* Where the lot is on its own route, then what the parcels are doing. */
+.lot__status strong { color: var(--text); font-weight: var(--w-semi); }
+.lot__no {
   margin-right: 7px; padding: 1px 6px;
   border-radius: var(--r-sm); background: var(--surface-2);
   font-size: var(--t-xs); color: var(--text-dim); font-variant-numeric: tabular-nums;
 }
-.batch__crew { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 14px 10px; }
+.lot__crew { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 14px 10px; }
 
 /* A template: what it fills in, and the journey it sets up. */
 .tplcard {
@@ -3619,9 +3758,9 @@ a.order__name:hover { color: var(--accent-text); }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* The batch's sayable identifier, beside the name it was given. Both, because
+/* The lot's sayable identifier, beside the name it was given. Both, because
    a list elsewhere may refer to either and they have to be recognisably the
-   same batch. */
+   same lot. */
 .lothead__no {
   font-family: var(--mono);
   font-size: var(--t-2xs);
@@ -3636,7 +3775,7 @@ a.order__name:hover { color: var(--accent-text); }
 
 /* A labelled toggle on an order row.
  *
- * The warehouse tick and the batch action carry their word with them. They
+ * The warehouse tick and the lot action carry their word with them. They
  * were bare icons with a `title`, which is invisible on touch: the device
  * this is worked on has no hover, so the tooltip never fires and the control
  * is a glyph nobody can identify. Two extra words per row is the right price
@@ -3681,7 +3820,7 @@ a.order__name:hover { color: var(--accent-text); }
 /* ── Choosing one of a few things ──────────────────────────────────────────
  *
  * A radio list you can read, rather than a select plus a preview plus a mode
- * toggle. Choosing how a batch travels is the one real decision in opening
+ * toggle. Choosing how a lot travels is the one real decision in opening
  * one, so the options are laid out as things with names and summaries and the
  * choice is a tap on the whole row.
  */
@@ -3762,3 +3901,9 @@ a.order__name:hover { color: var(--accent-text); }
 }
 .disclose:hover { color: var(--text); border-color: var(--text-faint); }
 .disclose .faint { margin-left: auto; }
+/* Inside a list of items rather than between two sections of a form. */
+.disclose--sm {
+  margin-top: 6px; padding: 7px 10px;
+  border-style: solid; border-color: var(--border);
+  font-size: var(--t-xs); font-weight: var(--w-normal);
+}

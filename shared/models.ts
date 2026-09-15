@@ -135,7 +135,7 @@ export interface User extends BaseDocument {
    */
   forwarderProfile: ForwarderProfile | null;
   /**
-   * The India end of the same journey: whoever takes delivery of a batch and
+   * The India end of the same journey: whoever takes delivery of a lot and
    * gets the parcels to the buyers. Same account base as the forwarder, for
    * the same reason - one person is often a seller too.
    */
@@ -342,7 +342,7 @@ export interface HandlerProfile {
   /** What they charge per parcel handled, in minor units. Indicative. */
   perParcelFeeMinor: number | null;
   /**
-   * Ratings from the shops whose batches they have actually distributed - the
+   * Ratings from the shops whose lots they have actually distributed - the
    * same completed-work rule as everywhere else.
    */
   trust: TrustSignals;
@@ -386,14 +386,14 @@ export interface Listing extends BaseDocument {
   /**
    * Demand pooling, opt-in per listing.
    *
-   * Lives here rather than on the lot because a shipment batch can carry five
+   * Lives here rather than on the lot because a shipment lot can carry five
    * unrelated items, each with its own demand: "twenty people must want *this*
    * figure before I commit the cash" is a fact about the item, not the crate.
    * Null for an ordinary listing.
    */
   preOrder: PreOrder | null;
   /**
-   * The shipment batch this item travels in. Seller-side bookkeeping: buyers
+   * The shipment lot this item travels in. Seller-side bookkeeping: buyers
    * never see the lot itself, only the tracking it produces.
    */
   lotId: string | null;
@@ -401,9 +401,9 @@ export interface Listing extends BaseDocument {
    * In hand or imported.
    *
    * Determined by `lotId` rather than chosen alongside it: an import is a
-   * consignment, and the batch is what carries the stages a buyer waits on, so
-   * an imported item outside a batch has nowhere for its tracking to come from.
-   * A batch means import; no batch means it ships from the seller's shelf.
+   * consignment, and the lot is what carries the stages a buyer waits on, so
+   * an imported item outside a lot has nowhere for its tracking to come from.
+   * A lot means import; no lot means it ships from the seller's shelf.
    *
    * Optional on the type because listings written before this field existed do
    * not carry it; `sourcingOf` resolves those rather than showing a blank.
@@ -434,7 +434,7 @@ export interface Listing extends BaseDocument {
   bundle?: boolean;
   photos: ListingPhoto[];
   /**
-   * The ladder a buyer reads before this item is in a batch.
+   * The ladder a buyer reads before this item is in a lot.
    *
    * Set from the Quick Post template it was listed with, and snapshotted onto
    * the order at purchase for the same reason a lot snapshots its route: the
@@ -443,7 +443,7 @@ export interface Listing extends BaseDocument {
    */
   preLotRoute?: LotRoute | null;
   /**
-   * The route template a batch made from this item should travel.
+   * The route template a lot made from this item should travel.
    *
    * A pointer rather than a copy, because nothing is travelling it yet - it is
    * a suggestion the "add to a lot" screen pre-selects when the seller opens
@@ -587,7 +587,7 @@ export interface StageEvent {
 }
 
 /**
- * A shipment batch: the items a seller is moving in one consignment.
+ * A shipment lot: the items a seller is moving in one consignment.
  *
  * Purely seller-side bookkeeping. Buyers never see a lot, its name, or how many
  * other people's items share the crate - they see the tracking it produces,
@@ -601,9 +601,9 @@ export interface Lot extends BaseDocument {
   /** Seller's own label, e.g. "Guangzhou run - September". Never shown to buyers. */
   name: string;
   description: string;
-  /** Where the batch is coming from, e.g. "Guangzhou, CN". Seller-facing. */
+  /** Where the lot is coming from, e.g. "Guangzhou, CN". Seller-facing. */
   origin: string;
-  /** Who the batch is bought from. Null until the seller fills it in. */
+  /** Who the lot is bought from. Null until the seller fills it in. */
   supplier: LotSupplier | null;
   status: LotStatus;
   stage: LotStage;
@@ -615,12 +615,12 @@ export interface Lot extends BaseDocument {
   /** Null until the seller picks a forwarder or enters one manually. */
   forwarder: LotForwarder | null;
   /**
-   * Who takes the batch in India and gets the parcels out. Null until named,
-   * which is most batches: a shop dispatching its own is the common case.
+   * Who takes the lot in India and gets the parcels out. Null until named,
+   * which is most lots: a shop dispatching its own is the common case.
    */
   handler?: LotHandler | null;
   /**
-   * The exporter named on this batch, if the shop named one.
+   * The exporter named on this lot, if the shop named one.
    *
    * Separate from the store-wide `export` right, which stays: that is a
    * standing arrangement with a supplier who packs everything, and this is one
@@ -629,15 +629,15 @@ export interface Lot extends BaseDocument {
    */
   exporterUserId?: string | null;
   /**
-   * The short number people actually use for this batch.
+   * The short number people actually use for this lot.
    *
    * Derived from the id, so it needs no counter and no lock, and stored rather
    * than recomputed so it cannot change under a buyer who wrote it down.
-   * Absent on batches opened before it existed, which read it from their id.
+   * Absent on lots opened before it existed, which read it from their id.
    */
   lotNumber?: string;
   /**
-   * The ladder this batch travels, snapshotted from the seller's template.
+   * The ladder this lot travels, snapshotted from the seller's template.
    *
    * A copy rather than a reference: a route is a template, and editing the
    * template must not rewrite the timeline a buyer has been reading for three
@@ -662,9 +662,9 @@ export interface LotHandler {
 /**
  * The overseas seller or agent a lot is bought from.
  *
- * Distinct from the forwarder, which moves the batch, and from the Figmark
+ * Distinct from the forwarder, which moves the lot, and from the Figmark
  * account listing the items - this is the counterparty at the origin end, kept
- * so a batch can be reconciled against their invoice months later.
+ * so a lot can be reconciled against their invoice months later.
  */
 export interface LotSupplier {
   name: string;
@@ -697,7 +697,7 @@ export interface LotForwarder {
 /** Inputs to the landed-cost / profit calculator. All amounts in minor units. */
 export interface LotCostModel {
   currency: string;
-  /** Agent/supplier invoice total for the batch. */
+  /** Agent/supplier invoice total for the lot. */
   goodsCostMinor: number;
   /** China -> India freight. */
   freightMinor: number;
@@ -721,7 +721,7 @@ export interface LotCostModel {
 export interface Order extends BaseDocument {
   /**
    * Partition key. Null once meant "impossible"; a direct domestic sale has no
-   * shipment batch, so it is stored under the sentinel below rather than left
+   * shipment lot, so it is stored under the sentinel below rather than left
    * unpartitioned.
    */
   lotId: string;
@@ -760,19 +760,29 @@ export interface Order extends BaseDocument {
   stage: FulfilmentStage;
   stageHistory: StageEvent[];
   /**
+   * Where this one item has got to on its lot's route.
+   *
+   * Absent for almost every order, and that is the point: an item rides its
+   * lot, and the lot's position is the answer. It is written only when the
+   * seller moves this item on its own - the parcel held at customs while the
+   * rest of the crate cleared, the piece that missed the flight - and from
+   * then on this item's timeline is its own.
+   */
+  currentStep?: number;
+  /**
    * Who brought this buyer in, when they arrived through a share link.
    *
    * Credit for filling a group-buy, and the only thing that makes sharing one
-   * worth a person's reputation: recruiting for a batch that never ships is
+   * worth a person's reputation: recruiting for a lot that never ships is
    * how you lose friends, so whoever did it is recorded next to whether it
    * shipped.
    */
   broughtBy?: string | null;
   /**
-   * The ladder this item read before it joined a batch.
+   * The ladder this item read before it joined a lot.
    *
-   * Copied from the listing at purchase. Once the item is in a batch the
-   * batch's route takes over and this stays as the first half of the journey,
+   * Copied from the listing at purchase. Once the item is in a lot the
+   * lot's route takes over and this stays as the first half of the journey,
    * which is what the buyer's timeline shows above the join.
    */
   preLotRoute?: LotRoute | null;

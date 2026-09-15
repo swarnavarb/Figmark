@@ -63,7 +63,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     repository.listLots(),
   ]);
   const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
-  // The batch contributes exactly one buyer-visible fact: when it ships.
+  // The lot contributes exactly one buyer-visible fact: when it ships.
   const dispatchByLot = new Map(lots.map((l) => [l.id, l.estimatedDispatchAt]));
 
   return json(200, {
@@ -194,24 +194,24 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     return error(400, 'invalid_listing', 'A price above zero is required.');
   }
 
-  // A batch can be chosen while listing rather than only afterwards, so the
+  // A lot can be chosen while listing rather than only afterwards, so the
   // seller is not made to publish and then go and file it. It has to be one of
-  // theirs: the lookup is scoped to their partition, so another seller's batch
+  // theirs: the lookup is scoped to their partition, so another seller's lot
   // id simply does not resolve.
   let lotId: string | null = null;
   if (body.lotId) {
     const lot = await repository.getLot(sellerId, body.lotId);
-    if (!lot) return error(404, 'not_found', 'No such batch of yours to add this to.');
+    if (!lot) return error(404, 'not_found', 'No such lot of yours to add this to.');
     lotId = lot.id;
   }
 
   // An import travels in a consignment, and the consignment is what carries the
   // stages a buyer waits on - but it does not have to exist yet. Filing an item
-  // into a batch is bookkeeping the shop does when the batch is actually being
+  // into a lot is bookkeeping the shop does when the lot is actually being
   // packed, often weeks after the item went up, and refusing the listing until
   // then meant the shop either lied about sourcing or did not list at all.
   //
-  // So an import may wait for its batch. What it must not do is hide that: the
+  // So an import may wait for its lot. What it must not do is hide that: the
   // item says "import" with no dispatch estimate until it is filed, which is
   // the truth, rather than a date nothing can keep.
   const sourcing: Sourcing = lotId ? 'import' : (body.sourcing === 'import' ? 'import' : 'in_hand');
@@ -221,7 +221,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
      none: one step before the wall says nothing. */
   const preLotSteps = normaliseSteps(body.preLotSteps ?? []);
   const preLot = preLotSteps.length >= 2
-    ? { routeId: null, name: body.preLotName?.trim() || 'Before the batch', steps: preLotSteps }
+    ? { routeId: null, name: body.preLotName?.trim() || 'Before the lot', steps: preLotSteps }
     : null;
 
   const now = new Date().toISOString();
@@ -240,7 +240,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     priceMinor: Math.round(body.priceMinor),
     currency: 'INR',
     quantityAvailable: Math.max(1, Math.round(body.quantityAvailable ?? 1)),
-    // Pre-order and shipment batch are independent: a listing opts into demand
+    // Pre-order and shipment lot are independent: a listing opts into demand
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
     preOrder:
@@ -424,9 +424,9 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const now2 = new Date().toISOString();
   const order: Order = {
     id: `ord_${randomUUID().slice(0, 12)}`,
-    // Inherits the item's batch if it has one. Otherwise it depends on what
+    // Inherits the item's lot if it has one. Otherwise it depends on what
     // the item is: a domestic sale tracks against the short vocabulary and
-    // never joins a batch, while an import sold before its run is opened waits
+    // never joins a lot, while an import sold before its run is opened waits
     // for one - and has to be findable on the screen where a shop fills it.
     lotId: listing.lotId
       ?? (sourcingOf(listing) === 'import' ? AWAITING_LOT_ID : DIRECT_LOT_ID),
@@ -442,7 +442,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     status: 'pending_payment',
     paymentStatus: 'unpaid',
     stage: listing.lotId ? 'ordering' : 'preparing',
-    // Copied from the listing, for the same reason a batch copies its route:
+    // Copied from the listing, for the same reason a lot copies its route:
     // the template is a template, and editing it must not rewrite a timeline
     // somebody is already reading.
     preLotRoute: listing.preLotRoute ?? null,

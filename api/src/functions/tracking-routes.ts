@@ -3,28 +3,18 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE,
-  SUGGESTED_STEPS,
-  coarseStage,
-  currentStepOf,
-  lotNumberFrom,
-  normaliseSteps,
-  routeOf,
-  stepId,
-  type LotRoute,
-  type RouteStep,
-  type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps, routeOf, stepId, type LotRoute, type RouteStep, type StepSide, type TrackingRoute,
 } from '../../../shared/routes.js';
-import { getAuthService } from '../auth/index.js';
+import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
 
 /**
- * Routes, the items that ride them, and moving a batch one step.
+ * Routes, the items that ride them, and moving a lot one step.
  *
- * The batch is the tracking engine and an item inherits its progress. That is
+ * The lot is the tracking engine and an item inherits its progress. That is
  * the whole design: one click moves thirty-four items, because moving them one
  * at a time is the work nobody did, which is why buyers used to ask instead.
  *
@@ -53,12 +43,31 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
   return json(200, {
     routes: await repository.listRoutes(user.id),
     builtIn: BUILT_IN_ROUTE,
-    /** What a new route opens with: the nine steps sellers actually describe. */
+    /*
+     * The shapes a shop can start from.
+     *
+     * Sent rather than bundled into the app so the set can grow without a
+     * deploy of the frontend, and so both ends agree about what a preset is.
+     * They are not saved routes: picking one fills the editor in, and it only
+     * becomes a route of the shop's own when they save it.
+     */
+    presets: ROUTE_PRESETS.map((preset) => ({
+      ...preset,
+      steps: preset.steps.map((step, index) => ({
+        id: `${preset.id}_${index}`,
+        name: step.name,
+        description: step.description,
+        position: index,
+        side: step.side,
+      })),
+    })),
+    /** What a blank route opens with: the nine steps sellers actually describe. */
     suggested: SUGGESTED_STEPS.map((name, index) => ({
       id: `sg_${index}`,
       name,
       description: '',
       position: index,
+      side: index < 2 ? 'pre' : 'post',
     })),
   });
 }
@@ -66,7 +75,7 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
 interface RouteBody {
   id?: string;
   name?: string;
-  steps?: { id?: string; name?: string; description?: string }[];
+  steps?: { id?: string; name?: string; description?: string; side?: StepSide }[];
 }
 
 /** POST /api/routes - write a ladder, or correct one. */
@@ -117,7 +126,7 @@ async function saveRoute(request: HttpRequest, _context: InvocationContext) {
 /**
  * POST /api/routes/{id}/delete - drop a template.
  *
- * The batches already travelling it are unaffected: each carries its own copy,
+ * The lots already travelling it are unaffected: each carries its own copy,
  * which is the reason they carry one.
  */
 async function deleteRoute(request: HttpRequest, _context: InvocationContext) {
@@ -132,9 +141,9 @@ async function deleteRoute(request: HttpRequest, _context: InvocationContext) {
   return json(200, { deleted: id });
 }
 
-/* ── Filling a batch ───────────────────────────────────────────────────── */
+/* ── Filling a lot ───────────────────────────────────────────────────── */
 
-/** An item as the "what can go in this batch" list shows it. */
+/** An item as the "what can go in this lot" list shows it. */
 function itemCard(order: Order, buyers: Map<string, User>) {
   const buyer = buyers.get(order.buyerId);
   return {
@@ -156,15 +165,15 @@ async function namesFor(repository: Repo, orders: readonly Order[]): Promise<Map
 }
 
 /**
- * GET /api/lots/{id}/candidates - what could go in this batch.
+ * GET /api/lots/{id}/candidates - what could go in this lot.
  *
- * Everything this shop has sold that is bound for a batch and is not in one.
+ * Everything this shop has sold that is bound for a lot and is not in one.
  * Not "every order ever": a domestic sale is never going in a crate, and an
- * item already in another batch would have to be taken out of it first.
+ * item already in another lot would have to be taken out of it first.
  */
 async function lotCandidates(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
-  if (!id) return error(400, 'invalid_request', 'A batch id is required.');
+  if (!id) return error(400, 'invalid_request', 'A lot id is required.');
   const { lot } = await ownedLot(request, id);
 
   const repository = await getRepository();
@@ -181,16 +190,16 @@ async function lotCandidates(request: HttpRequest, _context: InvocationContext) 
 }
 
 /**
- * POST /api/lots/{id}/items - put items in the batch.
+ * POST /api/lots/{id}/items - put items in the lot.
  *
  * Moving an item is a partition move in the store, so it goes through the
  * repository's own method rather than a plain update. The item keeps its own
  * history and gains an entry saying where it went, so a buyer sees "added to
- * batch" rather than their timeline silently growing five new steps.
+ * lot" rather than their timeline silently growing five new steps.
  */
 async function addItems(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
-  if (!id) return error(400, 'invalid_request', 'A batch id is required.');
+  if (!id) return error(400, 'invalid_request', 'A lot id is required.');
   const { lot, userId } = await ownedLot(request, id);
 
   let body: { orderIds?: string[] };
@@ -212,7 +221,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
   for (const orderId of wanted) {
     const order = await repository.getOrder(orderId);
     if (!order) continue;
-    // Somebody else's item, a domestic sale, or one already riding in a batch:
+    // Somebody else's item, a domestic sale, or one already riding in a lot:
     // all three are refusals, and none of them is worth failing the whole
     // request over when the other nine are fine.
     if (order.sellerId !== lot.sellerId) continue;
@@ -246,7 +255,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
       {
         kind: 'lot_moved',
         title: `Your item is in ${lot.name}`,
-        body: `It now travels with the batch: ${route.name}.`,
+        body: `It now travels with the lot: ${route.name}.`,
         link: '/me?tab=purchases',
       },
       { except: lot.sellerId },
@@ -256,10 +265,10 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
   return json(200, { added: added.length, orderIds: added.map((order) => order.id) });
 }
 
-/* ── Moving the batch ──────────────────────────────────────────────────── */
+/* ── Moving the lot ──────────────────────────────────────────────────── */
 
 /**
- * POST /api/lots/{id}/step - move the batch along its route.
+ * POST /api/lots/{id}/step - move the lot along its route.
  *
  * One click, every item. The alternative - the seller ticking thirty-four
  * items through nine steps each - is 306 actions for one consignment, which is
@@ -271,7 +280,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
  */
 async function stepLot(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
-  if (!id) return error(400, 'invalid_request', 'A batch id is required.');
+  if (!id) return error(400, 'invalid_request', 'A lot id is required.');
   const { lot, userId } = await ownedLot(request, id);
 
   let body: { to?: number; note?: string };
@@ -286,7 +295,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   const target = typeof body.to === 'number' ? Math.trunc(body.to) : from + 1;
 
   if (target < 0 || target >= route.steps.length) {
-    return error(409, 'no_such_step', 'That batch is at the end of its route.');
+    return error(409, 'no_such_step', 'That lot is at the end of its route.');
   }
   if (target === from) return json(200, { lot, ordersUpdated: 0 });
 
@@ -319,6 +328,10 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
       repository.updateOrder({
         ...order,
         stage,
+        // Written on the item as well as the lot: an item the seller had moved
+        // on its own is brought back in line by the next move of the lot,
+        // rather than staying stuck at a position nobody remembers setting.
+        currentStep: target,
         stageHistory: [...order.stageHistory, event],
         status: last ? 'delivered' : 'in_fulfilment',
         completedAt: last ? now : order.completedAt,
@@ -336,7 +349,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     {
       kind: 'lot_moved',
       title: `${lot.name}: ${step.name}`,
-      body: `${live.length} ${live.length === 1 ? 'item' : 'items'} in this batch moved.`,
+      body: `${live.length} ${live.length === 1 ? 'item' : 'items'} in this lot moved.`,
       link: '/me?tab=purchases',
     },
     { except: lot.sellerId },
@@ -345,9 +358,192 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   return json(200, { lot: updated, ordersUpdated: live.length });
 }
 
+/* ── Notes, and one item that travels differently ──────────────────────── */
+
+/**
+ * POST /api/lots/{id}/note - say something without moving the lot.
+ *
+ * The thing sellers actually do between steps. A crate sits at the forwarder
+ * for nine days and the honest thing to tell twenty buyers is "still waiting
+ * on the airline, booked for Thursday" - which is not a step, has no place on
+ * a ladder, and until now could only be said by inventing one.
+ *
+ * It is the same `StageEvent` a step writes, recorded at the position the lot
+ * is already at. Nothing new: one history, read by one timeline, so a note
+ * lands between the steps it was written between.
+ */
+async function noteOnLot(request: HttpRequest, _context: InvocationContext) {
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A lot id is required.');
+  const { lot, userId } = await ownedLot(request, id);
+
+  let body: { note?: string; at?: number };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const note = body.note?.trim();
+  if (!note) return error(400, 'invalid_request', 'Write the note first.');
+
+  const route = routeOf(lot);
+  /* Filed at the step it was written against, not at wherever the lot happens
+     to be. "Booked for Thursday" written against the flight belongs on the
+     flight, and a seller who writes ahead is telling people what is coming. */
+  const at = typeof body.at === 'number'
+    ? Math.max(0, Math.min(route.steps.length - 1, Math.trunc(body.at)))
+    : currentStepOf(lot);
+  const now = new Date().toISOString();
+  const event: StageEvent = {
+    stage: coarseStage(route, at),
+    step: route.steps[at]?.name,
+    enteredAt: now,
+    note,
+    recordedBy: userId,
+  };
+
+  const repository = await getRepository();
+  // The lot's own history and every item's, because the item's history is what
+  // the buyer reads and a note only the seller can see is not a note.
+  const updated = await repository.updateLot({
+    ...lot,
+    stageHistory: [...lot.stageHistory, event],
+    updatedAt: now,
+  });
+
+  const orders = (await repository.listOrdersForLot(lot.id))
+    .filter((order) => order.status !== 'cancelled');
+  await Promise.all(orders.map((order) =>
+    repository.updateOrder({
+      ...order,
+      stageHistory: [...order.stageHistory, event],
+      updatedAt: now,
+    })));
+
+  await notify(
+    repository,
+    orders.map((order) => order.buyerId),
+    {
+      kind: 'lot_moved',
+      title: `${lot.name}: an update`,
+      body: note,
+      link: '/me?tab=purchases',
+    },
+    { except: lot.sellerId },
+  );
+
+  return json(200, { lot: updated, ordersUpdated: orders.length });
+}
+
+/**
+ * The order a caller may work, and the lot it rides in.
+ *
+ * Seller-side only. An order's timeline is the seller's to write; the buyer
+ * reads it through `orderTracking` and never through here.
+ */
+async function ownedOrder(request: HttpRequest, orderId: string) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const repository = await getRepository();
+  const order = await repository.getOrder(orderId);
+  if (!order || order.sellerId !== user.id) {
+    throw AuthError.forbidden('That order is not yours.');
+  }
+  const lot = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
+  return { order, lot, userId: user.id, repository };
+}
+
+/**
+ * POST /api/orders/{id}/step - move one item, or note something about it.
+ *
+ * The exception that makes the rule usable. Thirty-three pieces cleared and
+ * one was pulled for inspection; the lot has not moved, and neither has the
+ * truth for thirty-three people. So the item gets its own position and its own
+ * note, on the lot's own ladder, and the next move of the lot brings it back
+ * in line.
+ *
+ * `to` moves it. `to` omitted is a note at wherever it already is - which is
+ * the between-the-steps case, and by far the commoner one.
+ */
+async function stepItem(request: HttpRequest, _context: InvocationContext) {
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'An order id is required.');
+  const { order, lot, userId, repository } = await ownedOrder(request, id);
+
+  let body: { to?: number; note?: string; at?: number };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+
+  const note = body.note?.trim() || null;
+  const moving = typeof body.to === 'number';
+  if (!moving && !note) {
+    return error(400, 'invalid_request', 'Write a note, or pick a step to move it to.');
+  }
+  if (moving && !lot) {
+    return error(409, 'no_lot', 'That item is not in a lot yet, so it has no route to move along.');
+  }
+
+  const route = lot ? routeOf(lot) : null;
+  const here = route
+    ? Math.max(0, Math.min(route.steps.length - 1, order.currentStep ?? currentStepOf(lot!)))
+    : 0;
+  // A note goes where it was written; only `to` moves the item.
+  const at = !moving && typeof body.at === 'number' && route
+    ? Math.max(0, Math.min(route.steps.length - 1, Math.trunc(body.at)))
+    : here;
+  const target = moving ? Math.trunc(body.to!) : at;
+
+  if (route && (target < 0 || target >= route.steps.length)) {
+    return error(409, 'no_such_step', 'That route has no such step.');
+  }
+
+  const now = new Date().toISOString();
+  const stage = route ? coarseStage(route, target) : order.stage;
+  const event: StageEvent = {
+    stage,
+    step: route?.steps[target]?.name,
+    enteredAt: now,
+    note,
+    recordedBy: userId,
+  };
+
+  const last = Boolean(route) && target === route!.steps.length - 1;
+  const updated = await repository.updateOrder({
+    ...order,
+    ...(moving
+      ? {
+          currentStep: target,
+          stage,
+          status: last ? 'delivered' : order.status === 'cancelled' ? order.status : 'in_fulfilment',
+          completedAt: last ? now : order.completedAt,
+        }
+      : {}),
+    stageHistory: [...order.stageHistory, event],
+    updatedAt: now,
+  });
+
+  await notify(
+    repository,
+    [order.buyerId],
+    {
+      kind: 'lot_moved',
+      title: moving && route ? `${order.itemName}: ${route.steps[target]!.name}` : `${order.itemName}: an update`,
+      body: note ?? 'Your item moved on.',
+      link: '/me?tab=purchases',
+    },
+    { except: order.sellerId },
+  );
+
+  return json(200, { order: updated });
+}
+
 /* ── What the buyer sees ───────────────────────────────────────────────── */
 
-/** The buyer's own items, grouped by the batch they travel in. */
+/** The buyer's own items, grouped by the lot they travel in. */
 async function myItems(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -356,7 +552,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   const orders = (await repository.listOrdersForBuyer(user.id))
     .filter((order) => order.status !== 'cancelled');
 
-  // One read per batch rather than one per item: three items in one batch are
+  // One read per lot rather than one per item: three items in one lot are
   // one journey, and asking three times would be three chances to disagree.
   const lots = new Map<string, Lot | null>();
   for (const order of orders) {
@@ -423,6 +619,8 @@ export const deleteRouteRoute = handler(deleteRoute);
 export const lotCandidatesRoute = handler(lotCandidates);
 export const addItemsRoute = handler(addItems);
 export const stepLotRoute = handler(stepLot);
+export const noteOnLotRoute = handler(noteOnLot);
+export const stepItemRoute = handler(stepItem);
 export const myItemsRoute = handler(myItems);
 
 /** Route templates as the create-lot form needs them, for reuse elsewhere. */
@@ -444,4 +642,6 @@ app.http('lot-candidates', {
 });
 app.http('lot-items', { ...anon, methods: ['POST'], route: 'lots/{id}/items', handler: addItemsRoute });
 app.http('lot-step', { ...anon, methods: ['POST'], route: 'lots/{id}/step', handler: stepLotRoute });
+app.http('lot-note', { ...anon, methods: ['POST'], route: 'lots/{id}/note', handler: noteOnLotRoute });
+app.http('order-step', { ...anon, methods: ['POST'], route: 'orders/{id}/step', handler: stepItemRoute });
 app.http('me-items', { ...anon, methods: ['GET'], route: 'me/items', handler: myItemsRoute });

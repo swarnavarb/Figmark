@@ -5,8 +5,8 @@ Defined in `shared/models.ts` (documents), `shared/enums.ts` (vocabularies) and
 the Cosmos repository both read `containers.ts`, so a query can never assume a
 partition key the container was not created with.
 
-The shape extends AxisTwelve's Lot → Customer → Order model: `Lot` is the batch,
-`User` covers both sides of the trade, and `Order` is one manifest line.
+The shape extends AxisTwelve's Lot → Customer → Order model: `Lot` is one
+shipment, `User` covers both sides of the trade, and `Order` is one manifest line.
 
 ## Containers
 

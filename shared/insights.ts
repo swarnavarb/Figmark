@@ -264,7 +264,7 @@ export function phaseOf(orders: readonly Order[]): LotPhase {
 /**
  * The same sentence, from the counts a card already holds.
  *
- * A batch card charts a tally and nothing else, and re-deriving the phase from
+ * A lot card charts a tally and nothing else, and re-deriving the phase from
  * a second fetch of the orders is how a line ends up disagreeing with the bars
  * directly beneath it. Reading both off one tally makes that impossible.
  */

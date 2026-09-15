@@ -183,11 +183,11 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
         items={data.listings.map((listing) => ({
           id: listing.id,
           label: `${listing.title} — ${formatMoney(listing.priceMinor, listing.currency)}`,
-          meta: `${listing.status}${listing.lotId ? ' · in a batch' : ''}`,
+          meta: `${listing.status}${listing.lotId ? ' · in a lot' : ''}`,
         }))}
         onDelete={(item) => setPending({ kind: 'listing', id: item.id, ownerId: user.id, label: item.label })} />
 
-      <ResourceList title="Batches" empty="No batches."
+      <ResourceList title="Lots" empty="No lots."
         items={data.lots.map((lot) => ({ id: lot.id, label: lot.name, meta: `${lot.status} · ${lot.stage}` }))}
         onDelete={(item) => setPending({ kind: 'lot', id: item.id, ownerId: user.id, label: item.label })} />
 
@@ -248,7 +248,7 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
           <p>This removes the account and everything it has made:</p>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             <li>{data.listings.length} listing{data.listings.length === 1 ? '' : 's'}</li>
-            <li>{data.lots.length} batch{data.lots.length === 1 ? '' : 'es'}</li>
+            <li>{data.lots.length} lot{data.lots.length === 1 ? '' : 'es'}</li>
             <li>{data.posts.length} post{data.posts.length === 1 ? '' : 's'}</li>
             <li>Their email, phone and username go back into circulation</li>
           </ul>

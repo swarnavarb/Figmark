@@ -216,7 +216,7 @@ export class MemoryRepository implements Repository {
 
   listDemoAccounts(): DemoAccount[] {
     // The accounts that can actually be signed into: the shop, the two people
-    // who work its batches at either end of the water, and the escrow between.
+    // who work its lots at either end of the water, and the escrow between.
     return [
       { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
@@ -394,7 +394,7 @@ export class MemoryRepository implements Repository {
     for (const id of listingIds) {
       const listing = this.listings.get(id);
       // Silently skip anything the caller does not own, rather than failing the
-      // whole batch: the route has already checked the lot's owner.
+      // whole lot: the route has already checked the lot's owner.
       if (!listing || listing.sellerId !== sellerId) continue;
       listing.lotId = lotId;
       listing.updatedAt = new Date().toISOString();

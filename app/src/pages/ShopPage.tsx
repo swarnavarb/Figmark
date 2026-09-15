@@ -8,13 +8,12 @@ import {
 import { countOf, type LotTally } from '@shared/board';
 import { CATEGORIES } from '@shared/catalog';
 import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
-import type { RouteStep } from '@shared/routes';
-import { BUILT_IN_PRE_LOT_ROUTE, preLotRouteOf, type PostTemplate } from '@shared/templates';
-import { RouteBuilder } from '../components/RouteBuilder';
+import { preLotRouteOf, type PostTemplate } from '@shared/templates';
+import { Ladder } from '../components/Ladder';
 import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
-import { currentStepName, routeOf } from '@shared/routes';
+import { BUILT_IN_ROUTE, currentStepName, preSteps as preStepsOf, routeOf } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
@@ -37,7 +36,7 @@ import {
 import { Avatar, EmptyState, ErrorNotice, Icon, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
 import { PackingList } from './ExporterPage';
-import { BatchDetail, NewBatchForm } from './BatchesPage';
+import { LotDetail, NewLotForm } from './LotsPage';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
@@ -373,7 +372,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
         <label className="field">
           <span>Description</span>
           <textarea value={draft.bio ?? ''} onChange={(e) => set('bio', e.target.value)}
-            placeholder="What you sell, where you import from, how often you run a batch." rows={4} />
+            placeholder="What you sell, where you import from, how often you run a lot." rows={4} />
         </label>
 
         <div className="field-row">
@@ -471,7 +470,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
 
 /* ── Items ──────────────────────────────────────────────────────────────── */
 
-/** What is listed, and the way back to the batches that carry it. */
+/** What is listed, and the way back to the lots that carry it. */
 function MyItems({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -549,10 +548,10 @@ function MyItems({ store }: { store: StoreAccess }) {
                   <span className="listing__title">{listing.title}</span>
                   <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
                   <div className="listing__meta">
-                    {/* An item with no batch is not a problem to fix - most
+                    {/* An item with no lot is not a problem to fix - most
                         never need one. It says which it is and stops there. */}
                     <span className={`badge${listing.lotId ? '' : ' badge--quiet'}`}>
-                      {listing.lotId ? 'In a batch' : 'No batch'}
+                      {listing.lotId ? 'In a lot' : 'No lot'}
                     </span>
                     <span className="faint">{listing.viewCount} views</span>
                   </div>
@@ -575,7 +574,7 @@ type OrderFilter = 'all' | 'answer' | 'nolot';
  * This was the Payments screen, and payments was too narrow a name for it.
  * Money is one of six things an order needs answering about and the other five
  * had nowhere to live: whether the piece has reached the warehouse, whether it
- * is in a batch, which batch, where that batch has got to, and whether the
+ * is in a lot, which lot, where that lot has got to, and whether the
  * buyer has been told any of it. Those answers were spread across three
  * screens, so the normal working day was a tour.
  *
@@ -631,7 +630,7 @@ function Orders({ store }: { store: StoreAccess }) {
   if (data.orders.length === 0) {
     return (
       <EmptyState title="No orders yet">
-        Every purchase lands here — the money, the warehouse, the batch it travels in, and the one
+        Every purchase lands here — the money, the warehouse, the lot it travels in, and the one
         tick that tells the buyer it has arrived.
       </EmptyState>
     );
@@ -645,7 +644,7 @@ function Orders({ store }: { store: StoreAccess }) {
         {([
           ['all', `All ${data.orders.length}`],
           ['answer', `To answer ${needsAnswer.size}`],
-          ['nolot', `No batch ${data.orders.filter((row) => row.awaitingLot).length}`],
+          ['nolot', `No lot ${data.orders.filter((row) => row.awaitingLot).length}`],
         ] as [OrderFilter, string][]).map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={filter === id}
             className={filter === id ? 'is-on' : ''} onClick={() => setFilter(id)}>
@@ -656,7 +655,7 @@ function Orders({ store }: { store: StoreAccess }) {
 
       {shown.length === 0 ? (
         <p className="muted">
-          {filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a batch.'}
+          {filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a lot.'}
         </p>
       ) : (
         <div className="orows">
@@ -777,12 +776,12 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
               {[
                 template.tags.length > 0 ? template.tags.join(', ') : null,
                 template.condition,
-                template.defaultLotId ? 'Goes into a batch' : 'No batch',
+                template.defaultLotId ? 'Goes into a lot' : 'No lot',
               ].filter(Boolean).join(' · ')}
             </span>
             <span className="faint">
-              Before the batch: {preLotRouteOf(template).steps.length} steps · after:{' '}
-              {template.lotRouteName ?? 'China → India'}
+              {template.lotRouteName ?? 'China → India'} ·{' '}
+              {preLotRouteOf(template).steps.length} steps before the lot
             </span>
             {template.description && <p className="tplcard__body">{template.description}</p>}
             <div className="tplcard__foot">
@@ -816,9 +815,6 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
   const [description, setDescription] = useState(template?.description ?? '');
   const [defaultLotId, setDefaultLotId] = useState(template?.defaultLotId ?? '');
   const [lotRouteId, setLotRouteId] = useState(template?.lotRouteId ?? '');
-  const [preSteps, setPreSteps] = useState<RouteStep[]>(
-    template?.preLotRoute?.steps ?? BUILT_IN_PRE_LOT_ROUTE.steps,
-  );
   const [lots, setLots] = useState<LotSummary[]>([]);
   const [routes, setRoutes] = useState<RoutesResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -845,9 +841,12 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
         description: description.trim(),
         defaultLotId: defaultLotId || null,
         lotRouteId: lotRouteId || null,
-        preLotSteps: preSteps
-          .filter((step) => step.name.trim())
-          .map((step) => ({ name: step.name, description: step.description })),
+        /* The first half of the route this item is expected to travel, stored
+           on the template so an order sold before any lot exists still has a
+           ladder to read. Derived rather than written a second time: two
+           hand-authored ladders is exactly what used to put "at the China
+           warehouse" on a buyer's screen twice. */
+        preLotSteps: before.map((step) => ({ name: step.name, description: step.description })),
       });
       onSaved();
     } catch (err) {
@@ -856,6 +855,13 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
       setBusy(false);
     }
   }
+
+  /* The route this template's items are expected to travel, and the half of it
+     that happens before any lot exists. */
+  const chosen = routes?.routes.find((route) => route.id === lotRouteId)
+    ?? routes?.builtIn
+    ?? BUILT_IN_ROUTE;
+  const before = preStepsOf(chosen);
 
   return (
     <form className="card card--pad form" onSubmit={submit}>
@@ -917,9 +923,9 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
       </label>
 
       <label className="field">
-        <span>Default batch</span>
+        <span>Default lot</span>
         <select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
-          <option value="">No batch — filed after it sells</option>
+          <option value="">No lot — filed after it sells</option>
           {lots.map(({ lot }) => (
             <option key={lot.id} value={lot.id}>
               {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
@@ -932,24 +938,20 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
         </span>
       </label>
 
-      {/* The two ladders. Before the batch is what a buyer reads while they
-          wait for one; after it is the route the batch itself will travel. */}
+      {/* One route, not two ladders. The route already says where the item
+          stops travelling alone, so both halves come from the same list and
+          cannot contradict each other the way two written ones did. */}
       <div className="card card--pad stack" style={{ background: 'var(--surface-2)' }}>
         <div>
           <div style={{ fontWeight: 600 }}>Tracking</div>
           <span className="field__hint">
-            What a buyer of this item reads. The first list runs until it is in a batch; after that
-            the batch's own route takes over.
+            What a buyer of this item reads. Pick the journey it travels; the route says which
+            steps happen to the order on its own and which happen once it is in a lot.
           </span>
         </div>
 
-        <div className="field">
-          <span>Before the batch</span>
-          <RouteBuilder steps={preSteps} onChange={setPreSteps} />
-        </div>
-
         <label className="field">
-          <span>After it joins a batch</span>
+          <span>Route</span>
           <select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)}>
             <option value="">
               {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
@@ -961,9 +963,20 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
             ))}
           </select>
           <span className="field__hint">
-            Pre-selected when you open a batch for one of these items.
+            Pre-selected when you open a lot for one of these items.{' '}
+            <Link to="/routes">Write a route</Link> if none of these is the journey.
           </span>
         </label>
+
+        <div className="field">
+          <span>Before it joins a lot</span>
+          <Ladder steps={before} current={-1} />
+          <span className="field__hint">
+            {before.length === 0
+              ? 'This route has no steps before the lot, so a buyer waits with no timeline until one is opened.'
+              : `What the buyer reads while they wait. The other ${chosen.steps.length - before.length} steps arrive with the lot.`}
+          </span>
+        </div>
       </div>
 
       {error && <ErrorNotice message={error} />}
@@ -1053,12 +1066,12 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
           {row.quantity > 1 && <span>{row.quantity} units</span>}
           {!row.inHand && (
             lotHref
-              /* The batch by the name the seller gave it, which is what the
+              /* The lot by the name the seller gave it, which is what the
                  lot page is headed with. Showing the generated number here
-                 and the name over there gave one batch two labels and made
+                 and the name over there gave one lot two labels and made
                  the link look like it went somewhere else. */
               ? <Link to={lotHref} className="orow__lot">{row.lotName ?? `LOT ${row.lotNumber}`}</Link>
-              : <span className="orow__lot orow__lot--none">no batch</span>
+              : <span className="orow__lot orow__lot--none">no lot</span>
           )}
           {row.lotStep && <span className="orow__step">{row.lotStep}</span>}
         </div>
@@ -1069,7 +1082,7 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
 
       <div className="orow__acts">
         {/* A domestic sale has neither of these: it never goes near a
-            warehouse and never joins a batch. */}
+            warehouse and never joins a lot. */}
         {!row.inHand && (
           <>
             {/* Labelled, not a bare tick. This was a full-width button reading
@@ -1087,10 +1100,10 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
               <span>China WH</span>
             </button>
             {!lotHref && (
-              <button type="button" className="orow__toggle" aria-label="Add this order to a batch"
+              <button type="button" className="orow__toggle" aria-label="Add this order to a lot"
                 onClick={onFile}>
                 <Icon name="plus" size={13} />
-                <span>Batch</span>
+                <span>Lot</span>
               </button>
             )}
           </>
@@ -1110,11 +1123,11 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
 }
 
 /**
- * Put this order in a batch: an existing one, or one opened here.
+ * Put this order in a lot: an existing one, or one opened here.
  *
  * Opened here is the case worth designing for. A shop sells an item, the run it
- * belongs in does not exist yet, and the batch screen is two taps away and
- * asks for eight things - so the batch gets opened later, or never, and the
+ * belongs in does not exist yet, and the lot screen is two taps away and
+ * asks for eight things - so the lot gets opened later, or never, and the
  * buyer waits without a timeline. This asks for a name and a route and does
  * both jobs in one request.
  */
@@ -1144,7 +1157,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
       .then((result) => {
         setLots(result.lots);
         setLotId(result.lots[0]?.lot.id ?? '');
-        // No batches yet means there is nothing to pick, so the form opens on
+        // No lots yet means there is nothing to pick, so the form opens on
         // the door that works.
         if (result.lots.length === 0) setMode('new');
       })
@@ -1161,7 +1174,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
         ? { lotId }
         : {
             newLot: {
-              name: name.trim() || `Batch for ${row.itemName}`,
+              name: name.trim() || `Lot for ${row.itemName}`,
               origin: origin.trim(),
               exporterHandle: exporter.trim() || undefined,
               handlerUserId: handlerId || undefined,
@@ -1195,7 +1208,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
           lots === null ? (
             <p className="muted">Loading…</p>
           ) : lots.length === 0 ? (
-            <p className="muted">No batches open yet. Make one.</p>
+            <p className="muted">No lots open yet. Make one.</p>
           ) : (
             <label className="field">
               <span>Lot</span>
@@ -1245,7 +1258,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
                 ))}
               </select>
               <span className="field__hint">
-                Every item in this batch travels these steps, and the buyer reads them.
+                Every item in this lot travels these steps, and the buyer reads them.
               </span>
             </label>
           </>
@@ -1265,7 +1278,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
  * Turning an order down.
  *
  * Every order is a promise made before anything moves, and sometimes it cannot
- * be kept: the stock went, the supplier pulled the line, the batch will not
+ * be kept: the stock went, the supplier pulled the line, the lot will not
  * fill. The reason is required because the buyer is owed one - they may have
  * already sent money - and because "cancelled" with no explanation is how a
  * shop loses somebody who would otherwise have waited.
@@ -1323,9 +1336,9 @@ function RejectOrder({ row, onClose, onDone }: {
 /**
  * Consignments: opening them, filling them, and watching them move.
  *
- * These were two screens - "Manage batches" out on its own page, and a tracking
+ * These were two screens - "Manage lots" out on its own page, and a tracking
  * board in here - asking the database for the same rows twice and disagreeing
- * about what a batch card looks like. A batch is one object with one lifecycle;
+ * about what a lot card looks like. A lot is one object with one lifecycle;
  * splitting "administer it" from "watch it" put a trip out of the tab between a
  * seller and the thing they were already looking at.
  */
@@ -1340,7 +1353,7 @@ function Lots({ store }: { store: StoreAccess }) {
     try {
       setData(await api.myLots(store.isOwner ? undefined : store.ownerId));
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your batches.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.');
     }
   }, [store.ownerId, store.isOwner]);
 
@@ -1349,7 +1362,7 @@ function Lots({ store }: { store: StoreAccess }) {
   }, [load]);
 
   if (openId) {
-    return <BatchDetail lotId={openId} onBack={() => { setOpenId(null); void load(); }} />;
+    return <LotDetail lotId={openId} onBack={() => { setOpenId(null); void load(); }} />;
   }
 
   if (error) return <ErrorNotice message={error} />;
@@ -1358,23 +1371,23 @@ function Lots({ store }: { store: StoreAccess }) {
   return (
     <div className="stack">
       {creating ? (
-        <NewBatchForm
-          suggestedName={`Batch ${(data?.lots.length ?? 0) + 1}`}
+        <NewLotForm
+          suggestedName={`Lot ${(data?.lots.length ?? 0) + 1}`}
           onDone={() => { setCreating(false); void load(); }}
           onCancel={() => setCreating(false)}
         />
       ) : (
         <button type="button" className="btn" style={{ justifySelf: 'start' }} onClick={() => setCreating(true)}>
-          <Icon name="plus" size={15} /> New batch
+          <Icon name="plus" size={15} /> New lot
         </button>
       )}
 
       {/* Items with nowhere to travel. Not an error - most items never need a
-          batch - but a seller who meant to file one wants to see it. */}
+          lot - but a seller who meant to file one wants to see it. */}
       {data.unassigned.length > 0 && (
         <div className="note-row">
           <div style={{ minWidth: 0 }}>
-            <span className="card__title">{data.unassigned.length} not in a batch</span>
+            <span className="card__title">{data.unassigned.length} not in a lot</span>
             <span className="faint">
               {data.unassigned.slice(0, 3).map((listing) => listing.title).join(' · ')}
               {data.unassigned.length > 3 && ` and ${data.unassigned.length - 3} more`}
@@ -1385,24 +1398,24 @@ function Lots({ store }: { store: StoreAccess }) {
       )}
 
       {data.lots.length === 0 ? (
-        <EmptyState icon="◲" title="No batches yet">
-          A batch is one consignment. Open one for your next run, then file the items travelling in
-          it — buyers never see the batch, only the tracking it produces.
+        <EmptyState icon="◲" title="No lots yet">
+          A lot is one consignment. Open one for your next run, then file the items travelling in
+          it — buyers never see the lot, only the tracking it produces.
         </EmptyState>
       ) : (
         data.lots.map((summary) => (
-          <BatchCard key={summary.lot.id} summary={summary} store={store} onOpen={() => setOpenId(summary.lot.id)} />
+          <LotCard key={summary.lot.id} summary={summary} store={store} onOpen={() => setOpenId(summary.lot.id)} />
         ))
       )}
     </div>
   );
 }
 
-/** The numbers on a batch card that open the people behind them. */
+/** The numbers on a lot card that open the people behind them. */
 type Drill = 'customers' | 'packed' | 'dispatched';
 
 const DRILL_HINTS: Record<Drill, string> = {
-  customers: 'Everyone with something in this batch, most items first.',
+  customers: 'Everyone with something in this lot, most items first.',
   packed: 'How far each person is, least packed first — that is the work left.',
   dispatched: 'Who has gone and who is still here.',
 };
@@ -1410,11 +1423,11 @@ const DRILL_HINTS: Record<Drill, string> = {
 /**
  * One consignment: what is in it, where it is, and the two things to do with it.
  *
- * The counts collapse once it has left: a batch in transit is a tracking
+ * The counts collapse once it has left: a lot in transit is a tracking
  * number and a stage, and the packing figures it was worked by are history the
  * moment it is on a plane.
  */
-function BatchCard({ summary, store, onOpen }: {
+function LotCard({ summary, store, onOpen }: {
   summary: LotSummary;
   store: StoreAccess;
   onOpen: () => void;
@@ -1436,7 +1449,7 @@ function BatchCard({ summary, store, onOpen }: {
    * Open the rows behind a number.
    *
    * The manifest is fetched the first time one is tapped rather than with the
-   * card: a seller with nine batches would otherwise pay for nine manifests to
+   * card: a seller with nine lots would otherwise pay for nine manifests to
    * see a list of names nobody asked for.
    */
   const drillInto = (chip: Drill) => {
@@ -1447,17 +1460,17 @@ function BatchCard({ summary, store, onOpen }: {
       .then(setPeople)
       .catch((err: unknown) =>
         setPeopleError(
-          err instanceof ApiRequestError ? err.message : 'Could not load who is in this batch.',
+          err instanceof ApiRequestError ? err.message : 'Could not load who is in this lot.',
         ),
       );
   };
 
   return (
-    <article className={`batch${working ? '' : ' batch--moving'}`}>
-      <button type="button" className="batch__head" onClick={onOpen}>
-        <span className="batch__title">
-          <span className="batch__name">
-            {lot.lotNumber && <span className="batch__no">LOT {lot.lotNumber}</span>}
+    <article className={`lot${working ? '' : ' lot--moving'}`}>
+      <button type="button" className="lot__head" onClick={onOpen}>
+        <span className="lot__title">
+          <span className="lot__name">
+            {lot.lotNumber && <span className="lot__no">LOT {lot.lotNumber}</span>}
             {lot.name}
           </span>
           <span className="faint">
@@ -1474,27 +1487,27 @@ function BatchCard({ summary, store, onOpen }: {
         </span>
       </button>
 
-      <div className="batch__bar" aria-hidden="true">
+      <div className="lot__bar" aria-hidden="true">
         <span style={{ width: `${((LOT_STAGES.indexOf(lot.stage) + 1) / LOT_STAGES.length) * 100}%` }} />
       </div>
 
-      {/* Where the batch is on its own route, in the seller's words, and then
+      {/* Where the lot is on its own route, in the seller's words, and then
           what the parcels inside it are doing - which is not the same question
           and does not always have the same answer. */}
-      <div className="batch__status">
-        <span className={`batch__pip batch__pip--${phase}`} aria-hidden="true" />
+      <div className="lot__status">
+        <span className={`lot__pip lot__pip--${phase}`} aria-hidden="true" />
         <strong>{currentStepName(lot)}</strong>
         <span className="faint">· {PHASE_LABELS[phase]}</span>
       </div>
       {(lot.exporterUserId || lot.handler?.name) && (
-        <div className="batch__crew">
+        <div className="lot__crew">
           {lot.exporterUserId && <span className="chipfact">Exporter named</span>}
           {lot.handler?.name && <span className="chipfact">Handler: {lot.handler.name}</span>}
         </div>
       )}
 
       {working && summary.orderCount > 0 && (
-        <div className="batch__body">
+        <div className="lot__body">
           <div className="tiles">
             <Tile
               value={String(tally.customers)}
@@ -1545,8 +1558,8 @@ function BatchCard({ summary, store, onOpen }: {
         </div>
       )}
 
-      <div className="batch__foot">
-        <button type="button" className="btn btn--quiet btn--sm" onClick={onOpen}>Edit batch</button>
+      <div className="lot__foot">
+        <button type="button" className="btn btn--quiet btn--sm" onClick={onOpen}>Edit lot</button>
         <Link to={board} className="btn btn--ghost btn--sm">Packing board →</Link>
       </div>
     </article>
@@ -1554,7 +1567,7 @@ function BatchCard({ summary, store, onOpen }: {
 }
 
 /**
- * The people behind one of a batch card's numbers.
+ * The people behind one of a lot card's numbers.
  *
  * Per person rather than per item, because a parcel goes to a person: "four
  * packed" is a fact about cardboard, and "Priya 1 of 3" is the thing to do
@@ -1578,9 +1591,9 @@ function DrillRows({ board, chip, to }: { board: LotBoard; chip: Drill; to: stri
   else if (chip === 'dispatched') rows.sort((a, b) => a.dispatched / a.total - b.dispatched / b.total);
   else rows.sort((a, b) => b.total - a.total);
 
-  if (rows.length === 0) return <p className="faint">Nobody has ordered into this batch yet.</p>;
+  if (rows.length === 0) return <p className="faint">Nobody has ordered into this lot yet.</p>;
 
-  // Eight, then the board. A batch of forty is a working session, not a
+  // Eight, then the board. A lot of forty is a working session, not a
   // glance, and the screen built for it is one tap away.
   const shown = rows.slice(0, 8);
 
@@ -1770,7 +1783,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
 
       {quiet ? (
         <EmptyState icon="◷" title="Nothing has moved yet">
-          Open a batch and file some orders into it. These figures are counted off the checkpoints
+          Open a lot and file some orders into it. These figures are counted off the checkpoints
           you tick, so they fill themselves in as the consignment travels.
         </EmptyState>
       ) : (
@@ -1784,7 +1797,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
             <Stat
               label="Value moving"
               value={formatMoney(headline.valueInFlightMinor)}
-              note={`${headline.openLots} batch${headline.openLots === 1 ? '' : 'es'} open`}
+              note={`${headline.openLots} lot${headline.openLots === 1 ? '' : 'es'} open`}
             />
             <Stat
               label="Awaiting payment"
@@ -1798,7 +1811,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
             <Stat
               label="Repeat customers"
               value={String(data.repeat)}
-              note="bought across two batches or more"
+              note="bought across two lots or more"
             />
           </div>
 
@@ -1807,7 +1820,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
               <div>
                 <h2>Boxes still to pack</h2>
                 <span className="field__hint">
-                  One parcel per customer per batch, sized off what is in it. A customer drops out
+                  One parcel per customer per lot, sized off what is in it. A customer drops out
                   once theirs is packed.
                 </span>
               </div>
@@ -1861,7 +1874,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
           {perLot.length > 0 && (
             <div className="card card--pad stack">
               <div>
-                <h2>Batch by batch</h2>
+                <h2>Lot by lot</h2>
                 <span className="field__hint">
                   Where each consignment actually is, and what is riding on it.
                 </span>
@@ -1930,7 +1943,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
                   <span style={{ minWidth: 0 }}>
                     <Person who={row.who} />
                     <span className="faint">
-                      {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} across {row.lots} batch
+                      {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} across {row.lots} lot
                       {row.lots === 1 ? '' : 'es'}
                     </span>
                   </span>
@@ -1945,7 +1958,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
               <div>
                 <h2>New against returning</h2>
                 <span className="field__hint">
-                  Customers in each batch, and whether you had seen them before.
+                  Customers in each lot, and whether you had seen them before.
                 </span>
               </div>
               <div className="legs">
@@ -1972,7 +1985,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
                   <div>
                     <h2>Worth packing together</h2>
                     <span className="field__hint">
-                      Several items in one batch, going to one person — one parcel, not three.
+                      Several items in one lot, going to one person — one parcel, not three.
                     </span>
                   </div>
                   {bulk.map((row) => (
@@ -1992,7 +2005,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
                   <div style={{ marginTop: bulk.length > 0 ? 6 : 0 }}>
                     <h2>Not seen lately</h2>
                     <span className="field__hint">
-                      Bought before, nothing in your last three batches.
+                      Bought before, nothing in your last three lots.
                     </span>
                   </div>
                   {dormant.map((row) => (
@@ -2001,7 +2014,7 @@ function ProInsights({ data }: { data: InsightsResponse }) {
                         <Person who={row.who} />
                         <span className="faint"> · last in {row.lastLotName}</span>
                       </span>
-                      <span className="badge">{row.lotsAgo} batches ago</span>
+                      <span className="badge">{row.lotsAgo} lots ago</span>
                     </div>
                   ))}
                 </>

@@ -9,16 +9,16 @@ import {
   ApiRequestError, api,
   type Checkout, type EscrowOption, type EvidenceDraft, type OrderState, type OrderTracking,
 } from '../api';
-import { Ladder } from './BatchesPage';
+import { Ladder } from '../components/Ladder';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { formatDate, formatMoney, timeAgo } from '../format';
 
 /**
  * One order, as the buyer sees it.
  *
- * Nothing here mentions a shipment batch. The timeline is the order's own
+ * Nothing here mentions a shipment lot. The timeline is the order's own
  * history, so an item moved into a later consignment gains an event rather
- * than rewinding, and the only facts inherited from the batch are the tracking
+ * than rewinding, and the only facts inherited from the lot are the tracking
  * reference and the dispatch estimate.
  */
 export function OrderPage() {
@@ -84,30 +84,36 @@ export function OrderPage() {
         <div className="card card--pad stack">
           <h2>Where it is</h2>
 
-          {/* The batch's own ladder, in the seller's words, when there is a
-              batch. An item waiting for one gets what has actually happened
+          {/* The lot's own ladder, in the seller's words, when there is a
+              lot. An item waiting for one gets what has actually happened
               and a line saying what it is waiting for - not five hollow
               circles implying a journey nobody has booked. */}
           {data.awaitingLot || data.route ? (
             data.route ? (
               /* One ladder, not two.
                *
-               * This used to draw the pre-batch template above the batch's
+               * This used to draw the pre-lot template above the lot's
                * route, and the two overlap: both open with the order being
                * placed and the parcel reaching the China warehouse. The
                * result put the same event on screen twice in contradictory
                * states - ticked in the top ladder, hollow in the one below.
-               * Once there is a batch, the batch's route is the whole
+               * Once there is a lot, the lot's route is the whole
                * journey and the only thing worth drawing. */
               <>
-                <Ladder steps={data.route.steps} current={data.route.currentStep} />
+                {/* With what the seller actually said along the way. The
+                    ladder is unchanged - the notes hang off the rungs they
+                    were written at, which is where they were meant to be
+                    read. */}
+                <Ladder steps={data.route.steps} current={data.route.currentStep}
+                  history={data.order.stageHistory} />
                 <span className="field__hint">
                   Travelling in {data.route.lotName} · lot #{data.route.lotNumber}
                 </span>
               </>
             ) : (
               <>
-                <Ladder steps={data.preLot.steps} current={data.preLot.currentStep} />
+                <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
+                  history={data.order.stageHistory} />
                 <p className="notice notice--warn">
                   <strong>Not in a shipment yet.</strong> The seller groups orders into one
                   shipment before it leaves. The rest of the journey appears as soon as yours
@@ -630,7 +636,7 @@ async function downscale(file: File): Promise<string> {
  * Tapping a name expands it; the arrow adds them. Two steps on purpose: reading
  * about somebody should not be the same gesture as handing them the money.
  *
- * The suggestion is the one the rest of the batch already uses. A consignment is
+ * The suggestion is the one the rest of the lot already uses. A consignment is
  * one shipment with one set of problems, and thirty buyers each picking a
  * different holder turns one conversation into thirty — so the number of others
  * who agreed is shown, because that is the actual reason to go along with them.

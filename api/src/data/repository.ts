@@ -112,10 +112,10 @@ export interface Repository {
   saveRoute(route: TrackingRoute): Promise<TrackingRoute>;
   deleteRoute(sellerId: string, routeId: string): Promise<boolean>;
 
-  /** Sold, bound for a batch, not yet in one. */
+  /** Sold, bound for a lot, not yet in one. */
   listOrdersAwaitingLot(sellerId: string): Promise<Order[]>;
   /**
-   * Move an order into a batch.
+   * Move an order into a lot.
    *
    * Its own method because `lotId` is the partition key: a replace would write
    * into a partition the document is not in, so this is a create in the new one
@@ -124,7 +124,7 @@ export interface Repository {
   moveOrderToLot(order: Order, fromLotId: string): Promise<Order>;
   listListings(query?: CatalogQuery): Promise<Listing[]>;
 
-  /* Shipment batches (seller-side). */
+  /* Shipment lots (seller-side). */
   createLot(lot: Lot): Promise<Lot>;
   updateLot(lot: Lot): Promise<Lot>;
   /** Every listing tagged into this lot. */
@@ -146,7 +146,7 @@ export interface Repository {
   /**
    * Every order against one listing.
    *
-   * Cross-partition - orders live under their shipment batch - and bounded by
+   * Cross-partition - orders live under their shipment lot - and bounded by
    * how many people bought one item, not by how many orders exist. Read to
    * draw a pre-order's roster, which is the one place the buyers of a single
    * listing are shown as a group.

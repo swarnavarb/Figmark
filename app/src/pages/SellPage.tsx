@@ -102,7 +102,7 @@ export function SellPage() {
   const [lotId, setLotId] = useState('');
   const [creatingLot, setCreatingLot] = useState(false);
 
-  // The seller's open batches, so an item can be filed as it is listed rather
+  // The seller's open lots, so an item can be filed as it is listed rather
   // than published first and tidied up afterwards.
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +148,7 @@ export function SellPage() {
     if (fill.condition) setCondition(fill.condition);
     if (fill.description) setDescription(fill.description);
     setPreLot(template.preLotRoute?.steps ?? null);
-    // A batch named by the template wins; otherwise the template's own answer
+    // A lot named by the template wins; otherwise the template's own answer
     // about what it lists, which is the thing a shop should not have to repeat
     // forty times a month.
     if (fill.lotId) {
@@ -168,7 +168,7 @@ export function SellPage() {
 
   const priceMinor = Math.round(Number(price || 0) * 100);
   // A lot listing needs a lot; there is nothing to publish into otherwise.
-  // A batch is bookkeeping the shop does when the batch is packed, which is
+  // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
   const canPublish = title.trim().length > 2 && priceMinor > 0;
   // The lot is the answer: in one means import, out of one means in hand.
@@ -435,7 +435,7 @@ export function SellPage() {
               </button>
               <button type="button" role="radio" aria-checked={shape === 'waiting'}
                 className={shape === 'waiting' ? 'is-on' : ''} onClick={() => setShape('waiting')}>
-                Import — batch later
+                Import — lot later
               </button>
               <button type="button" role="radio" aria-checked={shape === 'lot'}
                 className={shape === 'lot' ? 'is-on' : ''} onClick={() => setShape('lot')}>
@@ -451,17 +451,17 @@ export function SellPage() {
             ) : shape === 'waiting' ? (
               <p className="field__hint">
                 It goes up as an import with no dispatch date. When it sells it lands on your Orders
-                screen waiting for a batch — file it into one there, any time.
+                screen waiting for a lot — file it into one there, any time.
               </p>
             ) : (
               <label className="field">
-                <span>Batch</span>
-                {/* Filing an item into a batch is bookkeeping done when the
-                    batch is actually being packed, often weeks after the item
+                <span>Lot</span>
+                {/* Filing an item into a lot is bookkeeping done when the
+                    lot is actually being packed, often weeks after the item
                     went up. Requiring it here made shops either misdescribe the
                     sourcing or not list at all, so "later" is a real answer. */}
                 <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
-                  <option value="">File it into a batch later</option>
+                  <option value="">File it into a lot later</option>
                   {lots.map((lot) => (
                     <option key={lot.id} value={lot.id}>
                       {lot.name}{lot.origin ? ` — ${lot.origin}` : ''}
@@ -470,12 +470,12 @@ export function SellPage() {
                 </select>
                 <span className="field__hint">
                   {lotId
-                    ? 'Buyers follow this batch through customs and get its dispatch estimate.'
+                    ? 'Buyers follow this lot through customs and get its dispatch estimate.'
                     : 'It goes up as an import with no dispatch date until you file it — any time, from Items.'}
                 </span>
                 <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start', marginTop: 8 }}
                   onClick={() => setCreatingLot(true)}>
-                  + New batch
+                  + New lot
                 </button>
               </label>
             )}

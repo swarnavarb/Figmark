@@ -17,11 +17,17 @@ export const handleKey = (username: string) => `@${username.trim().toLowerCase()
  */
 export const USERNAME_PATTERN = /^[a-z0-9](?:[a-z0-9_.]{1,28}[a-z0-9])$/;
 
-/** Reserved because they are already routes, or would be mistaken for one. */
+/**
+ * Reserved because they are already routes, or would be mistaken for one.
+ *
+ * `batch` and `batches` stay reserved after the rename to lots: they were live
+ * paths, they may be bookmarked, and a username that shadows an old route is
+ * the kind of thing that only breaks for the one person who kept the link.
+ */
 const TAKEN = new Set([
   'api', 'app', 'admin', 'about', 'auth', 'login', 'logout', 'signup', 'signin',
   'sell', 'shop', 'social', 'lot', 'lots', 'listing', 'listings', 'order', 'orders',
-  'me', 'my', 'batches', 'forwarders', 'settings', 'help', 'support', 'terms',
+  'me', 'my', 'batch', 'batches', 'forwarders', 'settings', 'help', 'support', 'terms',
   'privacy', 'search', 'new', 'edit', 'static', 'assets', 'figmark',
 ]);
 

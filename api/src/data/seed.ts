@@ -577,9 +577,9 @@ export function seedListings(): Listing[] {
         }
       : null,
     lotId: entry.lotId ?? null,
-    // The batch decides it: an import travels in a consignment, so an item with
-    // no batch behind it is stock already on the shelf. Derived rather than
-    // stated, so a fixture cannot claim an import it has no batch for.
+    // The lot decides it: an import travels in a consignment, so an item with
+    // no lot behind it is stock already on the shelf. Derived rather than
+    // stated, so a fixture cannot claim an import it has no lot for.
     sourcing: entry.lotId ? 'import' : 'in_hand',
     bundle: entry.bundle === true,
     photos: [],
@@ -621,7 +621,7 @@ export function seedLots(): Lot[] {
       createdAt: iso(-4), updatedAt: iso(-1),
     },
     {
-      /* The demo account's own shipment batch, so the seller console has
+      /* The demo account's own shipment lot, so the seller console has
          something real in it the moment you sign in. */
       id: 'lot_my_batch', sellerId: 'usr_demo',
       name: 'Mumbai dispatch — week 36',
@@ -629,7 +629,7 @@ export function seedLots(): Lot[] {
       origin: 'Mumbai, IN',
       supplier: null,
       status: 'open', stage: 'ordering',
-      stageHistory: [{ stage: 'ordering', enteredAt: iso(-3), note: 'Batch opened.', recordedBy: 'usr_demo' }],
+      stageHistory: [{ stage: 'ordering', enteredAt: iso(-3), note: 'Lot opened.', recordedBy: 'usr_demo' }],
       estimatedDispatchAt: iso(4),
       forwarder: null,
       costModel: { currency: 'INR', goodsCostMinor: 0, freightMinor: 0, customsDutyMinor: 0, packagingMinor: 12_000, localShippingMinor: 18_000, totalWeightGrams: 1_800 },
@@ -821,7 +821,7 @@ export function seedReviews(): Review[] {
        every storefront reads "unrated" and the credit card looks broken rather
        than empty. These are the orders where those two are the seller. */
     revealed('rev_5', 'usr_kaiju', 'usr_demo', 'ord_1002', 'buyer_to_seller', 5,
-      'Third order from them. Consolidated the whole batch and sent one parcel.', -30),
+      'Third order from them. Consolidated the whole lot and sent one parcel.', -30),
     revealed('rev_6', 'usr_kaiju', 'usr_demo', 'ord_1001', 'buyer_to_seller', 4,
       'Statue arrived perfect. Two weeks later than the estimate, which they did warn about.', -20),
     revealed('rev_7', 'usr_gadgetgrid', 'usr_demo', 'ord_1003', 'buyer_to_seller', 5,
@@ -1087,7 +1087,7 @@ const POSTS: PostSeed[] = [
   {
     id: 'pst_kaiju_2', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
     authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
-    body: 'August lot cleared the warehouse and is with the forwarder. QC photos going out to everyone in that batch tonight.',
+    body: 'August lot cleared the warehouse and is with the forwarder. QC photos going out to everyone in that lot tonight.',
     likeCount: 11, replyCount: 2, ageDays: -4,
   },
   {
@@ -1312,7 +1312,7 @@ export function seedShippedLot(): Lot {
       handlerUserId: 'usr_hnd_bombay', name: 'Bombay Parcel Works',
       contact: '+919000000201', city: 'Mumbai',
     },
-    // Named on this batch rather than granted the run of the shop: the supplier
+    // Named on this lot rather than granted the run of the shop: the supplier
     // already holds the store's export right, and this is the other way in.
     exporterUserId: 'usr_packer',
     costModel: {

@@ -735,7 +735,7 @@ export class CosmosRepository implements Repository {
 
   async listOrdersAwaitingLot(sellerId: string): Promise<Order[]> {
     // Single-partition: every waiting item is filed under the one sentinel, so
-    // "what is there to put in this batch" is a cheap read however many shops
+    // "what is there to put in this lot" is a cheap read however many shops
     // are using the app.
     const { resources } = await this.container('orders')
       .items.query<Order>(
@@ -756,7 +756,7 @@ export class CosmosRepository implements Repository {
 
   async moveOrderToLot(order: Order, fromLotId: string): Promise<Order> {
     // `lotId` is the partition key, so this is not an update. Create in the new
-    // partition first: if the delete then fails the item is in two batches,
+    // partition first: if the delete then fails the item is in two lots,
     // which a manifest makes obvious - the other order would leave it in none,
     // which nothing would.
     const moved: Order = { ...order, updatedAt: new Date().toISOString() };
@@ -769,7 +769,7 @@ export class CosmosRepository implements Repository {
 
   async listHandlers(): Promise<User[]> {
     // Listed ones only. An unlisted handler still works - a shop names them on
-    // a batch by hand - they are simply not on offer to strangers.
+    // a lot by hand - they are simply not on offer to strangers.
     const { resources } = await this.container('users')
       .items.query<User>({
         query: 'SELECT * FROM c WHERE IS_DEFINED(c.handlerProfile) AND c.handlerProfile.listedInDirectory = true',

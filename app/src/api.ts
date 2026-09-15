@@ -10,7 +10,7 @@ import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
-import type { RouteStep, TrackingRoute } from '@shared/routes';
+import type { RouteStep, StepSide, TrackingRoute } from '@shared/routes';
 import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
@@ -30,7 +30,7 @@ export interface EvidenceDraft {
 }
 import type {
   Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty,
-  Order, PaymentClaim, Post, Review, SellerPaymentDetails, SellerProfile, StoreManager,
+  Order, PaymentClaim, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent, StoreManager,
 } from '@shared/models';
 
 /**
@@ -111,7 +111,7 @@ export interface SellerCard {
 export interface FeedListing extends Listing {
   liked: boolean;
   seller: SellerCard | null;
-  /** Inherited from the item's shipment batch; the batch itself stays private. */
+  /** Inherited from the item's shipment lot; the lot itself stays private. */
   estimatedDispatchAt: string | null;
 }
 
@@ -180,7 +180,7 @@ export interface LotSummary {
 
 export interface LotsResponse {
   lots: LotSummary[];
-  /** Listings not yet tagged into any batch. */
+  /** Listings not yet tagged into any lot. */
   unassigned: Listing[];
 }
 
@@ -188,10 +188,12 @@ export interface LotContents {
   lot: Lot;
   listings: Listing[];
   orders: Order[];
-  /** The ladder this batch travels and where along it. */
+  /** The ladder this lot travels and where along it. */
   route: LotRouteView;
   /** The items in it, with who bought each. */
   items: LotItem[];
+  /** Every step the lot took and every note written on it, oldest first. */
+  history: StageEvent[];
   totals: { lines: number; units: number; weightGrams: number; valueMinor: number };
 }
 
@@ -199,7 +201,7 @@ export interface OrderTracking {
   order: Order;
   stages: FulfilmentStage[];
   currentStage: FulfilmentStage;
-  /** The batch's ladder, in the seller's own words. Null without a batch. */
+  /** The lot's ladder, in the seller's own words. Null without a lot. */
   route: {
     name: string;
     steps: RouteStep[];
@@ -207,9 +209,9 @@ export interface OrderTracking {
     lotName: string;
     lotNumber: string;
   } | null;
-  /** The ladder before any batch, in the words the shop's template used. */
+  /** The ladder before any lot, in the words the shop's template used. */
   preLot: { name: string; steps: RouteStep[]; currentStep: number };
-  /** Sold, bound for a batch, not in one - so the timeline stops early. */
+  /** Sold, bound for a lot, not in one - so the timeline stops early. */
   awaitingLot: boolean;
   sellerName: string;
   trackingReference: string | null;
@@ -297,7 +299,7 @@ export interface Checkout {
   sellerPayment: SellerPaymentDetails | null;
   /** Empty when nobody approved can be neutral in this trade. */
   escrows: EscrowOption[];
-  /** The one the rest of the batch already uses, and why. Never a default. */
+  /** The one the rest of the lot already uses, and why. Never a default. */
   suggested: { agentId: string; name: string; because: string } | null;
 }
 
@@ -324,7 +326,7 @@ export interface SaleRow {
   lotStep: string | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
-  /** The route its Quick Post template set up for the batch that will carry it. */
+  /** The route its Quick Post template set up for the lot that will carry it. */
   lotRouteId: string | null;
 }
 
@@ -455,9 +457,9 @@ export interface NewListing {
   priceMinor: number;
   quantityAvailable: number;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;
-  /** Omitted when the item goes into a batch, which settles it. */
+  /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
-  /** The seller's own batch to file this into, chosen while listing. */
+  /** The seller's own lot to file this into, chosen while listing. */
   lotId?: string | null;
   /** The store to list into; absent means your own. */
   storeId?: string;
@@ -473,11 +475,11 @@ export interface NewListing {
   /** The before-lot ladder a Quick Post template gave it. */
   preLotSteps?: { name: string; description?: string }[];
   preLotName?: string;
-  /** The route template a batch made from this item should travel. */
+  /** The route template a lot made from this item should travel. */
   lotRouteId?: string | null;
 }
 
-/** Everything about a batch that can be set when opening it, and corrected later. */
+/** Everything about a lot that can be set when opening it, and corrected later. */
 export interface LotDetails {
   name: string;
   description?: string;
@@ -701,7 +703,7 @@ export interface ServiceDirectory {
   providers: ProviderCard[];
 }
 
-/** A batch consigned to this forwarder. */
+/** A lot consigned to this forwarder. */
 export interface ConsignmentRow {
   store: { ownerId: string; name: string; handle: string | null };
   lot: {
@@ -716,7 +718,7 @@ export interface ConsignmentRow {
   weightGrams: number;
 }
 
-/** A batch this handler has to get out, counted in parcels. */
+/** A lot this handler has to get out, counted in parcels. */
 export interface DistributionRow {
   store: { ownerId: string; name: string; handle: string | null };
   lot: { id: string; name: string; stage: FulfilmentStage; origin: string };
@@ -726,7 +728,7 @@ export interface DistributionRow {
   tally: LotTally;
 }
 
-export interface DistributionBatch {
+export interface DistributionLot {
   store: { ownerId: string; name: string; handle: string | null };
   lot: { id: string; name: string; stage: FulfilmentStage; origin: string };
   city: string | null;
@@ -749,15 +751,24 @@ export interface DistributionBatch {
 
 /* ── Routes and the items that ride them ───────────────────────────────── */
 
+export interface RoutePreset {
+  id: string;
+  name: string;
+  blurb: string;
+  steps: RouteStep[];
+}
+
 export interface RoutesResponse {
   routes: TrackingRoute[];
   /** The seven stages this app has always had, as a route you can pick. */
   builtIn: { routeId: string | null; name: string; steps: RouteStep[] };
-  /** What a new route opens with, so nobody starts at an empty list. */
+  /** The shapes a shop can start from, described. */
+  presets: RoutePreset[];
+  /** What a blank route opens with, so nobody starts at an empty list. */
   suggested: RouteStep[];
 }
 
-/** An item that could go in a batch: sold, bound for one, not in one. */
+/** An item that could go in a lot: sold, bound for one, not in one. */
 export interface CandidateItem {
   id: string;
   itemName: string;
@@ -781,6 +792,12 @@ export interface LotItem {
   buyerName: string;
   buyerHandle: string | null;
   checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+  /** Where this item is on the lot's route. The lot's position unless moved alone. */
+  currentStep: number;
+  /** True when the seller moved this one item away from the rest of the lot. */
+  ownStep: boolean;
+  /** This item's own history, which is what its buyer reads. */
+  history: StageEvent[];
 }
 
 export interface LotRouteView {
@@ -788,12 +805,12 @@ export interface LotRouteView {
   routeId: string | null;
   steps: RouteStep[];
   currentStep: number;
-  /** Once the batch is with the seller, items are finished one at a time. */
+  /** Once the lot is with the seller, items are finished one at a time. */
   atSeller: boolean;
   lotNumber: string;
 }
 
-/** One batch of a buyer's items, with the single timeline they share. */
+/** One lot of a buyer's items, with the single timeline they share. */
 export interface ItemGroup {
   key: string;
   kind: 'lot' | 'awaiting' | 'direct';
@@ -1013,7 +1030,7 @@ export const api = {
     body: LotDetails & {
       forwarderUserId?: string; forwarderName?: string; forwarderContact?: string;
       routeId?: string; routeName?: string;
-      routeSteps?: { id?: string; name: string; description?: string }[];
+      routeSteps?: { id?: string; name: string; description?: string; side?: StepSide }[];
       exporterHandle?: string; handlerUserId?: string; handlerName?: string;
     },
   ) => post<{ lot: Lot }>('/lots', body),
@@ -1037,17 +1054,21 @@ export const api = {
     listed?: boolean;
   }) => post<{ kind: ServiceKind; profile: unknown }>('/me/service', body),
   consignments: () => request<{ consignments: ConsignmentRow[] }>('/me/service/consignments'),
-  distribution: () => request<{ batches: DistributionRow[] }>('/me/service/distribution'),
-  distributionBatch: (id: string) =>
-    request<DistributionBatch>(`/me/service/distribution/${encodeURIComponent(id)}`),
-  /** Name the people working a batch: who checks it, and who gets it out. */
+  distribution: () => request<{ lots: DistributionRow[] }>('/me/service/distribution'),
+  distributionLot: (id: string) =>
+    request<DistributionLot>(`/me/service/distribution/${encodeURIComponent(id)}`),
+  /** Name the people working a lot: who checks it, and who gets it out. */
   setCrew: (id: string, body: {
     handlerUserId?: string | null; handlerName?: string; handlerContact?: string;
     handlerCity?: string; exporterUserId?: string | null; exporterHandle?: string | null;
   }) => post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/crew`, body),
 
   routes: () => request<RoutesResponse>('/routes'),
-  saveRoute: (body: { id?: string; name: string; steps: { id?: string; name: string; description?: string }[] }) =>
+  saveRoute: (body: {
+    id?: string;
+    name: string;
+    steps: { id?: string; name: string; description?: string; side?: 'pre' | 'post' }[];
+  }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),
   lotCandidates: (id: string, q?: string) =>
@@ -1056,9 +1077,15 @@ export const api = {
     ),
   addItemsToLot: (id: string, orderIds: string[]) =>
     post<{ added: number; orderIds: string[] }>(`/lots/${encodeURIComponent(id)}/items`, { orderIds }),
-  /** Move the batch along its route. Omit `to` for the next step. */
+  /** Move the lot along its route. Omit `to` for the next step. */
   stepLot: (id: string, body: { to?: number; note?: string } = {}) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
+  /** Say something about the lot, at a step, without moving it. Every buyer in it reads it. */
+  noteOnLot: (id: string, note: string, at?: number) =>
+    post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/note`, { note, at }),
+  /** Move one item on its own, or note something about it. Omit `to` to just note. */
+  stepItem: (id: string, body: { to?: number; note?: string; at?: number }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/step`, body),
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
 
   templates: () => request<{ templates: PostTemplate[] }>('/templates'),
@@ -1072,7 +1099,7 @@ export const api = {
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
   uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
-  /** File one order into a batch - an existing one, or one opened here. */
+  /** File one order into a lot - an existing one, or one opened here. */
   assignOrderToLot: (id: string, body: { lotId?: string; newLot?: Record<string, unknown> }) =>
     post<{ order: Order; lot: Lot }>(`/orders/${encodeURIComponent(id)}/lot`, body),
 

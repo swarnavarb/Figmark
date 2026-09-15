@@ -4,10 +4,10 @@ import { ApiRequestError, api, type LotDetails } from '../api';
 import { ErrorNotice } from './ui';
 
 /**
- * The details that describe a batch, in one place.
+ * The details that describe a lot, in one place.
  *
- * Creating a batch and correcting one later are the same form: every field is
- * editable afterwards, so having two definitions of what a batch has would only
+ * Creating a lot and correcting one later are the same form: every field is
+ * editable afterwards, so having two definitions of what a lot has would only
  * be an opportunity for them to disagree.
  */
 export function LotDetailFields({ value, onChange, compact = false }: {
@@ -16,10 +16,10 @@ export function LotDetailFields({ value, onChange, compact = false }: {
   /**
    * Fold everything but the name and the origin away.
    *
-   * Opening a batch is four decisions - what it is called, where it comes from,
+   * Opening a lot is four decisions - what it is called, where it comes from,
    * who works it, and the route it climbs - and the supplier's invoice
    * reference is not one of them. It is still here, one tap away, and still the
-   * same single definition of what a batch has: the edit screen asks for none
+   * same single definition of what a lot has: the edit screen asks for none
    * of this and gets all of it.
    */
   compact?: boolean;
@@ -60,8 +60,8 @@ export function LotDetailFields({ value, onChange, compact = false }: {
         <div>
           <div style={{ fontWeight: 600 }}>Supplier</div>
           <span className="field__hint">
-            Who you are buying this batch from at the origin — the overseas seller or agent, not your
-            forwarder. Kept so you can reconcile the batch against their invoice later.
+            Who you are buying this lot from at the origin — the overseas seller or agent, not your
+            forwarder. Kept so you can reconcile the lot against their invoice later.
           </span>
         </div>
         <label className="field">
@@ -112,7 +112,7 @@ export const emptyLotDetails = (): LotDetails => ({
   supplierReference: '',
 });
 
-/** The details of an existing batch, ready to be edited. */
+/** The details of an existing lot, ready to be edited. */
 export const lotDetailsOf = (lot: Lot): LotDetails => ({
   name: lot.name,
   description: lot.description,
@@ -124,9 +124,9 @@ export const lotDetailsOf = (lot: Lot): LotDetails => ({
 });
 
 /**
- * Open a batch without leaving the page you are on.
+ * Open a lot without leaving the page you are on.
  *
- * A seller listing their first imported item has no batch to file it into, and
+ * A seller listing their first imported item has no lot to file it into, and
  * sending them to another screen to make one loses the listing they were half
  * way through writing.
  */
@@ -170,7 +170,7 @@ export function NewLotDialog({ onCreated, onCancel }: {
           </button>
           <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
         </div>
-        <span className="field__hint">Everything here can be changed later from My batches.</span>
+        <span className="field__hint">Everything here can be changed later from My lots.</span>
       </form>
     </Modal>
   );

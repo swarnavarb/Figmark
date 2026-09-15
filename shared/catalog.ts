@@ -147,7 +147,7 @@ export function matchesKind(listing: KindShape, kind: string | undefined): boole
     case 'mixed_lot':
       return listing.bundle === true;
     case 'in_hand':
-      // Not "has no shipment batch": an item can be in hand and still have been
+      // Not "has no shipment lot": an item can be in hand and still have been
       // imported at some point. What a buyer is asking is whether it ships from
       // the seller's shelf today, which is what `sourcing` records.
       return (listing.sourcing ?? (listing.lotId ? 'import' : 'in_hand')) === 'in_hand';

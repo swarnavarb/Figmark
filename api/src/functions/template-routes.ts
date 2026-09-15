@@ -13,13 +13,13 @@ import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
 /**
- * Quick Post templates, photo uploads, and putting one order in a batch.
+ * Quick Post templates, photo uploads, and putting one order in a lot.
  *
  * Three things that look unrelated and are the same thing: the work a shop does
  * over and over that nothing was helping with. Forty listings a month with the
  * same category and the same two lines; a photo that had nowhere to go because
  * upload was the one part of the storage seam nobody had written; and an order
- * that had to be filed into a batch from the batch's screen rather than from
+ * that had to be filed into a lot from the lot's screen rather than from
  * the order in front of you.
  */
 
@@ -96,7 +96,7 @@ async function saveTemplate(request: HttpRequest, _context: InvocationContext) {
     // Two steps or none: one step before the wall says nothing a status word
     // would not, and the built-in pair is the sensible default.
     preLotRoute: preSteps.length >= 2
-      ? { routeId: null, name: body.preLotName?.trim() || 'Before the batch', steps: preSteps }
+      ? { routeId: null, name: body.preLotName?.trim() || 'Before the lot', steps: preSteps }
       : null,
     lotRouteId,
     lotRouteName,
@@ -190,19 +190,19 @@ async function photo(request: HttpRequest, _context: InvocationContext) {
   };
 }
 
-/* ── One order into a batch ────────────────────────────────────────────── */
+/* ── One order into a lot ────────────────────────────────────────────── */
 
 /**
  * POST /api/orders/{id}/lot - file this one order.
  *
- * The batch screen can take several at once; this is the other direction, from
+ * The lot screen can take several at once; this is the other direction, from
  * the order in front of you. It is the same move either way - an item joins a
- * batch and inherits its route - and it is here because the seller's answer to
+ * lot and inherits its route - and it is here because the seller's answer to
  * "where does this go" happens while they are looking at the order, not while
- * they are looking at the batch.
+ * they are looking at the lot.
  *
- * The batch may not exist yet. Creating it goes through the same builder the
- * lots screen uses, so a batch opened from here is a batch like any other.
+ * The lot may not exist yet. Creating it goes through the same builder the
+ * lots screen uses, so a lot opened from here is a lot like any other.
  */
 async function assignOrderToLot(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -226,16 +226,16 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
       409,
       'already_filed',
       order.lotId === 'direct'
-        ? 'That is a domestic sale. It is not travelling in a batch.'
-        : 'That item is already in a batch.',
+        ? 'That is a domestic sale. It is not travelling in a lot.'
+        : 'That item is already in a lot.',
     );
   }
 
   let lot = body.lotId ? await repository.getLot(user.id, body.lotId) : null;
-  if (body.lotId && !lot) return error(404, 'not_found', 'No such batch.');
+  if (body.lotId && !lot) return error(404, 'not_found', 'No such lot.');
 
   if (!lot) {
-    if (!body.newLot) return error(400, 'invalid_request', 'Pick a batch, or describe a new one.');
+    if (!body.newLot) return error(400, 'invalid_request', 'Pick a lot, or describe a new one.');
     const made = await buildLot(user.id, body.newLot, repository);
     if (made.refusal) return error(made.refusal.status, made.refusal.code, made.refusal.message);
     lot = made.lot;
@@ -270,7 +270,7 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
     {
       kind: 'lot_moved',
       title: `Your item is in ${lot.name}`,
-      body: `It now travels with the batch: ${route.name}.`,
+      body: `It now travels with the lot: ${route.name}.`,
       link: '/me?tab=purchases',
     },
     { except: user.id },

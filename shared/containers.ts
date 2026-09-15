@@ -166,7 +166,7 @@ export const CONTAINERS = {
     name: 'routes',
     partitionKeyPath: '/sellerId',
     rationale:
-      'A route is a template a shop writes once and reuses on every batch, so the only read is "show me mine" - one partition, a handful of documents, never browsed by anyone else. The steps ride inside the document rather than in a container of their own: they are only ever read as a whole list, in order, and a second container would buy nothing but a join.',
+      'A route is a template a shop writes once and reuses on every lot, so the only read is "show me mine" - one partition, a handful of documents, never browsed by anyone else. The steps ride inside the document rather than in a container of their own: they are only ever read as a whole list, in order, and a second container would buy nothing but a join.',
     // Step descriptions are prose nobody queries by.
     excludedPaths: ['/steps/[]/description/?'],
   },

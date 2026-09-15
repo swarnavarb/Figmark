@@ -11,7 +11,7 @@ import {
 import type { Order } from './models.js';
 
 /**
- * Partition key for an order with no shipment batch behind it.
+ * Partition key for an order with no shipment lot behind it.
  *
  * `orders` is partitioned by `/lotId`, so a direct domestic sale still needs a
  * value. A single shared sentinel keeps those orders in one partition, which is
@@ -20,14 +20,14 @@ import type { Order } from './models.js';
 export const DIRECT_LOT_ID = 'direct';
 
 /**
- * An import that has been sold and has no batch behind it yet.
+ * An import that has been sold and has no lot behind it yet.
  *
  * Distinct from `direct`, and the distinction is the whole point: a direct sale
- * ships off a shelf and will never be in a batch, while this one is waiting for
+ * ships off a shelf and will never be in a lot, while this one is waiting for
  * the next run to be opened. Filed under `direct` - which is what happened
  * before this existed - the buyer was shown a three-step domestic timeline for
  * something crossing an ocean, and the item was invisible to the screen where
- * a shop fills a batch.
+ * a shop fills a lot.
  */
 export const AWAITING_LOT_ID = 'awaiting_lot';
 
@@ -35,18 +35,18 @@ export function isDirect(order: Pick<Order, 'lotId'>): boolean {
   return order.lotId === DIRECT_LOT_ID;
 }
 
-/** Sold, bound for a batch, not yet in one. */
+/** Sold, bound for a lot, not yet in one. */
 export function awaitingLot(order: Pick<Order, 'lotId'>): boolean {
   return order.lotId === AWAITING_LOT_ID;
 }
 
-/** In a real batch, as opposed to either sentinel. */
+/** In a real lot, as opposed to either sentinel. */
 export function inLot(order: Pick<Order, 'lotId'>): boolean {
   return !isDirect(order) && !awaitingLot(order);
 }
 
 /**
- * How far an item with no batch can honestly be tracked.
+ * How far an item with no lot can honestly be tracked.
  *
  * Two steps, and then it stops. Everything after "received at the warehouse"
  * is a fact about a consignment, and this item is not in one - so the timeline
@@ -113,10 +113,10 @@ export type { DirectStage, FulfilmentStage, LotStage };
 /**
  * How a listing is sourced.
  *
- * A batch settles it: an item in one is an import, whatever anybody typed. With
- * no batch the stored answer stands, because filing an item into a batch is
+ * A lot settles it: an item in one is an import, whatever anybody typed. With
+ * no lot the stored answer stands, because filing an item into a lot is
  * bookkeeping a shop does weeks after the item went up - the listing route has
- * allowed an import to wait for its batch for some time, and reading that back
+ * allowed an import to wait for its lot for some time, and reading that back
  * as "in hand" was this function telling the buyer the opposite of what the
  * seller said, on a screen the seller could not correct.
  */

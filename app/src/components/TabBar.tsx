@@ -10,7 +10,7 @@ import { NavLink, useLocation } from 'react-router-dom';
  * list, ship, talk - and browsing is what most sessions are.
  */
 /**
- * Three nodes joined: the trades around one batch.
+ * Three nodes joined: the trades around one lot.
  *
  * Exported because the Services hub leads with the same mark, and a drawn one
  * rather than an emoji for the same reason every glyph in this bar is drawn -
@@ -42,7 +42,7 @@ export const TABS = [
     to: '/shop',
     label: 'Sell',
     match: (path: string) =>
-      path.startsWith('/shop') || path.startsWith('/sell') || path.startsWith('/batches')
+      path.startsWith('/shop') || path.startsWith('/sell') || path.startsWith('/lots')
       || path.startsWith('/lot/'),
     icon: (
       <>
@@ -61,7 +61,7 @@ export const TABS = [
       path.startsWith('/services') || path.startsWith('/forwarders')
       || path.startsWith('/escrow') || path.startsWith('/packing'),
     // A hub of people rather than a briefcase: three nodes joined, which is
-    // what these four jobs are around one batch.
+    // what these four jobs are around one lot.
     icon: SERVICES_GLYPH,
   },
   {

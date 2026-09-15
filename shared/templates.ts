@@ -24,7 +24,7 @@ export interface PostTemplate extends BaseDocument {
   tags: string[];
   condition: ConditionTag | null;
   /**
-   * Whether items listed this way ship from the shelf or arrive in a batch.
+   * Whether items listed this way ship from the shelf or arrive in a lot.
    *
    * The template knows: a shop's Marvel Legends template is an import
    * template, and its clearance template is not. Without it a shop that lists
@@ -38,20 +38,20 @@ export interface PostTemplate extends BaseDocument {
   /**
    * Where an item listed from this template goes.
    *
-   * `null` - and the common case - is no batch: the item is sold first and
-   * filed into a run later, which is what the Orders screen is for. A batch id
+   * `null` - and the common case - is no lot: the item is sold first and
+   * filed into a run later, which is what the Orders screen is for. A lot id
    * here is a shop that opens the run before it lists the items in it.
    */
   defaultLotId: string | null;
-  /** The ladder before it is in a batch. Null means the built-in two steps. */
+  /** The ladder before it is in a lot. Null means the built-in two steps. */
   preLotRoute: LotRoute | null;
-  /** The template a batch created from one of these items should travel. */
+  /** The template a lot created from one of these items should travel. */
   lotRouteId: string | null;
   lotRouteName: string | null;
 }
 
 /**
- * What a buyer sees before their item is in a batch.
+ * What a buyer sees before their item is in a lot.
  *
  * Two steps and then a wall, because everything after the warehouse is a fact
  * about a consignment and this item is not in one. Kept as a route like every
@@ -60,7 +60,7 @@ export interface PostTemplate extends BaseDocument {
  */
 export const BUILT_IN_PRE_LOT_ROUTE: LotRoute = {
   routeId: null,
-  name: 'Before the batch',
+  name: 'Before the lot',
   steps: [
     { id: 'pre_placed', name: 'Order placed', description: '', position: 0 },
     {
@@ -72,7 +72,7 @@ export const BUILT_IN_PRE_LOT_ROUTE: LotRoute = {
   ],
 };
 
-/** The route an item travels before its batch: its own, or the built-in one. */
+/** The route an item travels before its lot: its own, or the built-in one. */
 export function preLotRouteOf(source: { preLotRoute?: LotRoute | null } | null | undefined): LotRoute {
   const route = source?.preLotRoute;
   return route && route.steps.length > 0 ? route : BUILT_IN_PRE_LOT_ROUTE;
@@ -124,7 +124,7 @@ export function fillFrom(template: PostTemplate): TemplateFill {
 
 /**
  * How the two ladders read end to end, for the line a template shows about
- * itself. Before the batch, then the batch's own - which is the whole journey
+ * itself. Before the lot, then the lot's own - which is the whole journey
  * a buyer of this item will read.
  */
 export function journeyOf(

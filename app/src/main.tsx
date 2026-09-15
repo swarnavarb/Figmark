@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { AuthPage } from './pages/AuthPage';
-import { BatchesPage } from './pages/BatchesPage';
+import { LotsPage } from './pages/LotsPage';
+import { RouteEditorPage, RoutesPage } from './pages/RoutesPage';
 import { FeedPage } from './pages/FeedPage';
 import { ForwardersPage } from './pages/ForwardersPage';
 import { ListingPage } from './pages/ListingPage';
@@ -52,7 +53,14 @@ function App() {
         <Route path="/sell" element={<SellPage />} />
         <Route path="/shop" element={<ShopPage />} />
         <Route path="/lot/:id" element={<LotBoardPage />} />
-        <Route path="/batches" element={<BatchesPage />} />
+        <Route path="/lots" element={<LotsPage />} />
+        {/* The old spelling. It was a live path before the rename, so anything
+            bookmarked or linked still lands in the right place. */}
+        <Route path="/batches" element={<Navigate to="/lots" replace />} />
+        <Route path="/routes" element={<RoutesPage />} />
+        {/* `new` before `:id`, so writing a route is never read as editing one. */}
+        <Route path="/routes/new" element={<RouteEditorPage />} />
+        <Route path="/routes/:id" element={<RouteEditorPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/services/mine" element={<MyServicesPage />} />
         <Route path="/services/mine/forwarder" element={<ConsignmentsPage />} />

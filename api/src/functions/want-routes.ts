@@ -318,7 +318,7 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
  * Tell the person who asked, and everybody who said they wanted it too.
  *
  * The offering seller is left out: they know. Failures are swallowed one at a
- * time rather than in a batch, because a notification that could not be written
+ * time rather than in a lot, because a notification that could not be written
  * must not undo the answer that was.
  */
 async function notifySeekers(

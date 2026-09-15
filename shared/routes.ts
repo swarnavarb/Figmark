@@ -2,17 +2,17 @@ import { LOT_STAGES, LOT_STAGE_LABELS, type LotStage } from './enums.js';
 import type { BaseDocument, Lot } from './models.js';
 
 /**
- * A route is the list of steps a batch travels through.
+ * A route is the list of steps a lot travels through.
  *
  * Until now the ladder was a fixed seven-word enum, which is right for the
  * shape of the trade and wrong for the words: one seller runs air freight
  * through Guangzhou and another sends sea freight out of Yiwu with a customs
  * broker in between, and both were made to describe it as "QC & repack". A
  * route lets the seller write their own ladder once and reuse it on every
- * batch, and the buyer reads the same words the seller works.
+ * lot, and the buyer reads the same words the seller works.
  *
- * The batch is the tracking engine. An item in a batch has no timeline of its
- * own - it inherits the batch's, which is what makes moving thirty-four items
+ * The lot is the tracking engine. An item in a lot has no timeline of its
+ * own - it inherits the lot's, which is what makes moving thirty-four items
  * one click instead of thirty-four.
  *
  * Two rules keep this from becoming a second parallel system:
@@ -25,13 +25,79 @@ import type { BaseDocument, Lot } from './models.js';
  *    built-in route that mapping is the identity.
  */
 
+/**
+ * Which half of the journey a step belongs to.
+ *
+ * `pre` is everything that happens to one item on its own, before it joins a
+ * lot. `post` is everything that happens to the whole lot once it has.
+ *
+ * This replaces the separate pre-lot template. One route now describes the
+ * whole journey and says where it changes hands, which is what stopped the
+ * two ladders overlapping: there is only one list, so no event can appear in
+ * it twice.
+ */
+export type StepSide = 'pre' | 'post';
+
+/** How many opening steps count as `pre` on a route written before sides. */
+const LEGACY_PRE_STEPS = 2;
+
 export interface RouteStep {
   id: string;
   name: string;
-  /** Optional, and usually empty: most steps are their own explanation. */
+  /**
+   * What actually happens at this step, in a sentence.
+   *
+   * Written for the buyer, who reads it on their timeline, and shown to the
+   * seller while they are arranging the route so they can tell two similar
+   * steps apart.
+   */
   description: string;
   /** Index in the ladder. Stored so a reorder is a write, not a re-sort. */
   position: number;
+  /**
+   * Optional so every route stored before this existed still loads. Read it
+   * through `sideOf`, never directly.
+   */
+  side?: StepSide;
+}
+
+/**
+ * Which side a step is on, for a route that may predate the field.
+ *
+ * The fallback reproduces exactly what the app did before: the first two
+ * steps were the pre-lot ladder and everything after belonged to the lot.
+ */
+export function sideOf(step: RouteStep, index: number): StepSide {
+  return step.side ?? (index < LEGACY_PRE_STEPS ? 'pre' : 'post');
+}
+
+/** Anything with a ladder in it: a lot's route, a saved template, a preset. */
+interface HasSteps { steps: RouteStep[] }
+
+/**
+ * The steps an item travels on its own, before it joins a lot.
+ *
+ * Takes anything with steps - a lot's snapshot, a saved template, a preset -
+ * because the answer depends on the steps and on nothing else about it.
+ */
+export function preSteps(route: HasSteps): RouteStep[] {
+  return route.steps.filter((step, index) => sideOf(step, index) === 'pre');
+}
+
+/** The steps the whole lot travels together. */
+export function postSteps(route: HasSteps): RouteStep[] {
+  return route.steps.filter((step, index) => sideOf(step, index) === 'post');
+}
+
+/**
+ * Where the hand-over sits: the index of the first `post` step.
+ *
+ * Equal to the step count when a route has no `post` steps at all, which is a
+ * journey that never consolidates - a courier run, or a domestic sale.
+ */
+export function joinIndexOf(route: HasSteps): number {
+  const at = route.steps.findIndex((step, index) => sideOf(step, index) === 'post');
+  return at === -1 ? route.steps.length : at;
 }
 
 /** A reusable ladder, saved under the seller who wrote it. */
@@ -57,23 +123,145 @@ export interface LotRoute {
 }
 
 /** The ladder that has always been here, written out. */
+/**
+ * What each of the seven built-in steps actually means.
+ *
+ * Kept beside the labels rather than inside them because a label is what the
+ * step is called and this is what happens there. The buyer reads these on
+ * their timeline; the seller reads them while arranging a route.
+ */
+const BUILT_IN_DESCRIPTIONS: Record<string, string> = {
+  ordering: 'The order is placed with you and you are sourcing the piece.',
+  china_wh_received: 'The piece has arrived at the overseas warehouse and is waiting for a lot.',
+  dispatched_from_china: 'The lot has left the warehouse and is on its way out of the country.',
+  india_received: 'The lot has landed and is going through customs.',
+  qc_repack: 'Every piece is checked and repacked for its own journey.',
+  local_dispatch: 'Your parcel has been handed to the domestic courier.',
+  delivered: 'It reached you.',
+};
+
+/** The two opening steps happen to one item; the rest happen to the whole lot. */
+const BUILT_IN_SIDES: Record<string, StepSide> = {
+  ordering: 'pre',
+  china_wh_received: 'pre',
+};
+
 export const BUILT_IN_ROUTE: LotRoute = {
   routeId: null,
   name: 'China → India',
   steps: LOT_STAGES.map((stage, index) => ({
     id: stage,
     name: LOT_STAGE_LABELS[stage],
-    description: '',
+    description: BUILT_IN_DESCRIPTIONS[stage] ?? '',
     position: index,
+    side: BUILT_IN_SIDES[stage] ?? 'post',
   })),
 };
+
+/**
+ * A step written out for a preset, before it becomes a real one.
+ *
+ * Presets are the point of this whole feature: a shop picking "Courier, end to
+ * end" from a list gets a correct route in one tap, where the same shop in a
+ * step builder gets one with customs missing.
+ */
+interface PresetStep {
+  name: string;
+  description: string;
+  side: StepSide;
+}
+
+export interface RoutePreset {
+  id: string;
+  name: string;
+  /** One line on what kind of journey this is, for the card that offers it. */
+  blurb: string;
+  steps: readonly PresetStep[];
+}
+
+export const ROUTE_PRESETS: readonly RoutePreset[] = [
+  {
+    id: 'consolidated',
+    name: 'China → India, consolidated',
+    blurb: 'Pieces gather at your warehouse, then travel together as one lot.',
+    steps: [
+      { name: 'Ordering', description: 'The order is placed with you and you are sourcing the piece.', side: 'pre' },
+      { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre' },
+      { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
+      { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
+      { name: 'Customs', description: 'Clearing customs on arrival. Usually handled by the forwarder.', side: 'post' },
+      { name: 'Landed', description: 'The lot has been received in India.', side: 'post' },
+      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post' },
+      { name: 'Delivered', description: 'It reached you.', side: 'post' },
+    ],
+  },
+  {
+    id: 'procurement',
+    name: 'Chain procurement',
+    blurb: 'You order from a supplier who orders from theirs. Longer before it moves.',
+    steps: [
+      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Ordered from the supplier', description: 'The shop has placed the order with their supplier.', side: 'pre' },
+      { name: 'Supplier sourcing', description: 'The supplier is obtaining the piece.', side: 'pre' },
+      { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre' },
+      { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
+      { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
+      { name: 'Customs', description: 'Clearing customs on arrival.', side: 'post' },
+      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post' },
+      { name: 'Delivered', description: 'It reached you.', side: 'post' },
+    ],
+  },
+  {
+    id: 'forwarder',
+    name: 'Supplier → forwarder',
+    blurb: 'The supplier ships straight to your freight forwarder. No warehouse of yours.',
+    steps: [
+      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Supplier shipped', description: 'The supplier has sent the piece to the freight forwarder.', side: 'pre' },
+      { name: 'At the forwarder', description: 'Received and being consolidated into a lot.', side: 'post' },
+      { name: 'Dispatched', description: 'The lot has left for India.', side: 'post' },
+      { name: 'Customs', description: 'Clearing customs on arrival. Handled by the forwarder.', side: 'post' },
+      { name: 'Landed', description: 'The lot has been received in India.', side: 'post' },
+      { name: 'Delivered', description: 'It reached you.', side: 'post' },
+    ],
+  },
+  {
+    id: 'courier',
+    name: 'Courier, end to end',
+    blurb: 'DHL or similar, one parcel per order. Never joins a lot.',
+    steps: [
+      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Supplier shipped', description: 'The piece has been handed to the courier.', side: 'pre' },
+      { name: 'Tracking issued', description: 'The courier has given the parcel a tracking number.', side: 'pre' },
+      { name: 'In transit', description: 'On its way to India.', side: 'pre' },
+      { name: 'Customs', description: 'Clearing customs. The courier handles this.', side: 'pre' },
+      { name: 'Out for delivery', description: 'With the local courier for the last leg.', side: 'pre' },
+      { name: 'Delivered', description: 'It reached you.', side: 'pre' },
+    ],
+  },
+  {
+    id: 'preorder',
+    name: 'Pre-order',
+    blurb: 'Bought before it exists. Months of waiting before anything moves.',
+    steps: [
+      { name: 'Pre-order placed', description: 'Your place is reserved against the release.', side: 'pre' },
+      { name: 'Release month reached', description: 'The maker has reached the announced release window.', side: 'pre' },
+      { name: 'Produced', description: 'The piece has been made and shipped to the warehouse.', side: 'pre' },
+      { name: 'At the overseas warehouse', description: 'Arrived and waiting for a lot.', side: 'pre' },
+      { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
+      { name: 'Customs', description: 'Clearing customs on arrival.', side: 'post' },
+      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post' },
+      { name: 'Delivered', description: 'It reached you.', side: 'post' },
+    ],
+  },
+];
 
 /**
  * What the builder opens with.
  *
  * Nine steps rather than the built-in seven, because this is what sellers
  * actually describe when asked: the two extra are the waits - the flight, and
- * the item sitting in a warehouse before it has a batch at all - which the
+ * the item sitting in a warehouse before it has a lot at all - which the
  * seven-stage ladder folded into its neighbours and buyers asked about anyway.
  */
 export const SUGGESTED_STEPS: readonly string[] = [
@@ -101,11 +289,15 @@ export function stepId(seed: number): string {
  */
 export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[] {
   return steps
-    .map((step) => ({
-      id: step.id?.trim() || stepId(Date.now()),
+    .map((step, index) => ({
+      id: step.id?.trim() || stepId(Date.now() + index),
       name: (step.name ?? '').trim(),
       description: (step.description ?? '').trim(),
       position: 0,
+      // Carried through rather than recomputed: which side a step is on is a
+      // decision the seller made, and dropping it here would silently move
+      // every step back to the legacy split on the next save.
+      side: step.side === 'pre' || step.side === 'post' ? step.side : undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));
@@ -135,7 +327,7 @@ export function currentStepOf(lot: Pick<Lot, 'route' | 'currentStep' | 'stage'>)
 /**
  * The coarse stage a route position corresponds to.
  *
- * `lot.stage` is still what the packing console, the batch card and the
+ * `lot.stage` is still what the packing console, the lot card and the
  * analytics read, and none of them should have to learn a vocabulary the
  * seller invented this morning. So it is derived: the route is laid over the
  * seven fixed stages in proportion.
@@ -149,7 +341,7 @@ export function coarseStage(route: LotRoute, index: number): LotStage {
   const steps = Math.max(1, route.steps.length);
   const clamped = Math.max(0, Math.min(steps - 1, index));
   // The last step is always delivered, whatever the arithmetic says: a route
-  // the seller has finished is a batch that has arrived.
+  // the seller has finished is a lot that has arrived.
   if (clamped === steps - 1) return LOT_STAGES[LOT_STAGES.length - 1]!;
   const mapped = Math.floor((clamped / steps) * LOT_STAGES.length);
   return LOT_STAGES[Math.min(LOT_STAGES.length - 1, mapped)]!;
@@ -193,7 +385,7 @@ export function currentStepName(lot: Pick<Lot, 'route' | 'currentStep' | 'stage'
 export function atSellerYet(lot: Pick<Lot, 'route' | 'currentStep' | 'stage'>): boolean {
   // Read off the coarse stage rather than a step name, because the name is the
   // seller's to write and this has to hold whatever they called it. India
-  // received is where a batch stops being one object and becomes a pile of
+  // received is where a lot stops being one object and becomes a pile of
   // parcels, which is exactly when per-item work starts.
   const stage = coarseStage(routeOf(lot), currentStepOf(lot));
   return LOT_STAGES.indexOf(stage) >= LOT_STAGES.indexOf('india_received');

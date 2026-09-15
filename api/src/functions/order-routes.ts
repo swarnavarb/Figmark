@@ -336,8 +336,8 @@ async function suggestEscrow(
     name: agent.escrowRights!.displayName || agent.displayName,
     because:
       best.count === 1
-        ? '1 other order in this batch already uses them.'
-        : `${best.count} other orders in this batch already use them.`,
+        ? '1 other order in this lot already uses them.'
+        : `${best.count} other orders in this lot already use them.`,
   };
 }
 
@@ -672,7 +672,7 @@ export const claimPaymentRoute = handler(claimPayment);
  * POST /api/orders/{id}/reject - the seller cannot serve this order.
  *
  * Every order on this marketplace is a promise made before anything moves: the
- * stock may have gone, the supplier may have pulled the line, the batch may not
+ * stock may have gone, the supplier may have pulled the line, the lot may not
  * fill. The seller needs a way to say so that is not silence, and the buyer
  * needs it to be a thing that happened rather than an order that quietly never
  * arrives.

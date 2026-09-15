@@ -263,14 +263,14 @@ export function ListingPage() {
 /**
  * Demand pooling, as the buyer sees it - and as a group rather than a bar.
  *
- * Says nothing about shipment batches: which consignment this rides in, who
+ * Says nothing about shipment lots: which consignment this rides in, who
  * else is in it and where it currently sits are the seller's business. What a
  * buyer needs is how close this is to going ahead, who else is in, when booking
  * closes, and roughly when it ships.
  *
  * The free step is deliberately first and deliberately smaller than the paid
  * one. Somebody who pledges has told the seller something true at no cost to
- * themselves; somebody who is asked to pay into a batch that may never happen
+ * themselves; somebody who is asked to pay into a lot that may never happen
  * mostly just leaves, and a bar at zero recruits nobody.
  */
 function PreOrderPanel({
@@ -328,7 +328,7 @@ function PreOrderPanel({
    */
   async function share() {
     // Credited only when the person sharing it is actually in the thing they
-    // are recommending. Recruiting for a batch you would not join yourself is
+    // are recommending. Recruiting for a lot you would not join yourself is
     // how somebody spends their reputation without noticing.
     const url = `${window.location.origin}/listing/${listingId}${
       mine && meId ? `?via=${encodeURIComponent(meId)}` : ''
@@ -366,7 +366,7 @@ function PreOrderPanel({
         ) : (
           <>
             The seller places the order at {view.fillThreshold}. Pledging costs nothing now and is
-            called in for payment — within a day — the moment it fills. Nobody pays for a batch that
+            called in for payment — within a day — the moment it fills. Nobody pays for a lot that
             does not happen.
           </>
         )}

@@ -7,7 +7,7 @@ import { ApiRequestError, api, type ActivityResponse, type ItemGroup } from '../
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
-import { Ladder } from './BatchesPage';
+import { Ladder } from '../components/Ladder';
 
 type Tab = 'listings' | 'purchases' | 'sales' | 'following' | 'settings';
 
@@ -36,15 +36,15 @@ function waitingOn(data: ActivityResponse, userId: string) {
 }
 
 /**
- * Everything the buyer is waiting on, grouped by the batch it travels in.
+ * Everything the buyer is waiting on, grouped by the lot it travels in.
  *
  * Three items in one consignment are one journey, so they are one timeline and
  * one card. Drawing the same nine steps three times was the old behaviour, and
  * it made a buyer with a good month look like a buyer with a problem.
  *
- * The batch is the unit of grouping because it is the unit of truth: the seller
- * moves the batch and every item in it moves, so a per-item timeline could only
- * ever repeat what the batch already said.
+ * The lot is the unit of grouping because it is the unit of truth: the seller
+ * moves the lot and every item in it moves, so a per-item timeline could only
+ * ever repeat what the lot already said.
  */
 function MyItems() {
   const [groups, setGroups] = useState<ItemGroup[] | null>(null);
@@ -79,7 +79,7 @@ function MyItems() {
           <article key={group.key} className="itemgroup">
             <div className="itemgroup__top">
               <span className="itemgroup__name">
-                {group.lot ? `Lot #${group.lot.number}` : group.kind === 'awaiting' ? 'Waiting for a batch' : 'Shipped direct'}
+                {group.lot ? `Lot #${group.lot.number}` : group.kind === 'awaiting' ? 'Waiting for a lot' : 'Shipped direct'}
               </span>
               <span className="badge">
                 {group.items.length} item{group.items.length === 1 ? '' : 's'}
@@ -115,7 +115,7 @@ function MyItems() {
               </>
             ) : group.kind === 'awaiting' ? (
               <p className="notice notice--warn">
-                Not in a batch yet. The seller adds it to one when the next run is packed, and the
+                Not in a lot yet. The seller adds it to one when the next run is packed, and the
                 tracking appears here the moment they do.
               </p>
             ) : (

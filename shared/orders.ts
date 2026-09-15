@@ -100,7 +100,7 @@ export function actionsFor(
 
   // The seller cannot serve it. Every order on this marketplace is a promise
   // made before anything moves - the stock may be gone, the supplier may have
-  // pulled the line, the batch may not go - so the seller needs a way to say so
+  // pulled the line, the lot may not go - so the seller needs a way to say so
   // that is not silence. Only before it ships, and never once money is held:
   // after that it is a refund or a dispute, which are different conversations
   // with different rules.

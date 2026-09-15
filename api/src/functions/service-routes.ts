@@ -141,14 +141,14 @@ async function servicesHub(request: HttpRequest, _context: InvocationContext) {
     const account = await repository.getUserById(viewer.id);
     if (account) mine.push(...servicesOf(account));
     // The exporter's answer is not on their account - it is whether anybody
-    // has asked them to check a batch.
+    // has asked them to check a lot.
     if (await packsForAnyone(repository, viewer.id)) mine.push('exporter');
   }
 
   return json(200, { categories, mine: SERVICE_ORDER.filter((kind) => mine.includes(kind)) });
 }
 
-/** Whether anyone has named this account on a batch, or granted it the right. */
+/** Whether anyone has named this account on a lot, or granted it the right. */
 async function packsForAnyone(repository: Repo, userId: string): Promise<boolean> {
   for (const owner of await repository.listStoreOwners()) {
     const managers = owner.sellerProfile?.managers ?? [];
@@ -171,7 +171,7 @@ async function serviceDirectory(request: HttpRequest, _context: InvocationContex
     return error(
       403,
       'not_browsable',
-      `${meta.plural} are named by a shop on a batch, so there is no list of them.`,
+      `${meta.plural} are named by a shop on a lot, so there is no list of them.`,
     );
   }
 
@@ -234,7 +234,7 @@ async function offerService(request: HttpRequest, _context: InvocationContext) {
   const name = (body.companyName ?? '').trim() || existing?.companyName || account.displayName;
   const places = (body.places ?? []).map((place) => place.trim()).filter(Boolean);
 
-  // Withdrawing is a flag, not a delete: the batches they have already carried
+  // Withdrawing is a flag, not a delete: the lots they have already carried
   // are somebody else's history too, and it has to keep resolving to a name.
   const listed = body.listed !== false;
 
@@ -294,7 +294,7 @@ function slugOf(name: string, userId: string): string {
 
 /* ── Doing the work ────────────────────────────────────────────────────── */
 
-/** Every batch across every shop that names this account in the given role. */
+/** Every lot across every shop that names this account in the given role. */
 async function lotsNaming(
   repository: Repo,
   userId: string,
@@ -356,7 +356,7 @@ async function consignments(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/me/service/distribution - batches this handler has to get out.
+ * GET /api/me/service/distribution - lots this handler has to get out.
  *
  * Counted by parcel rather than by piece: a handler's day is people, and three
  * items for one buyer is one job, not three.
@@ -388,11 +388,11 @@ async function distribution(request: HttpRequest, _context: InvocationContext) {
     }),
   );
 
-  return json(200, { batches: rows });
+  return json(200, { lots: rows });
 }
 
 /**
- * GET /api/me/service/distribution/{id} - one batch, as parcels to send.
+ * GET /api/me/service/distribution/{id} - one lot, as parcels to send.
  *
  * The exporter's packing list is pieces and never customers, because they pack
  * a crate. This is the mirror image: a handler's whole job is which box goes to
@@ -403,13 +403,13 @@ async function distributionDetail(request: HttpRequest, _context: InvocationCont
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const lotId = request.params.id;
-  if (!lotId) return error(400, 'invalid_lot', 'A batch id is required.');
+  if (!lotId) return error(400, 'invalid_lot', 'A lot id is required.');
 
   const repository = await getRepository();
   const found = (await lotsNaming(repository, user.id, 'handler')).find(
     (row) => row.lot.id === lotId,
   );
-  if (!found) return error(403, 'forbidden', 'That batch is not yours to distribute.');
+  if (!found) return error(403, 'forbidden', 'That lot is not yours to distribute.');
 
   const orders = (await repository.listOrdersForLot(lotId)).filter(
     (order) => order.status !== 'cancelled',

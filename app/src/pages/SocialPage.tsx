@@ -264,7 +264,7 @@ export function ChannelPage() {
         {shown.length === 0 ? (
           <EmptyState title={data.channel.mine ? 'Nothing said here yet' : 'Nothing posted here yet'}>
             {data.channel.mine
-              ? 'This is where you tell the people who follow you what is happening — a batch closing, customs cleared, a delay. It stays here rather than going to everyone\'s feed.'
+              ? 'This is where you tell the people who follow you what is happening — a lot closing, customs cleared, a delay. It stays here rather than going to everyone\'s feed.'
               : isForum
                 ? 'Start it off.'
                 : show === 'announcements'

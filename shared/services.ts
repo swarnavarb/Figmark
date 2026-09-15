@@ -31,7 +31,7 @@ export type ServiceKind = (typeof SERVICE_KINDS)[number];
  * - `listed` - they put themselves up. Anyone can, so there is a directory.
  * - `granted` - the company grants it, because the job is holding other
  *   people's money and an open sign-up for that is a fraud vector.
- * - `named` - a shop names one person on one batch. Nobody applies, so a
+ * - `named` - a shop names one person on one lot. Nobody applies, so a
  *   directory would list people who never agreed to be listed.
  */
 export type ServiceEntry = 'listed' | 'granted' | 'named';
@@ -68,9 +68,9 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     icon: 'plane',
     blurb: 'Consolidates the crate and flies it China → India.',
     detail:
-      'They take the batch from the supplier or the China warehouse and get it to India: '
+      'They take the lot from the supplier or the China warehouse and get it to India: '
       + 'consolidation, air or sea freight, and the customs paperwork at both ends. Rates and '
-      + 'turnaround are the forwarder’s own claims until they have shipped batches here.',
+      + 'turnaround are the forwarder’s own claims until they have shipped lots here.',
     entry: 'listed',
     browsable: true,
     console: '/services/mine/forwarder',
@@ -83,7 +83,7 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     icon: 'box',
     blurb: 'Takes delivery in India and gets every parcel to its buyer.',
     detail:
-      'The India end of the run. They receive the batch when it lands, split it into one parcel '
+      'The India end of the run. They receive the lot when it lands, split it into one parcel '
       + 'per buyer, and book the domestic courier - the work between customs and somebody’s '
       + 'door. A handler can stay unlisted and work only for shops that already know them.',
     entry: 'listed',
@@ -111,9 +111,9 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     plural: 'Exporters',
     glyph: '🔍',
     icon: 'search',
-    blurb: 'Checks every piece in China before the batch leaves.',
+    blurb: 'Checks every piece in China before the lot leaves.',
     detail:
-      'Named by a shop on a batch, and only that batch. They work from a packing list - pieces, '
+      'Named by a shop on a lot, and only that lot. They work from a packing list - pieces, '
       + 'counts and weights, never customers or prices - and tick each one as it is packed, which '
       + 'is what the shop watches to know the run is ready to fly.',
     entry: 'named',
@@ -131,7 +131,7 @@ export const SERVICE_ORDER: readonly ServiceKind[] = ['exporter', 'forwarder', '
 export const ENTRY_NOTE: Record<ServiceEntry, string> = {
   listed: 'Anyone can offer this. Put yourself on the list from My service.',
   granted: 'Granted by Figmark. Ask, rather than sign up.',
-  named: 'Named by a shop on one batch. There is no list to join.',
+  named: 'Named by a shop on one lot. There is no list to join.',
 };
 
 /** Whether this account provides that service right now. */
@@ -157,17 +157,17 @@ export function servicesOf(
   return SERVICE_ORDER.filter((kind) => provides(user, kind));
 }
 
-/* ── Working somebody else's batch ─────────────────────────────────────── */
+/* ── Working somebody else's lot ─────────────────────────────────────── */
 
-/** What this account is on a given batch, beyond owning it. */
+/** What this account is on a given lot, beyond owning it. */
 export type CrewRole = 'exporter' | 'handler';
 
 /**
- * Named on the batch itself, as opposed to holding a right in the shop.
+ * Named on the lot itself, as opposed to holding a right in the shop.
  *
  * A shop can hand one run to one person without making them staff, which is
  * how most of this work is actually arranged - a friend with a warehouse, for
- * this batch, this month.
+ * this lot, this month.
  */
 export function crewRoleOf(lot: Pick<Lot, 'handler' | 'exporterUserId'>, userId: string): CrewRole | null {
   if (lot.exporterUserId === userId) return 'exporter';
