@@ -59,7 +59,13 @@ export function BatchesPage() {
       </div>
 
       {error && <ErrorNotice message={error} />}
-      {creating && <NewBatchForm onDone={() => { setCreating(false); void load(); }} onCancel={() => setCreating(false)} />}
+      {creating && (
+        <NewBatchForm
+          suggestedName={`Batch ${(data?.lots.length ?? 0) + 1}`}
+          onDone={() => { setCreating(false); void load(); }}
+          onCancel={() => setCreating(false)}
+        />
+      )}
 
       {!data ? (
         error ? null : <p className="muted">Loading…</p>
@@ -251,8 +257,30 @@ function StageTrack({ stage }: { stage: Lot['stage'] }) {
  * The number is not asked for. It is derived from the batch's own id the moment
  * it exists, which is one fewer thing to invent and one fewer thing to collide.
  */
-export function NewBatchForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
-  const [details, setDetails] = useState<LotDetails>(emptyLotDetails);
+/**
+ * A route in one line: how many steps, and where it starts and ends.
+ *
+ * Enough to choose between two routes without opening either. The full ladder
+ * is on the batch once it exists, and on the route itself in the library.
+ */
+function summarise(steps: readonly { name: string }[]): string {
+  if (steps.length === 0) return 'No steps yet';
+  const first = steps[0]!.name;
+  const last = steps[steps.length - 1]!.name;
+  return `${steps.length} steps · ${first} → ${last}`;
+}
+
+export function NewBatchForm({ onDone, onCancel, suggestedName }: {
+  onDone: () => void;
+  onCancel: () => void;
+  /** What to call it if the seller does not care, which is most of the time. */
+  suggestedName?: string;
+}) {
+  const [details, setDetails] = useState<LotDetails>(
+    () => ({ ...emptyLotDetails, name: suggestedName ?? '' }),
+  );
+  /** Everything that is not a decision, folded away until asked for. */
+  const [more, setMore] = useState(false);
   const [forwarderName, setForwarderName] = useState('');
   const [exporterHandle, setExporterHandle] = useState('');
   const [handlerId, setHandlerId] = useState('');
@@ -329,110 +357,124 @@ export function NewBatchForm({ onDone, onCancel }: { onDone: () => void; onCance
   // of what a batch has, so the two screens cannot drift apart.
   return (
     <form className="card card--pad form" onSubmit={submit} style={{ marginBottom: 22 }}>
-      <h2>Create lot</h2>
-      <LotDetailFields value={details} onChange={setDetails} compact />
+      <h2>New batch</h2>
+      <p className="muted" style={{ marginTop: -6 }}>
+        A batch is one shipment. Name it, say how it travels, then file orders into it.
+      </p>
 
       <label className="field">
-        <span>Forwarder (optional)</span>
-        <input value={forwarderName} onChange={(e) => setForwarderName(e.target.value)}
-          placeholder="Lotus Freight, or your own" />
-        <span className="field__hint">Who moves the batch, as opposed to who you bought it from.</span>
+        <span>Name it</span>
+        <input value={details.name} onChange={(e) => setDetails({ ...details, name: e.target.value })}
+          placeholder="Guangzhou run — October" required autoFocus />
+        <span className="field__hint">For your own lists. Buyers see the batch number, not this.</span>
       </label>
 
-      <label className="field">
-        <span>Exporter (optional)</span>
-        <input value={exporterHandle} onChange={(e) => setExporterHandle(e.target.value)}
-          placeholder="@their_handle" />
+      {/* The one decision worth making here. Presented as things you can
+          read rather than as a picker plus a preview plus a mode toggle: a
+          seller choosing a route wants to see the route. */}
+      <fieldset className="pickset">
+        <legend>How this batch travels</legend>
         <span className="field__hint">
-          Who checks the pieces before the batch leaves. They get a packing list for this batch only.
+          Every item in the batch follows these steps, and buyers read them as their tracking.
         </span>
-      </label>
 
-      <label className="field">
-        <span>Domestic handler (optional)</span>
-        <select value={handlerId} onChange={(e) => setHandlerId(e.target.value)}>
-          <option value="">Nobody — you dispatch it yourself</option>
-          {handlers.map((entry) => (
-            <option key={entry.userId} value={entry.userId}>{entry.name} — {entry.line}</option>
-          ))}
-        </select>
-        <span className="field__hint">Who takes delivery in India and gets the parcels out.</span>
-      </label>
+        {library && (
+          <label className={`pick${mode === 'existing' && !routeId ? ' is-on' : ''}`}>
+            <input type="radio" name="route" checked={mode === 'existing' && !routeId}
+              onChange={() => { setMode('existing'); setRouteId(''); }} />
+            <span className="pick__body">
+              <span className="pick__name">{library.builtIn.name}</span>
+              <span className="pick__steps">{summarise(library.builtIn.steps)}</span>
+            </span>
+          </label>
+        )}
 
-      {/* The ladder. Two doors, because a shop that has run this route before
-          should never see the builder again. */}
-      <div className="card card--pad stack" style={{ background: 'var(--surface-2)' }}>
-        <div>
-          <div style={{ fontWeight: 600 }}>Route</div>
-          <span className="field__hint">
-            The steps this batch travels. Every item in it inherits them, and buyers read these
-            words — so write them the way you would say them.
+        {(library?.routes ?? []).map((route) => (
+          <label key={route.id} className={`pick${mode === 'existing' && routeId === route.id ? ' is-on' : ''}`}>
+            <input type="radio" name="route" checked={mode === 'existing' && routeId === route.id}
+              onChange={() => { setMode('existing'); setRouteId(route.id); }} />
+            <span className="pick__body">
+              <span className="pick__name">{route.name}</span>
+              <span className="pick__steps">{summarise(route.steps)}</span>
+            </span>
+          </label>
+        ))}
+
+        <label className={`pick${mode === 'new' ? ' is-on' : ''}`}>
+          <input type="radio" name="route" checked={mode === 'new'}
+            onChange={() => setMode('new')} />
+          <span className="pick__body">
+            <span className="pick__name">Write my own steps</span>
+            <span className="pick__steps">For a journey none of the above describes</span>
           </span>
-        </div>
+        </label>
 
-        <div className="seg" role="radiogroup" aria-label="Route">
-          <button type="button" role="radio" aria-checked={mode === 'existing'}
-            className={mode === 'existing' ? 'is-on' : ''} onClick={() => setMode('existing')}>
-            Select existing
-          </button>
-          <button type="button" role="radio" aria-checked={mode === 'new'}
-            className={mode === 'new' ? 'is-on' : ''} onClick={() => setMode('new')}>
-            Create new
-          </button>
-        </div>
-
-        {mode === 'existing' ? (
-          <>
+        {mode === 'new' && (
+          <div className="pick__open">
             <label className="field">
-              <span>Route</span>
-              <select value={routeId} onChange={(e) => setRouteId(e.target.value)}>
-                <option value="">
-                  {library ? `${library.builtIn.name} — ${library.builtIn.steps.length} steps` : 'Loading…'}
-                </option>
-                {(library?.routes ?? []).map((route) => (
-                  <option key={route.id} value={route.id}>
-                    {route.name} — {route.steps.length} steps
-                  </option>
-                ))}
-              </select>
-            </label>
-            <ol className="ladder ladder--preview">
-              {(routeId
-                ? library?.routes.find((route) => route.id === routeId)?.steps
-                : library?.builtIn.steps
-              )?.map((step) => (
-                <li key={step.id} className="ladder__row">
-                  <span className="ladder__dot" aria-hidden="true" />
-                  <span>{step.name}</span>
-                </li>
-              ))}
-            </ol>
-          </>
-        ) : (
-          <>
-            <label className="field">
-              <span>Route name</span>
+              <span>Call it</span>
               <input value={routeName} onChange={(e) => setRouteName(e.target.value)}
-                placeholder="China → India" />
+                placeholder="Guangzhou air express" />
             </label>
             <RouteBuilder steps={steps} onChange={setSteps} />
             <label className="tick">
               <input type="checkbox" checked={saveTemplate}
                 onChange={(e) => setSaveTemplate(e.target.checked)} />
               <span>
-                Save this route
+                Save it
                 <span className="faint"> — so the next batch can pick it instead of retyping it.</span>
               </span>
             </label>
-          </>
+          </div>
         )}
-      </div>
+      </fieldset>
+
+      {/* Nobody, a forwarder, an exporter and a handler are all things a batch
+          may acquire later, and none of them stop it existing. They were four
+          fields between "New batch" and the button that makes one. */}
+      <button type="button" className="disclose" aria-expanded={more}
+        onClick={() => setMore(!more)}>
+        <Icon name={more ? 'down' : 'right'} size={14} />
+        Who handles it, and the paperwork
+        <span className="faint">optional, and editable later</span>
+      </button>
+
+      {more && (
+        <div className="stack">
+          <label className="field">
+            <span>Forwarder</span>
+            <input value={forwarderName} onChange={(e) => setForwarderName(e.target.value)}
+              placeholder="Lotus Freight, or your own" />
+            <span className="field__hint">Who moves the batch, as opposed to who you bought it from.</span>
+          </label>
+
+          <label className="field">
+            <span>Exporter</span>
+            <input value={exporterHandle} onChange={(e) => setExporterHandle(e.target.value)}
+              placeholder="@their_handle" />
+            <span className="field__hint">
+              Who checks the pieces before the batch leaves. They get a packing list for this batch only.
+            </span>
+          </label>
+
+          <label className="field">
+            <span>Domestic handler</span>
+            <select value={handlerId} onChange={(e) => setHandlerId(e.target.value)}>
+              <option value="">Nobody — you dispatch it yourself</option>
+              {handlers.map((entry) => (
+                <option key={entry.userId} value={entry.userId}>{entry.name} — {entry.line}</option>
+              ))}
+            </select>
+            <span className="field__hint">Who takes delivery in India and gets the parcels out.</span>
+          </label>
+        </div>
+      )}
 
       {error && <ErrorNotice message={error} />}
       <div className="row">
         <button type="submit" className="btn"
           disabled={busy || !details.name.trim() || (mode === 'new' && named.length < 2)}>
-          {busy ? 'Creating…' : 'Create lot'}
+          {busy ? 'Opening…' : 'Open the batch'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
       </div>

@@ -620,11 +620,25 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
      hollow circles implying a journey nobody has booked yet. */
   const route = lot ? routeOf(lot) : null;
 
-  /* The first half of the journey, in whatever words the shop's template used.
-     Shown above the join once there is a batch, and on its own - ending at a
-     wall rather than at five hollow circles - while there is not. */
+  /* The short ladder an item travels before it has a batch. Shown on its own,
+     ending at a wall rather than at five hollow circles. Once there IS a
+     batch this is not drawn at all: the batch's route already opens with the
+     same two events, and drawing both put "at the China warehouse" on the
+     screen twice, ticked in one ladder and hollow in the other. */
   const before = preLotRouteOf(order);
   const beforeReached = order.checkpoints?.china_received ? 1 : 0;
+
+  /* Where the item is on its batch's ladder.
+   *
+   * The batch's own position is the floor, not the answer. A seller ticks
+   * "China WH received" per item, and an item that has landed is past that
+   * step whether or not the whole batch has been moved on yet. Taking the
+   * furthest of the two is what stops the timeline contradicting the tick
+   * the seller just made. */
+  const reached = route && order.checkpoints?.china_received
+    ? stepForStage(route, 'china_wh_received')
+    : 0;
+  const position = route ? Math.max(currentStepOf(lot!), reached) : 0;
 
   return json(200, {
     order,
@@ -635,7 +649,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
       ? {
           name: route.name,
           steps: route.steps,
-          currentStep: currentStepOf(lot!),
+          currentStep: position,
           lotName: lot!.name,
           lotNumber: lot!.lotNumber ?? lotNumberFrom(lot!.id, lot!.createdAt),
         }

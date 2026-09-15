@@ -3677,3 +3677,88 @@ a.order__name:hover { color: var(--accent-text); }
   .orow__acts { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
   .orow__toggle { height: 26px; }
 }
+
+/* ── Choosing one of a few things ──────────────────────────────────────────
+ *
+ * A radio list you can read, rather than a select plus a preview plus a mode
+ * toggle. Choosing how a batch travels is the one real decision in opening
+ * one, so the options are laid out as things with names and summaries and the
+ * choice is a tap on the whole row.
+ */
+.pickset {
+  display: grid;
+  gap: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--s4);
+  margin: 0;
+  background: var(--surface-2);
+}
+.pickset legend {
+  padding: 0 var(--s2);
+  margin-left: calc(var(--s2) * -1);
+  font-size: var(--t-sm);
+  font-weight: var(--w-semi);
+}
+.pickset .field__hint { margin-bottom: var(--s1); }
+
+.pick {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.pick:hover { border-color: var(--border-strong); }
+.pick.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.pick input { width: 17px; height: 17px; margin-top: 1px; accent-color: var(--accent); cursor: pointer; }
+.pick__body { min-width: 0; display: grid; gap: 2px; }
+.pick__name { font-size: var(--t-sm); font-weight: var(--w-semi); }
+.pick__steps {
+  font-size: var(--t-2xs);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pick.is-on .pick__steps { color: var(--text); }
+/* The builder, when "write my own" is the one chosen. */
+.pick__open {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s3);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+/* ── A disclosure ──────────────────────────────────────────────────────────
+ *
+ * For the fields that are not decisions. Everything behind one of these is
+ * editable later, which is why it is not in the way of the button.
+ */
+.disclose {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: 11px var(--s3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.disclose:hover { color: var(--text); border-color: var(--text-faint); }
+.disclose .faint { margin-left: auto; }

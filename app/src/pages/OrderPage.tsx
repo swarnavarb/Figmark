@@ -89,31 +89,32 @@ export function OrderPage() {
               and a line saying what it is waiting for - not five hollow
               circles implying a journey nobody has booked. */}
           {data.awaitingLot || data.route ? (
-            <>
-              {/* The first half of the journey, in whatever words the shop
-                  uses. It is the same ladder either way - what changes is
-                  whether there is a second half to draw under it. */}
-              <Ladder
-                steps={data.preLot.steps}
-                current={data.route ? data.preLot.steps.length : data.preLot.currentStep}
-              />
-
-              {data.route ? (
-                <>
-                  <span className="field__hint" style={{ marginTop: 4 }}>
-                    Travelling in {data.route.lotName} · lot #{data.route.lotNumber} ·{' '}
-                    {data.route.name}
-                  </span>
-                  <Ladder steps={data.route.steps} current={data.route.currentStep} />
-                </>
-              ) : (
+            data.route ? (
+              /* One ladder, not two.
+               *
+               * This used to draw the pre-batch template above the batch's
+               * route, and the two overlap: both open with the order being
+               * placed and the parcel reaching the China warehouse. The
+               * result put the same event on screen twice in contradictory
+               * states - ticked in the top ladder, hollow in the one below.
+               * Once there is a batch, the batch's route is the whole
+               * journey and the only thing worth drawing. */
+              <>
+                <Ladder steps={data.route.steps} current={data.route.currentStep} />
+                <span className="field__hint">
+                  Travelling in {data.route.lotName} · lot #{data.route.lotNumber}
+                </span>
+              </>
+            ) : (
+              <>
+                <Ladder steps={data.preLot.steps} current={data.preLot.currentStep} />
                 <p className="notice notice--warn">
-                  <strong>Not added to any lot yet.</strong> Your order is waiting to be added to an
-                  international shipment. The rest of the journey appears the moment the seller files
-                  it into one.
+                  <strong>Not in a shipment yet.</strong> The seller groups orders into one
+                  shipment before it leaves. The rest of the journey appears as soon as yours
+                  joins one.
                 </p>
-              )}
-            </>
+              </>
+            )
           ) : (
             <ol className="track" style={{ flexWrap: 'wrap' }}>
               {stages.map((stage, index) => (
@@ -228,7 +229,19 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
     }
   }
 
-  const nothingToDo = actions.length === 0 || (actions.length === 1 && actions[0] === 'review');
+  /*
+   * Whether this card has anything in it.
+   *
+   * Derived from the buttons the card can actually draw rather than from a
+   * hand-kept list of actions to ignore, because the two drifted: `reject` is
+   * offered to a seller on an unshipped order, has no button here, and was not
+   * in the ignore list - so a seller looking at a paid direct sale got an
+   * empty rounded rectangle above the timeline. Adding an action without a
+   * button can no longer produce one.
+   */
+  const DRAWN_HERE = ['pay', 'settle_claim', 'confirm', 'dispute'] as const;
+  const nothingToDo = !actions.some((action) =>
+    (DRAWN_HERE as readonly string[]).includes(action));
 
   return (
     <div className="stack" style={{ marginBottom: 20 }}>

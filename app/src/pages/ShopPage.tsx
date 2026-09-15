@@ -1358,7 +1358,11 @@ function Lots({ store }: { store: StoreAccess }) {
   return (
     <div className="stack">
       {creating ? (
-        <NewBatchForm onDone={() => { setCreating(false); void load(); }} onCancel={() => setCreating(false)} />
+        <NewBatchForm
+          suggestedName={`Batch ${(data?.lots.length ?? 0) + 1}`}
+          onDone={() => { setCreating(false); void load(); }}
+          onCancel={() => setCreating(false)}
+        />
       ) : (
         <button type="button" className="btn" style={{ justifySelf: 'start' }} onClick={() => setCreating(true)}>
           <Icon name="plus" size={15} /> New batch
