@@ -8,7 +8,7 @@ import { mayTick, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
-  routeOf, stepForStage, type LotRoute, type StepSide,
+  joinIndexOf, routeOf, stepForStage, type LotRoute, type StepSide,
 } from '../../../shared/routes.js';
 import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
 import {
@@ -642,8 +642,19 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
    * step whether or not the whole lot has been moved on yet. Taking the
    * furthest of the two is what stops the timeline contradicting the tick
    * the seller just made. */
+  /*
+   * The warehouse tick means the item has finished travelling alone, so it
+   * sits on the last step before the lot takes over - read off the route's own
+   * hand-over rather than off the seven coarse stages.
+   *
+   * The coarse mapping used to answer this and it overshot: on an eight-step
+   * route the first step whose stage reached `china_wh_received` was
+   * "Dispatched from China", so ticking a parcel into the warehouse told its
+   * buyer the crate had left the country. A route is the seller's own list and
+   * only it knows where the item stops being one item.
+   */
   const reached = route && order.checkpoints?.china_received
-    ? stepForStage(route, 'china_wh_received')
+    ? Math.max(0, Math.min(route.steps.length - 1, joinIndexOf(route) - 1))
     : 0;
   /* The item's own position wins over the lot's when it has one: a piece
      pulled for inspection while the crate cleared is genuinely somewhere
@@ -652,6 +663,20 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   const position = route
     ? Math.max(order.currentStep ?? currentStepOf(lot!), reached)
     : 0;
+
+  /*
+   * The gap between the two ladders, which is a real place to be.
+   *
+   * An item can be done with everything that happens to it alone - counted
+   * into the warehouse, waiting - while the lot it rides has not moved. Drawing
+   * the next rung as current says the crate has dispatched; drawing nothing
+   * says the item is stuck. It is neither: it is waiting for the lot, and that
+   * is what the timeline says now.
+   */
+  const join = route ? joinIndexOf(route) : 0;
+  const waiting = Boolean(
+    route && position === join - 1 && currentStepOf(lot!) < join && join < route.steps.length,
+  );
 
   return json(200, {
     order,
@@ -663,6 +688,9 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
           name: route.name,
           steps: route.steps,
           currentStep: position,
+          /** True while the item is done travelling alone and the lot has not moved. */
+          waitingForLot: waiting,
+          lotId: lot!.id,
           lotName: lot!.name,
           lotNumber: lot!.lotNumber ?? lotNumberFrom(lot!.id, lot!.createdAt),
         }

@@ -69,7 +69,7 @@ const { setCrewRoute: setCrew } = await import(new URL('fulfilment-routes.js', f
 const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
   lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
-  noteOnLotRoute: noteOnLot, stepItemRoute: stepItem,
+  noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
   myItemsRoute: myItems,
 } = await import(new URL('tracking-routes.js', fns));
 const {
@@ -5086,6 +5086,159 @@ await check('an item can be moved to another lot, and the timeline says so', asy
     headers: auth, params: { id: order.id }, body: { lotId: second.jsonBody.lot.id },
   }), ctx);
   assert.equal(nowhere.status, 409);
+});
+
+await check('the warehouse tick stops at the hand-over, not past it', async () => {
+  /* Ticking a parcel into the warehouse used to land it on "Dispatched from
+     China" - the coarse seven stages overshoot on a longer route - so the
+     buyer was told the crate had left the country because one box arrived. */
+  const route = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Eight steps',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Received at international warehouse', side: 'pre' },
+        { name: 'Dispatched from China', side: 'post' },
+        { name: 'International transit', side: 'post' },
+        { name: 'Indian customs', side: 'post' },
+        { name: 'Received by seller', side: 'post' },
+        { name: 'Domestic dispatch', side: 'post' },
+        { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  const lot = await createLot(req({
+    headers: auth,
+    body: { name: 'Hand-over lot', origin: 'Guangzhou, CN', routeId: route.jsonBody.route.id },
+  }), ctx);
+
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Waits at the warehouse', priceMinor: 5_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('Warehouse Watcher');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({
+    headers: auth, params: { id: order.id }, body: { lotId: lot.jsonBody.lot.id },
+  }), ctx);
+
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+
+  const tracking = (await orderTracking(req({
+    headers: buyer.headers, params: { id: order.id },
+  }), ctx)).jsonBody;
+  assert.equal(
+    tracking.route.steps[tracking.route.currentStep].name,
+    'Received at international warehouse',
+    'the last step it travels alone, not the first one the lot travels',
+  );
+  assert.equal(tracking.route.waitingForLot, true, 'and it says it is waiting for the lot');
+
+  // Once the lot itself moves, the wait is over and the position is the lot's.
+  await stepLot(req({ headers: auth, params: { id: lot.jsonBody.lot.id }, body: { to: 2 } }), ctx);
+  const after = (await orderTracking(req({
+    headers: buyer.headers, params: { id: order.id },
+  }), ctx)).jsonBody;
+  assert.equal(after.route.steps[after.route.currentStep].name, 'Dispatched from China');
+  assert.equal(after.route.waitingForLot, false);
+});
+
+await check('a lot can be put on a different ladder, carrying its place', async () => {
+  const short = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Short way',
+      steps: [
+        { name: 'Ordered', side: 'pre' }, { name: 'Packed', side: 'pre' },
+        { name: 'Flown', side: 'post' }, { name: 'Landed', side: 'post' },
+      ],
+    },
+  }), ctx);
+  const long = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'The long way round',
+      steps: [
+        { name: 'Ordered', side: 'pre' }, { name: 'At the desk', side: 'pre' },
+        { name: 'Consolidated', side: 'post' }, { name: 'Sailed', side: 'post' },
+        { name: 'Customs', side: 'post' }, { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+
+  const lot = await createLot(req({
+    headers: auth,
+    body: { name: 'Rerouted', origin: 'Yiwu, CN', routeId: short.jsonBody.route.id },
+  }), ctx);
+  const lotId = lot.jsonBody.lot.id;
+
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Rides a changed route', priceMinor: 4_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('Route Changed');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId } }), ctx);
+  await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 2 } }), ctx);
+
+  const changed = await setLotRoute(req({
+    headers: auth, params: { id: lotId },
+    body: { routeId: long.jsonBody.route.id, note: 'Sea freight now, so the steps changed.' },
+  }), ctx);
+  assert.equal(changed.status, 200, JSON.stringify(changed.jsonBody));
+  assert.equal(changed.jsonBody.ordersUpdated, 1);
+
+  const board = (await lotContents(req({ headers: auth, params: { id: lotId } }), ctx)).jsonBody;
+  assert.equal(board.route.name, 'The long way round');
+  assert.equal(board.route.steps.length, 6);
+  assert.ok(board.route.currentStep > 0, 'a lot halfway there does not start again');
+
+  // The buyer reads the new ladder, from the equivalent point, and is told why.
+  const tracking = (await orderTracking(req({
+    headers: buyer.headers, params: { id: order.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.route.name, 'The long way round');
+  assert.ok(tracking.route.currentStep < tracking.route.steps.length);
+  assert.equal(
+    tracking.order.stageHistory.at(-1).note,
+    'Sea freight now, so the steps changed.',
+  );
+
+  // Twice over is refused, and somebody else's lot is not theirs to reroute.
+  const again = await setLotRoute(req({
+    headers: auth, params: { id: lotId }, body: { routeId: long.jsonBody.route.id },
+  }), ctx);
+  assert.equal(again.status, 409);
+  const stranger = await newBuyer('Not This Shop Either');
+  const refused = await setLotRoute(req({
+    headers: stranger.headers, params: { id: lotId }, body: { routeId: short.jsonBody.route.id },
+  }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+await check('a lot is named by the person opening it, never by the first thing in it', async () => {
+  // The name used to fall back to "Lot for <whatever sold first>" when the
+  // field was left blank, and that lot then held thirty other people's parcels.
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Names nothing', priceMinor: 6_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('No Name Given');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+
+  for (const name of [undefined, '', '   ']) {
+    const refused = await assignOrderToLot(req({
+      headers: auth, params: { id: order.id },
+      body: { newLot: { name, origin: 'Guangzhou, CN' } },
+    }), ctx);
+    assert.equal(refused.status, 400, `"${name}" is not a name`);
+  }
 });
 
 await check('a domestic sale is not something to file into a crate', async () => {

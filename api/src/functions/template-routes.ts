@@ -210,7 +210,7 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
   const orderId = request.params.id;
   if (!orderId) return error(400, 'invalid_request', 'An order id is required.');
 
-  let body: { lotId?: string; newLot?: NewLotBody };
+  let body: { lotId?: string; newLot?: NewLotBody; note?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -257,7 +257,11 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
     kind: was ? 'moved' : 'joined',
     lot: lotRefOf(lot),
     from: was,
-    note: null,
+    /* Why, in the seller's own words, on the same event rather than as a
+       second one beside it: "moved to the next run" and "the airline bumped
+       us" are one thing that happened, and a buyer reading two rows would
+       wonder what the other one was. */
+    note: body.note?.trim() || null,
     recordedBy: user.id,
   };
 
@@ -282,9 +286,10 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
     {
       kind: 'lot_moved',
       title: was ? `Your item moved to ${lot.name}` : `Your item is in ${lot.name}`,
-      body: was
-        ? `It travels with ${lot.name} now instead of ${was.name}.`
-        : `It now travels with the lot: ${route.name}.`,
+      body: body.note?.trim()
+        || (was
+          ? `It travels with ${lot.name} now instead of ${was.name}.`
+          : `It now travels with the lot: ${route.name}.`),
       link: '/me?tab=purchases',
     },
     { except: user.id },

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { labelFor } from '@shared/fulfilment';
+import { isLotEvent, labelFor } from '@shared/fulfilment';
+import { WAITING_FOR_LOT } from '@shared/routes';
 import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
 import { reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS } from '@shared/enums';
 import type { Order, SellerPaymentDetails } from '@shared/models';
 import {
   ApiRequestError, api,
-  type Checkout, type EscrowOption, type EvidenceDraft, type OrderState, type OrderTracking,
+  type Checkout, type EscrowOption, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
 } from '../api';
 import { Ladder } from '../components/Ladder';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
@@ -27,6 +28,7 @@ export function OrderPage() {
   const [data, setData] = useState<OrderTracking | null>(null);
   const [state, setState] = useState<OrderState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [changing, setChanging] = useState(false);
 
   // Two calls because they answer different questions - where the parcel is,
   // and what may be done about it - and the second settles the escrow clock on
@@ -50,6 +52,8 @@ export function OrderPage() {
 
   const { order, stages, currentStage } = data;
   const currentIndex = stages.indexOf(currentStage);
+  /** The lot it is in now, as opposed to the ones it has been in. */
+  const latestLotAt = [...order.stageHistory].reverse().find(isLotEvent)?.enteredAt ?? null;
   // Newest first: what just happened matters more than what happened first.
   const history = [...order.stageHistory].reverse();
 
@@ -112,7 +116,27 @@ export function OrderPage() {
                     the rungs they happened at, which is where they were meant
                     to be read. */}
                 <Ladder steps={data.route.steps} current={data.route.currentStep}
-                  history={data.order.stageHistory} />
+                  history={data.order.stageHistory}
+                  waitingFor={data.route.waitingForLot ? WAITING_FOR_LOT : null}
+                  /* The lot is where a seller's next question leads - change
+                     it, or go and move it on - so the answers sit on the lot
+                     itself rather than on a screen they have to go and find.
+                     Only on the lot it is in now: the earlier ones are
+                     history, and history is not a control. */
+                  lotAction={state.side === 'seller'
+                    ? (event) => (event.enteredAt === latestLotAt ? (
+                        <span className="ladder__lot-acts">
+                          <button type="button" className="ladder__act"
+                            onClick={() => setChanging(true)}>
+                            Change lot
+                          </button>
+                          <Link className="ladder__act ladder__act--move"
+                            to={`/shop?tab=lots&lot=${encodeURIComponent(data.route!.lotId)}`}>
+                            Record progress to the lot
+                          </Link>
+                        </span>
+                      ) : null)
+                    : undefined} />
               </>
             ) : (
               <>
@@ -200,7 +224,99 @@ export function OrderPage() {
           )}
         </aside>
       </div>
+
+      {changing && data.route && (
+        <ChangeLotDialog
+          orderId={order.id}
+          current={{ id: data.route.lotId, name: data.route.lotName }}
+          onClose={() => setChanging(false)}
+          onDone={() => { setChanging(false); void load(); }}
+        />
+      )}
     </main>
+  );
+}
+
+/**
+ * Move this one item into a different lot, and say why.
+ *
+ * The note is on the same event as the move rather than beside it, because
+ * "moved to the next run" and "the airline bumped us" are one thing that
+ * happened: a buyer reading two rows would wonder what the other one was.
+ */
+function ChangeLotDialog({ orderId, current, onClose, onDone }: {
+  orderId: string;
+  current: { id: string; name: string };
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [lots, setLots] = useState<LotSummary[] | null>(null);
+  const [lotId, setLotId] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.myLots()
+      .then((result) => setLots(result.lots.filter((row) => row.lot.id !== current.id)))
+      .catch(() => setLots([]));
+  }, [current.id]);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.assignOrderToLot(orderId, { lotId, note: note.trim() || undefined });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Change lot" onClose={onClose}>
+      <div className="stack">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Travelling with <strong>{current.name}</strong>. Moving it starts this item on the new
+          lot's route where that lot has got to.
+        </p>
+
+        <label className="field">
+          <span>Move it to</span>
+          <select value={lotId} onChange={(event) => setLotId(event.target.value)}>
+            <option value="">Pick a lot…</option>
+            {(lots ?? []).map((row) => (
+              <option key={row.lot.id} value={row.lot.id}>
+                {row.lot.lotNumber ? `LOT ${row.lot.lotNumber} — ` : ''}{row.lot.name}
+              </option>
+            ))}
+          </select>
+          {lots !== null && lots.length === 0 && (
+            <span className="field__hint">
+              No other lot to move it to. Open one on the Track tab first.
+            </span>
+          )}
+        </label>
+
+        <label className="field">
+          <span>Note (optional)</span>
+          <textarea value={note} rows={2} onChange={(event) => setNote(event.target.value)}
+            placeholder="Missed the cut-off — riding the next run instead." />
+          <span className="field__hint">The buyer reads this on their timeline, beside the move.</span>
+        </label>
+
+        {error && <ErrorNotice message={error} />}
+        <div className="row">
+          <button type="button" className="btn" disabled={busy || !lotId}
+            onClick={() => void submit()}>
+            {busy ? 'Moving…' : 'Move it'}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

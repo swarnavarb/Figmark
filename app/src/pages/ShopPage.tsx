@@ -13,7 +13,7 @@ import { Ladder } from '../components/Ladder';
 import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
-import { BUILT_IN_ROUTE, currentStepName, preSteps as preStepsOf, routeOf } from '@shared/routes';
+import { BUILT_IN_ROUTE, currentStepName, preSteps as preStepsOf, routeOf, suggestLotName } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
@@ -1155,7 +1155,11 @@ function FileIntoLot({ row, store, onClose, onDone }: {
   const [routes, setRoutes] = useState<RoutesResponse | null>(null);
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [lotId, setLotId] = useState('');
-  const [name, setName] = useState('');
+  /* Prefilled, not defaulted. A name that appears in the field is one the
+     seller reads and corrects; one applied silently when the field is left
+     blank is how a shop ends up with a lot called "Lot for <the first thing
+     that went in it>" holding thirty other people's parcels. */
+  const [name, setName] = useState(() => suggestLotName());
   const [origin, setOrigin] = useState('');
   const [exporter, setExporter] = useState('');
   const [handlerId, setHandlerId] = useState('');
@@ -1188,7 +1192,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
         ? { lotId }
         : {
             newLot: {
-              name: name.trim() || `Lot for ${row.itemName}`,
+              name: name.trim(),
               origin: origin.trim(),
               exporterHandle: exporter.trim() || undefined,
               handlerUserId: handlerId || undefined,
@@ -1238,9 +1242,12 @@ function FileIntoLot({ row, store, onClose, onDone }: {
         ) : (
           <>
             <label className="field">
-              <span>Lot name</span>
+              <span>Lot name *</span>
               <input value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="September import" autoFocus />
+                placeholder="September import" required autoFocus />
+              <span className="field__hint">
+                Yours to recognise, and every later item goes in under it. Buyers never see it.
+              </span>
             </label>
             <label className="field">
               <span>Origin</span>
@@ -1279,7 +1286,8 @@ function FileIntoLot({ row, store, onClose, onDone }: {
         )}
 
         {error && <ErrorNotice message={error} />}
-        <button type="button" className="btn btn--block" disabled={busy || (mode === 'existing' && !lotId)}
+        <button type="button" className="btn btn--block"
+          disabled={busy || (mode === 'existing' ? !lotId : !name.trim())}
           onClick={() => void submit()}>
           {busy ? 'Filing…' : mode === 'existing' ? 'Add to lot' : 'Create lot & add order'}
         </button>
@@ -1360,7 +1368,21 @@ function Lots({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<LotsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  /*
+   * Which lot is open lives in the URL, like the tab does, so a lot is a place
+   * that can be linked to. An order's timeline sends its seller straight here
+   * to move the lot on, and "go to Track, find the lot, open it" is not a
+   * thing anybody should be told to do from a screen that knows which lot.
+   */
+  const [params, setParams] = useSearchParams();
+  const openId = params.get('lot');
+  const setOpenId = (next: string | null) =>
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      if (next) copy.set('lot', next);
+      else copy.delete('lot');
+      return copy;
+    }, { replace: true });
 
   const load = useCallback(async () => {
     setError(null);
@@ -1386,7 +1408,7 @@ function Lots({ store }: { store: StoreAccess }) {
     <div className="stack">
       {creating ? (
         <NewLotForm
-          suggestedName={`Lot ${(data?.lots.length ?? 0) + 1}`}
+          suggestedName={suggestLotName()}
           onDone={() => { setCreating(false); void load(); }}
           onCancel={() => setCreating(false)}
         />

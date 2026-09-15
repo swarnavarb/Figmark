@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { isLotEvent, kindOf } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
@@ -19,7 +19,7 @@ import { Icon } from './Icon';
  * between two, which is where most of what a seller has to say actually
  * belongs ("still waiting on the airline, booked for Thursday" is not a step).
  */
-export function Ladder({ steps, current, history, onMove, onNote, busy, whose }: {
+export function Ladder({ steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction }: {
   steps: RouteStep[];
   current: number;
   /** Everything recorded against this journey, oldest first. */
@@ -31,6 +31,16 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose }:
   busy?: boolean;
   /** What a note here reaches, said plainly under the box. */
   whose?: string;
+  /**
+   * The item is done travelling alone and its lot has not moved yet.
+   *
+   * A real place to be, and the ladder had nowhere to put it: the rung above
+   * is finished and the rung below has not happened, so one of the two was
+   * being drawn as the present and lying about it. This draws the wait.
+   */
+  waitingFor?: string | null;
+  /** Rendered inside the lot marker, for whoever may change which lot it is. */
+  lotAction?: (event: StageEvent) => ReactNode;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -50,10 +60,13 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose }:
   return (
     <ol className={`ladder${editable ? ' ladder--live' : ''}`}>
       {steps.map((step, index) => {
-        const state = stepStateAt(index, current);
+        /* Waiting for the lot means the rung the item is on is finished, not
+           in progress: the present is the wait drawn under it. */
+        const state = waitingFor && index === current ? 'done' : stepStateAt(index, current);
         const said = notes.get(index) ?? [];
         return (
-          <li key={step.id} className={`ladder__row is-${state}`}>
+          <Fragment key={step.id}>
+          <li className={`ladder__row is-${state}`}>
             <span className="ladder__dot" aria-hidden="true">
               {state === 'done' ? '✓' : state === 'current' ? '●' : ''}
             </span>
@@ -83,6 +96,7 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose }:
                         {event.lot?.number && <span className="faint"> · LOT {event.lot.number}</span>}
                       </span>
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>
+                      {lotAction?.(event)}
                     </span>
                   )
                   : (
@@ -141,6 +155,22 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose }:
               )}
             </span>
           </li>
+
+          {/* Between the two ladders, and drawn as its own rung rather than
+              folded into either: the item has finished everything that happens
+              to it alone, and what happens next happens to the whole lot. */}
+          {waitingFor && index === current && (
+            <li className="ladder__row ladder__row--wait is-current">
+              <span className="ladder__dot" aria-hidden="true">●</span>
+              <span className="ladder__body">
+                <span className="ladder__name">{waitingFor}</span>
+                <span className="faint">
+                  Everything from here happens to the whole lot, not to this piece alone.
+                </span>
+              </span>
+            </li>
+          )}
+          </Fragment>
         );
       })}
     </ol>

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { CHECKPOINT_COUNT_LABELS, LOT_STAGES, LOT_STAGE_LABELS, type OrderCheckpoint } from '@shared/enums';
-import { sideOf, type RouteStep } from '@shared/routes';
+import { sideOf, suggestLotName, type RouteStep } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import {
   ApiRequestError, api,
-  type LotContents, type LotDetails, type LotsResponse, type ProviderCard,
+  type LotContents, type LotDetails, type LotRouteView, type LotsResponse, type ProviderCard,
   type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { RouteBuilder } from '../components/RouteBuilder';
@@ -70,7 +70,7 @@ export function LotsPage() {
       {error && <ErrorNotice message={error} />}
       {creating && (
         <NewLotForm
-          suggestedName={`Lot ${(data?.lots.length ?? 0) + 1}`}
+          suggestedName={suggestLotName()}
           onDone={() => { setCreating(false); void load(); }}
           onCancel={() => setCreating(false)}
         />
@@ -502,6 +502,98 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
  * sell flow, where a seller is in a hurry - is editable here, which is what
  * makes it reasonable to ask for only a name up front.
  */
+/**
+ * Put this lot on a different ladder.
+ *
+ * A shop picks a route when it opens a lot, which is before it knows whether
+ * the forwarder will clear customs or they will. Getting it wrong meant the
+ * lot travelled the wrong words to the end, because the route is copied onto
+ * the lot and nothing could copy another one over it.
+ *
+ * Where the lot has got to comes across with it: that is a fact about the
+ * shipment rather than about the list describing it.
+ */
+function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
+  lot: Lot;
+  current: LotRouteView;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [library, setLibrary] = useState<RoutesResponse | null>(null);
+  const [routeId, setRouteId] = useState(current.routeId ?? '');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.routes().then(setLibrary).catch(() => setLibrary(null));
+  }, []);
+
+  const picked = routeId
+    ? library?.routes.find((row) => row.id === routeId) ?? null
+    : library?.builtIn ?? null;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.setLotRoute(lot.id, routeId || null, note.trim() || undefined);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not change the route.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Change route" onClose={onCancel}>
+      <form className="form" onSubmit={submit}>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Travelling <strong>{current.name}</strong>, at step {current.currentStep + 1} of{' '}
+          {current.steps.length}. Everyone in this lot reads the new steps from the equivalent
+          point, not from the beginning.
+        </p>
+
+        <label className="field">
+          <span>Route</span>
+          <select value={routeId} onChange={(event) => setRouteId(event.target.value)}>
+            <option value="">
+              {library ? `${library.builtIn.name} — ${library.builtIn.steps.length} steps` : 'Loading…'}
+            </option>
+            {(library?.routes ?? []).map((row) => (
+              <option key={row.id} value={row.id}>{row.name} — {row.steps.length} steps</option>
+            ))}
+          </select>
+          <span className="field__hint">
+            <Link to="/routes">Write a route</Link> if none of these is the journey.
+          </span>
+        </label>
+
+        {picked && <Ladder steps={picked.steps} current={-1} />}
+
+        <label className="field">
+          <span>Note (optional)</span>
+          <textarea value={note} rows={2} onChange={(event) => setNote(event.target.value)}
+            placeholder="Forwarder is handling customs now, so the steps changed." />
+          <span className="field__hint">
+            Every buyer in this lot reads it, beside the change.
+          </span>
+        </label>
+
+        {error && <ErrorNotice message={error} />}
+        <div className="row">
+          <button type="submit" className="btn" disabled={busy}>
+            {busy ? 'Changing…' : 'Change the route'}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function EditLotDialog({ lot, onSaved, onCancel }: {
   lot: Lot;
   onSaved: () => void;
@@ -749,6 +841,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
      every success message had become. */
   const [flash, setFlash] = useState<{ text: string; ok: boolean } | null>(null);
   const [editing, setEditing] = useState(false);
+  const [rerouting, setRerouting] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
@@ -813,8 +906,13 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
             ].filter(Boolean).join(' · ')}
           </p>
         </div>
-        <div className="row">
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>Edit details</button>
+        <div className="row row--tight">
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>
+            Rename &amp; details
+          </button>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRerouting(true)}>
+            Change route
+          </button>
           <StageBadge stage={lot.stage} />
         </div>
       </div>
@@ -822,6 +920,15 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
       {editing && (
         <EditLotDialog lot={lot} onCancel={() => setEditing(false)}
           onSaved={() => { setEditing(false); void load(); }} />
+      )}
+
+      {rerouting && (
+        <ChangeRouteDialog
+          lot={lot}
+          current={route}
+          onCancel={() => setRerouting(false)}
+          onSaved={() => { setRerouting(false); void load(); }}
+        />
       )}
 
       {flash && (

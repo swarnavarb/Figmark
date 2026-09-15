@@ -2945,15 +2945,31 @@ a.provider__name:hover { color: var(--accent-text); }
    that happened to the item rather than along the route, so it is drawn
    across the line rather than hanging off it. */
 .ladder__lot {
-  display: flex; align-items: baseline; gap: 7px;
+  /* Wraps, so the controls below take a line of their own. Without it they
+     compete with the sentence for the same line and - because a flex item with
+     `min-width: 0` may shrink to nothing - the lot's name ends up set one
+     character per line. */
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px;
   margin-top: 5px; padding: 7px 10px;
   border: 1px solid var(--aqua-line); border-radius: var(--r-sm);
   background: var(--aqua-soft);
   font-size: var(--t-xs); color: var(--text);
 }
 .ladder__lot svg { flex: 0 0 auto; color: var(--aqua); transform: translateY(2px); }
-.ladder__lot-text { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.ladder__lot-text { min-width: 0; flex: 1 1 60%; overflow-wrap: anywhere; }
 .ladder__lot strong { font-weight: var(--w-semi); }
+.ladder__lot-acts { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+/* The controls here are always on: they are the point of the box, not a
+   hover-revealed extra on a rung. */
+.ladder__lot-acts .ladder__act { text-decoration: none; }
+
+/* The wait between the two ladders. Dashed, because it is a state rather than
+   a step somebody will ever tick. */
+.ladder__row--wait.is-current .ladder__dot {
+  border-style: dashed; border-color: var(--warn); color: var(--warn);
+  background: var(--warn-soft);
+}
+.ladder__row--wait .ladder__name { color: var(--warn); }
 
 /* The controls take no space until they are wanted, so a nine-step ladder is a
    ladder rather than nine rows of buttons nobody is going to press. Collapsed

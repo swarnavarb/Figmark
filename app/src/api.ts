@@ -206,6 +206,9 @@ export interface OrderTracking {
     name: string;
     steps: RouteStep[];
     currentStep: number;
+    /** The item has finished travelling alone and its lot has not moved yet. */
+    waitingForLot: boolean;
+    lotId: string;
     lotName: string;
     lotNumber: string;
   } | null;
@@ -1080,6 +1083,9 @@ export const api = {
   /** Move the lot along its route. Omit `to` for the next step. */
   stepLot: (id: string, body: { to?: number; note?: string } = {}) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
+  /** Put the lot on a different ladder, carrying its position across. */
+  setLotRoute: (id: string, routeId: string | null, note?: string) =>
+    post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/route`, { routeId, note }),
   /** Say something about the lot, at a step, without moving it. Every buyer in it reads it. */
   noteOnLot: (id: string, note: string, at?: number) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/note`, { note, at }),
@@ -1100,7 +1106,7 @@ export const api = {
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
   uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
   /** File one order into a lot - an existing one, or one opened here. */
-  assignOrderToLot: (id: string, body: { lotId?: string; newLot?: Record<string, unknown> }) =>
+  assignOrderToLot: (id: string, body: { lotId?: string; newLot?: Record<string, unknown>; note?: string }) =>
     post<{ order: Order; lot: Lot }>(`/orders/${encodeURIComponent(id)}/lot`, body),
 
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),

@@ -416,3 +416,29 @@ export function lotRefOf(lot: { id: string; name: string; lotNumber?: string | n
     number: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
   };
 }
+
+/**
+ * What the wait between the two ladders is called.
+ *
+ * One string, shared, because the seller reads it on their board and the buyer
+ * reads it on their timeline and the two describing the same wait differently
+ * is how a support message starts.
+ */
+export const WAITING_FOR_LOT = 'Prepping for dispatch from the warehouse';
+
+/**
+ * A name to open a lot under, when the seller has not thought of one.
+ *
+ * Prefilled rather than defaulted: a name that appears in the field is a name
+ * the seller reads and corrects, and one applied silently when the field is
+ * left blank is how a shop ends up with "Lot for Marvel Legends Rivals
+ * Punisher" holding thirty other people's parcels.
+ *
+ * The month, because that is how consolidation runs are actually talked about,
+ * and the origin when there is one.
+ */
+export function suggestLotName(at: Date = new Date(), origin?: string): string {
+  const month = at.toLocaleDateString('en-GB', { month: 'long' });
+  const place = origin?.split(',')[0]?.trim();
+  return place ? `${place} run — ${month}` : `${month} run`;
+}

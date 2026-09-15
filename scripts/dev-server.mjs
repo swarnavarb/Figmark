@@ -54,7 +54,8 @@ const {
 const { insightsRoute } = await import(new URL('insight-routes.js', apiRoot));
 const {
   listRoutesRoute, saveRouteRoute, deleteRouteRoute,
-  lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, stepItemRoute, myItemsRoute,
+  lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, setLotRouteRoute,
+  stepItemRoute, myItemsRoute,
 } = await import(new URL('tracking-routes.js', apiRoot));
 const {
   listTemplatesRoute, saveTemplateRoute, deleteTemplateRoute,
@@ -163,6 +164,7 @@ const routes = [
   ['POST', '/api/lots/:id/items', addItemsRoute],
   ['POST', '/api/lots/:id/step', stepLotRoute],
   ['POST', '/api/lots/:id/note', noteOnLotRoute],
+  ['POST', '/api/lots/:id/route', setLotRouteRoute],
   ['POST', '/api/orders/:id/step', stepItemRoute],
   ['GET', '/api/me/items', myItemsRoute],
   ['GET', '/api/templates', listTemplatesRoute],

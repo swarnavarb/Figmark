@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, normaliseSteps, routeOf, stepId, type LotRoute, type RouteStep, type StepSide, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StepSide, type TrackingRoute,
 } from '../../../shared/routes.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -360,6 +360,99 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   return json(200, { lot: updated, ordersUpdated: live.length });
 }
 
+/**
+ * POST /api/lots/{id}/route - put this lot on a different ladder.
+ *
+ * A shop picks a route when it opens a lot, which is before it knows whether
+ * the forwarder will clear customs or the shop will. Getting it wrong used to
+ * mean the lot travelled the wrong words to the end, because a route is copied
+ * onto the lot and nothing could copy another one over it.
+ *
+ * The position moves with it. Where the lot had got to is a fact about the
+ * shipment, not about the list it was being described with, so it is carried
+ * across through the coarse stage the two ladders share rather than reset to
+ * the beginning or left pointing at a rung that no longer exists.
+ */
+async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A lot id is required.');
+  const { lot, userId } = await ownedLot(request, id);
+
+  let body: { routeId?: string | null; note?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const repository = await getRepository();
+
+  /* A copy, like every route a lot carries: editing the template later must
+     not rewrite a timeline somebody has been reading for three weeks. */
+  let next: LotRoute = BUILT_IN_ROUTE;
+  if (body.routeId) {
+    const template = await repository.getRoute(userId, body.routeId);
+    if (!template) return error(404, 'not_found', 'No such route.');
+    next = { routeId: template.id, name: template.name, steps: template.steps };
+  }
+
+  const before = routeOf(lot);
+  if (before.routeId === next.routeId && before.name === next.name) {
+    return error(409, 'same_route', 'That lot already travels that route.');
+  }
+
+  // Carried across by the stage the two ladders share, so a lot halfway to
+  // India stays halfway to India rather than starting again.
+  const at = stepForStage(next, coarseStage(before, currentStepOf(lot)));
+  const stage = coarseStage(next, at);
+  const now = new Date().toISOString();
+  const event: StageEvent = {
+    stage,
+    step: next.steps[at]?.name,
+    enteredAt: now,
+    kind: 'note',
+    note: body.note?.trim() || `Now tracked as ${next.name}.`,
+    recordedBy: userId,
+  };
+
+  const updated = await repository.updateLot({
+    ...lot,
+    route: next,
+    currentStep: at,
+    stage,
+    stageHistory: [...lot.stageHistory, event],
+    updatedAt: now,
+  });
+
+  /* Every item in it, because an order's own position indexes into the lot's
+     ladder and a position left pointing at the old one is a buyer reading a
+     step that is no longer on their timeline. */
+  const orders = (await repository.listOrdersForLot(lot.id))
+    .filter((order) => order.status !== 'cancelled');
+  await Promise.all(orders.map((order) =>
+    repository.updateOrder({
+      ...order,
+      stage,
+      currentStep: at,
+      stageHistory: [...order.stageHistory, event],
+      updatedAt: now,
+    })));
+
+  await notify(
+    repository,
+    orders.map((order) => order.buyerId),
+    {
+      kind: 'lot_moved',
+      title: `${lot.name}: tracking updated`,
+      body: event.note ?? `Now tracked as ${next.name}.`,
+      link: '/me?tab=purchases',
+    },
+    { except: lot.sellerId },
+  );
+
+  return json(200, { lot: updated, ordersUpdated: orders.length });
+}
+
 /* ── Notes, and one item that travels differently ──────────────────────── */
 
 /**
@@ -622,6 +715,7 @@ export const lotCandidatesRoute = handler(lotCandidates);
 export const addItemsRoute = handler(addItems);
 export const stepLotRoute = handler(stepLot);
 export const noteOnLotRoute = handler(noteOnLot);
+export const setLotRouteRoute = handler(setLotRoute);
 export const stepItemRoute = handler(stepItem);
 export const myItemsRoute = handler(myItems);
 
@@ -645,5 +739,6 @@ app.http('lot-candidates', {
 app.http('lot-items', { ...anon, methods: ['POST'], route: 'lots/{id}/items', handler: addItemsRoute });
 app.http('lot-step', { ...anon, methods: ['POST'], route: 'lots/{id}/step', handler: stepLotRoute });
 app.http('lot-note', { ...anon, methods: ['POST'], route: 'lots/{id}/note', handler: noteOnLotRoute });
+app.http('lot-route', { ...anon, methods: ['POST'], route: 'lots/{id}/route', handler: setLotRouteRoute });
 app.http('order-step', { ...anon, methods: ['POST'], route: 'orders/{id}/step', handler: stepItemRoute });
 app.http('me-items', { ...anon, methods: ['GET'], route: 'me/items', handler: myItemsRoute });
