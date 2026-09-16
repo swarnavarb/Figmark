@@ -35,7 +35,7 @@ const {
   lotsBoardRoute: lotsBoard, lotBoardRoute: lotBoard, setCheckpointRoute: setCheckpoint,
 } = await import(new URL('fulfilment-routes.js', fns));
 const {
-  exporterLotsRoute: exporterLots, exporterLotRoute: exporterLot,
+  supplierLotsRoute: supplierLots, supplierLotRoute: supplierLot,
 } = await import(new URL('fulfilment-routes.js', fns));
 const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
@@ -1562,8 +1562,8 @@ await check('messaging needs a session', async () => {
   assert.equal((await sendMessage(req({ params: { handle: 'arjun' }, body: { body: 'Hi' } }), ctx)).status, 401);
 });
 
-/* ── the exporter's packing view ───────────────────────────────────────── */
-console.log("\nthe exporter's packing view");
+/* ── the supplier's packing view ───────────────────────────────────────── */
+console.log("\nthe supplier's packing view");
 
 const packerSession = await login(req({
   body: { identifier: PACKER_EMAIL, password: DEMO_PASSWORD },
@@ -1571,18 +1571,18 @@ const packerSession = await login(req({
 const packer = { authorization: `Bearer ${packerSession.jsonBody.token}` };
 
 await check('a packer sees the lots they pack for, and only those', async () => {
-  const body = (await exporterLots(req({ headers: packer }), ctx)).jsonBody;
+  const body = (await supplierLots(req({ headers: packer }), ctx)).jsonBody;
   const ids = body.lots.map((row) => row.lot.id);
   assert.ok(ids.includes('lot_open_24'), 'the open lot is theirs to pack');
   // Already gone from China, so no longer theirs.
   assert.equal(ids.includes('lot_ship_23'), false);
 
-  const outsider = (await exporterLots(req({ headers: helper }), ctx)).jsonBody;
+  const outsider = (await supplierLots(req({ headers: helper }), ctx)).jsonBody;
   assert.deepEqual(outsider.lots, []);
 });
 
 await check('a packing list is pieces, never customers or prices', async () => {
-  const body = (await exporterLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const body = (await supplierLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
   assert.equal(body.items.length, 34);
   assert.equal(JSON.stringify(body).includes('priceMinor'), false);
   assert.equal(JSON.stringify(body).includes('buyerId'), false);
@@ -1595,7 +1595,7 @@ await check('a packing list is pieces, never customers or prices', async () => {
 });
 
 await check("marking packed is what moves the owner's ch-packed count", async () => {
-  const first = (await exporterLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const first = (await supplierLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
   const target = first.items.find((item) => !item.packed);
   assert.ok(target, 'expected something still to pack');
   const before = first.tally.counts.find((row) => row.checkpoint === 'china_packed').done;
@@ -1611,7 +1611,7 @@ await check("marking packed is what moves the owner's ch-packed count", async ()
 });
 
 await check('a packer may tick that, and nothing else', async () => {
-  const body = (await exporterLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const body = (await supplierLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
   const target = body.items[0];
 
   for (const checkpoint of ['china_received', 'ready_to_dispatch', 'dispatched']) {
@@ -1625,7 +1625,7 @@ await check('a packer may tick that, and nothing else', async () => {
 await check('the packing list names the shop, so a crate landing can be reported', async () => {
   // The warehouse receipt is not something the packer can tick - they tell the
   // shop and the shop ticks it - so the handle to tell has to be on this screen.
-  const body = (await exporterLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const body = (await supplierLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
   assert.equal(body.store.handle, 'arjun_collects');
 
   const sent = await sendMessage(req({
@@ -1637,7 +1637,7 @@ await check('the packing list names the shop, so a crate landing can be reported
 });
 
 await check('a lot they do not pack for is closed to them', async () => {
-  const refused = await exporterLot(req({ headers: packer, params: { id: 'lot_ship_23' } }), ctx);
+  const refused = await supplierLot(req({ headers: packer, params: { id: 'lot_ship_23' } }), ctx);
   assert.equal(refused.status, 403);
 });
 
@@ -4013,17 +4013,17 @@ await check('the hub counts what there is to count, and says so where there is n
   const byKind = Object.fromEntries(body.categories.map((row) => [row.kind, row]));
 
   // Every job, in the order the goods move.
-  assert.deepEqual(body.categories.map((row) => row.kind), ['exporter', 'forwarder', 'handler', 'escrow']);
+  assert.deepEqual(body.categories.map((row) => row.kind), ['supplier', 'forwarder', 'handler', 'escrow']);
   assert.ok(byKind.forwarder.count >= 3, 'the seeded forwarders should be counted');
   assert.ok(byKind.handler.count >= 2);
   assert.ok(byKind.escrow.count >= 1);
-  // "0 exporters" would be a lie about a category that has no roster at all.
-  assert.equal(byKind.exporter.count, null);
-  assert.equal(byKind.exporter.browsable, false);
+  // "0 suppliers" would be a lie about a category that has no roster at all.
+  assert.equal(byKind.supplier.count, null);
+  assert.equal(byKind.supplier.browsable, false);
 });
 
 await check('a private trade has no list, however politely you ask', async () => {
-  const refused = await serviceDirectory(req({ params: { kind: 'exporter' } }), ctx);
+  const refused = await serviceDirectory(req({ params: { kind: 'supplier' } }), ctx);
   assert.equal(refused.status, 403);
   assert.equal(refused.jsonBody.error, 'not_browsable');
 
@@ -4086,7 +4086,7 @@ await check('offering a service puts you on the list, and withdrawing takes you 
 });
 
 await check('the two you cannot sign up for, you cannot sign up for', async () => {
-  for (const kind of ['escrow', 'exporter', 'plumber']) {
+  for (const kind of ['escrow', 'supplier', 'plumber']) {
     const refused = await offerService(req({ headers: auth, body: { kind } }), ctx);
     assert.equal(refused.status, 400, `${kind} should not be self-service`);
     assert.equal(refused.jsonBody.error, 'invalid_service');
@@ -4123,7 +4123,7 @@ await check('the parcel list is people and never prices', async () => {
     headers: handlerAuth, params: { id: 'lot_open_24' },
   }), ctx)).jsonBody;
 
-  // The exporter's list is pieces and never customers, because they pack a
+  // The supplier's list is pieces and never customers, because they pack a
   // crate. This is the mirror: the whole job is which box goes to which person.
   assert.ok(body.parcels.length > 0);
   assert.ok(body.parcels.every((parcel) => parcel.name && parcel.name !== 'Unknown'));
@@ -4188,7 +4188,7 @@ await check('somebody else’s lot is not on your screen and not yours to tick',
   assert.equal(tick.status, 403);
 });
 
-await check('naming an exporter on one lot hands over that lot and no other', async () => {
+await check('naming a supplier on one lot hands over that lot and no other', async () => {
   const checker = await signup(req({
     body: {
       displayName: 'One Run Checker', email: 'checker@figmark.example',
@@ -4200,19 +4200,22 @@ await check('naming an exporter on one lot hands over that lot and no other', as
   assert.ok(handle, 'signup claims a handle');
 
   // Nothing yet.
-  assert.deepEqual((await exporterLots(req({ headers: theirs }), ctx)).jsonBody.lots, []);
+  assert.deepEqual((await supplierLots(req({ headers: theirs }), ctx)).jsonBody.lots, []);
 
-  const named = await setCrew(req({
-    headers: auth, params: { id: 'lot_open_24' }, body: { exporterHandle: `@${handle}` },
+  /* Named where the supplier is named, which is with the supplier's own
+     details: they were two roles until it became clear they never were. */
+  const named = await updateLotDetails(req({
+    headers: auth, params: { id: 'lot_open_24' },
+    body: { supplierName: 'One Run Checker', supplierHandle: `@${handle}` },
   }), ctx);
   assert.equal(named.status, 200, JSON.stringify(named.jsonBody));
-  assert.equal(named.jsonBody.lot.exporterUserId, checker.jsonBody.user.id);
+  assert.equal(named.jsonBody.lot.supplier.supplierUserId, checker.jsonBody.user.id);
 
-  const theirLots = (await exporterLots(req({ headers: theirs }), ctx)).jsonBody.lots;
+  const theirLots = (await supplierLots(req({ headers: theirs }), ctx)).jsonBody.lots;
   assert.deepEqual(theirLots.map((row) => row.lot.id), ['lot_open_24'], 'that lot, and only it');
 
   // The packing list, which is pieces and nothing about the buyers.
-  const list = (await exporterLot(req({ headers: theirs, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const list = (await supplierLot(req({ headers: theirs, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
   assert.ok(list.items.length > 0);
   assert.equal(JSON.stringify(list).includes('buyerId'), false);
 
@@ -4223,8 +4226,9 @@ await check('naming an exporter on one lot hands over that lot and no other', as
   assert.equal(refused.status, 403);
 
   // A handle nobody answers to is refused rather than stored.
-  const nobody = await setCrew(req({
-    headers: auth, params: { id: 'lot_open_24' }, body: { exporterHandle: '@nobody_at_all' },
+  const nobody = await updateLotDetails(req({
+    headers: auth, params: { id: 'lot_open_24' },
+    body: { supplierName: 'Nobody', supplierHandle: '@nobody_at_all' },
   }), ctx);
   assert.equal(nobody.status, 404);
 });

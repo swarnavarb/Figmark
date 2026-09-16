@@ -20,7 +20,7 @@ import { ChannelPage, SocialPage } from './pages/SocialPage';
 import { ThreadPage } from './pages/MessagesPage';
 import { DisputePage } from './pages/DisputePage';
 import { EscrowPage } from './pages/EscrowPage';
-import { ExporterPage, PackingLotPage } from './pages/ExporterPage';
+import { SupplierPage, PackingLotPage } from './pages/SupplierPage';
 import { ProfileByHandlePage } from './pages/ProfileByHandlePage';
 import { SessionProvider, useSession } from './session';
 import './styles.css';
@@ -70,7 +70,7 @@ function App() {
         <Route path="/social" element={<SocialPage />} />
         <Route path="/social/c/:id" element={<ChannelPage />} />
         <Route path="/messages/:handle" element={<ThreadPage />} />
-        <Route path="/packing" element={<ExporterPage />} />
+        <Route path="/packing" element={<SupplierPage />} />
         <Route path="/packing/:id" element={<PackingLotPage />} />
         <Route path="/order/:id" element={<OrderPage />} />
         <Route path="/dispute/:id" element={<DisputePage />} />

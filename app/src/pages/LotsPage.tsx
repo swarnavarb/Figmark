@@ -178,7 +178,6 @@ function CrewCard({ lot, busy, onRun }: {
 
   const [choice, setChoice] = useState(lot.handler?.handlerUserId ?? (lot.handler ? 'manual' : ''));
   const [manualName, setManualName] = useState(lot.handler?.handlerUserId ? '' : lot.handler?.name ?? '');
-  const [exporter, setExporter] = useState('');
 
   useEffect(() => {
     // The public lists only. An unlisted forwarder or handler still works - a
@@ -196,7 +195,10 @@ function CrewCard({ lot, busy, onRun }: {
       <div className="card card--pad stack">
         <div>
           <h2>Supplier</h2>
-          <span className="field__hint">Who you bought this run from. Buyers never see it.</span>
+          <span className="field__hint">
+            Who you buy this run from, and who checks and packs it before it leaves. Buyers
+            never see any of it.
+          </span>
         </div>
         <label className="field">
           <span>Name</span>
@@ -208,7 +210,8 @@ function CrewCard({ lot, busy, onRun }: {
           <input value={supplierHandle} onChange={(e) => setSupplierHandle(e.target.value)}
             placeholder={lot.supplier?.supplierUserId ? 'Tagged. Type another to change it.' : '@their_handle'} />
           <span className="field__hint">
-            Optional. Tag them and they see this lot on their own screen.
+            Optional. Tag them and they get a packing list for this lot — pieces, counts and
+            weights, never your buyers or prices — and tick each one as they pack it.
           </span>
         </label>
         <div className="field-row">
@@ -281,21 +284,12 @@ function CrewCard({ lot, busy, onRun }: {
 
       <div className="card card--pad stack">
         <div>
-          <h2>Exporter and handler</h2>
+          <h2>Domestic handler</h2>
           <span className="field__hint">
-            Who checks this lot before it leaves, and who gets it out when it lands. Each one sees
-            their own screen for this lot and nothing else of yours.
+            Who takes delivery when the lot lands and gets the parcels out. They see their own
+            screen for this lot and nothing else of yours.
           </span>
         </div>
-
-        <label className="field">
-          <span>Exporter — checks the pieces in China</span>
-          <input value={exporter} onChange={(e) => setExporter(e.target.value)}
-            placeholder={lot.exporterUserId ? 'Named. Type another @handle to change it.' : '@their_handle'} />
-          <span className="field__hint">
-            They get a packing list: pieces, counts and weights, never your buyers or prices.
-          </span>
-        </label>
 
         <label className="field">
           <span>Handler — takes delivery in India</span>
@@ -324,9 +318,8 @@ function CrewCard({ lot, busy, onRun }: {
             api.setCrew(lot.id, {
               handlerUserId: choice === 'manual' || choice === '' ? null : choice,
               handlerName: choice === 'manual' ? manualName : choice === '' ? '' : undefined,
-              exporterHandle: exporter.trim() ? exporter.trim() : undefined,
             }).then(() => {}))}>
-          Save crew
+          Save handler
         </button>
       </div>
     </div>
@@ -383,7 +376,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
   /** Everything that is not a decision, folded away until asked for. */
   const [more, setMore] = useState(false);
   const [forwarderName, setForwarderName] = useState('');
-  const [exporterHandle, setExporterHandle] = useState('');
+  const [supplierHandle, setSupplierHandle] = useState('');
   const [handlerId, setHandlerId] = useState('');
   const [handlers, setHandlers] = useState<ProviderCard[]>([]);
 
@@ -438,7 +431,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
         // Either a directory forwarder or one you already work with; the lot
         // does not care which, and neither does the buyer's tracking.
         forwarderName: forwarderName.trim() || undefined,
-        exporterHandle: exporterHandle.trim() || undefined,
+        supplierHandle: supplierHandle.trim() || undefined,
         handlerUserId: handlerId || undefined,
         ...(mode === 'existing'
           ? { routeId: chosenId }
@@ -536,7 +529,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
         )}
       </fieldset>
 
-      {/* Nobody, a forwarder, an exporter and a handler are all things a lot
+      {/* Nobody, a forwarder, an supplier and a handler are all things a lot
           may acquire later, and none of them stop it existing. They were four
           fields between "New lot" and the button that makes one. */}
       <button type="button" className="disclose" aria-expanded={more}
@@ -556,8 +549,8 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
           </label>
 
           <label className="field">
-            <span>Exporter</span>
-            <input value={exporterHandle} onChange={(e) => setExporterHandle(e.target.value)}
+            <span>Supplier</span>
+            <input value={supplierHandle} onChange={(e) => setSupplierHandle(e.target.value)}
               placeholder="@their_handle" />
             <span className="field__hint">
               Who checks the pieces before the lot leaves. They get a packing list for this lot only.

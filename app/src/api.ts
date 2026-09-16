@@ -974,9 +974,9 @@ export interface PublicProfile {
   }[];
 }
 
-/* ── Exporter ──────────────────────────────────────────────────────────── */
+/* ── Supplier ──────────────────────────────────────────────────────────── */
 
-export interface ExporterItem {
+export interface SupplierItem {
   id: string;
   itemName: string;
   condition: string;
@@ -986,18 +986,18 @@ export interface ExporterItem {
   packed: boolean;
 }
 
-export interface ExporterStore {
+export interface SupplierStore {
   ownerId: string;
   name: string;
   /** The shop's handle, so the packer can tell it a crate has landed. */
   handle: string | null;
 }
 
-export interface ExporterLot {
-  store: ExporterStore;
+export interface SupplierLot {
+  store: SupplierStore;
   lot: { id: string; name: string; stage: FulfilmentStage; origin: string };
   tally: LotTally;
-  items: ExporterItem[];
+  items: SupplierItem[];
 }
 
 export const api = {
@@ -1052,7 +1052,7 @@ export const api = {
       forwarderUserId?: string; forwarderName?: string; forwarderContact?: string;
       routeId?: string; routeName?: string;
       routeSteps?: { id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
-      exporterHandle?: string; handlerUserId?: string; handlerName?: string;
+      supplierHandle?: string; handlerUserId?: string; handlerName?: string;
     },
   ) => post<{ lot: Lot }>('/lots', body),
   updateLotDetails: (id: string, body: Partial<LotDetails>) =>
@@ -1081,7 +1081,7 @@ export const api = {
   /** Name the people working a lot: who checks it, and who gets it out. */
   setCrew: (id: string, body: {
     handlerUserId?: string | null; handlerName?: string; handlerContact?: string;
-    handlerCity?: string; exporterUserId?: string | null; exporterHandle?: string | null;
+    handlerCity?: string; supplierUserId?: string | null; supplierHandle?: string | null;
   }) => post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/crew`, body),
 
   routes: () => request<RoutesResponse>('/routes'),
@@ -1218,11 +1218,11 @@ export const api = {
     post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
   setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
 
-  exporterLots: () =>
-    request<{ lots: { store: ExporterStore; lot: ExporterLot['lot']; tally: LotTally }[] }>(
-      '/exporter/lots',
+  supplierLots: () =>
+    request<{ lots: { store: SupplierStore; lot: SupplierLot['lot']; tally: LotTally }[] }>(
+      '/supplier/lots',
     ),
-  exporterLot: (id: string) => request<ExporterLot>(`/exporter/lots/${encodeURIComponent(id)}`),
+  supplierLot: (id: string) => request<SupplierLot>(`/supplier/lots/${encodeURIComponent(id)}`),
 
   storefront: () =>
     request<{ storefront: SellerProfile | null; displayName: string }>('/me/storefront'),

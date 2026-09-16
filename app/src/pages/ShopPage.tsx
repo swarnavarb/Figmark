@@ -18,6 +18,7 @@ import { BUILT_IN_ROUTE, currentStepName, preSteps as preStepsOf, routeOf, sugge
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
+import { supplierIdOf } from '@shared/services';
 import {
   ApiRequestError,
   api,
@@ -36,7 +37,7 @@ import {
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
-import { PackingList } from './ExporterPage';
+import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -1218,7 +1219,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
      that went in it>" holding thirty other people's parcels. */
   const [name, setName] = useState(() => suggestLotName());
   const [origin, setOrigin] = useState('');
-  const [exporter, setExporter] = useState('');
+  const [supplier, setSupplier] = useState('');
   const [handlerId, setHandlerId] = useState('');
   const [handlers, setHandlers] = useState<ProviderCard[]>([]);
   // The template's answer, pre-selected: picking the template once should be
@@ -1251,7 +1252,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
             newLot: {
               name: name.trim(),
               origin: origin.trim(),
-              exporterHandle: exporter.trim() || undefined,
+              supplierHandle: supplier.trim() || undefined,
               handlerUserId: handlerId || undefined,
               routeId: routeId || undefined,
             },
@@ -1311,8 +1312,8 @@ function FileIntoLot({ row, store, onClose, onDone }: {
               <input value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="China" />
             </label>
             <label className="field">
-              <span>Exporter (optional)</span>
-              <input value={exporter} onChange={(e) => setExporter(e.target.value)} placeholder="@their_handle" />
+              <span>Supplier (optional)</span>
+              <input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="@their_handle" />
             </label>
             <label className="field">
               <span>Domestic handler (optional)</span>
@@ -1613,9 +1614,9 @@ function LotCard({ summary, store, onOpen }: {
         <strong>{currentStepName(lot)}</strong>
         <span className="faint">· {PHASE_LABELS[phase]}</span>
       </div>
-      {(lot.exporterUserId || lot.handler?.name) && (
+      {(supplierIdOf(lot) || lot.handler?.name) && (
         <div className="lot__crew">
-          {lot.exporterUserId && <span className="chipfact">Exporter named</span>}
+          {supplierIdOf(lot) && <span className="chipfact">Supplier tagged</span>}
           {lot.handler?.name && <span className="chipfact">Handler: {lot.handler.name}</span>}
         </div>
       )}

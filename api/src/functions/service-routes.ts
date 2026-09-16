@@ -5,6 +5,7 @@ import {
   SERVICES,
   SERVICE_ORDER,
   servicesOf,
+  supplierIdOf,
   type ServiceKind,
 } from '../../../shared/services.js';
 import { getAuthService } from '../auth/index.js';
@@ -107,7 +108,7 @@ async function providersOf(repository: Repo, kind: ServiceKind): Promise<Provide
       return (await repository.listEscrowAgents())
         .filter((user) => user.escrowRights && !user.suspended)
         .map(escrowCard);
-    case 'exporter':
+    case 'supplier':
       // Private by construction. Guarded at the route too; this is the second
       // lock, so a future caller cannot reach the list by asking politely.
       return [];
@@ -130,7 +131,7 @@ async function servicesHub(request: HttpRequest, _context: InvocationContext) {
   const categories = await Promise.all(
     SERVICE_ORDER.map(async (kind) => ({
       ...SERVICES[kind],
-      // A count only where there is a list to count. "0 exporters" would be a
+      // A count only where there is a list to count. "0 suppliers" would be a
       // lie about a category that deliberately has no roster.
       count: SERVICES[kind].browsable ? (await providersOf(repository, kind)).length : null,
     })),
@@ -140,9 +141,9 @@ async function servicesHub(request: HttpRequest, _context: InvocationContext) {
   if (viewer) {
     const account = await repository.getUserById(viewer.id);
     if (account) mine.push(...servicesOf(account));
-    // The exporter's answer is not on their account - it is whether anybody
+    // A supplier's answer is not on their account - it is whether anybody
     // has asked them to check a lot.
-    if (await packsForAnyone(repository, viewer.id)) mine.push('exporter');
+    if (await packsForAnyone(repository, viewer.id)) mine.push('supplier');
   }
 
   return json(200, { categories, mine: SERVICE_ORDER.filter((kind) => mine.includes(kind)) });
@@ -156,7 +157,7 @@ async function packsForAnyone(repository: Repo, userId: string): Promise<boolean
       return true;
     }
     const lots = await repository.listLots({ sellerId: owner.id });
-    if (lots.some((lot) => lot.exporterUserId === userId)) return true;
+    if (lots.some((lot) => supplierIdOf(lot) === userId)) return true;
   }
   return false;
 }
@@ -206,7 +207,7 @@ interface ListingBody {
  * POST /api/me/service - put yourself on a list, or take yourself off it.
  *
  * Only the two kinds anyone may offer. Escrow is granted because the job is
- * holding other people's money, and an exporter is named by a shop - neither is
+ * holding other people's money, and a supplier is named by a shop - neither is
  * something to sign up for, and letting this route write them would be a way
  * around both rules.
  */
@@ -394,7 +395,7 @@ async function distribution(request: HttpRequest, _context: InvocationContext) {
 /**
  * GET /api/me/service/distribution/{id} - one lot, as parcels to send.
  *
- * The exporter's packing list is pieces and never customers, because they pack
+ * The supplier's packing list is pieces and never customers, because they pack
  * a crate. This is the mirror image: a handler's whole job is which box goes to
  * which person, so they get names and a phone number - and still no prices,
  * which are nobody's business but the shop's and the buyer's.

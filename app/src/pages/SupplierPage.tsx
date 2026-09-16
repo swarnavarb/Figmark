@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { LOT_CARD_LABELS } from '@shared/enums';
 import { countOf } from '@shared/board';
-import { ApiRequestError, api, type ExporterItem, type ExporterLot, type ExporterStore } from '../api';
+import { ApiRequestError, api, type SupplierItem, type SupplierLot, type SupplierStore } from '../api';
 import { EmptyState, ErrorNotice, Icon, Tile } from '../components/ui';
 import { formatWeight } from '../format';
 
@@ -15,7 +15,7 @@ import { formatWeight } from '../format';
  * own. What they tick shows up on the owner's board as "ch packed", which is
  * the whole point of giving them a way in.
  */
-export function ExporterPage() {
+export function SupplierPage() {
   return (
     <main className="page tab-view">
       <div className="page__head">
@@ -37,13 +37,13 @@ export function ExporterPage() {
  */
 export function PackingList({ storeId }: { storeId?: string } = {}) {
   const [rows, setRows] = useState<
-    { store: ExporterStore; lot: ExporterLot['lot']; tally: ExporterLot['tally'] }[] | null
+    { store: SupplierStore; lot: SupplierLot['lot']; tally: SupplierLot['tally'] }[] | null
   >(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void api
-      .exporterLots()
+      .supplierLots()
       .then((result) =>
         setRows(storeId ? result.lots.filter((row) => row.store.ownerId === storeId) : result.lots),
       )
@@ -109,7 +109,7 @@ export function PackingList({ storeId }: { storeId?: string } = {}) {
  */
 export function PackingLotPage() {
   const { id } = useParams<{ id: string }>();
-  const [data, setData] = useState<ExporterLot | null>(null);
+  const [data, setData] = useState<SupplierLot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [only, setOnly] = useState(false);
@@ -117,7 +117,7 @@ export function PackingLotPage() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      setData(await api.exporterLot(id));
+      setData(await api.supplierLot(id));
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not open this lot.');
     }
@@ -130,7 +130,7 @@ export function PackingLotPage() {
   if (error && !data) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
   if (!data) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
 
-  async function mark(order: ExporterItem, packed: boolean) {
+  async function mark(order: SupplierItem, packed: boolean) {
     if (busy.has(order.id)) return;
     setBusy((current) => new Set(current).add(order.id));
 

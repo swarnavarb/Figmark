@@ -241,7 +241,7 @@ export const STORE_PERMISSION_LABELS: Record<StorePermission, string> = {
   lots: 'Open and move lots',
   posts: 'Post as the store',
   analytics: 'See the numbers',
-  export: 'Pack the lots (exporter)',
+  export: 'Pack the lots (supplier)',
   admin: 'Manage the store and its people',
 };
 

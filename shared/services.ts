@@ -19,7 +19,7 @@ import type { Lot, User } from './models.js';
  * job is.
  */
 
-export const SERVICE_KINDS = ['forwarder', 'handler', 'escrow', 'exporter'] as const;
+export const SERVICE_KINDS = ['forwarder', 'handler', 'escrow', 'supplier'] as const;
 export type ServiceKind = (typeof SERVICE_KINDS)[number];
 
 /**
@@ -105,27 +105,27 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     browsable: true,
     console: '/escrow',
   },
-  exporter: {
-    kind: 'exporter',
-    label: 'Exporter',
-    plural: 'Exporters',
+  supplier: {
+    kind: 'supplier',
+    label: 'Supplier',
+    plural: 'Suppliers',
     glyph: '🔍',
     icon: 'search',
-    blurb: 'Checks every piece in China before the lot leaves.',
+    blurb: 'Sells the shop the run, and packs it before it leaves.',
     detail:
       'Named by a shop on a lot, and only that lot. They work from a packing list - pieces, '
       + 'counts and weights, never customers or prices - and tick each one as it is packed, which '
       + 'is what the shop watches to know the run is ready to fly.',
     entry: 'named',
-    // Nobody applies to be an exporter, so a list of them would be a list of
-    // people who never asked to be on one.
+    // Nobody applies to be somebody's supplier, so a list of them would be a
+    // list of people who never asked to be on one.
     browsable: false,
     console: '/packing',
   },
 };
 
 /** In the order the goods actually move. */
-export const SERVICE_ORDER: readonly ServiceKind[] = ['exporter', 'forwarder', 'handler', 'escrow'];
+export const SERVICE_ORDER: readonly ServiceKind[] = ['supplier', 'forwarder', 'handler', 'escrow'];
 
 /** How somebody becomes one, in one line, for the category screen. */
 export const ENTRY_NOTE: Record<ServiceEntry, string> = {
@@ -143,9 +143,10 @@ export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' 
       return Boolean(user.handlerProfile);
     case 'escrow':
       return Boolean(user.escrowRights);
-    // An exporter is not a thing you are, it is a thing a shop asked you to do:
-    // the answer is the lots naming you, which only the API can see.
-    case 'exporter':
+    // Being somebody's supplier is not a thing you are, it is a thing a shop
+    // asked you to be: the answer is the lots naming you, which only the API
+    // can see.
+    case 'supplier':
       return false;
   }
 }
@@ -160,7 +161,7 @@ export function servicesOf(
 /* ── Working somebody else's lot ─────────────────────────────────────── */
 
 /** What this account is on a given lot, beyond owning it. */
-export type CrewRole = 'exporter' | 'handler';
+export type CrewRole = 'supplier' | 'handler';
 
 /**
  * Named on the lot itself, as opposed to holding a right in the shop.
@@ -169,16 +170,31 @@ export type CrewRole = 'exporter' | 'handler';
  * how most of this work is actually arranged - a friend with a warehouse, for
  * this lot, this month.
  */
-export function crewRoleOf(lot: Pick<Lot, 'handler' | 'exporterUserId'>, userId: string): CrewRole | null {
-  if (lot.exporterUserId === userId) return 'exporter';
+export function crewRoleOf(
+  lot: Pick<Lot, 'handler' | 'supplier' | 'exporterUserId'>,
+  userId: string,
+): CrewRole | null {
+  if (supplierIdOf(lot) === userId) return 'supplier';
   if (lot.handler?.handlerUserId === userId) return 'handler';
   return null;
 }
 
 /**
+ * The account behind this lot's supplier, wherever it was written.
+ *
+ * Lots named before the merge put them in `exporterUserId`, because the two
+ * roles were modelled as two people until it became clear they never were.
+ */
+export function supplierIdOf(
+  lot: Pick<Lot, 'supplier' | 'exporterUserId'>,
+): string | null {
+  return lot.supplier?.supplierUserId ?? lot.exporterUserId ?? null;
+}
+
+/**
  * The checkpoints each role may tick, and nothing else.
  *
- * The split is the work each one actually does. An exporter packs: they mark
+ * The split is the work each one actually does. A supplier packs: they mark
  * pieces packed and that is all - the warehouse receipt stays the shop's,
  * because the shop is the one being told a crate arrived. A handler is the one
  * taking custody in India, so the receipt there is theirs, and so is everything
@@ -188,7 +204,7 @@ export function crewRoleOf(lot: Pick<Lot, 'handler' | 'exporterUserId'>, userId:
  * that appears and then 403s is worse than no button.
  */
 export const CREW_CHECKPOINTS: Record<CrewRole, readonly OrderCheckpoint[]> = {
-  exporter: ['china_packed'],
+  supplier: ['china_packed'],
   handler: ['india_received', 'ready_to_dispatch', 'packed', 'dispatched'],
 };
 

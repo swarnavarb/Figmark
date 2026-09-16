@@ -648,12 +648,14 @@ export interface Lot extends BaseDocument {
    */
   handler?: LotHandler | null;
   /**
-   * The exporter named on this lot, if the shop named one.
+   * Where the supplier used to be named, before there was a supplier.
    *
-   * Separate from the store-wide `export` right, which stays: that is a
-   * standing arrangement with a supplier who packs everything, and this is one
-   * person asked to check one run before it leaves. Either gets the packing
-   * list; neither gets anything else.
+   * The two were one person all along: whoever you buy the run from is who
+   * checks and packs it before it leaves. `supplier.supplierUserId` is the
+   * field now, and this stays only so lots that named an exporter before the
+   * merge keep the person they named. Read both through `supplierIdOf`.
+   *
+   * @deprecated Use `supplier.supplierUserId`.
    */
   exporterUserId?: string | null;
   /**

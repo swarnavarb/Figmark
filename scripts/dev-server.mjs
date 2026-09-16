@@ -26,7 +26,7 @@ const {
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
-  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, exporterLotsRoute, exporterLotRoute,
+  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, supplierLotsRoute, supplierLotRoute,
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
@@ -192,8 +192,8 @@ const routes = [
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],
   ['POST', '/api/users/:id/page-reviews/new', writePageReviewRoute],
-  ['GET', '/api/exporter/lots', exporterLotsRoute],
-  ['GET', '/api/exporter/lots/:id', exporterLotRoute],
+  ['GET', '/api/supplier/lots', supplierLotsRoute],
+  ['GET', '/api/supplier/lots/:id', supplierLotRoute],
 ];
 
 const MIME = {

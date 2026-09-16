@@ -39,7 +39,7 @@ export const DEMO_PASSWORD = 'figmark123';
 /**
  * The supplier packing the demo shop's lots, as an account of their own.
  *
- * Packing access is the point of it: signing in here shows what the exporter
+ * Packing access is the point of it: signing in here shows what the supplier
  * sees, which is a list of pieces and nothing about the buyers behind them.
  */
 export const PACKER_EMAIL = 'packer@baiyunhobby.example';
@@ -1295,7 +1295,12 @@ export function seedShippedLot(): Lot {
     name: 'Lot 23',
     description: 'Left the China warehouse. Air freight, landing at BOM.',
     origin: 'Guangzhou, CN',
-    supplier: { name: 'Baiyun Hobby Trading', contact: 'wechat: baiyun_hobby', reference: 'BH-2523' },
+    // Tagged rather than merely named: the supplier already holds the store's
+    // export right, and this is the other way in - one lot, one person.
+    supplier: {
+      name: 'Baiyun Hobby Trading', contact: 'wechat: baiyun_hobby', reference: 'BH-2523',
+      supplierUserId: 'usr_packer',
+    },
     status: 'closed',
     stage: 'dispatched_from_china',
     stageHistory: [
@@ -1312,9 +1317,6 @@ export function seedShippedLot(): Lot {
       handlerUserId: 'usr_hnd_bombay', name: 'Bombay Parcel Works',
       contact: '+919000000201', city: 'Mumbai',
     },
-    // Named on this lot rather than granted the run of the shop: the supplier
-    // already holds the store's export right, and this is the other way in.
-    exporterUserId: 'usr_packer',
     costModel: {
       currency: 'INR', goodsCostMinor: 41_20_000, freightMinor: 3_60_000, customsDutyMinor: 6_40_000,
       packagingMinor: 62_000, localShippingMinor: 1_10_000, totalWeightGrams: 17_400,

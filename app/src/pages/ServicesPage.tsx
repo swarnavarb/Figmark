@@ -89,7 +89,7 @@ export function ServicesPage() {
               <span className="svc__body">
                 <span className="svc__top">
                   <span className="svc__name">{category.plural}</span>
-                  {/* No count where there is no list: "0 exporters" would be a
+                  {/* No count where there is no list: "0 suppliers" would be a
                       lie about a category that deliberately has no roster. */}
                   {category.count !== null ? (
                     <span className="badge">{category.count}</span>
@@ -292,7 +292,7 @@ export function MyServicesPage() {
           {hub.mine.length === 0 ? (
             <EmptyState icon="◍" title="You don’t provide one yet">
               Freight forwarding and domestic handling are open to anyone — put yourself on the list
-              and shops can name you on a lot. Escrow is granted by Figmark, and an exporter is
+              and shops can name you on a lot. Escrow is granted by Figmark, and an supplier is
               named by a shop on one run.
             </EmptyState>
           ) : (
@@ -310,7 +310,7 @@ export function MyServicesPage() {
             ))
           )}
 
-          {/* Both open lists, in one form. Escrow and exporter are deliberately
+          {/* Both open lists, in one form. Escrow and supplier are deliberately
               not here: neither is something you can sign up for. */}
           <div className="card card--pad stack">
             <div>
@@ -566,7 +566,7 @@ export function DistributionPage() {
 /**
  * One lot as parcels to send.
  *
- * The mirror image of the exporter's packing list. Theirs is pieces and never
+ * The mirror image of the supplier's packing list. Theirs is pieces and never
  * customers, because they pack a crate; a handler's entire job is which box
  * goes to which person, so they get the names and a phone number - and still no
  * prices, which stay between the shop and its buyer.
