@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StepSide, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StepSide, type StepTrigger, type TrackingRoute,
 } from '../../../shared/routes.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -59,15 +59,20 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
         description: step.description,
         position: index,
         side: step.side,
+        // The bindings come with the shape. A preset that arrived with no
+        // buttons attached would make every shop wire up its own from scratch
+        // to get the behaviour the preset is describing.
+        trigger: step.trigger,
       })),
     })),
     /** What a blank route opens with: the nine steps sellers actually describe. */
-    suggested: SUGGESTED_STEPS.map((name, index) => ({
+    suggested: SUGGESTED_STEPS.map((step, index) => ({
       id: `sg_${index}`,
-      name,
-      description: '',
+      name: step.name,
+      description: step.description,
       position: index,
-      side: index < 2 ? 'pre' : 'post',
+      side: step.side,
+      trigger: step.trigger,
     })),
   });
 }
@@ -75,7 +80,7 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
 interface RouteBody {
   id?: string;
   name?: string;
-  steps?: { id?: string; name?: string; description?: string; side?: StepSide }[];
+  steps?: { id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
 }
 
 /** POST /api/routes - write a ladder, or correct one. */
@@ -224,7 +229,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
     /* Filed where the item is, not where the lot is. A parcel already counted
        into the warehouse joined its lot there, and recording the lot's own
        step put "travelling with lot" above an arrival that happened first. */
-    const at = itemStepOn(route, index, undefined, Boolean(order.checkpoints?.china_received));
+    const at = itemStepOn(route, index, undefined, order.checkpoints);
     // Somebody else's item, a domestic sale, or one already riding in a lot:
     // all three are refusals, and none of them is worth failing the whole
     // request over when the other nine are fine.
@@ -689,7 +694,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
     const index = lot && route
       ? Math.max(...items.map((order) => itemStepOn(
           route, currentStepOf(lot), order.currentStep,
-          Boolean(order.checkpoints?.china_received),
+          order.checkpoints,
         )))
       : 0;
     const seller = byId.get(items[0]!.sellerId);

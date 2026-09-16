@@ -10,7 +10,7 @@ import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
-import type { RouteStep, StepSide, TrackingRoute } from '@shared/routes';
+import type { RouteStep, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
@@ -1051,7 +1051,7 @@ export const api = {
     body: LotDetails & {
       forwarderUserId?: string; forwarderName?: string; forwarderContact?: string;
       routeId?: string; routeName?: string;
-      routeSteps?: { id?: string; name: string; description?: string; side?: StepSide }[];
+      routeSteps?: { id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
       exporterHandle?: string; handlerUserId?: string; handlerName?: string;
     },
   ) => post<{ lot: Lot }>('/lots', body),
@@ -1088,7 +1088,7 @@ export const api = {
   saveRoute: (body: {
     id?: string;
     name: string;
-    steps: { id?: string; name: string; description?: string; side?: 'pre' | 'post' }[];
+    steps: { id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),

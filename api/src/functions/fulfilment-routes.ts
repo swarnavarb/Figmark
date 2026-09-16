@@ -8,7 +8,8 @@ import { mayTick, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
-  itemStepOn, joinIndexOf, lotOffset, routeOf, stepForStage, type LotRoute, type StepSide,
+  itemStepOn, joinIndexOf, lotOffset, routeOf, stepForStage,
+  type LotRoute, type StepSide, type StepTrigger,
 } from '../../../shared/routes.js';
 import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
 import {
@@ -191,7 +192,7 @@ export interface NewLotBody {
   /** A saved template to travel, or steps written here and now. */
   routeId?: string;
   routeName?: string;
-  routeSteps?: { id?: string; name?: string; description?: string; side?: StepSide }[];
+  routeSteps?: { id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
   /** Who checks it before it leaves, and who gets it out when it lands. */
   exporterHandle?: string;
   handlerUserId?: string;
@@ -404,12 +405,21 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
       checkpoints: order.checkpoints ?? {},
       /** Where this item is on the lot's route: the lot's, its own, or what it has done. */
       currentStep: itemStepOn(
-        route, step, order.currentStep, Boolean(order.checkpoints?.china_received),
+        route, step, order.currentStep, order.checkpoints,
       ),
-      /** True only when it was: the screen says so rather than implying it. */
-      ownStep: typeof order.currentStep === 'number' && order.currentStep !== step,
+      /**
+       * True only when the seller really did move this one away from the rest.
+       *
+       * Against where the item would be anyway - its buttons, and the lot when
+       * the lot is carrying anything - rather than against the lot's raw
+       * position, which while filling sits in the half of the route that
+       * happens to one item at a time and made every new item look diverted.
+       */
+      ownStep: typeof order.currentStep === 'number'
+        && order.currentStep !== itemStepOn(route, step, undefined, order.checkpoints),
       /** Done travelling alone, and the lot has not moved: a real place to be. */
-      waitingForLot: Boolean(order.checkpoints?.china_received)
+      waitingForLot:
+        itemStepOn(route, step, order.currentStep, order.checkpoints) === lotOffset(route) - 1
         && step < lotOffset(route)
         && lotOffset(route) < route.steps.length,
       history: order.stageHistory,
@@ -713,7 +723,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   const position = route
     ? itemStepOn(
         route, currentStepOf(lot!), order.currentStep,
-        Boolean(order.checkpoints?.china_received),
+        order.checkpoints,
       )
     : 0;
 

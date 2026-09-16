@@ -3135,7 +3135,7 @@ a.provider__name:hover { color: var(--accent-text); }
 .step {
   display: grid;
   grid-template-columns: auto auto 1fr auto;
-  grid-template-areas: 'grip no . acts' 'name name name name' 'desc desc desc desc';
+  grid-template-areas: 'grip no . acts' 'name name name name' 'desc desc desc desc' 'trig trig trig trig';
   align-items: center; gap: 6px 8px;
   padding: 8px 9px;
   border: 1px solid var(--border); border-radius: var(--r-sm);
@@ -3146,6 +3146,7 @@ a.provider__name:hover { color: var(--accent-text); }
 .step__acts { grid-area: acts; }
 .step__name { grid-area: name; }
 .step__desc { grid-area: desc; }
+.step__trig { grid-area: trig; }
 /* Quieter than the name, because it is the sentence under it: the seller reads
    the ladder by its names and only drops into the descriptions to correct one. */
 .step__desc {
@@ -3159,6 +3160,24 @@ a.provider__name:hover { color: var(--accent-text); }
   background: var(--surface-2); border-color: var(--accent-line); outline: none;
   color: var(--text);
 }
+
+/* What moves this step. Quieter than the words the buyer reads, because it is
+   plumbing - but on the row it belongs to, so the binding is never a guess. */
+.step__trig {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-top: 2px; padding: 0 2px;
+  font-size: var(--t-2xs);
+}
+.step__trig-lead { color: var(--text-faint); letter-spacing: 0.04em; text-transform: uppercase; }
+.step__trig select {
+  min-width: 0; flex: 1 1 150px;
+  padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text-dim);
+  font: inherit; font-size: var(--t-2xs);
+}
+.step__trig select:focus { border-color: var(--accent-line); outline: none; color: var(--text); }
+.step__trig-say { flex-basis: 100%; color: var(--text-faint); }
 
 /*
  * The split builder: one list of steps, two halves on the screen.
@@ -3219,6 +3238,37 @@ a.provider__name:hover { color: var(--accent-text); }
   font-size: var(--t-xs); color: var(--accent-text); font-variant-numeric: tabular-nums;
 }
 .rrow__note { font-size: var(--t-xs); color: var(--text-faint); }
+
+/*
+ * The route as it will be read, beside the fields that write it.
+ *
+ * A builder is a list of inputs; this is the thing the inputs produce. Seeing
+ * the two together is the difference between writing a route and guessing at
+ * one - and it is where a seller notices that the step they just wrote says
+ * something nobody outside their warehouse would understand.
+ */
+.preview {
+  display: grid; gap: 12px;
+  padding: 14px;
+  border: 1px dashed var(--border-strong); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.preview__head { display: grid; gap: 3px; }
+.preview__head h3 { margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.preview__keys { display: grid; gap: 7px; padding-top: 10px; border-top: 1px solid var(--border); }
+.preview__row { display: flex; flex-wrap: wrap; gap: 7px; }
+
+/* One binding, read as the sentence it is: press this, and this happens. */
+.trigkey {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--aqua-line); border-radius: 999px;
+  background: var(--aqua-soft);
+  font-size: var(--t-2xs);
+}
+.trigkey svg { flex: 0 0 auto; color: var(--aqua); }
+.trigkey__btn { font-weight: var(--w-semi); color: var(--text); }
+.trigkey__to { min-width: 0; color: var(--text-dim); overflow-wrap: anywhere; }
 .step.is-dragging { opacity: 0.5; }
 .step.is-over { border-color: var(--accent); box-shadow: 0 -2px 0 var(--accent) inset; }
 /* Only the grip drags, so tapping into the field to rename a step does not
@@ -3260,7 +3310,23 @@ a.provider__name:hover { color: var(--accent-text); }
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--t-sm); font-weight: var(--w-semi);
 }
-.lotitem__acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+/* Six buttons, and what each one moves the tracking to. Two columns on a
+   phone and three where there is room: a packing floor presses these on a
+   handset, standing up, one item at a time. */
+.lotitem__acts {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px;
+}
+@media (min-width: 560px) {
+  .lotitem__acts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* The step this button writes, under the button's own name - so a shop can
+   read what pressing it will tell the buyer without opening the route. */
+.tickbtn__to {
+  display: block; margin-top: 2px;
+  font-size: var(--t-2xs); font-weight: var(--w-normal); color: var(--text-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tickbtn.is-on .tickbtn__to { color: var(--ok); opacity: 0.85; }
 
 /* Picking items into a lot, in place rather than in a dialog: the list you
    are filling is the context for what you are adding to it. */

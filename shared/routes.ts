@@ -1,4 +1,4 @@
-import { LOT_STAGES, LOT_STAGE_LABELS, type LotStage } from './enums.js';
+import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type OrderCheckpoint } from './enums.js';
 import type { BaseDocument, Lot } from './models.js';
 
 /**
@@ -38,6 +38,35 @@ import type { BaseDocument, Lot } from './models.js';
  */
 export type StepSide = 'pre' | 'post';
 
+/**
+ * The button that moves a step, when a button moves it.
+ *
+ * A route is a list of words until something advances it, and what actually
+ * advances it is a person pressing a button: the piece lands at the warehouse,
+ * the shop taps "China WH", and the buyer's timeline says "Received at
+ * international warehouse" without anybody editing a timeline.
+ *
+ * The six are the physical checkpoints a shop already ticks per item. Binding
+ * one to a step is what turns a tick into tracking; a step with no trigger is
+ * moved by hand, from the ladder itself, which is right for the steps nobody
+ * can mark from a warehouse floor ("customs cleared" is a phone call).
+ *
+ * `lot_move` is the seventh: the whole lot moving, which advances every item
+ * in it at once. It is bound implicitly - every step in the lot's half of the
+ * route is reached that way - so it is offered for reading rather than set.
+ */
+export type StepTrigger = OrderCheckpoint;
+
+/** What each trigger button says, and what pressing it means. */
+export const TRIGGER_LABELS: Record<StepTrigger, { button: string; means: string }> = {
+  china_received: { button: 'China WH', means: 'the piece arrived at the overseas warehouse' },
+  china_packed: { button: 'Packed CH', means: 'it was boxed up before the lot left' },
+  india_received: { button: 'India WH', means: 'it landed and you have it' },
+  ready_to_dispatch: { button: 'Ready', means: 'it is checked and ready to go out' },
+  packed: { button: 'Packed', means: 'it is boxed for the domestic courier' },
+  dispatched: { button: 'Dispatched', means: 'it is on its way to the buyer' },
+};
+
 /** How many opening steps count as `pre` on a route written before sides. */
 const LEGACY_PRE_STEPS = 2;
 
@@ -59,6 +88,14 @@ export interface RouteStep {
    * through `sideOf`, never directly.
    */
   side?: StepSide;
+  /**
+   * The button that advances an item to this step.
+   *
+   * Absent means nobody can press this one into place: it is reached by hand
+   * from the ladder, or by the whole lot moving. Set it and the shop's
+   * existing tick becomes the thing that writes the buyer's tracking.
+   */
+  trigger?: StepTrigger;
 }
 
 /**
@@ -118,6 +155,31 @@ export function lotOffset(route: HasSteps): number {
   return at >= route.steps.length ? 0 : at;
 }
 
+/** What an item has physically done, as the buttons a shop presses record it. */
+export type Ticks = Partial<Record<OrderCheckpoint, string | null>> | undefined;
+
+/**
+ * How far the buttons alone have carried this item.
+ *
+ * The furthest step whose trigger has been pressed, and -1 when none has. It
+ * is derived rather than stored on purpose: untick a button pressed by mistake
+ * and the timeline falls back to the last one that is still true, with nothing
+ * to correct by hand and nothing left holding a position nobody remembers
+ * setting.
+ */
+export function triggeredStep(route: HasSteps, ticks: Ticks): number {
+  let at = -1;
+  route.steps.forEach((step, index) => {
+    if (step.trigger && ticks?.[step.trigger]) at = Math.max(at, index);
+  });
+  return at;
+}
+
+/** True once any step on this route is worked by a button rather than by hand. */
+export function hasTriggers(route: HasSteps): boolean {
+  return route.steps.some((step) => Boolean(step.trigger));
+}
+
 /**
  * Where an item is on its lot's route.
  *
@@ -126,15 +188,27 @@ export function lotOffset(route: HasSteps): number {
  * has physically done. The floor matters because a parcel counted into the
  * warehouse has finished travelling alone whether or not the crate has moved,
  * and a timeline that forgot it would rewind under its buyer.
+ *
+ * That floor is read off the buttons the shop bound to its own steps. A route
+ * with none bound falls back to the hand-over - the old behaviour, and the
+ * best a guess can do when nobody has said which tick means which step.
  */
 export function itemStepOn(
   route: HasSteps,
   lotStep: number,
   own: number | undefined,
-  received: boolean,
+  ticks: Ticks,
 ): number {
-  const alone = received ? Math.max(0, lotOffset(route) - 1) : 0;
-  const at = Math.max(own ?? lotStep, alone);
+  const alone = hasTriggers(route)
+    ? triggeredStep(route, ticks)
+    : (ticks?.china_received ? Math.max(0, lotOffset(route) - 1) : -1);
+  /* A lot that is still filling has taken none of its own steps, so it carries
+     its items nowhere: they are wherever their own buttons have put them. It
+     sits one short of its first step, and that position is in the half of the
+     route that happens to one item at a time - inheriting it would hand every
+     new item an arrival it has not made. */
+  const fromLot = lotStep >= lotOffset(route) ? lotStep : 0;
+  const at = Math.max(own ?? fromLot, alone);
   return Math.max(0, Math.min(route.steps.length - 1, at));
 }
 
@@ -184,6 +258,18 @@ const BUILT_IN_SIDES: Record<string, StepSide> = {
   china_wh_received: 'pre',
 };
 
+/**
+ * Which tick moves which of the seven, so the built-in route works the way
+ * every other one does: a shop that never opens the builder still gets a
+ * timeline that moves when they press the buttons they already press.
+ */
+const BUILT_IN_TRIGGERS: Record<string, StepTrigger> = {
+  china_wh_received: 'china_received',
+  india_received: 'india_received',
+  qc_repack: 'packed',
+  local_dispatch: 'dispatched',
+};
+
 export const BUILT_IN_ROUTE: LotRoute = {
   routeId: null,
   name: 'China → India',
@@ -193,6 +279,7 @@ export const BUILT_IN_ROUTE: LotRoute = {
     description: BUILT_IN_DESCRIPTIONS[stage] ?? '',
     position: index,
     side: BUILT_IN_SIDES[stage] ?? 'post',
+    trigger: BUILT_IN_TRIGGERS[stage],
   })),
 };
 
@@ -207,6 +294,8 @@ interface PresetStep {
   name: string;
   description: string;
   side: StepSide;
+  /** The button that advances an item to it, where a button can. */
+  trigger?: StepTrigger;
 }
 
 export interface RoutePreset {
@@ -224,12 +313,12 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     blurb: 'Pieces gather at your warehouse, then travel together as one lot.',
     steps: [
       { name: 'Ordering', description: 'The order is placed with you and you are sourcing the piece.', side: 'pre' },
-      { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre' },
+      { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre', trigger: 'china_received' },
       { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
       { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival. Usually handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received in India.', side: 'post' },
-      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post' },
+      { name: 'Landed', description: 'The lot has been received in India.', side: 'post', trigger: 'india_received' },
+      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -241,11 +330,11 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
       { name: 'Ordered from the supplier', description: 'The shop has placed the order with their supplier.', side: 'pre' },
       { name: 'Supplier sourcing', description: 'The supplier is obtaining the piece.', side: 'pre' },
-      { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre' },
+      { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre', trigger: 'china_received' },
       { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
       { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival.', side: 'post' },
-      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post' },
+      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -256,10 +345,10 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     steps: [
       { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The supplier has sent the piece to the freight forwarder.', side: 'pre' },
-      { name: 'At the forwarder', description: 'Received and being consolidated into a lot.', side: 'post' },
+      { name: 'At the forwarder', description: 'Received and being consolidated into a lot.', side: 'post', trigger: 'china_received' },
       { name: 'Dispatched', description: 'The lot has left for India.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival. Handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received in India.', side: 'post' },
+      { name: 'Landed', description: 'The lot has been received in India.', side: 'post', trigger: 'india_received' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -273,7 +362,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Tracking issued', description: 'The courier has given the parcel a tracking number.', side: 'pre' },
       { name: 'In transit', description: 'On its way to India.', side: 'pre' },
       { name: 'Customs', description: 'Clearing customs. The courier handles this.', side: 'pre' },
-      { name: 'Out for delivery', description: 'With the local courier for the last leg.', side: 'pre' },
+      { name: 'Out for delivery', description: 'With the local courier for the last leg.', side: 'pre', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'pre' },
     ],
   },
@@ -285,10 +374,10 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Pre-order placed', description: 'Your place is reserved against the release.', side: 'pre' },
       { name: 'Release month reached', description: 'The maker has reached the announced release window.', side: 'pre' },
       { name: 'Produced', description: 'The piece has been made and shipped to the warehouse.', side: 'pre' },
-      { name: 'At the overseas warehouse', description: 'Arrived and waiting for a lot.', side: 'pre' },
+      { name: 'At the overseas warehouse', description: 'Arrived and waiting for a lot.', side: 'pre', trigger: 'china_received' },
       { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival.', side: 'post' },
-      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post' },
+      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -306,15 +395,30 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
  * through, or be re-filed into a later run - none of which a fixed rung can
  * describe. It is an event now, drawn where it happened.
  */
-export const SUGGESTED_STEPS: readonly string[] = [
-  'Order placed',
-  'Received at international warehouse',
-  'Dispatched from China',
-  'International transit',
-  'Indian customs',
-  'Received by seller',
-  'Domestic dispatch',
-  'Delivered',
+export const SUGGESTED_STEPS: readonly PresetStep[] = [
+  { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+  {
+    name: 'Received at international warehouse',
+    description: 'The piece is counted in and waiting for a lot.',
+    side: 'pre',
+    trigger: 'china_received',
+  },
+  { name: 'Dispatched from China', description: 'The lot has left the warehouse.', side: 'post' },
+  { name: 'International transit', description: 'On its way out of the country.', side: 'post' },
+  { name: 'Indian customs', description: 'Clearing customs on arrival.', side: 'post' },
+  {
+    name: 'Received by seller',
+    description: 'Landed, and with the shop.',
+    side: 'post',
+    trigger: 'india_received',
+  },
+  {
+    name: 'Domestic dispatch',
+    description: 'Handed to the courier for the last leg.',
+    side: 'post',
+    trigger: 'dispatched',
+  },
+  { name: 'Delivered', description: 'It reached you.', side: 'post' },
 ];
 
 /** Ids that are stable for a saved step and unique within a route. */
@@ -339,6 +443,11 @@ export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[
       // decision the seller made, and dropping it here would silently move
       // every step back to the legacy split on the next save.
       side: step.side === 'pre' || step.side === 'post' ? step.side : undefined,
+      // The same, and it matters more: dropping the binding would leave the
+      // shop pressing a button that had quietly stopped moving anything.
+      trigger: ORDER_CHECKPOINTS.includes(step.trigger as OrderCheckpoint)
+        ? (step.trigger as StepTrigger)
+        : undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));

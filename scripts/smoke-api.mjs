@@ -5376,6 +5376,120 @@ await check('an item counted into the warehouse has done it, and says so', async
   assert.equal(after.route.waitingForLot, true, 'still waiting on the crate, and still saying so');
 });
 
+await check('a button the shop already presses writes the buyer\'s tracking', async () => {
+  /* The whole point of a route: the piece lands, the shop taps "China WH", and
+     the buyer's timeline says "Received at international warehouse" without
+     anybody editing a timeline. */
+  const route = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Triggered',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Received at international warehouse', side: 'pre', trigger: 'china_received' },
+        { name: 'Dispatched from China', side: 'post' },
+        { name: 'Landed in India', side: 'post', trigger: 'india_received' },
+        { name: 'Out for delivery', side: 'post', trigger: 'dispatched' },
+      ],
+    },
+  }), ctx);
+  assert.equal(route.status, 201, JSON.stringify(route.jsonBody));
+  assert.equal(route.jsonBody.route.steps[1].trigger, 'china_received', 'the binding is stored');
+  assert.equal(route.jsonBody.route.steps[0].trigger, undefined, 'and only where it was set');
+
+  const lot = await createLot(req({
+    headers: auth,
+    body: { name: 'Triggered run', origin: 'Guangzhou, CN', routeId: route.jsonBody.route.id },
+  }), ctx);
+  const lotId = lot.jsonBody.lot.id;
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Moves on a button', priceMinor: 5_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('Reads The Timeline');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId } }), ctx);
+
+  const where = async () => {
+    const t = (await orderTracking(req({
+      headers: buyer.headers, params: { id: order.id },
+    }), ctx)).jsonBody;
+    return t.route.steps[t.route.currentStep].name;
+  };
+  assert.equal(await where(), 'Order placed', 'nothing pressed, nothing moved');
+
+  // One press.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  assert.equal(await where(), 'Received at international warehouse');
+
+  // A button bound to a step further along jumps straight there: the lot flew
+  // while nobody was ticking, and the tick that lands is the truth.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'india_received', on: true },
+  }), ctx);
+  assert.equal(await where(), 'Landed in India');
+
+  /* Unticked is untrue, and the timeline falls back to the furthest button
+     still pressed rather than holding a position nobody remembers setting. */
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'india_received', on: false },
+  }), ctx);
+  assert.equal(await where(), 'Received at international warehouse');
+
+  // A button with nothing bound to it records the fact and moves nothing.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: true },
+  }), ctx);
+  assert.equal(await where(), 'Received at international warehouse');
+
+  // And the lot moving still carries everyone, buttons or no buttons.
+  await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 4 } }), ctx);
+  assert.equal(await where(), 'Out for delivery');
+});
+
+await check('a route with no buttons bound still works the way it always did', async () => {
+  // Nobody is forced to bind anything: an unbound route falls back to the
+  // hand-over, which is the best a guess can do and what shops had before.
+  const route = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Nothing bound',
+      steps: [
+        { name: 'Ordered', side: 'pre' },
+        { name: 'At the warehouse', side: 'pre' },
+        { name: 'Flown', side: 'post' },
+        { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  const lot = await createLot(req({
+    headers: auth,
+    body: { name: 'Unbound run', origin: 'Guangzhou, CN', routeId: route.jsonBody.route.id },
+  }), ctx);
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'No buttons here', priceMinor: 3_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('Unbound Buyer');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({
+    headers: auth, params: { id: order.id }, body: { lotId: lot.jsonBody.lot.id },
+  }), ctx);
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+
+  const tracking = (await orderTracking(req({
+    headers: buyer.headers, params: { id: order.id },
+  }), ctx)).jsonBody;
+  assert.equal(tracking.route.steps[tracking.route.currentStep].name, 'At the warehouse');
+  assert.equal(tracking.route.waitingForLot, true);
+});
+
 await check('a domestic sale is not something to file into a crate', async () => {
   const shelf = await createListing(req({
     headers: auth, body: { title: 'Straight off the shelf', priceMinor: 3_000, sourcing: 'in_hand' },

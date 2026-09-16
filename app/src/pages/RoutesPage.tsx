@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { joinIndexOf, sideOf, type RouteStep } from '@shared/routes';
+import { TRIGGER_LABELS, joinIndexOf, sideOf, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
 import { RouteBuilder } from '../components/RouteBuilder';
+import { Ladder } from '../components/Ladder';
 
 /**
  * The routes a shop can send a lot along.
@@ -192,6 +193,7 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
             name: step.name.trim(),
             description: step.description.trim(),
             side: sideOf(step, index),
+            trigger: step.trigger,
           })),
       });
       onSaved();
@@ -203,6 +205,8 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
   }
 
   const named = steps.filter((step) => step.name.trim()).length;
+  /** How much of this route works itself, which is the point of binding one. */
+  const bound = steps.filter((step) => step.name.trim() && step.trigger).length;
 
   /* Nothing chosen yet: offer the shapes rather than an empty list. */
   if (!started) {
@@ -263,6 +267,38 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
       </label>
 
       <RouteBuilder steps={steps} onChange={setSteps} split />
+
+      {/* What the buyer will actually read, while it is being written. The
+          builder is a list of fields; this is the thing the fields produce,
+          and seeing it beside them is the difference between writing a route
+          and guessing at one. */}
+      <div className="preview">
+        <div className="preview__head">
+          <h3>What your buyer will see</h3>
+          <span className="field__hint">
+            {bound === 0
+              ? 'Nothing here moves on its own yet — bind a button to a step above.'
+              : `${bound} of ${named} steps move when you press a button.`}
+          </span>
+        </div>
+        <Ladder steps={named > 0 ? steps.filter((step) => step.name.trim()) : []} current={-1} />
+        {named === 0 && <p className="muted">Name a step and it appears here.</p>}
+
+        {bound > 0 && (
+          <div className="preview__keys">
+            <span className="field__hint">The buttons this route uses:</span>
+            <div className="preview__row">
+              {steps.filter((step) => step.name.trim() && step.trigger).map((step) => (
+                <span key={step.id} className="trigkey">
+                  <span className="trigkey__btn">{TRIGGER_LABELS[step.trigger!].button}</span>
+                  <Icon name="right" size={11} />
+                  <span className="trigkey__to">{step.name}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {error && <ErrorNotice message={error} />}
 

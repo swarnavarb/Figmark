@@ -1,6 +1,7 @@
 import { useState, type DragEvent } from 'react';
 import { Icon } from './Icon';
-import { sideOf, stepId, type RouteStep, type StepSide } from '@shared/routes';
+import { ORDER_CHECKPOINTS } from '@shared/enums';
+import { TRIGGER_LABELS, sideOf, stepId, type RouteStep, type StepSide } from '@shared/routes';
 
 /**
  * The step list, editable.
@@ -236,6 +237,33 @@ function StepRows({ rows, onMove, onSet, onRemove, dragging, over, setDragging, 
             placeholder="Say what happens here, in one line"
             onChange={(event) => onSet(index, { description: event.target.value })}
           />
+
+          {/* What actually moves it. A route is a list of words until somebody
+              presses something, and the thing they press is a button they are
+              already pressing: the piece lands, they tap China WH, and this
+              step is what the buyer reads. */}
+          <label className="step__trig">
+            <span className="step__trig-lead">Moved by</span>
+            <select
+              value={step.trigger ?? ''}
+              aria-label={`What advances step ${row + 1}`}
+              onChange={(event) => onSet(index, {
+                trigger: (event.target.value || undefined) as RouteStep['trigger'],
+              })}
+            >
+              <option value="">Me, by hand</option>
+              {ORDER_CHECKPOINTS.map((checkpoint) => (
+                <option key={checkpoint} value={checkpoint}>
+                  The “{TRIGGER_LABELS[checkpoint].button}” button
+                </option>
+              ))}
+            </select>
+            {step.trigger && (
+              <span className="step__trig-say">
+                Press it when {TRIGGER_LABELS[step.trigger].means}.
+              </span>
+            )}
+          </label>
 
           <span className="step__acts">
             <button type="button" className="iconbtn" aria-label={`Move step ${row + 1} up`}

@@ -253,9 +253,7 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
      put "travelling with lot" above an arrival that happened first. A move
      between lots starts fresh on the new lot's ladder, so only the checkpoint
      floors it. */
-  const index = itemStepOn(
-    route, currentStepOf(lot), undefined, Boolean(order.checkpoints?.china_received),
-  );
+  const index = itemStepOn(route, currentStepOf(lot), undefined, order.checkpoints);
   const now = new Date().toISOString();
   const event: StageEvent = {
     stage: coarseStage(route, index),

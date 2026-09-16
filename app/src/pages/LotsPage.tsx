@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { CHECKPOINT_COUNT_LABELS, LOT_STAGES, LOT_STAGE_LABELS, type OrderCheckpoint } from '@shared/enums';
-import { WAITING_FOR_LOT, sideOf, suggestLotName, type RouteStep } from '@shared/routes';
+import {
+  LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type OrderCheckpoint,
+} from '@shared/enums';
+import {
+  TRIGGER_LABELS, WAITING_FOR_LOT, sideOf, suggestLotName, type RouteStep,
+} from '@shared/routes';
 import type { Lot } from '@shared/models';
 import {
   ApiRequestError, api,
@@ -422,6 +426,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
           name: routeName.trim() || 'My route',
           steps: named.map((step, index) => ({
             name: step.name, description: step.description, side: sideOf(step, index),
+            trigger: step.trigger,
           })),
         });
         chosenId = saved.route.id;
@@ -443,6 +448,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
                 routeName: routeName.trim() || 'My route',
                 routeSteps: named.map((step, index) => ({
                   name: step.name, description: step.description, side: sideOf(step, index),
+                  trigger: step.trigger,
                 })),
               }),
       });
@@ -729,13 +735,12 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
  * own. Before that the ticks would be a lie - nothing can be packed while it is
  * over the Bay of Bengal - so they are not offered.
  */
-function LotItemRow({ item, steps, others, atSeller, busy, onTick, onMove, onNote, onRelot }: {
+function LotItemRow({ item, steps, others, busy, onTick, onMove, onNote, onRelot }: {
   item: LotItem;
   /** The lot's route, which is the ladder this item rides. */
   steps: RouteStep[];
   /** The shop's other open lots, for an item that has to ride a different one. */
   others: { id: string; name: string; lotNumber?: string | null }[];
-  atSeller: boolean;
   busy: boolean;
   onTick: (checkpoint: OrderCheckpoint, on: boolean) => void;
   onMove: (to: number) => void | Promise<void>;
@@ -758,20 +763,28 @@ function LotItemRow({ item, steps, others, atSeller, busy, onTick, onMove, onNot
         {item.quantity > 1 && ` · ×${item.quantity}`}
       </span>
 
-      {atSeller && (
-        <div className="lotitem__acts">
-          {(['packed', 'dispatched'] as const).map((checkpoint) => {
-            const done = Boolean(item.checkpoints[checkpoint]);
-            return (
-              <button key={checkpoint} type="button" disabled={busy} aria-pressed={done}
-                className={`tickbtn${done ? ' is-on' : ''}`}
-                onClick={() => onTick(checkpoint, !done)}>
-                {CHECKPOINT_COUNT_LABELS[checkpoint]}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* The buttons that move this item's tracking.
+          One press, and its buyer's timeline says the step the shop bound to
+          it - which is the whole point of binding one. A button with nothing
+          bound still records the fact; it simply moves no timeline, and says
+          so rather than looking broken. */}
+      <div className="lotitem__acts">
+        {ORDER_CHECKPOINTS.map((checkpoint) => {
+          const done = Boolean(item.checkpoints[checkpoint]);
+          const moves = steps.find((step) => step.trigger === checkpoint);
+          return (
+            <button key={checkpoint} type="button" disabled={busy} aria-pressed={done}
+              className={`tickbtn${done ? ' is-on' : ''}`}
+              title={moves
+                ? `${done ? 'Pressed' : 'Press'} when ${TRIGGER_LABELS[checkpoint].means} — moves tracking to “${moves.name}”`
+                : `${TRIGGER_LABELS[checkpoint].button}: recorded, but no step is bound to it`}
+              onClick={() => onTick(checkpoint, !done)}>
+              {TRIGGER_LABELS[checkpoint].button}
+              {moves && <span className="tickbtn__to">{moves.name}</span>}
+            </button>
+          );
+        })}
+      </div>
 
       {/* One item's own timeline. Almost always the lot's, which is why it is
           closed: it is opened for the exception - the piece pulled at customs
@@ -1130,7 +1143,6 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                   item={item}
                   steps={route.steps}
                   others={others}
-                  atSeller={route.atSeller}
                   busy={busy}
                   onTick={(checkpoint, on) =>
                     run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
