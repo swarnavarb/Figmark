@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { Lot } from '@shared/models';
+import { COUNTRIES } from '@shared/countries';
 import { ApiRequestError, api, type LotDetails } from '../api';
 import { ErrorNotice } from './ui';
 
@@ -41,6 +42,27 @@ export function LotDetailFields({ value, onChange, compact = false }: {
         <input value={value.origin ?? ''} onChange={(e) => set('origin', e.target.value)}
           placeholder="Guangzhou, CN" />
       </label>
+
+      {/* The countries this lot travels between - every route step that names
+          one reads these, so they are required before the route means anything. */}
+      <div className="row" style={{ gap: 10 }}>
+        <label className="field" style={{ flex: 1 }}>
+          <span>Origin country *</span>
+          <select value={value.originCountry ?? ''} required
+            onChange={(e) => set('originCountry', e.target.value)}>
+            <option value="" disabled>Country</option>
+            {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
+          </select>
+        </label>
+        <label className="field" style={{ flex: 1 }}>
+          <span>Destination country *</span>
+          <select value={value.destinationCountry ?? ''} required
+            onChange={(e) => set('destinationCountry', e.target.value)}>
+            <option value="" disabled>Country</option>
+            {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
+          </select>
+        </label>
+      </div>
 
       <Extras compact={compact}>
       <label className="field">
@@ -106,6 +128,8 @@ export const emptyLotDetails = (): LotDetails => ({
   name: '',
   description: '',
   origin: '',
+  originCountry: '',
+  destinationCountry: '',
   estimatedDispatchAt: null,
   supplierName: '',
   supplierContact: '',
@@ -117,6 +141,8 @@ export const lotDetailsOf = (lot: Lot): LotDetails => ({
   name: lot.name,
   description: lot.description,
   origin: lot.origin ?? '',
+  originCountry: lot.originCountry ?? '',
+  destinationCountry: lot.destinationCountry ?? '',
   estimatedDispatchAt: lot.estimatedDispatchAt,
   supplierName: lot.supplier?.name ?? '',
   supplierContact: lot.supplier?.contact ?? '',

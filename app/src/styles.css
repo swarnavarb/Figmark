@@ -3132,6 +3132,14 @@ a.provider__name:hover { color: var(--accent-text); }
   font: inherit; font-size: var(--t-sm);
 }
 .ladder__write textarea:focus { outline: none; border-color: var(--accent); }
+.ladder__write input {
+  width: 100%; min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text);
+  font: inherit; font-size: var(--t-sm);
+}
+.ladder__write input:focus { outline: none; border-color: var(--accent); }
 .ladder__write-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ladder__write-acts .field__hint { flex: 1 1 140px; min-width: 0; }
 
@@ -3202,6 +3210,12 @@ a.provider__name:hover { color: var(--accent-text); }
   background: var(--surface); color: var(--text); font-size: var(--t-sm);
 }
 .stagestep__name:focus { border-color: var(--accent-line); outline: none; }
+.stagestep--locked { opacity: 0.85; }
+.stagestep__name--static {
+  min-width: 0; flex: 1; padding: 8px 10px;
+  font-size: var(--t-sm); color: var(--text-dim);
+}
+.stagestep--locked svg { color: var(--text-faint); flex: 0 0 auto; }
 .stagestep__more { display: grid; gap: 8px; padding: 0 10px 10px; }
 .stagestep__desc {
   min-width: 0; width: 100%;
@@ -4104,6 +4118,12 @@ a.order__name:hover { color: var(--accent-text); }
   overflow-wrap: anywhere;
 }
 .pick.is-on .pick__steps { color: var(--text); }
+.pick__name svg { vertical-align: -2px; margin-right: 2px; }
+/* Visually its own colour, per the brief: a seller should never mistake the
+   open builder for one more pre-filled shape in the list above it. */
+.pick--scratch { border-color: var(--violet-line); background: var(--violet-soft); }
+.pick--scratch.is-on { border-color: var(--violet-lit); box-shadow: 0 0 0 1px var(--violet-lit); }
+.pick--scratch .pick__name { color: var(--violet-text); }
 /* The builder, when "write my own" is the one chosen. */
 .pick__open {
   display: grid;

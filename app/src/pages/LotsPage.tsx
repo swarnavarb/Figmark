@@ -7,12 +7,13 @@ import {
   TRIGGER_LABELS, WAITING_FOR_LOT, sideOf, suggestLotName, type RouteStep,
 } from '@shared/routes';
 import type { Lot } from '@shared/models';
+import { COUNTRIES } from '@shared/countries';
 import {
   ApiRequestError, api,
   type LotBoard, type LotContents, type LotDetails, type LotRouteView, type LotsResponse,
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
-import { RouteBuilder } from '../components/RouteBuilder';
+import { RouteBuilder, STAGE_ICON_META } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
 import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
@@ -469,6 +470,29 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
         <span className="field__hint">For your own lists. Buyers see the lot number, not this.</span>
       </label>
 
+      {/* Every step this lot's route names - "Received at 'China' Dispatch
+          Center" - reads these two, so they are asked before the route is,
+          not filled in as an afterthought once the words are already wrong. */}
+      <div className="row" style={{ gap: 10 }}>
+        <label className="field" style={{ flex: 1 }}>
+          <span>Origin</span>
+          <select value={details.originCountry ?? ''} required
+            onChange={(e) => setDetails({ ...details, originCountry: e.target.value })}>
+            <option value="" disabled>Country</option>
+            {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
+          </select>
+        </label>
+        <span style={{ alignSelf: 'center', marginTop: 18 }}><Icon name="right" size={14} /></span>
+        <label className="field" style={{ flex: 1 }}>
+          <span>Destination</span>
+          <select value={details.destinationCountry ?? ''} required
+            onChange={(e) => setDetails({ ...details, destinationCountry: e.target.value })}>
+            <option value="" disabled>Country</option>
+            {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
+          </select>
+        </label>
+      </div>
+
       {/* The one decision worth making here. Presented as things you can
           read rather than as a picker plus a preview plus a mode toggle: a
           seller choosing a route wants to see the route. */}
@@ -500,11 +524,28 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
           </label>
         ))}
 
-        <label className={`pick${mode === 'new' ? ' is-on' : ''}`}>
-          <input type="radio" name="route" checked={mode === 'new'}
-            onChange={() => setMode('new')} />
+        {/* Where an order enters the lot's journey - the supplier holds it
+            until enough orders are ready, or it goes straight to the
+            forwarder - is a decision, not something to assume. These two
+            cards make it one. */}
+        {(library?.routeTemplates ?? []).map((template) => (
+          <label key={template.id}
+            className={`pick pick--template${mode === 'new' && routeName === template.name ? ' is-on' : ''}`}>
+            <input type="radio" name="route" checked={mode === 'new' && routeName === template.name}
+              onChange={() => { setMode('new'); setRouteName(template.name); setSteps(template.steps); }} />
+            <span className="pick__body">
+              <span className="pick__name"><Icon name={STAGE_ICON_META[template.icon].icon} size={15} /> {template.name}</span>
+              <span className="pick__steps">{template.blurb}</span>
+            </span>
+          </label>
+        ))}
+
+        <label className={`pick pick--scratch${mode === 'new' && !(library?.routeTemplates ?? []).some((t) => t.name === routeName) ? ' is-on' : ''}`}>
+          <input type="radio" name="route"
+            checked={mode === 'new' && !(library?.routeTemplates ?? []).some((t) => t.name === routeName)}
+            onChange={() => { setMode('new'); setRouteName(''); setSteps(library?.suggested ?? []); }} />
           <span className="pick__body">
-            <span className="pick__name">Write my own steps</span>
+            <span className="pick__name">✨ Define Route From Scratch</span>
             <span className="pick__steps">For a journey none of the above describes</span>
           </span>
         </label>
@@ -1095,11 +1136,12 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               current={lotStep}
               history={data.history}
               busy={busy}
+              vars={{ origin: lot.originCountry, destination: lot.destinationCountry }}
               whose={items.length === 0
                 ? 'Nothing is riding in this lot yet, so this is a note to yourself.'
                 : `Every one of the ${items.length} buyers in this lot reads it.`}
-              onMove={(to) => run(`Now: ${lotSteps[to]?.name ?? 'moved'}.`, () =>
-                api.stepLot(lot.id, { to: to + route.offset }).then(() => {}))}
+              onMove={(to, details) => run(`Now: ${lotSteps[to]?.name ?? 'moved'}.`, () =>
+                api.stepLot(lot.id, { to: to + route.offset, ...details }).then(() => {}))}
               onNote={(text, at) => run('Note added.', () =>
                 api.noteOnLot(lot.id, text, at + route.offset).then(() => {}))}
             />

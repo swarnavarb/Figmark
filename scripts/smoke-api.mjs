@@ -18,9 +18,25 @@ const {
   myActivityRoute: myActivity, forwardersRoute: forwarders,
 } = await import(new URL('catalog-routes.js', fns));
 const {
-  myLotsRoute: myLots, createLotRoute: createLot, lotContentsRoute: lotContents,
+  myLotsRoute: myLots, createLotRoute: createLotHandler, lotContentsRoute: lotContents,
   updateLotDetailsRoute: updateLotDetails,
 } = await import(new URL('fulfilment-routes.js', fns));
+/**
+ * `createLot` defaulted to a China -> India lot everywhere in this file
+ * before origin/destination country existed. Rather than touch every one of
+ * the sixteen fixtures below, the default is injected here; a fixture that
+ * wants to test the requirement itself passes its own (possibly empty)
+ * `originCountry`/`destinationCountry` and this leaves it alone.
+ */
+const createLot = (request, ctx) => {
+  const patched = {
+    json: async () => {
+      const body = await request.json().catch(() => ({}));
+      return { originCountry: 'China', destinationCountry: 'India', ...body };
+    },
+  };
+  return createLotHandler({ ...request, ...patched }, ctx);
+};
 const {
   storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, dashboardRoute: dashboard,
   myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales,
@@ -507,16 +523,38 @@ await check('a lot carries its origin and supplier', () => {
   assert.equal(lot.jsonBody.lot.supplier.reference, 'BH-1');
 });
 
-await check('the name is the only field a lot insists on', async () => {
+await check('a name and the two countries are all a lot insists on', async () => {
   const bare = await createLot(req({ headers: auth, body: { name: 'Bare lot' } }), ctx);
   assert.equal(bare.status, 201);
   assert.equal(bare.jsonBody.lot.origin, '');
+  assert.equal(bare.jsonBody.lot.originCountry, 'China');
+  assert.equal(bare.jsonBody.lot.destinationCountry, 'India');
   // A contact with nobody attached to it is not a supplier.
   assert.equal(bare.jsonBody.lot.supplier, null);
 
   const nameless = await createLot(req({ headers: auth, body: { origin: 'Shenzhen, CN' } }), ctx);
   assert.equal(nameless.status, 400);
   assert.equal(nameless.jsonBody.error, 'invalid_lot');
+});
+
+await check('a lot needs both an origin and a destination country', async () => {
+  const noCountries = await createLotHandler(req({
+    headers: auth, body: { name: 'No countries' },
+  }), ctx);
+  assert.equal(noCountries.status, 400);
+  assert.equal(noCountries.jsonBody.error, 'invalid_lot');
+
+  const badCountry = await createLotHandler(req({
+    headers: auth, body: { name: 'Bad country', originCountry: 'Narnia', destinationCountry: 'India' },
+  }), ctx);
+  assert.equal(badCountry.status, 400);
+
+  const ok = await createLotHandler(req({
+    headers: auth, body: { name: 'Good countries', originCountry: 'Vietnam', destinationCountry: 'United Arab Emirates' },
+  }), ctx);
+  assert.equal(ok.status, 201);
+  assert.equal(ok.jsonBody.lot.originCountry, 'Vietnam');
+  assert.equal(ok.jsonBody.lot.destinationCountry, 'United Arab Emirates');
 });
 
 await check('every detail can be corrected afterwards', async () => {
@@ -5003,7 +5041,7 @@ await check('one order, one move: a lot opened and the order filed into it', asy
     headers: auth, params: { id: templatedOrder.id },
     body: {
       newLot: {
-        name: 'Opened from an order', origin: 'Guangzhou, CN',
+        name: 'Opened from an order', origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India',
         routeId: undefined,
       },
     },
@@ -5284,7 +5322,7 @@ await check('a lot is named by the person opening it, never by the first thing i
   for (const name of [undefined, '', '   ']) {
     const refused = await assignOrderToLot(req({
       headers: auth, params: { id: order.id },
-      body: { newLot: { name, origin: 'Guangzhou, CN' } },
+      body: { newLot: { name, origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India' } },
     }), ctx);
     assert.equal(refused.status, 400, `"${name}" is not a name`);
   }

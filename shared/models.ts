@@ -612,6 +612,16 @@ export interface StageEvent {
    */
   lot?: { id: string; name: string; number: string } | null;
   from?: { id: string; name: string; number: string } | null;
+  /**
+   * Set when this event is a forward/shipment hand-over - a step the route
+   * flagged `forward` (e.g. "Freight Forwarder Forwards to Destination").
+   *
+   * Per-event rather than per-lot or per-order: a lot forwarded twice, or
+   * with a change of carrier partway, needs two different answers, not one
+   * field everything after it silently inherits.
+   */
+  trackingId?: string;
+  shipper?: string;
 }
 
 /**
@@ -631,6 +641,18 @@ export interface Lot extends BaseDocument {
   description: string;
   /** Where the lot is coming from, e.g. "Guangzhou, CN". Seller-facing. */
   origin: string;
+  /**
+   * The two countries this lot travels between, as plain names from
+   * `COUNTRIES` (`shared/countries.ts`) - "China", "India".
+   *
+   * Optional on the type so a lot opened before these existed still loads;
+   * the "new lot" form requires both. Route steps read them through
+   * `renderStepText` rather than naming a country themselves, which is what
+   * lets one route template read correctly for a shop running China -> India
+   * and another running Vietnam -> UAE.
+   */
+  originCountry?: string;
+  destinationCountry?: string;
   /** Who the lot is bought from. Null until the seller fills it in. */
   supplier: LotSupplier | null;
   status: LotStatus;

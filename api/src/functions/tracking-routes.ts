@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
 } from '../../../shared/routes.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -76,6 +76,28 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
       stageId: step.stageId,
       stageName: step.stageName,
       stageIcon: step.stageIcon,
+      locked: step.locked,
+      forward: step.forward,
+    })),
+    /**
+     * The logistics-scenario cards: where an order enters the lot's journey.
+     * Same shape as `presets`, sent the same way for the same reason.
+     */
+    routeTemplates: ROUTE_TEMPLATES.map((template) => ({
+      ...template,
+      steps: template.steps.map((step, index) => ({
+        id: `${template.id}_${index}`,
+        name: step.name,
+        description: step.description,
+        position: index,
+        side: step.side,
+        trigger: step.trigger,
+        stageId: step.stageId,
+        stageName: step.stageName,
+        stageIcon: step.stageIcon,
+        locked: step.locked,
+        forward: step.forward,
+      })),
     })),
   });
 }
@@ -85,7 +107,7 @@ interface RouteBody {
   name?: string;
   steps?: {
     id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger;
-    stageId?: string; stageName?: string; stageIcon?: string;
+    stageId?: string; stageName?: string; stageIcon?: string; locked?: boolean; forward?: boolean;
   }[];
 }
 
@@ -305,7 +327,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   if (!id) return error(400, 'invalid_request', 'A lot id is required.');
   const { lot, userId } = await ownedLot(request, id);
 
-  let body: { to?: number; note?: string };
+  let body: { to?: number; note?: string; trackingId?: string; shipper?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -334,6 +356,11 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     enteredAt: now,
     note: body.note?.trim() || null,
     recordedBy: userId,
+    // Only kept where the step this move lands on is actually a hand-over -
+    // a stray trackingId sent against a step nobody flagged `forward` would
+    // read as tracking for a leg that never had a carrier.
+    trackingId: step.forward ? body.trackingId?.trim() || undefined : undefined,
+    shipper: step.forward ? body.shipper?.trim() || undefined : undefined,
   };
 
   const last = target === route.steps.length - 1;

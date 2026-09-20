@@ -126,6 +126,33 @@ export interface RouteStep {
   /** The stage's name, carried on every step in it. */
   stageName?: string;
   stageIcon?: StageIcon;
+  /**
+   * Always present, never renamed or removed - "Order Placed" on every
+   * template. The builder disables editing on a step carrying this.
+   */
+  locked?: boolean;
+  /**
+   * A hand-over to a carrier: the step where the seller enters the tracking
+   * ID and shipper a `stepLot` call against it is stored with. Not every
+   * "Dispatched" step is one - only where a route names an actual hand-off.
+   */
+  forward?: boolean;
+}
+
+/**
+ * A step's name or description, with `{origin}`/`{destination}` filled in
+ * from the lot travelling it.
+ *
+ * Route text is written once and reused by every lot on that route, so a
+ * country cannot be baked into it at authoring time - "Received at 'China'
+ * Dispatch Center" only means the same thing for a shop always shipping from
+ * China. Steps hold the token instead and every screen that shows a step runs
+ * it through this before a person reads it.
+ */
+export function renderStepText(text: string, vars: { origin?: string | null; destination?: string | null }): string {
+  return text
+    .replace(/\{origin\}/g, vars.origin?.trim() || 'origin')
+    .replace(/\{destination\}/g, vars.destination?.trim() || 'destination');
 }
 
 /**
@@ -330,6 +357,8 @@ interface PresetStep {
   stageId?: string;
   stageName?: string;
   stageIcon?: StageIcon;
+  locked?: boolean;
+  forward?: boolean;
 }
 
 export interface RoutePreset {
@@ -431,14 +460,14 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
  */
 export const SUGGESTED_STEPS: readonly PresetStep[] = [
   {
-    name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre',
-    stageId: 'supplier', stageName: 'Supplier / Exporter', stageIcon: 'supplier',
+    name: 'Order Placed', description: 'Your order is confirmed with the shop.', side: 'pre', locked: true,
+    stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
   },
   {
-    name: 'Received at international warehouse',
+    name: "Received at '{origin}' Dispatch Center",
     description: 'The piece is counted in and waiting for a lot.',
     side: 'pre', trigger: 'china_received',
-    stageId: 'supplier', stageName: 'Supplier / Exporter', stageIcon: 'supplier',
+    stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
   },
   {
     name: 'Dispatched from China', description: 'The lot has left the warehouse.', side: 'post',
@@ -463,6 +492,58 @@ export const SUGGESTED_STEPS: readonly PresetStep[] = [
   {
     name: 'Delivered', description: 'It reached you.', side: 'post',
     stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery',
+  },
+];
+
+/**
+ * A named shape for the two-card "logistics scenario" picker, distinct from
+ * `ROUTE_PRESETS`: those are journey shapes (courier, pre-order); these are
+ * *where an order enters the lot's journey* - the thing this list exists to
+ * make configurable rather than assumed.
+ *
+ * Adding a fourth scenario is adding one entry here, with its own steps
+ * written the same way as the two below.
+ */
+export interface RouteTemplate {
+  id: string;
+  name: string;
+  blurb: string;
+  icon: StageIcon;
+  steps: readonly PresetStep[];
+}
+
+export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
+  {
+    id: 'supplier_accumulates',
+    name: 'Supplier Accumulates',
+    blurb: 'The supplier gathers several customers’ orders into one shipment before it moves.',
+    icon: 'supplier',
+    steps: [
+      { name: 'Order Placed', description: 'Your order is confirmed with the shop.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
+      { name: 'Supplier Accumulates Orders', description: "Held at the supplier's until enough orders are ready to ship together.", side: 'pre', trigger: 'china_received', stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
+      { name: 'Dispatched to Freight Forwarder', description: "Handed over from the supplier to the freight forwarder.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Forwards to Destination', description: "On its way to '{destination}'.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: "Received at '{destination}' Warehouse", description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
+    ],
+  },
+  {
+    id: 'direct_to_forwarder',
+    name: 'Direct to Freight Forwarder',
+    blurb: 'The seller buys from the supplier and has it shipped straight to the freight forwarder.',
+    icon: 'warehouse',
+    steps: [
+      { name: 'Order Placed', description: 'Your order is confirmed with the shop.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
+      { name: 'Seller Purchases & Ships to Freight Forwarder', description: 'Bought from the supplier and sent straight on, with no stop at the seller.', side: 'pre', forward: true, stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
+      { name: 'Freight Forwarder Receives Goods', description: 'Counted in at the freight forwarder.', side: 'post', trigger: 'china_received', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Forwards to Destination', description: "On its way to '{destination}'.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: "Received at '{destination}' Warehouse", description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
+    ],
   },
 ];
 
@@ -498,6 +579,8 @@ export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[
       stageId: step.stageId?.trim() || undefined,
       stageName: step.stageName?.trim() || undefined,
       stageIcon: STAGE_ICONS.includes(step.stageIcon as StageIcon) ? (step.stageIcon as StageIcon) : undefined,
+      locked: step.locked === true || undefined,
+      forward: step.forward === true || undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));

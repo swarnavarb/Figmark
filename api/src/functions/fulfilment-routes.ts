@@ -9,8 +9,9 @@ import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
   itemStepOn, joinIndexOf, lotOffset, routeOf, stepForStage,
-  type LotRoute, type StepSide, type StepTrigger,
+  type LotRoute, type StageIcon, type StepSide, type StepTrigger,
 } from '../../../shared/routes.js';
+import { COUNTRIES } from '../../../shared/countries.js';
 import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
 import {
   awaitingLot, furthestStage, inLot, stagesFor,
@@ -42,6 +43,8 @@ interface LotDetailsBody {
   name?: string;
   description?: string;
   origin?: string;
+  originCountry?: string;
+  destinationCountry?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -110,6 +113,16 @@ async function updateLotDetails(request: HttpRequest, _context: InvocationContex
   }
   if (body.description !== undefined) lot.description = body.description.trim();
   if (body.origin !== undefined) lot.origin = body.origin.trim();
+  if (body.originCountry !== undefined) {
+    const value = body.originCountry.trim();
+    if (value && !COUNTRIES.includes(value)) return error(400, 'invalid_lot', 'Pick a country from the list.');
+    lot.originCountry = value || undefined;
+  }
+  if (body.destinationCountry !== undefined) {
+    const value = body.destinationCountry.trim();
+    if (value && !COUNTRIES.includes(value)) return error(400, 'invalid_lot', 'Pick a country from the list.');
+    lot.destinationCountry = value || undefined;
+  }
   if (body.estimatedDispatchAt !== undefined) lot.estimatedDispatchAt = body.estimatedDispatchAt;
   // The supplier moves as a unit: naming one sets it, clearing the name drops it.
   if (body.supplierName !== undefined || body.supplierHandle !== undefined) {
@@ -180,6 +193,9 @@ export interface NewLotBody {
   name?: string;
   description?: string;
   origin?: string;
+  /** Required: the two countries this lot travels between, e.g. "China" -> "India". */
+  originCountry?: string;
+  destinationCountry?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -192,7 +208,10 @@ export interface NewLotBody {
   /** A saved template to travel, or steps written here and now. */
   routeId?: string;
   routeName?: string;
-  routeSteps?: { id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+  routeSteps?: {
+    id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+    stageId?: string; stageName?: string; stageIcon?: string; locked?: boolean; forward?: boolean;
+  }[];
   /** Who gets it out when it lands. The supplier is named above. */
   handlerUserId?: string;
   handlerName?: string;
@@ -214,6 +233,15 @@ export async function buildLot(
   const name = body.name?.trim();
   if (!name) return refuse(400, 'invalid_lot', 'Give the lot a name you will recognise.');
 
+  const originCountry = body.originCountry?.trim();
+  const destinationCountry = body.destinationCountry?.trim();
+  if (!originCountry || !destinationCountry) {
+    return refuse(400, 'invalid_lot', 'Pick where this lot is coming from and going to.');
+  }
+  if (!COUNTRIES.includes(originCountry) || !COUNTRIES.includes(destinationCountry)) {
+    return refuse(400, 'invalid_lot', 'Pick a country from the list.');
+  }
+
   /* The ladder this lot travels, settled before anything is written: a lot
      created against a template that turns out not to exist should not exist
      either, tracking whatever the fallback happened to be. */
@@ -225,7 +253,9 @@ export async function buildLot(
     // timeline under a buyer who has been reading it for three weeks.
     route = { routeId: template.id, name: template.name, steps: template.steps };
   } else if (body.routeSteps && body.routeSteps.length > 0) {
-    const steps = normaliseSteps(body.routeSteps);
+    const steps = normaliseSteps(
+      body.routeSteps.map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
+    );
     if (steps.length < 2) return refuse(400, 'invalid_route', 'A route needs at least two steps.');
     route = { routeId: null, name: body.routeName?.trim() || 'Route', steps };
   }
@@ -284,6 +314,8 @@ export async function buildLot(
     handler: handlerNamed,
     description: body.description?.trim() ?? '',
     origin: body.origin?.trim() ?? '',
+    originCountry,
+    destinationCountry,
     supplier: supplierFrom(body, supplierTag),
     status: 'open',
     stage: opensAs,

@@ -491,6 +491,8 @@ export interface LotDetails {
   name: string;
   description?: string;
   origin?: string;
+  originCountry?: string;
+  destinationCountry?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -775,6 +777,8 @@ export interface RoutesResponse {
   presets: RoutePreset[];
   /** What a blank route opens with, so nobody starts at an empty list. */
   suggested: RouteStep[];
+  /** The logistics-scenario cards: where an order enters the lot's journey. */
+  routeTemplates: (RoutePreset & { icon: StageIcon })[];
 }
 
 /** An item that could go in a lot: sold, bound for one, not in one. */
@@ -1051,7 +1055,10 @@ export const api = {
     body: LotDetails & {
       forwarderUserId?: string; forwarderName?: string; forwarderContact?: string;
       routeId?: string; routeName?: string;
-      routeSteps?: { id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+      routeSteps?: {
+        id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+        stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
+      }[];
       supplierHandle?: string; handlerUserId?: string; handlerName?: string;
     },
   ) => post<{ lot: Lot }>('/lots', body),
@@ -1090,7 +1097,7 @@ export const api = {
     name: string;
     steps: {
       id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
-      stageId?: string; stageName?: string; stageIcon?: StageIcon;
+      stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
     }[];
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),
@@ -1102,7 +1109,7 @@ export const api = {
   addItemsToLot: (id: string, orderIds: string[]) =>
     post<{ added: number; orderIds: string[] }>(`/lots/${encodeURIComponent(id)}/items`, { orderIds }),
   /** Move the lot along its route. Omit `to` for the next step. */
-  stepLot: (id: string, body: { to?: number; note?: string } = {}) =>
+  stepLot: (id: string, body: { to?: number; note?: string; trackingId?: string; shipper?: string } = {}) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
   /** Put the lot on a different ladder, carrying its position across. */
   setLotRoute: (id: string, routeId: string | null, note?: string) =>

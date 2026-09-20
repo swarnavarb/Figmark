@@ -2,7 +2,7 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { isLotEvent, kindOf } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
-import { groupStages, stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
+import { groupStages, renderStepText, stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
 import { Icon } from './Icon';
 import { STAGE_ICON_META } from './RouteBuilder';
 
@@ -20,13 +20,19 @@ import { STAGE_ICON_META } from './RouteBuilder';
  * between two, which is where most of what a seller has to say actually
  * belongs ("still waiting on the airline, booked for Thursday" is not a step).
  */
-export function Ladder({ steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction }: {
+export function Ladder({ steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars }: {
   steps: RouteStep[];
   current: number;
   /** Everything recorded against this journey, oldest first. */
   history?: StageEvent[];
+  /**
+   * The lot's own origin/destination, filled into any `{origin}`/
+   * `{destination}` a step's text carries. Absent renders the tokens as the
+   * plain words "origin"/"destination" - readable, if not the exact country.
+   */
+  vars?: { origin?: string | null; destination?: string | null };
   /** Seller-side: move to a step. Absent means the ladder is read-only. */
-  onMove?: (to: number) => void | Promise<void>;
+  onMove?: (to: number, details?: { trackingId?: string; shipper?: string }) => void | Promise<void>;
   /** Seller-side: say something without moving. */
   onNote?: (note: string, at: number) => void | Promise<void>;
   busy?: boolean;
@@ -46,6 +52,18 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
+  /** A hand-over to a carrier: which forward step is being moved to, if any. */
+  const [forwarding, setForwarding] = useState<number | null>(null);
+  const [trackingId, setTrackingId] = useState('');
+  const [shipper, setShipper] = useState('');
+
+  function moveTo(index: number) {
+    if (!onMove) return;
+    void onMove(index, { trackingId: trackingId.trim() || undefined, shipper: shipper.trim() || undefined });
+    setForwarding(null);
+    setTrackingId('');
+    setShipper('');
+  }
 
   const notes = notesByStep(steps, history ?? []);
   const editable = Boolean(onMove || onNote);
@@ -85,7 +103,7 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
           {stage && (
             <li className="ladder__stage" aria-hidden="true">
               <Icon name={STAGE_ICON_META[stage.stageIcon ?? 'warehouse'].icon} size={14} />
-              <span>{stage.stageName}</span>
+              <span>{renderStepText(stage.stageName, vars ?? {})}</span>
             </li>
           )}
           <li className={`ladder__row is-${state}`}>
@@ -94,8 +112,8 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
             </span>
 
             <span className="ladder__body">
-              <span className="ladder__name">{step.name}</span>
-              {step.description && <span className="faint">{step.description}</span>}
+              <span className="ladder__name">{renderStepText(step.name, vars ?? {})}</span>
+              {step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
 
               {said.map((event, at) => (
                 isLotEvent(event)
@@ -123,7 +141,14 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
                   )
                   : (
                     <span key={`${event.enteredAt}-${at}`} className="ladder__note">
-                      <span className="ladder__note-text">{event.note}</span>
+                      {event.note && <span className="ladder__note-text">{event.note}</span>}
+                      {(event.trackingId || event.shipper) && (
+                        <span className="ladder__note-text">
+                          {event.shipper && <>Shipper: <strong>{event.shipper}</strong></>}
+                          {event.shipper && event.trackingId && ' · '}
+                          {event.trackingId && <>Tracking ID: <strong>{event.trackingId}</strong></>}
+                        </span>
+                      )}
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>
                     </span>
                   )
@@ -139,12 +164,32 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
                       <Icon name="plus" size={11} /> Note
                     </button>
                   )}
-                  {onMove && index !== current && (
+                  {onMove && index !== current && forwarding !== index && (
                     <button type="button" className="ladder__act ladder__act--move" disabled={busy}
-                      onClick={() => void onMove(index)}>
+                      onClick={() => step.forward ? setForwarding(index) : void onMove(index)}>
                       {index < current ? 'Move back here' : 'Move here'}
                     </button>
                   )}
+                </span>
+              )}
+
+              {/* A hand-over to a carrier gets its two fields here, on the step
+                  it actually happened at - not one global "tracking" field
+                  that a second forward on the same lot would overwrite. */}
+              {editable && forwarding === index && (
+                <span className="ladder__write">
+                  <input value={trackingId} onChange={(event) => setTrackingId(event.target.value)}
+                    placeholder="Tracking ID" aria-label="Tracking ID" />
+                  <input value={shipper} onChange={(event) => setShipper(event.target.value)}
+                    placeholder="Shipper / carrier, e.g. DHL" aria-label="Shipper or carrier" />
+                  <span className="ladder__write-acts">
+                    <button type="button" className="btn btn--sm" disabled={busy} onClick={() => moveTo(index)}>
+                      Move here
+                    </button>
+                    <button type="button" className="btn btn--quiet btn--sm" onClick={() => setForwarding(null)}>
+                      Cancel
+                    </button>
+                  </span>
                 </span>
               )}
 
@@ -218,7 +263,7 @@ function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, Sta
 
   const out = new Map<number, StageEvent[]>();
   for (const event of history) {
-    if (!event.note && !isLotEvent(event)) continue;
+    if (!event.note && !event.trackingId && !event.shipper && !isLotEvent(event)) continue;
     const named = event.step ? index.get(event.step) : undefined;
     const at = named ?? stepForStage({ steps }, event.stage as LotStage);
     const existing = out.get(at);

@@ -80,6 +80,10 @@ export function RouteBuilder({ steps, onChange, split = false }: {
     const groups = groupStages(steps);
     const to = from + dir;
     if (to < 0 || to >= groups.length) return;
+    // Neither end of the swap may hold a locked step - "Order Placed" is
+    // always first, so nothing may trade places with its stage either.
+    if (groups[from]!.steps.some(({ step }) => step.locked)) return;
+    if (groups[to]!.steps.some(({ step }) => step.locked)) return;
     const next = [...groups];
     const [taken] = next.splice(from, 1);
     next.splice(to, 0, taken!);
@@ -146,10 +150,12 @@ export function RouteBuilder({ steps, onChange, split = false }: {
           </label>
 
           <div className="row row--between">
-            <button type="button" className="btn btn--quiet btn--sm"
-              onClick={() => { removeStage(editing.stageId); setEditingStage(null); }}>
-              <Icon name="trash" size={13} /> Delete stage
-            </button>
+            {!editing.steps.some(({ step }) => step.locked) && (
+              <button type="button" className="btn btn--quiet btn--sm"
+                onClick={() => { removeStage(editing.stageId); setEditingStage(null); }}>
+                <Icon name="trash" size={13} /> Delete stage
+              </button>
+            )}
             <button type="button" className="btn btn--sm" onClick={() => setEditingStage(null)}>Done</button>
           </div>
         </Modal>
@@ -188,12 +194,14 @@ function StageBox({ stage, stageIndex, stageCount, onEdit, onMoveStage, onAddSte
           <span className="stagebox__name">{stage.stageName || 'Untitled stage'}</span>
           <Icon name="chevron" size={13} />
         </button>
-        <span className="stagebox__reorder">
-          <button type="button" className="iconbtn" aria-label="Move stage earlier"
-            disabled={stageIndex === 0} onClick={() => onMoveStage(-1)}><Icon name="up" size={12} /></button>
-          <button type="button" className="iconbtn" aria-label="Move stage later"
-            disabled={stageIndex === stageCount - 1} onClick={() => onMoveStage(1)}><Icon name="down" size={12} /></button>
-        </span>
+        {!stage.steps.some(({ step }) => step.locked) && (
+          <span className="stagebox__reorder">
+            <button type="button" className="iconbtn" aria-label="Move stage earlier"
+              disabled={stageIndex === 0} onClick={() => onMoveStage(-1)}><Icon name="up" size={12} /></button>
+            <button type="button" className="iconbtn" aria-label="Move stage later"
+              disabled={stageIndex === stageCount - 1} onClick={() => onMoveStage(1)}><Icon name="down" size={12} /></button>
+          </span>
+        )}
       </div>
 
       <div className="stagebox__steps">
@@ -221,6 +229,19 @@ function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
   onMove: (from: number, to: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  if (step.locked) {
+    // Always present, never renamed, moved or removed - "Order Placed" reads
+    // as a fact about every route rather than a step a seller could break.
+    return (
+      <div className="stagestep stagestep--locked">
+        <div className="stagestep__main">
+          <span className="stagestep__dot" aria-hidden="true" />
+          <span className="stagestep__name stagestep__name--static">{step.name}</span>
+          <Icon name="lock" size={13} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="stagestep">
       <div className="stagestep__main">
