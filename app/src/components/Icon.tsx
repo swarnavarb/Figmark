@@ -21,7 +21,7 @@ export type IconName =
   | 'tag' | 'bolt' | 'lock' | 'bell' | 'message' | 'mail' | 'megaphone'
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image'
-  | 'trash' | 'sort' | 'filter' | 'external';
+  | 'trash' | 'sort' | 'filter' | 'external' | 'home';
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>),
@@ -60,6 +60,7 @@ const PATHS: Record<IconName, ReactNode> = {
   sort: <path d="M7 4.6v14.8M7 19.4l-3-3M17 19.4V4.6M17 4.6l3 3" />,
   filter: <path d="M3.6 5.4h16.8l-6.6 7.6v6l-3.6 2v-8Z" />,
   external: (<><path d="M14 4.6h5.4V10" /><path d="m19.4 4.6-8 8" /><path d="M18 14v4.6a1.4 1.4 0 0 1-1.4 1.4H5.6a1.4 1.4 0 0 1-1.4-1.4V7.4A1.4 1.4 0 0 1 5.6 6H10" /></>),
+  home: (<><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9.4h12V10" /><path d="M10 19.4v-6h4v6" /></>),
 };
 
 /** Glyphs that read better filled than stroked. */
