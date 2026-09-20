@@ -10,7 +10,7 @@ import { CATEGORIES } from '@shared/catalog';
 import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
-import { RouteEditor } from './RoutesPage';
+import { RouteEditor, RoutesList } from './RoutesPage';
 import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
@@ -42,7 +42,7 @@ import { LotDetail, NewLotForm } from './LotsPage';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Section = 'items' | 'payments' | 'lots' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -52,6 +52,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   // would only be a way to break the rights that reference it.
   { id: 'payments', label: 'Orders' },
   { id: 'lots', label: 'Track' },
+  { id: 'routes', label: 'Routes' },
   { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
@@ -61,12 +62,13 @@ const SECTIONS: { id: Section; label: string }[] = [
 /**
  * Which sections belong to the same Sell-home card, so the chip bar under a
  * card only ever shows the handful of screens that card promised - not all
- * seven at once.
+ * eight at once.
  */
 const SECTION_GROUPS: Record<string, Section[]> = {
   items: ['items', 'payments'],
   manage: ['storefront', 'people', 'packing'],
   lots: ['lots'],
+  routes: ['routes'],
   analytics: ['analytics'],
 };
 
@@ -248,12 +250,6 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       copy.set('tab', next);
       return copy;
     }, { replace: true });
-  const goHome = () =>
-    setParams((current) => {
-      const copy = new URLSearchParams(current);
-      copy.delete('tab');
-      return copy;
-    }, { replace: true });
 
   const store = stores.find((entry) => entry.ownerId === storeId) ?? stores[0]!;
   // A section nobody may open should not be offered: a tab that answers 403 is
@@ -264,50 +260,31 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     // the API checks rather than on a wider one.
     if (entry.id === 'payments') return store.permissions.includes('admin');
     if (entry.id === 'analytics') return store.permissions.includes('analytics');
-    if (entry.id === 'lots') return store.permissions.includes('lots');
+    if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'packing') return store.permissions.includes('export');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     return true;
   });
-  // No tab, or a tab this store cannot open: the Sell-tab home, five cards and
-  // nothing else.
+  // No tab, or a tab this store cannot open: nothing renders below the
+  // workflow buttons.
   const active = visible.find((entry) => entry.id === requested)?.id ?? null;
-
-  if (active === null) {
-    return (
-      <main className="page tab-view">
-        <div className="page__head"><div><h1>Sell</h1></div></div>
-        <SellHome onGo={setSection} />
-      </main>
-    );
-  }
-
-  const chips = visible.filter((entry) => SECTION_GROUPS[groupOf(active)]!.includes(entry.id));
+  const chips = active ? visible.filter((entry) => SECTION_GROUPS[groupOf(active)]!.includes(entry.id)) : [];
 
   return (
     <main className="page tab-view">
-      <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start', marginBottom: 10 }}
-        onClick={goHome}>
-        <Icon name="back" size={14} /> Sell
-      </button>
+      {/* No "list an item" here: the Items section opens with that door, and
+          no shop-name header here either - the workflow below already says
+          where you are. */}
+      {user?.escrowRights && (
+        <Link to="/escrow" className="btn btn--ghost btn--sm" style={{ justifySelf: 'end', marginBottom: 10 }}>
+          {<Icon name="lock" size={13} />} Escrow
+        </Link>
+      )}
 
-      <div className="page__head">
-        <div>
-          <h1>{store.name}</h1>
-          <p className="muted">
-            {store.isOwner ? 'Your shop.' : 'You help run this shop.'}{' '}
-            {store.permissions.length} of {STORE_PERMISSIONS.length} rights.
-          </p>
-        </div>
-        {/* No "list an item" here: the Items tab opens with that door, and the
-            same button twice on one screen is one too many. */}
-        {user?.escrowRights && (
-          <Link to="/escrow" className="btn btn--ghost btn--sm">{<Icon name="lock" size={13} />} Escrow</Link>
-        )}
-      </div>
+      <SellHome active={active} onGo={setSection} />
 
       {stores.length > 1 && (
-        <label className="field" style={{ marginBottom: 14 }}>
+        <label className="field" style={{ marginBlock: 14 }}>
           <span>Store</span>
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
             {stores.map((entry) => (
@@ -319,8 +296,8 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </label>
       )}
 
-      {chips.length > 1 && (
-        <div className="sections" role="tablist" aria-label="Shop sections">
+      {active && chips.length > 1 && (
+        <div className="sections" role="tablist" aria-label="Shop sections" style={{ marginTop: 18 }}>
           {chips.map((entry) => (
             <button
               key={entry.id}
@@ -337,39 +314,46 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       )}
 
       {/* Keyed so switching sections replays the entrance rather than swapping
-          content underneath a static frame. */}
-      <div className="tab-view" key={`${store.ownerId}:${active}`}>
-        {active === 'items' && <MyItems store={store} />}
-        {active === 'payments' && <Orders store={store} />}
-        {active === 'lots' && <Lots store={store} />}
-        {active === 'packing' && <PackingList storeId={store.ownerId} />}
-        {active === 'analytics' && <Analytics store={store} />}
-        {active === 'storefront' && <StorefrontEditor />}
-        {active === 'people' && <People store={store} onChanged={onChanged} />}
-      </div>
+          content underneath a static frame. The Sell page itself never
+          changes - the workflow above stays put and only this area swaps. */}
+      {active && (
+        <div className="tab-view" style={{ marginTop: chips.length > 1 ? 14 : 20 }} key={`${store.ownerId}:${active}`}>
+          {active === 'items' && <MyItems store={store} />}
+          {active === 'payments' && <Orders store={store} />}
+          {active === 'lots' && <Lots store={store} />}
+          {active === 'routes' && <RoutesList />}
+          {active === 'packing' && <PackingList storeId={store.ownerId} />}
+          {active === 'analytics' && <Analytics store={store} />}
+          {active === 'storefront' && <StorefrontEditor />}
+          {active === 'people' && <People store={store} onChanged={onChanged} />}
+        </div>
+      )}
     </main>
   );
 }
 
 /**
- * The Sell tab's front door: five cards instead of a name and a rights count
- * nobody asked for.
+ * The Sell tab's front door: five cards, always on screen.
  *
  * Two primary actions up top - the business, not the stock - then the
  * workflow every import actually follows, drawn as the three things it is:
- * items become part of a lot, and a lot follows a route. Routes lives outside
- * this console entirely (`/routes`, unchanged), so that card is a plain link.
+ * items become part of a lot, and a lot follows a route. All five stay in
+ * place; picking one only changes what appears in the area below them, so
+ * the Sell page itself is never left.
  */
-function SellHome({ onGo }: { onGo: (section: Section) => void }) {
+function SellHome({ active, onGo }: { active: Section | null; onGo: (section: Section) => void }) {
+  const on = (section: Section) => (active ? groupOf(active) === groupOf(section) : false);
   return (
     <div className="stack">
       <div className="doors doors--two">
-        <button type="button" className="door door--card door--analytics" onClick={() => onGo('analytics')}>
+        <button type="button" className={`door door--card door--analytics${on('analytics') ? ' is-on' : ''}`}
+          onClick={() => onGo('analytics')}>
           <span className="door__glyph" aria-hidden="true"><Icon name="spark" size={22} /></span>
           <span className="door__title">Analytics</span>
           <span className="door__note">Sales, views and trends for your shop.</span>
         </button>
-        <button type="button" className="door door--card door--manage" onClick={() => onGo('storefront')}>
+        <button type="button" className={`door door--card door--manage${on('storefront') ? ' is-on' : ''}`}
+          onClick={() => onGo('storefront')}>
           <span className="door__glyph" aria-hidden="true"><Icon name="bank" size={22} /></span>
           <span className="door__title">Manage Store</span>
           <span className="door__note">Your storefront, your team, and packing.</span>
@@ -379,20 +363,23 @@ function SellHome({ onGo }: { onGo: (section: Section) => void }) {
       <div className="workflow">
         <span className="workflow__label">Workflow</span>
         <div className="workflow__row">
-          <button type="button" className="workflow__step workflow__step--items" onClick={() => onGo('items')}>
+          <button type="button" className={`workflow__step workflow__step--items${on('items') ? ' is-on' : ''}`}
+            onClick={() => onGo('items')}>
             <span className="workflow__glyph" aria-hidden="true"><Icon name="tag" size={20} /></span>
             <span className="workflow__title">Items</span>
           </button>
           <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
-          <button type="button" className="workflow__step workflow__step--lots" onClick={() => onGo('lots')}>
+          <button type="button" className={`workflow__step workflow__step--lots${on('lots') ? ' is-on' : ''}`}
+            onClick={() => onGo('lots')}>
             <span className="workflow__glyph" aria-hidden="true"><Icon name="box" size={20} /></span>
             <span className="workflow__title">Lots</span>
           </button>
           <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
-          <Link to="/routes" className="workflow__step workflow__step--routes">
+          <button type="button" className={`workflow__step workflow__step--routes${on('routes') ? ' is-on' : ''}`}
+            onClick={() => onGo('routes')}>
             <span className="workflow__glyph" aria-hidden="true"><Icon name="truck" size={20} /></span>
             <span className="workflow__title">Routes</span>
-          </Link>
+          </button>
         </div>
         <p className="faint workflow__hint">
           Items are added → items become part of a lot → lots follow a route.

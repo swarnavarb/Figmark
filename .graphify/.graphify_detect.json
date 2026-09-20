@@ -257,17 +257,17 @@
     "video": []
   },
   "total_files": 248,
-  "total_words": 428979,
+  "total_words": 429041,
   "needs_graph": true,
   "warning": null,
   "skipped_sensitive": [
     "api/src/auth/passwords.ts",
     "api/src/auth/tokens.ts"
   ],
-  "graphifyignore_patterns": 16,
+  "graphifyignore_patterns": 18,
   "git": {
     "source_owner": "git",
-    "source_hash": "0ff8f4c26d631fc77d438ccba425b5fdcf2ea241",
+    "source_hash": "9bd6ac1778a65cfb0e6253f5e33f07ec70db4113",
     "branches": [
       "chore/azure-swa-development-env",
       "claude/figmark-connection-icpfax",
@@ -285,11 +285,11 @@
     "source": "default-auto",
     "root": ".",
     "git_root": ".",
-    "head": "0ff8f4c26d631fc77d438ccba425b5fdcf2ea241",
-    "candidate_count": 428,
+    "head": "9bd6ac1778a65cfb0e6253f5e33f07ec70db4113",
+    "candidate_count": 426,
     "included_count": 248,
     "excluded_untracked_count": 0,
-    "excluded_ignored_count": 17615,
+    "excluded_ignored_count": 17617,
     "excluded_sensitive_count": 2,
     "missing_committed_count": 14,
     "warnings": [],

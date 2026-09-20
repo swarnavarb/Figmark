@@ -14,7 +14,13 @@ import { Ladder } from '../components/Ladder';
  * shipment travels is a decision a shop makes once and reuses, not a question
  * worth asking every time somebody opens a crate.
  */
-export function RoutesPage() {
+/**
+ * The list of routes, without the page chrome around it.
+ *
+ * Split out so the Sell tab can show the same list inline, under its workflow
+ * buttons, instead of navigating to a separate screen for it.
+ */
+export function RoutesList() {
   const [data, setData] = useState<RoutesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,11 +35,7 @@ export function RoutesPage() {
   useEffect(() => { void load(); }, [load]);
 
   return (
-    <main className="page">
-      <Link to="/shop?tab=lots" className="backlink">
-        <Icon name="back" size={14} /> Track
-      </Link>
-
+    <div className="stack">
       <div className="page__head">
         <div>
           <h1>Routes</h1>
@@ -68,6 +70,24 @@ export function RoutesPage() {
           forwarder.
         </EmptyState>
       )}
+    </div>
+  );
+}
+
+/**
+ * The routes a shop can send a lot along.
+ *
+ * Its own screen rather than a section of the new-lot form, because how a
+ * shipment travels is a decision a shop makes once and reuses, not a question
+ * worth asking every time somebody opens a crate.
+ */
+export function RoutesPage() {
+  return (
+    <main className="page">
+      <Link to="/shop?tab=lots" className="backlink">
+        <Icon name="back" size={14} /> Track
+      </Link>
+      <RoutesList />
     </main>
   );
 }
