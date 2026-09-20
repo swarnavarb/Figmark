@@ -256,9 +256,6 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
   // worse than a tab that is not there.
   const visible = SECTIONS.filter((entry) => {
     if (entry.id === 'items') return store.permissions.includes('listings');
-    // Answering for money is an owner's call, so it rides on the same right
-    // the API checks rather than on a wider one.
-    if (entry.id === 'payments') return store.permissions.includes('admin');
     if (entry.id === 'analytics') return store.permissions.includes('analytics');
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'packing') return store.permissions.includes('export');
@@ -321,7 +318,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'items' && <MyItems store={store} />}
           {active === 'payments' && <Orders store={store} />}
           {active === 'lots' && <Lots store={store} />}
-          {active === 'routes' && <RoutesList />}
+          {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'packing' && <PackingList storeId={store.ownerId} />}
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}

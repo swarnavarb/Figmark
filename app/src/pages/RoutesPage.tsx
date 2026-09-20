@@ -4,7 +4,7 @@ import { TRIGGER_LABELS, joinIndexOf, sideOf, type RouteStep } from '@shared/rou
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
-import { RouteBuilder } from '../components/RouteBuilder';
+import { RouteBuilder, STAGE_ICON_META } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
 
 /**
@@ -20,7 +20,14 @@ import { Ladder } from '../components/Ladder';
  * Split out so the Sell tab can show the same list inline, under its workflow
  * buttons, instead of navigating to a separate screen for it.
  */
-export function RoutesList() {
+export function RoutesList({ spotlightNew = false }: {
+  /**
+   * True only when a Lot's "Define your Silk Route" sent the seller here -
+   * never on an ordinary visit to this tab. That is the one rule this whole
+   * pointer has to get right.
+   */
+  spotlightNew?: boolean;
+} = {}) {
   const [data, setData] = useState<RoutesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,19 +51,17 @@ export function RoutesList() {
             the way you would say them.
           </p>
         </div>
-        <Link to="/routes/new" className="btn"><Icon name="plus" size={14} /> New route</Link>
+        <span className="spotlight-row">
+          <Link to="/routes/new" className="btn"><Icon name="plus" size={14} /> New route</Link>
+          {spotlightNew && <Icon name="left" size={16} className="spotlight-arrow" aria-hidden="true" />}
+        </span>
       </div>
 
       {error && <ErrorNotice message={error} />}
       {!data && !error && <SkeletonRows count={4} />}
 
-      {data && (
+      {data && data.routes.length > 0 && (
         <div className="rlist">
-          <RouteRow
-            name={data.builtIn.name}
-            steps={data.builtIn.steps}
-            note="Built in. Used by any lot that has not picked another."
-          />
           {data.routes.map((route) => (
             <RouteRow key={route.id} to={`/routes/${route.id}`} name={route.name} steps={route.steps} />
           ))}
@@ -64,10 +69,9 @@ export function RoutesList() {
       )}
 
       {data && data.routes.length === 0 && (
-        <EmptyState icon={<Icon name="truck" size={26} />} title="One route so far">
-          The built-in one covers a normal consolidated run. Write your own when a lot travels
-          differently — a courier parcel, a pre-order, a supplier who ships straight to your
-          forwarder.
+        <EmptyState icon={<Icon name="truck" size={26} />} title="No routes yet">
+          Write one for the journey your lots actually travel — a courier parcel, a pre-order, a
+          supplier who ships straight to your forwarder. Every lot can then point at it.
         </EmptyState>
       )}
     </div>
@@ -85,7 +89,7 @@ export function RoutesPage() {
   return (
     <main className="page">
       <Link to="/shop?tab=lots" className="backlink">
-        <Icon name="back" size={14} /> Track
+        <Icon name="back" size={14} /> Lots
       </Link>
       <RoutesList />
     </main>
@@ -93,10 +97,12 @@ export function RoutesPage() {
 }
 
 /** A route in a list: its name, its shape, and where it changes hands. */
-function RouteRow({ name, steps, to, note }: {
+export function RouteRow({ name, steps, to, onClick, note }: {
   name: string;
   steps: RouteStep[];
   to?: string;
+  /** Open it in place, for callers that keep the route library on the same screen. */
+  onClick?: () => void;
   note?: string;
 }) {
   const join = joinIndexOf({ steps });
@@ -116,12 +122,12 @@ function RouteRow({ name, steps, to, note }: {
         </span>
         {note && <span className="rrow__note">{note}</span>}
       </span>
-      {to && <Icon name="right" size={16} />}
+      {(to || onClick) && <Icon name="right" size={16} />}
     </>
   );
-  return to
-    ? <Link to={to} className="rrow">{body}</Link>
-    : <div className="rrow rrow--fixed">{body}</div>;
+  if (to) return <Link to={to} className="rrow">{body}</Link>;
+  if (onClick) return <button type="button" className="rrow" onClick={onClick}>{body}</button>;
+  return <div className="rrow rrow--fixed">{body}</div>;
 }
 
 /* ── The editor ──────────────────────────────────────────────────────────── */
@@ -247,6 +253,22 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
 
         {library && (
           <div className="rlist">
+            {/* Where an order enters the lot's journey - the supplier holds
+                it until enough orders are ready, or it goes straight to the
+                forwarder - is a decision, not something to assume. */}
+            {library.routeTemplates.map((template) => (
+              <button key={template.id} type="button" className="rrow"
+                onClick={() => open(template.steps, template.name)}>
+                <span className="rrow__body">
+                  <span className="rrow__name">
+                    <Icon name={STAGE_ICON_META[template.icon].icon} size={15} /> {template.name}
+                  </span>
+                  <span className="rrow__sum">{template.steps.length} steps</span>
+                  <span className="rrow__note">{template.blurb}</span>
+                </span>
+                <Icon name="right" size={16} />
+              </button>
+            ))}
             {library.presets.map((preset) => (
               <button key={preset.id} type="button" className="rrow"
                 onClick={() => open(preset.steps, preset.name)}>

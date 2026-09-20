@@ -4,7 +4,7 @@ import {
   LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type OrderCheckpoint,
 } from '@shared/enums';
 import {
-  TRIGGER_LABELS, WAITING_FOR_LOT, sideOf, suggestLotName, type RouteStep,
+  TRIGGER_LABELS, WAITING_FOR_LOT, laneOf, suggestLotName, type RouteStep,
 } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
@@ -13,7 +13,6 @@ import {
   type LotBoard, type LotContents, type LotDetails, type LotRouteView, type LotsResponse,
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
-import { RouteBuilder, STAGE_ICON_META } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
 import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
@@ -376,12 +375,15 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
   const [handlerId, setHandlerId] = useState('');
   const [handlers, setHandlers] = useState<ProviderCard[]>([]);
 
+  /*
+   * The route builder used to live here, behind a "write my own steps"
+   * option. It is one thing now, not two: the Routes tab in Sell is where a
+   * route is designed, and this screen only ever picks from what is already
+   * there - so there is one place a seller learns to look, not two that can
+   * disagree about which is the real one.
+   */
   const [library, setLibrary] = useState<RoutesResponse | null>(null);
-  const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [routeId, setRouteId] = useState('');
-  const [routeName, setRouteName] = useState('');
-  const [steps, setSteps] = useState<RouteStep[]>([]);
-  const [saveTemplate, setSaveTemplate] = useState(true);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -389,38 +391,18 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
   useEffect(() => {
     void api.routes().then((result) => {
       setLibrary(result);
-      // Their own first, then the one that has always been here.
       setRouteId(result.routes[0]?.id ?? '');
-      setSteps(result.suggested);
-      setRouteName(result.builtIn.name);
     }).catch(() => setLibrary(null));
     void api.serviceDirectory('handler')
       .then((result) => setHandlers(result.providers))
       .catch(() => setHandlers([]));
   }, []);
 
-  const named = steps.filter((step) => step.name.trim());
-
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      let chosenId = routeId || undefined;
-      // Saving the ladder as a template is the default, because a shop that
-      // runs one route runs it every month and retyping nine steps each time
-      // is how a system stops being used.
-      if (mode === 'new' && saveTemplate) {
-        const saved = await api.saveRoute({
-          name: routeName.trim() || 'My route',
-          steps: named.map((step, index) => ({
-            name: step.name, description: step.description, side: sideOf(step, index),
-            trigger: step.trigger,
-          })),
-        });
-        chosenId = saved.route.id;
-      }
-
       await api.createLot({
         ...details,
         name: details.name.trim(),
@@ -429,17 +411,9 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
         forwarderName: forwarderName.trim() || undefined,
         supplierHandle: supplierHandle.trim() || undefined,
         handlerUserId: handlerId || undefined,
-        ...(mode === 'existing'
-          ? { routeId: chosenId }
-          : chosenId
-            ? { routeId: chosenId }
-            : {
-                routeName: routeName.trim() || 'My route',
-                routeSteps: named.map((step, index) => ({
-                  name: step.name, description: step.description, side: sideOf(step, index),
-                  trigger: step.trigger,
-                })),
-              }),
+        // Left unset when nothing is picked yet: the lot still opens, on the
+        // generic ladder, and can be pointed at a route once one exists.
+        routeId: routeId || undefined,
       });
       onDone();
     } catch (err) {
@@ -488,30 +462,19 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
         </label>
       </div>
 
-      {/* The one decision worth making here. Presented as things you can
-          read rather than as a picker plus a preview plus a mode toggle: a
-          seller choosing a route wants to see the route. */}
+      {/* Picking, never designing: a route is written once, in the Routes
+          tab, and every lot after it just points at the ladder that already
+          exists. */}
       <fieldset className="pickset">
         <legend>How this lot travels</legend>
         <span className="field__hint">
           Every item in the lot follows these steps, and buyers read them as their tracking.
         </span>
 
-        {library && (
-          <label className={`pick${mode === 'existing' && !routeId ? ' is-on' : ''}`}>
-            <input type="radio" name="route" checked={mode === 'existing' && !routeId}
-              onChange={() => { setMode('existing'); setRouteId(''); }} />
-            <span className="pick__body">
-              <span className="pick__name">{library.builtIn.name}</span>
-              <span className="pick__steps">{summarise(library.builtIn.steps)}</span>
-            </span>
-          </label>
-        )}
-
         {(library?.routes ?? []).map((route) => (
-          <label key={route.id} className={`pick${mode === 'existing' && routeId === route.id ? ' is-on' : ''}`}>
-            <input type="radio" name="route" checked={mode === 'existing' && routeId === route.id}
-              onChange={() => { setMode('existing'); setRouteId(route.id); }} />
+          <label key={route.id} className={`pick${routeId === route.id ? ' is-on' : ''}`}>
+            <input type="radio" name="route" checked={routeId === route.id}
+              onChange={() => setRouteId(route.id)} />
             <span className="pick__body">
               <span className="pick__name">{route.name}</span>
               <span className="pick__steps">{summarise(route.steps)}</span>
@@ -519,50 +482,17 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
           </label>
         ))}
 
-        {/* Where an order enters the lot's journey - the supplier holds it
-            until enough orders are ready, or it goes straight to the
-            forwarder - is a decision, not something to assume. These two
-            cards make it one. */}
-        {(library?.routeTemplates ?? []).map((template) => (
-          <label key={template.id}
-            className={`pick pick--template${mode === 'new' && routeName === template.name ? ' is-on' : ''}`}>
-            <input type="radio" name="route" checked={mode === 'new' && routeName === template.name}
-              onChange={() => { setMode('new'); setRouteName(template.name); setSteps(template.steps); }} />
-            <span className="pick__body">
-              <span className="pick__name"><Icon name={STAGE_ICON_META[template.icon].icon} size={15} /> {template.name}</span>
-              <span className="pick__steps">{template.blurb}</span>
-            </span>
-          </label>
-        ))}
-
-        <label className={`pick pick--scratch${mode === 'new' && !(library?.routeTemplates ?? []).some((t) => t.name === routeName) ? ' is-on' : ''}`}>
-          <input type="radio" name="route"
-            checked={mode === 'new' && !(library?.routeTemplates ?? []).some((t) => t.name === routeName)}
-            onChange={() => { setMode('new'); setRouteName(''); setSteps(library?.suggested ?? []); }} />
-          <span className="pick__body">
-            <span className="pick__name">✨ Define Route From Scratch</span>
-            <span className="pick__steps">For a journey none of the above describes</span>
-          </span>
-        </label>
-
-        {mode === 'new' && (
-          <div className="pick__open">
-            <label className="field">
-              <span>Call it</span>
-              <input value={routeName} onChange={(e) => setRouteName(e.target.value)}
-                placeholder="Guangzhou air express" />
-            </label>
-            <RouteBuilder steps={steps} onChange={setSteps} split />
-            <label className="tick">
-              <input type="checkbox" checked={saveTemplate}
-                onChange={(e) => setSaveTemplate(e.target.checked)} />
-              <span>
-                Save it
-                <span className="faint"> — so the next lot can pick it instead of retyping it.</span>
-              </span>
-            </label>
-          </div>
+        {library && library.routes.length === 0 && (
+          <p className="field__hint" style={{ margin: 0 }}>
+            You have not written a route yet. Opening the lot now uses a generic ladder — write your
+            own any time and point this lot (or the next one) at it.
+          </p>
         )}
+
+        <Link to="/shop?tab=routes&spotlight=new" className="silkcta">
+          <span className="silkcta__label">✨ Define your Silk Route</span>
+          <span className="silkcta__note">Write or pick a route in the Routes tab</span>
+        </Link>
       </fieldset>
 
       {/* Nobody, a forwarder, an supplier and a handler are all things a lot
@@ -609,7 +539,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
       {error && <ErrorNotice message={error} />}
       <div className="row">
         <button type="submit" className="btn"
-          disabled={busy || !details.name.trim() || (mode === 'new' && named.length < 2)}>
+          disabled={busy || !details.name.trim()}>
           {busy ? 'Opening…' : 'Open the lot'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
@@ -649,12 +579,15 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void api.routes().then(setLibrary).catch(() => setLibrary(null));
+    void api.routes().then((result) => {
+      setLibrary(result);
+      // The lot's own route when it has one, otherwise whichever this shop
+      // wrote first - never the generic ladder, which is not offered here.
+      setRouteId((existing) => existing || result.routes[0]?.id || '');
+    }).catch(() => setLibrary(null));
   }, []);
 
-  const picked = routeId
-    ? library?.routes.find((row) => row.id === routeId) ?? null
-    : library?.builtIn ?? null;
+  const picked = library?.routes.find((row) => row.id === routeId) ?? null;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -679,35 +612,42 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
           point, not from the beginning.
         </p>
 
-        <label className="field">
-          <span>Route</span>
-          <select value={routeId} onChange={(event) => setRouteId(event.target.value)}>
-            <option value="">
-              {library ? `${library.builtIn.name} — ${library.builtIn.steps.length} steps` : 'Loading…'}
-            </option>
-            {(library?.routes ?? []).map((row) => (
-              <option key={row.id} value={row.id}>{row.name} — {row.steps.length} steps</option>
-            ))}
-          </select>
-          <span className="field__hint">
-            <Link to="/routes">Write a route</Link> if none of these is the journey.
-          </span>
-        </label>
+        {library && library.routes.length > 0 ? (
+          <label className="field">
+            <span>Route</span>
+            <select value={routeId} onChange={(event) => setRouteId(event.target.value)}>
+              {library.routes.map((row) => (
+                <option key={row.id} value={row.id}>{row.name} — {row.steps.length} steps</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className="field__hint">
+            {library ? 'You have not written a route yet.' : 'Loading…'}
+          </p>
+        )}
+
+        <Link to="/shop?tab=routes&spotlight=new" className="silkcta silkcta--sm"
+          style={{ justifySelf: 'start' }}>
+          <span className="silkcta__label">✨ Define your Silk Route</span>
+        </Link>
 
         {picked && <Ladder steps={picked.steps} current={-1} />}
 
-        <label className="field">
-          <span>Note (optional)</span>
-          <textarea value={note} rows={2} onChange={(event) => setNote(event.target.value)}
-            placeholder="Forwarder is handling customs now, so the steps changed." />
-          <span className="field__hint">
-            Every buyer in this lot reads it, beside the change.
-          </span>
-        </label>
+        {picked && (
+          <label className="field">
+            <span>Note (optional)</span>
+            <textarea value={note} rows={2} onChange={(event) => setNote(event.target.value)}
+              placeholder="Forwarder is handling customs now, so the steps changed." />
+            <span className="field__hint">
+              Every buyer in this lot reads it, beside the change.
+            </span>
+          </label>
+        )}
 
         {error && <ErrorNotice message={error} />}
         <div className="row">
-          <button type="submit" className="btn" disabled={busy}>
+          <button type="submit" className="btn" disabled={busy || !picked}>
             {busy ? 'Changing…' : 'Change the route'}
           </button>
           <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
@@ -1075,7 +1015,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
         </div>
         <p className="lothero__line">
           {[
-            lot.origin || null,
+            (lot.originCountry || lot.destinationCountry) ? laneOf(lot) : null,
             `${items.length} ${items.length === 1 ? 'item' : 'items'}`,
             totals.weightGrams > 0 ? formatWeight(totals.weightGrams) : null,
             totals.valueMinor > 0 ? formatMoney(totals.valueMinor) : null,
@@ -1224,20 +1164,43 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                 the name.
               </span>
             </div>
-            <div className="row row--tight">
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>
-                Rename &amp; details
-              </button>
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRerouting(true)}>
-                Change route
-              </button>
-            </div>
+            <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
+              onClick={() => setEditing(true)}>
+              Rename &amp; details
+            </button>
             <dl className="factlist">
-              <div><dt>Route</dt><dd>{route.name} · {route.steps.length} steps</dd></div>
-              <div><dt>Origin</dt><dd>{lot.origin || 'Not set'}</dd></div>
+              <div><dt>Origin</dt><dd>{lot.originCountry || lot.origin || 'Not set'}</dd></div>
+              <div><dt>Destination</dt><dd>{lot.destinationCountry || 'Not set'}</dd></div>
               <div><dt>Est. dispatch</dt>
                 <dd>{lot.estimatedDispatchAt ? formatDate(lot.estimatedDispatchAt) : 'Not set'}</dd></div>
             </dl>
+          </div>
+
+          {/* The Lot's own view of its route: what it is, never how it was
+              made. Designing one happens in the Routes tab - this only picks
+              between what is already there, or points a seller at that tab. */}
+          <div className="card card--pad stack">
+            <div>
+              <h2>How this lot travels</h2>
+              <span className="field__hint">
+                Every item in this lot follows these steps, and buyers read them as their tracking.
+              </span>
+            </div>
+            <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+              <span aria-hidden="true" style={{ fontSize: 20 }}>🚚</span>
+              <div style={{ minWidth: 0 }}>
+                <div className="pick__name">{route.name}</div>
+                <div className="pick__steps">{summarise(route.steps)}</div>
+              </div>
+            </div>
+            <div className="row row--tight">
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRerouting(true)}>
+                Change route
+              </button>
+              <Link to="/shop?tab=routes&spotlight=new" className="silkcta silkcta--sm">
+                <span className="silkcta__label">✨ Define your Silk Route</span>
+              </Link>
+            </div>
           </div>
 
           <div className="card card--pad stack">

@@ -329,7 +329,7 @@ const BUILT_IN_TRIGGERS: Record<string, StepTrigger> = {
 
 export const BUILT_IN_ROUTE: LotRoute = {
   routeId: null,
-  name: 'China → India',
+  name: 'Origin → Destination',
   steps: LOT_STAGES.map((stage, index) => ({
     id: stage,
     name: LOT_STAGE_LABELS[stage],
@@ -372,7 +372,7 @@ export interface RoutePreset {
 export const ROUTE_PRESETS: readonly RoutePreset[] = [
   {
     id: 'consolidated',
-    name: 'China → India, consolidated',
+    name: 'Origin → Destination, consolidated',
     blurb: 'Pieces gather at your warehouse, then travel together as one lot.',
     steps: [
       { name: 'Ordering', description: 'The order is placed with you and you are sourcing the piece.', side: 'pre' },
@@ -380,7 +380,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
       { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival. Usually handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received in India.', side: 'post', trigger: 'india_received' },
+      { name: 'Landed', description: 'The lot has been received at the destination.', side: 'post', trigger: 'india_received' },
       { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
@@ -409,9 +409,9 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The supplier has sent the piece to the freight forwarder.', side: 'pre' },
       { name: 'At the forwarder', description: 'Received and being consolidated into a lot.', side: 'post', trigger: 'china_received' },
-      { name: 'Dispatched', description: 'The lot has left for India.', side: 'post' },
+      { name: 'Dispatched', description: 'The lot has left for the destination.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival. Handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received in India.', side: 'post', trigger: 'india_received' },
+      { name: 'Landed', description: 'The lot has been received at the destination.', side: 'post', trigger: 'india_received' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -470,7 +470,7 @@ export const SUGGESTED_STEPS: readonly PresetStep[] = [
     stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
   },
   {
-    name: 'Dispatched from China', description: 'The lot has left the warehouse.', side: 'post',
+    name: 'Dispatched from origin', description: 'The lot has left the warehouse.', side: 'post',
     stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse',
   },
   {
@@ -478,7 +478,7 @@ export const SUGGESTED_STEPS: readonly PresetStep[] = [
     stageId: 'transit', stageName: 'International Transit', stageIcon: 'transit',
   },
   {
-    name: 'Indian customs', description: 'Clearing customs on arrival.', side: 'post',
+    name: 'Destination customs', description: 'Clearing customs on arrival.', side: 'post',
     stageId: 'domestic', stageName: 'Domestic', stageIcon: 'customs',
   },
   {
@@ -546,6 +546,35 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
     ],
   },
 ];
+
+/**
+ * The tracking statuses a seller reaches for most often.
+ *
+ * Offered as a dropdown so a step is one tap to name rather than a blank field
+ * every route repeats slightly differently - "Received at warehouse" typed once
+ * as "warehouse received" is a step nobody's search or preset recognises later.
+ * `'Custom'` is not a status; it is the sentinel that opens the free-text field
+ * for the one in twenty steps that needs its own words.
+ */
+export const TRACKING_STATUS_OPTIONS = [
+  'Order placed',
+  'Payment received',
+  'Supplier accepted',
+  'Preparing order',
+  'Accumulating orders',
+  'Ready for dispatch',
+  'Dispatched',
+  'Received at warehouse',
+  'Consolidating',
+  'Shipment booked',
+  'In transit',
+  'Arrived at destination',
+  'Customs clearance',
+  'Customs cleared',
+  'Received by domestic handler',
+  'Out for delivery',
+  'Delivered',
+] as const;
 
 /** Ids that are stable for a saved step and unique within a route. */
 export function stepId(seed: number): string {
@@ -763,6 +792,18 @@ export const WAITING_FOR_A_LOT = 'Waiting for a shipment to travel in';
  * The month, because that is how consolidation runs are actually talked about,
  * and the origin when there is one.
  */
+/**
+ * Where a lot travels, by country: "China → India".
+ *
+ * A route template says "Origin → Destination" because the same template
+ * serves every lane a shop runs; this is what fills those words in for one
+ * particular lot, falling back to the generic word when the seller has not
+ * picked a country yet.
+ */
+export function laneOf(lot: Pick<Lot, 'originCountry' | 'destinationCountry'>): string {
+  return `${lot.originCountry?.trim() || 'Origin'} → ${lot.destinationCountry?.trim() || 'Destination'}`;
+}
+
 export function suggestLotName(at: Date = new Date(), origin?: string): string {
   const month = at.toLocaleDateString('en-GB', { month: 'long' });
   const place = origin?.split(',')[0]?.trim();

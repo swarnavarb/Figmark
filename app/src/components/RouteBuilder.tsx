@@ -3,7 +3,7 @@ import { Icon, type IconName } from './Icon';
 import { Modal } from './ui';
 import { ORDER_CHECKPOINTS } from '@shared/enums';
 import {
-  STAGE_ICONS, STAGE_ICON_LABELS, TRIGGER_LABELS, groupStages, sideOf, stepId,
+  STAGE_ICONS, STAGE_ICON_LABELS, TRACKING_STATUS_OPTIONS, TRIGGER_LABELS, groupStages, sideOf, stepId,
   type RouteStep, type StageGroup, type StageIcon, type StepSide,
 } from '@shared/routes';
 
@@ -229,6 +229,15 @@ function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
   onMove: (from: number, to: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const isPreset = (TRACKING_STATUS_OPTIONS as readonly string[]).includes(step.name);
+  /* Once the seller has typed their own words, stay in that mode even while
+     they are still typing and the name happens to be empty or mid-edit -
+     recomputing "is this a preset" from the value alone would snap them back
+     to the dropdown on every keystroke. Called unconditionally, before the
+     locked-step return below, so this component's hook order never depends
+     on that flag. */
+  const [customMode, setCustomMode] = useState(!isPreset && step.name.trim().length > 0);
+
   if (step.locked) {
     // Always present, never renamed, moved or removed - "Order Placed" reads
     // as a fact about every route rather than a step a seller could break.
@@ -242,18 +251,35 @@ function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
       </div>
     );
   }
+
   return (
     <div className="stagestep">
       <div className="stagestep__main">
         <span className="stagestep__dot" aria-hidden="true" />
-        <input className="stagestep__name" value={step.name} placeholder="What happens here"
-          aria-label={`Step ${row + 1} name`}
-          onChange={(event) => onChange(index, { name: event.target.value })} />
+        <select className="stagestep__name" aria-label={`Step ${row + 1} status`}
+          value={customMode ? 'Custom' : (isPreset ? step.name : '')}
+          onChange={(event) => {
+            if (event.target.value === 'Custom') { setCustomMode(true); return; }
+            setCustomMode(false);
+            onChange(index, { name: event.target.value });
+          }}>
+          <option value="" disabled>What happens here</option>
+          {TRACKING_STATUS_OPTIONS.map((label) => <option key={label} value={label}>{label}</option>)}
+          <option value="Custom">Custom</option>
+        </select>
         <button type="button" className="iconbtn" onClick={() => setOpen((value) => !value)}
           aria-label={open ? 'Collapse step details' : 'Edit step details'}>
           <Icon name="chevron" size={13} />
         </button>
       </div>
+
+      {customMode && (
+        <div className="stagestep__custom">
+          <input className="stagestep__desc" value={step.name} placeholder="Name this status"
+            aria-label={`Step ${row + 1} custom name`}
+            onChange={(event) => onChange(index, { name: event.target.value })} />
+        </div>
+      )}
 
       {open && (
         <div className="stagestep__more">
@@ -270,6 +296,16 @@ function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
                 <option key={checkpoint} value={checkpoint}>The "{TRIGGER_LABELS[checkpoint].button}" button</option>
               ))}
             </select>
+            {/* Data the trigger has always carried, said plainly: a step bound
+                to a checkpoint moves itself when that checkpoint is ticked,
+                today from this app's own buttons and later, potentially, from
+                a carrier API - the binding does not change, only what presses
+                it. */}
+            {step.trigger ? (
+              <span className="badge badge--accent" style={{ justifySelf: 'start' }}>⚡ Activity Triggered</span>
+            ) : (
+              <span className="badge badge--quiet" style={{ justifySelf: 'start' }}>✋ Manual</span>
+            )}
           </label>
 
           <div className="stagestep__acts">
