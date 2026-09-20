@@ -98,9 +98,6 @@ jobs:
           output_location: ''
           skip_app_build: true
           skip_api_build: true
-          # Explicit so the action always treats main as production, regardless
-          # of which branch a workflow_dispatch run happens to be started from.
-          production_branch: main
 
   deploy_development:
     name: Deploy to Static Web Apps (development)
@@ -134,7 +131,6 @@ jobs:
           # main stays production; deploying from "development" (not main)
           # makes Azure publish this to its own stable branch environment
           # instead of the production slot.
-          production_branch: main
 
   close_preview:
     name: Close pull request preview
