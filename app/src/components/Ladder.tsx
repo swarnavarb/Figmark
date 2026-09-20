@@ -3,6 +3,7 @@ import { isLotEvent, kindOf } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import { groupStages, renderStepText, stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
+import { trackingSearchUrl } from '@shared/tracking-links';
 import { Icon } from './Icon';
 import { STAGE_ICON_META } from './RouteBuilder';
 
@@ -147,6 +148,15 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
                           {event.shipper && <>Shipper: <strong>{event.shipper}</strong></>}
                           {event.shipper && event.trackingId && ' · '}
                           {event.trackingId && <>Tracking ID: <strong>{event.trackingId}</strong></>}
+                          {/* No carrier API is connected yet (see
+                              api/src/tracking/provider.ts), so this looks the
+                              current status up rather than showing it inline. */}
+                          {event.trackingId && (
+                            <a href={trackingSearchUrl(event.shipper ?? '', event.trackingId)}
+                              target="_blank" rel="noopener noreferrer" className="ladder__track-link">
+                              Check status <Icon name="external" size={11} />
+                            </a>
+                          )}
                         </span>
                       )}
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>

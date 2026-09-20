@@ -3136,6 +3136,12 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 .ladder__note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ladder__note-when { font-size: var(--t-2xs); color: var(--text-faint); }
+.ladder__track-link {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 6px;
+  color: var(--accent-text); text-decoration: none; font-weight: var(--w-semi);
+}
+.ladder__track-link:hover { text-decoration: underline; }
 
 /* The hand-over into a lot. Not a rung - it is the one thing on this ladder
    that happened to the item rather than along the route, so it is drawn
