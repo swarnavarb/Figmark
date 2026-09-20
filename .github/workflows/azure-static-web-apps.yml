@@ -98,6 +98,14 @@ jobs:
           output_location: ''
           skip_app_build: true
           skip_api_build: true
+          # Not declared in the action's published action.yml (GitHub Actions
+          # warns "Unexpected input"), but its container entrypoint reads this
+          # env var regardless and it is load-bearing: without it, a deploy
+          # from a non-main branch has been observed landing on the
+          # production URL instead of a branch preview. Do not remove this
+          # again without re-verifying a non-main deploy lands on its own
+          # preview URL.
+          production_branch: main
 
   deploy_development:
     name: Deploy to Static Web Apps (development)
@@ -130,7 +138,9 @@ jobs:
           skip_api_build: true
           # main stays production; deploying from "development" (not main)
           # makes Azure publish this to its own stable branch environment
-          # instead of the production slot.
+          # instead of the production slot. This input is load-bearing here:
+          # see the comment on the production deploy step above.
+          production_branch: main
 
   close_preview:
     name: Close pull request preview
