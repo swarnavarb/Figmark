@@ -390,7 +390,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     name: 'Chain procurement',
     blurb: 'You order from a supplier who orders from theirs. Longer before it moves.',
     steps: [
-      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Ordered from the supplier', description: 'The shop has placed the order with their supplier.', side: 'pre' },
       { name: 'Supplier sourcing', description: 'The supplier is obtaining the piece.', side: 'pre' },
       { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre', trigger: 'china_received' },
@@ -406,7 +406,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     name: 'Supplier → forwarder',
     blurb: 'The supplier ships straight to your freight forwarder. No warehouse of yours.',
     steps: [
-      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The supplier has sent the piece to the freight forwarder.', side: 'pre' },
       { name: 'At the forwarder', description: 'Received and being consolidated into a lot.', side: 'post', trigger: 'china_received' },
       { name: 'Dispatched', description: 'The lot has left for the destination.', side: 'post' },
@@ -420,7 +420,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     name: 'Courier, end to end',
     blurb: 'DHL or similar, one parcel per order. Never joins a lot.',
     steps: [
-      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The piece has been handed to the courier.', side: 'pre' },
       { name: 'Tracking issued', description: 'The courier has given the parcel a tracking number.', side: 'pre' },
       { name: 'In transit', description: 'On its way to India.', side: 'pre' },
@@ -460,7 +460,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
  */
 export const SUGGESTED_STEPS: readonly PresetStep[] = [
   {
-    name: 'Order Placed', description: 'Your order is confirmed with the shop.', side: 'pre', locked: true,
+    name: 'Order Placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre', locked: true,
     stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
   },
   {
@@ -519,7 +519,7 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
     blurb: 'The supplier gathers several customers’ orders into one shipment before it moves.',
     icon: 'supplier',
     steps: [
-      { name: 'Order Placed', description: 'Your order is confirmed with the shop.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
+      { name: 'Order Placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
       { name: 'Supplier Accumulates Orders', description: "Held at the supplier's until enough orders are ready to ship together.", side: 'pre', trigger: 'china_received', stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
       { name: 'Dispatched to Freight Forwarder', description: "Handed over from the supplier to the freight forwarder.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
       { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
@@ -535,7 +535,7 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
     blurb: 'The seller buys from the supplier and has it shipped straight to the freight forwarder.',
     icon: 'warehouse',
     steps: [
-      { name: 'Order Placed', description: 'Your order is confirmed with the shop.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
+      { name: 'Order Placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
       { name: 'Seller Purchases & Ships to Freight Forwarder', description: 'Bought from the supplier and sent straight on, with no stop at the seller.', side: 'pre', forward: true, stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
       { name: 'Freight Forwarder Receives Goods', description: 'Counted in at the freight forwarder.', side: 'post', trigger: 'china_received', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
       { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },

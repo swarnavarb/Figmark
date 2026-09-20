@@ -712,7 +712,7 @@ function LotItemRow({ item, steps, others, busy, onTick, onMove, onNote, onRelot
   others: { id: string; name: string; lotNumber?: string | null }[];
   busy: boolean;
   onTick: (checkpoint: OrderCheckpoint, on: boolean) => void;
-  onMove: (to: number) => void | Promise<void>;
+  onMove: (to: number, details?: { trackingId?: string; shipper?: string }) => void | Promise<void>;
   onNote: (note: string, at: number) => void | Promise<void>;
   onRelot: (lotId: string) => void | Promise<void>;
 }) {
@@ -1116,9 +1116,9 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                   busy={busy}
                   onTick={(checkpoint, on) =>
                     run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
-                  onMove={(to) =>
+                  onMove={(to, details) =>
                     run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
-                      api.stepItem(item.id, { to }).then(() => {}))}
+                      api.stepItem(item.id, { to, ...details }).then(() => {}))}
                   onNote={(text, at) =>
                     run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
                   onRelot={(to) =>

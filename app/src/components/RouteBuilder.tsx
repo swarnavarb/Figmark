@@ -28,6 +28,7 @@ export function RouteBuilder({ steps, onChange, split = false }: {
   split?: boolean;
 }) {
   const [editingStage, setEditingStage] = useState<string | null>(null);
+  const [joinInfoOpen, setJoinInfoOpen] = useState(false);
 
   /** Positions renumbered, and - when split - the two halves kept in order. */
   const commit = (next: RouteStep[]) => {
@@ -100,7 +101,25 @@ export function RouteBuilder({ steps, onChange, split = false }: {
         <div key={stage.stageId} className="routebuilder__unit">
           {stageIndex > 0 && <Icon name="down" size={16} className="routearrow" />}
           {joinAt >= 0 && stage.steps[0]!.index === joinAt && (
-            <div className="joinline"><span>usually joins a lot here</span></div>
+            <div className="joinline">
+              <span className="joinline__label">
+                usually joins a lot here
+                {/* Tap, not hover: most of this is worked from a phone. */}
+                <button type="button" className="joinline__info" aria-expanded={joinInfoOpen}
+                  aria-label="Why this line is only usual, not required"
+                  onClick={() => setJoinInfoOpen((value) => !value)}>
+                  i
+                </button>
+              </span>
+            </div>
+          )}
+          {joinAt >= 0 && stage.steps[0]!.index === joinAt && joinInfoOpen && (
+            <p className="field__hint joinline__note">
+              An item can be added to a lot at any time — before this line or after it. It is
+              tracked automatically either way: the moment it joins, it is placed at the right
+              point on this ladder from what has already happened to it and how far the lot has
+              already moved.
+            </p>
           )}
           <StageBox
             stage={stage}

@@ -348,6 +348,11 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   if (target === from) return json(200, { lot, ordersUpdated: 0 });
 
   const step = route.steps[target]!;
+  // A hand-over with nobody to ask about it is not a hand-over: the courier
+  // is what a tracking ID actually means anything against, live lookup or not.
+  if (step.forward && !body.shipper?.trim()) {
+    return error(400, 'courier_required', 'Say which courier this is moving with.');
+  }
   const stage = coarseStage(route, target);
   const now = new Date().toISOString();
   const event: StageEvent = {
@@ -622,7 +627,7 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   if (!id) return error(400, 'invalid_request', 'An order id is required.');
   const { order, lot, userId, repository } = await ownedOrder(request, id);
 
-  let body: { to?: number; note?: string; at?: number };
+  let body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -652,14 +657,23 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'no_such_step', 'That route has no such step.');
   }
 
+  const targetStep = route?.steps[target];
+  // Same rule as moving the whole lot: a hand-over step needs a courier to
+  // hand over to.
+  if (moving && targetStep?.forward && !body.shipper?.trim()) {
+    return error(400, 'courier_required', 'Say which courier this is moving with.');
+  }
+
   const now = new Date().toISOString();
   const stage = route ? coarseStage(route, target) : order.stage;
   const event: StageEvent = {
     stage,
-    step: route?.steps[target]?.name,
+    step: targetStep?.name,
     enteredAt: now,
     note,
     recordedBy: userId,
+    trackingId: moving && targetStep?.forward ? body.trackingId?.trim() || undefined : undefined,
+    shipper: moving && targetStep?.forward ? body.shipper?.trim() || undefined : undefined,
   };
 
   const last = Boolean(route) && target === route!.steps.length - 1;

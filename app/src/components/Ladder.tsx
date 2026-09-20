@@ -175,21 +175,27 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
 
               {/* A hand-over to a carrier gets its two fields here, on the step
                   it actually happened at - not one global "tracking" field
-                  that a second forward on the same lot would overwrite. */}
+                  that a second forward on the same lot would overwrite. The
+                  courier is required: a tracking ID with nobody to ask it of
+                  is not a lookup anybody can make, live or by hand. */}
               {editable && forwarding === index && (
                 <span className="ladder__write">
                   <input value={trackingId} onChange={(event) => setTrackingId(event.target.value)}
-                    placeholder="Tracking ID" aria-label="Tracking ID" />
+                    placeholder="Tracking ID / AWB" aria-label="Tracking ID or AWB number" />
                   <input value={shipper} onChange={(event) => setShipper(event.target.value)}
-                    placeholder="Shipper / carrier, e.g. DHL" aria-label="Shipper or carrier" />
+                    placeholder="Courier, e.g. DHL, Bluedart" aria-label="Courier or shipper" required />
                   <span className="ladder__write-acts">
-                    <button type="button" className="btn btn--sm" disabled={busy} onClick={() => moveTo(index)}>
+                    <button type="button" className="btn btn--sm" disabled={busy || !shipper.trim()}
+                      onClick={() => moveTo(index)}>
                       Move here
                     </button>
                     <button type="button" className="btn btn--quiet btn--sm" onClick={() => setForwarding(null)}>
                       Cancel
                     </button>
                   </span>
+                  {!shipper.trim() && (
+                    <span className="field__hint">The courier's name is required to move here.</span>
+                  )}
                 </span>
               )}
 

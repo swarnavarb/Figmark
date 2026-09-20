@@ -1118,7 +1118,7 @@ export const api = {
   noteOnLot: (id: string, note: string, at?: number) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/note`, { note, at }),
   /** Move one item on its own, or note something about it. Omit `to` to just note. */
-  stepItem: (id: string, body: { to?: number; note?: string; at?: number }) =>
+  stepItem: (id: string, body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/step`, body),
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
 

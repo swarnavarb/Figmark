@@ -3354,6 +3354,20 @@ a.provider__name:hover { color: var(--accent-text); }
   background: linear-gradient(90deg, transparent, var(--accent-line), transparent);
 }
 .joinline span { min-width: 0; text-align: center; }
+.joinline__label { display: inline-flex; align-items: center; gap: 5px; justify-content: center; }
+.joinline__info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; flex: 0 0 auto;
+  border-radius: 50%; border: 1px solid var(--accent-line);
+  background: transparent; color: var(--accent-text);
+  font-size: 10px; font-weight: var(--w-bold); font-style: italic; line-height: 1;
+  text-transform: none; letter-spacing: normal;
+  cursor: pointer;
+}
+.joinline__info:hover, .joinline__info[aria-expanded="true"] { background: var(--accent-soft); }
+.joinline__note {
+  margin: -10px 0 16px; text-align: center; text-transform: none; letter-spacing: normal;
+}
 
 /*
  * The route library: a shape you can read, not a name in a dropdown.
@@ -3378,19 +3392,26 @@ a.provider__name:hover { color: var(--accent-text); }
    it reads as an action rather than as one more thing to choose between. */
 .silkcta {
   display: flex; flex-direction: column; gap: 2px;
+  width: 100%;
   padding: var(--s3) var(--s4);
-  border-radius: var(--r-lg);
+  border: none; border-radius: var(--r-lg);
   background: var(--grad-warm);
   color: #fff;
   box-shadow: 0 4px 14px rgba(236, 72, 153, 0.35);
-  text-decoration: none;
+  text-decoration: none; text-align: left;
+  font: inherit; cursor: pointer;
   transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
 }
 .silkcta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(236, 72, 153, 0.45); }
 .silkcta__label { font-size: var(--t-sm); font-weight: var(--w-bold); }
 .silkcta__note { font-size: var(--t-2xs); opacity: 0.85; }
-.silkcta--sm { flex-direction: row; align-items: center; padding: 7px 12px; gap: 6px; }
+.silkcta--sm { flex-direction: row; align-items: center; width: auto; padding: 7px 12px; gap: 6px; }
 .silkcta--sm .silkcta__label { font-size: var(--t-xs); }
+.silkcta--wide { padding: 18px var(--s4); gap: 4px; }
+.silkcta--wide .silkcta__label { font-size: var(--t-base); }
+.silkcta--wide .silkcta__note { font-size: var(--t-xs); }
+
+.rlist__label { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-faint); margin-top: 4px; }
 
 .rrow__body { display: grid; gap: 3px; min-width: 0; flex: 1; }
 .rrow__name { font-weight: var(--w-semi); font-size: var(--t-base); }
@@ -3508,6 +3529,23 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 .extras > summary:hover { color: var(--text); }
 .extras[open] > summary { margin-bottom: 12px; }
+
+/* The Routes tab's FAQ: one card, each question its own <details> so opening
+   one never pushes the others' summaries off screen. */
+.faq__item {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.faq__item:first-of-type { border-top: none; padding-top: 0; }
+.faq__item > summary {
+  cursor: pointer; font-size: var(--t-sm); font-weight: var(--w-semi);
+  list-style: none;
+}
+.faq__item > summary::-webkit-details-marker { display: none; }
+.faq__item > summary::before { content: '+ '; color: var(--accent-text); font-weight: var(--w-bold); }
+.faq__item[open] > summary::before { content: '– '; }
+.faq__item > summary:hover { color: var(--accent-text); }
+.faq__item p { margin: 8px 0 0; font-size: var(--t-xs); line-height: 1.5; }
 
 /* ── Orders, templates and photos ──────────────────────────────────────── */
 
