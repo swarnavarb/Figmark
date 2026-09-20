@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StepSide, type StepTrigger, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
 } from '../../../shared/routes.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -73,6 +73,9 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
       position: index,
       side: step.side,
       trigger: step.trigger,
+      stageId: step.stageId,
+      stageName: step.stageName,
+      stageIcon: step.stageIcon,
     })),
   });
 }
@@ -80,7 +83,10 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
 interface RouteBody {
   id?: string;
   name?: string;
-  steps?: { id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+  steps?: {
+    id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+    stageId?: string; stageName?: string; stageIcon?: string;
+  }[];
 }
 
 /** POST /api/routes - write a ladder, or correct one. */
@@ -98,7 +104,11 @@ async function saveRoute(request: HttpRequest, _context: InvocationContext) {
   const name = body.name?.trim();
   if (!name) return error(400, 'invalid_route', 'Give the route a name.');
 
-  const steps = normaliseSteps(body.steps ?? []);
+  // stageIcon arrives as an arbitrary string from the request body;
+  // normaliseSteps is what actually validates it against the known set.
+  const steps = normaliseSteps(
+    (body.steps ?? []).map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
+  );
   // Two, because one step is a state and not a journey - and because a buyer
   // reading a single-step timeline learns nothing a status word would not say.
   if (steps.length < 2) {

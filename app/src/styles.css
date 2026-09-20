@@ -3004,6 +3004,15 @@ a.provider__name:hover { color: var(--accent-text); }
  * circle is a promise and a blank is a fact.
  */
 .ladder { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+/* A stage heading, only where the route names one - the same grouping the
+   builder draws as a box, read here as a label over its steps. */
+.ladder__stage {
+  display: flex; align-items: center; gap: 6px;
+  margin: 10px 0 2px 30px; padding: 0;
+  font-size: var(--t-2xs); font-weight: var(--w-semi);
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim);
+}
+.ladder__stage:first-child { margin-top: 0; }
 .ladder__row {
   position: relative;
   display: grid; grid-template-columns: 20px 1fr; align-items: baseline; gap: 10px;
@@ -3126,78 +3135,111 @@ a.provider__name:hover { color: var(--accent-text); }
 .ladder__write-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ladder__write-acts .field__hint { flex: 1 1 140px; min-width: 0; }
 
-/* The builder. A grip, a number, a name, a description and small buttons. */
-.steps { display: grid; gap: 8px; }
-/* The name gets its own row. On one line with the handle, the number and three
-   buttons beside it, a 390px screen left about 160px for the text - and
-   "Received at international warehouse" in 160px is a step nobody can read
-   back, which is the one thing this editor exists to let them do. */
-.step {
-  display: grid;
-  grid-template-columns: auto auto 1fr auto;
-  grid-template-areas: 'grip no . acts' 'name name name name' 'desc desc desc desc' 'trig trig trig trig';
-  align-items: center; gap: 6px 8px;
-  padding: 8px 9px;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
+/*
+ * The route builder: a box per stage, an arrow between each, steps inside.
+ *
+ * One column and big tap targets by default - a phone is where a route gets
+ * written. On a wide screen the same markup wraps into a row instead of
+ * stacking, which is the "graphical flow" a desktop gets: it is the same
+ * component and the same data, just laid out sideways.
+ */
+.routebuilder { display: grid; gap: 4px; }
+.routebuilder__unit { display: grid; gap: 4px; }
+.routearrow {
+  justify-self: center;
+  color: var(--text-faint);
+  animation: route-arrow 1.6s ease-in-out infinite;
+}
+@keyframes route-arrow {
+  0%, 100% { transform: translateY(0); opacity: 0.6; }
+  50% { transform: translateY(3px); opacity: 1; }
+}
+.routebuilder__add { justify-self: start; margin-top: 6px; }
+
+.stagebox {
+  display: grid; gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-lg);
   background: var(--surface);
 }
-.step__grip { grid-area: grip; }
-.step__no { grid-area: no; }
-.step__acts { grid-area: acts; }
-.step__name { grid-area: name; }
-.step__desc { grid-area: desc; }
-.step__trig { grid-area: trig; }
-/* Quieter than the name, because it is the sentence under it: the seller reads
-   the ladder by its names and only drops into the descriptions to correct one. */
-.step__desc {
-  min-width: 0; width: 100%;
-  padding: 5px 8px;
+.stagebox--supplier { border-color: var(--coral-line); background: linear-gradient(180deg, var(--coral-soft), transparent 60%); }
+.stagebox--warehouse { border-color: var(--aqua-line); background: linear-gradient(180deg, var(--aqua-soft), transparent 60%); }
+.stagebox--transit { border-color: var(--blue-line); background: linear-gradient(180deg, var(--blue-soft), transparent 60%); }
+.stagebox--customs { border-color: var(--lime-line); background: linear-gradient(180deg, var(--lime-soft), transparent 60%); }
+.stagebox--delivery { border-color: var(--violet-line); background: linear-gradient(180deg, var(--violet-soft), transparent 60%); }
+
+.stagebox__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.stagebox__title {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 4px 6px 4px 4px; margin-left: -4px;
+  border: none; border-radius: var(--r-sm);
+  background: transparent; color: var(--text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.stagebox__title:hover { background: var(--surface-hover); }
+.stagebox__title svg:last-child { color: var(--text-faint); }
+.stagebox__icon {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 34px; height: 34px; border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.stagebox__name { min-width: 0; font-weight: var(--w-semi); font-size: var(--t-base); overflow-wrap: anywhere; }
+.stagebox__reorder { display: flex; gap: 4px; flex: 0 0 auto; }
+
+.stagebox__steps { display: grid; gap: 6px; }
+.stagebox__addstep { justify-self: start; }
+
+.stagestep {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.stagestep__main { display: flex; align-items: center; gap: 8px; padding: 9px 10px; }
+.stagestep__dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.stagestep__name {
+  min-width: 0; flex: 1;
+  padding: 8px 10px;
   border: 1px solid transparent; border-radius: var(--r-sm);
-  background: transparent; color: var(--text-dim); font-size: var(--t-xs);
+  background: var(--surface); color: var(--text); font-size: var(--t-sm);
 }
-.step__desc:hover { background: var(--surface-2); }
-.step__desc:focus {
-  background: var(--surface-2); border-color: var(--accent-line); outline: none;
-  color: var(--text);
-}
-
-/* What moves this step. Quieter than the words the buyer reads, because it is
-   plumbing - but on the row it belongs to, so the binding is never a guess. */
-.step__trig {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  margin-top: 2px; padding: 0 2px;
-  font-size: var(--t-2xs);
-}
-.step__trig-lead { color: var(--text-faint); letter-spacing: 0.04em; text-transform: uppercase; }
-.step__trig select {
-  min-width: 0; flex: 1 1 150px;
-  padding: 4px 8px;
+.stagestep__name:focus { border-color: var(--accent-line); outline: none; }
+.stagestep__more { display: grid; gap: 8px; padding: 0 10px 10px; }
+.stagestep__desc {
+  min-width: 0; width: 100%;
+  padding: 7px 10px;
   border: 1px solid var(--border); border-radius: var(--r-sm);
-  background: var(--surface-2); color: var(--text-dim);
-  font: inherit; font-size: var(--t-2xs);
+  background: var(--surface); color: var(--text-dim); font-size: var(--t-xs);
 }
-.step__trig select:focus { border-color: var(--accent-line); outline: none; color: var(--text); }
-.step__trig-say { flex-basis: 100%; color: var(--text-faint); }
+.stagestep__desc:focus { border-color: var(--accent-line); outline: none; color: var(--text); }
+.stagestep__trig { display: grid; gap: 4px; font-size: var(--t-2xs); color: var(--text-faint); }
+.stagestep__trig select {
+  padding: 7px 8px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text-dim);
+  font: inherit; font-size: var(--t-xs);
+}
+.stagestep__acts { display: flex; gap: 4px; }
 
-/*
- * The split builder: one list of steps, two halves on the screen.
- *
- * The halves are not two lists. A step's side is a property of the step, so
- * dragging one across the divider is the same operation as dragging it up a
- * place - which is what keeps the two ladders from ever overlapping the way
- * the separate pre-lot template used to.
- */
-.steps--split { gap: 0; }
-.stepsec { display: grid; gap: 8px; padding: 2px 0 14px; }
-.stepsec__head { display: grid; gap: 2px; }
-.stepsec__head h3 {
-  margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi);
-  letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim);
+/* The icon grid in "Edit stage". Each button is the hue its stage would be. */
+.stageicons { display: flex; flex-wrap: wrap; gap: 8px; }
+.stageicon {
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--text-dim); cursor: pointer;
 }
-.stepsec__none {
-  margin: 0; padding: 10px 12px;
-  border: 1px dashed var(--border); border-radius: var(--r-sm);
-  font-size: var(--t-xs); color: var(--text-faint);
+.stageicon--supplier.is-active { border-color: var(--coral-line); background: var(--coral-soft); color: var(--coral); }
+.stageicon--warehouse.is-active { border-color: var(--aqua-line); background: var(--aqua-soft); color: var(--aqua); }
+.stageicon--transit.is-active { border-color: var(--blue-line); background: var(--blue-soft); color: var(--blue); }
+.stageicon--customs.is-active { border-color: var(--lime-line); background: var(--lime-soft); color: var(--lime); }
+.stageicon--delivery.is-active { border-color: var(--violet-line); background: var(--violet-soft); color: var(--violet-lit); }
+
+@media (min-width: 860px) {
+  .routebuilder { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+  .routebuilder__unit { display: flex; align-items: center; gap: 10px; flex: 0 1 auto; }
+  .routearrow { transform: rotate(-90deg); animation: route-arrow-x 1.6s ease-in-out infinite; }
+  @keyframes route-arrow-x { 0%, 100% { transform: rotate(-90deg) translateY(0); opacity: 0.6; } 50% { transform: rotate(-90deg) translateY(3px); opacity: 1; } }
+  .stagebox { width: 260px; }
+  .routebuilder .joinline { flex-basis: 100%; }
 }
 
 /* Where the item stops travelling alone. Drawn, because it is the one thing on
@@ -3269,24 +3311,6 @@ a.provider__name:hover { color: var(--accent-text); }
 .trigkey svg { flex: 0 0 auto; color: var(--aqua); }
 .trigkey__btn { font-weight: var(--w-semi); color: var(--text); }
 .trigkey__to { min-width: 0; color: var(--text-dim); overflow-wrap: anywhere; }
-.step.is-dragging { opacity: 0.5; }
-.step.is-over { border-color: var(--accent); box-shadow: 0 -2px 0 var(--accent) inset; }
-/* Only the grip drags, so tapping into the field to rename a step does not
-   pick the row up instead. */
-.step__grip { cursor: grab; color: var(--text-faint); user-select: none; }
-.step__grip:active { cursor: grabbing; }
-.step__no {
-  width: 18px; text-align: center;
-  font-size: var(--t-xs); color: var(--text-faint); font-variant-numeric: tabular-nums;
-}
-.step__name {
-  min-width: 0; width: 100%;
-  padding: 6px 8px;
-  border: 1px solid transparent; border-radius: var(--r-sm);
-  background: var(--surface-2); font-size: var(--t-sm);
-}
-.step__name:focus { border-color: var(--accent-line); outline: none; }
-.step__acts { display: flex; gap: 2px; }
 .iconbtn {
   width: 26px; height: 26px; padding: 0;
   display: grid; place-items: center;
