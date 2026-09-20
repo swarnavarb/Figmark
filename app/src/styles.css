@@ -1936,8 +1936,6 @@ code, kbd, samp, pre {
 @media (max-width: 640px) {
   .lot--carton .factlist > div { flex-direction: column; align-items: flex-start; gap: 0; }
   .lot--carton .factlist dd { text-align: left; }
-  .lot--carton .tiles, .lot--carton .tiles--big { grid-template-columns: 1fr 1fr; }
-  .lot--carton .tile__label { overflow-wrap: break-word; }
 }
 
 /* The lid: a coloured cap on the box, tapped to open the lot. The hue is
@@ -1987,16 +1985,7 @@ code, kbd, samp, pre {
   display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
   font-size: var(--t-xs); font-weight: var(--w-medium); opacity: 0.95;
 }
-/* A country, tagged rather than spelled out in a sentence - each side of
-   the lane is its own small chip, auto-filled from the lot's own record. */
-.lot__tag {
-  display: inline-flex; align-items: center; gap: 3px; min-width: 0; max-width: 46%;
-  padding: 2px 7px;
-  border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.22);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.lot__flag { font-size: 13px; line-height: 1; }
+.lot__flag { font-size: 19px; line-height: 1; }
 
 /* Where the lot actually is, and who is working it. Always shown, whatever
    the card's open/shut state — the box, not a drawer inside it. */
@@ -2051,29 +2040,56 @@ code, kbd, samp, pre {
   margin: 0; padding: 0 12px 12px;
   font-size: var(--t-xs); color: var(--carton-dim);
 }
-.lot__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 4px 12px 12px; }
+.lot__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 4px 12px 10px; }
 
-/* The flip: front and back share one grid cell (so the box is as tall as
-   whichever face is bigger) and rotate past each other in opposite
-   directions - a real turn, not a panel sliding open beneath the lid. */
-.lot--carton .lot__flip { display: grid; grid-template-columns: minmax(0, 1fr); perspective: 1600px; }
+/* Five numbers, full width, two rows - not two rows of different weight. */
+.lot__tiles { display: grid; gap: 4px; }
+.lot__tiles--2 { grid-template-columns: repeat(2, 1fr); }
+.lot__tiles--3 { grid-template-columns: repeat(3, 1fr); }
+
+/* A tile's name, said once when tapped, then gone - the icon has no room
+   to spell it out itself. */
+.lot__hint {
+  justify-self: center;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: var(--carton-ink);
+  color: var(--carton-bg);
+  font-size: var(--t-2xs); font-weight: var(--w-semi);
+  animation: lotHint 1.4s ease forwards;
+}
+@keyframes lotHint {
+  0% { opacity: 0; transform: translateY(-2px); }
+  12% { opacity: 1; transform: none; }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* The flip: whichever face is showing sits in normal flow and sets the
+   card's height; the other is lifted out so it can never leave a gap
+   beneath the one you're looking at. */
+.lot--carton .lot__flip { position: relative; perspective: 1600px; }
 .lot--carton .lot__face {
-  grid-area: 1 / 1;
   min-width: 0;
   backface-visibility: hidden;
   transition: transform 0.5s cubic-bezier(0.4, 0.15, 0.2, 1);
 }
 .lot--carton .lot__face--front { transform: rotateY(0deg); }
-.lot--carton .lot__face--back { transform: rotateY(180deg); }
-.lot--carton.lot--flipped .lot__face--front { transform: rotateY(-180deg); }
-.lot--carton.lot--flipped .lot__face--back { transform: rotateY(0deg); }
+.lot--carton .lot__face--back { position: absolute; inset: 0; transform: rotateY(180deg); }
+.lot--carton.lot--flipped .lot__face--front { position: absolute; inset: 0; transform: rotateY(-180deg); }
+.lot--carton.lot--flipped .lot__face--back { position: static; transform: rotateY(0deg); }
 
-.lot--carton .tile { min-width: 0; padding: 8px 6px; background: #fff; border-color: var(--carton-line-strong); }
-.lot--carton .tile__value { font-size: 18px; color: var(--carton-ink); }
-.lot--carton .tiles--big .tile__value { font-size: 24px; }
-.lot--carton .tile__label { color: var(--carton-ink); }
+.lot--carton .tile {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 0; padding: 7px 4px;
+  background: #fff; border-color: var(--carton-line-strong);
+}
+.lot--carton .tile__value { font-size: 15px; color: var(--carton-ink); }
 .lot--carton .tile--tap:hover { background: #fff; border-color: var(--carton-dim); }
 .lot--carton .tile--tap.is-open { border-color: var(--carton-ink); background: #fff; }
+.lot--carton .bars { gap: 5px; }
+.lot--carton .bar { grid-template-columns: 58px 1fr auto; gap: 6px; }
+.lot--carton .bar__label { font-size: var(--t-2xs); }
 .lot--carton .bar__label, .lot--carton .bar__count { color: var(--carton-dim); }
 .lot--carton .bar__track { background: rgba(54, 42, 26, 0.1); }
 .lot--carton .drill { background: rgba(54, 42, 26, 0.05); border-color: var(--carton-line); }

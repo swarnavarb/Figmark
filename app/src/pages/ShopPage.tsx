@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  CHECKPOINT_COUNT_LABELS, LOT_CARD_LABELS, LOT_STAGES,
+  LOT_CARD_LABELS, LOT_STAGES,
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
 } from '@shared/enums';
@@ -1645,6 +1645,26 @@ const DRILL_HINTS: Record<Drill, string> = {
   dispatched: 'Who has gone and who is still here.',
 };
 
+/** What each icon-only flip tile means, for the tap-to-reveal label. */
+const TILE_HINTS = {
+  customers: 'Customers', orders: 'Orders', ready: 'Ready to dispatch',
+  packed: 'Packed', dispatched: 'Dispatched',
+} as const;
+type TileKey = keyof typeof TILE_HINTS;
+
+/** A number with just an icon - five of them have to fit where three used to. */
+function MiniTile({ icon, value, tone, onClick, open }: {
+  icon: IconName; value: string; tone?: 'blue' | 'green'; onClick?: () => void; open?: boolean;
+}) {
+  const className = `tile${tone ? ` tile--${tone}` : ''}${onClick ? ' tile--tap' : ''}${open ? ' is-open' : ''}`;
+  const body = <><Icon name={icon} size={15} /><span className="tile__value">{value}</span></>;
+  return onClick ? (
+    <button type="button" className={className} onClick={onClick} aria-expanded={open ?? false}>{body}</button>
+  ) : (
+    <div className={className}>{body}</div>
+  );
+}
+
 /**
  * One consignment: what is in it, where it is, and the two things to do with it.
  *
@@ -1677,6 +1697,14 @@ function LotCard({ summary, store, onOpen }: {
   const [drill, setDrill] = useState<Drill | null>(null);
   const [people, setPeople] = useState<LotBoard | null>(null);
   const [peopleError, setPeopleError] = useState<string | null>(null);
+  const [hint, setHint] = useState<{ id: number; text: string } | null>(null);
+
+  /** A little label that names an icon-only tile, then vanishes on its own. */
+  const showHint = (key: TileKey) => {
+    const id = Date.now();
+    setHint({ id, text: TILE_HINTS[key] });
+    setTimeout(() => setHint((current) => (current?.id === id ? null : current)), 1400);
+  };
 
   /**
    * Open the rows behind a number.
@@ -1699,8 +1727,15 @@ function LotCard({ summary, store, onOpen }: {
   };
 
   const hue = hueOf(lot.id);
-
   const pill = PHASE_PILL[phase];
+  const originFlag = countryFlag(lot.originCountry);
+  const destFlag = countryFlag(lot.destinationCountry);
+  /** The three progress checkpoints, said as a flag rather than a country name. */
+  const BAR_LABEL: Record<string, string> = {
+    china_received: `${originFlag} WH`,
+    china_packed: `${originFlag} Packed`,
+    india_received: `${destFlag} Rcvd`,
+  };
 
   return (
     <article className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}${open ? ' lot--flipped' : ''}`}>
@@ -1722,9 +1757,9 @@ function LotCard({ summary, store, onOpen }: {
               </span>
             </div>
             <span className="lot__lane">
-              <span className="lot__tag"><span className="lot__flag" aria-hidden="true">{countryFlag(lot.originCountry)}</span>{lot.originCountry || 'Origin'}</span>
+              <span className="lot__flag" aria-hidden="true">{originFlag}</span>
               <Icon name="right" size={11} />
-              <span className="lot__tag"><span className="lot__flag" aria-hidden="true">{countryFlag(lot.destinationCountry)}</span>{lot.destinationCountry || 'Destination'}</span>
+              <span className="lot__flag" aria-hidden="true">{destFlag}</span>
             </span>
             {/* The fold where an open flap meets the box - drawn, not photographed. */}
             <svg className="lot__crease" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
@@ -1762,32 +1797,20 @@ function LotCard({ summary, store, onOpen }: {
             <p className="lot__empty">Nothing in this lot yet.</p>
           ) : (
             <div className="lot__body">
-              <div className="tiles tiles--big">
-                <Tile value={String(tally.customers)} label="Customers" />
-                <Tile value={String(summary.orderCount)} label="Orders" />
+              <div className="lot__tiles lot__tiles--2">
+                <MiniTile icon="users" value={String(tally.customers)} onClick={() => showHint('customers')} />
+                <MiniTile icon="box" value={String(summary.orderCount)} onClick={() => showHint('orders')} />
               </div>
-              <div className="tiles">
-                <Tile
-                  value={String(tally.customers)}
-                  label="Customers"
-                  onClick={() => drillInto('customers')}
-                  open={drill === 'customers'}
-                />
-                <Tile
-                  value={String(countOf(tally, 'packed').done)}
-                  label="Packed"
-                  tone="blue"
-                  onClick={() => drillInto('packed')}
-                  open={drill === 'packed'}
-                />
-                <Tile
-                  value={`${tally.customersDispatched}/${tally.customers}`}
-                  label="Dispatched"
-                  tone="green"
-                  onClick={() => drillInto('dispatched')}
-                  open={drill === 'dispatched'}
-                />
+              <div className="lot__tiles lot__tiles--3">
+                <MiniTile icon="tag" value={String(countOf(tally, 'ready_to_dispatch').done)}
+                  onClick={() => showHint('ready')} />
+                <MiniTile icon="check" value={String(countOf(tally, 'packed').done)} tone="blue"
+                  onClick={() => { drillInto('packed'); showHint('packed'); }} open={drill === 'packed'} />
+                <MiniTile icon="truck" value={`${tally.customersDispatched}/${tally.customers}`} tone="green"
+                  onClick={() => { drillInto('dispatched'); showHint('dispatched'); }} open={drill === 'dispatched'} />
               </div>
+
+              {hint && <div key={hint.id} className="lot__hint">{hint.text}</div>}
 
               {drill && (
                 <div className="drill">
@@ -1804,7 +1827,7 @@ function LotCard({ summary, store, onOpen }: {
               <div className="bars">
                 {tally.progress.map((row) => (
                   <div key={row.checkpoint} className="bar">
-                    <span className="bar__label">{CHECKPOINT_COUNT_LABELS[row.checkpoint]}</span>
+                    <span className="bar__label">{BAR_LABEL[row.checkpoint]}</span>
                     <span className="bar__track">
                       <span className="bar__fill"
                         style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }} />
