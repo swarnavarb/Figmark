@@ -31,7 +31,7 @@ export function RoutesPage() {
   return (
     <main className="page">
       <Link to="/shop?tab=lots" className="backlink">
-        <Icon name="back" size={14} /> Track
+        <Icon name="back" size={14} /> Lots
       </Link>
 
       <div className="page__head">
@@ -48,13 +48,8 @@ export function RoutesPage() {
       {error && <ErrorNotice message={error} />}
       {!data && !error && <SkeletonRows count={4} />}
 
-      {data && (
+      {data && data.routes.length > 0 && (
         <div className="rlist">
-          <RouteRow
-            name={data.builtIn.name}
-            steps={data.builtIn.steps}
-            note="Built in. Used by any lot that has not picked another."
-          />
           {data.routes.map((route) => (
             <RouteRow key={route.id} to={`/routes/${route.id}`} name={route.name} steps={route.steps} />
           ))}
@@ -62,10 +57,9 @@ export function RoutesPage() {
       )}
 
       {data && data.routes.length === 0 && (
-        <EmptyState icon={<Icon name="truck" size={26} />} title="One route so far">
-          The built-in one covers a normal consolidated run. Write your own when a lot travels
-          differently — a courier parcel, a pre-order, a supplier who ships straight to your
-          forwarder.
+        <EmptyState icon={<Icon name="truck" size={26} />} title="No routes yet">
+          Write one for the journey your lots actually travel — a courier parcel, a pre-order, a
+          supplier who ships straight to your forwarder. Every lot can then point at it.
         </EmptyState>
       )}
     </main>

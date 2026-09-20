@@ -36,11 +36,18 @@ export function LotDetailFields({ value, onChange, compact = false }: {
         <span className="field__hint">The only thing you must fill in. Buyers never see it.</span>
       </label>
 
-      <label className="field">
-        <span>Lot origin</span>
-        <input value={value.origin ?? ''} onChange={(e) => set('origin', e.target.value)}
-          placeholder="Guangzhou, CN" />
-      </label>
+      <div className="field-row">
+        <label className="field">
+          <span>Lot origin</span>
+          <input value={value.origin ?? ''} onChange={(e) => set('origin', e.target.value)}
+            placeholder="Guangzhou, CN" />
+        </label>
+        <label className="field">
+          <span>Lot destination</span>
+          <input value={value.destination ?? ''} onChange={(e) => set('destination', e.target.value)}
+            placeholder="Mumbai, IN" />
+        </label>
+      </div>
 
       <Extras compact={compact}>
       <label className="field">
@@ -106,6 +113,7 @@ export const emptyLotDetails = (): LotDetails => ({
   name: '',
   description: '',
   origin: '',
+  destination: '',
   estimatedDispatchAt: null,
   supplierName: '',
   supplierContact: '',
@@ -117,6 +125,7 @@ export const lotDetailsOf = (lot: Lot): LotDetails => ({
   name: lot.name,
   description: lot.description,
   origin: lot.origin ?? '',
+  destination: lot.destination ?? '',
   estimatedDispatchAt: lot.estimatedDispatchAt,
   supplierName: lot.supplier?.name ?? '',
   supplierContact: lot.supplier?.contact ?? '',

@@ -1524,6 +1524,11 @@ function RoutesPanel() {
   const [data, setData] = useState<RoutesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | 'new' | null>(null);
+  const [params, setParams] = useSearchParams();
+  /* Only true when a Lot's "Define your Silk Route" sent the seller here -
+     never on an ordinary visit to this tab, which is the one rule this whole
+     feature has to get right. */
+  const spotlightNew = params.get('spotlight') === 'new';
 
   const load = useCallback(async () => {
     try {
@@ -1534,6 +1539,14 @@ function RoutesPanel() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  /** Opening the editor, from anywhere, is the point where the pointer has done its job. */
+  const clearSpotlight = () =>
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      copy.delete('spotlight');
+      return copy;
+    }, { replace: true });
 
   if (editing) {
     return (
@@ -1551,21 +1564,19 @@ function RoutesPanel() {
         <p className="muted" style={{ margin: 0 }}>
           The steps a lot travels. Buyers read these words as their tracking.
         </p>
-        <button type="button" className="btn" onClick={() => setEditing('new')}>
-          <Icon name="plus" size={14} /> New route
-        </button>
+        <span className="spotlight-row">
+          <button type="button" className="btn" onClick={() => { clearSpotlight(); setEditing('new'); }}>
+            <Icon name="plus" size={14} /> New route
+          </button>
+          {spotlightNew && <Icon name="left" size={16} className="spotlight-arrow" aria-hidden="true" />}
+        </span>
       </div>
 
       {error && <ErrorNotice message={error} />}
       {!data && !error && <SkeletonRows count={4} />}
 
-      {data && (
+      {data && data.routes.length > 0 && (
         <div className="rlist">
-          <RouteRow
-            name={data.builtIn.name}
-            steps={data.builtIn.steps}
-            note="Built in. Used by any lot that has not picked another."
-          />
           {data.routes.map((route) => (
             <RouteRow key={route.id} name={route.name} steps={route.steps}
               onClick={() => setEditing(route.id)} />
@@ -1574,10 +1585,9 @@ function RoutesPanel() {
       )}
 
       {data && data.routes.length === 0 && (
-        <EmptyState icon={<Icon name="truck" size={26} />} title="One route so far">
-          The built-in one covers a normal consolidated run. Write your own when a lot travels
-          differently — a courier parcel, a pre-order, a supplier who ships straight to your
-          forwarder.
+        <EmptyState icon={<Icon name="truck" size={26} />} title="No routes yet">
+          Write one for the journey your lots actually travel. Every lot can then point at it, and
+          buyers read your own words as their tracking instead of a generic ladder.
         </EmptyState>
       )}
     </div>

@@ -3156,6 +3156,16 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 .routebuilder__add { justify-self: start; margin-top: 6px; }
 
+/* The one-time pointer at "New route", for a seller who just arrived from a
+   Lot's "Define your Silk Route". Reuses the same bounce as `.routearrow`
+   rather than inventing a second motion for "look here". */
+.spotlight-row { display: flex; align-items: center; gap: 6px; }
+.spotlight-row .btn { box-shadow: 0 0 0 3px var(--accent-soft), 0 4px 14px rgba(124, 58, 237, 0.4); }
+.spotlight-arrow { color: var(--accent); animation: route-arrow 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-arrow, .routearrow { animation: none; }
+}
+
 .stagebox {
   display: grid; gap: 8px;
   padding: 12px;
@@ -3202,6 +3212,7 @@ a.provider__name:hover { color: var(--accent-text); }
   background: var(--surface); color: var(--text); font-size: var(--t-sm);
 }
 .stagestep__name:focus { border-color: var(--accent-line); outline: none; }
+.stagestep__custom { padding: 0 10px 9px; }
 .stagestep__more { display: grid; gap: 8px; padding: 0 10px 10px; }
 .stagestep__desc {
   min-width: 0; width: 100%;
@@ -3274,6 +3285,25 @@ a.provider__name:hover { color: var(--accent-text); }
 .rrow:hover { border-color: var(--border-strong); background: var(--surface-hover); }
 .rrow--fixed { cursor: default; background: var(--surface-2); }
 .rrow--fixed:hover { border-color: var(--border); background: var(--surface-2); }
+
+/* The one door a Lot has left onto route design: a CTA, not a picker row, so
+   it reads as an action rather than as one more thing to choose between. */
+.silkcta {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-lg);
+  background: var(--grad-warm);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(236, 72, 153, 0.35);
+  text-decoration: none;
+  transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.silkcta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(236, 72, 153, 0.45); }
+.silkcta__label { font-size: var(--t-sm); font-weight: var(--w-bold); }
+.silkcta__note { font-size: var(--t-2xs); opacity: 0.85; }
+.silkcta--sm { flex-direction: row; align-items: center; padding: 7px 12px; gap: 6px; }
+.silkcta--sm .silkcta__label { font-size: var(--t-xs); }
+
 .rrow__body { display: grid; gap: 3px; min-width: 0; flex: 1; }
 .rrow__name { font-weight: var(--w-semi); font-size: var(--t-base); }
 .rrow__sum {

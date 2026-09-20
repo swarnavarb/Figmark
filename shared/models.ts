@@ -631,6 +631,14 @@ export interface Lot extends BaseDocument {
   description: string;
   /** Where the lot is coming from, e.g. "Guangzhou, CN". Seller-facing. */
   origin: string;
+  /**
+   * Where the lot is going to, e.g. "Mumbai, IN". Seller-facing.
+   *
+   * Optional so a lot written before this existed still loads; routes read it
+   * through `laneOf`, which falls back to a generic "Destination" rather than
+   * assuming any one country.
+   */
+  destination?: string;
   /** Who the lot is bought from. Null until the seller fills it in. */
   supplier: LotSupplier | null;
   status: LotStatus;

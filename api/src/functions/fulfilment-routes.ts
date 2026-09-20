@@ -42,6 +42,7 @@ interface LotDetailsBody {
   name?: string;
   description?: string;
   origin?: string;
+  destination?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -110,6 +111,7 @@ async function updateLotDetails(request: HttpRequest, _context: InvocationContex
   }
   if (body.description !== undefined) lot.description = body.description.trim();
   if (body.origin !== undefined) lot.origin = body.origin.trim();
+  if (body.destination !== undefined) lot.destination = body.destination.trim();
   if (body.estimatedDispatchAt !== undefined) lot.estimatedDispatchAt = body.estimatedDispatchAt;
   // The supplier moves as a unit: naming one sets it, clearing the name drops it.
   if (body.supplierName !== undefined || body.supplierHandle !== undefined) {
@@ -180,6 +182,7 @@ export interface NewLotBody {
   name?: string;
   description?: string;
   origin?: string;
+  destination?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -284,6 +287,7 @@ export async function buildLot(
     handler: handlerNamed,
     description: body.description?.trim() ?? '',
     origin: body.origin?.trim() ?? '',
+    destination: body.destination?.trim() ?? '',
     supplier: supplierFrom(body, supplierTag),
     status: 'open',
     stage: opensAs,
