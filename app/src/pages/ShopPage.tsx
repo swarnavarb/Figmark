@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  CHECKPOINT_COUNT_LABELS, LOT_CARD_LABELS, LOT_STAGES, LOT_STAGE_LABELS,
+  CHECKPOINT_COUNT_LABELS, LOT_CARD_LABELS, LOT_STAGES,
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
 } from '@shared/enums';
@@ -14,11 +14,12 @@ import { RouteEditor, RoutesList } from './RoutesPage';
 import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
-import { BUILT_IN_ROUTE, currentStepName, preSteps as preStepsOf, routeOf, suggestLotName } from '@shared/routes';
+import {
+  BUILT_IN_ROUTE, currentStepName, laneOf, preSteps as preStepsOf, routeOf, suggestLotName,
+} from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
-import { supplierIdOf } from '@shared/services';
 import {
   ApiRequestError,
   api,
@@ -1519,6 +1520,9 @@ function Lots({ store }: { store: StoreAccess }) {
       return copy;
     }, { replace: true });
 
+  /** Delivered is done; everything else is still being worked. */
+  const [statusFilter, setStatusFilter] = useState<'active' | 'completed'>('active');
+
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -1538,6 +1542,9 @@ function Lots({ store }: { store: StoreAccess }) {
 
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
+
+  const filtered = data.lots.filter((entry) =>
+    statusFilter === 'completed' ? entry.lot.stage === 'delivered' : entry.lot.stage !== 'delivered');
 
   return (
     <div className="stack">
@@ -1577,12 +1584,42 @@ function Lots({ store }: { store: StoreAccess }) {
           it — buyers never see the lot, only the tracking it produces.
         </EmptyState>
       ) : (
-        data.lots.map((summary) => (
-          <LotCard key={summary.lot.id} summary={summary} store={store} onOpen={() => setOpenId(summary.lot.id)} />
-        ))
+        <>
+          <div className="seg" role="tablist" aria-label="Lot status">
+            {(['active', 'completed'] as const).map((entry) => (
+              <button key={entry} type="button" role="tab" aria-selected={statusFilter === entry}
+                className={statusFilter === entry ? 'is-on' : ''}
+                onClick={() => setStatusFilter(entry)}>
+                {entry === 'active' ? 'Active lots' : 'Completed lots'}
+              </button>
+            ))}
+          </div>
+
+          {filtered.length === 0 ? (
+            <p className="muted">No {statusFilter} lots.</p>
+          ) : (
+            filtered.map((summary) => (
+              <LotCard key={summary.lot.id} summary={summary} store={store}
+                onOpen={() => setOpenId(summary.lot.id)} />
+            ))
+          )}
+        </>
       )}
     </div>
   );
+}
+
+/**
+ * A lid colour per lot, stable across reloads and filtering.
+ *
+ * Hashed off the id rather than the list position, so a lot does not change
+ * colour when another one above it leaves the filtered view.
+ */
+const CARTON_HUES = ['violet', 'coral', 'aqua', 'blue', 'pink', 'lime'] as const;
+function hueOf(id: string): (typeof CARTON_HUES)[number] {
+  let sum = 0;
+  for (let i = 0; i < id.length; i++) sum += id.charCodeAt(i);
+  return CARTON_HUES[sum % CARTON_HUES.length]!;
 }
 
 /** The numbers on a lot card that open the people behind them. */
@@ -1647,30 +1684,27 @@ function LotCard({ summary, store, onOpen }: {
       );
   };
 
+  const hue = hueOf(lot.id);
+
   return (
-    <article className={`lot${lot.stage === 'ordering' ? '' : ' lot--moving'}`}>
-      <div className="lot__head">
+    <article className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}`}>
+      {/* The lid: what the box is called and where it is going. Clicking it,
+          or the arrow on it, is the only way in — the body below is for
+          reading, not for opening the lot. */}
+      <div className="lot__head" role="button" tabIndex={0} onClick={onOpen}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
+        }}>
         <span className="lot__title">
           <span className="lot__name">
-            {lot.lotNumber && <span className="lot__no">LOT {lot.lotNumber}</span>}
+            {lot.lotNumber && <span className="lot__no">#LOT{lot.lotNumber}</span>}
             {lot.name}
           </span>
-          <span className="faint">
-            {[
-              lot.origin || null,
-              summary.orderCount > 0 ? `${summary.orderCount} items` : null,
-              routeOf(lot).name,
-              lot.forwarder?.trackingReference ?? null,
-            ].filter(Boolean).join(' · ')}
-          </span>
+          <span className="faint">{laneOf(lot)}</span>
         </span>
-        <span className={`badge badge--${lot.stage === 'delivered' ? 'ok' : 'warn'}`}>
-          {LOT_STAGE_LABELS[lot.stage]}
-        </span>
-        {/* The way in. A card is a summary you read; this is the lot you work. */}
-        <button type="button" className="lot__enter" onClick={onOpen}
+        <button type="button" className="lot__enter" onClick={(event) => { event.stopPropagation(); onOpen(); }}
           aria-label={`Open ${lot.name}`}>
-          <Icon name="right" size={18} />
+          <Icon name="external" size={17} />
         </button>
       </div>
 
@@ -1686,19 +1720,30 @@ function LotCard({ summary, store, onOpen }: {
         <strong>{currentStepName(lot)}</strong>
         <span className="faint">· {PHASE_LABELS[phase]}</span>
       </div>
-      {(supplierIdOf(lot) || lot.handler?.name) && (
-        <div className="lot__crew">
-          {supplierIdOf(lot) && <span className="chipfact">Supplier tagged</span>}
-          {lot.handler?.name && <span className="chipfact">Handler: {lot.handler.name}</span>}
-        </div>
-      )}
+      <span className="faint" style={{ padding: '0 14px', display: 'block', marginTop: -4 }}>
+        {[
+          summary.orderCount > 0 ? `${summary.orderCount} orders` : null,
+          routeOf(lot).name,
+          lot.forwarder?.trackingReference ?? null,
+        ].filter(Boolean).join(' · ')}
+      </span>
+
+      {/* Who is working this lot, always shown — "Not assigned" is a real
+          answer, not a gap to hide until it is filled in. */}
+      <dl className="factlist" style={{ padding: '10px 14px 0' }}>
+        <div><dt>Supplier</dt><dd>{lot.supplier?.name || 'Not assigned'}</dd></div>
+        <div><dt>Freight forwarder</dt><dd>{lot.forwarder?.name || 'Not assigned'}</dd></div>
+        <div><dt>Domestic handler</dt><dd>{lot.handler?.name || 'Not assigned'}</dd></div>
+      </dl>
 
       {/* Everything a lot card can say, once it is asked. Shut by default
           because a seller with nine lots is looking for one of them. */}
       <button type="button" className="lot__more" aria-expanded={open}
         onClick={() => setOpen(!open)}>
         <Icon name={open ? 'down' : 'right'} size={13} />
-        {open ? 'Less' : `${tally.customers} ${tally.customers === 1 ? 'customer' : 'customers'} · ${countOf(tally, 'packed').done} packed · ${tally.customersDispatched} sent`}
+        {open
+          ? 'Less'
+          : <><Icon name="users" size={12} /> {tally.customers} {tally.customers === 1 ? 'customer' : 'customers'} · {summary.orderCount} {summary.orderCount === 1 ? 'order' : 'orders'}</>}
       </button>
 
       {open && summary.orderCount === 0 && (
@@ -1707,6 +1752,10 @@ function LotCard({ summary, store, onOpen }: {
 
       {open && summary.orderCount > 0 && (
         <div className="lot__body">
+          <div className="tiles tiles--big">
+            <Tile value={String(tally.customers)} label="Customers" />
+            <Tile value={String(summary.orderCount)} label="Orders" />
+          </div>
           <div className="tiles">
             <Tile
               value={String(tally.customers)}

@@ -1907,6 +1907,23 @@ code, kbd, samp, pre {
    is on a plane, so the card is a name, a stage and a tracking number. */
 .lot--moving { border-color: rgba(251, 191, 36, 0.3); }
 
+/* The lid: a coloured cap on the box, tapped to open the lot. The hue is
+   cosmetic (which box is which at a glance in a long list), so it only ever
+   touches the lid's own background — never a status colour anywhere else on
+   the card. */
+.lot--carton .lot__head {
+  cursor: pointer;
+  transition: filter var(--dur-1, 0.15s) var(--ease, ease), transform var(--dur-1, 0.15s) var(--ease, ease);
+}
+.lot--carton .lot__head:hover { filter: brightness(1.08); }
+.lot--carton .lot__head:active { transform: scale(0.994); }
+.lot--violet .lot__head { background: var(--violet-soft); border-bottom: 2px solid var(--violet-line); }
+.lot--coral .lot__head  { background: var(--coral-soft);  border-bottom: 2px solid var(--coral-line); }
+.lot--aqua .lot__head   { background: var(--aqua-soft);   border-bottom: 2px solid var(--aqua-line); }
+.lot--blue .lot__head   { background: var(--blue-soft);   border-bottom: 2px solid var(--blue-line); }
+.lot--pink .lot__head   { background: var(--pink-soft);   border-bottom: 2px solid var(--pink-line); }
+.lot--lime .lot__head   { background: var(--lime-soft);   border-bottom: 2px solid var(--lime-line); }
+
 .lot__head {
   display: flex; align-items: center; gap: 10px;
   width: 100%;
