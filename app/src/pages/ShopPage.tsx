@@ -7,6 +7,7 @@ import {
 } from '@shared/enums';
 import { countOf, type LotTally } from '@shared/board';
 import { CATEGORIES } from '@shared/catalog';
+import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
@@ -15,7 +16,7 @@ import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
 import {
-  BUILT_IN_ROUTE, currentStepName, laneOf, preSteps as preStepsOf, routeOf, suggestLotName,
+  BUILT_IN_ROUTE, currentStepName, preSteps as preStepsOf, routeOf, suggestLotName,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
@@ -36,7 +37,7 @@ import {
   type ProviderCard,
   type RoutesResponse,
 } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
 import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
@@ -1622,6 +1623,17 @@ function hueOf(id: string): (typeof CARTON_HUES)[number] {
   return CARTON_HUES[sum % CARTON_HUES.length]!;
 }
 
+/** The one status pill on a carton, from the same phase the bars beneath it chart. */
+const PHASE_PILL: Record<ReturnType<typeof phaseOfCounts>, { label: string; icon: IconName; tone: 'ok' | 'info' | 'warn' | 'accent' }> = {
+  empty: { label: 'Not started', icon: 'box', tone: 'warn' },
+  filling: { label: 'Filling', icon: 'box', tone: 'warn' },
+  prepping: { label: 'At Origin', icon: 'tag', tone: 'info' },
+  china_done: { label: 'Dispatched', icon: 'truck', tone: 'info' },
+  india: { label: 'In Transit', icon: 'truck', tone: 'ok' },
+  domestic: { label: 'Out for Delivery', icon: 'truck', tone: 'ok' },
+  completed: { label: 'Delivered', icon: 'check', tone: 'accent' },
+};
+
 /** The numbers on a lot card that open the people behind them. */
 type Drill = 'customers' | 'packed' | 'dispatched';
 
@@ -1686,6 +1698,8 @@ function LotCard({ summary, store, onOpen }: {
 
   const hue = hueOf(lot.id);
 
+  const pill = PHASE_PILL[phase];
+
   return (
     <article className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}`}>
       {/* The lid: what the box is called and where it is going. Clicking it,
@@ -1695,46 +1709,55 @@ function LotCard({ summary, store, onOpen }: {
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
         }}>
-        <span className="lot__title">
-          <span className="lot__name">
+        <div className="lot__headtop">
+          <span className="lot__title">
+            <span className="lot__name">{lot.name}</span>
             {lot.lotNumber && <span className="lot__no">#LOT{lot.lotNumber}</span>}
-            {lot.name}
           </span>
-          <span className="faint">{laneOf(lot)}</span>
+          <button type="button" className="lot__enter" onClick={(event) => { event.stopPropagation(); onOpen(); }}
+            aria-label={`Open ${lot.name}`}>
+            <Icon name="down" size={16} />
+          </button>
+        </div>
+        <span className="lot__lane">
+          <span className="lot__flag" aria-hidden="true">{countryFlag(lot.originCountry)}</span>
+          {lot.originCountry || 'Origin'}
+          <Icon name="right" size={12} />
+          <span className="lot__flag" aria-hidden="true">{countryFlag(lot.destinationCountry)}</span>
+          {lot.destinationCountry || 'Destination'}
         </span>
-        <button type="button" className="lot__enter" onClick={(event) => { event.stopPropagation(); onOpen(); }}
-          aria-label={`Open ${lot.name}`}>
-          <Icon name="external" size={17} />
-        </button>
       </div>
 
-      <div className="lot__bar" aria-hidden="true">
-        <span style={{ width: `${((LOT_STAGES.indexOf(lot.stage) + 1) / LOT_STAGES.length) * 100}%` }} />
+      {/* Where the lot actually is, in one glance, then who is working it -
+          "Not assigned" is a real answer here, not a gap to hide until it is
+          filled in. */}
+      <div className="lot__box">
+        <div className="lot__boxmain">
+          <span className={`lotpill lotpill--${pill.tone}`}>
+            <Icon name={pill.icon} size={13} /> {pill.label}
+          </span>
+
+          <dl className="factlist lot__facts">
+            <div><dt>Supplier</dt><dd className={lot.supplier?.name ? '' : 'is-unset'}>{lot.supplier?.name || 'Not assigned'}</dd></div>
+            <div><dt>Freight Forwarder</dt><dd className={lot.forwarder?.name ? '' : 'is-unset'}>{lot.forwarder?.name || 'Not assigned'}</dd></div>
+            <div><dt>Domestic Handler</dt><dd className={lot.handler?.name ? '' : 'is-unset'}>{lot.handler?.name || 'Not assigned'}</dd></div>
+          </dl>
+        </div>
+        {/* Purely decorative - the "this way up" of an actual carton. */}
+        <span className="lot__tape" aria-hidden="true">
+          <Icon name="up" size={13} />
+          <Icon name="up" size={13} />
+        </span>
       </div>
 
-      {/* Where the lot is on its own route, in the seller's words, and then
-          what the parcels inside it are doing - which is not the same question
-          and does not always have the same answer. */}
-      <div className="lot__status">
-        <span className={`lot__pip lot__pip--${phase}`} aria-hidden="true" />
-        <strong>{currentStepName(lot)}</strong>
-        <span className="faint">· {PHASE_LABELS[phase]}</span>
-      </div>
-      <span className="faint" style={{ padding: '0 14px', display: 'block', marginTop: -4 }}>
+      <span className="faint lot__extra">
         {[
+          `${currentStepName(lot)} · ${PHASE_LABELS[phase]}`,
           summary.orderCount > 0 ? `${summary.orderCount} orders` : null,
           routeOf(lot).name,
           lot.forwarder?.trackingReference ?? null,
         ].filter(Boolean).join(' · ')}
       </span>
-
-      {/* Who is working this lot, always shown — "Not assigned" is a real
-          answer, not a gap to hide until it is filled in. */}
-      <dl className="factlist" style={{ padding: '10px 14px 0' }}>
-        <div><dt>Supplier</dt><dd>{lot.supplier?.name || 'Not assigned'}</dd></div>
-        <div><dt>Freight forwarder</dt><dd>{lot.forwarder?.name || 'Not assigned'}</dd></div>
-        <div><dt>Domestic handler</dt><dd>{lot.handler?.name || 'Not assigned'}</dd></div>
-      </dl>
 
       {/* Everything a lot card can say, once it is asked. Shut by default
           because a seller with nine lots is looking for one of them. */}

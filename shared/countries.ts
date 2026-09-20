@@ -29,3 +29,31 @@ export const COUNTRIES: readonly string[] = [
   'Turkey', 'Turkmenistan', 'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom',
   'United States', 'Uruguay', 'Uzbekistan', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
 ];
+
+/**
+ * ISO 3166-1 alpha-2 code for each entry in `COUNTRIES`, same order - kept
+ * only to draw a flag. Nothing else needs a code: everything upstream of this
+ * stores and reads the plain name, which is what a route step's own words
+ * ("Received at 'China' Dispatch Center") are built from.
+ */
+const COUNTRY_ISO2 = (
+  'AF AL DZ AD AO AR AM AU AT AZ BS BH BD BB BY BE BZ BJ BT BO BA BW BR BN BG BF BI KH CM CA TD CL CN '
+  + 'CO KM CG CR HR CU CY CZ DK DJ DM DO EC EG SV EE ET FJ FI FR GA GM GE DE GH GR GD GT GN GY HT HN HK HU '
+  + 'IS IN ID IR IQ IE IL IT JM JP JO KZ KE KW KG LA LV LB LS LR LY LI LT LU MO MG MW MY MV ML MT MR MU MX '
+  + 'MD MC MN ME MA MZ MM NA NP NL NZ NI NE NG KP MK NO OM PK PA PG PY PE PH PL PT QA RO RU RW SA SN RS SC '
+  + 'SL SG SK SI SO ZA KR SS ES LK SD SR SE CH SY TW TJ TZ TH TG TT TN TR TM UG UA AE GB US UY UZ VE VN YE ZM ZW'
+).split(' ');
+
+const FLAG_CODE_BY_COUNTRY = new Map(COUNTRIES.map((name, i) => [name, COUNTRY_ISO2[i]!]));
+
+/**
+ * A country's flag, drawn from its two-letter code as the pair of Unicode
+ * regional-indicator symbols every current OS renders as that flag - so
+ * nothing here stores or ships an emoji character directly. Falls back to a
+ * globe for a country typed before the list existed, or none at all.
+ */
+export function countryFlag(country: string | null | undefined): string {
+  const code = country ? FLAG_CODE_BY_COUNTRY.get(country.trim()) : undefined;
+  if (!code) return '🌐';
+  return [...code].map((letter) => String.fromCodePoint(0x1F1E6 + letter.charCodeAt(0) - 65)).join('');
+}
