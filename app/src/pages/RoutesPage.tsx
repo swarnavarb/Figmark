@@ -194,6 +194,9 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
             description: step.description.trim(),
             side: sideOf(step, index),
             trigger: step.trigger,
+            stageId: step.stageId,
+            stageName: step.stageName,
+            stageIcon: step.stageIcon,
           })),
       });
       onSaved();

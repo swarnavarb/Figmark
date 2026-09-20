@@ -2,8 +2,9 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { isLotEvent, kindOf } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
-import { stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
+import { groupStages, stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
 import { Icon } from './Icon';
+import { STAGE_ICON_META } from './RouteBuilder';
 
 /**
  * A route, drawn.
@@ -49,6 +50,20 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
   const notes = notesByStep(steps, history ?? []);
   const editable = Boolean(onMove || onNote);
 
+  /*
+   * Stage headers, drawn only where the seller actually grouped steps.
+   *
+   * `groupStages` folds every step with no `stageId` into a box of one, which
+   * is right for the builder (nothing to group, nothing missing) and wrong
+   * here: heading every rung with its own name would repeat what is already
+   * on it. So only a step that starts an explicitly-named stage gets one.
+   */
+  const stageStarts = new Map(
+    groupStages(steps)
+      .filter((group) => group.steps[0]!.step.stageId)
+      .map((group) => [group.steps[0]!.index, group] as const),
+  );
+
   async function send(at: number) {
     const text = draft.trim();
     if (!text || !onNote) return;
@@ -64,8 +79,15 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
            in progress: the present is the wait drawn under it. */
         const state = waitingFor && index === current ? 'done' : stepStateAt(index, current);
         const said = notes.get(index) ?? [];
+        const stage = stageStarts.get(index);
         return (
           <Fragment key={step.id}>
+          {stage && (
+            <li className="ladder__stage" aria-hidden="true">
+              <Icon name={STAGE_ICON_META[stage.stageIcon ?? 'warehouse'].icon} size={14} />
+              <span>{stage.stageName}</span>
+            </li>
+          )}
           <li className={`ladder__row is-${state}`}>
             <span className="ladder__dot" aria-hidden="true">
               {state === 'done' ? '✓' : state === 'current' ? '●' : ''}

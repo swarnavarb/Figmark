@@ -57,6 +57,24 @@ export type StepSide = 'pre' | 'post';
  */
 export type StepTrigger = OrderCheckpoint;
 
+/**
+ * Which kind of leg a stage box represents, for the icon on it.
+ *
+ * Purely cosmetic - it groups the same steps a route always had, it does not
+ * add a second thing to track. A step with no stage renders as a stage of
+ * one, which is how every route written before stages existed still opens.
+ */
+export const STAGE_ICONS = ['supplier', 'warehouse', 'transit', 'customs', 'delivery'] as const;
+export type StageIcon = (typeof STAGE_ICONS)[number];
+
+export const STAGE_ICON_LABELS: Record<StageIcon, string> = {
+  supplier: 'Supplier / exporter',
+  warehouse: 'Warehouse / forwarder',
+  transit: 'In transit',
+  customs: 'Customs',
+  delivery: 'Delivery',
+};
+
 /** What each trigger button says, and what pressing it means. */
 export const TRIGGER_LABELS: Record<StepTrigger, { button: string; means: string }> = {
   china_received: { button: 'China WH', means: 'the piece arrived at the overseas warehouse' },
@@ -96,6 +114,18 @@ export interface RouteStep {
    * existing tick becomes the thing that writes the buyer's tracking.
    */
   trigger?: StepTrigger;
+  /**
+   * The stage box this step is drawn inside, on the visual builder.
+   *
+   * Consecutive steps sharing a `stageId` render as one box; a step with none
+   * is its own box. Grouping only - it changes nothing about `side`,
+   * `trigger` or how the step is tracked, so a route saved before stages
+   * existed opens exactly as it always did.
+   */
+  stageId?: string;
+  /** The stage's name, carried on every step in it. */
+  stageName?: string;
+  stageIcon?: StageIcon;
 }
 
 /**
@@ -296,6 +326,10 @@ interface PresetStep {
   side: StepSide;
   /** The button that advances an item to it, where a button can. */
   trigger?: StepTrigger;
+  /** Which stage box this step opens grouped into, on the visual builder. */
+  stageId?: string;
+  stageName?: string;
+  stageIcon?: StageIcon;
 }
 
 export interface RoutePreset {
@@ -396,29 +430,40 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
  * describe. It is an event now, drawn where it happened.
  */
 export const SUGGESTED_STEPS: readonly PresetStep[] = [
-  { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+  {
+    name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre',
+    stageId: 'supplier', stageName: 'Supplier / Exporter', stageIcon: 'supplier',
+  },
   {
     name: 'Received at international warehouse',
     description: 'The piece is counted in and waiting for a lot.',
-    side: 'pre',
-    trigger: 'china_received',
-  },
-  { name: 'Dispatched from China', description: 'The lot has left the warehouse.', side: 'post' },
-  { name: 'International transit', description: 'On its way out of the country.', side: 'post' },
-  { name: 'Indian customs', description: 'Clearing customs on arrival.', side: 'post' },
-  {
-    name: 'Received by seller',
-    description: 'Landed, and with the shop.',
-    side: 'post',
-    trigger: 'india_received',
+    side: 'pre', trigger: 'china_received',
+    stageId: 'supplier', stageName: 'Supplier / Exporter', stageIcon: 'supplier',
   },
   {
-    name: 'Domestic dispatch',
-    description: 'Handed to the courier for the last leg.',
-    side: 'post',
-    trigger: 'dispatched',
+    name: 'Dispatched from China', description: 'The lot has left the warehouse.', side: 'post',
+    stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse',
   },
-  { name: 'Delivered', description: 'It reached you.', side: 'post' },
+  {
+    name: 'International transit', description: 'On its way out of the country.', side: 'post',
+    stageId: 'transit', stageName: 'International Transit', stageIcon: 'transit',
+  },
+  {
+    name: 'Indian customs', description: 'Clearing customs on arrival.', side: 'post',
+    stageId: 'domestic', stageName: 'Domestic', stageIcon: 'customs',
+  },
+  {
+    name: 'Received by seller', description: 'Landed, and with the shop.', side: 'post', trigger: 'india_received',
+    stageId: 'domestic', stageName: 'Domestic', stageIcon: 'customs',
+  },
+  {
+    name: 'Domestic dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched',
+    stageId: 'domestic', stageName: 'Domestic', stageIcon: 'customs',
+  },
+  {
+    name: 'Delivered', description: 'It reached you.', side: 'post',
+    stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery',
+  },
 ];
 
 /** Ids that are stable for a saved step and unique within a route. */
@@ -448,9 +493,49 @@ export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[
       trigger: ORDER_CHECKPOINTS.includes(step.trigger as OrderCheckpoint)
         ? (step.trigger as StepTrigger)
         : undefined,
+      // Carried through like `side` and `trigger`: dropping it here would
+      // silently ungroup every stage box on the next save.
+      stageId: step.stageId?.trim() || undefined,
+      stageName: step.stageName?.trim() || undefined,
+      stageIcon: STAGE_ICONS.includes(step.stageIcon as StageIcon) ? (step.stageIcon as StageIcon) : undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));
+}
+
+/** One stage box: its steps, in order, with the position each one sits at. */
+export interface StageGroup {
+  stageId: string;
+  stageName: string;
+  stageIcon: StageIcon | undefined;
+  steps: { step: RouteStep; index: number }[];
+}
+
+/**
+ * Steps folded into their stage boxes, for the builder and for the buyer's
+ * timeline alike - one grouping, read the same way everywhere it is drawn.
+ *
+ * A step with no `stageId` is a box of one, named after itself: routes
+ * written before stages existed, and the built-in route, still draw
+ * correctly, just as one box per step.
+ */
+export function groupStages(steps: readonly RouteStep[]): StageGroup[] {
+  const groups: StageGroup[] = [];
+  steps.forEach((step, index) => {
+    const id = step.stageId ?? step.id;
+    const last = groups[groups.length - 1];
+    if (last && last.stageId === id) {
+      last.steps.push({ step, index });
+      return;
+    }
+    groups.push({
+      stageId: id,
+      stageName: step.stageName ?? step.name,
+      stageIcon: step.stageIcon,
+      steps: [{ step, index }],
+    });
+  });
+  return groups;
 }
 
 /** The route this lot travels: its own, or the one that has always been here. */

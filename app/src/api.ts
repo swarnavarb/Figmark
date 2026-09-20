@@ -10,7 +10,7 @@ import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
-import type { RouteStep, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
+import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
@@ -1088,7 +1088,10 @@ export const api = {
   saveRoute: (body: {
     id?: string;
     name: string;
-    steps: { id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+    steps: {
+      id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+      stageId?: string; stageName?: string; stageIcon?: StageIcon;
+    }[];
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),
