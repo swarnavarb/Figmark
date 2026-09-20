@@ -1,8 +1,8 @@
 name: Build and deploy
 
 on:
-  # Every branch is built and verified; only main deploys (see the deploy job's
-  # condition below).
+  # Every branch is built and verified; only main and development deploy (see
+  # the deploy jobs' conditions below).
   push:
   pull_request:
     types: [opened, synchronize, reopened, closed]
@@ -65,10 +65,10 @@ jobs:
   deploy:
     name: Deploy to Static Web Apps
     needs: build
-    # main is the production branch: only it and manual runs deploy. Other
-    # branches are built and verified above but never published. Compared
-    # against github.ref rather than ref_name so a tag named "main" cannot
-    # trigger a production deploy.
+    # main is the production branch: only it and manual runs deploy here. Other
+    # branches are built and verified above but never published by this job.
+    # Compared against github.ref rather than ref_name so a tag named "main"
+    # cannot trigger a production deploy.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -98,6 +98,43 @@ jobs:
           output_location: ''
           skip_app_build: true
           skip_api_build: true
+          # Explicit so the action always treats main as production, regardless
+          # of which branch a workflow_dispatch run happens to be started from.
+          production_branch: main
+
+  deploy_development:
+    name: Deploy to Static Web Apps (development)
+    needs: build
+    # development is a permanent, stable non-production environment: every
+    # push to it deploys here, separately from the production job above.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+    runs-on: ubuntu-latest
+    environment:
+      name: development
+      url: ${{ steps.deploy.outputs.static_web_app_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: figmark-build
+
+      - name: Deploy
+        id: deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: app/dist
+          api_location: api
+          output_location: ''
+          skip_app_build: true
+          skip_api_build: true
+          # main stays production; deploying from "development" (not main)
+          # makes Azure publish this to its own stable branch environment
+          # instead of the production slot.
+          production_branch: main
 
   close_preview:
     name: Close pull request preview
