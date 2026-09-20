@@ -1921,6 +1921,7 @@ code, kbd, samp, pre {
   --carton-tape: #EAC873;
   background: var(--carton-bg);
   border-color: var(--carton-line-strong);
+  border-radius: var(--r-sm);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px rgba(0, 0, 0, 0.32);
   transition: transform var(--dur-1, 0.18s) var(--ease, ease), box-shadow var(--dur-1, 0.18s) var(--ease, ease);
 }
@@ -1932,7 +1933,7 @@ code, kbd, samp, pre {
 
 /* Two boxes to a shelf, phone included - each carton just gets narrower,
    so its contents restack below rather than being squeezed sideways. */
-.lot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+.lot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 @media (max-width: 640px) {
   .lot--carton .factlist > div { flex-direction: column; align-items: flex-start; gap: 0; }
   .lot--carton .factlist dd { text-align: left; }
@@ -2022,7 +2023,6 @@ code, kbd, samp, pre {
   transition: background var(--dur-1, 0.15s) var(--ease, ease), color var(--dur-1, 0.15s) var(--ease, ease);
 }
 .lot__more:hover { color: var(--carton-ink); background: rgba(54, 42, 26, 0.05); }
-.lot__more--back { border-top: 0; border-bottom: 1px solid var(--carton-line); }
 .lot__more svg:last-child { margin-left: auto; }
 .lot__count { display: inline-flex; align-items: center; gap: 4px; color: var(--carton-ink); }
 /* The one way in, spelled out - a card is a summary, this is the door. */
@@ -2082,9 +2082,9 @@ code, kbd, samp, pre {
 .lot--carton .tile {
   display: flex; align-items: center; justify-content: center; gap: 4px;
   min-width: 0; padding: 7px 4px;
-  background: #fff; border-color: var(--carton-line-strong);
+  background: #fff; border-color: var(--carton-line-strong); color: var(--carton-ink);
 }
-.lot--carton .tile__value { font-size: 15px; color: var(--carton-ink); }
+.lot--carton .tile__value { font-size: 15px; }
 .lot--carton .tile--tap:hover { background: #fff; border-color: var(--carton-dim); }
 .lot--carton .tile--tap.is-open { border-color: var(--carton-ink); background: #fff; }
 .lot--carton .bars { gap: 5px; }

@@ -1789,12 +1789,13 @@ function LotCard({ summary, store, onOpen }: {
 
         {/* Back: what's inside, once asked. */}
         <div className="lot__face lot__face--back" aria-hidden={!open}>
-          <button type="button" className="lot__more lot__more--back" onClick={() => setOpen(false)}>
-            <Icon name="left" size={13} /> Back
-          </button>
-
           {summary.orderCount === 0 ? (
-            <p className="lot__empty">Nothing in this lot yet.</p>
+            <>
+              <p className="lot__empty">Nothing in this lot yet.</p>
+              <button type="button" className="lot__more" onClick={() => setOpen(false)}>
+                <Icon name="left" size={13} /> Back
+              </button>
+            </>
           ) : (
             <div className="lot__body">
               <div className="lot__tiles lot__tiles--2">
@@ -1805,9 +1806,9 @@ function LotCard({ summary, store, onOpen }: {
                 <MiniTile icon="tag" value={String(countOf(tally, 'ready_to_dispatch').done)}
                   onClick={() => showHint('ready')} />
                 <MiniTile icon="check" value={String(countOf(tally, 'packed').done)} tone="blue"
-                  onClick={() => { drillInto('packed'); showHint('packed'); }} open={drill === 'packed'} />
+                  onClick={() => drillInto('packed')} open={drill === 'packed'} />
                 <MiniTile icon="truck" value={`${tally.customersDispatched}/${tally.customers}`} tone="green"
-                  onClick={() => { drillInto('dispatched'); showHint('dispatched'); }} open={drill === 'dispatched'} />
+                  onClick={() => drillInto('dispatched')} open={drill === 'dispatched'} />
               </div>
 
               {hint && <div key={hint.id} className="lot__hint">{hint.text}</div>}
@@ -1836,6 +1837,10 @@ function LotCard({ summary, store, onOpen }: {
                   </div>
                 ))}
               </div>
+
+              <button type="button" className="lot__more" onClick={() => setOpen(false)}>
+                <Icon name="left" size={13} /> Back
+              </button>
             </div>
           )}
         </div>
