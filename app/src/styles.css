@@ -1930,10 +1930,25 @@ code, kbd, samp, pre {
 }
 .lot--carton.lot--moving { border-color: var(--carton-line-strong); }
 
-/* Two boxes to a shelf on anything but a phone. */
-.lot-grid { display: grid; grid-template-columns: 1fr; gap: var(--s4); }
+/* Two boxes to a shelf, phone included - each carton just gets narrower,
+   so its contents restack below rather than being squeezed sideways. */
+.lot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
 @media (min-width: 640px) {
-  .lot-grid { grid-template-columns: 1fr 1fr; }
+  .lot-grid { gap: var(--s4); }
+}
+@media (max-width: 640px) {
+  .lot--carton .lot__name { font-size: var(--t-sm); }
+  .lot--carton .lot__lane { flex-wrap: wrap; font-size: var(--t-xs); }
+  .lot--carton .lot__box { padding: 12px 10px 4px; gap: 8px; }
+  .lot--carton .lot__tape { width: 18px; }
+  .lot--carton .factlist > div { flex-direction: column; align-items: flex-start; gap: 0; }
+  .lot--carton .factlist dd { text-align: left; }
+  .lot--carton .lot__foot { flex-direction: column; align-items: stretch; }
+  .lot--carton .tiles, .lot--carton .tiles--big { grid-template-columns: 1fr 1fr; }
+  .lot--carton .tile { min-width: 0; padding: 10px 6px; }
+  .lot--carton .tile__value { font-size: 20px; }
+  .lot--carton .tiles--big .tile__value { font-size: 24px; }
+  .lot--carton .tile__label { font-size: 9px; overflow-wrap: break-word; }
 }
 
 /* The lid: a coloured cap on the box, tapped to open the lot. The hue is
@@ -2053,12 +2068,12 @@ code, kbd, samp, pre {
   margin: 0; padding: 0 14px 12px;
   font-size: var(--t-xs); color: var(--carton-dim);
 }
-.lot__body { display: grid; gap: 12px; padding: 4px 14px 14px; }
+.lot__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 4px 14px 14px; }
 
 /* The flip: front and back share one grid cell (so the box is as tall as
    whichever face is bigger) and rotate past each other in opposite
    directions - a real turn, not a panel sliding open beneath the lid. */
-.lot--carton .lot__flip { display: grid; perspective: 1600px; }
+.lot--carton .lot__flip { display: grid; grid-template-columns: minmax(0, 1fr); perspective: 1600px; }
 .lot--carton .lot__face {
   grid-area: 1 / 1;
   min-width: 0;
@@ -2066,7 +2081,7 @@ code, kbd, samp, pre {
   transition: transform 0.5s cubic-bezier(0.4, 0.15, 0.2, 1);
 }
 .lot--carton .lot__face--front { transform: rotateY(0deg); }
-.lot--carton .lot__face--back { transform: rotateY(180deg); display: grid; align-content: start; }
+.lot--carton .lot__face--back { transform: rotateY(180deg); }
 .lot--carton.lot--flipped .lot__face--front { transform: rotateY(-180deg); }
 .lot--carton.lot--flipped .lot__face--back { transform: rotateY(0deg); }
 
