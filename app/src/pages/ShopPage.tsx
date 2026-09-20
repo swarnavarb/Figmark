@@ -16,7 +16,7 @@ import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
 import {
-  BUILT_IN_ROUTE, currentStepName, preSteps as preStepsOf, routeOf, suggestLotName,
+  BUILT_IN_ROUTE, preSteps as preStepsOf, suggestLotName,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
@@ -1716,17 +1716,15 @@ function LotCard({ summary, store, onOpen }: {
                 <span className="lot__name">{lot.name}</span>
                 {lot.lotNumber && <span className="lot__no">#LOT{lot.lotNumber}</span>}
               </span>
-              <button type="button" className="lot__enter" onClick={(event) => { event.stopPropagation(); onOpen(); }}
-                aria-label={`Open ${lot.name}`}>
-                <Icon name="down" size={16} />
-              </button>
+              {/* The current status, said once, at the top - not repeated below. */}
+              <span className={`lotpill lotpill--sm lotpill--${pill.tone}`}>
+                <Icon name={pill.icon} size={11} /> {pill.label}
+              </span>
             </div>
             <span className="lot__lane">
-              <span className="lot__flag" aria-hidden="true">{countryFlag(lot.originCountry)}</span>
-              {lot.originCountry || 'Origin'}
-              <Icon name="right" size={12} />
-              <span className="lot__flag" aria-hidden="true">{countryFlag(lot.destinationCountry)}</span>
-              {lot.destinationCountry || 'Destination'}
+              <span className="lot__tag"><span className="lot__flag" aria-hidden="true">{countryFlag(lot.originCountry)}</span>{lot.originCountry || 'Origin'}</span>
+              <Icon name="right" size={11} />
+              <span className="lot__tag"><span className="lot__flag" aria-hidden="true">{countryFlag(lot.destinationCountry)}</span>{lot.destinationCountry || 'Destination'}</span>
             </span>
             {/* The fold where an open flap meets the box - drawn, not photographed. */}
             <svg className="lot__crease" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
@@ -1735,48 +1733,29 @@ function LotCard({ summary, store, onOpen }: {
           </div>
 
           <div className="lot__box">
-            <div className="lot__boxmain">
-              <span className={`lotpill lotpill--${pill.tone}`}>
-                <Icon name={pill.icon} size={13} /> {pill.label}
-              </span>
-
-              <dl className="factlist lot__facts">
-                <div><dt>Supplier</dt><dd className={lot.supplier?.name ? '' : 'is-unset'}>{lot.supplier?.name || 'Not assigned'}</dd></div>
-                <div><dt>Freight Forwarder</dt><dd className={lot.forwarder?.name ? '' : 'is-unset'}>{lot.forwarder?.name || 'Not assigned'}</dd></div>
-                <div><dt>Domestic Handler</dt><dd className={lot.handler?.name ? '' : 'is-unset'}>{lot.handler?.name || 'Not assigned'}</dd></div>
-              </dl>
-            </div>
-            {/* Purely decorative - the "this way up" of an actual carton. */}
-            <span className="lot__tape" aria-hidden="true">
-              <Icon name="up" size={13} />
-              <Icon name="up" size={13} />
-            </span>
+            <dl className="factlist lot__facts">
+              <div><dt>Supplier</dt><dd className={lot.supplier?.name ? '' : 'is-unset'}>{lot.supplier?.name || 'Not assigned'}</dd></div>
+              <div><dt>Freight Forwarder</dt><dd className={lot.forwarder?.name ? '' : 'is-unset'}>{lot.forwarder?.name || 'Not assigned'}</dd></div>
+              <div><dt>Domestic Handler</dt><dd className={lot.handler?.name ? '' : 'is-unset'}>{lot.handler?.name || 'Not assigned'}</dd></div>
+            </dl>
           </div>
-
-          <span className="faint lot__extra">
-            {[
-              `${currentStepName(lot)} · ${PHASE_LABELS[phase]}`,
-              routeOf(lot).name,
-              lot.forwarder?.trackingReference ?? null,
-            ].filter(Boolean).join(' · ')}
-          </span>
 
           {/* Flips the box over to show what's inside. */}
           <button type="button" className="lot__more" aria-expanded={open} onClick={() => setOpen(true)}>
-            <Icon name="users" size={12} /> {tally.customers} {tally.customers === 1 ? 'customer' : 'customers'} · {summary.orderCount} {summary.orderCount === 1 ? 'order' : 'orders'}
+            <span className="lot__count"><Icon name="users" size={12} />{tally.customers}</span>
+            <span className="lot__count"><Icon name="box" size={12} />{summary.orderCount}</span>
             <Icon name="right" size={13} />
           </button>
 
-          <div className="lot__foot">
-            <button type="button" className="btn btn--quiet btn--sm" onClick={onOpen}>Edit lot</button>
-            <Link to={board} className="btn btn--ghost btn--sm">Packing board →</Link>
-          </div>
+          <button type="button" className="lot__open" onClick={onOpen}>
+            Open <Icon name="right" size={13} />
+          </button>
         </div>
 
         {/* Back: what's inside, once asked. */}
         <div className="lot__face lot__face--back" aria-hidden={!open}>
           <button type="button" className="lot__more lot__more--back" onClick={() => setOpen(false)}>
-            <Icon name="left" size={13} /> Back to {lot.name}
+            <Icon name="left" size={13} /> Back
           </button>
 
           {summary.orderCount === 0 ? (

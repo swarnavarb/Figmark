@@ -1933,22 +1933,11 @@ code, kbd, samp, pre {
 /* Two boxes to a shelf, phone included - each carton just gets narrower,
    so its contents restack below rather than being squeezed sideways. */
 .lot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
-@media (min-width: 640px) {
-  .lot-grid { gap: var(--s4); }
-}
 @media (max-width: 640px) {
-  .lot--carton .lot__name { font-size: var(--t-sm); }
-  .lot--carton .lot__lane { flex-wrap: wrap; font-size: var(--t-xs); }
-  .lot--carton .lot__box { padding: 12px 10px 4px; gap: 8px; }
-  .lot--carton .lot__tape { width: 18px; }
   .lot--carton .factlist > div { flex-direction: column; align-items: flex-start; gap: 0; }
   .lot--carton .factlist dd { text-align: left; }
-  .lot--carton .lot__foot { flex-direction: column; align-items: stretch; }
   .lot--carton .tiles, .lot--carton .tiles--big { grid-template-columns: 1fr 1fr; }
-  .lot--carton .tile { min-width: 0; padding: 10px 6px; }
-  .lot--carton .tile__value { font-size: 20px; }
-  .lot--carton .tiles--big .tile__value { font-size: 24px; }
-  .lot--carton .tile__label { font-size: 9px; overflow-wrap: break-word; }
+  .lot--carton .tile__label { overflow-wrap: break-word; }
 }
 
 /* The lid: a coloured cap on the box, tapped to open the lot. The hue is
@@ -1959,7 +1948,7 @@ code, kbd, samp, pre {
 .lot--carton .lot__head {
   position: relative;
   cursor: pointer;
-  padding-bottom: 20px;
+  padding-bottom: 15px;
   box-shadow: inset 0 -14px 12px -10px rgba(0, 0, 0, 0.22);
   transition: filter var(--dur-1, 0.15s) var(--ease, ease);
 }
@@ -1968,7 +1957,7 @@ code, kbd, samp, pre {
 /* The crease of a flap folded shut, drawn as one stroke rather than shipped
    as an image - cheap, and it recolours itself with the lid for free. */
 .lot__crease {
-  position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 9px;
+  position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 8px;
   color: rgba(0, 0, 0, 0.24);
 }
 .lot--violet .lot__head { background: var(--violet); color: var(--violet-ink); }
@@ -1979,27 +1968,15 @@ code, kbd, samp, pre {
 .lot--lime .lot__head   { background: var(--lime);   color: var(--lime-ink); }
 
 .lot__head {
-  display: grid; gap: 8px;
+  display: grid; gap: 6px;
   width: 100%;
-  padding: 14px 14px 12px;
+  padding: 10px 12px 8px;
   text-align: left;
 }
-.lot__headtop { display: flex; align-items: flex-start; gap: 10px; }
+.lot__headtop { display: flex; align-items: center; gap: 8px; }
 .lot__title { flex: 1; min-width: 0; display: grid; gap: 1px; }
-/* The way into the lot. A card is a summary you read; the arrow is the lot
-   you work, and it is the same arrow on every card whatever stage it is at. */
-.lot__enter {
-  flex: 0 0 auto;
-  width: 30px; height: 30px; padding: 0;
-  display: grid; place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 50%;
-  background: rgba(255, 255, 255, 0.22); color: inherit;
-  cursor: pointer;
-  transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
-}
-.lot__enter:hover { background: rgba(255, 255, 255, 0.36); transform: translateY(1px); }
 .lot__name {
-  font-size: var(--t-md); font-weight: var(--w-bold); letter-spacing: -0.01em;
+  font-size: var(--t-sm); font-weight: var(--w-bold); letter-spacing: -0.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lot__no {
@@ -2007,38 +1984,30 @@ code, kbd, samp, pre {
   font-variant-numeric: tabular-nums;
 }
 .lot__lane {
-  display: flex; align-items: center; gap: 5px;
-  font-size: var(--t-sm); font-weight: var(--w-medium); opacity: 0.95;
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  font-size: var(--t-xs); font-weight: var(--w-medium); opacity: 0.95;
 }
-.lot__flag { font-size: 17px; line-height: 1; }
+/* A country, tagged rather than spelled out in a sentence - each side of
+   the lane is its own small chip, auto-filled from the lot's own record. */
+.lot__tag {
+  display: inline-flex; align-items: center; gap: 3px; min-width: 0; max-width: 46%;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lot__flag { font-size: 13px; line-height: 1; }
 
 /* Where the lot actually is, and who is working it. Always shown, whatever
    the card's open/shut state — the box, not a drawer inside it. */
-.lot__box { display: flex; align-items: stretch; gap: 12px; padding: 13px 14px 4px; }
-.lot__boxmain { flex: 1; min-width: 0; display: grid; gap: 10px; }
-.lot__facts { color: var(--carton-ink); }
+.lot__box { padding: 8px 12px 2px; }
+.lot--carton .lot__facts { gap: 5px; color: var(--carton-ink); }
 .lot--carton .factlist dt { color: var(--carton-dim); }
 .lot--carton .factlist dd { color: var(--carton-ink); font-weight: var(--w-medium); }
 .lot--carton .factlist dd.is-unset { color: var(--carton-dim); font-weight: 400; font-style: italic; }
-/* Purely decorative: the "this way up" arrows of an actual parcel, printed
-   on a strip of tape down the side of the box. */
-.lot__tape {
-  flex: 0 0 auto; width: 26px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  border-radius: var(--r-sm);
-  background: var(--carton-tape);
-  background-image: repeating-linear-gradient(
-    135deg, rgba(255, 255, 255, 0.35) 0 6px, transparent 6px 12px
-  );
-  color: rgba(54, 42, 26, 0.55);
-}
-.lot__extra {
-  display: block; padding: 8px 14px 0;
-  color: var(--carton-dim);
-}
 
-/* The status pill: one badge, one colour, one fact - not a dot beside a
-   sentence beside a second badge. */
+/* The status pill: one badge, one colour, one fact, said once at the top of
+   the lid - not repeated as a sentence further down the card. */
 .lotpill {
   display: inline-flex; align-items: center; gap: 6px;
   width: fit-content;
@@ -2046,6 +2015,7 @@ code, kbd, samp, pre {
   border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: var(--w-semi);
 }
+.lotpill--sm { flex: 0 0 auto; padding: 3px 8px; gap: 4px; font-size: var(--t-2xs); white-space: nowrap; }
 .lotpill--ok { background: linear-gradient(135deg, #34D399, #10B981); color: #04251A; }
 .lotpill--info { background: linear-gradient(135deg, #60A5FA, #3B82F6); color: #fff; }
 .lotpill--warn { background: linear-gradient(135deg, #FBBF24, #F59E0B); color: #2B1D00; }
@@ -2055,8 +2025,8 @@ code, kbd, samp, pre {
    whatever stage the lot is at: a card that changes shape as its lot moves is
    two components wearing one name. */
 .lot__more {
-  display: flex; align-items: center; gap: 7px;
-  width: 100%; padding: 11px 14px;
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 12px;
   border: 0; border-top: 1px solid var(--carton-line); background: none;
   color: var(--carton-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi);
   text-align: left; cursor: pointer;
@@ -2064,11 +2034,24 @@ code, kbd, samp, pre {
 }
 .lot__more:hover { color: var(--carton-ink); background: rgba(54, 42, 26, 0.05); }
 .lot__more--back { border-top: 0; border-bottom: 1px solid var(--carton-line); }
+.lot__more svg:last-child { margin-left: auto; }
+.lot__count { display: inline-flex; align-items: center; gap: 4px; color: var(--carton-ink); }
+/* The one way in, spelled out - a card is a summary, this is the door. */
+.lot__open {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 9px 12px;
+  border: 0; border-top: 1px solid var(--carton-line);
+  background: rgba(54, 42, 26, 0.06); color: var(--carton-ink);
+  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi);
+  cursor: pointer;
+  transition: background var(--dur-1, 0.15s) var(--ease, ease);
+}
+.lot__open:hover { background: rgba(54, 42, 26, 0.12); }
 .lot__empty {
-  margin: 0; padding: 0 14px 12px;
+  margin: 0; padding: 0 12px 12px;
   font-size: var(--t-xs); color: var(--carton-dim);
 }
-.lot__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 4px 14px 14px; }
+.lot__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 4px 12px 12px; }
 
 /* The flip: front and back share one grid cell (so the box is as tall as
    whichever face is bigger) and rotate past each other in opposite
@@ -2085,25 +2068,15 @@ code, kbd, samp, pre {
 .lot--carton.lot--flipped .lot__face--front { transform: rotateY(-180deg); }
 .lot--carton.lot--flipped .lot__face--back { transform: rotateY(0deg); }
 
-.lot--carton .tile { background: #fff; border-color: var(--carton-line-strong); }
-.lot--carton .tile__value, .lot--carton .tile__label { color: var(--carton-ink); }
+.lot--carton .tile { min-width: 0; padding: 8px 6px; background: #fff; border-color: var(--carton-line-strong); }
+.lot--carton .tile__value { font-size: 18px; color: var(--carton-ink); }
+.lot--carton .tiles--big .tile__value { font-size: 24px; }
+.lot--carton .tile__label { color: var(--carton-ink); }
 .lot--carton .tile--tap:hover { background: #fff; border-color: var(--carton-dim); }
 .lot--carton .tile--tap.is-open { border-color: var(--carton-ink); background: #fff; }
 .lot--carton .bar__label, .lot--carton .bar__count { color: var(--carton-dim); }
 .lot--carton .bar__track { background: rgba(54, 42, 26, 0.1); }
 .lot--carton .drill { background: rgba(54, 42, 26, 0.05); border-color: var(--carton-line); }
-.lot__foot {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 9px 12px 10px;
-  border-top: 1px solid var(--carton-line);
-  background: rgba(54, 42, 26, 0.04);
-}
-.lot--carton .lot__foot .btn--quiet { color: var(--carton-dim); }
-.lot--carton .lot__foot .btn--quiet:hover { color: var(--carton-ink); background: rgba(54, 42, 26, 0.08); }
-.lot--carton .lot__foot .btn--ghost {
-  background: #fff; border-color: var(--carton-line-strong); color: var(--carton-ink);
-}
-.lot--carton .lot__foot .btn--ghost:hover { background: var(--carton-bg); }
 
 /*
  * The lot, said once and properly.
