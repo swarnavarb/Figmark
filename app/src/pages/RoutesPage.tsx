@@ -73,10 +73,12 @@ export function RoutesPage() {
 }
 
 /** A route in a list: its name, its shape, and where it changes hands. */
-function RouteRow({ name, steps, to, note }: {
+export function RouteRow({ name, steps, to, onClick, note }: {
   name: string;
   steps: RouteStep[];
   to?: string;
+  /** Open it in place, for callers that keep the route library on the same screen. */
+  onClick?: () => void;
   note?: string;
 }) {
   const join = joinIndexOf({ steps });
@@ -96,12 +98,12 @@ function RouteRow({ name, steps, to, note }: {
         </span>
         {note && <span className="rrow__note">{note}</span>}
       </span>
-      {to && <Icon name="right" size={16} />}
+      {(to || onClick) && <Icon name="right" size={16} />}
     </>
   );
-  return to
-    ? <Link to={to} className="rrow">{body}</Link>
-    : <div className="rrow rrow--fixed">{body}</div>;
+  if (to) return <Link to={to} className="rrow">{body}</Link>;
+  if (onClick) return <button type="button" className="rrow" onClick={onClick}>{body}</button>;
+  return <div className="rrow rrow--fixed">{body}</div>;
 }
 
 /* ── The editor ──────────────────────────────────────────────────────────── */

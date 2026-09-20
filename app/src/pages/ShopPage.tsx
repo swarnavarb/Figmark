@@ -10,7 +10,8 @@ import { CATEGORIES } from '@shared/catalog';
 import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
-import { RouteEditor } from './RoutesPage';
+import { RouteEditor, RouteRow } from './RoutesPage';
+import { SkeletonRows } from '../components/Feedback';
 import {
   PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
 } from '@shared/insights';
@@ -42,16 +43,12 @@ import { LotDetail, NewLotForm } from './LotsPage';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Section = 'items' | 'payments' | 'lots' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
-  // Payments was too narrow a name for what this screen does: money is one of
-  // six things an order needs answering about, and the other five had nowhere
-  // to live. The id stays `payments` - it is the identity, and renaming it
-  // would only be a way to break the rights that reference it.
-  { id: 'payments', label: 'Orders' },
-  { id: 'lots', label: 'Track' },
+  { id: 'lots', label: 'Lots' },
+  { id: 'routes', label: 'Routes' },
   { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
@@ -238,11 +235,8 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
   // worse than a tab that is not there.
   const visible = SECTIONS.filter((entry) => {
     if (entry.id === 'items') return store.permissions.includes('listings');
-    // Answering for money is an owner's call, so it rides on the same right
-    // the API checks rather than on a wider one.
-    if (entry.id === 'payments') return store.permissions.includes('admin');
     if (entry.id === 'analytics') return store.permissions.includes('analytics');
-    if (entry.id === 'lots') return store.permissions.includes('lots');
+    if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'packing') return store.permissions.includes('export');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     return true;
@@ -251,20 +245,13 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
 
   return (
     <main className="page tab-view">
-      <div className="page__head">
-        <div>
-          <h1>{store.name}</h1>
-          <p className="muted">
-            {store.isOwner ? 'Your shop.' : 'You help run this shop.'}{' '}
-            {store.permissions.length} of {STORE_PERMISSIONS.length} rights.
-          </p>
-        </div>
-        {/* No "list an item" here: the Items tab opens with that door, and the
-            same button twice on one screen is one too many. */}
-        {user?.escrowRights && (
+      {/* No "list an item" here: the Items tab opens with that door, and the
+          same button twice on one screen is one too many. */}
+      {user?.escrowRights && (
+        <div className="row" style={{ justifyContent: 'flex-end', marginBottom: 12 }}>
           <Link to="/escrow" className="btn btn--ghost btn--sm">{<Icon name="lock" size={13} />} Escrow</Link>
-        )}
-      </div>
+        </div>
+      )}
 
       {stores.length > 1 && (
         <label className="field" style={{ marginBottom: 14 }}>
@@ -297,9 +284,21 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       {/* Keyed so switching sections replays the entrance rather than swapping
           content underneath a static frame. */}
       <div className="tab-view" key={`${store.ownerId}:${active}`}>
-        {active === 'items' && <MyItems store={store} />}
-        {active === 'payments' && <Orders store={store} />}
-        {active === 'lots' && <Lots store={store} />}
+        {active === 'items' && (
+          <div className="stack">
+            <MyItems store={store} />
+            {/* Answering for money is an owner's call, so it rides on the same
+                right the API checks rather than on a wider one. */}
+            {store.permissions.includes('admin') && (
+              <>
+                <div style={{ fontWeight: 600 }}>Orders</div>
+                <Orders store={store} />
+              </>
+            )}
+          </div>
+        )}
+        {active === 'lots' && <Lots store={store} onRoutes={() => setSection('routes')} />}
+        {active === 'routes' && <RoutesPanel />}
         {active === 'packing' && <PackingList storeId={store.ownerId} />}
         {active === 'analytics' && <Analytics store={store} />}
         {active === 'storefront' && <StorefrontEditor />}
@@ -1422,7 +1421,7 @@ function RejectOrder({ row, onClose, onDone }: {
  * splitting "administer it" from "watch it" put a trip out of the tab between a
  * seller and the thing they were already looking at.
  */
-function Lots({ store }: { store: StoreAccess }) {
+function Lots({ store, onRoutes }: { store: StoreAccess; onRoutes: () => void }) {
   const [data, setData] = useState<LotsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1478,9 +1477,9 @@ function Lots({ store }: { store: StoreAccess }) {
           <button type="button" className="btn" onClick={() => setCreating(true)}>
             <Icon name="plus" size={15} /> New lot
           </button>
-          <Link to="/routes" className="btn btn--quiet">
+          <button type="button" className="btn btn--quiet" onClick={onRoutes}>
             <Icon name="truck" size={15} /> Routes
-          </Link>
+          </button>
         </div>
       )}
 
@@ -1508,6 +1507,78 @@ function Lots({ store }: { store: StoreAccess }) {
         data.lots.map((summary) => (
           <LotCard key={summary.lot.id} summary={summary} store={store} onOpen={() => setOpenId(summary.lot.id)} />
         ))
+      )}
+    </div>
+  );
+}
+
+/* ── Routes ──────────────────────────────────────────────────────────────── */
+
+/**
+ * The route library, without leaving the Sell tab.
+ *
+ * The same list and editor RoutesPage renders on its own URL, shown here in
+ * place so writing or picking a route is not a trip out of the shop console.
+ */
+function RoutesPanel() {
+  const [data, setData] = useState<RoutesResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | 'new' | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setData(await api.routes());
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your routes.');
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  if (editing) {
+    return (
+      <RouteEditor
+        editing={editing === 'new' ? null : editing}
+        onSaved={() => { setEditing(null); void load(); }}
+        onCancel={() => setEditing(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="stack">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <p className="muted" style={{ margin: 0 }}>
+          The steps a lot travels. Buyers read these words as their tracking.
+        </p>
+        <button type="button" className="btn" onClick={() => setEditing('new')}>
+          <Icon name="plus" size={14} /> New route
+        </button>
+      </div>
+
+      {error && <ErrorNotice message={error} />}
+      {!data && !error && <SkeletonRows count={4} />}
+
+      {data && (
+        <div className="rlist">
+          <RouteRow
+            name={data.builtIn.name}
+            steps={data.builtIn.steps}
+            note="Built in. Used by any lot that has not picked another."
+          />
+          {data.routes.map((route) => (
+            <RouteRow key={route.id} name={route.name} steps={route.steps}
+              onClick={() => setEditing(route.id)} />
+          ))}
+        </div>
+      )}
+
+      {data && data.routes.length === 0 && (
+        <EmptyState icon={<Icon name="truck" size={26} />} title="One route so far">
+          The built-in one covers a normal consolidated run. Write your own when a lot travels
+          differently — a courier parcel, a pre-order, a supplier who ships straight to your
+          forwarder.
+        </EmptyState>
       )}
     </div>
   );
