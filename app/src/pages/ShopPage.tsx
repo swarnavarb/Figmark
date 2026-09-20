@@ -59,6 +59,22 @@ const SECTIONS: { id: Section; label: string }[] = [
 ];
 
 /**
+ * Which sections belong to the same Sell-home card, so the chip bar under a
+ * card only ever shows the handful of screens that card promised - not all
+ * seven at once.
+ */
+const SECTION_GROUPS: Record<string, Section[]> = {
+  items: ['items', 'payments'],
+  manage: ['storefront', 'people', 'packing'],
+  lots: ['lots'],
+  analytics: ['analytics'],
+};
+
+function groupOf(section: Section): string {
+  return Object.entries(SECTION_GROUPS).find(([, ids]) => ids.includes(section))?.[0] ?? 'items';
+}
+
+/**
  * The sell tab, which is two different screens depending on where you are.
  *
  * Before a store exists there is exactly one thing to offer: open one. Items
@@ -225,11 +241,17 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
    * reads as the app having forgotten what you were doing.
    */
   const [params, setParams] = useSearchParams();
-  const section = (params.get('tab') ?? 'items') as Section;
+  const requested = params.get('tab');
   const setSection = (next: Section) =>
     setParams((current) => {
       const copy = new URLSearchParams(current);
       copy.set('tab', next);
+      return copy;
+    }, { replace: true });
+  const goHome = () =>
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      copy.delete('tab');
       return copy;
     }, { replace: true });
 
@@ -247,10 +269,28 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     return true;
   });
-  const active = visible.some((entry) => entry.id === section) ? section : visible[0]!.id;
+  // No tab, or a tab this store cannot open: the Sell-tab home, five cards and
+  // nothing else.
+  const active = visible.find((entry) => entry.id === requested)?.id ?? null;
+
+  if (active === null) {
+    return (
+      <main className="page tab-view">
+        <div className="page__head"><div><h1>Sell</h1></div></div>
+        <SellHome onGo={setSection} />
+      </main>
+    );
+  }
+
+  const chips = visible.filter((entry) => SECTION_GROUPS[groupOf(active)]!.includes(entry.id));
 
   return (
     <main className="page tab-view">
+      <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start', marginBottom: 10 }}
+        onClick={goHome}>
+        <Icon name="back" size={14} /> Sell
+      </button>
+
       <div className="page__head">
         <div>
           <h1>{store.name}</h1>
@@ -279,20 +319,22 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </label>
       )}
 
-      <div className="sections" role="tablist" aria-label="Shop sections">
-        {visible.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            aria-selected={active === entry.id}
-            className={`chip${active === entry.id ? ' is-on' : ''}`}
-            onClick={() => setSection(entry.id)}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
+      {chips.length > 1 && (
+        <div className="sections" role="tablist" aria-label="Shop sections">
+          {chips.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              aria-selected={active === entry.id}
+              className={`chip${active === entry.id ? ' is-on' : ''}`}
+              onClick={() => setSection(entry.id)}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Keyed so switching sections replays the entrance rather than swapping
           content underneath a static frame. */}
@@ -306,6 +348,57 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         {active === 'people' && <People store={store} onChanged={onChanged} />}
       </div>
     </main>
+  );
+}
+
+/**
+ * The Sell tab's front door: five cards instead of a name and a rights count
+ * nobody asked for.
+ *
+ * Two primary actions up top - the business, not the stock - then the
+ * workflow every import actually follows, drawn as the three things it is:
+ * items become part of a lot, and a lot follows a route. Routes lives outside
+ * this console entirely (`/routes`, unchanged), so that card is a plain link.
+ */
+function SellHome({ onGo }: { onGo: (section: Section) => void }) {
+  return (
+    <div className="stack">
+      <div className="doors doors--two">
+        <button type="button" className="door door--card door--analytics" onClick={() => onGo('analytics')}>
+          <span className="door__glyph" aria-hidden="true"><Icon name="spark" size={22} /></span>
+          <span className="door__title">Analytics</span>
+          <span className="door__note">Sales, views and trends for your shop.</span>
+        </button>
+        <button type="button" className="door door--card door--manage" onClick={() => onGo('storefront')}>
+          <span className="door__glyph" aria-hidden="true"><Icon name="bank" size={22} /></span>
+          <span className="door__title">Manage Store</span>
+          <span className="door__note">Your storefront, your team, and packing.</span>
+        </button>
+      </div>
+
+      <div className="workflow">
+        <span className="workflow__label">Workflow</span>
+        <div className="workflow__row">
+          <button type="button" className="workflow__step workflow__step--items" onClick={() => onGo('items')}>
+            <span className="workflow__glyph" aria-hidden="true"><Icon name="tag" size={20} /></span>
+            <span className="workflow__title">Items</span>
+          </button>
+          <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
+          <button type="button" className="workflow__step workflow__step--lots" onClick={() => onGo('lots')}>
+            <span className="workflow__glyph" aria-hidden="true"><Icon name="box" size={20} /></span>
+            <span className="workflow__title">Lots</span>
+          </button>
+          <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
+          <Link to="/routes" className="workflow__step workflow__step--routes">
+            <span className="workflow__glyph" aria-hidden="true"><Icon name="truck" size={20} /></span>
+            <span className="workflow__title">Routes</span>
+          </Link>
+        </div>
+        <p className="faint workflow__hint">
+          Items are added → items become part of a lot → lots follow a route.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -1471,16 +1564,11 @@ function Lots({ store }: { store: StoreAccess }) {
           onCancel={() => setCreating(false)}
         />
       ) : (
-        /* Two decisions, and the second is the rarer one: a lot is opened
-           weekly, a route is written once and then reused by every lot after
-           it. So routes sit beside the button rather than inside it. */
+        // Routes now live on their own Sell-home card, not beside this button.
         <div className="row row--tight" style={{ justifySelf: 'start' }}>
           <button type="button" className="btn" onClick={() => setCreating(true)}>
             <Icon name="plus" size={15} /> New lot
           </button>
-          <Link to="/routes" className="btn btn--quiet">
-            <Icon name="truck" size={15} /> Routes
-          </Link>
         </div>
       )}
 

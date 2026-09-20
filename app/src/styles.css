@@ -1804,6 +1804,78 @@ code, kbd, samp, pre {
 /* The flag sits in the top-right corner, so the title stops before it. */
 .door--pro .door__title { padding-right: 42px; }
 
+/* Sell-home cards: same shape as a `.door`, coloured so the two primary
+   actions read as clearly different things at a glance. */
+.door--card { border-width: 1px; }
+.door--analytics { border-color: var(--aqua-line); background: linear-gradient(160deg, var(--aqua-soft), transparent 65%); }
+.door--analytics:hover { border-color: var(--aqua); }
+.door--analytics .door__glyph { color: var(--aqua); }
+.door--manage { border-color: var(--violet-line); background: linear-gradient(160deg, var(--violet-soft), transparent 65%); }
+.door--manage:hover { border-color: var(--violet-lit); }
+.door--manage .door__glyph { color: var(--violet-text); }
+
+/* Items → Lots → Routes, drawn as one connected process rather than three
+   unrelated buttons - visually distinct from the two business cards above,
+   so a seller reads it as "the workflow", not "two more doors". */
+.workflow {
+  display: grid;
+  gap: 12px;
+  padding: 18px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+}
+.workflow__label {
+  font-size: var(--t-xs);
+  font-weight: var(--w-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.workflow__row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.workflow__step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.18s, transform 0.18s;
+}
+.workflow__step:hover { transform: translateY(-2px); }
+.workflow__step--items { border-color: var(--coral-line); }
+.workflow__step--items .workflow__glyph { color: var(--coral); }
+.workflow__step--lots { border-color: var(--blue-line); }
+.workflow__step--lots .workflow__glyph { color: var(--blue-text); }
+.workflow__step--routes { border-color: var(--lime-line); }
+.workflow__step--routes .workflow__glyph { color: var(--lime); }
+.workflow__title { font-size: var(--t-sm); font-weight: var(--w-bold); }
+.workflow__arrow {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+.workflow__hint { margin: 0; text-align: center; }
+@media (max-width: 480px) {
+  .workflow__row { gap: 4px; }
+  .workflow__step { padding: 12px 4px; }
+  .workflow__arrow svg { width: 12px; height: 12px; }
+}
+
 /* The shop's sections: seven of them wrap into two ragged rows on a phone, so
    they scroll like every other row of choices in the app. */
 .sections {

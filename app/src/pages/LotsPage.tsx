@@ -60,13 +60,8 @@ export function LotsPage() {
             buyer in it sees — they never see the lot itself.
           </p>
         </div>
-        {/* Two decisions, and the second is the rarer one: a lot is opened
-            weekly, a route is written once and then reused by every lot after
-            it. So routes sit beside the button rather than inside it. */}
+        {/* Routes now live on the Sell tab's own Routes card, not here. */}
         <div className="row row--tight">
-          <Link to="/routes" className="btn btn--quiet">
-            <Icon name="truck" size={15} /> Routes
-          </Link>
           <button className="btn" onClick={() => setCreating(true)}>
             <Icon name="plus" size={15} /> New lot
           </button>
