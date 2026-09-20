@@ -29,7 +29,6 @@ import {
   type PartyRef,
   type StorefrontDraft,
   type ActivityResponse,
-  type LotBoard,
   type LotSummary,
   type LotsResponse,
   type SaleRow,
@@ -1636,15 +1635,6 @@ const PHASE_PILL: Record<ReturnType<typeof phaseOfCounts>, { label: string; icon
   completed: { label: 'Delivered', icon: 'check', tone: 'accent' },
 };
 
-/** The numbers on a lot card that open the people behind them. */
-type Drill = 'customers' | 'packed' | 'dispatched';
-
-const DRILL_HINTS: Record<Drill, string> = {
-  customers: 'Everyone with something in this lot, most items first.',
-  packed: 'How far each person is, least packed first — that is the work left.',
-  dispatched: 'Who has gone and who is still here.',
-};
-
 /** What each icon-only flip tile means, for the tap-to-reveal label. */
 const TILE_HINTS = {
   customers: 'Customers', orders: 'Orders', ready: 'Ready to dispatch',
@@ -1678,7 +1668,6 @@ function LotCard({ summary, store, onOpen }: {
   onOpen: () => void;
 }) {
   const { lot, tally } = summary;
-  const board = `/lot/${lot.id}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`;
   // Read off the same tally the bars below chart, rather than from the stage
   // the seller last ticked: thirty-three of thirty-four in the warehouse is
   // "prepping" whatever the lot record says, and a line derived from the same
@@ -1694,9 +1683,6 @@ function LotCard({ summary, store, onOpen }: {
    * it you are looking at is your choice.
    */
   const [open, setOpen] = useState(false);
-  const [drill, setDrill] = useState<Drill | null>(null);
-  const [people, setPeople] = useState<LotBoard | null>(null);
-  const [peopleError, setPeopleError] = useState<string | null>(null);
   const [hint, setHint] = useState<{ id: number; text: string } | null>(null);
 
   /** A little label that names an icon-only tile, then vanishes on its own. */
@@ -1704,26 +1690,6 @@ function LotCard({ summary, store, onOpen }: {
     const id = Date.now();
     setHint({ id, text: TILE_HINTS[key] });
     setTimeout(() => setHint((current) => (current?.id === id ? null : current)), 1400);
-  };
-
-  /**
-   * Open the rows behind a number.
-   *
-   * The manifest is fetched the first time one is tapped rather than with the
-   * card: a seller with nine lots would otherwise pay for nine manifests to
-   * see a list of names nobody asked for.
-   */
-  const drillInto = (chip: Drill) => {
-    setDrill((current) => (current === chip ? null : chip));
-    if (people || peopleError) return;
-    void api
-      .lotBoard(lot.id, store.isOwner ? undefined : store.ownerId)
-      .then(setPeople)
-      .catch((err: unknown) =>
-        setPeopleError(
-          err instanceof ApiRequestError ? err.message : 'Could not load who is in this lot.',
-        ),
-      );
   };
 
   const hue = hueOf(lot.id);
@@ -1739,34 +1705,35 @@ function LotCard({ summary, store, onOpen }: {
 
   return (
     <article className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}${open ? ' lot--flipped' : ''}`}>
-      <div className="lot__flip">
-        {/* Front: the carton as it sits in a warehouse. */}
-        <div className="lot__face lot__face--front">
-          <div className="lot__head" role="button" tabIndex={0} onClick={onOpen}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
-            }}>
-            <div className="lot__headtop">
-              <span className="lot__title">
-                <span className="lot__name">{lot.name}</span>
-                {lot.lotNumber && <span className="lot__no">#LOT{lot.lotNumber}</span>}
-              </span>
-              {/* The current status, said once, at the top - not repeated below. */}
-              <span className={`lotpill lotpill--sm lotpill--${pill.tone}`}>
-                <Icon name={pill.icon} size={11} /> {pill.label}
-              </span>
-            </div>
-            <span className="lot__lane">
-              <span className="lot__flag" aria-hidden="true">{originFlag}</span>
-              <Icon name="right" size={11} />
-              <span className="lot__flag" aria-hidden="true">{destFlag}</span>
-            </span>
-            {/* The fold where an open flap meets the box - drawn, not photographed. */}
-            <svg className="lot__crease" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
-              <path d="M0 0 L38 0 L50 9 L62 0 L100 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-            </svg>
-          </div>
+      {/* The lid stays put - only the body below it flips. */}
+      <div className="lot__head" role="button" tabIndex={0} onClick={onOpen}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
+        }}>
+        <div className="lot__headtop">
+          <span className="lot__title">
+            <span className="lot__name">{lot.name}</span>
+            {lot.lotNumber && <span className="lot__no">#LOT{lot.lotNumber}</span>}
+          </span>
+          {/* The current status, said once, at the top - not repeated below. */}
+          <span className={`lotpill lotpill--sm lotpill--${pill.tone}`}>
+            <Icon name={pill.icon} size={11} /> {pill.label}
+          </span>
+        </div>
+        <span className="lot__lane">
+          <span className="lot__flag" aria-hidden="true">{originFlag}</span>
+          <Icon name="right" size={11} />
+          <span className="lot__flag" aria-hidden="true">{destFlag}</span>
+        </span>
+        {/* The fold where an open flap meets the box - drawn, not photographed. */}
+        <svg className="lot__crease" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 0 L38 0 L50 9 L62 0 L100 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+      </div>
 
+      <div className="lot__flip">
+        {/* Front: what the box holds and who's working it. */}
+        <div className="lot__face lot__face--front">
           <div className="lot__box">
             <dl className="factlist lot__facts">
               <div><dt>Supplier</dt><dd className={lot.supplier?.name ? '' : 'is-unset'}>{lot.supplier?.name || 'Not assigned'}</dd></div>
@@ -1775,7 +1742,7 @@ function LotCard({ summary, store, onOpen }: {
             </dl>
           </div>
 
-          {/* Flips the box over to show what's inside. */}
+          {/* Flips the body over to show what's inside. */}
           <button type="button" className="lot__more" aria-expanded={open} onClick={() => setOpen(true)}>
             <span className="lot__count"><Icon name="users" size={12} />{tally.customers}</span>
             <span className="lot__count"><Icon name="box" size={12} />{summary.orderCount}</span>
@@ -1787,15 +1754,10 @@ function LotCard({ summary, store, onOpen }: {
           </button>
         </div>
 
-        {/* Back: what's inside, once asked. */}
+        {/* Back: the numbers, once asked. */}
         <div className="lot__face lot__face--back" aria-hidden={!open}>
           {summary.orderCount === 0 ? (
-            <>
-              <p className="lot__empty">Nothing in this lot yet.</p>
-              <button type="button" className="lot__more" onClick={() => setOpen(false)}>
-                <Icon name="left" size={13} /> Back
-              </button>
-            </>
+            <p className="lot__empty">Nothing in this lot yet.</p>
           ) : (
             <div className="lot__body">
               <div className="lot__tiles lot__tiles--2">
@@ -1806,24 +1768,12 @@ function LotCard({ summary, store, onOpen }: {
                 <MiniTile icon="tag" value={String(countOf(tally, 'ready_to_dispatch').done)}
                   onClick={() => showHint('ready')} />
                 <MiniTile icon="check" value={String(countOf(tally, 'packed').done)} tone="blue"
-                  onClick={() => drillInto('packed')} open={drill === 'packed'} />
+                  onClick={() => showHint('packed')} />
                 <MiniTile icon="truck" value={`${tally.customersDispatched}/${tally.customers}`} tone="green"
-                  onClick={() => drillInto('dispatched')} open={drill === 'dispatched'} />
+                  onClick={() => showHint('dispatched')} />
               </div>
 
               {hint && <div key={hint.id} className="lot__hint">{hint.text}</div>}
-
-              {drill && (
-                <div className="drill">
-                  {peopleError ? (
-                    <p className="faint">{peopleError}</p>
-                  ) : people ? (
-                    <DrillRows board={people} chip={drill} to={board} />
-                  ) : (
-                    <p className="faint">Loading…</p>
-                  )}
-                </div>
-              )}
 
               <div className="bars">
                 {tally.progress.map((row) => (
@@ -1837,74 +1787,15 @@ function LotCard({ summary, store, onOpen }: {
                   </div>
                 ))}
               </div>
-
-              <button type="button" className="lot__more" onClick={() => setOpen(false)}>
-                <Icon name="left" size={13} /> Back
-              </button>
             </div>
           )}
+
+          <button type="button" className="lot__more" onClick={() => setOpen(false)}>
+            <Icon name="left" size={13} /> Back
+          </button>
         </div>
       </div>
     </article>
-  );
-}
-
-/**
- * The people behind one of a lot card's numbers.
- *
- * Per person rather than per item, because a parcel goes to a person: "four
- * packed" is a fact about cardboard, and "Priya 1 of 3" is the thing to do
- * something about. The per-person counts add back up to the number that was
- * tapped, so the list can never contradict the tile above it.
- */
-function DrillRows({ board, chip, to }: { board: LotBoard; chip: Drill; to: string }) {
-  const rows = board.customers.map((customer) => {
-    const ticked = (checkpoint: 'packed' | 'dispatched') =>
-      customer.orders.filter((order) => Boolean(order.checkpoints?.[checkpoint])).length;
-    return {
-      customer,
-      total: Math.max(1, customer.orders.length),
-      packed: ticked('packed'),
-      dispatched: ticked('dispatched'),
-    };
-  });
-
-  // Whichever number was tapped, the rows that still need work come first.
-  if (chip === 'packed') rows.sort((a, b) => a.packed / a.total - b.packed / b.total);
-  else if (chip === 'dispatched') rows.sort((a, b) => a.dispatched / a.total - b.dispatched / b.total);
-  else rows.sort((a, b) => b.total - a.total);
-
-  if (rows.length === 0) return <p className="faint">Nobody has ordered into this lot yet.</p>;
-
-  // Eight, then the board. A lot of forty is a working session, not a
-  // glance, and the screen built for it is one tap away.
-  const shown = rows.slice(0, 8);
-
-  return (
-    <>
-      <span className="faint">{DRILL_HINTS[chip]}</span>
-      {shown.map(({ customer, total, packed, dispatched }) => {
-        const done = chip === 'dispatched' ? dispatched : packed;
-        const tone = done === total ? ' badge--ok' : done === 0 ? '' : ' badge--warn';
-        return (
-          <div key={customer.buyerId} className="drill__row">
-            <span className="drill__name">{customer.name}</span>
-            {chip === 'customers' ? (
-              <span className="badge">{total} item{total === 1 ? '' : 's'}</span>
-            ) : (
-              <span className={`badge${tone}`}>
-                {done}/{total} {chip === 'dispatched' ? 'gone' : 'packed'}
-              </span>
-            )}
-          </div>
-        );
-      })}
-      {rows.length > shown.length && (
-        <Link to={to} className="drill__more">
-          {rows.length - shown.length} more on the packing board →
-        </Link>
-      )}
-    </>
   );
 }
 

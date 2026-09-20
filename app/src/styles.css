@@ -1919,6 +1919,7 @@ code, kbd, samp, pre {
   --carton-line: rgba(54, 42, 26, 0.14);
   --carton-line-strong: rgba(54, 42, 26, 0.24);
   --carton-tape: #EAC873;
+  display: flex; flex-direction: column;
   background: var(--carton-bg);
   border-color: var(--carton-line-strong);
   border-radius: var(--r-sm);
@@ -2065,15 +2066,21 @@ code, kbd, samp, pre {
   100% { opacity: 0; }
 }
 
-/* The flip: whichever face is showing sits in normal flow and sets the
-   card's height; the other is lifted out so it can never leave a gap
-   beneath the one you're looking at. */
-.lot--carton .lot__flip { position: relative; perspective: 1600px; }
+/* The flip: only the body below the lid turns over. Whichever face is
+   showing sits in normal flow and fills the rest of the card (so a
+   shorter card in the same row still stretches to match its neighbour);
+   the other face is lifted out so it can never leave a gap beneath it. */
+.lot--carton .lot__flip { position: relative; flex: 1 1 auto; display: flex; perspective: 1600px; }
 .lot--carton .lot__face {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column;
   min-width: 0;
   backface-visibility: hidden;
   transition: transform 0.5s cubic-bezier(0.4, 0.15, 0.2, 1);
 }
+/* Whatever sits last in a face - the Open or Back button - is pinned to
+   its bottom edge, however tall the card was stretched to match its row. */
+.lot--carton .lot__face > *:last-child { margin-top: auto; }
 .lot--carton .lot__face--front { transform: rotateY(0deg); }
 .lot--carton .lot__face--back { position: absolute; inset: 0; transform: rotateY(180deg); }
 .lot--carton.lot--flipped .lot__face--front { position: absolute; inset: 0; transform: rotateY(-180deg); }
@@ -2092,7 +2099,6 @@ code, kbd, samp, pre {
 .lot--carton .bar__label { font-size: var(--t-2xs); }
 .lot--carton .bar__label, .lot--carton .bar__count { color: var(--carton-dim); }
 .lot--carton .bar__track { background: rgba(54, 42, 26, 0.1); }
-.lot--carton .drill { background: rgba(54, 42, 26, 0.05); border-color: var(--carton-line); }
 
 /*
  * The lot, said once and properly.
@@ -2278,24 +2284,6 @@ code, kbd, samp, pre {
 .tile--tap:hover { background: var(--surface-hover); border-color: var(--border-strong); }
 .tile--tap:active { transform: scale(0.98); }
 .tile--tap.is-open { border-color: var(--accent-line); background: var(--accent-soft); }
-
-/* The rows behind a tapped number. */
-.drill {
-  display: grid; gap: 2px;
-  padding: 10px 12px;
-  border: 1px solid var(--accent-line); border-radius: var(--r-md);
-  background: var(--surface-2);
-}
-.drill .faint { margin-bottom: 4px; }
-.drill__row {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 6px 0; border-bottom: 1px solid var(--border);
-}
-.drill__row:last-child { border-bottom: none; padding-bottom: 0; }
-.drill__name {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: var(--t-sm); font-weight: var(--w-semi);
-}
 
 .tile--blue { border-color: rgba(59, 130, 246, 0.45); }
 .tile--green { border-color: rgba(52, 211, 153, 0.45); }
@@ -3037,13 +3025,6 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 .coh__track > span { flex-basis: 0; min-width: 0; }
 .coh__new { background: var(--accent); }
 .coh__old { background: var(--ok); }
-
-/* The rest of a long list lives on the screen built for working it. */
-.drill__more {
-  display: block; padding-top: 8px;
-  font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--accent-text); text-decoration: none;
-}
-.drill__more:hover { color: var(--accent-hover); }
 
 /* ── Services ──────────────────────────────────────────────────────────── */
 
