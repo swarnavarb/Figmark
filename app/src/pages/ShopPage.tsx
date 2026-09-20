@@ -1599,10 +1599,12 @@ function Lots({ store }: { store: StoreAccess }) {
           {filtered.length === 0 ? (
             <p className="muted">No {statusFilter} lots.</p>
           ) : (
-            filtered.map((summary) => (
-              <LotCard key={summary.lot.id} summary={summary} store={store}
-                onOpen={() => setOpenId(summary.lot.id)} />
-            ))
+            <div className="lot-grid">
+              {filtered.map((summary) => (
+                <LotCard key={summary.lot.id} summary={summary} store={store}
+                  onOpen={() => setOpenId(summary.lot.id)} />
+              ))}
+            </div>
           )}
         </>
       )}
@@ -1701,137 +1703,140 @@ function LotCard({ summary, store, onOpen }: {
   const pill = PHASE_PILL[phase];
 
   return (
-    <article className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}`}>
-      {/* The lid: what the box is called and where it is going. Clicking it,
-          or the arrow on it, is the only way in — the body below is for
-          reading, not for opening the lot. */}
-      <div className="lot__head" role="button" tabIndex={0} onClick={onOpen}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
-        }}>
-        <div className="lot__headtop">
-          <span className="lot__title">
-            <span className="lot__name">{lot.name}</span>
-            {lot.lotNumber && <span className="lot__no">#LOT{lot.lotNumber}</span>}
+    <article className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}${open ? ' lot--flipped' : ''}`}>
+      <div className="lot__flip">
+        {/* Front: the carton as it sits in a warehouse. */}
+        <div className="lot__face lot__face--front">
+          <div className="lot__head" role="button" tabIndex={0} onClick={onOpen}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
+            }}>
+            <div className="lot__headtop">
+              <span className="lot__title">
+                <span className="lot__name">{lot.name}</span>
+                {lot.lotNumber && <span className="lot__no">#LOT{lot.lotNumber}</span>}
+              </span>
+              <button type="button" className="lot__enter" onClick={(event) => { event.stopPropagation(); onOpen(); }}
+                aria-label={`Open ${lot.name}`}>
+                <Icon name="down" size={16} />
+              </button>
+            </div>
+            <span className="lot__lane">
+              <span className="lot__flag" aria-hidden="true">{countryFlag(lot.originCountry)}</span>
+              {lot.originCountry || 'Origin'}
+              <Icon name="right" size={12} />
+              <span className="lot__flag" aria-hidden="true">{countryFlag(lot.destinationCountry)}</span>
+              {lot.destinationCountry || 'Destination'}
+            </span>
+            {/* The fold where an open flap meets the box - drawn, not photographed. */}
+            <svg className="lot__crease" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0 0 L38 0 L50 9 L62 0 L100 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+            </svg>
+          </div>
+
+          <div className="lot__box">
+            <div className="lot__boxmain">
+              <span className={`lotpill lotpill--${pill.tone}`}>
+                <Icon name={pill.icon} size={13} /> {pill.label}
+              </span>
+
+              <dl className="factlist lot__facts">
+                <div><dt>Supplier</dt><dd className={lot.supplier?.name ? '' : 'is-unset'}>{lot.supplier?.name || 'Not assigned'}</dd></div>
+                <div><dt>Freight Forwarder</dt><dd className={lot.forwarder?.name ? '' : 'is-unset'}>{lot.forwarder?.name || 'Not assigned'}</dd></div>
+                <div><dt>Domestic Handler</dt><dd className={lot.handler?.name ? '' : 'is-unset'}>{lot.handler?.name || 'Not assigned'}</dd></div>
+              </dl>
+            </div>
+            {/* Purely decorative - the "this way up" of an actual carton. */}
+            <span className="lot__tape" aria-hidden="true">
+              <Icon name="up" size={13} />
+              <Icon name="up" size={13} />
+            </span>
+          </div>
+
+          <span className="faint lot__extra">
+            {[
+              `${currentStepName(lot)} · ${PHASE_LABELS[phase]}`,
+              routeOf(lot).name,
+              lot.forwarder?.trackingReference ?? null,
+            ].filter(Boolean).join(' · ')}
           </span>
-          <button type="button" className="lot__enter" onClick={(event) => { event.stopPropagation(); onOpen(); }}
-            aria-label={`Open ${lot.name}`}>
-            <Icon name="down" size={16} />
+
+          {/* Flips the box over to show what's inside. */}
+          <button type="button" className="lot__more" aria-expanded={open} onClick={() => setOpen(true)}>
+            <Icon name="users" size={12} /> {tally.customers} {tally.customers === 1 ? 'customer' : 'customers'} · {summary.orderCount} {summary.orderCount === 1 ? 'order' : 'orders'}
+            <Icon name="right" size={13} />
           </button>
-        </div>
-        <span className="lot__lane">
-          <span className="lot__flag" aria-hidden="true">{countryFlag(lot.originCountry)}</span>
-          {lot.originCountry || 'Origin'}
-          <Icon name="right" size={12} />
-          <span className="lot__flag" aria-hidden="true">{countryFlag(lot.destinationCountry)}</span>
-          {lot.destinationCountry || 'Destination'}
-        </span>
-      </div>
 
-      {/* Where the lot actually is, in one glance, then who is working it -
-          "Not assigned" is a real answer here, not a gap to hide until it is
-          filled in. */}
-      <div className="lot__box">
-        <div className="lot__boxmain">
-          <span className={`lotpill lotpill--${pill.tone}`}>
-            <Icon name={pill.icon} size={13} /> {pill.label}
-          </span>
-
-          <dl className="factlist lot__facts">
-            <div><dt>Supplier</dt><dd className={lot.supplier?.name ? '' : 'is-unset'}>{lot.supplier?.name || 'Not assigned'}</dd></div>
-            <div><dt>Freight Forwarder</dt><dd className={lot.forwarder?.name ? '' : 'is-unset'}>{lot.forwarder?.name || 'Not assigned'}</dd></div>
-            <div><dt>Domestic Handler</dt><dd className={lot.handler?.name ? '' : 'is-unset'}>{lot.handler?.name || 'Not assigned'}</dd></div>
-          </dl>
-        </div>
-        {/* Purely decorative - the "this way up" of an actual carton. */}
-        <span className="lot__tape" aria-hidden="true">
-          <Icon name="up" size={13} />
-          <Icon name="up" size={13} />
-        </span>
-      </div>
-
-      <span className="faint lot__extra">
-        {[
-          `${currentStepName(lot)} · ${PHASE_LABELS[phase]}`,
-          summary.orderCount > 0 ? `${summary.orderCount} orders` : null,
-          routeOf(lot).name,
-          lot.forwarder?.trackingReference ?? null,
-        ].filter(Boolean).join(' · ')}
-      </span>
-
-      {/* Everything a lot card can say, once it is asked. Shut by default
-          because a seller with nine lots is looking for one of them. */}
-      <button type="button" className="lot__more" aria-expanded={open}
-        onClick={() => setOpen(!open)}>
-        <Icon name={open ? 'down' : 'right'} size={13} />
-        {open
-          ? 'Less'
-          : <><Icon name="users" size={12} /> {tally.customers} {tally.customers === 1 ? 'customer' : 'customers'} · {summary.orderCount} {summary.orderCount === 1 ? 'order' : 'orders'}</>}
-      </button>
-
-      {open && summary.orderCount === 0 && (
-        <p className="lot__empty">Nothing in this lot yet.</p>
-      )}
-
-      {open && summary.orderCount > 0 && (
-        <div className="lot__body">
-          <div className="tiles tiles--big">
-            <Tile value={String(tally.customers)} label="Customers" />
-            <Tile value={String(summary.orderCount)} label="Orders" />
+          <div className="lot__foot">
+            <button type="button" className="btn btn--quiet btn--sm" onClick={onOpen}>Edit lot</button>
+            <Link to={board} className="btn btn--ghost btn--sm">Packing board →</Link>
           </div>
-          <div className="tiles">
-            <Tile
-              value={String(tally.customers)}
-              label="Customers"
-              onClick={() => drillInto('customers')}
-              open={drill === 'customers'}
-            />
-            <Tile
-              value={String(countOf(tally, 'packed').done)}
-              label="Packed"
-              tone="blue"
-              onClick={() => drillInto('packed')}
-              open={drill === 'packed'}
-            />
-            <Tile
-              value={`${tally.customersDispatched}/${tally.customers}`}
-              label="Dispatched"
-              tone="green"
-              onClick={() => drillInto('dispatched')}
-              open={drill === 'dispatched'}
-            />
-          </div>
+        </div>
 
-          {drill && (
-            <div className="drill">
-              {peopleError ? (
-                <p className="faint">{peopleError}</p>
-              ) : people ? (
-                <DrillRows board={people} chip={drill} to={board} />
-              ) : (
-                <p className="faint">Loading…</p>
+        {/* Back: what's inside, once asked. */}
+        <div className="lot__face lot__face--back" aria-hidden={!open}>
+          <button type="button" className="lot__more lot__more--back" onClick={() => setOpen(false)}>
+            <Icon name="left" size={13} /> Back to {lot.name}
+          </button>
+
+          {summary.orderCount === 0 ? (
+            <p className="lot__empty">Nothing in this lot yet.</p>
+          ) : (
+            <div className="lot__body">
+              <div className="tiles tiles--big">
+                <Tile value={String(tally.customers)} label="Customers" />
+                <Tile value={String(summary.orderCount)} label="Orders" />
+              </div>
+              <div className="tiles">
+                <Tile
+                  value={String(tally.customers)}
+                  label="Customers"
+                  onClick={() => drillInto('customers')}
+                  open={drill === 'customers'}
+                />
+                <Tile
+                  value={String(countOf(tally, 'packed').done)}
+                  label="Packed"
+                  tone="blue"
+                  onClick={() => drillInto('packed')}
+                  open={drill === 'packed'}
+                />
+                <Tile
+                  value={`${tally.customersDispatched}/${tally.customers}`}
+                  label="Dispatched"
+                  tone="green"
+                  onClick={() => drillInto('dispatched')}
+                  open={drill === 'dispatched'}
+                />
+              </div>
+
+              {drill && (
+                <div className="drill">
+                  {peopleError ? (
+                    <p className="faint">{peopleError}</p>
+                  ) : people ? (
+                    <DrillRows board={people} chip={drill} to={board} />
+                  ) : (
+                    <p className="faint">Loading…</p>
+                  )}
+                </div>
               )}
+
+              <div className="bars">
+                {tally.progress.map((row) => (
+                  <div key={row.checkpoint} className="bar">
+                    <span className="bar__label">{CHECKPOINT_COUNT_LABELS[row.checkpoint]}</span>
+                    <span className="bar__track">
+                      <span className="bar__fill"
+                        style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }} />
+                    </span>
+                    <span className="bar__count">{row.done}/{row.total}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-
-          <div className="bars">
-            {tally.progress.map((row) => (
-              <div key={row.checkpoint} className="bar">
-                <span className="bar__label">{CHECKPOINT_COUNT_LABELS[row.checkpoint]}</span>
-                <span className="bar__track">
-                  <span className="bar__fill"
-                    style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }} />
-                </span>
-                <span className="bar__count">{row.done}/{row.total}</span>
-              </div>
-            ))}
-          </div>
         </div>
-      )}
-
-      <div className="lot__foot">
-        <button type="button" className="btn btn--quiet btn--sm" onClick={onOpen}>Edit lot</button>
-        <Link to={board} className="btn btn--ghost btn--sm">Packing board →</Link>
       </div>
     </article>
   );

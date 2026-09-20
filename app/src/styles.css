@@ -1930,6 +1930,12 @@ code, kbd, samp, pre {
 }
 .lot--carton.lot--moving { border-color: var(--carton-line-strong); }
 
+/* Two boxes to a shelf on anything but a phone. */
+.lot-grid { display: grid; grid-template-columns: 1fr; gap: var(--s4); }
+@media (min-width: 640px) {
+  .lot-grid { grid-template-columns: 1fr 1fr; }
+}
+
 /* The lid: a coloured cap on the box, tapped to open the lot. The hue is
    cosmetic (which box is which at a glance in a long list), so it only ever
    touches the lid's own background — never a status colour anywhere else on
@@ -1944,6 +1950,12 @@ code, kbd, samp, pre {
 }
 .lot--carton .lot__head:hover { filter: brightness(1.06); }
 .lot--carton .lot__head:active { filter: brightness(1.02); }
+/* The crease of a flap folded shut, drawn as one stroke rather than shipped
+   as an image - cheap, and it recolours itself with the lid for free. */
+.lot__crease {
+  position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 9px;
+  color: rgba(0, 0, 0, 0.24);
+}
 .lot--violet .lot__head { background: var(--violet); color: var(--violet-ink); }
 .lot--coral .lot__head  { background: var(--coral);  color: var(--coral-ink); }
 .lot--aqua .lot__head   { background: var(--aqua);   color: var(--aqua-ink); }
@@ -2036,18 +2048,28 @@ code, kbd, samp, pre {
   transition: background var(--dur-1, 0.15s) var(--ease, ease), color var(--dur-1, 0.15s) var(--ease, ease);
 }
 .lot__more:hover { color: var(--carton-ink); background: rgba(54, 42, 26, 0.05); }
+.lot__more--back { border-top: 0; border-bottom: 1px solid var(--carton-line); }
 .lot__empty {
   margin: 0; padding: 0 14px 12px;
   font-size: var(--t-xs); color: var(--carton-dim);
 }
-.lot__body {
-  display: grid; gap: 12px; padding: 4px 14px 14px; border-top: 1px solid var(--carton-line);
-  animation: cartonExpand 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+.lot__body { display: grid; gap: 12px; padding: 4px 14px 14px; }
+
+/* The flip: front and back share one grid cell (so the box is as tall as
+   whichever face is bigger) and rotate past each other in opposite
+   directions - a real turn, not a panel sliding open beneath the lid. */
+.lot--carton .lot__flip { display: grid; perspective: 1600px; }
+.lot--carton .lot__face {
+  grid-area: 1 / 1;
+  min-width: 0;
+  backface-visibility: hidden;
+  transition: transform 0.5s cubic-bezier(0.4, 0.15, 0.2, 1);
 }
-@keyframes cartonExpand {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: none; }
-}
+.lot--carton .lot__face--front { transform: rotateY(0deg); }
+.lot--carton .lot__face--back { transform: rotateY(180deg); display: grid; align-content: start; }
+.lot--carton.lot--flipped .lot__face--front { transform: rotateY(-180deg); }
+.lot--carton.lot--flipped .lot__face--back { transform: rotateY(0deg); }
+
 .lot--carton .tile { background: #fff; border-color: var(--carton-line-strong); }
 .lot--carton .tile__value, .lot--carton .tile__label { color: var(--carton-ink); }
 .lot--carton .tile--tap:hover { background: #fff; border-color: var(--carton-dim); }
