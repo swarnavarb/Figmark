@@ -1065,15 +1065,31 @@ code, kbd, samp, pre {
 .track__dot {
   position: absolute; top: 0; left: 0; width: 10px; height: 10px;
   border-radius: 50%; background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
 }
-.track__step.is-done .track__dot { background: var(--aqua); }
+.track__step.is-done .track__dot { background: var(--aqua); color: var(--surface); }
 /* Where the thing actually is: the one lit dot on the line, with a halo so it
    is findable without reading a single label. */
 .track__step.is-current .track__dot {
-  background: var(--violet);
+  background: var(--violet); color: var(--surface);
   box-shadow: 0 0 0 4px var(--accent-soft), 0 0 12px rgba(124, 58, 237, 0.7);
 }
 .track__step.is-current { color: var(--text); font-weight: var(--w-semi); }
+
+/* Uniform step-state mark: a tick once a step is done, a small spinner while
+   it is the one under way - the same two glyphs wherever a journey is drawn
+   (the ladder here, the plain line above), whatever shape the route behind
+   it has. */
+.stepmark { display: block; }
+.stepmark--done { color: inherit; }
+.stepmark--current {
+  display: block; width: 60%; height: 60%;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: stepmark-spin 0.8s linear infinite;
+}
+@keyframes stepmark-spin { to { transform: rotate(360deg); } }
 
 /* ── Forms ─────────────────────────────────────────────────────────────── */
 
@@ -3365,7 +3381,7 @@ a.provider__name:hover { color: var(--accent-text); }
   55% { transform: translateX(-7px) scale(1.12); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .spotlight-badge, .routearrow { animation: none; }
+  .spotlight-badge, .routearrow, .stepmark--current { animation: none; }
 }
 
 .stagebox {

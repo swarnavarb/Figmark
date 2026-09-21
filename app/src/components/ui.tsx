@@ -104,6 +104,21 @@ export function ErrorNotice({ message }: { message: string }) {
   return <p className="notice notice--error">{message}</p>;
 }
 
+export type StepState = 'done' | 'current' | 'todo';
+
+/**
+ * How one step of a journey reads, drawn the same way everywhere a journey is
+ * shown - a route's own ladder, the plain line a direct-ship order gets,
+ * anywhere else one is added later. A tick once it is behind you, a small
+ * spinner while it is the one under way, nothing yet for what has not been
+ * reached: one vocabulary, whatever shape the route behind it actually has.
+ */
+export function StepMark({ state, size = 11 }: { state: StepState; size?: number }) {
+  if (state === 'done') return <Icon name="check" size={size} className="stepmark stepmark--done" />;
+  if (state === 'current') return <span className="stepmark stepmark--current" aria-hidden="true" />;
+  return null;
+}
+
 /**
  * Live fill progress for a group-buy lot.
  *

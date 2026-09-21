@@ -11,7 +11,7 @@ import {
   type Checkout, type EscrowOption, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
 } from '../api';
 import { Ladder } from '../components/Ladder';
-import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
+import { ErrorNotice, Icon, Modal, PersonLink, StepMark } from '../components/ui';
 import { formatDate, formatMoney, timeAgo } from '../format';
 
 /**
@@ -154,7 +154,9 @@ export function OrderPage() {
               {stages.map((stage, index) => (
                 <li key={stage}
                   className={`track__step${index < currentIndex ? ' is-done' : ''}${index === currentIndex ? ' is-current' : ''}`}>
-                  <span className="track__dot" aria-hidden="true" />
+                  <span className="track__dot" aria-hidden="true">
+                    <StepMark state={index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'todo'} size={7} />
+                  </span>
                   <span>{labelFor(stage)}</span>
                 </li>
               ))}

@@ -5,6 +5,7 @@ import type { StageEvent } from '@shared/models';
 import { groupStages, renderStepText, stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { Icon } from './Icon';
+import { StepMark } from './ui';
 import { STAGE_ICON_META } from './RouteBuilder';
 
 /**
@@ -109,7 +110,7 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
           )}
           <li className={`ladder__row is-${state}`}>
             <span className="ladder__dot" aria-hidden="true">
-              {state === 'done' ? '✓' : state === 'current' ? '●' : ''}
+              <StepMark state={state} size={11} />
             </span>
 
             <span className="ladder__body">
@@ -244,7 +245,9 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
               to it alone, and what happens next happens to the whole lot. */}
           {waitingFor && index === current && (
             <li className="ladder__row ladder__row--wait is-current">
-              <span className="ladder__dot" aria-hidden="true">●</span>
+              <span className="ladder__dot" aria-hidden="true">
+                <StepMark state="current" size={11} />
+              </span>
               <span className="ladder__body">
                 <span className="ladder__name">{waitingFor}</span>
                 <span className="faint">

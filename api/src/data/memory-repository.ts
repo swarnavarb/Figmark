@@ -1,5 +1,5 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
-import type { TrackingRoute } from '../../../shared/routes.js';
+import { ROUTE_TEMPLATES, normaliseSteps, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
@@ -77,7 +77,9 @@ export class MemoryRepository implements Repository {
 
   async init(): Promise<void> {
     for (const user of [...seedUsers(), ...seedLotBuyers()]) this.indexUser(user);
-    for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()]) this.lots.set(lot.id, lot);
+    for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()].map((one) => this.withSampleRoute(one))) {
+      this.lots.set(lot.id, lot);
+    }
     for (const listing of seedListings()) this.listings.set(listing.id, listing);
     for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders()]) this.orders.set(order.id, order);
     for (const comment of seedComments()) this.comments.set(comment.id, comment);
@@ -103,6 +105,43 @@ export class MemoryRepository implements Repository {
     if (user.sellerProfile?.username) {
       this.handles.set(handleKey(user.sellerProfile.username), { userId: user.id, isStore: true });
     }
+  }
+
+  /**
+   * One saved route per seller, standing in for the fixtures until each shop
+   * writes its own. Cached per seller so every one of their lots snapshots the
+   * same route rather than each getting its own copy of an identical ladder,
+   * and saved into `this.routes` so `GET /api/routes` shows it as a real
+   * template, not just something baked into a lot.
+   */
+  private sampleRoutes = new Map<string, TrackingRoute>();
+  private sampleRouteFor(sellerId: string): TrackingRoute {
+    const existing = this.sampleRoutes.get(sellerId);
+    if (existing) return existing;
+    const template = ROUTE_TEMPLATES.find((entry) => entry.id === 'supplier_accumulates') ?? ROUTE_TEMPLATES[0]!;
+    const now = new Date().toISOString();
+    const route: TrackingRoute = {
+      id: `rt_${sellerId}_sample`,
+      sellerId,
+      name: `${template.name} (sample)`,
+      steps: normaliseSteps(template.steps),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.sampleRoutes.set(sellerId, route);
+    this.routes.set(route.id, route);
+    return route;
+  }
+
+  /**
+   * Every seeded lot travels the one sample route, so the fixtures show a
+   * real route's ladder working uniformly across lots rather than each
+   * falling back to the built-in seven stages by default.
+   */
+  private withSampleRoute(lot: Lot): Lot {
+    const sample = this.sampleRouteFor(lot.sellerId);
+    const route = { routeId: sample.id, name: sample.name, steps: sample.steps };
+    return { ...lot, route, currentStep: stepForStage(route, lot.stage) };
   }
 
   status(): BackendStatus {
