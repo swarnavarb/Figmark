@@ -494,7 +494,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
 
         <Link to="/shop?tab=routes&spotlight=new" className="silkcta">
           <span className="silkcta__label">✨ Define your Silk Route</span>
-          <span className="silkcta__note">Write or pick a route in the Routes tab</span>
+          <span className="silkcta__note">Create a new route</span>
         </Link>
       </fieldset>
 

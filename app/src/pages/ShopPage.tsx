@@ -33,7 +33,6 @@ import {
   type LotsResponse,
   type SaleRow,
   type SalesResponse,
-  type ProviderCard,
   type RoutesResponse,
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
@@ -1289,21 +1288,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
 }) {
   const navigate = useNavigate();
   const [lots, setLots] = useState<LotSummary[] | null>(null);
-  const [routes, setRoutes] = useState<RoutesResponse | null>(null);
-  const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [lotId, setLotId] = useState('');
-  /* Prefilled, not defaulted. A name that appears in the field is one the
-     seller reads and corrects; one applied silently when the field is left
-     blank is how a shop ends up with a lot called "Lot for <the first thing
-     that went in it>" holding thirty other people's parcels. */
-  const [name, setName] = useState(() => suggestLotName());
-  const [origin, setOrigin] = useState('');
-  const [supplier, setSupplier] = useState('');
-  const [handlerId, setHandlerId] = useState('');
-  const [handlers, setHandlers] = useState<ProviderCard[]>([]);
-  // The template's answer, pre-selected: picking the template once should be
-  // the last time anybody thinks about this item's tracking.
-  const [routeId, setRouteId] = useState(row.lotRouteId ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1312,36 +1297,21 @@ function FileIntoLot({ row, store, onClose, onDone }: {
       .then((result) => {
         setLots(result.lots);
         setLotId(result.lots[0]?.lot.id ?? '');
-        // No lots yet means there is nothing to pick, so the form opens on
-        // the door that works.
-        if (result.lots.length === 0) setMode('new');
       })
       .catch(() => setLots([]));
-    void api.routes().then(setRoutes).catch(() => setRoutes(null));
-    void api.serviceDirectory('handler').then((r) => setHandlers(r.providers)).catch(() => setHandlers([]));
   }, [store.ownerId, store.isOwner]);
+
+  function goCreateLot() {
+    onClose();
+    navigate('/lots?new=true');
+  }
 
   async function submit() {
     setBusy(true);
     setError(null);
     try {
-      await api.assignOrderToLot(row.id, mode === 'existing'
-        ? { lotId }
-        : {
-            newLot: {
-              name: name.trim(),
-              origin: origin.trim(),
-              supplierHandle: supplier.trim() || undefined,
-              handlerUserId: handlerId || undefined,
-              routeId: routeId || undefined,
-            },
-          });
-      if (mode === 'new') {
-        onClose();
-        navigate('/lots?new=true');
-      } else {
-        onDone();
-      }
+      await api.assignOrderToLot(row.id, { lotId });
+      onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
     } finally {
@@ -1383,62 +1353,16 @@ function FileIntoLot({ row, store, onClose, onDone }: {
           )}
         </fieldset>
 
-        <button type="button" className="btn btn--block"
-          onClick={() => setMode('new')}>
-          <Icon name="plus" size={14} /> Create a new lot
+        <button type="button" className="silkcta" onClick={goCreateLot}>
+          <span className="silkcta__label">✨ Create a new lot</span>
+          <span className="silkcta__note">Opens the lots tab, ready to fill in</span>
         </button>
-
-        {mode === 'new' && (
-          <div className="stack" style={{ borderTop: '1px solid var(--line)', paddingTop: 16 }}>
-            <label className="field">
-              <span>Lot name *</span>
-              <input value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="September import" required autoFocus />
-              <span className="field__hint">
-                Yours to recognise, and every later item goes in under it. Buyers never see it.
-              </span>
-            </label>
-            <label className="field">
-              <span>Origin</span>
-              <input value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="China" />
-            </label>
-            <label className="field">
-              <span>Supplier (optional)</span>
-              <input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="@their_handle" />
-            </label>
-            <label className="field">
-              <span>Domestic handler (optional)</span>
-              <select value={handlerId} onChange={(e) => setHandlerId(e.target.value)}>
-                <option value="">Nobody — you dispatch it yourself</option>
-                {handlers.map((entry) => (
-                  <option key={entry.userId} value={entry.userId}>{entry.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Tracking template</span>
-              <select value={routeId} onChange={(e) => setRouteId(e.target.value)}>
-                <option value="">
-                  {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
-                </option>
-                {(routes?.routes ?? []).map((route) => (
-                  <option key={route.id} value={route.id}>
-                    {route.name} — {route.steps.length} steps
-                  </option>
-                ))}
-              </select>
-              <span className="field__hint">
-                Every item in this lot travels these steps, and the buyer reads them.
-              </span>
-            </label>
-          </div>
-        )}
 
         {error && <ErrorNotice message={error} />}
         <button type="button" className="btn btn--block"
-          disabled={busy || (mode === 'new' ? !name.trim() : !lotId)}
+          disabled={busy || !lotId}
           onClick={() => void submit()}>
-          {busy ? 'Filing…' : mode === 'new' ? 'Create lot & add order' : 'Add to lot'}
+          {busy ? 'Filing…' : 'Add to lot'}
         </button>
       </div>
     </Modal>
