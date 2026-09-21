@@ -1091,6 +1091,18 @@ code, kbd, samp, pre {
 }
 @keyframes stepmark-spin { to { transform: rotate(360deg); } }
 
+/* The wave: three bars, staggered, standing in for "this is moving right
+   now" wherever a gap between two steps says something. */
+.waveloader { display: flex; align-items: center; justify-content: center; gap: 2px; width: 60%; height: 60%; }
+.waveloader span {
+  width: 2.5px; height: 100%; border-radius: 1px; background: currentColor;
+  animation: waveloader-bounce 0.9s ease-in-out infinite;
+}
+.waveloader span:nth-child(1) { animation-delay: -0.3s; }
+.waveloader span:nth-child(2) { animation-delay: -0.15s; }
+.waveloader span:nth-child(3) { animation-delay: 0s; }
+@keyframes waveloader-bounce { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+
 /* ── Forms ─────────────────────────────────────────────────────────────── */
 
 .form { display: grid; gap: 15px; }
@@ -3381,7 +3393,7 @@ a.provider__name:hover { color: var(--accent-text); }
   55% { transform: translateX(-7px) scale(1.12); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .spotlight-badge, .routearrow, .stepmark--current { animation: none; }
+  .spotlight-badge, .routearrow, .stepmark--current, .waveloader span { animation: none; }
 }
 
 .stagebox {
@@ -4432,3 +4444,71 @@ a.order__name:hover { color: var(--accent-text); }
   border-style: solid; border-color: var(--border);
   font-size: var(--t-xs); font-weight: var(--w-normal);
 }
+
+/* ── Route Studio: the experimental node builder ──────────────────────────
+   Kept apart from the stage-box builder above it - RouteBuilder and this are
+   two answers to the same screen, on purpose, until one of them loses. */
+.rsgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.rscard {
+  display: grid; gap: 4px; text-align: left; padding: 12px;
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+  cursor: pointer;
+}
+.rscard:hover { border-color: var(--border-strong); }
+.rscard__icon { color: var(--accent-text); }
+.rscard__name { font-weight: var(--w-semi); }
+.rscard__note { font-size: var(--t-xs); color: var(--text-dim); }
+
+.rschain { display: grid; }
+
+/* The "+" that sits on the connecting line - invisible until the chain (or
+   the button itself) is focused or hovered, so a finished route reads as a
+   chain of steps and not as a row of buttons. */
+.rsinsert { display: grid; grid-template-columns: 28px 1fr; align-items: center; height: 22px; position: relative; }
+.rsinsert__line { grid-column: 1; justify-self: center; width: 1px; height: 100%; background: var(--border); }
+.rsinsert__btn {
+  position: absolute; left: 0; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1px dashed var(--border-strong); background: var(--surface); color: var(--text-dim);
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.rschain:hover .rsinsert__btn { opacity: 1; }
+.rsinsert__btn:focus-visible { opacity: 1; outline: none; }
+.rsinsert__btn:hover { border-style: solid; border-color: var(--accent); color: var(--accent-text); }
+
+.rsnode { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+.rsnode__dot {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--border-strong);
+  font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-dim);
+}
+.rsnode__card {
+  display: grid; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+}
+.rsnode__top { display: flex; align-items: center; gap: 8px; }
+.rsnode__name {
+  flex: 1 1 auto; min-width: 0; border: none; background: transparent;
+  font-size: var(--t-sm); font-weight: var(--w-semi); padding: 4px 0; color: var(--text);
+}
+.rsnode__name:focus { outline: none; }
+
+.rstrigs { display: flex; flex-wrap: wrap; gap: 6px; }
+.rstrig {
+  font-size: var(--t-2xs); padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim);
+}
+.rstrig.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+
+.rsnode__more { display: grid; gap: 10px; padding-top: 4px; border-top: 1px dashed var(--border); }
+.rsnode__acts { display: flex; gap: 6px; }
+
+.rsjoin { display: flex; align-items: center; gap: 8px; margin-left: 14px; padding: 4px 0; }
+.rsjoin__line { width: 40px; height: 1px; background: var(--accent-line); }
+.rsjoin__label {
+  display: flex; align-items: center; gap: 5px; font-size: var(--t-2xs); font-weight: var(--w-semi);
+  color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.rsjoin__acts { display: flex; gap: 4px; }
+
+.rsscrub { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }

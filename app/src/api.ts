@@ -1098,6 +1098,7 @@ export const api = {
     steps: {
       id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
       stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
+      waitMessage?: string;
     }[];
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),

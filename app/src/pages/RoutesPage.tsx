@@ -59,6 +59,12 @@ export function RoutesList({ spotlightNew = false }: {
               <Icon name="left" size={18} />
             </span>
           )}
+          {/* The other builder, being tried out beside this one - see
+              RouteStudioPage. A separate, quieter door in on purpose: this
+              is the one everybody still lands on unless they go looking. */}
+          <Link to="/routes/studio/new" className="btn btn--ghost btn--sm">
+            Try the Studio builder
+          </Link>
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => setShowFaq(!showFaq)} aria-label="FAQ" title="How routes and tracking work">
             <Icon name="message" size={14} />
           </button>
@@ -325,6 +331,10 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
             stageId: step.stageId,
             stageName: step.stageName,
             stageIcon: step.stageIcon,
+            // Not edited from this screen, but carried through rather than
+            // dropped - a route opened here after being written in the
+            // studio builder should not lose what it said in the gaps.
+            waitMessage: step.waitMessage,
           })),
       });
       onSaved();

@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { AuthPage } from './pages/AuthPage';
 import { RouteEditorPage, RoutesPage } from './pages/RoutesPage';
+import { RouteStudioPage } from './pages/RouteStudioPage';
 import { FeedPage } from './pages/FeedPage';
 import { ForwardersPage } from './pages/ForwardersPage';
 import { ListingPage } from './pages/ListingPage';
@@ -59,6 +60,10 @@ function App() {
         <Route path="/routes" element={<RoutesPage />} />
         {/* `new` before `:id`, so writing a route is never read as editing one. */}
         <Route path="/routes/new" element={<RouteEditorPage />} />
+        {/* The experimental node-based builder, being compared against the one
+            above. Its own paths, so neither can be reached by the other's link. */}
+        <Route path="/routes/studio/new" element={<RouteStudioPage />} />
+        <Route path="/routes/studio/:id" element={<RouteStudioPage />} />
         <Route path="/routes/:id" element={<RouteEditorPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/services/mine" element={<MyServicesPage />} />

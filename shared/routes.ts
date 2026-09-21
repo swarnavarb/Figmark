@@ -137,6 +137,40 @@ export interface RouteStep {
    * "Dispatched" step is one - only where a route names an actual hand-off.
    */
   forward?: boolean;
+  /**
+   * What the buyer reads in the gap after this step, while it is the one
+   * reached and the next has not happened yet.
+   *
+   * Optional: unset falls back to `DEFAULT_WAIT_MESSAGES` for this step's
+   * trigger, which is blank for a trigger with no default and for a step
+   * with no trigger at all - the ordinary case, where the gap is just the
+   * line to the next rung and nothing is said in it.
+   */
+  waitMessage?: string;
+}
+
+/**
+ * The line shown in the gap right after a step, before the next one, when
+ * the step has not been given a `waitMessage` of its own.
+ *
+ * Keyed by trigger rather than by step name, because the name is the
+ * seller's to write and two routes calling the same checkpoint different
+ * things should still read sensibly in the gap that follows it. Only the two
+ * "arrived and waiting to move on" checkpoints get a default - the others
+ * (packed, ready, dispatched) are not places a buyer waits, they are the
+ * hand-off itself.
+ */
+export const DEFAULT_WAIT_MESSAGES: Partial<Record<StepTrigger, string>> = {
+  china_received: 'Prepping for origin dispatch',
+  india_received: 'In transit',
+};
+
+/** What the buyer reads in the gap after this step, if anything. */
+export function waitMessageFor(step: RouteStep | undefined): string | null {
+  if (!step) return null;
+  const own = step.waitMessage?.trim();
+  if (own) return own;
+  return (step.trigger && DEFAULT_WAIT_MESSAGES[step.trigger]) || null;
 }
 
 /**
@@ -610,6 +644,7 @@ export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[
       stageIcon: STAGE_ICONS.includes(step.stageIcon as StageIcon) ? (step.stageIcon as StageIcon) : undefined,
       locked: step.locked === true || undefined,
       forward: step.forward === true || undefined,
+      waitMessage: step.waitMessage?.trim() || undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));
@@ -717,9 +752,15 @@ export function stepForStage(route: HasSteps, stage: LotStage): number {
 
 export type StepState = 'done' | 'current' | 'todo';
 
+/**
+ * A step is ticked the moment it is reached, not only once it is behind you -
+ * moving to a step is what "done" means here. What used to be drawn as a
+ * separate "current" mark on the rung itself is now the gap after it (see
+ * `waitMessageFor`): the rung is ticked, and the wait, if there is one, is
+ * its own row underneath.
+ */
 export function stepStateAt(index: number, current: number): StepState {
-  if (index < current) return 'done';
-  return index === current ? 'current' : 'todo';
+  return index <= current ? 'done' : 'todo';
 }
 
 /**

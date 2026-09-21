@@ -2,10 +2,12 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { isLotEvent, kindOf } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
-import { groupStages, renderStepText, stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
+import {
+  groupStages, renderStepText, stepForStage, stepStateAt, waitMessageFor, type RouteStep,
+} from '@shared/routes';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { Icon } from './Icon';
-import { StepMark } from './ui';
+import { StepMark, WaveLoader } from './ui';
 import { STAGE_ICON_META } from './RouteBuilder';
 
 /**
@@ -92,12 +94,22 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
     setNoting(null);
   }
 
+  /*
+   * The gap after the current rung, if anything is said in it: the explicit
+   * wait a caller hands in (the pre-lot/lot boundary), or failing that
+   * whatever this route says happens after its current step - a custom
+   * message the seller wrote, or the default for the checkpoint it is bound
+   * to. Nothing, most of the time: only a handful of steps are places a
+   * buyer actually waits.
+   */
+  const gapMessage = waitingFor || (current >= 0 ? waitMessageFor(steps[current]) : null);
+
   return (
     <ol className={`ladder${editable ? ' ladder--live' : ''}`}>
       {steps.map((step, index) => {
-        /* Waiting for the lot means the rung the item is on is finished, not
-           in progress: the present is the wait drawn under it. */
-        const state = waitingFor && index === current ? 'done' : stepStateAt(index, current);
+        // Reaching a step is what ticks it - the present is the gap after
+        // it, drawn as its own row below, not a mark on the rung itself.
+        const state = stepStateAt(index, current);
         const said = notes.get(index) ?? [];
         const stage = stageStarts.get(index);
         return (
@@ -240,19 +252,21 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
             </span>
           </li>
 
-          {/* Between the two ladders, and drawn as its own rung rather than
-              folded into either: the item has finished everything that happens
-              to it alone, and what happens next happens to the whole lot. */}
-          {waitingFor && index === current && (
+          {/* The gap after the current rung, drawn as its own row rather than
+              folded into either neighbour: it is neither done nor todo, it is
+              what is happening right now, between the two. */}
+          {gapMessage && index === current && (
             <li className="ladder__row ladder__row--wait is-current">
               <span className="ladder__dot" aria-hidden="true">
-                <StepMark state="current" size={11} />
+                <WaveLoader />
               </span>
               <span className="ladder__body">
-                <span className="ladder__name">{waitingFor}</span>
-                <span className="faint">
-                  Everything from here happens to the whole lot, not to this piece alone.
-                </span>
+                <span className="ladder__name">{gapMessage}</span>
+                {waitingFor && (
+                  <span className="faint">
+                    Everything from here happens to the whole lot, not to this piece alone.
+                  </span>
+                )}
               </span>
             </li>
           )}
