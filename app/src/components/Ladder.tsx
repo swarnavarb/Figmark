@@ -24,7 +24,9 @@ import { STAGE_ICON_META } from './RouteBuilder';
  * between two, which is where most of what a seller has to say actually
  * belongs ("still waiting on the airline, booked for Thursday" is not a step).
  */
-export function Ladder({ steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars }: {
+export function Ladder({
+  steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
+}: {
   steps: RouteStep[];
   current: number;
   /** Everything recorded against this journey, oldest first. */
@@ -52,6 +54,12 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
   waitingFor?: string | null;
   /** Rendered inside the lot marker, for whoever may change which lot it is. */
   lotAction?: (event: StageEvent) => ReactNode;
+  /**
+   * Show, on every step handed over to a courier, an illustrative example of
+   * the tracking ID/courier fields that step will ask for - read-only, for a
+   * route being written where no real hand-over has happened yet to show one.
+   */
+  forwardExample?: boolean;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -176,6 +184,14 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
                     </span>
                   )
               ))}
+
+              {forwardExample && step.forward && !said.length && (
+                <span className="ladder__forward-example">
+                  <Icon name="box" size={12} />
+                  <span>Tracking ID / AWB <em>e.g. DHL1234567890</em></span>
+                  <span>Courier <em>e.g. DHL</em></span>
+                </span>
+              )}
 
               {/* The affordance that makes "between the steps" a place you can
                   write: it hangs under the rung the note will be filed at. */}

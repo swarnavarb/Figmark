@@ -161,7 +161,7 @@ export interface RouteStep {
  * hand-off itself.
  */
 export const DEFAULT_WAIT_MESSAGES: Partial<Record<StepTrigger, string>> = {
-  china_received: 'Prepping for origin dispatch',
+  china_received: 'Prepping for {origin} dispatch',
   india_received: 'In transit',
 };
 
@@ -173,7 +173,7 @@ export const DEFAULT_WAIT_MESSAGES: Partial<Record<StepTrigger, string>> = {
  * name or description. `'Custom'` is the sentinel that opens free text.
  */
 export const WAIT_MESSAGE_PRESETS = [
-  'Prepping for origin dispatch',
+  'Prepping for {origin} dispatch',
   'In transit',
   'Being consolidated at the forwarder',
   'Awaiting customs clearance',
@@ -181,10 +181,20 @@ export const WAIT_MESSAGE_PRESETS = [
   'Arriving in {destination}',
 ] as const;
 
+/**
+ * The sentinel a step's `waitMessage` carries to say, explicitly, that the
+ * gap after it says nothing - distinct from an unset `waitMessage`, which
+ * falls back to `DEFAULT_WAIT_MESSAGES`. Without this a step whose trigger
+ * has a default (the two "arrived and waiting" checkpoints) could never be
+ * silenced, only overwritten with different words.
+ */
+export const NO_WAIT_MESSAGE = '__silent__';
+
 /** What the buyer reads in the gap after this step, if anything. */
 export function waitMessageFor(step: RouteStep | undefined): string | null {
   if (!step) return null;
   const own = step.waitMessage?.trim();
+  if (own === NO_WAIT_MESSAGE) return null;
   if (own) return own;
   return (step.trigger && DEFAULT_WAIT_MESSAGES[step.trigger]) || null;
 }

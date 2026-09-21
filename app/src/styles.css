@@ -3271,6 +3271,16 @@ a.provider__name:hover { color: var(--accent-text); }
   color: var(--accent-text); text-decoration: none; font-weight: var(--w-semi);
 }
 .ladder__track-link:hover { text-decoration: underline; }
+/* A preview-only illustration of the two fields a courier hand-over will
+   ask for, shown on a route being written where no real hand-over exists
+   yet to display in its place. */
+.ladder__forward-example {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  margin-top: 4px; padding: 6px 9px;
+  border: 1px dashed var(--border-strong); border-radius: var(--r-sm);
+  font-size: var(--t-2xs); color: var(--text-faint);
+}
+.ladder__forward-example em { color: var(--text-dim); font-style: normal; }
 
 /* The hand-over into a lot. Not a rung - it is the one thing on this ladder
    that happened to the item rather than along the route, so it is drawn
@@ -3393,7 +3403,7 @@ a.provider__name:hover { color: var(--accent-text); }
   55% { transform: translateX(-7px) scale(1.12); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .spotlight-badge, .routearrow, .stepmark--current, .waveloader span { animation: none; }
+  .spotlight-badge, .routearrow, .stepmark--current, .waveloader span, .rschain::before { animation: none; }
 }
 
 .stagebox {
@@ -4464,16 +4474,20 @@ a.order__name:hover { color: var(--accent-text); }
 .rschain { position: relative; display: grid; padding-left: 2px; }
 /* The road itself: a dashed green rail running behind every dot and gap,
    the full height of the chain regardless of how deep the nodes it passes
-   through are nested. */
+   through are nested. Nudged along slowly, so the road reads as travelled
+   rather than painted on. */
 .rschain::before {
   content: ''; position: absolute; top: 4px; bottom: 4px; left: 13px; width: 3px;
-  border-radius: 2px;
-  background: repeating-linear-gradient(to bottom, var(--ok) 0 9px, transparent 9px 15px);
+  border-radius: 2px; background-size: 3px 30px;
+  background-image: repeating-linear-gradient(to bottom, var(--ok) 0 9px, transparent 9px 15px);
+  animation: rsroad-travel 6s linear infinite;
 }
+@keyframes rsroad-travel { from { background-position: 0 0; } to { background-position: 0 30px; } }
 
 .rsnode { position: relative; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
 /* A stop on the road: filled green, the same colour a finished rung ticks
-   in everywhere else this app draws a journey. */
+   in everywhere else this app draws a journey. Stays green whatever the
+   card behind it is coloured - it is the one consistent mark of progress. */
 .rsnode__dot {
   position: relative; z-index: 1;
   width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
@@ -4482,38 +4496,75 @@ a.order__name:hover { color: var(--accent-text); }
   box-shadow: 0 0 0 2px var(--ok);
   font-size: var(--t-xs); font-weight: var(--w-bold);
 }
+/* The locked first stop - "Order Placed" - reads as a fact, not a button: a
+   lock instead of a number, muted instead of glowing. */
+.rsnode__dot--locked { background: var(--text-faint); box-shadow: 0 0 0 2px var(--text-faint); }
 .rsnode__card {
   display: grid; gap: 9px; padding: 12px 14px;
   border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .rsnode__card:focus-within, .rsnode__card:hover {
-  border-color: var(--accent-line); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  border-color: var(--accent-line); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16); transform: translateY(-1px);
 }
+/* Each leg of the journey takes on its own colour, the same palette the
+   stage-box builder uses, so a long chain reads as distinct legs at a
+   glance rather than one long grey list. */
+.rsnode__card--supplier { border-color: var(--coral-line); background: linear-gradient(160deg, var(--coral-soft), var(--surface) 55%); }
+.rsnode__card--warehouse { border-color: var(--aqua-line); background: linear-gradient(160deg, var(--aqua-soft), var(--surface) 55%); }
+.rsnode__card--transit { border-color: var(--blue-line); background: linear-gradient(160deg, var(--blue-soft), var(--surface) 55%); }
+.rsnode__card--customs { border-color: var(--lime-line); background: linear-gradient(160deg, var(--lime-soft), var(--surface) 55%); }
+.rsnode__card--delivery { border-color: var(--violet-line); background: linear-gradient(160deg, var(--violet-soft), var(--surface) 55%); }
+.rsnode__card--locked { background: var(--surface-2); box-shadow: none; }
 .rsnode__top { display: flex; align-items: center; gap: 8px; }
 .rsnode__name {
   flex: 1 1 auto; min-width: 0; border: none; background: transparent;
   font-size: var(--t-md); font-weight: var(--w-bold); padding: 4px 0; color: var(--text);
 }
 .rsnode__name:focus { outline: none; }
+.rsnode__name--static { padding: 4px 0; color: var(--text-dim); }
 .rsnode__desc {
   border: none; border-bottom: 1px dashed var(--border); background: transparent;
   font-size: var(--t-xs); color: var(--text-dim); padding: 2px 0 6px;
 }
 .rsnode__desc:focus { outline: none; border-bottom-color: var(--accent); }
+.rsnode__desc--static { font-size: var(--t-xs); color: var(--text-faint); padding: 0; }
+.rsnode__paymenthint {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: var(--t-2xs); color: var(--text-faint); line-height: 1.4;
+}
+.rsnode__paymenthint svg { flex: 0 0 auto; margin-top: 1px; }
 
+.rsnode__trigheading {
+  font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
 .rstrigs { display: flex; flex-wrap: wrap; gap: 6px; }
 .rstrig {
   font-size: var(--t-2xs); padding: 4px 9px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim);
-  cursor: pointer; transition: transform 0.1s ease;
+  cursor: pointer; transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 .rstrig:hover { transform: translateY(-1px); border-color: var(--accent-line); }
-.rstrig.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: var(--w-semi); }
+.rstrig.is-on {
+  border-color: var(--accent); background: var(--grad-cool); color: var(--accent-ink); font-weight: var(--w-semi);
+  box-shadow: 0 3px 10px var(--accent-soft);
+}
 
 .rsnode__more { display: grid; gap: 10px; padding-top: 4px; border-top: 1px dashed var(--border); }
 .rsnode__acts { display: flex; gap: 6px; }
+/* The illustrative fields shown the moment "hand-over to a courier" is
+   turned on - disabled, because nothing here is a real hand-over yet, only
+   a preview of what one will ask for. */
+.rsnode__forward {
+  display: grid; gap: 6px; padding: 9px 10px;
+  border: 1px dashed var(--border-strong); border-radius: var(--r-md); background: var(--surface-2);
+}
+.rsnode__forward input {
+  padding: 7px 9px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface);
+  font-size: var(--t-xs); color: var(--text-faint);
+}
 
 /* The gap between two nodes: the road's shoulder, where a wait is said and
    where a new stop is dropped in. */

@@ -2,8 +2,8 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ORDER_CHECKPOINTS } from '@shared/enums';
 import {
-  DEFAULT_WAIT_MESSAGES, TRIGGER_LABELS, WAIT_MESSAGE_PRESETS, joinIndexOf, renderStepText, sideOf, stepId,
-  waitMessageFor, type RouteStep, type StepTrigger,
+  DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, TRIGGER_LABELS, WAIT_MESSAGE_PRESETS, joinIndexOf, renderStepText,
+  sideOf, stepId, waitMessageFor, type RouteStep, type StepTrigger,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { ErrorNotice, Icon, WaveLoader } from '../components/ui';
@@ -15,6 +15,27 @@ import { Ladder } from '../components/Ladder';
  *  nothing is attached to one yet, and the tokens have to show as something
  *  rather than the literal word "origin". */
 const PREVIEW_VARS = { origin: 'China', destination: 'India' };
+
+/**
+ * The two warehouse checkpoints, renamed for the Studio's own chips and
+ * toasts to say "origin"/"destination" rather than hard-coding a country -
+ * the button a real seller presses still reads `TRIGGER_LABELS` everywhere
+ * else in the app; only how this page talks about it changes.
+ */
+const STUDIO_TRIGGER_TEXT: Partial<Record<StepTrigger, { button: string; explain: string }>> = {
+  china_received: {
+    button: '{origin} WH',
+    explain: 'When an item reaches the {origin} warehouse, you mark it from the order list and it moves automatically.',
+  },
+  india_received: {
+    button: '{destination} WH',
+    explain: 'When an item reaches the {destination} warehouse, you mark it from the order list and it moves automatically.',
+  },
+};
+
+function triggerButtonLabel(checkpoint: StepTrigger): string {
+  return renderStepText(STUDIO_TRIGGER_TEXT[checkpoint]?.button ?? TRIGGER_LABELS[checkpoint].button, PREVIEW_VARS);
+}
 
 /**
  * The other route builder: a vertical chain of nodes instead of stage boxes,
@@ -206,8 +227,6 @@ function RouteStudio({ editing, onSaved, onCancel }: {
 
   return (
     <form className="stack" onSubmit={save}>
-      <h2>{editing ? 'Edit route — Studio' : 'New route — Studio'}</h2>
-
       <label className="field">
         <span>Call it *</span>
         <input value={name} onChange={(event) => setName(event.target.value)}
@@ -218,12 +237,15 @@ function RouteStudio({ editing, onSaved, onCancel }: {
       {/* The road: every node a green stop along it, every gap a place the
           journey itself can say something while nothing else has happened. */}
       <div className="rschain">
-        <GapRow onInsert={() => insertAt(0)} />
+        {/* No shoulder and no on-ramp before the first stop: the road starts
+            at Order Placed, it does not lead up to it. */}
+        {!sided[0]?.locked && <GapRow onInsert={() => insertAt(0)} />}
         {sided.map((step, index) => (
           <div key={step.id}>
             {index === joinAt && <JoinDivider joinAt={joinAt} atEnd={false} onMove={setJoinAt} />}
             <StepNode
               step={step} index={index} count={steps.length}
+              lockedAbove={Boolean(sided[index - 1]?.locked)}
               onChange={(patch) => setAt(index, patch)}
               onRemove={() => removeAt(index)}
               onMove={(to) => moveAt(index, to)}
@@ -265,7 +287,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
                 <Icon name="right" size={13} />
               </button>
             </div>
-            <Ladder steps={named} current={Math.min(previewAt, named.length - 1)} vars={PREVIEW_VARS} />
+            <Ladder steps={named} current={Math.min(previewAt, named.length - 1)} vars={PREVIEW_VARS} forwardExample />
           </>
         ) : (
           <p className="muted">Name a node and it appears here.</p>
@@ -358,19 +380,24 @@ function WaitMessageEditor({ step, onChange, onDone }: {
 }) {
   const defaultWait = step.trigger ? DEFAULT_WAIT_MESSAGES[step.trigger] : undefined;
   const isPreset = (WAIT_MESSAGE_PRESETS as readonly string[]).includes(step.waitMessage ?? '');
-  const [customMode, setCustomMode] = useState(!isPreset && Boolean(step.waitMessage?.trim()));
+  const [customMode, setCustomMode] = useState(!isPreset && Boolean(step.waitMessage?.trim())
+    && step.waitMessage !== NO_WAIT_MESSAGE);
 
   return (
     <div className="rsgap__editor">
-      <select value={customMode ? 'Custom' : (isPreset ? step.waitMessage : '')}
+      <select value={customMode ? 'Custom' : (isPreset ? step.waitMessage : (step.waitMessage ?? ''))}
         aria-label="Pick a wait message"
         onChange={(event) => {
           if (event.target.value === 'Custom') { setCustomMode(true); return; }
           setCustomMode(false);
           onChange({ waitMessage: event.target.value || undefined });
         }}>
-        <option value="">{defaultWait ? `Default — ${defaultWait}` : 'Nothing — the gap stays quiet'}</option>
-        {WAIT_MESSAGE_PRESETS.map((text) => <option key={text} value={text}>{text}</option>)}
+        <option value="">{defaultWait ? `Default — ${renderStepText(defaultWait, PREVIEW_VARS)}` : 'Nothing — the gap stays quiet'}</option>
+        {/* A default only ever offers "use it" or "write something else" — this
+            is the third answer, explicitly saying nothing at all, which is not
+            otherwise reachable once a trigger has a default of its own. */}
+        {defaultWait && <option value={NO_WAIT_MESSAGE}>Nothing — the gap stays quiet</option>}
+        {WAIT_MESSAGE_PRESETS.map((text) => <option key={text} value={text}>{renderStepText(text, PREVIEW_VARS)}</option>)}
         <option value="Custom">Custom…</option>
       </select>
       {customMode && (
@@ -387,12 +414,18 @@ function WaitMessageEditor({ step, onChange, onDone }: {
   );
 }
 
-/** One node on the road: name, description and triggers always showing;
- *  reordering and the carrier hand-over tucked behind the chevron. */
-function StepNode({ step, index, count, onChange, onRemove, onMove }: {
+/**
+ * One node on the road: name and description always showing; what actually
+ * moves this step on — the trigger chips, the courier hand-over, reordering
+ * and delete — tucked behind the chevron, starting right where "What moves
+ * to the next step" says so.
+ */
+function StepNode({ step, index, count, lockedAbove, onChange, onRemove, onMove }: {
   step: RouteStep;
   index: number;
   count: number;
+  /** The step right before this one is the locked "Order Placed" - moving up would swap past it. */
+  lockedAbove: boolean;
   onChange: (patch: Partial<RouteStep>) => void;
   onRemove: () => void;
   onMove: (to: number) => void;
@@ -402,16 +435,42 @@ function StepNode({ step, index, count, onChange, onRemove, onMove }: {
 
   function explain(checkpoint: StepTrigger | null) {
     if (!checkpoint) {
-      push('Manual — nobody presses a button for this one; it only moves from the ladder itself.', 'info');
+      push('Manual — should be moved manually.', 'info');
       return;
     }
-    push(`"${TRIGGER_LABELS[checkpoint].button}" moves this step on its own: ${TRIGGER_LABELS[checkpoint].means}.`, 'info');
+    const custom = STUDIO_TRIGGER_TEXT[checkpoint];
+    const said = custom
+      ? renderStepText(custom.explain, PREVIEW_VARS)
+      : `moves this step on its own: ${TRIGGER_LABELS[checkpoint].means}.`;
+    push(`"${triggerButtonLabel(checkpoint)}" — ${said}`, 'info');
+  }
+
+  /* Always first, never renamed, moved or removed - "Order Placed" reads as
+     a fact about every route, and it is the one place a real order's payment
+     status shows without the seller writing a word about it. */
+  if (step.locked) {
+    return (
+      <div className="rsnode">
+        <span className="rsnode__dot rsnode__dot--locked" aria-hidden="true"><Icon name="lock" size={12} /></span>
+        <div className="rsnode__card rsnode__card--locked">
+          <div className="rsnode__top">
+            <span className="rsnode__name rsnode__name--static">{step.name}</span>
+          </div>
+          {step.description && <span className="rsnode__desc rsnode__desc--static">{step.description}</span>}
+          <span className="rsnode__paymenthint">
+            <Icon name="bank" size={12} />
+            Shows the order's payment status here automatically — paid, awaiting payment, or refunded —
+            same as it does on the order itself.
+          </span>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="rsnode">
       <span className="rsnode__dot" aria-hidden="true">{index + 1}</span>
-      <div className="rsnode__card">
+      <div className={`rsnode__card${step.stageIcon ? ` rsnode__card--${step.stageIcon}` : ''}`}>
         <div className="rsnode__top">
           <input className="rsnode__name" value={step.name} placeholder="What happens here"
             aria-label={`Step ${index + 1} name`}
@@ -427,32 +486,41 @@ function StepNode({ step, index, count, onChange, onRemove, onMove }: {
           aria-label={`Step ${index + 1} description`}
           onChange={(event) => onChange({ description: event.target.value })} />
 
-        <div className="rstrigs">
-          <button type="button"
-            className={`rstrig${!step.trigger ? ' is-on' : ''}`}
-            onClick={() => { onChange({ trigger: undefined }); explain(null); }}>
-            ✋ Manual
-          </button>
-          {ORDER_CHECKPOINTS.map((checkpoint) => (
-            <button key={checkpoint} type="button"
-              className={`rstrig${step.trigger === checkpoint ? ' is-on' : ''}`}
-              onClick={() => { onChange({ trigger: checkpoint as StepTrigger }); explain(checkpoint as StepTrigger); }}>
-              ⚡ {TRIGGER_LABELS[checkpoint].button}
-            </button>
-          ))}
-        </div>
-
         {open && (
           <div className="rsnode__more">
+            <span className="rsnode__trigheading">What moves to the next step</span>
+            <div className="rstrigs">
+              <button type="button"
+                className={`rstrig${!step.trigger ? ' is-on' : ''}`}
+                onClick={() => { onChange({ trigger: undefined }); explain(null); }}>
+                ✋ Manual
+              </button>
+              {ORDER_CHECKPOINTS.map((checkpoint) => (
+                <button key={checkpoint} type="button"
+                  className={`rstrig${step.trigger === checkpoint ? ' is-on' : ''}`}
+                  onClick={() => { onChange({ trigger: checkpoint as StepTrigger }); explain(checkpoint as StepTrigger); }}>
+                  ⚡ {triggerButtonLabel(checkpoint as StepTrigger)}
+                </button>
+              ))}
+            </div>
+
             <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
               <input type="checkbox" checked={Boolean(step.forward)}
                 onChange={(event) => onChange({ forward: event.target.checked })} />
-              <span>Hand-over to a carrier — ask for a tracking ID and courier when a lot moves here</span>
+              <span>Hand-over to a courier — ask for a tracking ID and courier name when a lot moves here</span>
             </label>
+
+            {step.forward && (
+              <div className="rsnode__forward">
+                <span className="field__hint">Asked for the moment a lot reaches this step:</span>
+                <input disabled placeholder="Tracking ID / AWB — e.g. DHL1234567890" aria-label="Example tracking ID or AWB" />
+                <input disabled placeholder="Courier — e.g. DHL" aria-label="Example courier name" />
+              </div>
+            )}
 
             <div className="rsnode__acts">
               <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
-                disabled={index === 0} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
+                disabled={index === 0 || lockedAbove} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
               <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
                 disabled={index === count - 1} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
               <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${index + 1}`}
