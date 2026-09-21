@@ -143,10 +143,9 @@ export function OrderPage() {
                 <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
                   history={data.order.stageHistory}
                   waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
-                <p className="notice notice--warn">
-                  <strong>Not in a shipment yet.</strong> The seller groups orders into one
-                  shipment before it leaves. The rest of the journey appears as soon as yours
-                  joins one.
+                <p className="notice notice--info">
+                  <strong>Not yet added to a shipment lot.</strong> The rest of the journey
+                  appears as soon as your order is added to a lot.
                 </p>
               </>
             )
