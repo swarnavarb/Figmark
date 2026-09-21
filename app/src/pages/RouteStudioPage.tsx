@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { Fragment, useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ORDER_CHECKPOINTS } from '@shared/enums';
 import {
@@ -280,27 +280,35 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             at Order Placed, it does not lead up to it. */}
         {!sided[0]?.locked && <GapRow onInsert={() => insertAt(0)} />}
         {sided.map((step, index) => (
-          <div key={step.id}>
+          <Fragment key={step.id}>
             {index === joinAt && <JoinDivider joinAt={joinAt} atEnd={false} onMove={setJoinAt} />}
             {index === leaveAt && (
               <LeaveDivider leaveAt={leaveAt} joinAt={joinAt}
                 atEnd={leaveAt >= steps.length - 1} onMove={setLeaveAt} />
             )}
-            <StepNode
-              step={step} index={index} count={steps.length}
-              lockedAbove={Boolean(sided[index - 1]?.locked)}
-              lockedBelow={Boolean(sided[index + 1]?.locked)}
-              onChange={(patch) => setAt(index, patch)}
-              onRemove={() => removeAt(index)}
-              onMove={(to) => moveAt(index, to)}
-            />
-            {/* Nothing follows the locked last stop - no shoulder, no on-ramp,
-                no "what buyers see" gap for a wait that cannot happen. */}
-            {!(step.locked && index === sided.length - 1) && (
-              <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
-                onInsert={() => insertAt(index + 1)} />
-            )}
-          </div>
+            {/* The line lives on this wrapper alone, sized to its own content -
+                which is what lets it reach exactly to the next dot however
+                tall a description or an open wait-editor makes this one, and
+                why the very last wrapper (Delivered) gets none: nothing
+                follows it for a line to reach. */}
+            <div className={`rschain__row${index === sided.length - 1 ? ' rschain__row--last' : ''}`}>
+              <StepNode
+                step={step} index={index} count={steps.length}
+                lockedAbove={Boolean(sided[index - 1]?.locked)}
+                lockedBelow={Boolean(sided[index + 1]?.locked)}
+                onChange={(patch) => setAt(index, patch)}
+                onRemove={() => removeAt(index)}
+                onMove={(to) => moveAt(index, to)}
+              />
+              {/* Nothing follows the locked last stop - no shoulder, no
+                  on-ramp, no "what buyers see" gap for a wait that cannot
+                  happen. */}
+              {!(step.locked && index === sided.length - 1) && (
+                <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
+                  onInsert={() => insertAt(index + 1)} />
+              )}
+            </div>
+          </Fragment>
         ))}
         {joinAt >= steps.length && <JoinDivider joinAt={joinAt} atEnd onMove={setJoinAt} />}
       </div>
@@ -532,7 +540,7 @@ function StepNode({ step, index, count, lockedAbove, lockedBelow, onChange, onRe
   /* Always first, never renamed, moved or removed - "Order Placed" reads as
      a fact about every route, and it is the one place a real order's payment
      status shows without the seller writing a word about it. */
-  if (step.locked) {
+  if (step.locked && step.trigger !== 'delivered') {
     return (
       <div className="rsnode">
         <span className="rsnode__dot rsnode__dot--locked" aria-hidden="true"><Icon name="lock" size={12} /></span>
@@ -551,14 +559,23 @@ function StepNode({ step, index, count, lockedAbove, lockedBelow, onChange, onRe
     );
   }
 
+  /* The last stop, and the only other locked one - but not the same kind of
+     locked. Only its name and its place in the chain are fixed: the text
+     "Delivered", the trigger that is always the "Delivered" button, and
+     that nothing can follow it. Its description is the seller's to write
+     like any other step's, which is why it does not get Order Placed's
+     fully-static treatment. */
+  const isDelivered = step.locked && step.trigger === 'delivered';
+
   return (
     <div className="rsnode">
       <span className="rsnode__dot" aria-hidden="true">{index + 1}</span>
-      <div className={`rsnode__card${step.stageIcon ? ` rsnode__card--${step.stageIcon}` : ''}`}>
+      <div className={`rsnode__card${step.stageIcon ? ` rsnode__card--${step.stageIcon}` : ''}${isDelivered ? ' rsnode__card--delivered' : ''}`}>
         <div className="rsnode__top">
           <input className="rsnode__name" value={step.name} placeholder="What happens here"
-            aria-label={`Step ${index + 1} name`}
+            aria-label={`Step ${index + 1} name`} disabled={isDelivered}
             onChange={(event) => onChange({ name: event.target.value })} />
+          {isDelivered && <Icon name="lock" size={13} />}
           <button type="button" className="iconbtn" aria-label={open ? 'Collapse node' : 'Expand node'}
             onClick={() => setOpen((value) => !value)}>
             <Icon name="chevron" size={13} />
@@ -573,43 +590,55 @@ function StepNode({ step, index, count, lockedAbove, lockedBelow, onChange, onRe
         {open && (
           <div className="rsnode__more">
             <span className="rsnode__trigheading">What moves to the next step</span>
-            <div className="rstrigs">
-              <button type="button"
-                className={`rstrig${!step.trigger ? ' is-on' : ''}`}
-                onClick={() => { onChange({ trigger: undefined }); explain(null); }}>
-                ✋ Manual
-              </button>
-              {ORDER_CHECKPOINTS.map((checkpoint) => (
-                <button key={checkpoint} type="button"
-                  className={`rstrig${step.trigger === checkpoint ? ' is-on' : ''}`}
-                  onClick={() => { onChange({ trigger: checkpoint as StepTrigger }); explain(checkpoint as StepTrigger); }}>
-                  ⚡ {triggerButtonLabel(checkpoint as StepTrigger)}
+            {isDelivered ? (
+              <div className="rstrigs">
+                <span className="rstrig is-on rstrig--fixed">⚡ {triggerButtonLabel('delivered')}</span>
+              </div>
+            ) : (
+              <div className="rstrigs">
+                <button type="button"
+                  className={`rstrig${!step.trigger ? ' is-on' : ''}`}
+                  onClick={() => { onChange({ trigger: undefined }); explain(null); }}>
+                  ✋ Manual
                 </button>
-              ))}
-            </div>
-
-            <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
-              <input type="checkbox" checked={Boolean(step.forward)}
-                onChange={(event) => onChange({ forward: event.target.checked })} />
-              <span>Hand-over to a courier — ask for a tracking ID and courier name when a lot moves here</span>
-            </label>
-
-            {step.forward && (
-              <div className="rsnode__forward">
-                <span className="field__hint">Asked for the moment a lot reaches this step:</span>
-                <input disabled placeholder="Tracking ID / AWB — e.g. DHL1234567890" aria-label="Example tracking ID or AWB" />
-                <input disabled placeholder="Courier — e.g. DHL" aria-label="Example courier name" />
+                {ORDER_CHECKPOINTS.filter((checkpoint) => checkpoint !== 'delivered').map((checkpoint) => (
+                  <button key={checkpoint} type="button"
+                    className={`rstrig${step.trigger === checkpoint ? ' is-on' : ''}`}
+                    onClick={() => { onChange({ trigger: checkpoint as StepTrigger }); explain(checkpoint as StepTrigger); }}>
+                    ⚡ {triggerButtonLabel(checkpoint as StepTrigger)}
+                  </button>
+                ))}
               </div>
             )}
 
-            <div className="rsnode__acts">
-              <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
-                disabled={index === 0 || lockedAbove} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
-              <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
-                disabled={index === count - 1 || lockedBelow} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
-              <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${index + 1}`}
-                onClick={onRemove}><Icon name="trash" size={12} /></button>
-            </div>
+            {!isDelivered && (
+              <>
+                <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
+                  <input type="checkbox" checked={Boolean(step.forward)}
+                    onChange={(event) => onChange({ forward: event.target.checked })} />
+                  <span>Hand-over to a courier — ask for a tracking ID and courier name when a lot moves here</span>
+                </label>
+
+                {step.forward && (
+                  <div className="rsnode__forward">
+                    <span className="field__hint">Asked for the moment a lot reaches this step:</span>
+                    <input disabled placeholder="Tracking ID / AWB — e.g. DHL1234567890" aria-label="Example tracking ID or AWB" />
+                    <input disabled placeholder="Courier — e.g. DHL" aria-label="Example courier name" />
+                  </div>
+                )}
+              </>
+            )}
+
+            {!isDelivered && (
+              <div className="rsnode__acts">
+                <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
+                  disabled={index === 0 || lockedAbove} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
+                <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
+                  disabled={index === count - 1 || lockedBelow} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
+                <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${index + 1}`}
+                  onClick={onRemove}><Icon name="trash" size={12} /></button>
+              </div>
+            )}
           </div>
         )}
       </div>

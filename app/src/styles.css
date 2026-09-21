@@ -3406,7 +3406,7 @@ a.provider__name:hover { color: var(--accent-text); }
   55% { transform: translateX(-7px) scale(1.12); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .spotlight-badge, .routearrow, .stepmark--current, .waveloader span, .rschain::before { animation: none; }
+  .spotlight-badge, .routearrow, .stepmark--current, .waveloader span, .rschain__row::before { animation: none; }
 }
 
 .stagebox {
@@ -4475,12 +4475,17 @@ a.order__name:hover { color: var(--accent-text); }
 .rscard__note { font-size: var(--t-xs); color: var(--text-dim); }
 
 .rschain { position: relative; display: grid; padding-left: 2px; }
-/* The road itself: a dashed green rail running behind every dot and gap,
-   the full height of the chain regardless of how deep the nodes it passes
-   through are nested. Nudged along slowly, so the road reads as travelled
-   rather than painted on. */
-.rschain::before {
-  content: ''; position: absolute; top: 4px; bottom: 4px; left: 13px; width: 3px;
+/* The road, one segment per stop rather than one span for the whole chain -
+   each segment sized to its own row (the node's card plus the gap after
+   it), which is what lets it reach exactly to the next dot whatever an
+   open description or wait-editor does to that row's height. The last
+   stop - always Delivered - draws no segment: nothing follows it for the
+   road to reach, so it stops exactly on that number and nowhere past it.
+   Nudged along slowly, so the road reads as travelled rather than painted
+   on. */
+.rschain__row { position: relative; }
+.rschain__row:not(.rschain__row--last)::before {
+  content: ''; position: absolute; top: 26px; bottom: 0; left: 13px; width: 3px;
   border-radius: 2px; background-size: 3px 30px;
   background-image: repeating-linear-gradient(to bottom, var(--ok) 0 9px, transparent 9px 15px);
   animation: rsroad-travel 6s linear infinite;
@@ -4520,12 +4525,17 @@ a.order__name:hover { color: var(--accent-text); }
 .rsnode__card--customs { border-color: var(--lime-line); background: linear-gradient(160deg, var(--lime-soft), var(--surface) 55%); }
 .rsnode__card--delivery { border-color: var(--violet-line); background: linear-gradient(160deg, var(--violet-soft), var(--surface) 55%); }
 .rsnode__card--locked { background: var(--surface-2); box-shadow: none; }
+/* Delivered: still a card, still openable, still describable - only its
+   name and its place are fixed, so it reads as the finish line rather than
+   as another dead stagestep. */
+.rsnode__card--delivered { border-color: rgba(52, 211, 153, 0.45); background: linear-gradient(160deg, var(--ok-soft), var(--surface) 55%); }
 .rsnode__top { display: flex; align-items: center; gap: 8px; }
 .rsnode__name {
   flex: 1 1 auto; min-width: 0; border: none; background: transparent;
   font-size: var(--t-md); font-weight: var(--w-bold); padding: 4px 0; color: var(--text);
 }
 .rsnode__name:focus { outline: none; }
+.rsnode__name:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); cursor: default; }
 .rsnode__name--static { padding: 4px 0; color: var(--text-dim); }
 .rsnode__desc {
   border: none; border-bottom: 1px dashed var(--border); background: transparent;
@@ -4550,6 +4560,9 @@ a.order__name:hover { color: var(--accent-text); }
   cursor: pointer; transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 .rstrig:hover { transform: translateY(-1px); border-color: var(--accent-line); }
+/* Delivered's own chip: not a choice among others, so it neither looks
+   clickable nor is one - the trigger here is fixed, not merely selected. */
+.rstrig--fixed { cursor: default; }
 .rstrig.is-on {
   border-color: var(--accent); background: var(--grad-cool); color: var(--accent-ink); font-weight: var(--w-semi);
   box-shadow: 0 3px 10px var(--accent-soft);

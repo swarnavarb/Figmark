@@ -770,8 +770,8 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
 type LotSection = 'people' | 'tracking' | 'crew' | 'settings';
 
 const LOT_SECTIONS: { id: LotSection; label: string; icon: IconName; hint: string }[] = [
-  { id: 'people', label: 'People', icon: 'users', hint: 'Who is waiting for what' },
-  { id: 'tracking', label: 'Tracking', icon: 'truck', hint: 'Where it is, what is in it' },
+  { id: 'people', label: 'Customers & Orders', icon: 'users', hint: 'Who is waiting for what, and every item of theirs' },
+  { id: 'tracking', label: 'Tracking', icon: 'truck', hint: 'Where the whole lot is' },
   { id: 'crew', label: 'Crew', icon: 'plane', hint: 'Who moves it' },
   { id: 'settings', label: 'Settings', icon: 'tag', hint: 'Its name and its route' },
 ];
@@ -812,7 +812,9 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
      wording afterwards - which is what a growing regular expression over
      every success message had become. */
   const [flash, setFlash] = useState<{ text: string; ok: boolean } | null>(null);
-  const [section, setSection] = useState<LotSection>('tracking');
+  /* Customers & Orders first: it's where every item's own tracking - and
+     the one tick that ends it, "Delivered" - actually happens. */
+  const [section, setSection] = useState<LotSection>('people');
   const [editing, setEditing] = useState(false);
   const [rerouting, setRerouting] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -965,9 +967,92 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
       {error && data && <ErrorNotice message={error} />}
 
       {section === 'people' && (
-        people
-          ? <LotPeople board={people} onChanged={setPeople} onError={setError} />
-          : <p className="muted">Loading…</p>
+        <div className="stack">
+          {people
+            ? <LotPeople board={people} onChanged={setPeople} onError={setError} />
+            : <p className="muted">Loading…</p>}
+
+          {confirmDeliver && (
+            <Modal title="Mark delivered?" onClose={() => setConfirmDeliver(null)}>
+              <div className="stack">
+                <p>
+                  This marks <strong>{confirmDeliver.itemName}</strong> for{' '}
+                  <strong>{confirmDeliver.buyerName}</strong> as delivered. It shows delivered on their
+                  order everywhere it's read, and moves the order from active to completed. Once every
+                  item in this lot is marked this way, the lot itself moves to completed too.
+                </p>
+                <button type="button" className="btn btn--block" disabled={busy}
+                  onClick={() => {
+                    const item = confirmDeliver;
+                    setConfirmDeliver(null);
+                    void run('Marked delivered.', () => api.setCheckpoint(item.id, 'delivered', true).then(() => {}));
+                  }}>
+                  {busy ? 'Marking…' : 'Mark delivered'}
+                </button>
+                <button type="button" className="btn btn--quiet btn--block" onClick={() => setConfirmDeliver(null)}>
+                  Cancel
+                </button>
+              </div>
+            </Modal>
+          )}
+
+          <div className="card card--pad stack">
+            <div className="row row--between">
+              <h2>In this lot ({items.length})</h2>
+              <span className="faint">{totals.units} units</span>
+            </div>
+            <span className="field__hint">
+              Every item here travels the lot's route. Move the lot and all {items.length} move
+              with it.
+            </span>
+
+            {items.length === 0 ? (
+              <p className="muted">
+                Nothing in this lot yet. Add the items your customers have already bought.
+              </p>
+            ) : (
+              items.map((item) => (
+                <LotItemRow
+                  key={item.id}
+                  item={item}
+                  steps={route.steps}
+                  others={others}
+                  busy={busy}
+                  onTick={(checkpoint, on) =>
+                    run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
+                  onRequestDeliver={() => setConfirmDeliver(item)}
+                  onMove={(to, details) =>
+                    run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
+                      api.stepItem(item.id, { to, ...details }).then(() => {}))}
+                  onNote={(text, at) =>
+                    run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
+                  onRelot={(to) =>
+                    run('Item moved to another lot.', () =>
+                      api.assignOrderToLot(item.id, { lotId: to }).then(() => {}))}
+                />
+              ))
+            )}
+          </div>
+
+          {/* Sold, bound for a lot, in none - which before this screen existed
+              was a list nobody could see. Shut, because most of the time there
+              is nothing in it. */}
+          <div className="card card--pad stack">
+            <button type="button" className="disclose" aria-expanded={adding}
+              onClick={() => setAdding(!adding)}>
+              <Icon name={adding ? 'down' : 'right'} size={14} />
+              Not in any lot
+              <span className="faint">{adding ? 'hide' : 'add them to this one'}</span>
+            </button>
+            {adding && (
+              <AddItemsPanel
+                lotId={lot.id}
+                onClose={() => setAdding(false)}
+                onAdded={() => { setAdding(false); void load(); }}
+              />
+            )}
+          </div>
+        </div>
       )}
 
       {section === 'tracking' && (
@@ -1058,87 +1143,6 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               )}
             </Modal>
           )}
-
-          {confirmDeliver && (
-            <Modal title="Mark delivered?" onClose={() => setConfirmDeliver(null)}>
-              <div className="stack">
-                <p>
-                  This marks <strong>{confirmDeliver.itemName}</strong> for{' '}
-                  <strong>{confirmDeliver.buyerName}</strong> as delivered. It shows delivered on their
-                  order everywhere it's read, and moves the order from active to completed. Once every
-                  item in this lot is marked this way, the lot itself moves to completed too.
-                </p>
-                <button type="button" className="btn btn--block" disabled={busy}
-                  onClick={() => {
-                    const item = confirmDeliver;
-                    setConfirmDeliver(null);
-                    void run('Marked delivered.', () => api.setCheckpoint(item.id, 'delivered', true).then(() => {}));
-                  }}>
-                  {busy ? 'Marking…' : 'Mark delivered'}
-                </button>
-                <button type="button" className="btn btn--quiet btn--block" onClick={() => setConfirmDeliver(null)}>
-                  Cancel
-                </button>
-              </div>
-            </Modal>
-          )}
-
-          <div className="card card--pad stack">
-            <div className="row row--between">
-              <h2>In this lot ({items.length})</h2>
-              <span className="faint">{totals.units} units</span>
-            </div>
-            <span className="field__hint">
-              Every item here travels the lot's route. Move the lot and all {items.length} move
-              with it.
-            </span>
-
-            {items.length === 0 ? (
-              <p className="muted">
-                Nothing in this lot yet. Add the items your customers have already bought.
-              </p>
-            ) : (
-              items.map((item) => (
-                <LotItemRow
-                  key={item.id}
-                  item={item}
-                  steps={route.steps}
-                  others={others}
-                  busy={busy}
-                  onTick={(checkpoint, on) =>
-                    run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
-                  onRequestDeliver={() => setConfirmDeliver(item)}
-                  onMove={(to, details) =>
-                    run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
-                      api.stepItem(item.id, { to, ...details }).then(() => {}))}
-                  onNote={(text, at) =>
-                    run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
-                  onRelot={(to) =>
-                    run('Item moved to another lot.', () =>
-                      api.assignOrderToLot(item.id, { lotId: to }).then(() => {}))}
-                />
-              ))
-            )}
-          </div>
-
-          {/* Sold, bound for a lot, in none - which before this screen existed
-              was a list nobody could see. Shut, because most of the time there
-              is nothing in it. */}
-          <div className="card card--pad stack">
-            <button type="button" className="disclose" aria-expanded={adding}
-              onClick={() => setAdding(!adding)}>
-              <Icon name={adding ? 'down' : 'right'} size={14} />
-              Not in any lot
-              <span className="faint">{adding ? 'hide' : 'add them to this one'}</span>
-            </button>
-            {adding && (
-              <AddItemsPanel
-                lotId={lot.id}
-                onClose={() => setAdding(false)}
-                onAdded={() => { setAdding(false); void load(); }}
-              />
-            )}
-          </div>
         </div>
       )}
 
