@@ -165,6 +165,22 @@ export const DEFAULT_WAIT_MESSAGES: Partial<Record<StepTrigger, string>> = {
   india_received: 'In transit',
 };
 
+/**
+ * The wait messages a seller reaches for most often, offered as a picker the
+ * same way `TRACKING_STATUS_OPTIONS` offers step names - one tap to say a
+ * common wait rather than typing it slightly differently on every route.
+ * `{origin}`/`{destination}` work here exactly as they do in a step's own
+ * name or description. `'Custom'` is the sentinel that opens free text.
+ */
+export const WAIT_MESSAGE_PRESETS = [
+  'Prepping for origin dispatch',
+  'In transit',
+  'Being consolidated at the forwarder',
+  'Awaiting customs clearance',
+  'Leaving {origin}',
+  'Arriving in {destination}',
+] as const;
+
 /** What the buyer reads in the gap after this step, if anything. */
 export function waitMessageFor(step: RouteStep | undefined): string | null {
   if (!step) return null;

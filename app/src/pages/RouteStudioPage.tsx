@@ -1,15 +1,20 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ORDER_CHECKPOINTS } from '@shared/enums';
 import {
-  DEFAULT_WAIT_MESSAGES, TRIGGER_LABELS, joinIndexOf, sideOf, stepId,
-  type RouteStep, type StepTrigger,
+  DEFAULT_WAIT_MESSAGES, TRIGGER_LABELS, WAIT_MESSAGE_PRESETS, joinIndexOf, renderStepText, sideOf, stepId,
+  waitMessageFor, type RouteStep, type StepTrigger,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
-import { ErrorNotice, Icon } from '../components/ui';
-import { SkeletonRows } from '../components/Feedback';
+import { ErrorNotice, Icon, WaveLoader } from '../components/ui';
+import { SkeletonRows, useToast } from '../components/Feedback';
 import { STAGE_ICON_META } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
+
+/** Stands in for the real lot's countries while a route is being written -
+ *  nothing is attached to one yet, and the tokens have to show as something
+ *  rather than the literal word "origin". */
+const PREVIEW_VARS = { origin: 'China', destination: 'India' };
 
 /**
  * The other route builder: a vertical chain of nodes instead of stage boxes,
@@ -210,49 +215,24 @@ function RouteStudio({ editing, onSaved, onCancel }: {
         <span className="field__hint">For your own lists. Buyers see the nodes below, not this.</span>
       </label>
 
+      {/* The road: every node a green stop along it, every gap a place the
+          journey itself can say something while nothing else has happened. */}
       <div className="rschain">
-        <Inserter onClick={() => insertAt(0)} />
+        <GapRow onInsert={() => insertAt(0)} />
         {sided.map((step, index) => (
           <div key={step.id}>
-            {index === joinAt && (
-              <div className="rsjoin">
-                <span className="rsjoin__line" aria-hidden="true" />
-                <span className="rsjoin__label">
-                  <Icon name="box" size={12} /> Items join the lot here
-                </span>
-                <span className="rsjoin__acts">
-                  <button type="button" className="iconbtn" aria-label="Move the join line earlier"
-                    disabled={joinAt === 0} onClick={() => setJoinAt(joinAt - 1)}>
-                    <Icon name="up" size={12} />
-                  </button>
-                  <button type="button" className="iconbtn" aria-label="Move the join line later"
-                    disabled={joinAt >= steps.length} onClick={() => setJoinAt(joinAt + 1)}>
-                    <Icon name="down" size={12} />
-                  </button>
-                </span>
-              </div>
-            )}
+            {index === joinAt && <JoinDivider joinAt={joinAt} atEnd={false} onMove={setJoinAt} />}
             <StepNode
               step={step} index={index} count={steps.length}
               onChange={(patch) => setAt(index, patch)}
               onRemove={() => removeAt(index)}
               onMove={(to) => moveAt(index, to)}
             />
-            <Inserter onClick={() => insertAt(index + 1)} />
+            <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
+              onInsert={() => insertAt(index + 1)} />
           </div>
         ))}
-        {joinAt >= steps.length && (
-          <div className="rsjoin">
-            <span className="rsjoin__line" aria-hidden="true" />
-            <span className="rsjoin__label"><Icon name="box" size={12} /> Items join the lot here</span>
-            <span className="rsjoin__acts">
-              <button type="button" className="iconbtn" aria-label="Move the join line earlier"
-                disabled={joinAt === 0} onClick={() => setJoinAt(joinAt - 1)}>
-                <Icon name="up" size={12} />
-              </button>
-            </span>
-          </div>
-        )}
+        {joinAt >= steps.length && <JoinDivider joinAt={joinAt} atEnd onMove={setJoinAt} />}
       </div>
 
       {named.length < 2 && (
@@ -266,6 +246,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             {bound === 0
               ? 'Nothing here moves on its own yet — bind a button to a node above.'
               : `${bound} of ${named.length} steps move when you press a button.`}
+            {' '}Shown with example countries — a real lot fills {'{origin}'}/{'{destination}'} in on its own.
           </span>
         </div>
 
@@ -284,7 +265,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
                 <Icon name="right" size={13} />
               </button>
             </div>
-            <Ladder steps={named} current={Math.min(previewAt, named.length - 1)} />
+            <Ladder steps={named} current={Math.min(previewAt, named.length - 1)} vars={PREVIEW_VARS} />
           </>
         ) : (
           <p className="muted">Name a node and it appears here.</p>
@@ -303,21 +284,111 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   );
 }
 
-/** The "+" sitting on the connecting line between two nodes - or before the
- *  first, or after the last - so a step is inserted exactly where it is
- *  wanted rather than always tacked onto the end of the chain. */
-function Inserter({ onClick }: { onClick: () => void }) {
+/** The line the whole chain moves the join point along - shown wherever it
+ *  currently sits, whether that is between two nodes or past the last one. */
+function JoinDivider({ joinAt, atEnd, onMove }: {
+  joinAt: number;
+  atEnd: boolean;
+  onMove: (next: number) => void;
+}) {
   return (
-    <div className="rsinsert">
-      <span className="rsinsert__line" aria-hidden="true" />
-      <button type="button" className="rsinsert__btn" aria-label="Insert a step here" onClick={onClick}>
+    <div className="rsjoin">
+      <span className="rsjoin__label">
+        <Icon name="box" size={12} /> Items join the lot here
+      </span>
+      <span className="rsjoin__acts">
+        <button type="button" className="iconbtn" aria-label="Move the join line earlier"
+          disabled={joinAt === 0} onClick={() => onMove(joinAt - 1)}>
+          <Icon name="up" size={12} />
+        </button>
+        {!atEnd && (
+          <button type="button" className="iconbtn" aria-label="Move the join line later"
+            onClick={() => onMove(joinAt + 1)}>
+            <Icon name="down" size={12} />
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The gap between two nodes (or before the first, or after the last): the
+ * "+" that inserts a step exactly here, and - when there is a step above it
+ * - a click-to-add line saying what a buyer reads in this exact gap while
+ * they are waiting on it. The wave that plays on the real timeline is shown
+ * here too, the moment there is a message, so writing one and seeing how it
+ * reads are the same action.
+ */
+function GapRow({ afterStep, onChangeWait, onInsert }: {
+  afterStep?: RouteStep;
+  onChangeWait?: (patch: Partial<RouteStep>) => void;
+  onInsert: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const message = afterStep ? waitMessageFor(afterStep) : null;
+
+  return (
+    <div className="rsgap">
+      {afterStep && onChangeWait && (
+        editing ? (
+          <WaitMessageEditor step={afterStep} onChange={onChangeWait} onDone={() => setEditing(false)} />
+        ) : (
+          <button type="button" className="rsgap__wait" onClick={() => setEditing(true)}>
+            {message ? <WaveLoader /> : <Icon name="plus" size={11} />}
+            <span className={message ? undefined : 'faint'}>
+              {message ? renderStepText(message, PREVIEW_VARS) : 'What buyers see in between steps'}
+            </span>
+          </button>
+        )
+      )}
+      <button type="button" className="rsgap__insert" aria-label="Insert a step here" onClick={onInsert}>
         <Icon name="plus" size={13} />
       </button>
     </div>
   );
 }
 
-/** One node: always-visible name and quick controls, everything else open. */
+/** Preset wait messages, plus free text for the one in a while that needs its
+ *  own words - the same "pick or write your own" shape as a step's name. */
+function WaitMessageEditor({ step, onChange, onDone }: {
+  step: RouteStep;
+  onChange: (patch: Partial<RouteStep>) => void;
+  onDone: () => void;
+}) {
+  const defaultWait = step.trigger ? DEFAULT_WAIT_MESSAGES[step.trigger] : undefined;
+  const isPreset = (WAIT_MESSAGE_PRESETS as readonly string[]).includes(step.waitMessage ?? '');
+  const [customMode, setCustomMode] = useState(!isPreset && Boolean(step.waitMessage?.trim()));
+
+  return (
+    <div className="rsgap__editor">
+      <select value={customMode ? 'Custom' : (isPreset ? step.waitMessage : '')}
+        aria-label="Pick a wait message"
+        onChange={(event) => {
+          if (event.target.value === 'Custom') { setCustomMode(true); return; }
+          setCustomMode(false);
+          onChange({ waitMessage: event.target.value || undefined });
+        }}>
+        <option value="">{defaultWait ? `Default — ${defaultWait}` : 'Nothing — the gap stays quiet'}</option>
+        {WAIT_MESSAGE_PRESETS.map((text) => <option key={text} value={text}>{text}</option>)}
+        <option value="Custom">Custom…</option>
+      </select>
+      {customMode && (
+        <input value={step.waitMessage ?? ''} placeholder="e.g. Leaving {origin}" autoFocus
+          aria-label="Custom wait message"
+          onChange={(event) => onChange({ waitMessage: event.target.value })} />
+      )}
+      <span className="field__hint">
+        Shown with the moving wave above, between this step and the next. {'{origin}'} and{' '}
+        {'{destination}'} fill in from the lot, same as in a step's name.
+      </span>
+      <button type="button" className="btn btn--sm" onClick={onDone}>Done</button>
+    </div>
+  );
+}
+
+/** One node on the road: name, description and triggers always showing;
+ *  reordering and the carrier hand-over tucked behind the chevron. */
 function StepNode({ step, index, count, onChange, onRemove, onMove }: {
   step: RouteStep;
   index: number;
@@ -327,7 +398,15 @@ function StepNode({ step, index, count, onChange, onRemove, onMove }: {
   onMove: (to: number) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const defaultWait = step.trigger ? DEFAULT_WAIT_MESSAGES[step.trigger] : undefined;
+  const push = useToast();
+
+  function explain(checkpoint: StepTrigger | null) {
+    if (!checkpoint) {
+      push('Manual — nobody presses a button for this one; it only moves from the ladder itself.', 'info');
+      return;
+    }
+    push(`"${TRIGGER_LABELS[checkpoint].button}" moves this step on its own: ${TRIGGER_LABELS[checkpoint].means}.`, 'info');
+  }
 
   return (
     <div className="rsnode">
@@ -343,17 +422,21 @@ function StepNode({ step, index, count, onChange, onRemove, onMove }: {
           </button>
         </div>
 
+        <input className="rsnode__desc" value={step.description}
+          placeholder="Say what happens here, in one line — {origin} and {destination} work too"
+          aria-label={`Step ${index + 1} description`}
+          onChange={(event) => onChange({ description: event.target.value })} />
+
         <div className="rstrigs">
           <button type="button"
             className={`rstrig${!step.trigger ? ' is-on' : ''}`}
-            onClick={() => onChange({ trigger: undefined })}>
+            onClick={() => { onChange({ trigger: undefined }); explain(null); }}>
             ✋ Manual
           </button>
           {ORDER_CHECKPOINTS.map((checkpoint) => (
             <button key={checkpoint} type="button"
               className={`rstrig${step.trigger === checkpoint ? ' is-on' : ''}`}
-              title={TRIGGER_LABELS[checkpoint].means}
-              onClick={() => onChange({ trigger: checkpoint as StepTrigger })}>
+              onClick={() => { onChange({ trigger: checkpoint as StepTrigger }); explain(checkpoint as StepTrigger); }}>
               ⚡ {TRIGGER_LABELS[checkpoint].button}
             </button>
           ))}
@@ -361,25 +444,6 @@ function StepNode({ step, index, count, onChange, onRemove, onMove }: {
 
         {open && (
           <div className="rsnode__more">
-            <label className="field">
-              <span>Description</span>
-              <input value={step.description} placeholder="Say what happens here, in one line"
-                aria-label={`Step ${index + 1} description`}
-                onChange={(event) => onChange({ description: event.target.value })} />
-            </label>
-
-            <label className="field">
-              <span>What buyers read in the gap after this step</span>
-              <input value={step.waitMessage ?? ''}
-                placeholder={defaultWait ?? 'Nothing — the gap stays quiet'}
-                aria-label={`Wait message after step ${index + 1}`}
-                onChange={(event) => onChange({ waitMessage: event.target.value })} />
-              <span className="field__hint">
-                Shown with a small moving icon while this is the last step reached and the next
-                one has not happened yet.{defaultWait && ' Leave it blank to use the default above.'}
-              </span>
-            </label>
-
             <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
               <input type="checkbox" checked={Boolean(step.forward)}
                 onChange={(event) => onChange({ forward: event.target.checked })} />

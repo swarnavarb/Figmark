@@ -23,6 +23,7 @@ import { EscrowPage } from './pages/EscrowPage';
 import { SupplierPage, PackingLotPage } from './pages/SupplierPage';
 import { ProfileByHandlePage } from './pages/ProfileByHandlePage';
 import { SessionProvider, useSession } from './session';
+import { ToastHost } from './components/Feedback';
 import './styles.css';
 
 /**
@@ -97,7 +98,9 @@ createRoot(container).render(
   <StrictMode>
     <BrowserRouter>
       <SessionProvider>
-        <App />
+        <ToastHost>
+          <App />
+        </ToastHost>
       </SessionProvider>
     </BrowserRouter>
   </StrictMode>,
