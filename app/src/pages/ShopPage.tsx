@@ -717,6 +717,12 @@ function MyItems({ store }: { store: StoreAccess }) {
 /** What a seller can be looking for on this screen. */
 type OrderFilter = 'all' | 'answer' | 'nolot';
 
+/** Done, either because the buyer confirmed it or because the seller ticked
+ *  it delivered on the lot's own item list - either one is the same fact. */
+function isCompleted(row: SaleRow): boolean {
+  return row.status === 'delivered' || Boolean(row.deliveredAt);
+}
+
 /**
  * Every customer purchase, one card each.
  *
@@ -737,6 +743,8 @@ function Orders({ store }: { store: StoreAccess }) {
   const [filing, setFiling] = useState<SaleRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [filter, setFilter] = useState<OrderFilter>('all');
+  /** Delivered is done; everything else is still being worked. */
+  const [statusFilter, setStatusFilter] = useState<'active' | 'completed'>('active');
 
   const load = useCallback(async () => {
     setError(null);
@@ -769,7 +777,11 @@ function Orders({ store }: { store: StoreAccess }) {
   if (!data) return <p className="muted">Loading…</p>;
 
   const needsAnswer = new Set([...data.waiting, ...data.placed].map((row) => row.id));
-  const shown = data.orders.filter((row) =>
+  const scoped = data.orders.filter((row) =>
+    statusFilter === 'completed' ? isCompleted(row) : !isCompleted(row));
+  /* The "All / To answer / No lot" split only means anything for active
+     orders - a completed one needs nothing answered and rides no lot search. */
+  const shown = statusFilter === 'completed' ? scoped : scoped.filter((row) =>
     filter === 'all'
       ? true
       : filter === 'answer'
@@ -789,22 +801,38 @@ function Orders({ store }: { store: StoreAccess }) {
     <div className="stack">
       {error && <ErrorNotice message={error} />}
 
-      <div className="seg" role="tablist" aria-label="Which orders">
-        {([
-          ['all', `All ${data.orders.length}`],
-          ['answer', `To answer ${needsAnswer.size}`],
-          ['nolot', `No lot ${data.orders.filter((row) => row.awaitingLot).length}`],
-        ] as [OrderFilter, string][]).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={filter === id}
-            className={filter === id ? 'is-on' : ''} onClick={() => setFilter(id)}>
-            {label}
+      <div className="seg" role="tablist" aria-label="Order status">
+        {(['active', 'completed'] as const).map((entry) => (
+          <button key={entry} type="button" role="tab" aria-selected={statusFilter === entry}
+            className={statusFilter === entry ? 'is-on' : ''}
+            onClick={() => setStatusFilter(entry)}>
+            {entry === 'active'
+              ? `Active orders ${data.orders.filter((row) => !isCompleted(row)).length}`
+              : `Completed orders ${data.orders.filter(isCompleted).length}`}
           </button>
         ))}
       </div>
 
+      {statusFilter === 'active' && (
+        <div className="seg" role="tablist" aria-label="Which orders">
+          {([
+            ['all', `All ${scoped.length}`],
+            ['answer', `To answer ${needsAnswer.size}`],
+            ['nolot', `No lot ${scoped.filter((row) => row.awaitingLot).length}`],
+          ] as [OrderFilter, string][]).map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={filter === id}
+              className={filter === id ? 'is-on' : ''} onClick={() => setFilter(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {shown.length === 0 ? (
         <p className="muted">
-          {filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a lot.'}
+          {statusFilter === 'completed'
+            ? 'Nothing delivered yet.'
+            : filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a lot.'}
         </p>
       ) : (
         <div className="orows">

@@ -222,7 +222,8 @@ const PROGRESS: Record<OrderCheckpoint, number> = {
   india_received: 0.5,
   ready_to_dispatch: 0.65,
   packed: 0.8,
-  dispatched: 1,
+  dispatched: 0.95,
+  delivered: 1,
 };
 
 export function checkpointProgress(order: Order): number {
@@ -275,8 +276,8 @@ export function phaseOfCounts(counts: readonly CheckpointCount[]): LotPhase {
   const done = (checkpoint: OrderCheckpoint) =>
     counts.find((entry) => entry.checkpoint === checkpoint)?.done ?? 0;
 
-  if (done('dispatched') === total) return 'completed';
-  if (done('packed') >= 1) return 'domestic';
+  if (done('delivered') === total) return 'completed';
+  if (done('packed') >= 1 || done('dispatched') >= 1) return 'domestic';
   if (done('india_received') >= 1) return 'india';
   if (done('china_packed') === total) return 'china_done';
   if (done('china_received') / total >= 0.6) return 'prepping';

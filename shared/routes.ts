@@ -83,6 +83,7 @@ export const TRIGGER_LABELS: Record<StepTrigger, { button: string; means: string
   ready_to_dispatch: { button: 'Ready', means: 'it is checked and ready to go out' },
   packed: { button: 'Packed', means: 'it is boxed for the domestic courier' },
   dispatched: { button: 'Dispatched', means: 'it is on its way to the buyer' },
+  delivered: { button: 'Delivered', means: 'it has reached the buyer' },
 };
 
 /** How many opening steps count as `pre` on a route written before sides. */
@@ -147,6 +148,19 @@ export interface RouteStep {
    * line to the next rung and nothing is said in it.
    */
   waitMessage?: string;
+  /**
+   * True once the lot has broken back apart and this step is reached one
+   * item at a time again - "Items leave the lot here" and everything from
+   * it on, in the builder that draws that line. Only meaningful on a `post`
+   * step; a `pre` step is already individual, and never needs it.
+   *
+   * Nothing downstream of tracking reads this - an item can already outrun
+   * its lot's own position the moment one of its own checkpoints is ticked
+   * (see `itemStepOn`), whether or not this flag is set. It exists only so
+   * the line the seller drew while writing the route is still where they
+   * left it the next time they open it.
+   */
+  lastMile?: boolean;
 }
 
 /**
@@ -251,6 +265,17 @@ export function postSteps(route: HasSteps): RouteStep[] {
  */
 export function joinIndexOf(route: HasSteps): number {
   const at = route.steps.findIndex((step, index) => sideOf(step, index) === 'post');
+  return at === -1 ? route.steps.length : at;
+}
+
+/**
+ * Where the lot breaks back apart: the index of the first step marked
+ * `lastMile`. Equal to the step count when nothing is - a route that never
+ * hands items back to travelling on their own, which is the ordinary case
+ * for one written before this line existed.
+ */
+export function leaveIndexOf(route: HasSteps): number {
+  const at = route.steps.findIndex((step) => step.lastMile);
   return at === -1 ? route.steps.length : at;
 }
 
@@ -671,6 +696,7 @@ export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[
       locked: step.locked === true || undefined,
       forward: step.forward === true || undefined,
       waitMessage: step.waitMessage?.trim() || undefined,
+      lastMile: step.lastMile === true || undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));

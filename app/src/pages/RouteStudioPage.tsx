@@ -2,8 +2,8 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ORDER_CHECKPOINTS } from '@shared/enums';
 import {
-  DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, TRIGGER_LABELS, WAIT_MESSAGE_PRESETS, joinIndexOf, renderStepText,
-  sideOf, stepId, waitMessageFor, type RouteStep, type StepTrigger,
+  DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, TRIGGER_LABELS, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
+  renderStepText, sideOf, stepId, waitMessageFor, type RouteStep, type StepTrigger,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { ErrorNotice, Icon, WaveLoader } from '../components/ui';
@@ -35,6 +35,26 @@ const STUDIO_TRIGGER_TEXT: Partial<Record<StepTrigger, { button: string; explain
 
 function triggerButtonLabel(checkpoint: StepTrigger): string {
   return renderStepText(STUDIO_TRIGGER_TEXT[checkpoint]?.button ?? TRIGGER_LABELS[checkpoint].button, PREVIEW_VARS);
+}
+
+/**
+ * The last stop, guaranteed. Every route opened here ends on a locked
+ * "Delivered" node bound to the `delivered` checkpoint - upgrading one
+ * already named that (most presets already end on a plain "Delivered" step)
+ * rather than adding a second, and appending one for the handful of shapes
+ * that do not.
+ */
+function ensureDelivered(steps: readonly RouteStep[]): RouteStep[] {
+  const last = steps[steps.length - 1];
+  if (last && last.name.trim().toLowerCase() === 'delivered') {
+    return steps.map((step, index) => (index === steps.length - 1
+      ? { ...step, name: 'Delivered', locked: true, trigger: 'delivered' as StepTrigger, lastMile: true }
+      : step));
+  }
+  return [...steps, {
+    id: stepId(steps.length), name: 'Delivered', description: 'It reached you.', position: 0,
+    side: 'post', locked: true, trigger: 'delivered' as StepTrigger, lastMile: true,
+  }];
 }
 
 /**
@@ -76,6 +96,8 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   const [steps, setSteps] = useState<RouteStep[]>([]);
   /** Index of the first step that happens to the whole lot, not one item alone. */
   const [joinAt, setJoinAt] = useState(0);
+  /** Index of the first step reached one item at a time again, after the lot. */
+  const [leaveAt, setLeaveAt] = useState(0);
   const [started, setStarted] = useState(false);
   const [previewAt, setPreviewAt] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -95,19 +117,31 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   }, [editing]);
 
   function open(from: readonly RouteStep[], called: string) {
-    const withSides = from.map((step, index) => ({ ...step, position: index, side: sideOf(step, index) }));
+    const withDelivered = ensureDelivered(from);
+    const withSides = withDelivered.map((step, index) => ({ ...step, position: index, side: sideOf(step, index) }));
     setName(called);
     setSteps(withSides);
-    setJoinAt(joinIndexOf({ steps: withSides }));
+    const join = joinIndexOf({ steps: withSides });
+    setJoinAt(join);
+    // An explicit line the seller already drew wins; failing that, the first
+    // last-mile trigger is a reasonable guess at where one belongs, and
+    // failing even that, only the guaranteed Delivered node is last-mile.
+    const explicitLeave = leaveIndexOf({ steps: withSides });
+    const guessedLeave = withSides.findIndex((step) => step.trigger === 'packed' || step.trigger === 'dispatched');
+    setLeaveAt(explicitLeave < withSides.length
+      ? explicitLeave
+      : (guessedLeave >= 0 ? guessedLeave : withSides.length - 1));
     setStarted(true);
     setPreviewAt(0);
   }
 
-  /** Every step's `side`, recomputed from the join line rather than carried
-   *  per-step - moving the line is what moves a step between the two halves. */
+  /** Every step's `side` and `lastMile`, recomputed from the two lines rather
+   *  than carried per-step - moving a line is what moves a step between
+   *  halves. */
   const sided = steps.map((step, index) => ({
     ...step,
     side: index < joinAt ? ('pre' as const) : ('post' as const),
+    lastMile: index >= leaveAt ? true : undefined,
   }));
 
   function insertAt(index: number) {
@@ -115,11 +149,13 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     next.splice(index, 0, blankStep(steps.length));
     setSteps(next);
     if (index < joinAt) setJoinAt(joinAt + 1);
+    if (index < leaveAt) setLeaveAt(leaveAt + 1);
   }
 
   function removeAt(index: number) {
     setSteps(steps.filter((_, i) => i !== index));
     if (index < joinAt) setJoinAt(Math.max(0, joinAt - 1));
+    if (index < leaveAt) setLeaveAt(Math.max(joinAt, leaveAt - 1));
   }
 
   function setAt(index: number, patch: Partial<RouteStep>) {
@@ -132,10 +168,12 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     const [taken] = next.splice(from, 1);
     next.splice(to, 0, taken!);
     setSteps(next);
-    // The join line tracks whichever step was on the far side of it, not a
-    // raw index, so dragging a step across the line moves it with the step.
+    // Both lines track whichever step was on the far side of them, not a
+    // raw index, so dragging a step across one moves it with the step.
     if (from < joinAt && to >= joinAt) setJoinAt(joinAt - 1);
     else if (from >= joinAt && to < joinAt) setJoinAt(joinAt + 1);
+    if (from < leaveAt && to >= leaveAt) setLeaveAt(leaveAt - 1);
+    else if (from >= leaveAt && to < leaveAt) setLeaveAt(leaveAt + 1);
   }
 
   async function save(event: FormEvent) {
@@ -156,6 +194,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             trigger: step.trigger,
             forward: step.forward,
             waitMessage: step.waitMessage,
+            lastMile: step.lastMile,
           })),
       });
       onSaved();
@@ -243,15 +282,24 @@ function RouteStudio({ editing, onSaved, onCancel }: {
         {sided.map((step, index) => (
           <div key={step.id}>
             {index === joinAt && <JoinDivider joinAt={joinAt} atEnd={false} onMove={setJoinAt} />}
+            {index === leaveAt && (
+              <LeaveDivider leaveAt={leaveAt} joinAt={joinAt}
+                atEnd={leaveAt >= steps.length - 1} onMove={setLeaveAt} />
+            )}
             <StepNode
               step={step} index={index} count={steps.length}
               lockedAbove={Boolean(sided[index - 1]?.locked)}
+              lockedBelow={Boolean(sided[index + 1]?.locked)}
               onChange={(patch) => setAt(index, patch)}
               onRemove={() => removeAt(index)}
               onMove={(to) => moveAt(index, to)}
             />
-            <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
-              onInsert={() => insertAt(index + 1)} />
+            {/* Nothing follows the locked last stop - no shoulder, no on-ramp,
+                no "what buyers see" gap for a wait that cannot happen. */}
+            {!(step.locked && index === sided.length - 1) && (
+              <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
+                onInsert={() => insertAt(index + 1)} />
+            )}
           </div>
         ))}
         {joinAt >= steps.length && <JoinDivider joinAt={joinAt} atEnd onMove={setJoinAt} />}
@@ -326,6 +374,40 @@ function JoinDivider({ joinAt, atEnd, onMove }: {
         {!atEnd && (
           <button type="button" className="iconbtn" aria-label="Move the join line later"
             onClick={() => onMove(joinAt + 1)}>
+            <Icon name="down" size={12} />
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The line the lot breaks back apart along: everything from here is tracked
+ * one item at a time again, same as before the lot existed - packed,
+ * dispatched, delivered, each on its own schedule rather than the whole
+ * crate's. Never earlier than the join line; there is nothing to leave
+ * before there is a lot to leave.
+ */
+function LeaveDivider({ leaveAt, joinAt, atEnd, onMove }: {
+  leaveAt: number;
+  joinAt: number;
+  atEnd: boolean;
+  onMove: (next: number) => void;
+}) {
+  return (
+    <div className="rsjoin rsjoin--leave">
+      <span className="rsjoin__label">
+        <Icon name="box" size={12} /> Items leave the lot here
+      </span>
+      <span className="rsjoin__acts">
+        <button type="button" className="iconbtn" aria-label="Move the leave line earlier"
+          disabled={leaveAt <= joinAt} onClick={() => onMove(leaveAt - 1)}>
+          <Icon name="up" size={12} />
+        </button>
+        {!atEnd && (
+          <button type="button" className="iconbtn" aria-label="Move the leave line later"
+            onClick={() => onMove(leaveAt + 1)}>
             <Icon name="down" size={12} />
           </button>
         )}
@@ -420,12 +502,14 @@ function WaitMessageEditor({ step, onChange, onDone }: {
  * and delete — tucked behind the chevron, starting right where "What moves
  * to the next step" says so.
  */
-function StepNode({ step, index, count, lockedAbove, onChange, onRemove, onMove }: {
+function StepNode({ step, index, count, lockedAbove, lockedBelow, onChange, onRemove, onMove }: {
   step: RouteStep;
   index: number;
   count: number;
   /** The step right before this one is the locked "Order Placed" - moving up would swap past it. */
   lockedAbove: boolean;
+  /** The step right after this one is the locked "Delivered" - moving down would swap past it. */
+  lockedBelow: boolean;
   onChange: (patch: Partial<RouteStep>) => void;
   onRemove: () => void;
   onMove: (to: number) => void;
@@ -522,7 +606,7 @@ function StepNode({ step, index, count, lockedAbove, onChange, onRemove, onMove 
               <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
                 disabled={index === 0 || lockedAbove} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
               <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
-                disabled={index === count - 1} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
+                disabled={index === count - 1 || lockedBelow} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
               <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${index + 1}`}
                 onClick={onRemove}><Icon name="trash" size={12} /></button>
             </div>

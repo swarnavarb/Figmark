@@ -3923,6 +3923,11 @@ await check('progress is weighted across the journey, not just the last tick', (
   assert.equal(checkpointProgress(order('b1', 'x', 'MISB', { india_received: day(9) })), 0.5);
   assert.equal(
     checkpointProgress(order('b1', 'x', 'MISB', { china_received: day(2), dispatched: day(12) })),
+    0.95,
+    'dispatched is nearly there, not there - delivered is the one that means done',
+  );
+  assert.equal(
+    checkpointProgress(order('b1', 'x', 'MISB', { china_received: day(2), delivered: day(13) })),
     1,
   );
 });
@@ -3960,7 +3965,12 @@ await check('the status line and the counts under it cannot disagree', () => {
   assert.equal(phaseOf(landed), 'india');
   assert.equal(phaseOfCounts(tallyOf(landed).counts), 'india');
 
-  const done = rows.map((row) => ({ ...row, checkpoints: { dispatched: day(12) } }));
+  // Dispatched is on its way, not there yet - "completed" now means every
+  // piece has actually been marked delivered, not merely sent.
+  const dispatched = rows.map((row) => ({ ...row, checkpoints: { dispatched: day(12) } }));
+  assert.equal(phaseOf(dispatched), 'domestic');
+
+  const done = rows.map((row) => ({ ...row, checkpoints: { dispatched: day(12), delivered: day(13) } }));
   assert.equal(phaseOf(done), 'completed');
   // A cancelled order must not hold a finished lot open forever.
   assert.equal(phaseOf([...done, order('b3', 'C', 'MISB', {}, 'cancelled')]), 'completed');
@@ -4803,6 +4813,52 @@ await check('a route can be dropped, and the lots on it carry on', async () => {
   const still = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
   assert.equal(still.route.steps.length, 5);
   assert.equal(still.route.name, 'Guangzhou air express');
+});
+
+await check('a lot closes itself once every piece in it is marked delivered', async () => {
+  const listingA = await createListing(req({
+    headers: auth, body: { title: 'Last mile A', priceMinor: 5_000, sourcing: 'import' },
+  }), ctx);
+  const listingB = await createListing(req({
+    headers: auth, body: { title: 'Last mile B', priceMinor: 5_000, sourcing: 'import' },
+  }), ctx);
+  const buyerA = await newBuyer('Last Mile A');
+  const buyerB = await newBuyer('Last Mile B');
+  const orderA = (await createOrder(req({
+    headers: buyerA.headers, body: { listingId: listingA.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+  const orderB = (await createOrder(req({
+    headers: buyerB.headers, body: { listingId: listingB.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+
+  const lot = (await createLot(req({
+    headers: auth, body: { name: 'Two to deliver', origin: 'Guangzhou, CN' },
+  }), ctx)).jsonBody.lot;
+  await assignOrderToLot(req({ headers: auth, params: { id: orderA.id }, body: { lotId: lot.id } }), ctx);
+  await assignOrderToLot(req({ headers: auth, params: { id: orderB.id }, body: { lotId: lot.id } }), ctx);
+
+  // One of two: not everything has arrived, so the lot stays open.
+  const first = await setCheckpoint(req({
+    headers: auth, params: { id: orderA.id }, body: { checkpoint: 'delivered', on: true },
+  }), ctx);
+  assert.equal(first.status, 200);
+  const partway = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.notEqual(partway.lot.stage, 'delivered', 'one of two is not the whole lot');
+
+  // Delivered is deliberately not wired to `order.status` - the buyer's own
+  // confirmation and escrow release own that state, and a seller's tick must
+  // never be able to short-circuit it.
+  const stillEarning = (await orderTracking(req({ headers: buyerA.headers, params: { id: orderA.id } }), ctx)).jsonBody;
+  assert.notEqual(stillEarning.order.status, 'delivered', 'the checkpoint is not the order status');
+
+  // Two of two: the lot closes on its own, nothing else asked of the seller.
+  const second = await setCheckpoint(req({
+    headers: auth, params: { id: orderB.id }, body: { checkpoint: 'delivered', on: true },
+  }), ctx);
+  assert.equal(second.status, 200);
+  const finished = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.equal(finished.lot.stage, 'delivered');
+  assert.equal(finished.lot.status, 'closed');
 });
 
 /* ── the order in front of you ─────────────────────────────────────────── */

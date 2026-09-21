@@ -568,7 +568,7 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
  * own. Before that the ticks would be a lie - nothing can be packed while it is
  * over the Bay of Bengal - so they are not offered.
  */
-function LotItemRow({ item, steps, others, busy, onTick, onMove, onNote, onRelot }: {
+function LotItemRow({ item, steps, others, busy, onTick, onRequestDeliver, onMove, onNote, onRelot }: {
   item: LotItem;
   /** The lot's route, which is the ladder this item rides. */
   steps: RouteStep[];
@@ -576,11 +576,13 @@ function LotItemRow({ item, steps, others, busy, onTick, onMove, onNote, onRelot
   others: { id: string; name: string; lotNumber?: string | null }[];
   busy: boolean;
   onTick: (checkpoint: OrderCheckpoint, on: boolean) => void;
+  /** Marking delivered is the one tick that asks first - this opens that ask. */
+  onRequestDeliver: () => void;
   onMove: (to: number, details?: { trackingId?: string; shipper?: string }) => void | Promise<void>;
   onNote: (note: string, at: number) => void | Promise<void>;
   onRelot: (lotId: string) => void | Promise<void>;
 }) {
-  const gone = Boolean(item.checkpoints.dispatched);
+  const gone = Boolean(item.checkpoints.dispatched) || Boolean(item.checkpoints.delivered);
   /** Folded away by default: thirty-four open ladders is not a manifest. */
   const [open, setOpen] = useState(false);
 
@@ -607,11 +609,11 @@ function LotItemRow({ item, steps, others, busy, onTick, onMove, onNote, onRelot
           const moves = steps.find((step) => step.trigger === checkpoint);
           return (
             <button key={checkpoint} type="button" disabled={busy} aria-pressed={done}
-              className={`tickbtn${done ? ' is-on' : ''}`}
+              className={`tickbtn${done ? ' is-on' : ''}${checkpoint === 'delivered' ? ' tickbtn--delivered' : ''}`}
               title={moves
                 ? `${done ? 'Pressed' : 'Press'} when ${TRIGGER_LABELS[checkpoint].means} — moves tracking to “${moves.name}”`
                 : `${TRIGGER_LABELS[checkpoint].button}: recorded, but no step is bound to it`}
-              onClick={() => onTick(checkpoint, !done)}>
+              onClick={() => (checkpoint === 'delivered' && !done ? onRequestDeliver() : onTick(checkpoint, !done))}>
               {TRIGGER_LABELS[checkpoint].button}
               {moves && <span className="tickbtn__to">{moves.name}</span>}
             </button>
@@ -801,6 +803,10 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
     missing: LotItem[];
   } | null>(null);
   const [confirmingBypass, setConfirmingBypass] = useState(false);
+  /* Delivered is asked for separately from the gate above: that one guards
+     against moving too far ahead of the facts, this one guards against the
+     one tick that can't be quietly undone once a buyer has read it. */
+  const [confirmDeliver, setConfirmDeliver] = useState<LotItem | null>(null);
   const [busy, setBusy] = useState(false);
   /* Whether it worked is decided where it happened, not guessed from the
      wording afterwards - which is what a growing regular expression over
@@ -1053,6 +1059,30 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
             </Modal>
           )}
 
+          {confirmDeliver && (
+            <Modal title="Mark delivered?" onClose={() => setConfirmDeliver(null)}>
+              <div className="stack">
+                <p>
+                  This marks <strong>{confirmDeliver.itemName}</strong> for{' '}
+                  <strong>{confirmDeliver.buyerName}</strong> as delivered. It shows delivered on their
+                  order everywhere it's read, and moves the order from active to completed. Once every
+                  item in this lot is marked this way, the lot itself moves to completed too.
+                </p>
+                <button type="button" className="btn btn--block" disabled={busy}
+                  onClick={() => {
+                    const item = confirmDeliver;
+                    setConfirmDeliver(null);
+                    void run('Marked delivered.', () => api.setCheckpoint(item.id, 'delivered', true).then(() => {}));
+                  }}>
+                  {busy ? 'Marking…' : 'Mark delivered'}
+                </button>
+                <button type="button" className="btn btn--quiet btn--block" onClick={() => setConfirmDeliver(null)}>
+                  Cancel
+                </button>
+              </div>
+            </Modal>
+          )}
+
           <div className="card card--pad stack">
             <div className="row row--between">
               <h2>In this lot ({items.length})</h2>
@@ -1077,6 +1107,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                   busy={busy}
                   onTick={(checkpoint, on) =>
                     run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
+                  onRequestDeliver={() => setConfirmDeliver(item)}
                   onMove={(to, details) =>
                     run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
                       api.stepItem(item.id, { to, ...details }).then(() => {}))}

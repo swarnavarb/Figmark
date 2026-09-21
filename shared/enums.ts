@@ -268,6 +268,13 @@ export const ORDER_CHECKPOINTS = [
   'ready_to_dispatch',
   'packed',
   'dispatched',
+  /**
+   * The last one: the piece is in the buyer's hands. Seller-only (see
+   * `CREW_CHECKPOINTS` in shared/services.ts, which does not list it for
+   * either crew role) and gated behind a confirmation on the screen that
+   * ticks it - the one checkpoint serious enough to ask twice.
+   */
+  'delivered',
 ] as const;
 export type OrderCheckpoint = (typeof ORDER_CHECKPOINTS)[number];
 
@@ -279,6 +286,7 @@ export const CHECKPOINT_LABELS: Record<OrderCheckpoint, string> = {
   ready_to_dispatch: 'Ready',
   packed: 'Packed',
   dispatched: 'Dispatched',
+  delivered: 'Delivered',
 };
 
 /** Long forms, for the counts on a lot card. */
@@ -289,6 +297,7 @@ export const CHECKPOINT_COUNT_LABELS: Record<OrderCheckpoint, string> = {
   ready_to_dispatch: 'Ready to dispatch',
   packed: 'Packed',
   dispatched: 'Dispatched',
+  delivered: 'Delivered',
 };
 
 /** Which side of the water a checkpoint sits on, for the two status bands. */
@@ -299,6 +308,7 @@ export const CHECKPOINT_SIDE: Record<OrderCheckpoint, 'china' | 'india'> = {
   ready_to_dispatch: 'india',
   packed: 'india',
   dispatched: 'india',
+  delivered: 'india',
 };
 
 /**

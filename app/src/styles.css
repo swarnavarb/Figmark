@@ -3188,6 +3188,9 @@ a.provider__name:hover { color: var(--accent-text); }
   background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-text);
 }
 .tickbtn--link:hover { border-color: var(--accent); color: var(--accent-hover); }
+/* The one tick that asks first, before it is pressed - a dashed border
+   hints there is a question behind it rather than an instant flip. */
+.tickbtn--delivered:not(.is-on) { border-style: dashed; }
 
 /* Back out of a console without hunting for the bar. */
 .backlink {
@@ -4606,5 +4609,8 @@ a.order__name:hover { color: var(--accent-text); }
   color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.04em;
 }
 .rsjoin__acts { display: flex; gap: 4px; }
+/* The lot breaking back apart reads as a different colour than it forming -
+   the same blue the transit leg of a card takes elsewhere on this road. */
+.rsjoin--leave .rsjoin__label { color: var(--blue-text); }
 
 .rsscrub { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }

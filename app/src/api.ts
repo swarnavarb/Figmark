@@ -333,6 +333,8 @@ export interface SaleRow {
   lotStep: string | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
+  /** When the seller ticked it delivered, on the lot's own item list. */
+  deliveredAt: string | null;
   /** The route its Quick Post template set up for the lot that will carry it. */
   lotRouteId: string | null;
 }
@@ -1098,7 +1100,7 @@ export const api = {
     steps: {
       id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
       stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
-      waitMessage?: string;
+      waitMessage?: string; lastMile?: boolean;
     }[];
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),

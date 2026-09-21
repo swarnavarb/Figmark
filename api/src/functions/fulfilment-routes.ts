@@ -1000,6 +1000,30 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
 
   const saved = await repository.updateOrder(order);
   const siblings = await repository.listOrdersForLot(order.lotId);
+
+  /*
+   * `delivered` is deliberately not wired to `order.status`/escrow above -
+   * that state machine belongs to the buyer's own confirmation and to
+   * disputes, and a seller's tick must never be able to short-circuit it.
+   * What it does own is the lot: once every item in it has been ticked
+   * delivered, there is nothing left to pack, ship or watch, and the lot
+   * itself moves to the stage that already means "done" everywhere else
+   * that reads it.
+   */
+  if (checkpoint === 'delivered' && on && siblings.length > 0 && siblings.every((sibling) => Boolean(sibling.checkpoints?.delivered))) {
+    const lot = await repository.getLot(order.sellerId, order.lotId);
+    if (lot && lot.stage !== 'delivered') {
+      const route = routeOf(lot);
+      await repository.updateLot({
+        ...lot,
+        stage: 'delivered',
+        status: 'closed',
+        currentStep: route.steps.length - 1,
+        updatedAt: now,
+      });
+    }
+  }
+
   return json(200, { order: { id: saved.id, checkpoints: saved.checkpoints ?? {} }, tally: tally(siblings) });
 }
 

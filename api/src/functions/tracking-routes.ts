@@ -108,7 +108,7 @@ interface RouteBody {
   steps?: {
     id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger;
     stageId?: string; stageName?: string; stageIcon?: string; locked?: boolean; forward?: boolean;
-    waitMessage?: string;
+    waitMessage?: string; lastMile?: boolean;
   }[];
 }
 

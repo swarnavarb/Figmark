@@ -357,6 +357,11 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       lotStep: lot ? routeOf(lot).steps[currentStepOf(lot)]?.name ?? null : null,
       /** The one tick a seller makes from this screen. */
       chinaReceivedAt: order.checkpoints?.china_received ?? null,
+      /** Ticked on the lot screen, not this one - read here so this screen's
+       *  own Active/Completed split can tell without asking `order.status`,
+       *  which a seller's tick deliberately never touches (see setCheckpoint
+       *  in fulfilment-routes.ts). */
+      deliveredAt: order.checkpoints?.delivered ?? null,
       /**
        * The route the item's template said a lot carrying it should travel.
        *
