@@ -3350,7 +3350,11 @@ a.provider__name:hover { color: var(--accent-text); }
    rather than inventing a second motion for "look here". */
 .spotlight-row { display: flex; align-items: center; gap: 6px; }
 .spotlight-row .btn { box-shadow: 0 0 0 3px var(--accent-soft), 0 4px 14px rgba(124, 58, 237, 0.4); }
-.spotlight-arrow { color: var(--accent); animation: route-arrow 1.2s ease-in-out infinite; }
+.spotlight-arrow { color: var(--accent); font-size: 18px; animation: spotlight-pulse 1.2s ease-in-out infinite; }
+@keyframes spotlight-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
 @media (prefers-reduced-motion: reduce) {
   .spotlight-arrow, .routearrow { animation: none; }
 }

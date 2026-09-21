@@ -30,6 +30,7 @@ export function RoutesList({ spotlightNew = false }: {
 } = {}) {
   const [data, setData] = useState<RoutesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showFaq, setShowFaq] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -53,7 +54,10 @@ export function RoutesList({ spotlightNew = false }: {
         </div>
         <span className="spotlight-row">
           <Link to="/routes/new" className="btn"><Icon name="plus" size={14} /> New route</Link>
-          {spotlightNew && <Icon name="left" size={16} className="spotlight-arrow" aria-hidden="true" />}
+          {spotlightNew && <Icon name="spark" size={18} className="spotlight-arrow" aria-hidden="true" />}
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setShowFaq(!showFaq)} aria-label="FAQ" title="How routes and tracking work">
+            <Icon name="message" size={14} />
+          </button>
         </span>
       </div>
 
@@ -76,7 +80,7 @@ export function RoutesList({ spotlightNew = false }: {
         </EmptyState>
       )}
 
-      <RoutesFaq />
+      {showFaq && <RoutesFaq />}
     </div>
   );
 }

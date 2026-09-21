@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type OrderCheckpoint,
 } from '@shared/enums';
@@ -27,10 +27,12 @@ import { formatDate, formatMoney, formatWeight } from '../format';
  * writes the tracking they do see, on their own order.
  */
 export function LotsPage() {
+  const [searchParams] = useSearchParams();
+  const spotlightNew = searchParams.get('new') === 'true';
   const [data, setData] = useState<LotsResponse | null>(null);
   const [openLotId, setOpenLotId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(spotlightNew);
 
   const load = useCallback(async () => {
     try {
@@ -60,11 +62,12 @@ export function LotsPage() {
           </p>
         </div>
         {/* Routes now live on the Sell tab's own Routes card, not here. */}
-        <div className="row row--tight">
+        <span className="spotlight-row">
           <button className="btn" onClick={() => setCreating(true)}>
             <Icon name="plus" size={15} /> New lot
           </button>
-        </div>
+          {spotlightNew && <Icon name="spark" size={18} className="spotlight-arrow" aria-hidden="true" />}
+        </span>
       </div>
 
       {error && <ErrorNotice message={error} />}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LOT_CARD_LABELS, LOT_STAGES,
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
@@ -1287,6 +1287,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
   onClose: () => void;
   onDone: () => void;
 }) {
+  const navigate = useNavigate();
   const [lots, setLots] = useState<LotSummary[] | null>(null);
   const [routes, setRoutes] = useState<RoutesResponse | null>(null);
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
@@ -1335,7 +1336,12 @@ function FileIntoLot({ row, store, onClose, onDone }: {
               routeId: routeId || undefined,
             },
           });
-      onDone();
+      if (mode === 'new') {
+        onClose();
+        navigate('/lots?new=true');
+      } else {
+        onDone();
+      }
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
     } finally {
