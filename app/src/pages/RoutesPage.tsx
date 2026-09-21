@@ -54,7 +54,11 @@ export function RoutesList({ spotlightNew = false }: {
         </div>
         <span className="spotlight-row">
           <Link to="/routes/new" className="btn"><Icon name="plus" size={14} /> New route</Link>
-          {spotlightNew && <Icon name="spark" size={18} className="spotlight-arrow" aria-hidden="true" />}
+          {spotlightNew && (
+            <span className="spotlight-badge" aria-hidden="true">
+              <Icon name="left" size={18} />
+            </span>
+          )}
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => setShowFaq(!showFaq)} aria-label="FAQ" title="How routes and tracking work">
             <Icon name="message" size={14} />
           </button>

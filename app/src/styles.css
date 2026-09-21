@@ -3345,18 +3345,27 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 .routebuilder__add { justify-self: start; margin-top: 6px; }
 
-/* The one-time pointer at "New route", for a seller who just arrived from a
-   Lot's "Define your Silk Route". Reuses the same bounce as `.routearrow`
-   rather than inventing a second motion for "look here". */
-.spotlight-row { display: flex; align-items: center; gap: 6px; }
+/* The one-time pointer at "New route" / "New lot", for a seller who just
+   arrived from a CTA pointing here. A filled, high-contrast badge rather
+   than a bare glyph, so it reads as "click that" from across the screen. */
+.spotlight-row { display: flex; align-items: center; gap: 8px; }
 .spotlight-row .btn { box-shadow: 0 0 0 3px var(--accent-soft), 0 4px 14px rgba(124, 58, 237, 0.4); }
-.spotlight-arrow { color: var(--accent); font-size: 18px; animation: spotlight-pulse 1.2s ease-in-out infinite; }
-@keyframes spotlight-pulse {
-  0%, 100% { opacity: 0.6; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.1); }
+.spotlight-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--grad-warm);
+  color: #fff;
+  box-shadow: 0 0 0 4px var(--danger-soft), 0 6px 16px rgba(236, 72, 153, 0.55);
+  animation: spotlight-jab 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes spotlight-jab {
+  0%, 100% { transform: translateX(0) scale(1); }
+  35% { transform: translateX(-7px) scale(1.12); }
+  55% { transform: translateX(-7px) scale(1.12); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .spotlight-arrow, .routearrow { animation: none; }
+  .spotlight-badge, .routearrow { animation: none; }
 }
 
 .stagebox {

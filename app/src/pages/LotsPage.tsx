@@ -32,7 +32,7 @@ export function LotsPage() {
   const [data, setData] = useState<LotsResponse | null>(null);
   const [openLotId, setOpenLotId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(spotlightNew);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -66,7 +66,11 @@ export function LotsPage() {
           <button className="btn" onClick={() => setCreating(true)}>
             <Icon name="plus" size={15} /> New lot
           </button>
-          {spotlightNew && <Icon name="spark" size={18} className="spotlight-arrow" aria-hidden="true" />}
+          {spotlightNew && (
+            <span className="spotlight-badge" aria-hidden="true">
+              <Icon name="left" size={18} />
+            </span>
+          )}
         </span>
       </div>
 
