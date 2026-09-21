@@ -1352,37 +1352,44 @@ function FileIntoLot({ row, store, onClose, onDone }: {
   return (
     <Modal title={`Add ${row.itemName} to a lot`} onClose={onClose}>
       <div className="stack">
-        <div className="seg" role="radiogroup" aria-label="Which lot">
-          <button type="button" role="radio" aria-checked={mode === 'existing'}
-            disabled={(lots?.length ?? 0) === 0}
-            className={mode === 'existing' ? 'is-on' : ''} onClick={() => setMode('existing')}>
-            Existing lot
-          </button>
-          <button type="button" role="radio" aria-checked={mode === 'new'}
-            className={mode === 'new' ? 'is-on' : ''} onClick={() => setMode('new')}>
-            New lot
-          </button>
-        </div>
+        <fieldset className="pickset">
+          <legend>Choose a lot</legend>
+          <span className="field__hint">
+            Select one of your open lots, or create a new one.
+          </span>
 
-        {mode === 'existing' ? (
-          lots === null ? (
+          {lots === null ? (
             <p className="muted">Loading…</p>
           ) : lots.length === 0 ? (
-            <p className="muted">No lots open yet. Make one.</p>
+            <p className="muted" style={{ margin: 0 }}>No lots open yet. Create one below.</p>
           ) : (
-            <label className="field">
-              <span>Lot</span>
-              <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
-                {lots.map(({ lot }) => (
-                  <option key={lot.id} value={lot.id}>
+            lots.map(({ lot, tally }) => (
+              <label key={lot.id} className={`pick${lotId === lot.id ? ' is-on' : ''}`}>
+                <input type="radio" name="lot" checked={lotId === lot.id}
+                  onChange={() => setLotId(lot.id)} />
+                <span className="pick__body">
+                  <span className="pick__name">
                     {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )
-        ) : (
-          <>
+                  </span>
+                  <span className="faint" style={{ display: 'grid', gap: 4, marginTop: 6, fontSize: 'var(--t-xs)' }}>
+                    <span>{countryFlag(lot.originCountry)} → {countryFlag(lot.destinationCountry)}</span>
+                    {lot.supplier?.name && <span>Supplier: {lot.supplier.name}</span>}
+                    {lot.forwarder?.name && <span>Forwarder: {lot.forwarder.name}</span>}
+                    {lot.handler?.name && <span>Handler: {lot.handler.name}</span>}
+                  </span>
+                </span>
+              </label>
+            ))
+          )}
+        </fieldset>
+
+        <button type="button" className="btn btn--block"
+          onClick={() => setMode('new')}>
+          <Icon name="plus" size={14} /> Create a new lot
+        </button>
+
+        {mode === 'new' && (
+          <div className="stack" style={{ borderTop: '1px solid var(--line)', paddingTop: 16 }}>
             <label className="field">
               <span>Lot name *</span>
               <input value={name} onChange={(e) => setName(e.target.value)}
@@ -1424,14 +1431,14 @@ function FileIntoLot({ row, store, onClose, onDone }: {
                 Every item in this lot travels these steps, and the buyer reads them.
               </span>
             </label>
-          </>
+          </div>
         )}
 
         {error && <ErrorNotice message={error} />}
         <button type="button" className="btn btn--block"
-          disabled={busy || (mode === 'existing' ? !lotId : !name.trim())}
+          disabled={busy || (mode === 'new' ? !name.trim() : !lotId)}
           onClick={() => void submit()}>
-          {busy ? 'Filing…' : mode === 'existing' ? 'Add to lot' : 'Create lot & add order'}
+          {busy ? 'Filing…' : mode === 'new' ? 'Create lot & add order' : 'Add to lot'}
         </button>
       </div>
     </Modal>
