@@ -3348,7 +3348,7 @@ a.provider__name:hover { color: var(--accent-text); }
 /* The one-time pointer at "New route" / "New lot", for a seller who just
    arrived from a CTA pointing here. A filled, high-contrast badge rather
    than a bare glyph, so it reads as "click that" from across the screen. */
-.spotlight-row { display: flex; align-items: center; gap: 8px; }
+.spotlight-row { display: flex; align-items: center; gap: 14px; }
 .spotlight-row .btn { box-shadow: 0 0 0 3px var(--accent-soft), 0 4px 14px rgba(124, 58, 237, 0.4); }
 .spotlight-badge {
   display: inline-flex; align-items: center; justify-content: center;

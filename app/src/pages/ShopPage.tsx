@@ -317,7 +317,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         <div className="tab-view" style={{ marginTop: chips.length > 1 ? 14 : 20 }} key={`${store.ownerId}:${active}`}>
           {active === 'items' && <MyItems store={store} />}
           {active === 'payments' && <Orders store={store} />}
-          {active === 'lots' && <Lots store={store} />}
+          {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'packing' && <PackingList storeId={store.ownerId} />}
           {active === 'analytics' && <Analytics store={store} />}
@@ -1303,7 +1303,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
 
   function goCreateLot() {
     onClose();
-    navigate('/lots?new=true');
+    navigate('/shop?tab=lots&spotlight=new');
   }
 
   async function submit() {
@@ -1437,7 +1437,7 @@ function RejectOrder({ row, onClose, onDone }: {
  * splitting "administer it" from "watch it" put a trip out of the tab between a
  * seller and the thing they were already looking at.
  */
-function Lots({ store }: { store: StoreAccess }) {
+function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNew?: boolean }) {
   const [data, setData] = useState<LotsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1493,11 +1493,16 @@ function Lots({ store }: { store: StoreAccess }) {
         />
       ) : (
         // Routes now live on their own Sell-home card, not beside this button.
-        <div className="row row--tight" style={{ justifySelf: 'start' }}>
+        <span className="spotlight-row" style={{ justifySelf: 'start' }}>
           <button type="button" className="btn" onClick={() => setCreating(true)}>
             <Icon name="plus" size={15} /> New lot
           </button>
-        </div>
+          {spotlightNew && (
+            <span className="spotlight-badge" aria-hidden="true">
+              <Icon name="left" size={18} />
+            </span>
+          )}
+        </span>
       )}
 
       {/* Items with nowhere to travel. Not an error - most items never need a

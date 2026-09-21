@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
-  LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type OrderCheckpoint,
+  ORDER_CHECKPOINTS, type OrderCheckpoint,
 } from '@shared/enums';
 import {
   TRIGGER_LABELS, WAITING_FOR_LOT, laneOf, suggestLotName, type RouteStep,
@@ -16,137 +16,8 @@ import {
 import { Ladder } from '../components/Ladder';
 import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
-import { EmptyState, ErrorNotice, Icon, type IconName } from '../components/ui';
+import { ErrorNotice, Icon, type IconName } from '../components/ui';
 import { formatDate, formatMoney, formatWeight } from '../format';
-
-/**
- * The seller's shipment lots.
- *
- * A lot is bookkeeping, not a product: it says which of your items travel in
- * one consignment. Buyers never see one - advancing a lot's stage is what
- * writes the tracking they do see, on their own order.
- */
-export function LotsPage() {
-  const [searchParams] = useSearchParams();
-  const spotlightNew = searchParams.get('new') === 'true';
-  const [data, setData] = useState<LotsResponse | null>(null);
-  const [openLotId, setOpenLotId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      setData(await api.myLots());
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.');
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (openLotId) {
-    return <LotDetail lotId={openLotId} onBack={() => { setOpenLotId(null); void load(); }} />;
-  }
-
-  return (
-    <main className="page">
-      <div className="page__head">
-        <div>
-          <h1>My lots</h1>
-          <p className="muted">
-            Group the items travelling in one consignment. Moving a lot forward updates the tracking every
-            buyer in it sees — they never see the lot itself.
-          </p>
-        </div>
-        {/* Routes now live on the Sell tab's own Routes card, not here. */}
-        <span className="spotlight-row">
-          <button className="btn" onClick={() => setCreating(true)}>
-            <Icon name="plus" size={15} /> New lot
-          </button>
-          {spotlightNew && (
-            <span className="spotlight-badge" aria-hidden="true">
-              <Icon name="left" size={18} />
-            </span>
-          )}
-        </span>
-      </div>
-
-      {error && <ErrorNotice message={error} />}
-      {creating && (
-        <NewLotForm
-          suggestedName={suggestLotName()}
-          onDone={() => { setCreating(false); void load(); }}
-          onCancel={() => setCreating(false)}
-        />
-      )}
-
-      {!data ? (
-        error ? null : <p className="muted">Loading…</p>
-      ) : (
-        <>
-          {data.unassigned.length > 0 && (
-            <div className="card card--pad" style={{ marginBottom: 22 }}>
-              <div className="row row--between">
-                <div>
-                  <div className="card__title">{data.unassigned.length} listings not in a lot</div>
-                  <span className="faint">
-                    {data.unassigned.map((l) => l.title).slice(0, 3).join(' · ')}
-                    {data.unassigned.length > 3 && ` and ${data.unassigned.length - 3} more`}
-                  </span>
-                </div>
-                <span className="badge badge--warn">Untracked</span>
-              </div>
-              <p className="muted" style={{ marginTop: 10 }}>
-                Buyers of these see “Preparing” until you tag them into a lot. Open a lot below to add them.
-              </p>
-            </div>
-          )}
-
-          {data.lots.length === 0 ? (
-            <EmptyState icon="◲" title="No lots yet">
-              Open one for your next consignment, then tag the items travelling in it.
-            </EmptyState>
-          ) : (
-            <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
-              {data.lots.map(({ lot, listingCount, orderCount, unitCount, weightGrams, valueMinor }) => (
-                <button key={lot.id} className="card card--pad card--link stack"
-                  style={{ textAlign: 'left', cursor: 'pointer', border: '1px solid var(--border)' }}
-                  onClick={() => setOpenLotId(lot.id)}>
-                  <div className="row row--between">
-                    <div>
-                      <div className="card__title">{lot.name}</div>
-                      <span className="faint">{lot.description || 'No description'}</span>
-                    </div>
-                    <StageBadge stage={lot.stage} />
-                  </div>
-
-                  <StageTrack stage={lot.stage} />
-
-                  <div className="spread faint">
-                    <span>{listingCount} items</span>
-                    <span>{orderCount} orders · {unitCount} units</span>
-                    {weightGrams > 0 && <span>{formatWeight(weightGrams)}</span>}
-                    {valueMinor > 0 && <span>{formatMoney(valueMinor)}</span>}
-                  </div>
-
-                  {lot.forwarder && (
-                    <span className="faint">
-                      {lot.forwarder.name}
-                      {lot.forwarder.trackingReference && ` · ${lot.forwarder.trackingReference}`}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </main>
-  );
-}
 
 /**
  * Who moves this lot, and how to reach them.
@@ -327,20 +198,6 @@ function CrewCard({ lot, busy, onRun }: {
     </div>
   );
 }
-function StageBadge({ stage }: { stage: Lot['stage'] }) {
-  const done = stage === 'delivered';
-  return <span className={`badge badge--${done ? 'ok' : 'warn'}`}>{LOT_STAGE_LABELS[stage]}</span>;
-}
-
-function StageTrack({ stage }: { stage: Lot['stage'] }) {
-  const current = LOT_STAGES.indexOf(stage);
-  return (
-    <div className="meter" role="img" aria-label={`${LOT_STAGE_LABELS[stage]}`}>
-      <div className="meter__fill" style={{ width: `${((current + 1) / LOT_STAGES.length) * 100}%` }} />
-    </div>
-  );
-}
-
 /**
  * Open a lot.
  *

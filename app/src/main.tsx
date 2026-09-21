@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { AuthPage } from './pages/AuthPage';
-import { LotsPage } from './pages/LotsPage';
 import { RouteEditorPage, RoutesPage } from './pages/RoutesPage';
 import { FeedPage } from './pages/FeedPage';
 import { ForwardersPage } from './pages/ForwardersPage';
@@ -53,10 +52,10 @@ function App() {
         <Route path="/sell" element={<SellPage />} />
         <Route path="/shop" element={<ShopPage />} />
         <Route path="/lot/:id" element={<LotBoardPage />} />
-        <Route path="/lots" element={<LotsPage />} />
-        {/* The old spelling. It was a live path before the rename, so anything
-            bookmarked or linked still lands in the right place. */}
-        <Route path="/batches" element={<Navigate to="/lots" replace />} />
+        {/* Lots live on the Sell tab's own Lots section, not a separate page -
+            these both just point there so nothing bookmarked or linked breaks. */}
+        <Route path="/lots" element={<Navigate to="/shop?tab=lots" replace />} />
+        <Route path="/batches" element={<Navigate to="/shop?tab=lots" replace />} />
         <Route path="/routes" element={<RoutesPage />} />
         {/* `new` before `:id`, so writing a route is never read as editing one. */}
         <Route path="/routes/new" element={<RouteEditorPage />} />
