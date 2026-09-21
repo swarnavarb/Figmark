@@ -787,6 +787,20 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   const [unassigned, setUnassigned] = useState<LotsResponse['unassigned']>([]);
   const [siblings, setSiblings] = useState<LotsResponse['lots']>([]);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * A move that would carry the lot past the checkpoint where items are
+   * received at the international warehouse, while some of them are not
+   * actually marked as received yet. Held here rather than fired straight
+   * from the button, so the seller sees what is missing before it happens
+   * instead of a buyer reading a step their piece never reached.
+   */
+  const [gate, setGate] = useState<{
+    targetAbsolute: number;
+    details?: { trackingId?: string; shipper?: string };
+    label: string;
+    missing: LotItem[];
+  } | null>(null);
+  const [confirmingBypass, setConfirmingBypass] = useState(false);
   const [busy, setBusy] = useState(false);
   /* Whether it worked is decided where it happened, not guessed from the
      wording afterwards - which is what a growing regular expression over
@@ -859,6 +873,43 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
     } finally {
       setBusy(false);
     }
+  }
+
+  /*
+   * Every lot move goes through here, whether it came from the "Move to
+   * next" button or from dragging a rung on the ladder - one gate, not two,
+   * so there is exactly one place that can let a lot travel past items that
+   * never checked in.
+   *
+   * The gate only exists where the route actually has a step for it: a
+   * route with no international-warehouse trigger (a courier run, say) has
+   * nothing to check and moves exactly as it always did.
+   */
+  function requestMove(
+    targetAbsolute: number,
+    details: { trackingId?: string; shipper?: string } | undefined,
+    label: string,
+  ) {
+    const gateAt = route.steps.findIndex((step) => step.trigger === 'china_received');
+    const missing = gateAt >= 0 && targetAbsolute >= gateAt
+      ? items.filter((item) => !item.checkpoints.china_received)
+      : [];
+    if (missing.length > 0) {
+      setGate({ targetAbsolute, details, label, missing });
+      return;
+    }
+    void run(label, () => api.stepLot(lot.id, { to: targetAbsolute, ...details }).then(() => {}));
+  }
+
+  async function confirmBypass() {
+    if (!gate) return;
+    const { targetAbsolute, details, label, missing } = gate;
+    setGate(null);
+    setConfirmingBypass(false);
+    await run(label, async () => {
+      await Promise.all(missing.map((item) => api.setCheckpoint(item.id, 'china_received', true)));
+      await api.stepLot(lot.id, { to: targetAbsolute, ...details });
+    });
   }
 
   return (
@@ -939,22 +990,68 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               whose={items.length === 0
                 ? 'Nothing is riding in this lot yet, so this is a note to yourself.'
                 : `Every one of the ${items.length} buyers in this lot reads it.`}
-              onMove={(to, details) => run(`Now: ${lotSteps[to]?.name ?? 'moved'}.`, () =>
-                api.stepLot(lot.id, { to: to + route.offset, ...details }).then(() => {}))}
+              onMove={(to, details) =>
+                requestMove(to + route.offset, details, `Now: ${lotSteps[to]?.name ?? 'moved'}.`)}
               onNote={(text, at) => run('Note added.', () =>
                 api.noteOnLot(lot.id, text, at + route.offset).then(() => {}))}
             />
 
             {nextStep ? (
               <button className="btn btn--block" disabled={busy}
-                onClick={() => void run(`Now: ${nextStep.name}.`, () =>
-                  api.stepLot(lot.id, {}).then(() => {}))}>
+                onClick={() => requestMove(route.currentStep + 1, undefined, `Now: ${nextStep.name}.`)}>
                 Move to {nextStep.name}
               </button>
             ) : (
               <p className="notice notice--ok">{status}. Nothing further to do.</p>
             )}
           </div>
+
+          {gate && (
+            <Modal
+              title={confirmingBypass ? 'Confirm the update' : 'Not all items are checked in'}
+              onClose={() => { setGate(null); setConfirmingBypass(false); }}>
+              {!confirmingBypass ? (
+                <div className="stack">
+                  <p>
+                    {gate.missing.length} of {items.length}{' '}
+                    {items.length === 1 ? 'item has' : 'items have'} not been marked as received at
+                    the international warehouse. Moving the lot on now would carry{' '}
+                    {gate.missing.length === 1 ? 'it' : 'them'} past a checkpoint{' '}
+                    {gate.missing.length === 1 ? "it hasn't" : "they haven't"} actually reached.
+                  </p>
+                  <ul className="stack" style={{ gap: 4, margin: 0, padding: 0, listStyle: 'none' }}>
+                    {gate.missing.map((item) => (
+                      <li key={item.id} className="faint">{item.itemName} — {item.buyerName}</li>
+                    ))}
+                  </ul>
+                  <button type="button" className="btn btn--block"
+                    onClick={() => { setGate(null); setConfirmingBypass(false); }}>
+                    Go check the items in
+                  </button>
+                  <button type="button" className="btn btn--ghost btn--block"
+                    onClick={() => setConfirmingBypass(true)}>
+                    Are these going straight to the freight forwarder?
+                  </button>
+                </div>
+              ) : (
+                <div className="stack">
+                  <p>
+                    This marks {gate.missing.length} {gate.missing.length === 1 ? 'item' : 'items'} as
+                    received at the international warehouse and moves the lot to{' '}
+                    <strong>{route.steps[gate.targetAbsolute]?.name}</strong>.
+                  </p>
+                  <button type="button" className="btn btn--block" disabled={busy}
+                    onClick={() => void confirmBypass()}>
+                    {busy ? 'Updating…' : 'Confirm and move the lot'}
+                  </button>
+                  <button type="button" className="btn btn--quiet btn--block"
+                    onClick={() => setConfirmingBypass(false)}>
+                    Back
+                  </button>
+                </div>
+              )}
+            </Modal>
+          )}
 
           <div className="card card--pad stack">
             <div className="row row--between">
