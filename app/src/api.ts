@@ -16,6 +16,7 @@ import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { OrderAction, OrderSide } from '@shared/orders';
 import type { DisputeAction } from '@shared/disputes';
+import type { Allocation, OrderMoney } from '@shared/payments';
 
 /** Somebody named on a screen, and the page their name opens. */
 export interface PartyRef {
@@ -30,7 +31,7 @@ export interface EvidenceDraft {
 }
 import type {
   Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty,
-  Order, PaymentClaim, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent, StoreManager,
+  Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent, StoreManager,
 } from '@shared/models';
 
 /**
@@ -300,6 +301,9 @@ export interface EscrowOption {
 
 export interface Checkout {
   itemMinor: number;
+  /** Null when the seller takes no advance on this item. */
+  advanceMinor: number | null;
+  advancePercent: number | null;
   currency: string;
   seller: PartyRef;
   /** Where to send the money on a direct sale. Null when the seller has set none. */
@@ -463,6 +467,9 @@ export interface NewListing {
   condition: string;
   priceMinor: number;
   quantityAvailable: number;
+  quantityMode?: 'fixed' | 'multiple';
+  expiresAt?: string | null;
+  advancePercent?: number | null;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
@@ -847,13 +854,19 @@ export interface ItemGroup {
   } | null;
   sellerName: string;
   sellerHandle: string | null;
-  items: {
+  sellerId: string;
+  items: (OrderMoney & {
     id: string;
     itemName: string;
     quantity: number;
     status: string;
+    paymentStatus: string;
+    currency: string;
+    photo: string | null;
+    method: PaymentMethod;
+    canPayMore: boolean;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
-  }[];
+  })[];
 }
 
 /* ── Quick Post templates and photos ───────────────────────────────────── */
@@ -1022,6 +1035,15 @@ export const api = {
   listing: (id: string) => request<ListingDetail>(`/listings/${encodeURIComponent(id)}`),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
+  editListing: (id: string, body: Partial<NewListing>) =>
+    post<{ listing: Listing }>(`/listings/${encodeURIComponent(id)}/edit`, body),
+  deleteListing: (id: string) =>
+    post<{ deleted: boolean; kept: 'archived' | null }>(`/listings/${encodeURIComponent(id)}/delete`),
+  payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
+    post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
+  refundCredit: (id: string, creditId?: string) =>
+    post<{ order: Order; refundedMinor: number }>(`/orders/${encodeURIComponent(id)}/refund-credit`, { creditId }),
+  myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),
   bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
     post<{ comment: ListingComment & { author: PartyRef } }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
@@ -1133,7 +1155,7 @@ export const api = {
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),
   checkout: (id: string) => request<Checkout>(`/orders/${encodeURIComponent(id)}/checkout`),
-  claimPayment: (id: string, body: { reference: string; screenshot: string | null }) =>
+  claimPayment: (id: string, body: { reference: string; screenshot: string | null; plan?: 'full' | 'advance' }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/claim-payment`, body),
   settleClaim: (id: string, body: { accept: boolean; reason?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/settle-claim`, body),

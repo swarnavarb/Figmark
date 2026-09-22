@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
-import type { Dispute, Order, Review, SellerPaymentDetails, User } from '../../../shared/models.js';
+import type { Dispute, Order, PaymentRecord, Review, SellerPaymentDetails, User } from '../../../shared/models.js';
+import {
+  PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, methodOf, orderMoney, rupees,
+} from '../../../shared/payments.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
   AUTO_RELEASE_DAYS,
@@ -60,6 +63,43 @@ function note(order: Order, text: string, by: string): void {
     ...order.stageHistory,
     { stage: order.stage, enteredAt: new Date().toISOString(), note: text, recordedBy: by },
   ];
+}
+
+/** Records one dated payment on the order and puts it on the buyer's timeline. */
+function record(
+  order: Order,
+  entry: Omit<PaymentRecord, 'id' | 'at' | 'batchId' | 'batchTotalMinor' | 'reference'> &
+    Partial<Pick<PaymentRecord, 'batchId' | 'batchTotalMinor' | 'reference'>>,
+): void {
+  order.payments = [
+    ...(order.payments ?? []),
+    {
+      id: `pay_${randomUUID().slice(0, 12)}`,
+      at: new Date().toISOString(),
+      batchId: null,
+      batchTotalMinor: null,
+      reference: null,
+      ...entry,
+    },
+  ];
+  const label = entry.kind === 'refund' ? '↩️ Refund processed' : `💳 ${PAYMENT_KIND_LABELS[entry.kind]} received`;
+  const part = entry.batchTotalMinor && entry.batchTotalMinor !== entry.amountMinor
+    ? ` (from a ${rupees(entry.batchTotalMinor)} payment)` : '';
+  note(order, `${label} — ${rupees(entry.amountMinor)}${part}`, entry.recordedBy);
+}
+
+/** Paid in full once nothing is outstanding; partly paid while something is. */
+function statusFromMoney(order: Order): void {
+  const money = orderMoney(order);
+  order.paymentStatus = money.outstandingMinor === 0 ? 'paid' : money.paidMinor > 0 ? 'partially_paid' : 'unpaid';
+}
+
+/** How much the chosen plan asks for now, or the refusal. */
+function planAmount(order: Order, plan: unknown): { plan: 'full' | 'advance'; amountMinor: number } | null {
+  const totalMinor = order.unitPriceMinor * order.quantity;
+  if (plan !== 'advance') return { plan: 'full', amountMinor: totalMinor };
+  if (!order.advancePercent) return null;
+  return { plan: 'advance', amountMinor: advanceMinor(totalMinor, order.advancePercent) };
 }
 
 /**
@@ -126,7 +166,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
-  let body: { protection?: boolean; escrowAgentId?: string };
+  let body: { protection?: boolean; escrowAgentId?: string; plan?: 'full' | 'advance' };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -157,12 +197,16 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     }
   }
 
+  const terms = planAmount(order, body.plan);
+  if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
+
   const now = new Date().toISOString();
   const totalMinor = order.unitPriceMinor * order.quantity;
 
-  order.paymentStatus = 'paid';
   order.status = 'confirmed';
   order.updatedAt = now;
+  order.paymentPlan = terms.plan;
+  order.paymentMethod = agent ? 'protected' : 'direct';
 
   if (agent?.escrowRights) {
     const rights = agent.escrowRights;
@@ -181,7 +225,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     order.escrow = {
       ...order.escrow,
       state: 'held',
-      amountMinor: totalMinor,
+      amountMinor: terms.amountMinor,
       heldAt: now,
       // Deliberately not set yet. The clock starts at dispatch, because an
       // import can sit in a lot for weeks and a window opened at checkout would
@@ -194,6 +238,8 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     order.escrow = { ...order.escrow, state: 'none', heldAt: null, autoReleaseAt: null };
     note(order, 'Paid directly to the seller, without protection.', user.id);
   }
+  record(order, { kind: terms.plan, method: order.paymentMethod, amountMinor: terms.amountMinor, recordedBy: user.id });
+  statusFromMoney(order);
 
   return json(200, {
     order: await repository.updateOrder(order),
@@ -235,6 +281,9 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     itemMinor: totalMinor,
+    /** Null when the seller does not take an advance on this item. */
+    advanceMinor: order.advancePercent ? advanceMinor(totalMinor, order.advancePercent) : null,
+    advancePercent: order.advancePercent ?? null,
     currency: order.currency,
     seller: sellerRef(seller),
     /**
@@ -539,12 +588,14 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'not_payable', 'This order is not waiting for payment.');
   }
 
-  let body: { reference?: string; screenshot?: string };
+  let body: { reference?: string; screenshot?: string; plan?: 'full' | 'advance' };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     body = {};
   }
+  const terms = planAmount(order, body.plan);
+  if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
 
   const reference = (body.reference ?? '').trim();
   const screenshot = (body.screenshot ?? '').trim();
@@ -576,7 +627,11 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
     decision: null,
     decidedAt: null,
     decidedReason: null,
+    plan: terms.plan,
+    amountMinor: terms.amountMinor,
   };
+  order.paymentPlan = terms.plan;
+  order.paymentMethod = 'direct';
   note(order, reference ? `Buyer paid directly — reference ${reference}.` : 'Buyer paid directly.', user.id);
   await repository.updateOrder(order);
 
@@ -639,8 +694,16 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (body.accept) {
-    order.paymentStatus = 'paid';
     order.status = 'confirmed';
+    order.paymentMethod = 'direct';
+    record(order, {
+      kind: claim?.plan ?? 'full',
+      method: 'direct',
+      amountMinor: claim?.amountMinor ?? order.unitPriceMinor * order.quantity,
+      reference: claim?.reference ?? null,
+      recordedBy: user.id,
+    });
+    statusFromMoney(order);
     // Nobody is holding this. The money went from the buyer to the seller
     // directly, so there is no escrow to release and nothing to dispute over -
     // which is exactly what buying without protection means.
@@ -666,7 +729,164 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
   return json(200, { order });
 }
 
+
+/**
+ * POST /api/me/purchases/pay - pay more towards items in one store's lot.
+ *
+ * One payment, spread over the chosen items in the order they were chosen:
+ * each is cleared before the next is touched, the rest spills onto the other
+ * items still owing in the same group, and anything left over is kept as a
+ * credit the seller refunds. Nothing is lost and nothing is guessed.
+ *
+ * Always by the method the orders were first paid with. A group whose items
+ * were paid two different ways is refused rather than quietly switched.
+ */
+async function payMore(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  let body: { orderIds?: string[]; amountMinor?: number; reference?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const ids = [...new Set(body.orderIds ?? [])];
+  const amountMinor = Math.round(Number(body.amountMinor) || 0);
+  if (ids.length === 0) return error(400, 'no_items', 'Choose at least one item to pay towards.');
+  if (amountMinor <= 0) return error(400, 'invalid_amount', 'Enter an amount above zero.');
+
+  const selected: Order[] = [];
+  for (const id of ids) {
+    const order = await repository.getOrder(id);
+    if (!order || order.buyerId !== user.id) return error(404, 'not_found', 'No such purchase of yours.');
+    if (!actionsFor(order, user.id).includes('pay_more')) {
+      return error(409, 'not_payable', `${order.itemName} is not waiting on a further payment.`);
+    }
+    selected.push(order);
+  }
+  const first = selected[0]!;
+  if (selected.some((o) => o.sellerId !== first.sellerId || o.lotId !== first.lotId)) {
+    return error(400, 'mixed_group', 'Pay towards items from one store and lot at a time.');
+  }
+  const method = methodOf(first);
+  if (selected.some((o) => methodOf(o) !== method)) {
+    return error(409, 'mixed_method', 'These items were paid different ways, so pay them separately.');
+  }
+
+  // The rest of the group, for the remainder to spill onto: same store, same
+  // lot, still owing, and paid the same way.
+  const others = (await repository.listOrdersForBuyer(user.id)).filter((o) =>
+    o.sellerId === first.sellerId && o.lotId === first.lotId && !ids.includes(o.id)
+    && actionsFor(o, user.id).includes('pay_more') && methodOf(o) === method);
+
+  const byId = new Map([...selected, ...others].map((o) => [o.id, o]));
+  const outstanding = (o: Order) => ({ id: o.id, outstandingMinor: orderMoney(o).outstandingMinor });
+  const plan = allocatePayment(amountMinor, selected.map(outstanding), others.map(outstanding));
+
+  const batchId = `bat_${randomUUID().slice(0, 12)}`;
+  const touched = new Map<string, Order>();
+  for (const line of plan.lines) {
+    const order = byId.get(line.orderId)!;
+    record(order, {
+      kind: 'additional', method, amountMinor: line.amountMinor, batchId, batchTotalMinor: amountMinor,
+      reference: body.reference?.trim() || null, recordedBy: user.id,
+    });
+    statusFromMoney(order);
+    if (order.escrow.state === 'held') {
+      order.escrow = { ...order.escrow, amountMinor: order.escrow.amountMinor + line.amountMinor };
+    }
+    touched.set(order.id, order);
+  }
+
+  // Over the balance: kept against the last item it reached, never dropped.
+  if (plan.extraMinor > 0) {
+    const holder = byId.get(plan.lines.at(-1)?.orderId ?? first.id)!;
+    holder.credits = [
+      ...(holder.credits ?? []),
+      {
+        id: `crd_${randomUUID().slice(0, 12)}`,
+        createdAt: new Date().toISOString(),
+        amountMinor: plan.extraMinor,
+        batchId,
+        refundedMinor: 0,
+        refundedAt: null,
+        refundedBy: null,
+        status: 'open',
+      },
+    ];
+    note(holder, `💰 Extra payment / credit — ${rupees(plan.extraMinor)}`, user.id);
+    touched.set(holder.id, holder);
+  }
+
+  const now = new Date().toISOString();
+  const saved: Order[] = [];
+  for (const order of touched.values()) saved.push(await repository.updateOrder({ ...order, updatedAt: now }));
+
+  await notify(repository, [first.sellerId], {
+    kind: 'payment_received',
+    title: `A buyer paid ${rupees(amountMinor)}`,
+    body: saved.map((o) => o.itemName).join(', '),
+    link: `/order/${first.id}`,
+  });
+
+  return json(200, { allocation: plan, method, orders: saved, simulatedPayment: method === 'protected' });
+}
+
+/**
+ * POST /api/orders/{id}/refund-credit - the seller hands back an overpayment.
+ *
+ * Marks the credit refunded with who did it and when, and writes the refund
+ * into the order's payments and timeline. The credit row stays: it is the
+ * record of what was overpaid in the first place.
+ */
+async function refundCredit(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  if (!actionsFor(order, user.id).includes('refund_credit')) {
+    return error(409, 'nothing_to_refund', 'There is no extra payment waiting to be refunded.');
+  }
+
+  let body: { creditId?: string } = {};
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    // No body: refund every open credit.
+  }
+
+  const now = new Date().toISOString();
+  let total = 0;
+  order.credits = (order.credits ?? []).map((credit) => {
+    if (credit.status !== 'open' || (body.creditId && credit.id !== body.creditId)) return credit;
+    const amount = credit.amountMinor - credit.refundedMinor;
+    total += amount;
+    return { ...credit, refundedMinor: credit.amountMinor, refundedAt: now, refundedBy: user.id, status: 'refunded' };
+  });
+  if (total === 0) return error(404, 'not_found', 'No such open credit on this order.');
+
+  record(order, { kind: 'refund', method: methodOf(order), amountMinor: total, recordedBy: user.id });
+  order.updatedAt = now;
+  const saved = await repository.updateOrder(order);
+
+  await notify(repository, [order.buyerId], {
+    kind: 'credit_refunded',
+    title: `${rupees(total)} refunded to you`,
+    body: order.itemName,
+    link: `/order/${order.id}`,
+  });
+
+  return json(200, { order: saved, refundedMinor: total });
+}
+
 export const payRoute = handler(pay);
+export const payMoreRoute = handler(payMore);
+export const refundCreditRoute = handler(refundCredit);
 export const claimPaymentRoute = handler(claimPayment);
 /**
  * POST /api/orders/{id}/reject - the seller cannot serve this order.
@@ -761,6 +981,8 @@ export const checkoutRoute = handler(checkout);
 
 const anon = { authLevel: 'anonymous' } as const;
 
+app.http('purchases-pay', { ...anon, methods: ['POST'], route: 'me/purchases/pay', handler: payMoreRoute });
+app.http('order-refund-credit', { ...anon, methods: ['POST'], route: 'orders/{id}/refund-credit', handler: refundCreditRoute });
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });
 app.http('order-claim-payment', { ...anon, methods: ['POST'], route: 'orders/{id}/claim-payment', handler: claimPaymentRoute });
 app.http('order-settle-claim', { ...anon, methods: ['POST'], route: 'orders/{id}/settle-claim', handler: settleClaimRoute });

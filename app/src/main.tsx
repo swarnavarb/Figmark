@@ -10,6 +10,7 @@ import { ForwardersPage } from './pages/ForwardersPage';
 import { ListingPage } from './pages/ListingPage';
 import { OrderPage } from './pages/OrderPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { PurchasesPage } from './pages/PurchasesPage';
 import { SellPage } from './pages/SellPage';
 import { LotBoardPage } from './pages/LotBoardPage';
 import { ShopPage } from './pages/ShopPage';
@@ -77,6 +78,7 @@ function App() {
         <Route path="/escrow" element={<EscrowPage />} />
         <Route path="/forwarders" element={<ForwardersPage />} />
         <Route path="/me" element={<ProfilePage />} />
+        <Route path="/purchases" element={<PurchasesPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
         <Route path="/:username" element={<ProfileByHandlePage />} />

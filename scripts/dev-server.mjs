@@ -22,6 +22,7 @@ const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, forwardersRoute,
+  editListingRoute, deleteListingRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
@@ -32,14 +33,14 @@ const {
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
-  socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute,
+  socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute,
   listForumsRoute, createForumRoute,
 } = await import(new URL('social-routes.js', apiRoot));
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
   payRoute, confirmRoute, reviewRoute, orderStateRoute, checkoutRoute,
-  claimPaymentRoute, settleClaimRoute, rejectOrderRoute,
+  claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
@@ -94,6 +95,8 @@ const routes = [
   ['POST', '/api/listings', createListingRoute],
   ['GET', '/api/listings/:id', listingDetailRoute],
   ['POST', '/api/listings/:id/like', toggleLikeRoute],
+  ['POST', '/api/listings/:id/edit', editListingRoute],
+  ['POST', '/api/listings/:id/delete', deleteListingRoute],
   ['POST', '/api/listings/:id/bump', bumpListingRoute],
   ['POST', '/api/listings/:id/comments', addCommentRoute],
   ['POST', '/api/sellers/:id/follow', toggleFollowRoute],
@@ -115,6 +118,7 @@ const routes = [
   ['GET', '/api/me/stores', myStoresRoute],
   ['POST', '/api/me/storefront/managers', updateManagersRoute],
   ['GET', '/api/social/feed', socialFeedRoute],
+  ['GET', '/api/me/posts', myPostsRoute],
   ['GET', '/api/social/channels', channelsRoute],
   ['GET', '/api/social/channels/:id', channelThreadRoute],
   ['POST', '/api/social/posts', createPostRoute],
@@ -128,6 +132,8 @@ const routes = [
   ['GET', '/api/orders/:id/state', orderStateRoute],
   ['GET', '/api/orders/:id/checkout', checkoutRoute],
   ['POST', '/api/orders/:id/pay', payRoute],
+  ['POST', '/api/orders/:id/refund-credit', refundCreditRoute],
+  ['POST', '/api/me/purchases/pay', payMoreRoute],
   ['POST', '/api/orders/:id/claim-payment', claimPaymentRoute],
   ['POST', '/api/orders/:id/settle-claim', settleClaimRoute],
   ['POST', '/api/orders/:id/reject', rejectOrderRoute],

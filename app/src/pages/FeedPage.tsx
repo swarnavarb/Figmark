@@ -12,6 +12,7 @@ import { CategoryIcon } from '../components/CategoryIcon';
 import { FillGap, FillKey, FillMeter } from '../components/FillMeter';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { ExpiryChip, StockChip } from '../components/Buy';
 
 const PRICE_BANDS = [
   { label: 'Under ₹500', value: '50000' },
@@ -292,6 +293,7 @@ function ListingCard({ listing }: { listing: FeedListing }) {
         <div className="thumb__badges">
           <span className="badge badge--solid">{listing.condition}</span>
           {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
+          <ExpiryChip listing={listing} />
         </div>
       </Thumb>
 
@@ -307,7 +309,7 @@ function ListingCard({ listing }: { listing: FeedListing }) {
             {SOURCING_LABELS[sourcingOf(listing)]}
           </span>
           <span className="badge">{listing.category}</span>
-          {listing.quantityAvailable > 1 && <span className="faint">{listing.quantityAvailable} left</span>}
+          {(listing.quantityMode === 'multiple' || listing.quantityAvailable > 1) && <StockChip listing={listing} />}
         </div>
 
         {/* The meter, from the counters cached on the listing. No faces here:

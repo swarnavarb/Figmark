@@ -45,7 +45,10 @@ const {
   payRoute: payOrder, confirmRoute: confirmOrder, reviewRoute: reviewOrder,
   orderStateRoute: orderState, checkoutRoute: checkout,
   claimPaymentRoute: claimPayment, settleClaimRoute: settleClaim,
+  payMoreRoute: payMore, refundCreditRoute: refundCredit,
 } = await import(new URL('order-routes.js', fns));
+const { editListingRoute: editListing, deleteListingRoute: deleteListing } =
+  await import(new URL('catalog-routes.js', fns));
 const {
   wantsBoardRoute: wantsBoard, wantPostRoute: postWant, wantReadRoute: readWant,
   wantOfferRoute: offerOnWant, wantCloseRoute: closeWant, wantAlsoMeRoute: alsoMe,
@@ -5529,6 +5532,172 @@ await check('only the shop that sold it may file it, or tick it', async () => {
     headers: theirs, params: { id: templatedOrder.id }, body: { lotId: 'x' },
   }), ctx);
   assert.equal(refused.status, 403);
+});
+
+/* ── stock, expiry, advance, pay more, refunds ─────────────────────────── */
+console.log('\nstock, expiry and instalments');
+
+const payBuyer = await signup(req({
+  body: { displayName: 'Instalment Buyer', email: 'instal@figmark.example', phone: '+919000045599', password: 'longenough1' },
+}), ctx);
+const payAuth = { authorization: `Bearer ${payBuyer.jsonBody.token}` };
+const list = async (body) => (await createListing(req({ headers: auth, body: { sourcing: 'in_hand', ...body } }), ctx)).jsonBody.listing;
+const buy = async (listingId, quantity = 1) => createOrder(req({ headers: payAuth, body: { listingId, quantity } }), ctx);
+/** Buyer claims the plan, seller accepts: the order as it then stands. */
+const paidBy = async (orderId, plan) => {
+  const claimed = await claimPayment(req({ headers: payAuth, params: { id: orderId }, body: { reference: 'UTR1', plan } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  return (await settleClaim(req({ headers: auth, params: { id: orderId }, body: { accept: true } }), ctx)).jsonBody.order;
+};
+
+await check('a numeric quantity counts down and sells out', async () => {
+  const item = await list({ title: 'Counted shelf', priceMinor: 10_000, quantityAvailable: 2 });
+  assert.equal((await buy(item.id, 2)).status, 201);
+  const after = (await listingDetail(req({ params: { id: item.id } }), ctx)).jsonBody.listing;
+  assert.equal(after.quantityAvailable, 0);
+  assert.equal(after.status, 'sold_out');
+  assert.equal((await buy(item.id)).status, 409);
+});
+
+await check('a "multiple" item stays available without a count', async () => {
+  const item = await list({ title: 'Big bin of keychains', priceMinor: 5_000, quantityMode: 'multiple' });
+  assert.equal(item.quantityMode, 'multiple');
+  assert.equal((await buy(item.id, 7)).status, 201);
+  assert.equal((await buy(item.id, 7)).status, 201);
+  const after = (await listingDetail(req({ params: { id: item.id } }), ctx)).jsonBody.listing;
+  assert.equal(after.status, 'active');
+});
+
+await check('an expired item cannot be bought, and can be made available again', async () => {
+  const item = await list({ title: 'Flash drop', priceMinor: 9_000, quantityAvailable: 5,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString() });
+  const earlier = (await buy(item.id)).jsonBody.order;
+  const repo = await getRepository();
+  await repo.updateListing({ ...(await repo.getListing(item.id)), expiresAt: new Date(Date.now() - 1000).toISOString() });
+
+  const refused = await buy(item.id);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'expired');
+  const catalog = (await feed(req({ query: { q: 'flash drop' } }), ctx)).jsonBody.listings;
+  assert.ok(!catalog.some((l) => l.id === item.id), 'expired items leave the catalog');
+  const mine = (await myActivity(req({ headers: auth }), ctx)).jsonBody.listings;
+  assert.ok(mine.some((l) => l.id === item.id), 'the seller still sees it, for the Expired tab');
+  assert.ok(await repo.getOrder(earlier.id), 'history survives expiry');
+
+  const past = await editListing(req({ headers: auth, params: { id: item.id },
+    body: { expiresAt: new Date(Date.now() - 5000).toISOString() } }), ctx);
+  assert.equal(past.status, 400);
+  const reopened = await editListing(req({ headers: auth, params: { id: item.id }, body: { expiresAt: null } }), ctx);
+  assert.equal(reopened.status, 200);
+  assert.equal((await buy(item.id)).status, 201);
+});
+
+await check('only the store can edit or delete an item; a bought one is withdrawn, not erased', async () => {
+  const item = await list({ title: 'Editable', priceMinor: 1_000, quantityAvailable: 3 });
+  assert.equal((await editListing(req({ headers: payAuth, params: { id: item.id }, body: { title: 'x' } }), ctx)).status, 403);
+  const edited = (await editListing(req({ headers: auth, params: { id: item.id },
+    body: { title: 'Edited', quantityMode: 'multiple' } }), ctx)).jsonBody.listing;
+  assert.equal(edited.title, 'Edited');
+  await buy(item.id);
+  const gone = (await deleteListing(req({ headers: auth, params: { id: item.id } }), ctx)).jsonBody;
+  assert.equal(gone.kept, 'archived');
+  assert.equal((await buy(item.id)).status, 409);
+});
+
+await check('full payment is recorded as one dated payment', async () => {
+  const item = await list({ title: 'Paid in one', priceMinor: 20_000, advancePercent: 30 });
+  const order = await paidBy((await buy(item.id)).jsonBody.order.id, 'full');
+  assert.equal(order.paymentStatus, 'paid');
+  assert.equal(order.paymentMethod, 'direct');
+  assert.deepEqual(order.payments.map((p) => [p.kind, p.amountMinor]), [['full', 20_000]]);
+});
+
+await check('an advance is refused where the seller does not take one', async () => {
+  const item = await list({ title: 'No advance here', priceMinor: 20_000 });
+  const order = (await buy(item.id)).jsonBody.order;
+  const refused = await claimPayment(req({ headers: payAuth, params: { id: order.id }, body: { reference: 'U', plan: 'advance' } }), ctx);
+  assert.equal(refused.jsonBody.error, 'no_advance');
+});
+
+// A = 5000 (40% → 3000 left), B = 4000 (50% → 2000 left), C = 2000 (50% → 1000 left), one store, direct.
+const [lA, lB, lC] = [
+  await list({ title: 'Item A', priceMinor: 500_000, advancePercent: 40 }),
+  await list({ title: 'Item B', priceMinor: 400_000, advancePercent: 50 }),
+  await list({ title: 'Item C', priceMinor: 200_000, advancePercent: 50 }),
+];
+const oA = await paidBy((await buy(lA.id)).jsonBody.order.id, 'advance');
+const oB = await paidBy((await buy(lB.id)).jsonBody.order.id, 'advance');
+const oC = await paidBy((await buy(lC.id)).jsonBody.order.id, 'advance');
+
+await check('an advance leaves a balance the buyer can pay more against', async () => {
+  assert.equal(oA.paymentStatus, 'partially_paid');
+  assert.deepEqual(oA.payments.map((p) => [p.kind, p.amountMinor]), [['advance', 200_000]]);
+  const state = (await orderState(req({ headers: payAuth, params: { id: oA.id } }), ctx)).jsonBody;
+  assert.ok(state.actions.includes('pay_more'));
+});
+
+await check('several additional payments stay separate dated records', async () => {
+  const one = await payMore(req({ headers: payAuth, body: { orderIds: [oA.id], amountMinor: 50_000 } }), ctx);
+  assert.equal(one.status, 200);
+  assert.equal(one.jsonBody.method, 'direct', 'the original method is kept');
+  const two = await payMore(req({ headers: payAuth, body: { orderIds: [oA.id], amountMinor: 50_000 } }), ctx);
+  const a = two.jsonBody.orders.find((o) => o.id === oA.id);
+  assert.deepEqual(a.payments.map((p) => p.kind), ['advance', 'additional', 'additional']);
+  assert.ok(a.stageHistory.some((e) => /Additional payment received — ₹500/.test(e.note ?? '')));
+});
+
+await check('one payment clears the chosen items in order and spills the rest onto the group', async () => {
+  // A now owes 2000, B 2000, C 1000. Pay 6000 for A + B.
+  const paid = (await payMore(req({ headers: payAuth, body: { orderIds: [oA.id, oB.id], amountMinor: 600_000 } }), ctx)).jsonBody;
+  assert.deepEqual(paid.allocation.lines.map((l) => [l.orderId, l.amountMinor, l.completes, l.spill]), [
+    [oA.id, 200_000, true, false],
+    [oB.id, 200_000, true, false],
+    [oC.id, 100_000, true, true],
+  ]);
+  assert.equal(paid.allocation.extraMinor, 100_000);
+  assert.ok(paid.orders.every((o) => o.paymentStatus === 'paid'));
+  const holder = paid.orders.find((o) => o.credits?.length);
+  assert.equal(holder.credits[0].amountMinor, 100_000, 'the extra is kept as credit');
+});
+
+await check('a paid-up item takes no more payments', async () => {
+  const again = await payMore(req({ headers: payAuth, body: { orderIds: [oA.id], amountMinor: 1_000 } }), ctx);
+  assert.equal(again.status, 409);
+});
+
+await check('the seller refunds the extra, and the timeline says so', async () => {
+  const holder = (await getRepository()).getOrder(oC.id);
+  const order = await holder;
+  assert.ok((await orderState(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody.actions.includes('refund_credit'));
+  assert.equal((await refundCredit(req({ headers: payAuth, params: { id: order.id }, body: {} }), ctx)).status, 409);
+  const refunded = (await refundCredit(req({ headers: auth, params: { id: order.id }, body: {} }), ctx)).jsonBody;
+  assert.equal(refunded.refundedMinor, 100_000);
+  const credit = refunded.order.credits[0];
+  assert.equal(credit.status, 'refunded');
+  assert.ok(credit.refundedAt && credit.refundedBy);
+  assert.equal(refunded.order.payments.at(-1).kind, 'refund');
+  assert.ok(refunded.order.stageHistory.some((e) => /Refund processed — ₹1,000/.test(e.note ?? '')));
+});
+
+await check('a group paid two different ways is refused rather than switched', async () => {
+  const lD = await list({ title: 'Item D', priceMinor: 200_000, advancePercent: 50 });
+  const lE = await list({ title: 'Item E', priceMinor: 200_000, advancePercent: 50 });
+  const oD = await paidBy((await buy(lD.id)).jsonBody.order.id, 'advance');
+  const oE = await paidBy((await buy(lE.id)).jsonBody.order.id, 'advance');
+  const repo = await getRepository();
+  await repo.updateOrder({ ...(await repo.getOrder(oE.id)), paymentMethod: 'protected' });
+  const mixed = await payMore(req({ headers: payAuth, body: { orderIds: [oD.id, oE.id], amountMinor: 1000 } }), ctx);
+  assert.equal(mixed.jsonBody.error, 'mixed_method');
+});
+
+await check('my purchases group by store, then lot, with the money on every item', async () => {
+  const { groups } = (await myItems(req({ headers: payAuth }), ctx)).jsonBody;
+  assert.ok(groups.every((g) => g.key.startsWith(`${g.sellerId}:`)));
+  const a = groups.flatMap((g) => g.items).find((i) => i.id === oA.id);
+  assert.equal(a.totalMinor, 500_000);
+  assert.equal(a.paidMinor, 500_000);
+  assert.equal(a.outstandingMinor, 0);
+  assert.equal(a.method, 'direct');
 });
 
 console.log(`\n${passed} checks passed`);

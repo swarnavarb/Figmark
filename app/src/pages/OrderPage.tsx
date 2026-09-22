@@ -11,6 +11,8 @@ import {
   type Checkout, type EscrowOption, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
 } from '../api';
 import { Ladder } from '../components/Ladder';
+import { PaymentHistory } from '../components/Buy';
+import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { formatDate, formatMoney, timeAgo } from '../format';
 
@@ -62,8 +64,8 @@ export function OrderPage() {
       {/* Both sides read this screen, so it goes back to whichever list they
           came from rather than always to the buyer's. */}
       <button className="btn btn--quiet" style={{ marginBottom: 16 }}
-        onClick={() => navigate(state.side === 'seller' ? '/me?tab=sales' : '/me?tab=purchases')}>
-        <Icon name="back" size={14} /> {state.side === 'seller' ? 'My sales' : 'My purchases'}
+        onClick={() => navigate(state.side === 'seller' ? '/me?tab=sales' : '/purchases')}>
+        <Icon name="back" size={14} /> {state.side === 'seller' ? 'My sales' : 'My Purchases'}
       </button>
 
       <div className="page__head">
@@ -208,6 +210,8 @@ export function OrderPage() {
               <p className="faint">No tracking reference yet. It appears once the seller dispatches.</p>
             )}
           </div>
+
+          <PaymentHistory order={order} side={state.side} onChanged={load} />
 
           {/* Only while it is actually held. On a finished order this was still
               explaining a hold that had already been released. */}
@@ -366,7 +370,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
    * empty rounded rectangle above the timeline. Adding an action without a
    * button can no longer produce one.
    */
-  const DRAWN_HERE = ['pay', 'settle_claim', 'confirm', 'dispute'] as const;
+  const DRAWN_HERE = ['pay', 'settle_claim', 'confirm', 'dispute', 'pay_more'] as const;
   const nothingToDo = !actions.some((action) =>
     (DRAWN_HERE as readonly string[]).includes(action));
 
@@ -430,6 +434,11 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
               <button className="btn btn--lg" onClick={() => setPaying(true)}>
                 Pay {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}
               </button>
+            )}
+            {actions.includes('pay_more') && (
+              <Link to="/purchases" className="btn btn--lg">
+                💳 Pay more · {formatMoney(orderMoney(order).outstandingMinor, order.currency)} left
+              </Link>
             )}
             {actions.includes('settle_claim') && !settling && (
               <button className="btn btn--lg" onClick={() => setSettling(true)}>
@@ -499,9 +508,10 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
 function BuyPanel({ order, busy, onPaid, onCancel }: {
   order: Order;
   busy: string | null;
-  onPaid: (body: { reference: string; screenshot: string | null }) => void | Promise<void>;
+  onPaid: (body: { reference: string; screenshot: string | null; plan?: 'full' | 'advance' }) => void | Promise<void>;
   onCancel: () => void;
 }) {
+  const [plan, setPlan] = useState<'full' | 'advance'>('full');
   const [quote, setQuote] = useState<Checkout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<'direct' | 'protected' | null>(null);
@@ -523,13 +533,15 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
   const canProtect = quote.escrows.length > 0;
   const canPayDirect = quote.sellerPayment !== null;
 
+  const dueNow = plan === 'advance' && quote.advanceMinor != null ? quote.advanceMinor : quote.itemMinor;
+
   if (route === 'direct' && quote.sellerPayment) {
     return (
       <DirectPay
-        quote={quote}
+        quote={{ ...quote, itemMinor: dueNow }}
         payment={quote.sellerPayment}
         busy={busy === 'claim'}
-        onPaid={onPaid}
+        onPaid={(body) => onPaid({ ...body, plan })}
         onBack={() => setRoute(null)}
       />
     );
@@ -539,6 +551,27 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
     <div className="stack">
       <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
 
+      {/* Full or advance, offered only where the seller takes an advance. The
+          method chosen below is then the one every later payment uses. */}
+      {quote.advanceMinor != null && (
+        <div className="seg" role="radiogroup" aria-label="How much to pay now">
+          <button type="button" role="radio" aria-checked={plan === 'full'}
+            className={plan === 'full' ? 'is-on' : ''} onClick={() => setPlan('full')}>
+            💯 Pay full · {formatMoney(quote.itemMinor, quote.currency)}
+          </button>
+          <button type="button" role="radio" aria-checked={plan === 'advance'}
+            className={plan === 'advance' ? 'is-on' : ''} onClick={() => setPlan('advance')}>
+            🌱 Pay advance · {formatMoney(quote.advanceMinor, quote.currency)}
+          </button>
+        </div>
+      )}
+      {plan === 'advance' && quote.advanceMinor != null && (
+        <p className="notice notice--info">
+          {quote.advancePercent}% now, {formatMoney(quote.itemMinor - quote.advanceMinor, quote.currency)} later
+          from My Purchases — using the same payment method you pick here.
+        </p>
+      )}
+
       <button type="button" className="buyway" disabled={!canPayDirect}
         onClick={() => setRoute('direct')}>
         <span className="buyway__title">Buy directly from the seller</span>
@@ -547,7 +580,7 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
             ? <>Pay <PersonLink party={quote.seller} /> yourself, then show them it went through. Nothing is held, so anything that goes wrong is between the two of you.</>
             : <><PersonLink party={quote.seller} /> has not added any payment details, so there is nowhere to send the money.</>}
         </span>
-        <span className="buyway__price">{formatMoney(quote.itemMinor, quote.currency)}</span>
+        <span className="buyway__price">{formatMoney(dueNow, quote.currency)}</span>
       </button>
 
       <button type="button" className={`buyway${route === 'protected' ? ' is-on' : ''}`}

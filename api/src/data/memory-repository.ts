@@ -352,9 +352,12 @@ export class MemoryRepository implements Repository {
   async createOrder(order: Order): Promise<Order> {
     this.orders.set(order.id, order);
     const listing = this.listings.get(order.listingId);
-    if (listing) {
+    // A "multiple" item has no count to run down, so it never sells out.
+    if (listing && listing.quantityMode !== 'multiple') {
       listing.quantityAvailable = Math.max(0, listing.quantityAvailable - order.quantity);
       if (listing.quantityAvailable === 0) listing.status = 'sold_out';
+    }
+    if (listing) {
       // Pre-order fill is denormalised onto the listing, so it moves with the
       // order rather than being counted at read time.
       if (listing.preOrder) listing.preOrder.filledCount += order.quantity;
