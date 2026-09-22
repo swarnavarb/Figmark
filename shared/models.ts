@@ -384,6 +384,15 @@ export interface Listing extends BaseDocument {
   currency: string;
   quantityAvailable: number;
   /**
+   * 'multiple' when the seller cannot put a number on the shelf: the item stays
+   * buyable and `quantityAvailable` is not counted down. Absent means 'fixed'.
+   */
+  quantityMode?: 'fixed' | 'multiple';
+  /** When it stops being buyable. Read against the clock; null or absent never expires. */
+  expiresAt?: string | null;
+  /** Buyers may pay this percentage up front instead of the full amount. Null or absent: full only. */
+  advancePercent?: number | null;
+  /**
    * Demand pooling, opt-in per listing.
    *
    * Lives here rather than on the lot because a shipment lot can carry five
@@ -868,6 +877,48 @@ export interface Order extends BaseDocument {
    * argument and deleting the evidence would leave only one side of it.
    */
   paymentClaim?: PaymentClaim | null;
+  /** Full or advance, as the buyer chose at checkout. */
+  paymentPlan?: 'full' | 'advance';
+  /**
+   * How the first payment was made. Every later payment on the order uses the
+   * same one: switching quietly would move money outside what was agreed.
+   */
+  paymentMethod?: PaymentMethod;
+  /** Copied from the listing at purchase, so editing the listing cannot move it. */
+  advancePercent?: number | null;
+  /** Every payment as its own dated transaction; balances are summed from these. */
+  payments?: PaymentRecord[];
+  /** Money paid over the balance, held for the seller to refund. */
+  credits?: CreditRecord[];
+}
+
+export type PaymentMethod = 'direct' | 'protected';
+
+export interface PaymentRecord {
+  id: string;
+  at: string;
+  kind: 'full' | 'advance' | 'additional' | 'refund';
+  method: PaymentMethod;
+  /** The part of the payment allocated to this order. */
+  amountMinor: number;
+  /** One buyer payment spread over several orders shares a batch. */
+  batchId: string | null;
+  /** The whole payment the buyer made, when it was split. */
+  batchTotalMinor: number | null;
+  reference: string | null;
+  recordedBy: string;
+}
+
+export interface CreditRecord {
+  id: string;
+  createdAt: string;
+  /** The original excess. */
+  amountMinor: number;
+  batchId: string | null;
+  refundedMinor: number;
+  refundedAt: string | null;
+  refundedBy: string | null;
+  status: 'open' | 'refunded';
 }
 
 /** One buyer's assertion that they sent the money, and the seller's answer. */
@@ -889,6 +940,9 @@ export interface PaymentClaim {
   decidedAt: string | null;
   /** Why they denied it. Read by the buyer, so it has to say something. */
   decidedReason: string | null;
+  /** What the claim is for: the full amount, or the advance. Absent on older claims. */
+  plan?: 'full' | 'advance';
+  amountMinor?: number;
 }
 
 /** Buyer protection, as bought: who holds it, and on what terms. */
@@ -1246,6 +1300,8 @@ export interface Notification extends BaseDocument {
 export type NotificationKind =
   | 'want_answered'
   | 'payment_claimed'
+  | 'payment_received'
+  | 'credit_refunded'
   | 'payment_settled'
   | 'dispute_opened'
   | 'dispute_replied'

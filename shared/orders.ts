@@ -37,7 +37,8 @@ export const REVIEW_REVEAL_DAYS = 14;
 /** Days a seller has to answer a dispute before it needs a human. */
 export const DISPUTE_RESPONSE_DAYS = 3;
 
-export type OrderAction = 'pay' | 'settle_claim' | 'confirm' | 'dispute' | 'review' | 'reject';
+export type OrderAction =
+  | 'pay' | 'settle_claim' | 'confirm' | 'dispute' | 'review' | 'reject' | 'pay_more' | 'refund_credit';
 
 /** Protection is only offered where the company has granted the seller it. */
 export function protectionFeeMinor(totalMinor: number, feeBasisPoints: number): number {
@@ -78,7 +79,7 @@ export function actionsFor(
   order: Pick<
     Order,
     'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
-  >,
+  > & Partial<Pick<Order, 'credits'>>,
   viewerId: string,
   reviewed = false,
 ): OrderAction[] {
@@ -97,6 +98,16 @@ export function actionsFor(
   // only one that matters, because whether the money arrived is a fact only
   // their own bank can tell them.
   if (side === 'seller' && order.paymentStatus === 'claimed') actions.push('settle_claim');
+
+  // An advance leaves a balance, and the buyer pays it down in as many goes as
+  // they like - always by the method they started with.
+  const live = order.status !== 'cancelled' && order.status !== 'refunded';
+  if (side === 'buyer' && live && order.paymentStatus === 'partially_paid') actions.push('pay_more');
+
+  // Money paid over the balance is the buyer's, and only the seller holds it.
+  if (side === 'seller' && order.credits?.some((credit) => credit.status === 'open')) {
+    actions.push('refund_credit');
+  }
 
   // The seller cannot serve it. Every order on this marketplace is a promise
   // made before anything moves - the stock may be gone, the supplier may have

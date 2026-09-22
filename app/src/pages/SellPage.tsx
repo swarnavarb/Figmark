@@ -11,6 +11,7 @@ import { NewLotDialog } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
+import { TermsFields, termsBody, termsDraft } from '../components/Buy';
 
 /**
  * The template this browser used last.
@@ -77,7 +78,7 @@ export function SellPage() {
   const [category, setCategory] = useState<string>(CATEGORIES[0]!);
   const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
   const [price, setPrice] = useState('');
-  const [quantity, setQuantity] = useState('1');
+  const [terms, setTerms] = useState(() => termsDraft());
   const [bundle, setBundle] = useState(false);
   const [shareToChannel, setShareToChannel] = useState(true);
   const [shareToFeed, setShareToFeed] = useState(false);
@@ -186,7 +187,7 @@ export function SellPage() {
         category,
         condition,
         priceMinor,
-        quantityAvailable: Math.max(1, Number(quantity) || 1),
+        ...termsBody(terms),
         bundle,
         shareToChannel,
         shareToFeed,
@@ -380,10 +381,10 @@ export function SellPage() {
               <input type="number" min="1" step="1" value={price}
                 onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
             </label>
-            <label className="field">
-              <span>Quantity</span>
-              <input type="number" min="1" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            </label>
+          </div>
+
+          <div className="card card--pad">
+            <TermsFields value={terms} onChange={setTerms} />
           </div>
 
           <label className="field">

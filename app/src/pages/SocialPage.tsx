@@ -636,7 +636,7 @@ function Composer({ forumId, onPosted }: { forumId?: string; onPosted: () => voi
 }
 
 /** One post, with the item attached when it is a sale post. */
-function PostView({ card }: { card: PostCard }) {
+export function PostView({ card }: { card: PostCard }) {
   const { post, listing, author } = card;
 
   return (

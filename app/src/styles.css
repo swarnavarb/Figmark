@@ -4627,3 +4627,144 @@ a.order__name:hover { color: var(--accent-text); }
 .rsjoin--leave .rsjoin__label { color: var(--blue-text); }
 
 .rsscrub { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }
+/* ── Buy / Purchases / Profile: stock, expiry, money ─────────────────────
+   Loud where it decides something (can I buy it, what do I owe), calm
+   everywhere else. Numbers stay in the UI face at full weight so a balance
+   is never the thing you squint at. */
+
+.stockchip, .expchip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: var(--w-semi); white-space: nowrap;
+  background: var(--lime-soft); color: var(--lime); box-shadow: inset 0 0 0 1px var(--lime-line);
+}
+.stockchip--multi { background: var(--violet-soft); color: var(--violet-text); box-shadow: inset 0 0 0 1px var(--violet-line); }
+.expchip { background: var(--aqua-soft); color: var(--aqua); box-shadow: inset 0 0 0 1px var(--aqua-line); }
+.expchip--soon {
+  background: var(--grad-warm); color: #fff; box-shadow: 0 4px 14px rgba(255, 90, 95, 0.35);
+  animation: expchip-pulse 1.6s ease-in-out infinite;
+}
+.expchip--gone { background: var(--danger-soft); color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.4); }
+.expchip--big { font-size: var(--t-sm); padding: 6px 12px; }
+@keyframes expchip-pulse { 50% { transform: scale(1.05); } }
+
+.moneybar { display: grid; gap: 8px; }
+.moneybar__nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
+.moneybar__nums > span {
+  display: grid; gap: 2px; padding: 8px 10px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.moneybar__nums small { color: var(--text-faint); font-size: var(--t-xs); }
+.moneybar__nums b { font-size: var(--t-md); font-variant-numeric: tabular-nums; }
+.moneybar__paid b { color: var(--ok); }
+.moneybar__due { border-color: var(--coral-line) !important; }
+.moneybar__due b { color: var(--coral); }
+.moneybar__done b { color: var(--ok); font-size: var(--t-sm); }
+.moneybar__credit { border-color: var(--pink-line) !important; }
+.moneybar__credit b { color: var(--pink-text); }
+.moneybar__track { display: block; height: 8px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
+.moneybar__track span { display: block; height: 100%; background: var(--grad-play); border-radius: inherit; transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+.payhist h3 { margin: 0; }
+.payhist__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.payhist__row {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--r-md); background: var(--surface-2);
+  border-left: 3px solid var(--ok);
+}
+.payhist__row--advance { border-left-color: var(--aqua); }
+.payhist__row--additional { border-left-color: var(--violet-lit); }
+.payhist__row--refund { border-left-color: var(--pink); }
+.payhist__icon { font-size: 18px; }
+.payhist__what { display: grid; }
+.payhist__what small { color: var(--text-faint); font-size: var(--t-xs); }
+.payhist__amt { font-variant-numeric: tabular-nums; }
+.payhist__row--refund .payhist__amt { color: var(--pink-text); }
+.creditline {
+  display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--pink-soft); box-shadow: inset 0 0 0 1px var(--pink-line);
+}
+.creditline.is-done { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+
+/* My Purchases: store → lot → rectangular item cards. */
+.purch__hero {
+  margin-bottom: 18px; padding: 18px; border-radius: var(--r-lg);
+  background: var(--grad-hero); color: #fff; box-shadow: var(--shadow-violet);
+}
+.purch__hero h1 { margin: 0; }
+.purch__hero p { margin: 4px 0 0; opacity: 0.9; }
+.purch__store { display: grid; gap: 12px; }
+.purch__storename { margin: 6px 0 0; font-size: var(--t-lg); }
+.purch__storename a { color: inherit; }
+.purch__lot {
+  display: grid; gap: 12px; padding: 14px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border);
+  animation: purch-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes purch-in { from { opacity: 0; transform: translateY(6px); } }
+.purch__lotname { font-weight: var(--w-semi); }
+.purch__items { display: grid; gap: 10px; }
+.purch__item {
+  display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: start;
+  padding: 10px; border-radius: var(--r-md); background: var(--surface-2);
+  border: 1px solid var(--border); color: inherit; text-decoration: none;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.purch__item:hover { transform: translateY(-1px); border-color: var(--violet-line); }
+.purch__item .thumb { border-radius: var(--r-sm); font-size: var(--t-md); }
+.purch__itembody { display: grid; gap: 3px; min-width: 0; font-size: var(--t-sm); }
+.purch__itembody > b { font-size: var(--t-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.purch__itembody .badge { justify-self: start; }
+.purch__paid { color: var(--ok); }
+.purch__due { color: var(--coral); }
+.purch__paymore { background: var(--grad-cool); border-color: transparent; }
+
+/* Pay More: pick in order, then the allocation spelled out. */
+.alloc__pick {
+  display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center;
+  width: 100%; padding: 10px; text-align: left; cursor: pointer;
+  border-radius: var(--r-md); background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); transition: border-color 0.15s ease, background 0.15s ease;
+}
+.alloc__pick.is-on { border-color: var(--violet-line); background: var(--violet-soft); }
+.alloc__num {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--surface); font-weight: var(--w-semi);
+}
+.alloc__pick.is-on .alloc__num { background: var(--grad-hero); color: #fff; }
+.alloc__name { font-weight: var(--w-semi); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.alloc__nums { display: grid; justify-items: end; font-variant-numeric: tabular-nums; }
+.alloc__nums small { color: var(--text-faint); }
+.alloc { display: grid; gap: 6px; padding: 12px; border-radius: var(--r-md); background: var(--surface-2); border: 1px dashed var(--aqua-line); }
+.alloc__line { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
+.alloc__line--extra { color: var(--pink-text); }
+.alloc__line--total { border-top: 1px solid var(--border); padding-top: 6px; font-size: var(--t-md); }
+
+/* The avatar menu. */
+.pmenu { position: relative; }
+.pmenu__btn { display: grid; padding: 2px; border: 0; border-radius: 50%; background: var(--grad-hero); cursor: pointer; }
+.pmenu__panel {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50; min-width: 200px;
+  display: grid; gap: 2px; padding: 6px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+  animation: pmenu-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: top right;
+}
+@keyframes pmenu-in { from { opacity: 0; transform: scale(0.96); } }
+.pmenu__who { padding: 6px 10px; color: var(--text-faint); font-size: var(--t-xs); }
+.pmenu__item {
+  display: block; width: 100%; padding: 10px 12px; border: 0; border-radius: var(--r-md);
+  background: transparent; color: var(--text); text-align: left; text-decoration: none;
+  font: inherit; font-weight: var(--w-medium); cursor: pointer;
+}
+.pmenu__item:hover { background: var(--surface-2); }
+.pmenu__item--out { color: var(--coral); }
+
+/* Profile photos, Instagram-tight. */
+.photogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; border-radius: var(--r-md); overflow: hidden; }
+.photogrid__cell { display: block; aspect-ratio: 1; background: var(--surface-2); overflow: hidden; }
+.photogrid__cell img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.25s ease; }
+.photogrid__cell:hover img { transform: scale(1.04); }
+
+@media (prefers-reduced-motion: reduce) {
+  .expchip--soon, .purch__lot, .pmenu__panel { animation: none; }
+}

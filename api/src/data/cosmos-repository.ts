@@ -1558,13 +1558,16 @@ export class CosmosRepository implements Repository {
     try {
       const listing = await this.getListing(order.listingId);
       if (listing) {
-        const quantityAvailable = Math.max(0, listing.quantityAvailable - order.quantity);
+        // A "multiple" item has no count to run down, so it never sells out.
+        const quantityAvailable = listing.quantityMode === 'multiple'
+          ? listing.quantityAvailable
+          : Math.max(0, listing.quantityAvailable - order.quantity);
         await this.container('listings')
           .item(listing.id, listing.sellerId)
           .replace({
             ...listing,
             quantityAvailable,
-            status: quantityAvailable === 0 ? 'sold_out' : listing.status,
+            status: quantityAvailable === 0 && listing.quantityMode !== 'multiple' ? 'sold_out' : listing.status,
             preOrder: listing.preOrder
               ? { ...listing.preOrder, filledCount: listing.preOrder.filledCount + order.quantity }
               : null,

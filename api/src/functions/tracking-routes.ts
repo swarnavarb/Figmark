@@ -5,6 +5,8 @@ import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
   BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
 } from '../../../shared/routes.js';
+import { actionsFor } from '../../../shared/orders.js';
+import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { notify } from './notify.js';
@@ -726,9 +728,19 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
     lots.set(order.lotId, await repository.getLot(order.sellerId, order.lotId));
   }
 
+  // Photos for the purchase cards, one read per item bought.
+  const photoOf = new Map<string, string | null>();
+  for (const listingId of new Set(orders.map((order) => order.listingId))) {
+    const listing = await repository.getListing(listingId);
+    const lead = listing?.photos.find((photo) => photo.isPrimary) ?? listing?.photos[0];
+    photoOf.set(listingId, lead?.url || null);
+  }
+
+  // Store, then lot: two shops' direct sales are two groups, not one.
   const groups = new Map<string, Order[]>();
   for (const order of orders) {
-    const key = inLot(order) ? order.lotId : order.lotId === DIRECT_LOT_ID ? DIRECT_LOT_ID : AWAITING_LOT_ID;
+    const lotKey = inLot(order) ? order.lotId : order.lotId === DIRECT_LOT_ID ? DIRECT_LOT_ID : AWAITING_LOT_ID;
+    const key = `${order.sellerId}:${lotKey}`;
     const existing = groups.get(key);
     if (existing) existing.push(order);
     else groups.set(key, [order]);
@@ -738,7 +750,8 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   const byId = new Map(sellers.map((seller) => [seller.id, seller]));
 
   const rows = [...groups].map(([key, items]) => {
-    const lot = lots.get(key) ?? null;
+    const lotKey = key.slice(key.indexOf(':') + 1);
+    const lot = lots.get(lotKey) ?? null;
     const route = lot ? routeOf(lot) : null;
     /* One ladder for the group, at the furthest of the items sharing it: a
        buyer whose parcel is already counted into the warehouse should not read
@@ -752,7 +765,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
     const seller = byId.get(items[0]!.sellerId);
     return {
       key,
-      kind: lot ? 'lot' : key === DIRECT_LOT_ID ? 'direct' : 'awaiting',
+      kind: lot ? 'lot' : lotKey === DIRECT_LOT_ID ? 'direct' : 'awaiting',
       lot: lot
         ? {
             id: lot.id,
@@ -767,11 +780,18 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         : null,
       sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'Seller',
       sellerHandle: seller?.sellerProfile?.username ?? null,
+      sellerId: items[0]!.sellerId,
       items: items.map((order) => ({
         id: order.id,
         itemName: order.itemName,
         quantity: order.quantity,
         status: order.status,
+        paymentStatus: order.paymentStatus,
+        currency: order.currency,
+        photo: photoOf.get(order.listingId) ?? null,
+        method: methodOf(order),
+        canPayMore: actionsFor(order, user.id).includes('pay_more'),
+        ...orderMoney(order),
         /** Ticked once the seller has this one in hand and is finishing it. */
         checkpoints: order.checkpoints ?? {},
       })),

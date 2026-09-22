@@ -5,6 +5,8 @@ import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge, l
 import { FillBlock } from '../components/FillMeter';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { isExpired, isMultiple } from '@shared/payments';
+import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 
 export function ListingPage() {
   const { id = '' } = useParams();
@@ -21,6 +23,7 @@ export function ListingPage() {
   const [action, setAction] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState('');
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +112,7 @@ export function ListingPage() {
 
           <div className="detail__section" style={{ marginTop: 22 }}>
             <h1>{listing.title}</h1>
+            {listing.expiresAt && <div className="badges"><ExpiryChip listing={listing} big /><StockChip listing={listing} /></div>}
             <div className="spread muted">
               <span>{listing.category}</span>
               <span>{listing.viewCount} views</span>
@@ -179,27 +183,39 @@ export function ListingPage() {
         <aside className="stack">
           <div className="card card--pad stack">
             <span className="detail__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-            <p className="muted">
-              {listing.quantityAvailable > 0
-                ? `${listing.quantityAvailable} available`
-                : 'Sold out'}
-            </p>
+            {/* Stock and expiry, loud: they decide whether this can be bought. */}
+            <div className="badges">
+              {isMultiple(listing) || listing.quantityAvailable > 0
+                ? <StockChip listing={listing} />
+                : <span className="badge badge--danger">Sold out</span>}
+              <ExpiryChip listing={listing} big />
+              {listing.advancePercent ? <span className="badge badge--lime">💸 {listing.advancePercent}% advance OK</span> : null}
+            </div>
 
             {action && <p className={`notice ${action.includes('—') || action.includes('Bumped') ? 'notice--ok' : 'notice--error'}`}>{action}</p>}
 
             {data.isOwn ? (
               <>
                 <p className="notice notice--info">This is your listing.</p>
+                <button className="btn btn--block" onClick={() => setEditing(true)}>
+                  {isExpired(listing) ? '✨ Make available again' : '✏️ Edit, quantity or delete'}
+                </button>
                 <button className="btn btn--ghost btn--block" onClick={() => void bump()} disabled={busy}>
                   Bump to top
                 </button>
               </>
             ) : (
               <>
-                <button className="btn btn--lg btn--block" onClick={() => void buy()}
-                  disabled={busy || !user || listing.quantityAvailable === 0}>
-                  {listing.preOrder ? 'Book a place' : 'Buy now'}
-                </button>
+                {/* No purchase on an expired item. The server refuses it too;
+                    this just does not offer what it would refuse. */}
+                {isExpired(listing) ? (
+                  <p className="notice notice--warn">⛔ This item has expired and can no longer be bought.</p>
+                ) : (
+                  <button className="btn btn--lg btn--block" onClick={() => void buy()}
+                    disabled={busy || !user || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
+                    {listing.preOrder ? 'Book a place' : 'Buy now'}
+                  </button>
+                )}
                 <button className={`btn btn--ghost btn--block${data.liked ? ' is-on' : ''}`}
                   onClick={() => void toggleLike()} disabled={busy || !user}
                   style={data.liked ? { color: 'var(--accent)', borderColor: 'var(--accent-line)' } : undefined}>
@@ -256,6 +272,14 @@ export function ListingPage() {
           )}
         </aside>
       </div>
+      {editing && (
+        <EditListingDialog listing={listing} onClose={() => setEditing(false)}
+          onSaved={(saved) => {
+            setEditing(false);
+            if (!saved) navigate('/shop');
+            else setData((prev) => (prev ? { ...prev, listing: { ...prev.listing, ...saved } } : prev));
+          }} />
+      )}
     </main>
   );
 }

@@ -19,7 +19,9 @@ import {
   BUILT_IN_ROUTE, preSteps as preStepsOf, suggestLotName,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import type { Listing, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import { isExpired } from '@shared/payments';
+import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import type { StoreAccess } from '@shared/stores';
 import {
   ApiRequestError,
@@ -624,8 +626,10 @@ function MyItems({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'stock' | 'power' | 'templates'>('stock');
+  const [shelf, setShelf] = useState<'available' | 'expired' | 'sold_out'>('available');
+  const [editing, setEditing] = useState<Listing | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     void api
       .activity()
       .then(setData)
@@ -633,10 +637,17 @@ function MyItems({ store }: { store: StoreAccess }) {
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your listings.'),
       );
   }, []);
+  useEffect(load, [load]);
 
   if (error) return <ErrorNotice message={error} />;
 
-  const mine = data?.listings.filter((listing) => listing.sellerId === store.ownerId) ?? [];
+  const all = data?.listings.filter((listing) => listing.sellerId === store.ownerId) ?? [];
+  // Expired is read off the clock; sold out only ever applies to a counted item.
+  const shelfOf = (listing: Listing) =>
+    isExpired(listing) ? 'expired' : listing.status === 'sold_out' ? 'sold_out' : 'available';
+  const counts = { available: 0, expired: 0, sold_out: 0 };
+  for (const listing of all) counts[shelfOf(listing)] += 1;
+  const mine = all.filter((listing) => shelfOf(listing) === shelf);
 
   return (
     <div className="stack">
@@ -679,23 +690,40 @@ function MyItems({ store }: { store: StoreAccess }) {
         <PowerSalePanel storeId={store.ownerId} />
       ) : !data ? (
         <p className="muted">Loading…</p>
-      ) : mine.length === 0 ? (
-        <EmptyState title="Nothing listed yet">
-          Everything you list goes out under {store.name}. It takes about a minute.
-        </EmptyState>
       ) : (
         <>
+          <div className="seg" role="tablist" aria-label="Shelf">
+            {(['available', 'expired', 'sold_out'] as const).map((entry) => (
+              <button key={entry} type="button" role="tab" aria-selected={shelf === entry}
+                className={shelf === entry ? 'is-on' : ''} onClick={() => setShelf(entry)}>
+                {entry === 'available' ? '🟢 Available' : entry === 'expired' ? '⛔ Expired' : '📭 Sold out'} · {counts[entry]}
+              </button>
+            ))}
+          </div>
+          {mine.length === 0 && (
+            <EmptyState title={shelf === 'expired' ? 'Nothing expired 🎉' : shelf === 'sold_out' ? 'Nothing sold out' : 'Nothing listed yet'}>
+              {shelf === 'available'
+                ? `Everything you list goes out under ${store.name}. It takes about a minute.`
+                : 'Items land here on their own and can be brought back from here.'}
+            </EmptyState>
+          )}
           <div className="grid">
             {mine.map((listing) => (
               <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
                 <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                   <div className="thumb__badges">
                     <span className="badge badge--solid">{listing.condition}</span>
+                    <ExpiryChip listing={listing} />
                   </div>
                 </Thumb>
                 <div className="listing__body">
                   <span className="listing__title">{listing.title}</span>
                   <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                  <StockChip listing={listing} />
+                  <button type="button" className="btn btn--ghost btn--sm"
+                    onClick={(event) => { event.preventDefault(); setEditing(listing); }}>
+                    {isExpired(listing) ? '✨ Make available again' : '✏️ Edit'}
+                  </button>
                   <div className="listing__meta">
                     {/* An item with no lot is not a problem to fix - most
                         never need one. It says which it is and stops there. */}
@@ -709,6 +737,10 @@ function MyItems({ store }: { store: StoreAccess }) {
             ))}
           </div>
         </>
+      )}
+      {editing && (
+        <EditListingDialog listing={editing} onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }} />
       )}
     </div>
   );
