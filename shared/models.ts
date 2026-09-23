@@ -892,8 +892,13 @@ export interface Order extends BaseDocument {
   payments?: PaymentRecord[];
   /** Money paid over the balance, held for the seller to refund. */
   credits?: CreditRecord[];
-  /** Disputes either side has raised about this order's money. */
-  paymentDisputes?: PaymentDispute[];
+  /**
+   * The seller asked the buyer to add or check their Payment Reversal Details
+   * before refunding them. Open until the buyer confirms them or saves new ones.
+   */
+  detailsCheck?: { requestedAt: string; requestedBy: string; confirmedAt: string | null } | null;
+  /** Every dispute raised on this order, of any topic; the records themselves live with the disputes. */
+  disputeLinks?: DisputeLink[];
   /**
    * Placed as a booking - the buyer's word that they want it, with no payment
    * yet. Payment is asked for only once the seller has accepted; on any other
@@ -1018,27 +1023,27 @@ export interface CreditRecord {
 export type RefundOrigin = 'overpaid' | 'cancelled' | 'manual';
 
 /**
- * Why somebody raised a dispute. The first three are the same shape - one
- * side says it paid, the other says the money never came - and `general` is
- * anything else either side wants on record.
+ * What a dispute is about. Every dispute on the marketplace is one `Dispute`
+ * record with one of these topics:
+ *
+ * - `escrow` - a protected order whose held money is in question. The only
+ *   kind whose settlement moves money, because it is the only kind where the
+ *   marketplace holds any. Absent on records from before topics existed.
+ * - `payment_rejected` / `refund_rejected` / `reversal_rejected` - one side
+ *   says it paid, the other says the money never came.
+ * - `general` - anything else either side wants settled.
  */
-export type PaymentDisputeKind = 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
+export type DisputeTopic = 'escrow' | 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
 
-/**
- * A dispute, recorded. Deliberately only the record for now: who raised it,
- * about what, and when - the working-it-out comes later.
- */
-export interface PaymentDispute {
+/** The order's own index of its disputes: enough to list them and never dispute one thing twice. */
+export interface DisputeLink {
   id: string;
-  /** What it is about, so the same rejection cannot be disputed twice. */
+  topic: DisputeTopic;
+  /** What was disputed - a particular rejected payment, or the dispute's own id. */
   subject: string;
-  kind: PaymentDisputeKind;
   raisedBy: string;
-  raisedBySide: 'buyer' | 'seller';
+  raisedSide: 'buyer' | 'seller';
   raisedAt: string;
-  amountMinor: number | null;
-  reason: string | null;
-  status: 'open';
 }
 
 /** One return of money to a buyer: how much, when, and whether it arrived. */
@@ -1236,6 +1241,12 @@ export interface DisputeResolution {
 export interface Dispute extends BaseDocument {
   /** Partition key. */
   orderId: string;
+  /** What it is about. Absent means `escrow`, the only kind there used to be. */
+  topic?: DisputeTopic;
+  /** What was disputed, for a rejected payment - so it cannot be disputed twice. */
+  subject?: string | null;
+  /** The money in question, where there is a particular amount. */
+  amountMinor?: number | null;
   raisedBy: string;
   againstUserId: string;
   /** Which side opened it. Either may: a seller has grievances too. */

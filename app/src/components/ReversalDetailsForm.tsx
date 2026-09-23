@@ -9,7 +9,7 @@ import { ErrorNotice } from './ui';
  * throughout and no provider hard-coded: the platform is not moving this
  * money and must not pretend to have validated an account it cannot see.
  */
-export function ReversalDetailsForm() {
+export function ReversalDetailsForm({ onSaved }: { onSaved?: () => void | Promise<void> } = {}) {
   const [method, setMethod] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [accountName, setAccountName] = useState('');
@@ -19,7 +19,7 @@ export function ReversalDetailsForm() {
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
 
   useEffect(() => {
     void api.reversalDetails()
@@ -59,13 +59,16 @@ export function ReversalDetailsForm() {
   async function save() {
     setBusy(true);
     setError(null);
-    setSaved(false);
+    setSaved(null);
     try {
-      await api.saveReversalDetails({
+      const result = await api.saveReversalDetails({
         method: method.trim(), identifier: identifier.trim(), accountName: accountName.trim(),
         notes: notes.trim() || undefined, qrCodeUrl: qrCodeUrl ?? undefined,
       });
-      setSaved(true);
+      setSaved(result.answeredRequests > 0
+        ? `Saved - and ${result.answeredRequests === 1 ? 'the seller who asked has' : `the ${result.answeredRequests} sellers who asked have`} been told they can refund you.`
+        : 'Saved.');
+      await onSaved?.();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
     } finally {
@@ -108,7 +111,7 @@ export function ReversalDetailsForm() {
         {qrCodeUrl && <img src={qrCodeUrl} alt="Your payment QR code" className="proof" />}
 
         {error && <ErrorNotice message={error} />}
-        {saved && <p className="notice notice--ok" style={{ margin: 0 }}>Saved.</p>}
+        {saved && <p className="notice notice--ok" style={{ margin: 0 }}>{saved}</p>}
 
         <button type="button" className="btn btn--lg" style={{ justifySelf: 'start' }}
           disabled={busy || !method.trim() || !identifier.trim() || !accountName.trim()}

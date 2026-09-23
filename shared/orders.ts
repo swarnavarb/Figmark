@@ -1,5 +1,5 @@
 import type { OrderStatus } from './enums.js';
-import type { Order, PaymentDisputeKind, Review } from './models.js';
+import type { DisputeTopic, Order, Review } from './models.js';
 import { rupees } from './payments.js';
 
 /**
@@ -87,7 +87,7 @@ export function actionsFor(
   order: Pick<
     Order,
     'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
-  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly'>>,
+  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck'>>,
   viewerId: string,
   reviewed = false,
 ): OrderAction[] {
@@ -147,13 +147,18 @@ export function actionsFor(
 
   // The reversal of a paid, cancelled order - one step at a time, and only
   // for the two people it concerns.
-  if (order.status === 'payment_reversal_pending') {
-    if (side === 'seller') {
-      actions.push('request_reversal_details', 'submit_reversal');
-    } else {
-      actions.push('confirm_reversal_details');
-    }
-  }
+  if (order.status === 'payment_reversal_pending' && side === 'seller') actions.push('submit_reversal');
+
+  // Where the buyer's money goes back to. A seller about to refund anything -
+  // a reversal, an overpayment, a refund of their own - may ask the buyer to
+  // add or check those details, and the buyer answers by confirming or saving
+  // them.
+  const owesMoneyBack = order.status === 'payment_reversal_pending'
+    || (order.credits ?? []).some((credit) => credit.status === 'open' || credit.status === 'held')
+    || (order.payments ?? []).some((payment) => payment.kind !== 'refund');
+  if (side === 'seller' && owesMoneyBack) actions.push('request_reversal_details');
+  const asked = Boolean(order.detailsCheck?.requestedAt && !order.detailsCheck.confirmedAt);
+  if (side === 'buyer' && (order.status === 'payment_reversal_pending' || asked)) actions.push('confirm_reversal_details');
   if (order.status === 'cancelled_reversed' && side === 'buyer' && order.reversal
     && order.reversal.buyerResponse === null) {
     actions.push('ack_reversal');
@@ -228,7 +233,7 @@ export function isCancelledLike(status: OrderStatus): boolean {
 /** One rejection the viewer could dispute, and what to call it. */
 export interface DisputeSubject {
   subject: string;
-  kind: Exclude<PaymentDisputeKind, 'general'>;
+  kind: Exclude<DisputeTopic, 'escrow' | 'general'>;
   amountMinor: number;
   label: string;
 }
@@ -244,7 +249,7 @@ export interface DisputeSubject {
  */
 export function disputeSubjects(
   order: Pick<Order, 'buyerId' | 'sellerId' | 'unitPriceMinor' | 'quantity'>
-    & Partial<Pick<Order, 'paymentClaim' | 'credits' | 'reversal' | 'paymentDisputes'>>,
+    & Partial<Pick<Order, 'paymentClaim' | 'credits' | 'reversal' | 'disputeLinks'>>,
   viewerId: string,
 ): DisputeSubject[] {
   const side = sideOf(order, viewerId);
@@ -278,6 +283,6 @@ export function disputeSubjects(
     }
   }
 
-  const raised = new Set((order.paymentDisputes ?? []).map((dispute) => dispute.subject));
+  const raised = new Set((order.disputeLinks ?? []).map((dispute) => dispute.subject));
   return out.filter((entry) => !raised.has(entry.subject));
 }

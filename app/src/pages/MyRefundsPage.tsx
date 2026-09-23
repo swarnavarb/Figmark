@@ -15,6 +15,8 @@ import { formatDateOrdinal, formatMoney } from '../format';
  */
 export function MyRefundsPage() {
   const [refunds, setRefunds] = useState<MyRefund[] | null>(null);
+  const [requests, setRequests] = useState<{ orderId: string; itemName: string; sellerName: string; requestedAt: string }[]>([]);
+  const [hasDetails, setHasDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   // In the URL, so a notification asking for reversal details lands on that tab.
@@ -23,7 +25,10 @@ export function MyRefundsPage() {
 
   const load = useCallback(async () => {
     try {
-      setRefunds((await api.myRefunds()).refunds);
+      const result = await api.myRefunds();
+      setRefunds(result.refunds);
+      setRequests(result.detailsRequests);
+      setHasDetails(result.hasDetails);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your refunds.');
     }
@@ -47,6 +52,43 @@ export function MyRefundsPage() {
     }
   }
 
+  async function confirmDetails(orderId: string) {
+    setBusy(`confirm:${orderId}`);
+    setError(null);
+    try {
+      await api.confirmReversalDetails(orderId);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /* A seller waiting on this buyer before they can refund - on both tabs,
+     because either is where they might be when they need to answer it. */
+  const asks = requests.map((ask) => (
+    <div key={ask.orderId} className="claimcard__ask">
+      <p style={{ margin: 0 }}>
+        💳 <b>{ask.sellerName}</b> asked you to {hasDetails ? 'confirm' : 'add'} your payment reversal details
+        so they can refund you for <b>{ask.itemName}</b>.
+      </p>
+      <span className="row" style={{ flexWrap: 'wrap' }}>
+        {hasDetails && (
+          <button type="button" className="btn btn--ok" disabled={busy !== null}
+            onClick={() => void confirmDetails(ask.orderId)}>
+            {busy === `confirm:${ask.orderId}` ? 'Sending…' : '✅ They are up to date'}
+          </button>
+        )}
+        {tab !== 'details' && (
+          <button type="button" className="btn btn--ghost" onClick={() => setParams({ tab: 'details' }, { replace: true })}>
+            ✏️ {hasDetails ? 'Update them' : 'Add them'}
+          </button>
+        )}
+      </span>
+    </div>
+  ));
+
   const tabs = (
     <div className="tabs tabs--vivid">
       <button type="button" className={`tab${tab === 'refunds' ? ' is-on' : ''}`} onClick={() => setParams({}, { replace: true })}>
@@ -64,7 +106,8 @@ export function MyRefundsPage() {
       <main className="page stack page--top">
         <div className="page__head"><h1>↩️ My refunds</h1></div>
         {tabs}
-        <ReversalDetailsForm />
+        {asks}
+        <ReversalDetailsForm onSaved={load} />
       </main>
     );
   }
@@ -83,6 +126,7 @@ export function MyRefundsPage() {
         <h1>↩️ My refunds</h1>
       </div>
       {tabs}
+      {asks}
 
       <section className="rfhero">
         <div className="rfhero__main">

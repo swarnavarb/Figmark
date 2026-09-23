@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent, labelFor } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, WAITING_FOR_LOT } from '@shared/routes';
 import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
-import { reasonsFor } from '@shared/disputes';
+import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS } from '@shared/enums';
 import type { Order, SellerPaymentDetails } from '@shared/models';
 import {
@@ -406,7 +406,6 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [rejecting, setRejecting] = useState(false);
 
   const { order, actions } = state;
-  const disputeId = order.escrow.disputeId;
 
   async function run(name: string, fn: () => Promise<unknown>) {
     setBusy(name);
@@ -489,12 +488,6 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
         )
       )}
 
-      {disputeId && (
-        <Link to={`/dispute/${disputeId}`} className="notice notice--warn"
-          style={{ display: 'block', textDecoration: 'none' }}>
-          There is an open dispute on this order — tap to read it.
-        </Link>
-      )}
 
       {!nothingToDo && (
         <div className="card card--pad stack">
@@ -673,16 +666,27 @@ function DisputePanel({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { order } = state;
-  const raised = order.paymentDisputes ?? [];
+  const navigate = useNavigate();
+  // Every dispute on the order, of any kind, each opening the one page it is
+  // worked on. An escrow dispute from before orders indexed them is found by
+  // the pointer it left.
+  const raised = [...(order.disputeLinks ?? [])];
+  if (order.escrow.disputeId && !raised.some((link) => link.id === order.escrow.disputeId)) {
+    raised.push({
+      id: order.escrow.disputeId, topic: 'escrow', subject: order.escrow.disputeId,
+      raisedBy: '', raisedSide: state.side ?? 'buyer', raisedAt: order.updatedAt,
+    });
+  }
 
   async function raise(key: string, body: { subject?: string; reason?: string }) {
     setBusy(key);
     setError(null);
     try {
-      await api.flagDispute(order.id, body);
+      const { dispute } = await api.flagDispute(order.id, body);
       setWriting(false);
       setReason('');
-      await onDone();
+      // Straight to where it is worked: the other side answers there.
+      navigate(`/dispute/${dispute.id}`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not record that.');
     } finally {
@@ -703,10 +707,10 @@ function DisputePanel({ state, onDone }: { state: OrderState; onDone: () => Prom
       ))}
 
       {raised.map((dispute) => (
-        <Link key={dispute.id} to="/disputes" className="disputebar disputebar--done">
+        <Link key={dispute.id} to={`/dispute/${dispute.id}`} className="disputebar disputebar--done">
           <span>
-            ⚖️ Dispute raised by the {dispute.raisedBySide} on {formatDateOrdinal(dispute.raisedAt)}
-            {dispute.reason ? ` — ${dispute.reason}` : ''}
+            ⚖️ {DISPUTE_TOPIC_LABELS[dispute.topic]} — raised by the {dispute.raisedSide} on{' '}
+            {formatDateOrdinal(dispute.raisedAt)}. Open the dispute
           </span>
           <Icon name="right" size={14} />
         </Link>

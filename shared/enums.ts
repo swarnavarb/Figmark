@@ -199,7 +199,12 @@ export const SELLER_DISPUTE_REASONS = [
   'delivery_refused',
 ] as const;
 
-export const DISPUTE_REASONS = [...BUYER_DISPUTE_REASONS, ...SELLER_DISPUTE_REASONS] as const;
+/**
+ * Every reason a dispute record can carry. `other` is for disputes that come
+ * from a rejected payment or a free-form complaint rather than the escrow
+ * form, whose topic already says what they are about.
+ */
+export const DISPUTE_REASONS = [...BUYER_DISPUTE_REASONS, ...SELLER_DISPUTE_REASONS, 'other'] as const;
 export type DisputeReason = (typeof DISPUTE_REASONS)[number];
 
 export const DISPUTE_REASON_LABELS: Record<DisputeReason, string> = {
@@ -212,6 +217,7 @@ export const DISPUTE_REASON_LABELS: Record<DisputeReason, string> = {
   false_claim: 'The claim against me is untrue',
   returned_damaged: 'Came back damaged',
   delivery_refused: 'Buyer refused the delivery',
+  other: 'Something else',
 };
 
 /**

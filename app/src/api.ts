@@ -6,7 +6,7 @@ import type {
   LoginResponse,
   MeResponse,
 } from '@shared/contracts';
-import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
+import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
@@ -32,7 +32,7 @@ export interface EvidenceDraft {
 import type {
   BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
   MessageParty, Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
-  StoreManager, RefundLogEntry, RefundOrigin,
+  StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
 } from '@shared/models';
 
 /**
@@ -374,6 +374,10 @@ export interface ShopCredit {
   pendingRefund: { amountMinor: number; reference: string | null; screenshotUrl?: string | null; sentAt: string } | null;
   refundDenials: number;
   disputable: DisputeSubject[];
+  /** Where the buyer's money goes back to, if they have said. */
+  buyerDetails: BuyerReversalDetails | null;
+  /** The seller asked them to add or check those details; open until they do. */
+  detailsCheck: Order['detailsCheck'];
   applications: { orderId: string; itemName: string; amountMinor: number; at: string }[];
   targets: { orderId: string; itemName: string; outstandingMinor: number }[];
 }
@@ -405,6 +409,8 @@ export interface RefundableOrder {
   currency: string;
   createdAt: string;
   buyer: PartyRef;
+  buyerDetails: BuyerReversalDetails | null;
+  detailsCheck: Order['detailsCheck'];
   refundableMinor: number;
 }
 
@@ -434,16 +440,14 @@ export interface DisputeRow {
   itemName: string;
   currency: string;
   counterpartyName: string;
-  kind: 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
+  topic: DisputeTopic;
   label: string;
   amountMinor: number | null;
-  reason: string | null;
+  reason: string;
   raisedAt: string;
   raisedByMe: boolean;
   raisedBySide: 'buyer' | 'seller';
-  status: 'open';
-  /** Where a dispute worked on its own screen lives, for the escrow kind. */
-  link: string | null;
+  status: DisputeStatus;
 }
 
 export interface MyDisputesResponse {
@@ -1174,10 +1178,14 @@ export const api = {
     amountMinor: number; reason: string; reference?: string; screenshotUrl?: string; message?: string;
   }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
-  myRefunds: () => request<{ refunds: MyRefund[] }>('/me/refunds'),
+  myRefunds: () => request<{
+    refunds: MyRefund[];
+    hasDetails: boolean;
+    detailsRequests: { orderId: string; itemName: string; sellerName: string; requestedAt: string }[];
+  }>('/me/refunds'),
   myDisputes: () => request<MyDisputesResponse>('/me/disputes'),
   flagDispute: (id: string, body: { subject?: string; reason?: string }) =>
-    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/flag-dispute`, body),
+    post<{ order: Order; dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/flag-dispute`, body),
   holdCredit: (id: string, creditId?: string) =>
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
   myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),
@@ -1327,7 +1335,7 @@ export const api = {
   reversalDetails: () => request<{ reversalDetails: BuyerReversalDetails | null }>('/me/reversal-details'),
   saveReversalDetails: (body: {
     method: string; identifier: string; accountName: string; notes?: string; qrCodeUrl?: string;
-  }) => post<{ reversalDetails: BuyerReversalDetails | null }>('/me/reversal-details/save', body),
+  }) => post<{ reversalDetails: BuyerReversalDetails | null; answeredRequests: number }>('/me/reversal-details/save', body),
 
   powerSales: (storeId?: string) =>
     request<{ sales: PowerSaleView[] }>(

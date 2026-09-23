@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type DisputeRow, type MyDisputesResponse } from '../api';
+import { DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 
@@ -15,6 +16,7 @@ import { formatDateOrdinal, formatMoney } from '../format';
 export function MyDisputesPage() {
   const [data, setData] = useState<MyDisputesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'store' ? 'store' : 'buyer';
   const [raising, setRaising] = useState(false);
@@ -38,11 +40,8 @@ export function MyDisputesPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.flagDispute(orderId, { reason: reason.trim() });
-      setRaising(false);
-      setOrderId('');
-      setReason('');
-      await load();
+      const { dispute } = await api.flagDispute(orderId, { reason: reason.trim() });
+      navigate(`/dispute/${dispute.id}`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not record that.');
     } finally {
@@ -119,21 +118,24 @@ export function MyDisputesPage() {
 
 function DisputeItem({ row }: { row: DisputeRow }) {
   return (
-    <li className="rfhist__row rfhist__row--not_received">
+    <li className={`rfhist__row rfhist__row--${row.status === 'resolved' || row.status === 'withdrawn' ? 'received' : 'not_received'}`}>
       <span className="rfhist__icon" aria-hidden="true">⚖️</span>
       <span className="rfhist__body">
-        <b>{row.label}</b>
+        <b><Link to={`/dispute/${row.id}`}>{row.label}</Link></b>
         <small>
-          <Link to={row.link ?? `/order/${row.orderId}`}>{row.itemName}</Link> · with {row.counterpartyName}
+          <Link to={`/order/${row.orderId}`}>{row.itemName}</Link> · with {row.counterpartyName}
         </small>
-        {row.reason && <small>“{row.reason}”</small>}
+        <small>“{row.reason}”</small>
         <small>
           Raised by {row.raisedByMe ? 'you' : `the ${row.raisedBySide}`} on {formatDateOrdinal(row.raisedAt)}
         </small>
       </span>
       <span className="rfhist__side">
         {row.amountMinor !== null && <b>{formatMoney(row.amountMinor, row.currency)}</b>}
-        <span className="badge badge--danger">Open</span>
+        <span className={`badge ${row.status === 'resolved' ? 'badge--ok' : row.status === 'withdrawn' ? 'badge--accent'
+          : row.status === 'under_mediation' ? 'badge--purple' : 'badge--danger'}`}>
+          {DISPUTE_STATUS_LABELS[row.status]}
+        </span>
       </span>
     </li>
   );

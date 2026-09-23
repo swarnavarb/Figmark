@@ -1,6 +1,6 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { LOT_STAGES, LOT_STAGE_LABELS, STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
-import type { Lot, SellerProfile } from '../../../shared/models.js';
+import type { BuyerReversalDetails, Lot, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
 import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
@@ -312,9 +312,14 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
 
   const orders = await repository.listOrdersForSeller(storeId);
   const buyers = new Map<string, ReturnType<typeof personRef>>();
+  /* Where each buyer's money goes back to - shown only in Refunds, beside a
+     refund this shop owes them, because that is what it is for. */
+  const payouts = new Map<string, BuyerReversalDetails | null>();
   for (const order of orders) {
     if (buyers.has(order.buyerId)) continue;
-    buyers.set(order.buyerId, personRef(await repository.getUserById(order.buyerId)));
+    const buyer = await repository.getUserById(order.buyerId);
+    buyers.set(order.buyerId, personRef(buyer));
+    payouts.set(order.buyerId, buyer?.reversalDetails ?? null);
   }
 
   /* Every lot these orders ride in, read once rather than per row: a shop
@@ -441,6 +446,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       status: credit.status,
       pendingRefund: credit.pendingRefund ?? null,
       refundDenials: credit.refundDenials?.length ?? 0,
+      buyerDetails: payouts.get(order.buyerId) ?? null,
+      detailsCheck: order.detailsCheck ?? null,
       /** A refund of this the buyer said never came, which the seller may dispute. */
       disputable: disputeSubjects(order, storeId).filter((entry) =>
         (credit.refundLog ?? []).some((logged) => entry.subject === `refund:${logged.id}`)),
@@ -484,6 +491,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       return {
         orderId: order.id, itemName: order.itemName, currency: order.currency, createdAt: order.createdAt,
         buyer: buyers.get(order.buyerId) ?? personRef(null),
+        buyerDetails: payouts.get(order.buyerId) ?? null,
+        detailsCheck: order.detailsCheck ?? null,
         refundableMinor: Math.max(0, orderMoney(order).paidMinor - reserved),
       };
     })

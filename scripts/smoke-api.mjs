@@ -5645,6 +5645,8 @@ const payBuyer = await signup(req({
   body: { displayName: 'Instalment Buyer', email: 'instal@figmark.example', phone: '+919000045599', password: 'longenough1' },
 }), ctx);
 const payAuth = { authorization: `Bearer ${payBuyer.jsonBody.token}` };
+await saveReversalDetails(req({ headers: payAuth,
+  body: { method: 'UPI', identifier: 'instal@upi', accountName: 'Instalment Buyer' } }), ctx);
 const list = async (body) => (await createListing(req({ headers: auth, body: { sourcing: 'in_hand', ...body } }), ctx)).jsonBody.listing;
 const buy = async (listingId, quantity = 1) => createOrder(req({ headers: payAuth, body: { listingId, quantity } }), ctx);
 /** Buyer claims the plan, seller accepts: the order as it then stands. */
@@ -5986,7 +5988,7 @@ await check('booking does not count as payment, and asks the seller to confirm f
 
 /** Places, accepts and pays an order in full, and returns its id and buyer. */
 let paidOrderSeq = 0;
-async function paidAcceptedOrder(title, priceMinor) {
+async function paidAcceptedOrder(title, priceMinor, { details = false } = {}) {
   paidOrderSeq += 1;
   const listed = await createListing(req({ headers: auth, body: { title, priceMinor, quantityAvailable: 5 } }), ctx);
   const buyer = await newBuyer(`Paid Order Buyer ${paidOrderSeq}`);
@@ -5995,6 +5997,11 @@ async function paidAcceptedOrder(title, priceMinor) {
   await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
   const paid = await payOrder(req({ headers: buyer.headers, params: { id: orderId }, body: {} }), ctx);
   assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+  // A refund needs somewhere to go; the tests that refund say so.
+  if (details) {
+    await saveReversalDetails(req({ headers: buyer.headers,
+      body: { method: 'UPI', identifier: `${paidOrderSeq}@upi`, accountName: 'Test Buyer' } }), ctx);
+  }
   return { orderId, buyer };
 }
 
@@ -6093,16 +6100,19 @@ await check('Scenario C: cancelling a paid order waits on the buyer to add rever
   const nudged = await requestReversalDetails(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
   assert.equal(nudged.status, 200);
 
-  // The buyer adds their details and says so.
-  await saveReversalDetails(req({
+  // The buyer adds their details - which, with the seller having asked,
+  // answers them on its own: the seller is told they can go ahead.
+  const saved = await saveReversalDetails(req({
     headers: buyer.headers,
     body: { method: 'Bank transfer', identifier: '000111222', accountName: 'Scenario C Buyer' },
   }), ctx);
+  assert.equal(saved.jsonBody.answeredRequests, 1);
+  const sellerId = (await (await getRepository()).getOrder(orderId)).sellerId;
+  const toldSeller = (await noticesFor(sellerId)).filter((row) => row.kind === 'reversal_details_updated');
+  assert.equal(toldSeller.length, 1);
+  // Confirming explicitly still works too, and says so again.
   const confirmed = await confirmReversalDetails(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
   assert.equal(confirmed.status, 200);
-  const toldSeller = (await noticesFor(confirmed.jsonBody.order.sellerId))
-    .filter((row) => row.kind === 'reversal_details_updated');
-  assert.equal(toldSeller.length, 1);
 
   // Now the seller retries and it goes through.
   const retried = await submitReversal(req({
@@ -6182,7 +6192,7 @@ await check('the buyer can save and read back their Payment Reversal Details', a
 console.log('\nrefunds');
 
 await check('a cancelled paid order lands on Refunds, and part-refunds leave the balance there', async () => {
-  const { orderId, buyer } = await paidAcceptedOrder('Refund Me In Parts', 30_000);
+  const { orderId, buyer } = await paidAcceptedOrder('Refund Me In Parts', 30_000, { details: true });
   await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Supplier ran out.' } }), ctx);
 
   const listed = (await sales(req({ headers: auth }), ctx)).jsonBody.credits.find((c) => c.orderId === orderId);
@@ -6230,7 +6240,7 @@ await check('a cancelled paid order lands on Refunds, and part-refunds leave the
 });
 
 await check('a seller can start a refund themselves, for an amount they type and a reason', async () => {
-  const { orderId, buyer } = await paidAcceptedOrder('Dented Box', 50_000);
+  const { orderId, buyer } = await paidAcceptedOrder('Dented Box', 50_000, { details: true });
   const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
   assert.equal(board.refundable.find((r) => r.orderId === orderId).refundableMinor, 50_000);
 
@@ -6305,12 +6315,29 @@ await check('a buyer whose payment the seller denies can dispute it, once', asyn
   const row = store.asStore.find((d) => d.orderId === orderId);
   assert.ok(row, 'and it is on the store’s list too');
   assert.equal(row.raisedBySide, 'buyer');
-  assert.ok((await noticesFor(raised.jsonBody.order.sellerId)).some((n) => n.kind === 'payment_dispute'),
+  assert.ok((await noticesFor(raised.jsonBody.order.sellerId)).some((n) => n.kind === 'dispute_opened'),
     'the seller is told');
+
+  // One kind of record for every dispute: the same page, the same thread.
+  const record = raised.jsonBody.dispute;
+  assert.equal(record.topic, 'payment_rejected');
+  const opened = (await readDispute(req({ headers: auth, params: { id: record.id } }), ctx)).jsonBody;
+  assert.equal(opened.dispute.amountMinor, 12_000);
+  assert.ok(opened.actions.includes('reply'));
+  assert.ok(!opened.actions.includes('offer'), 'nothing is held here, so there is nothing to split');
+  assert.equal(row.status, 'awaiting_response');
+
+  // Withdrawn by whoever raised it - and no money moves, because none was held.
+  const dropped = (await withdrawDispute(req({ headers: buyer.headers, params: { id: record.id } }), ctx)).jsonBody;
+  assert.equal(dropped.dispute.status, 'withdrawn');
+  assert.equal(dropped.order.status, 'pending_payment');
+  assert.equal(dropped.order.escrow.state, 'none');
+  assert.equal((await myDisputes(req({ headers: buyer.headers }), ctx)).jsonBody.asBuyer
+    .find((d) => d.id === record.id).status, 'withdrawn');
 });
 
 await check('a seller whose refund the buyer says never came can dispute it', async () => {
-  const { orderId, buyer } = await paidAcceptedOrder('Refund Not Received', 20_000);
+  const { orderId, buyer } = await paidAcceptedOrder('Refund Not Received', 20_000, { details: true });
   await startRefund(req({ headers: auth, params: { id: orderId }, body: { amountMinor: 5_000, reason: 'Goodwill', reference: 'GW1' } }), ctx);
   await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: false } }), ctx);
 
@@ -6322,7 +6349,7 @@ await check('a seller whose refund the buyer says never came can dispute it', as
 
   assert.equal((await flagDispute(req({ headers: auth, params: { id: orderId }, body: { subject: offered[0].subject } }), ctx)).status, 201);
   const store = (await myDisputes(req({ headers: auth }), ctx)).jsonBody.asStore.find((d) => d.orderId === orderId);
-  assert.equal(store.kind, 'refund_rejected');
+  assert.equal(store.topic, 'refund_rejected');
   assert.equal(store.raisedByMe, true);
 });
 
@@ -6331,12 +6358,74 @@ await check('either side can raise a dispute about anything, with a reason', asy
   assert.equal((await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: {} }), ctx)).status, 400);
   const raised = await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: { reason: 'Arrived broken' } }), ctx);
   assert.equal(raised.status, 201);
-  assert.equal(raised.jsonBody.dispute.kind, 'general');
+  assert.equal(raised.jsonBody.dispute.topic, 'general');
   const stranger = await newBuyer('Dispute Stranger');
   assert.equal((await flagDispute(req({ headers: stranger.headers, params: { id: orderId }, body: { reason: 'Not mine' } }), ctx)).status, 403);
   const listed = (await myDisputes(req({ headers: buyer.headers }), ctx)).jsonBody;
   assert.ok(listed.asBuyer.some((d) => d.orderId === orderId && d.reason === 'Arrived broken'));
   assert.ok(listed.orders.some((o) => o.id === orderId && o.side === 'buyer'), 'and the order is offered to raise another');
+});
+
+await check('the reversal dispute and the escrow dispute are the same kind of record, in the same list', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Merged Reversal Dispute', 14_000);
+  await saveReversalDetails(req({ headers: buyer.headers, body: { method: 'UPI', identifier: 'm@upi', accountName: 'M' } }), ctx);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Gone.' } }), ctx);
+  await submitReversal(req({ headers: auth, params: { id: orderId }, body: { reference: 'RV1' } }), ctx);
+  await ackReversal(req({ headers: buyer.headers, params: { id: orderId }, body: { received: false } }), ctx);
+  const raised = (await raiseDispute(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.equal(raised.order.status, 'dispute_raised');
+  assert.equal(raised.dispute.topic, 'reversal_rejected');
+  const listed = (await myDisputes(req({ headers: auth }), ctx)).jsonBody.asStore.find((d) => d.orderId === orderId);
+  assert.equal(listed.id, raised.dispute.id, 'listed from the record itself');
+});
+
+/* ── payment reversal details, asked for and answered from Refunds ───── */
+console.log('\nrefund details');
+
+await check('the refund window carries the buyer’s details, and refunds wait until there are some', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Details First', 16_000);
+  const blocked = await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 1_000, reason: 'Goodwill', reference: 'G1' } }), ctx);
+  assert.equal(blocked.jsonBody.error, 'buyer_details_missing', 'nowhere to send it yet');
+
+  let row = (await sales(req({ headers: auth }), ctx)).jsonBody.refundable.find((r) => r.orderId === orderId);
+  assert.equal(row.buyerDetails, null);
+
+  // Asked from the window: a message and a notification.
+  const asked = await requestReversalDetails(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
+  assert.ok((await noticesFor(buyer.id)).some((n) => n.kind === 'reversal_details_needed' && n.link === '/refunds?tab=details'));
+  const mine = (await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.equal(mine.hasDetails, false);
+  assert.ok(mine.detailsRequests.some((r) => r.orderId === orderId), 'the buyer sees who is waiting on them');
+
+  // Saving them answers the seller, and the refund goes through.
+  await saveReversalDetails(req({ headers: buyer.headers, body: { method: 'UPI', identifier: 'first@upi', accountName: 'First' } }), ctx);
+  row = (await sales(req({ headers: auth }), ctx)).jsonBody.refundable.find((r) => r.orderId === orderId);
+  assert.equal(row.buyerDetails.identifier, 'first@upi', 'shown to the seller in the refund window');
+  assert.ok(row.detailsCheck.confirmedAt);
+  assert.deepEqual((await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody.detailsRequests
+    .filter((r) => r.orderId === orderId), []);
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 1_000, reason: 'Goodwill', reference: 'G1' } }), ctx)).status, 201);
+});
+
+await check('a seller unsure the details are current asks, and refunds once the buyer confirms', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Details Check', 16_000, { details: true });
+  await requestReversalDetails(req({ headers: auth, params: { id: orderId }, body: { message: 'Still the same UPI?' } }), ctx);
+  const waiting = await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 2_000, reason: 'Late', reference: 'L1' } }), ctx);
+  assert.equal(waiting.jsonBody.error, 'awaiting_buyer_details');
+
+  const buyerActions = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody.actions;
+  assert.ok(buyerActions.includes('confirm_reversal_details'));
+  const confirmed = await confirmReversalDetails(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(confirmed.status, 200);
+  assert.ok(confirmed.jsonBody.order.detailsCheck.confirmedAt);
+  assert.ok((await noticesFor(confirmed.jsonBody.order.sellerId)).some((n) => n.kind === 'reversal_details_updated'));
+
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 2_000, reason: 'Late', reference: 'L1' } }), ctx)).status, 201, 'and the seller can go ahead');
 });
 
 console.log(`\n${passed} checks passed`);

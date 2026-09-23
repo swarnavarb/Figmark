@@ -6,6 +6,7 @@ import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { confirmDetailsOn } from './order-routes.js';
 
 /**
  * A page about somebody, and what other people have said about them.
@@ -342,7 +343,16 @@ async function saveReversalDetails(request: HttpRequest, _context: InvocationCon
   };
   record.updatedAt = now;
   const saved = await repository.updateUser(record);
-  return json(200, { reversalDetails: saved.reversalDetails ?? null });
+
+  // Saving them answers every seller who asked: the details are now current,
+  // which is all a confirmation says. Each is told they can refund.
+  let answered = 0;
+  for (const order of await repository.listOrdersForBuyer(user.id)) {
+    if (!order.detailsCheck?.requestedAt || order.detailsCheck.confirmedAt) continue;
+    await confirmDetailsOn(repository, order, saved, now);
+    answered += 1;
+  }
+  return json(200, { reversalDetails: saved.reversalDetails ?? null, answeredRequests: answered });
 }
 
 /** GET /api/me/reversal-details - read back what is on file. */

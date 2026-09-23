@@ -19,7 +19,7 @@ import {
   BUILT_IN_ROUTE, preSteps as preStepsOf, suggestLotName,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import type { Listing, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import type { BuyerReversalDetails, Listing, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
@@ -1555,7 +1555,7 @@ function Refunds({ store }: { store: StoreAccess }) {
       </section>
 
       {starting && (
-        <NewRefund refundable={data.refundable} onClose={() => setStarting(false)}
+        <NewRefund refundable={data.refundable} onClose={() => setStarting(false)} onChanged={load}
           onDone={async () => { setStarting(false); setView('history'); await load(); }} />
       )}
 
@@ -1677,6 +1677,11 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
       </div>
 
       {credit.reason && <p className="faint xcredit__note">“{credit.reason}”</p>}
+      {credit.detailsCheck?.requestedAt && !credit.detailsCheck.confirmedAt && (
+        <p className="faint xcredit__note">
+          ⏳ Waiting for {credit.buyer.name} to {credit.buyerDetails ? 'confirm' : 'add'} their payment reversal details.
+        </p>
+      )}
       {(credit.refundedMinor > 0 || credit.applications.length > 0) && (
         <p className="faint xcredit__note">
           Of {formatMoney(credit.amountMinor, credit.currency)}:
@@ -1725,6 +1730,10 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
 
       {mode && (
         <div className="xcredit__form">
+          {mode === 'refund' && (
+            <PayoutDetails orderId={credit.orderId} buyerName={credit.buyer.name}
+              details={credit.buyerDetails} check={credit.detailsCheck} onChanged={onChanged} />
+          )}
           {mode === 'apply' && (
             <label className="field">
               <span>Put it towards</span>
@@ -1774,7 +1783,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <button type="button" className="btn btn--ok"
               disabled={busy !== null || typedMinor <= 0 || typedMinor > cap || (mode === 'apply' && !target)
-                || (mode === 'refund' && !reference.trim() && !shot)}
+                || (mode === 'refund' && ((!reference.trim() && !shot) || !payoutReady(credit.buyerDetails, credit.detailsCheck)))}
               onClick={() => void run(mode, () => (mode === 'refund'
                 ? api.refundCredit(credit.orderId, {
                     creditId: credit.creditId, amountMinor: typedMinor, screenshotUrl: shot ?? undefined,
@@ -1795,14 +1804,122 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
 }
 
 /**
+ * Where the buyer's money goes back to, shown in the refund window itself.
+ *
+ * The seller should not have to leave the refund to find out, or trust a
+ * UPI id from a months-old chat. If the details are missing - or the seller
+ * just wants to be sure they are still right - they ask from here: the buyer
+ * gets a message and a notification, and the refund waits until the buyer
+ * confirms them or saves new ones.
+ */
+function PayoutDetails({ orderId, buyerName, details, check, onChanged }: {
+  orderId: string;
+  buyerName: string;
+  details: BuyerReversalDetails | null;
+  check: ShopCredit['detailsCheck'];
+  onChanged: () => Promise<void>;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pending = Boolean(check?.requestedAt && !check.confirmedAt);
+
+  function open() {
+    setMessage(details
+      ? 'Before I refund you, please check your payment reversal details are up to date (My refunds → Payment reversal details) and confirm them, or update them if anything has changed.'
+      : 'I need to refund you. Please add your payment reversal details (My refunds → Payment reversal details) so I know where to send it.');
+    setAsking(true);
+    setError(null);
+  }
+
+  async function send() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.requestReversalDetails(orderId, message.trim() || undefined);
+      setAsking(false);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={`payout${details ? '' : ' payout--missing'}${pending ? ' payout--pending' : ''}`}>
+      <div className="payout__head">
+        <b>💳 Send it to</b>
+        {details && (
+          <small>
+            Updated {formatDateOrdinal(details.updatedAt)}
+            {check?.confirmedAt ? ` · confirmed ${formatDateOrdinal(check.confirmedAt)}` : ''}
+          </small>
+        )}
+      </div>
+      {details ? (
+        <div className="payout__body">
+          <dl className="payout__grid">
+            <dt>Method</dt><dd>{details.method}</dd>
+            <dt>Account / UPI</dt><dd className="mono">{details.identifier}</dd>
+            <dt>Name</dt><dd>{details.accountName}</dd>
+            {details.notes && <><dt>Notes</dt><dd>{details.notes}</dd></>}
+          </dl>
+          {details.qrCodeUrl && (
+            <a href={details.qrCodeUrl} target="_blank" rel="noopener noreferrer" className="payout__qr">
+              <img src={details.qrCodeUrl} alt={`${buyerName}'s payment QR code`} />
+            </a>
+          )}
+        </div>
+      ) : (
+        <p className="payout__none">{buyerName} has not added payment reversal details yet.</p>
+      )}
+      {pending && check && (
+        <p className="payout__wait">
+          ⏳ You asked {buyerName} to {details ? 'check' : 'add'} these {timeAgo(check.requestedAt)}. You can
+          refund once they confirm or update them.
+        </p>
+      )}
+      {asking ? (
+        <div className="payout__ask">
+          <label className="field">
+            <span>Message to {buyerName}</span>
+            <textarea rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
+            <span className="field__hint">They get it in their messages and as a notification.</span>
+          </label>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void send()}>
+              {busy ? 'Sending…' : '💬 Send'}
+            </button>
+            <button type="button" className="btn btn--sm btn--quiet" onClick={() => setAsking(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="btn btn--sm btn--ghost payout__askbtn" onClick={open}>
+          💬 {pending ? `Remind ${buyerName}` : details ? `Ask ${buyerName} to confirm these` : `Ask ${buyerName} to add them`}
+        </button>
+      )}
+      {error && <ErrorNotice message={error} />}
+    </div>
+  );
+}
+
+/** A refund needs somewhere to go, and the seller's own doubt about it answered. */
+function payoutReady(details: BuyerReversalDetails | null, check: ShopCredit['detailsCheck']): boolean {
+  return Boolean(details) && !(check?.requestedAt && !check.confirmedAt);
+}
+
+/**
  * A refund the seller starts themselves - after a dispute, a damaged box, a
  * goodwill gesture. Nothing is owed until they say so, so nothing is filled
  * in for them: they choose the order, type the amount, and say why.
  */
-function NewRefund({ refundable, onClose, onDone }: {
+function NewRefund({ refundable, onClose, onDone, onChanged }: {
   refundable: RefundableOrder[];
   onClose: () => void;
   onDone: () => Promise<void>;
+  onChanged: () => Promise<void>;
 }) {
   const [orderId, setOrderId] = useState('');
   const [amount, setAmount] = useState('');
@@ -1850,6 +1967,10 @@ function NewRefund({ refundable, onClose, onDone }: {
               ))}
             </select>
           </label>
+          {chosen && (
+            <PayoutDetails orderId={chosen.orderId} buyerName={chosen.buyer.name}
+              details={chosen.buyerDetails} check={chosen.detailsCheck} onChanged={onChanged} />
+          )}
           <label className="field">
             <span>Amount (₹)</span>
             <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
@@ -1879,7 +2000,8 @@ function NewRefund({ refundable, onClose, onDone }: {
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <button type="button" className="btn btn--ok"
               disabled={busy || !chosen || typedMinor <= 0 || typedMinor > (chosen?.refundableMinor ?? 0)
-                || reason.trim().length < 3 || (!reference.trim() && !shot)}
+                || reason.trim().length < 3 || (!reference.trim() && !shot)
+                || !payoutReady(chosen?.buyerDetails ?? null, chosen?.detailsCheck ?? null)}
               onClick={() => void submit()}>
               {busy ? 'Sending…' : typedMinor > 0 && chosen ? `Refund ${formatMoney(typedMinor, chosen.currency)}` : 'Refund'}
             </button>
