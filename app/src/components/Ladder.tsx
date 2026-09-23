@@ -6,6 +6,7 @@ import {
   groupStages, renderStepText, stepForStage, stepStateAt, waitMessageFor, type RouteStep,
 } from '@shared/routes';
 import { trackingSearchUrl } from '@shared/tracking-links';
+import { formatDateOrdinal } from '../format';
 import { Icon } from './Icon';
 import { StepMark, WaveLoader } from './ui';
 import { STAGE_ICON_META } from './RouteBuilder';
@@ -163,23 +164,25 @@ export function Ladder({
                   )
                   : (
                     <span key={`${event.enteredAt}-${at}`} className="ladder__note">
-                      {event.note && <span className="ladder__note-text">{event.note}</span>}
-                      {(event.trackingId || event.shipper) && (
-                        <span className="ladder__note-text">
-                          {event.shipper && <>Shipper: <strong>{event.shipper}</strong></>}
-                          {event.shipper && event.trackingId && ' · '}
-                          {event.trackingId && <>Tracking ID: <strong>{event.trackingId}</strong></>}
-                          {/* No carrier API is connected yet (see
-                              api/src/tracking/provider.ts), so this looks the
-                              current status up rather than showing it inline. */}
-                          {event.trackingId && (
-                            <a href={trackingSearchUrl(event.shipper ?? '', event.trackingId)}
-                              target="_blank" rel="noopener noreferrer" className="ladder__track-link">
-                              Check status <Icon name="external" size={11} />
-                            </a>
-                          )}
-                        </span>
-                      )}
+                      <span className="ladder__note-body">
+                        {event.note && <span className="ladder__note-text">{event.note}</span>}
+                        {(event.trackingId || event.shipper) && (
+                          <span className="ladder__note-text">
+                            {event.shipper && <>Shipper: <strong>{event.shipper}</strong></>}
+                            {event.shipper && event.trackingId && ' · '}
+                            {event.trackingId && <>Tracking ID: <strong>{event.trackingId}</strong></>}
+                            {/* No carrier API is connected yet (see
+                                api/src/tracking/provider.ts), so this looks the
+                                current status up rather than showing it inline. */}
+                            {event.trackingId && (
+                              <a href={trackingSearchUrl(event.shipper ?? '', event.trackingId)}
+                                target="_blank" rel="noopener noreferrer" className="ladder__track-link">
+                                Check status <Icon name="external" size={11} />
+                              </a>
+                            )}
+                          </span>
+                        )}
+                      </span>
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>
                     </span>
                   )
@@ -326,5 +329,5 @@ function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, Sta
 function when(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return formatDateOrdinal(iso);
 }

@@ -501,6 +501,15 @@ code, kbd, samp, pre {
   margin-bottom: 20px;
 }
 
+/* The order's own status, glowing in its own colour - the one badge on the
+   page a person actually came to check, so it gets more presence than an
+   ordinary inline chip. */
+.order-status { padding: 6px 14px; font-size: var(--t-sm); font-weight: var(--w-bold); border-radius: 999px; }
+.order-status.badge--ok { box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.3), 0 4px 16px rgba(52, 211, 153, 0.28); }
+.order-status.badge--warn { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.3), 0 4px 16px rgba(251, 191, 36, 0.24); }
+.order-status.badge--danger { box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.32), 0 4px 16px rgba(244, 63, 94, 0.26); }
+.order-status.badge--accent { box-shadow: 0 0 0 1px var(--accent-line), 0 4px 16px rgba(124, 58, 237, 0.26); }
+
 /* ── Search ────────────────────────────────────────────────────────────── */
 
 .search { position: relative; display: flex; align-items: center; }
@@ -1360,6 +1369,13 @@ code, kbd, samp, pre {
 }
 .tab:hover { color: var(--text); }
 .tab.is-on { color: var(--accent-text); border-bottom-color: var(--accent); }
+
+/* A brighter, thicker underline where a page has few enough tabs that one
+   can afford to be a real statement of where you are, not just a hint. */
+.tabs--vivid .tab.is-on {
+  border-bottom-width: 3px;
+  border-image: linear-gradient(90deg, var(--accent), var(--aqua)) 1;
+}
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
 
@@ -3258,10 +3274,14 @@ a.provider__name:hover { color: var(--accent-text); }
 }
 .ladder__name { min-width: 0; }
 .ladder__row.is-done { color: var(--text-dim); }
-.ladder__row.is-done .ladder__dot { border-color: var(--ok); color: var(--ok); }
+.ladder__row.is-done .ladder__dot {
+  border-color: var(--ok); color: var(--ok-ink); background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
 .ladder__row.is-current { color: var(--text); font-weight: var(--w-semi); }
 .ladder__row.is-current .ladder__dot {
   border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 /* A preview in a form is a list, not a progress bar: nothing has happened yet. */
 .ladder--preview .ladder__row { color: var(--text-dim); padding: 5px 0; }
@@ -3276,14 +3296,23 @@ a.provider__name:hover { color: var(--accent-text); }
  */
 .ladder__body { display: grid; gap: 3px; min-width: 0; }
 .ladder__note {
-  display: grid; gap: 2px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
   margin-top: 4px; padding: 7px 9px;
   border-left: 2px solid var(--accent-line); border-radius: 0 var(--r-sm) var(--r-sm) 0;
   background: var(--surface-2);
   font-size: var(--t-xs); color: var(--text-dim);
 }
-.ladder__note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.ladder__note-when { font-size: var(--t-2xs); color: var(--text-faint); }
+.ladder__note-body { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.ladder__note-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The date every event carries, pinned to the right so a rung with a lot to
+   say and a rung with one word still line their dates up in the same
+   column - the eye reads down the right edge for "when", not the prose. */
+.ladder__note-when {
+  flex: 0 0 auto; margin-left: auto;
+  font-family: var(--mono); font-size: var(--t-2xs); font-weight: var(--w-medium);
+  color: var(--accent-text); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .ladder__track-link {
   display: inline-flex; align-items: center; gap: 3px;
   margin-left: 6px;
@@ -3988,25 +4017,47 @@ a.order__name:hover { color: var(--accent-text); }
   overflow: hidden;
 }
 
+/*
+ * Two rows, not one: the header (name, meta, status, price) always fits on a
+ * line at any width, and the actions - which can now number anywhere from
+ * one chevron to a warehouse tick, a lot button and a labelled Accept/Reject
+ * pair - get a full-width row of their own to wrap into. Squeezed into a
+ * single auto-sized right column, that many controls simply grew the column
+ * past the two rows it was allotted and spilled into the row below it.
+ */
 .orow {
   display: grid;
-  grid-template-columns: 3px minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 3px minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "stripe main badge price"
+    "stripe acts acts acts";
   align-items: center;
-  gap: var(--s3);
-  padding: 9px var(--s3) 9px 0;
+  gap: 4px var(--s3);
+  padding: 10px var(--s3) 10px 0;
   background: var(--surface);
-  transition: background var(--dur-1) var(--ease);
+  transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
 }
 .orow:hover { background: var(--surface-2); }
 .orow.is-busy { opacity: 0.55; }
+.orow__main { grid-area: main; }
+.orow .badge { grid-area: badge; justify-self: start; }
+.orow__price { grid-area: price; }
+.orow__acts { grid-area: acts; justify-content: flex-end; flex-wrap: wrap; }
 
 /* The edge is the state. Read down the left of the list, it answers "does
    this one need me" before a single word has been read. */
-.orow__stripe { align-self: stretch; background: var(--border-strong); }
-.orow--ok .orow__stripe { background: var(--ok); }
-.orow--warn .orow__stripe { background: var(--warn); }
-.orow--danger .orow__stripe { background: var(--danger); }
+.orow__stripe { grid-area: stripe; align-self: stretch; border-radius: 3px; background: var(--border-strong); }
+.orow--ok .orow__stripe { background: var(--ok); box-shadow: 0 0 10px rgba(52, 211, 153, 0.55); }
+.orow--warn .orow__stripe { background: var(--warn); box-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+.orow--danger .orow__stripe { background: var(--danger); box-shadow: 0 0 10px rgba(244, 63, 94, 0.5); }
 .orow--quiet .orow__stripe { background: var(--border-strong); }
+
+/* A whisper of the same colour behind the row it marks - enough to catch the
+   eye scanning a long list, never loud enough to fight the text on it. */
+.orow--warn { background: linear-gradient(90deg, rgba(245, 158, 11, 0.07), transparent 60%); }
+.orow--danger { background: linear-gradient(90deg, rgba(244, 63, 94, 0.06), transparent 60%); }
+.orow--warn:hover { background: linear-gradient(90deg, rgba(245, 158, 11, 0.12), var(--surface-2) 60%); }
+.orow--danger:hover { background: linear-gradient(90deg, rgba(244, 63, 94, 0.1), var(--surface-2) 60%); }
 
 .orow__main { min-width: 0; display: grid; gap: 2px; }
 .orow__name {
@@ -4067,7 +4118,7 @@ a.order__name:hover { color: var(--accent-text); }
 /* Present at every width, quiet until the row is under a pointer. Hover is
    not available on the device most of this is read on, so "appears on hover"
    would have meant "does not exist on a phone". */
-.orow__acts { display: flex; align-items: center; gap: 2px; }
+.orow__acts { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .orow__act {
   width: 28px; height: 28px;
   display: grid; place-items: center;
@@ -4090,18 +4141,18 @@ a.order__name:hover { color: var(--accent-text); }
 .orow__act:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* On a phone the badge and price drop under the name rather than competing
-   with it for a 370px line, and the actions stay on the right where the
-   thumb is. */
+   with it for a 370px line - the actions row below already wraps at any
+   width, so there is nothing left for this breakpoint to rearrange. */
 @media (max-width: 599px) {
   .orow {
     grid-template-columns: 3px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "stripe main main"
+      "stripe badge price"
+      "stripe acts acts";
     row-gap: 6px;
     padding-block: 10px;
   }
-  .orow__main { grid-column: 2; }
-  .orow__acts { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
-  .orow .badge { grid-column: 2; grid-row: 2; justify-self: start; }
-  .orow__price { grid-column: 2; grid-row: 2; justify-self: start; margin-left: 84px; }
 }
 
 /* ── The conversation ──────────────────────────────────────────────────────
@@ -4389,10 +4440,9 @@ a.order__name:hover { color: var(--accent-text); }
 }
 .orow__toggle:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* On a phone the label is what survives; the row gives it its own line
-   rather than squeezing it against the price. */
+/* On a phone the label is what survives; the row already wraps at any
+   width, this just shaves a couple of px off the control height. */
 @media (max-width: 599px) {
-  .orow__acts { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
   .orow__toggle { height: 26px; }
 }
 

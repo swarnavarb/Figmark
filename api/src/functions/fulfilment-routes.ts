@@ -955,6 +955,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const repository = await getRepository();
   const order = await repository.getOrder(orderId);
   if (!order) return error(404, 'not_found', 'No such order.');
+  const lot = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
 
   const sellerId = await lotsStoreFor(request, user, order.sellerId);
   if (sellerId === order.sellerId) {
@@ -969,7 +970,6 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     // the record of work done, so the person who did it is the one who makes
     // them.
     const owner = await repository.getUserById(order.sellerId);
-    const lot = await repository.getLot(order.sellerId, order.lotId);
     const role: CrewRole | null =
       (owner && can(owner, user.id, 'export')) || (lot && supplierIdOf(lot) === user.id)
         ? 'supplier'
@@ -994,15 +994,18 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   order.checkpoints = { ...(order.checkpoints ?? {}), [checkpoint]: on ? now : null };
   order.updatedAt = now;
 
-  // Every tick is a real, dated thing that happened, and belongs on the one
-  // timeline the buyer and seller both read - not just a silent flag flipped
-  // on the order. Recorded at the moment it is ticked, so it lands in true
-  // time order among the payments and other notes rather than wherever the
-  // order's coarse stage happens to place it.
+  // Every tick is a real, dated thing that happened, and belongs on the
+  // ladder's own timeline. Filed under the rung it actually is - not the
+  // order's coarse stage, which does not move when a checkpoint is ticked
+  // and would otherwise leave the note stranded under whatever rung the
+  // order happened to be at, however much later the tick came.
+  const stepsForTick = lot ? routeOf(lot).steps : preLotRouteOf(order).steps;
+  const tickedStep = stepsForTick.find((step) => step.trigger === checkpoint);
   order.stageHistory = [
     ...order.stageHistory,
     {
       stage: order.stage,
+      step: tickedStep?.name,
       enteredAt: now,
       note: on ? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
       recordedBy: user.id,

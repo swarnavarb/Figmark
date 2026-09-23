@@ -86,19 +86,6 @@ export function OrderPage() {
   const currentIndex = stages.indexOf(currentStage);
   /** The lot it is in now, as opposed to the ones it has been in. */
   const latestLotAt = [...order.stageHistory].reverse().find(isLotEvent)?.enteredAt ?? null;
-  /*
-   * One timeline, in the order things actually happened.
-   *
-   * The ladder above still groups notes by which rung they were said at, which
-   * is right for a seller writing one as they go - but a payment recorded
-   * while an item's coarse stage still read "preparing" was landing here
-   * before "received at the warehouse", even when the payment came later by
-   * the clock. Sorted by the real timestamp instead, so what is newest is
-   * always what is read first.
-   */
-  const timeline = [...order.stageHistory].sort(
-    (a, b) => new Date(b.enteredAt).getTime() - new Date(a.enteredAt).getTime(),
-  );
 
   return (
     <main className="page">
@@ -117,7 +104,7 @@ export function OrderPage() {
             {timeAgo(order.createdAt)}
           </p>
         </div>
-        <span className={`badge badge--${statusTone(order.status)}`}>
+        <span className={`badge badge--${statusTone(order.status)} order-status`}>
           {order.status.replace(/_/g, ' ')}
         </span>
       </div>
@@ -127,7 +114,7 @@ export function OrderPage() {
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
 
-      <div className="tabs">
+      <div className="tabs tabs--vivid">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
           onClick={() => setTab('tracking')}>
           Tracking
@@ -178,12 +165,12 @@ export function OrderPage() {
                 <span className="field__hint">
                   Travelling in {data.route.lotName} · lot #{data.route.lotNumber}
                 </span>
-                {/* Notes are read below, in one shared timeline sorted by
-                    when they actually happened, rather than hung off the
-                    rung each was filed under - a note said while the order's
-                    coarse stage still read "preparing" otherwise reads as
-                    older than a warehouse tick it actually followed. */}
+                {/* With what the seller actually said along the way, hung
+                    off the rung it happened at and dated - so a payment made
+                    after the parcel reached the warehouse reads under the
+                    warehouse tick, not above it. */}
                 <Ladder steps={data.route.steps} current={data.route.currentStep}
+                  history={data.order.stageHistory}
                   waitingFor={data.route.waitingForLot ? WAITING_FOR_LOT : null}
                   /* The lot is where a seller's next question leads - change
                      it, or go and move it on - so the answers sit on the lot
@@ -208,6 +195,7 @@ export function OrderPage() {
             ) : (
               <>
                 <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
+                  history={data.order.stageHistory}
                   waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
                 <p className="notice notice--info">
                   <strong>Not yet added to a shipment lot.</strong> The rest of the journey
@@ -228,21 +216,6 @@ export function OrderPage() {
               ))}
             </ol>
           )}
-
-          <div className="detail__section" style={{ marginTop: 8 }}>
-            <h3>Timeline</h3>
-            {timeline.map((event, index) => (
-              <div key={`${event.stage}-${event.enteredAt}-${index}`} className="comment">
-                <div className="comment__head">
-                  {/* The step as the seller wrote it, where there is one: their
-                      words are what the buyer has been reading all along. */}
-                  <span className="comment__who">{event.step ?? labelFor(event.stage)}</span>
-                  <span className="faint">{formatDateOrdinal(event.enteredAt)}</span>
-                </div>
-                {event.note && <p className="muted">{event.note}</p>}
-              </div>
-            ))}
-          </div>
         </div>
       )}
 
