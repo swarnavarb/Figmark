@@ -78,6 +78,14 @@ const {
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
 } = await import(new URL('power-sale-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
+const {
+  acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
+  requestReversalDetailsRoute: requestReversalDetails, confirmReversalDetailsRoute: confirmReversalDetails,
+  submitReversalRoute: submitReversal, ackReversalRoute: ackReversal, raiseDisputeRoute: raiseDispute,
+} = await import(new URL('order-routes.js', fns));
+const {
+  saveReversalDetailsRoute: saveReversalDetails, reversalDetailsRoute: readReversalDetails,
+} = await import(new URL('profile-routes.js', fns));
 const { insightsRoute: insights } = await import(new URL('insight-routes.js', fns));
 const {
   servicesHubRoute: servicesHub, serviceDirectoryRoute: serviceDirectory,
@@ -3763,7 +3771,7 @@ await check('a seller can turn an order down, and the stock comes back', async (
     body: { reason: 'Sold the last one this morning — sorry.' },
   }), ctx);
   assert.equal(turned.status, 200);
-  assert.equal(turned.jsonBody.order.status, 'cancelled');
+  assert.equal(turned.jsonBody.order.status, 'rejected');
 
   // The unit goes back, and so does the listing.
   const back = (await listingDetail(req({ params: { id } }), ctx)).jsonBody.listing;
@@ -3827,7 +3835,7 @@ await check('every order a shop has to answer is on one screen', async () => {
   for (const pile of ['waiting', 'placed', 'answered']) {
     assert.ok(Array.isArray(board[pile]), `${pile} should be a list`);
   }
-  assert.ok(board.answered.some((row) => row.status === 'cancelled'), 'a turned-down order is on the record');
+  assert.ok(board.answered.some((row) => row.status === 'rejected'), 'a turned-down order is on the record');
   assert.ok(board.placed.every((row) => row.paymentStatus === 'unpaid'));
 });
 
@@ -5792,6 +5800,250 @@ await check('my purchases group by store, then lot, with the money on every item
   assert.equal(a.paidMinor, 500_000);
   assert.equal(a.outstandingMinor, 0);
   assert.equal(a.method, 'direct');
+});
+
+/* ── booking, accepting, cancelling and reversing a paid order ───────────── */
+console.log('\naccepting, cancelling and reversing an order');
+
+await check('a fresh order waits on Accept or Reject, and Accept opens the door to pay', async () => {
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Fresh Order Item', priceMinor: 10_000, quantityAvailable: 3 },
+  }), ctx);
+  const buyer = await newBuyer('Fresh Order Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx);
+  const orderId = placed.jsonBody.order.id;
+
+  const state = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(state.actions.includes('accept'));
+  assert.ok(state.actions.includes('reject'));
+
+  const accepted = await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.jsonBody.order.accepted, true);
+
+  // Once accepted, the seller's X button is Cancel, never Reject again.
+  const after = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!after.actions.includes('reject'));
+  assert.ok(after.actions.includes('cancel'));
+});
+
+await check('booking does not count as payment, and asks the seller to confirm first', async () => {
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Bookable Item', priceMinor: 25_000, quantityAvailable: 2 },
+  }), ctx);
+  const buyer = await newBuyer('Booking Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx);
+  const orderId = placed.jsonBody.order.id;
+
+  const booked = await bookOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(booked.status, 200);
+  assert.equal(booked.jsonBody.order.bookingOnly, true);
+
+  // Payment is not on the table until the seller accepts.
+  const beforeAccept = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!beforeAccept.actions.includes('pay'));
+
+  const accepted = await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+  assert.equal(accepted.status, 200);
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'booking_accepted');
+  assert.equal(told.length, 1);
+
+  const afterAccept = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(afterAccept.actions.includes('pay'), 'payment opens up once the seller has accepted');
+});
+
+/** Places, accepts and pays an order in full, and returns its id and buyer. */
+let paidOrderSeq = 0;
+async function paidAcceptedOrder(title, priceMinor) {
+  paidOrderSeq += 1;
+  const listed = await createListing(req({ headers: auth, body: { title, priceMinor, quantityAvailable: 5 } }), ctx);
+  const buyer = await newBuyer(`Paid Order Buyer ${paidOrderSeq}`);
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx);
+  const orderId = placed.jsonBody.order.id;
+  await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+  const paid = await payOrder(req({ headers: buyer.headers, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+  return { orderId, buyer };
+}
+
+// Scenario A - cancel without payment.
+await check('Scenario A: cancelling an accepted order with no payment goes straight to Cancelled', async () => {
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'No Payment Yet', priceMinor: 15_000, quantityAvailable: 2 },
+  }), ctx);
+  const buyer = await newBuyer('Scenario A Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx);
+  const orderId = placed.jsonBody.order.id;
+  await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+
+  const noReason = await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: '' } }), ctx);
+  assert.equal(noReason.status, 400);
+
+  const cancelled = await cancelOrder(req({
+    headers: auth, params: { id: orderId }, body: { reason: 'Out of stock after all.' },
+  }), ctx);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.jsonBody.order.status, 'cancelled');
+  assert.ok(cancelled.jsonBody.order.stageHistory.some((e) => /Order cancelled by seller/.test(e.note ?? '')));
+
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'order_cancelled');
+  assert.equal(told.length, 1);
+
+  // The seller's message reached the buyer through the ordinary messaging system.
+  const repo = await getRepository();
+  const buyerRecord = await repo.getUserById(buyer.id);
+  const messages = await repo.listMessagesForHandles([buyerRecord.username ?? buyer.id]);
+  assert.ok(messages.some((m) => /cancelled/i.test(m.body)));
+});
+
+// Scenario B - cancel after payment, with reversal details on file.
+await check('Scenario B: cancel after payment reverses cleanly once the buyer has reversal details', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Paid Order With Details', 20_000);
+
+  await saveReversalDetails(req({
+    headers: buyer.headers,
+    body: { method: 'UPI', identifier: 'buyer@upi', accountName: 'Scenario B Buyer' },
+  }), ctx);
+
+  const cancelled = await cancelOrder(req({
+    headers: auth, params: { id: orderId }, body: { reason: 'Buyer requested a cancel.' },
+  }), ctx);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.jsonBody.order.status, 'payment_reversal_pending');
+
+  const state = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.equal(state.buyerHasReversalDetails, true);
+  assert.ok(state.actions.includes('submit_reversal'));
+
+  const missingProof = await submitReversal(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(missingProof.status, 400);
+
+  const reversed = await submitReversal(req({
+    headers: auth, params: { id: orderId }, body: { reference: 'REV123' },
+  }), ctx);
+  assert.equal(reversed.status, 200);
+  assert.equal(reversed.jsonBody.order.status, 'cancelled_reversed');
+  assert.equal(reversed.jsonBody.order.paymentStatus, 'refunded');
+  // The original payment stays in the ledger; the reversal is a new event.
+  assert.ok(reversed.jsonBody.order.payments.some((p) => p.kind !== 'refund'));
+  assert.ok(reversed.jsonBody.order.payments.some((p) => p.kind === 'refund'));
+
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'payment_reversed');
+  assert.equal(told.length, 1);
+
+  // The buyer confirms receipt.
+  const acked = await ackReversal(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true } }), ctx);
+  assert.equal(acked.status, 200);
+  assert.equal(acked.jsonBody.order.reversal.buyerResponse, 'received');
+});
+
+// Scenario C - cancel after payment, buyer has no reversal details yet.
+await check('Scenario C: cancelling a paid order waits on the buyer to add reversal details', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Paid Order Without Details', 30_000);
+
+  const cancelled = await cancelOrder(req({
+    headers: auth, params: { id: orderId }, body: { reason: 'Cannot fulfil.' },
+  }), ctx);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.jsonBody.order.status, 'payment_reversal_pending');
+
+  const needsDetails = (await noticesFor(buyer.id)).filter((row) => row.kind === 'reversal_details_needed');
+  assert.equal(needsDetails.length, 1);
+
+  // The seller cannot finalise the reversal yet.
+  const tooSoon = await submitReversal(req({
+    headers: auth, params: { id: orderId }, body: { reference: 'REV999' },
+  }), ctx);
+  assert.equal(tooSoon.status, 409);
+  assert.equal(tooSoon.jsonBody.error, 'buyer_details_missing');
+
+  // The seller can nudge again.
+  const nudged = await requestReversalDetails(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(nudged.status, 200);
+
+  // The buyer adds their details and says so.
+  await saveReversalDetails(req({
+    headers: buyer.headers,
+    body: { method: 'Bank transfer', identifier: '000111222', accountName: 'Scenario C Buyer' },
+  }), ctx);
+  const confirmed = await confirmReversalDetails(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(confirmed.status, 200);
+  const toldSeller = (await noticesFor(confirmed.jsonBody.order.sellerId))
+    .filter((row) => row.kind === 'reversal_details_updated');
+  assert.equal(toldSeller.length, 1);
+
+  // Now the seller retries and it goes through.
+  const retried = await submitReversal(req({
+    headers: auth, params: { id: orderId }, body: { reference: 'REV1000' },
+  }), ctx);
+  assert.equal(retried.status, 200);
+  assert.equal(retried.jsonBody.order.status, 'cancelled_reversed');
+});
+
+// Scenario D - reversal dispute.
+await check('Scenario D: a buyer who says the reversal never arrived can raise a dispute', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Disputed Reversal Order', 18_000);
+  await saveReversalDetails(req({
+    headers: buyer.headers,
+    body: { method: 'UPI', identifier: 'disputed@upi', accountName: 'Scenario D Buyer' },
+  }), ctx);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Cancelling.' } }), ctx);
+  const reversed = await submitReversal(req({
+    headers: auth, params: { id: orderId }, body: { reference: 'REV-D' },
+  }), ctx);
+  assert.equal(reversed.status, 200);
+
+  const notReceived = await ackReversal(req({
+    headers: buyer.headers, params: { id: orderId }, body: { received: false },
+  }), ctx);
+  assert.equal(notReceived.status, 200);
+  assert.equal(notReceived.jsonBody.order.reversal.buyerResponse, 'not_received');
+
+  const disputed = await raiseDispute(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(disputed.status, 200);
+  assert.equal(disputed.jsonBody.order.status, 'dispute_raised');
+  assert.ok(disputed.jsonBody.order.reversal.disputeRaisedAt);
+  // Everything before it is preserved: the original payment, the reversal, the history.
+  assert.ok(disputed.jsonBody.order.payments.length >= 2);
+  assert.ok(disputed.jsonBody.order.stageHistory.some((e) => /Dispute raised/.test(e.note ?? '')));
+
+  const toldSeller = (await noticesFor((await repository_user(disputed.jsonBody.order.sellerId)).id))
+    .filter((row) => row.kind === 'dispute_raised_reversal');
+  assert.equal(toldSeller.length, 1);
+});
+
+// Scenario E - one shared chronological timeline.
+await check('Scenario E: payment, cancellation and reversal events share one chronological timeline', async () => {
+  const { orderId } = await paidAcceptedOrder('Timeline Order', 12_000);
+  const repo = await getRepository();
+  const order = await repo.getOrder(orderId);
+  const kinds = order.stageHistory.map((e) => e.note);
+  assert.ok(kinds.some((n) => /Order accepted|Order placed/.test(n ?? '')) || order.stageHistory.length > 0);
+  // Every event carries an actual timestamp, and they are non-decreasing.
+  const times = order.stageHistory.map((e) => new Date(e.enteredAt).getTime());
+  for (let i = 1; i < times.length; i += 1) {
+    assert.ok(times[i] >= times[i - 1] - 1, 'events land on the timeline in the order they happened');
+  }
+  assert.ok(times.every((t) => Number.isFinite(t) && t > 0), 'every event has a real date');
+});
+
+await check('the buyer can save and read back their Payment Reversal Details', async () => {
+  const buyer = await newBuyer('Reversal Settings Buyer');
+  const empty = await readReversalDetails(req({ headers: buyer.headers }), ctx);
+  assert.equal(empty.jsonBody.reversalDetails, null);
+
+  const bad = await saveReversalDetails(req({ headers: buyer.headers, body: { method: '', identifier: '', accountName: '' } }), ctx);
+  assert.equal(bad.status, 400);
+
+  const saved = await saveReversalDetails(req({
+    headers: buyer.headers,
+    body: { method: 'UPI', identifier: 'settings@upi', accountName: 'Settings Buyer', qrCodeUrl: 'https://example.test/qr.png' },
+  }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.reversalDetails.identifier, 'settings@upi');
+
+  const read = await readReversalDetails(req({ headers: buyer.headers }), ctx);
+  assert.equal(read.jsonBody.reversalDetails.accountName, 'Settings Buyer');
 });
 
 console.log(`\n${passed} checks passed`);

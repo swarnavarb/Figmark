@@ -159,6 +159,8 @@ export interface User extends BaseDocument {
   tags?: string[];
   /** Last seen, so a page can say whether anybody is home. */
   lastSeenAt?: string | null;
+  /** Where to send this buyer's money back when an order they paid is cancelled. */
+  reversalDetails?: BuyerReversalDetails | null;
 }
 
 export interface SellerProfile {
@@ -890,6 +892,72 @@ export interface Order extends BaseDocument {
   payments?: PaymentRecord[];
   /** Money paid over the balance, held for the seller to refund. */
   credits?: CreditRecord[];
+  /**
+   * Placed as a booking - the buyer's word that they want it, with no payment
+   * yet. Payment is asked for only once the seller has accepted; on any other
+   * order this is simply absent.
+   */
+  bookingOnly?: boolean;
+  /**
+   * The seller has said yes to this order or booking. Drawn separately from
+   * `status` because a booking is accepted before a rupee moves, and because
+   * this is exactly the line the X button's meaning turns on: `reject` before
+   * it, `cancel` after.
+   */
+  accepted?: boolean;
+  acceptedAt?: string | null;
+  /** Why the seller called off an already-accepted order. */
+  cancelReason?: string | null;
+  /** The reversal of a paid, then cancelled, order - one record per order. */
+  reversal?: OrderReversal | null;
+}
+
+/**
+ * A cancelled order's payment going back to the buyer.
+ *
+ * Kept as its own record rather than folded into `payments`, because a
+ * reversal is a process with its own steps - waiting on the buyer's details,
+ * waiting on the seller's proof, waiting on the buyer's confirmation - and
+ * `payments` only ever wanted one fact (money moved) rather than several. The
+ * refund itself is still written to `payments` too, via the same `record()`
+ * every other payment goes through, so the ledger never disagrees with this.
+ */
+export interface OrderReversal {
+  reasonForCancel: string;
+  initiatedAt: string;
+  /** What is being reversed - the order's total paid at the moment of cancellation. */
+  amountMinor: number;
+  /** Set once the buyer has said "I've updated my payment details". */
+  buyerConfirmedDetailsAt: string | null;
+  /** The seller's proof that the reversal went out. */
+  reference: string | null;
+  screenshot: string | null;
+  reversedAt: string | null;
+  reversedBy: string | null;
+  /** The buyer's answer once the seller marks it reversed. */
+  buyerResponse: 'received' | 'not_received' | null;
+  buyerRespondedAt: string | null;
+  /** Set once the buyer raises a dispute over a reversal they say never arrived. */
+  disputeRaisedAt: string | null;
+}
+
+/**
+ * Where a buyer wants a cancelled order's payment sent back.
+ *
+ * Free text, like `SellerPaymentDetails` - the platform is not moving this
+ * money and must not pretend to have validated an account it cannot see. One
+ * record per buyer, kept in their own settings rather than typed fresh on
+ * every cancellation.
+ */
+export interface BuyerReversalDetails {
+  /** UPI, bank transfer, whatever they want to say - never hard-coded to one provider. */
+  method: string;
+  /** The UPI handle, account number, or other identifier that money goes to. */
+  identifier: string;
+  accountName: string;
+  notes?: string | null;
+  qrCodeUrl?: string | null;
+  updatedAt: string;
 }
 
 export type PaymentMethod = 'direct' | 'protected';
@@ -1313,7 +1381,16 @@ export type NotificationKind =
   | 'preorder_closed'
   | 'sale_opened'
   | 'sale_item'
-  | 'order_rejected';
+  | 'order_rejected'
+  | 'order_accepted'
+  | 'booking_accepted'
+  | 'order_cancelled'
+  | 'payment_reversal_pending'
+  | 'reversal_details_needed'
+  | 'reversal_details_updated'
+  | 'payment_reversed'
+  | 'reversal_ack'
+  | 'dispute_raised_reversal';
 
 /**
  * A run of channel posts that sells things, on a timer the shop sets.

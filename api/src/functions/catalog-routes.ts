@@ -406,7 +406,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
-  let body: { listingId?: string; quantity?: number; via?: string };
+  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book' };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -509,6 +509,10 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     completedAt: null,
     createdAt: now,
     updatedAt: now,
+    // Book: a pledge to buy with no payment yet. Payment is asked for once
+    // the seller has accepted - see acceptOrder in order-routes.ts.
+    bookingOnly: body.plan === 'book',
+    accepted: false,
   };
 
   const placed = await repository.createOrder(order);

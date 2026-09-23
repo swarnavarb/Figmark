@@ -133,6 +133,7 @@ function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () => void 
           <Link role="menuitem" to="/me" className="pmenu__item">🙂 My Profile</Link>
           <Link role="menuitem" to="/shop" className="pmenu__item">🏪 My Storefront</Link>
           <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>
+          <Link role="menuitem" to="/buyer-settings" className="pmenu__item">💳 Buyer Settings</Link>
           <button role="menuitem" type="button" className="pmenu__item pmenu__item--out" onClick={onSignOut}>
             👋 Sign Out
           </button>

@@ -1,4 +1,5 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
+import { isCancelledLike } from '../../../shared/orders.js';
 import { ROUTE_TEMPLATES, normaliseSteps, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
@@ -234,7 +235,7 @@ export class MemoryRepository implements Repository {
       .filter((order) =>
         order.sellerId === sellerId
         && order.lotId === AWAITING_LOT_ID
-        && order.status !== 'cancelled')
+        && !isCancelledLike(order.status))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 

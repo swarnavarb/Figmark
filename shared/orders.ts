@@ -1,3 +1,4 @@
+import type { OrderStatus } from './enums.js';
 import type { Order, Review } from './models.js';
 
 /**
@@ -38,7 +39,11 @@ export const REVIEW_REVEAL_DAYS = 14;
 export const DISPUTE_RESPONSE_DAYS = 3;
 
 export type OrderAction =
-  | 'pay' | 'settle_claim' | 'confirm' | 'dispute' | 'review' | 'reject' | 'pay_more' | 'refund_credit';
+  | 'pay' | 'settle_claim' | 'confirm' | 'dispute' | 'review' | 'reject' | 'pay_more' | 'refund_credit'
+  // Accepting a fresh order or booking, and calling one off once it is.
+  | 'accept' | 'cancel'
+  // The reversal of a paid, cancelled order, and the dispute at the end of it.
+  | 'request_reversal_details' | 'submit_reversal' | 'confirm_reversal_details' | 'ack_reversal' | 'raise_dispute';
 
 /** Protection is only offered where the company has granted the seller it. */
 export function protectionFeeMinor(totalMinor: number, feeBasisPoints: number): number {
@@ -79,7 +84,7 @@ export function actionsFor(
   order: Pick<
     Order,
     'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
-  > & Partial<Pick<Order, 'credits'>>,
+  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly'>>,
   viewerId: string,
   reviewed = false,
 ): OrderAction[] {
@@ -88,8 +93,11 @@ export function actionsFor(
 
   const actions: OrderAction[] = [];
 
-  // Only the buyer pays, and only while nothing has been paid.
-  if (side === 'buyer' && order.paymentStatus === 'unpaid' && order.status === 'pending_payment') {
+  // Only the buyer pays, and only while nothing has been paid. A booking is
+  // a pledge, not a payment - it asks for money only once the seller has
+  // said yes, per the tagline on the Book option itself.
+  const mayPayNow = !order.bookingOnly || order.accepted === true;
+  if (side === 'buyer' && mayPayNow && order.paymentStatus === 'unpaid' && order.status === 'pending_payment') {
     actions.push('pay');
   }
 
@@ -101,7 +109,7 @@ export function actionsFor(
 
   // An advance leaves a balance, and the buyer pays it down in as many goes as
   // they like - always by the method they started with.
-  const live = order.status !== 'cancelled' && order.status !== 'refunded';
+  const live = order.status !== 'cancelled' && order.status !== 'refunded' && order.status !== 'rejected';
   if (side === 'buyer' && live && order.paymentStatus === 'partially_paid') actions.push('pay_more');
 
   // Money paid over the balance is the buyer's, and only the seller holds it.
@@ -109,14 +117,45 @@ export function actionsFor(
     actions.push('refund_credit');
   }
 
+  // A brand new order or booking is waiting on the seller to say yes before
+  // anything else happens to it - nobody has paid, nobody has claimed to, and
+  // the seller has not yet said either way.
+  const fresh = order.status === 'pending_payment' && order.paymentStatus === 'unpaid'
+    && !order.accepted && !order.paymentClaim;
+  if (side === 'seller' && fresh) actions.push('accept');
+
   // The seller cannot serve it. Every order on this marketplace is a promise
   // made before anything moves - the stock may be gone, the supplier may have
   // pulled the line, the lot may not go - so the seller needs a way to say so
-  // that is not silence. Only before it ships, and never once money is held:
-  // after that it is a refund or a dispute, which are different conversations
-  // with different rules.
-  const unshipped = order.status === 'pending_payment' || order.status === 'confirmed';
-  if (side === 'seller' && unshipped && order.escrow.state !== 'held') actions.push('reject');
+  // that is not silence. Only before it is accepted, and never once money is
+  // held: after that it is `cancel`, a different button with a different
+  // ending, because the buyer was already told yes.
+  if (side === 'seller' && fresh && order.escrow.state !== 'held') actions.push('reject');
+
+  // Once accepted or placed, the same X button means something else: the
+  // order is being called off after the buyer was told it would happen.
+  const acceptedOrPlaced =
+    (order.status === 'pending_payment' && order.accepted === true)
+    || order.status === 'confirmed' || order.status === 'in_fulfilment' || order.status === 'shipped';
+  if (side === 'seller' && acceptedOrPlaced) actions.push('cancel');
+
+  // The reversal of a paid, cancelled order - one step at a time, and only
+  // for the two people it concerns.
+  if (order.status === 'payment_reversal_pending') {
+    if (side === 'seller') {
+      actions.push('request_reversal_details', 'submit_reversal');
+    } else {
+      actions.push('confirm_reversal_details');
+    }
+  }
+  if (order.status === 'cancelled_reversed' && side === 'buyer' && order.reversal
+    && order.reversal.buyerResponse === null) {
+    actions.push('ack_reversal');
+  }
+  if (order.status === 'cancelled_reversed' && side === 'buyer' && order.reversal?.buyerResponse === 'not_received'
+    && !order.reversal.disputeRaisedAt) {
+    actions.push('raise_dispute');
+  }
 
   // Confirming delivery is the buyer's alone: it is the one fact in the whole
   // pipeline that only they can know. The seller ticking "dispatched" is not
@@ -167,4 +206,15 @@ export function scoreFrom(ratings: readonly number[]): number | null {
 /** ISO timestamp `days` from `from`. */
 export function daysFrom(days: number, from = new Date()): string {
   return new Date(from.getTime() + days * 86_400_000).toISOString();
+}
+
+/**
+ * An order that came to nothing before it shipped - called off, either way.
+ *
+ * `rejected` split off `cancelled` so the two could be told apart on screen,
+ * but everywhere that used to read "cancelled" to mean "does not count" -
+ * stock, revenue, active-order counts - both belong in that same bucket.
+ */
+export function isCancelledLike(status: OrderStatus): boolean {
+  return status === 'cancelled' || status === 'rejected';
 }

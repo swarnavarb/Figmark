@@ -23,6 +23,7 @@ import { DisputePage } from './pages/DisputePage';
 import { EscrowPage } from './pages/EscrowPage';
 import { SupplierPage, PackingLotPage } from './pages/SupplierPage';
 import { ProfileByHandlePage } from './pages/ProfileByHandlePage';
+import { BuyerSettingsPage } from './pages/BuyerSettingsPage';
 import { SessionProvider, useSession } from './session';
 import { ToastHost } from './components/Feedback';
 import './styles.css';
@@ -84,6 +85,7 @@ function App() {
         <Route path="/forwarders" element={<ForwardersPage />} />
         <Route path="/me" element={<ProfilePage />} />
         <Route path="/purchases" element={<PurchasesPage />} />
+        <Route path="/buyer-settings" element={<BuyerSettingsPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
         <Route path="/:username" element={<ProfileByHandlePage />} />

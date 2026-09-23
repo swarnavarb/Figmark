@@ -41,6 +41,8 @@ const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUserna
 const {
   payRoute, confirmRoute, reviewRoute, orderStateRoute, checkoutRoute,
   claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
+  acceptOrderRoute, cancelOrderRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
+  submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
@@ -66,8 +68,10 @@ const {
   servicesHubRoute, serviceDirectoryRoute, offerServiceRoute,
   consignmentsRoute, distributionRoute, distributionDetailRoute,
 } = await import(new URL('service-routes.js', apiRoot));
-const { creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute } =
-  await import(new URL('profile-routes.js', apiRoot));
+const {
+  creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute,
+  saveReversalDetailsRoute, reversalDetailsRoute,
+} = await import(new URL('profile-routes.js', apiRoot));
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
   acceptDisputeRoute, withdrawDisputeRoute, escalateDisputeRoute,
@@ -140,6 +144,16 @@ const routes = [
   ['POST', '/api/orders/:id/confirm', confirmRoute],
   ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],
+  ['POST', '/api/orders/:id/book', bookOrderRoute],
+  ['POST', '/api/orders/:id/accept', acceptOrderRoute],
+  ['POST', '/api/orders/:id/cancel', cancelOrderRoute],
+  ['POST', '/api/orders/:id/reversal/request-details', requestReversalDetailsRoute],
+  ['POST', '/api/orders/:id/reversal/confirm-details', confirmReversalDetailsRoute],
+  ['POST', '/api/orders/:id/reversal/submit', submitReversalRoute],
+  ['POST', '/api/orders/:id/reversal/ack', ackReversalRoute],
+  ['POST', '/api/orders/:id/reversal/dispute', raiseDisputeRoute],
+  ['GET', '/api/me/reversal-details', reversalDetailsRoute],
+  ['POST', '/api/me/reversal-details/save', saveReversalDetailsRoute],
   ['GET', '/api/disputes/:id', readDisputeRoute],
   ['POST', '/api/disputes/:id/reply', replyDisputeRoute],
   ['POST', '/api/disputes/:id/offer', offerDisputeRoute],

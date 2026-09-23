@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
-import type { Dispute, Order, PaymentRecord, Review, SellerPaymentDetails, User } from '../../../shared/models.js';
+import { threadIdFor } from '../../../shared/handles.js';
+import type {
+  Dispute, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
+} from '../../../shared/models.js';
 import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
@@ -204,6 +207,8 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   const totalMinor = order.unitPriceMinor * order.quantity;
 
   order.status = 'confirmed';
+  order.accepted = true;
+  order.acceptedAt = order.acceptedAt ?? now;
   order.updatedAt = now;
   order.paymentPlan = terms.plan;
   order.paymentMethod = agent ? 'protected' : 'direct';
@@ -543,6 +548,11 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     counterparty: side === 'buyer' ? sellerRef(other) : personRef(other, 'the buyer'),
     actions: actionsFor(order, user.id, mine !== null),
     simulatedPayment: true,
+    // Lets the seller's cancel/reversal screen know, before they try, whether
+    // the buyer has somewhere for the money to go.
+    buyerHasReversalDetails: side === 'seller'
+      ? Boolean((await repository.getUserById(order.buyerId))?.reversalDetails)
+      : null,
     myReview: mine,
     // Only if it may be seen: an unrevealed review is exactly what this whole
     // mechanism exists to keep out of the counterparty's hands.
@@ -695,6 +705,8 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
 
   if (body.accept) {
     order.status = 'confirmed';
+    order.accepted = true;
+    order.acceptedAt = order.acceptedAt ?? now;
     order.paymentMethod = 'direct';
     record(order, {
       kind: claim?.plan ?? 'full',
@@ -929,7 +941,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   }
 
   const now = new Date().toISOString();
-  order.status = 'cancelled';
+  order.status = 'rejected';
   // Any claim on it is answered by the same act: the order is off, so the
   // money - if it was sent - is going back rather than being confirmed.
   if (order.paymentClaim && !order.paymentClaim.decision) {
@@ -979,6 +991,483 @@ export const reviewRoute = handler(review);
 export const orderStateRoute = handler(orderState);
 export const checkoutRoute = handler(checkout);
 
+/**
+ * Sends one message as the platform speaking for `from`, to `to`.
+ *
+ * The same `Message` shape the ordinary inbox writes, so it shows up in the
+ * same thread a person would message this counterparty from by hand - a
+ * cancellation notice is not a different kind of conversation, it is one more
+ * message in the one they already have (or the start of it, if they do not).
+ * Falls back to the account id as a handle for whichever side has not
+ * claimed a username yet, so a system message never fails to send for want
+ * of one.
+ */
+async function systemMessage(repository: Repo, from: User, to: User, body: string): Promise<void> {
+  const fromParty: MessageParty = {
+    handle: from.username ?? from.id, userId: from.id, isStore: false, displayName: from.displayName,
+  };
+  const toParty: MessageParty = {
+    handle: to.username ?? to.id, userId: to.id, isStore: false, displayName: to.displayName,
+  };
+  const now = new Date().toISOString();
+  const message: Message = {
+    id: `msg_${randomUUID().slice(0, 12)}`,
+    threadId: threadIdFor(fromParty.handle, toParty.handle),
+    from: fromParty,
+    to: toParty,
+    body,
+    readAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await repository.sendMessage(message);
+}
+
+/**
+ * POST /api/orders/{id}/accept - the seller says yes to a fresh order or booking.
+ *
+ * The line the X button's meaning turns on: before this, calling the order
+ * off is `reject`; after it, `cancel`. For a booking specifically, saying yes
+ * does not move any money - it only opens the door for the buyer to pay,
+ * which they are told to do.
+ */
+async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('accept')) {
+    return error(409, 'cannot_accept', 'There is nothing new on this order to accept.');
+  }
+
+  const now = new Date().toISOString();
+  order.accepted = true;
+  order.acceptedAt = now;
+  order.updatedAt = now;
+  note(order, order.bookingOnly ? 'Booking accepted by seller.' : 'Order accepted by seller.', user.id);
+  await repository.updateOrder(order);
+
+  await notify(repository, [order.buyerId], order.bookingOnly
+    ? {
+        kind: 'booking_accepted',
+        title: 'Your booking has been accepted',
+        body: 'Please make the payment.',
+        link: `/order/${order.id}`,
+      }
+    : {
+        kind: 'order_accepted',
+        title: `${order.itemName} was accepted`,
+        body: 'The seller has accepted your order.',
+        link: `/order/${order.id}`,
+      });
+
+  return json(200, { order });
+}
+
+/**
+ * POST /api/orders/{id}/cancel - the seller calls off an order already
+ * accepted or placed.
+ *
+ * Two very different endings, decided by whether any money has moved. Nothing
+ * paid: the order is simply `cancelled`, once the seller has said why and
+ * been prompted to tell the buyer directly. Something paid: cancelling alone
+ * would leave the buyer's money with nobody accountable for it, so instead the
+ * order becomes `payment_reversal_pending` and stays there until the reversal
+ * is recorded - see `submitReversal`.
+ */
+async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('cancel')) {
+    return error(409, 'cannot_cancel', 'This order cannot be cancelled here.');
+  }
+
+  let body: { reason?: string; message?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  const reason = (body.reason ?? '').trim();
+  if (reason.length < 4) return error(400, 'no_reason', 'Say why, so the buyer knows where they stand.');
+
+  const money = orderMoney(order);
+  const now = new Date().toISOString();
+  order.cancelReason = reason;
+  order.updatedAt = now;
+
+  const buyer = await repository.getUserById(order.buyerId);
+  const seller = await repository.getUserById(order.sellerId);
+
+  if (money.paidMinor <= 0) {
+    order.status = 'cancelled';
+    note(order, `Order cancelled by seller: ${reason}`, user.id);
+    await repository.updateOrder(order);
+
+    await notify(repository, [order.buyerId], {
+      kind: 'order_cancelled',
+      title: `${order.itemName} was cancelled`,
+      body: reason,
+      link: `/order/${order.id}`,
+    });
+    if (buyer && seller) {
+      const text = (body.message ?? '').trim()
+        || `Your order for ${order.itemName} has been cancelled: ${reason}`;
+      await systemMessage(repository, seller, buyer, text);
+    }
+    return json(200, { order });
+  }
+
+  order.status = 'payment_reversal_pending';
+  order.reversal = {
+    reasonForCancel: reason,
+    initiatedAt: now,
+    amountMinor: money.paidMinor,
+    buyerConfirmedDetailsAt: null,
+    reference: null,
+    screenshot: null,
+    reversedAt: null,
+    reversedBy: null,
+    buyerResponse: null,
+    buyerRespondedAt: null,
+    disputeRaisedAt: null,
+  };
+  note(order, `Order cancelled by seller, payment reversal pending: ${reason}`, user.id);
+  note(order, `Payment reversal initiated — ${rupees(money.paidMinor)}`, user.id);
+  await repository.updateOrder(order);
+
+  await notify(repository, [order.buyerId], {
+    kind: 'payment_reversal_pending',
+    title: `${order.itemName} was cancelled — reversing your payment`,
+    body: reason,
+    link: `/order/${order.id}`,
+  });
+
+  if (buyer && !buyer.reversalDetails) {
+    await notify(repository, [order.buyerId], {
+      kind: 'reversal_details_needed',
+      title: 'Add your payment reversal details',
+      body: `${order.itemName} was cancelled and needs somewhere to send your ${rupees(money.paidMinor)} back.`,
+      link: '/buyer-settings',
+    });
+    if (seller) {
+      const text = (body.message ?? '').trim()
+        || `Your order for ${order.itemName} is being cancelled and your payment of ${rupees(money.paidMinor)} `
+          + `will be reversed. Please update your Payment Reversal Details so we can send it back.`;
+      await systemMessage(repository, seller, buyer, text);
+    }
+  }
+
+  return json(200, { order });
+}
+
+/**
+ * POST /api/orders/{id}/reversal/request-details - the seller nudges a buyer
+ * who has not filled in where to send a reversal.
+ *
+ * Notify-only: it changes nothing about the order, because the order is
+ * already `payment_reversal_pending` and stays there until the buyer's
+ * details actually exist. Separate from `cancelOrder` so the seller can ask
+ * again without cancelling twice.
+ */
+async function requestReversalDetails(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('request_reversal_details')) {
+    return error(409, 'not_applicable', 'This order is not waiting on a payment reversal.');
+  }
+
+  let body: { message?: string } = {};
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    // No body: use the default message.
+  }
+
+  const buyer = await repository.getUserById(order.buyerId);
+  const seller = await repository.getUserById(order.sellerId);
+  if (!buyer || !seller) return error(404, 'not_found', 'Could not find both sides of this order.');
+
+  const money = orderMoney(order);
+  const text = (body.message ?? '').trim()
+    || `Your order for ${order.itemName} is being cancelled and your payment of ${rupees(order.reversal?.amountMinor ?? money.paidMinor)} `
+      + `will be reversed. Please update your Payment Reversal Details so we can send it back.`;
+  await systemMessage(repository, seller, buyer, text);
+
+  await notify(repository, [order.buyerId], {
+    kind: 'reversal_details_needed',
+    title: 'Add your payment reversal details',
+    body: `${order.itemName} needs somewhere to send your reversal.`,
+    link: '/buyer-settings',
+  });
+
+  return json(200, { sent: true });
+}
+
+/**
+ * POST /api/orders/{id}/reversal/confirm-details - the buyer says "I've
+ * updated my payment details".
+ *
+ * Just a fact recorded and a notice sent - the seller reads it on the order
+ * and decides for themselves whether to retry `submitReversal`.
+ */
+async function confirmReversalDetails(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('confirm_reversal_details')) {
+    return error(409, 'not_applicable', 'This order is not waiting on a payment reversal.');
+  }
+
+  const buyer = await repository.getUserById(user.id);
+  if (!buyer?.reversalDetails) {
+    return error(400, 'no_details', 'Add your Payment Reversal Details first.');
+  }
+
+  const now = new Date().toISOString();
+  order.reversal = { ...(order.reversal as NonNullable<Order['reversal']>), buyerConfirmedDetailsAt: now };
+  order.updatedAt = now;
+  note(order, 'Buyer confirmed updated payment reversal details.', user.id);
+  await repository.updateOrder(order);
+
+  await notify(repository, [order.sellerId], {
+    kind: 'reversal_details_updated',
+    title: 'The buyer has updated their reversal details',
+    body: order.itemName,
+    link: `/order/${order.id}`,
+  });
+
+  return json(200, { order });
+}
+
+/**
+ * POST /api/orders/{id}/reversal/submit - the seller records the reversal
+ * and marks it done.
+ *
+ * Refused until the buyer has somewhere to send the money: `Payment Reversal
+ * Pending` must not silently become `Cancelled + Reversed` while there is
+ * nowhere the reversal actually went. Combines what the spec calls out as
+ * separate steps - entering the transaction details and confirming "Payment
+ * Reversed" - into one action, because by the time the seller has typed the
+ * proof in they have already done the work; a second button asking them to
+ * confirm what they just entered adds a click without adding a check.
+ */
+async function submitReversal(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('submit_reversal')) {
+    return error(409, 'not_applicable', 'This order is not waiting on a payment reversal.');
+  }
+
+  const buyer = await repository.getUserById(order.buyerId);
+  if (!buyer?.reversalDetails) {
+    return error(409, 'buyer_details_missing', 'The buyer has not added Payment Reversal Details yet.');
+  }
+
+  let body: { reference?: string; screenshot?: string; amountMinor?: number };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  const reference = (body.reference ?? '').trim();
+  const screenshot = (body.screenshot ?? '').trim();
+  if (!reference && !screenshot) {
+    return error(400, 'no_proof', 'Add the reversal transaction reference or a screenshot of it.');
+  }
+  if (screenshot && !screenshot.startsWith('data:image/')) {
+    return error(400, 'invalid_screenshot', 'That does not look like an image.');
+  }
+  if (screenshot.length > MAX_SCREENSHOT_BYTES) {
+    return error(413, 'screenshot_too_large', 'That screenshot is too large. A smaller crop is enough.');
+  }
+
+  const reversal = order.reversal as NonNullable<Order['reversal']>;
+  const amountMinor = Math.round(Number(body.amountMinor) || reversal.amountMinor);
+  const now = new Date().toISOString();
+
+  // The refund itself goes through the same ledger every other payment does,
+  // so `Total Paid` and the payment history never disagree with what this
+  // screen says happened. The original payments stay exactly as they were.
+  record(order, { kind: 'refund', method: methodOf(order), amountMinor, reference: reference || null, recordedBy: user.id });
+
+  order.reversal = {
+    ...reversal, reference: reference || null, screenshot: screenshot || null, reversedAt: now, reversedBy: user.id,
+    amountMinor,
+  };
+  order.status = 'cancelled_reversed';
+  order.paymentStatus = 'refunded';
+  order.updatedAt = now;
+  note(order, `Payment reversed — ${rupees(amountMinor)}`, user.id);
+  await repository.updateOrder(order);
+
+  await notify(repository, [order.buyerId], {
+    kind: 'payment_reversed',
+    title: `${rupees(amountMinor)} has been marked reversed`,
+    body: 'Please confirm whether you have received it.',
+    link: `/order/${order.id}`,
+  });
+
+  const seller = await repository.getUserById(order.sellerId);
+  if (seller && buyer) {
+    await systemMessage(repository, seller, buyer,
+      'Your payment has been reversed. Please confirm whether you have received the payment.');
+  }
+
+  return json(200, { order });
+}
+
+/**
+ * POST /api/orders/{id}/reversal/ack - the buyer says whether a marked
+ * reversal actually arrived.
+ */
+async function ackReversal(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('ack_reversal')) {
+    return error(409, 'not_applicable', 'There is no reversal waiting on your confirmation.');
+  }
+
+  let body: { received?: boolean };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_request', 'Say whether the reversed payment arrived.');
+  }
+  if (typeof body.received !== 'boolean') {
+    return error(400, 'invalid_request', 'Say whether the reversed payment arrived.');
+  }
+
+  const now = new Date().toISOString();
+  order.reversal = {
+    ...(order.reversal as NonNullable<Order['reversal']>),
+    buyerResponse: body.received ? 'received' : 'not_received',
+    buyerRespondedAt: now,
+  };
+  order.updatedAt = now;
+  note(order, body.received ? 'Buyer confirmed payment received.' : 'Buyer says payment not received.', user.id);
+  await repository.updateOrder(order);
+
+  await notify(repository, [order.sellerId], {
+    kind: 'reversal_ack',
+    title: body.received ? 'The buyer confirmed the reversal arrived' : 'The buyer says the reversal has not arrived',
+    body: order.itemName,
+    link: `/order/${order.id}`,
+  });
+
+  return json(200, { order });
+}
+
+/**
+ * POST /api/orders/{id}/reversal/dispute - the buyer says a marked reversal
+ * never turned up.
+ *
+ * Deliberately thin: it records the state and preserves everything already on
+ * the order - the payments, the reversal, the messages, the timeline - rather
+ * than opening the full negotiated-dispute flow that a delivery dispute gets.
+ * The spec is explicit that the resolution workflow comes later; this is the
+ * provision for it.
+ */
+async function raiseDispute(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('raise_dispute')) {
+    return error(409, 'not_applicable', 'There is no reversal to dispute here.');
+  }
+
+  const now = new Date().toISOString();
+  order.status = 'dispute_raised';
+  order.reversal = { ...(order.reversal as NonNullable<Order['reversal']>), disputeRaisedAt: now };
+  order.updatedAt = now;
+  note(order, 'Dispute raised: buyer reports payment not received.', user.id);
+  await repository.updateOrder(order);
+
+  await notify(repository, [order.sellerId], {
+    kind: 'dispute_raised_reversal',
+    title: `Dispute raised on ${order.itemName}`,
+    body: 'The buyer says the reversed payment never arrived.',
+    link: `/order/${order.id}`,
+  });
+
+  return json(200, { order });
+}
+
+/**
+ * POST /api/orders/{id}/book - the buyer chooses Book instead of paying now.
+ *
+ * Booking is not a payment: it turns a fresh, unpaid order into a pledge that
+ * asks the seller to confirm availability first. Only available while the
+ * order is still exactly what `pay` would otherwise apply to.
+ */
+async function bookOrder(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (order.buyerId !== user.id || !actionsFor(order, user.id).includes('pay') || order.bookingOnly) {
+    return error(409, 'cannot_book', 'This order cannot be booked.');
+  }
+
+  order.bookingOnly = true;
+  order.updatedAt = new Date().toISOString();
+  note(order, 'Buyer chose to book — payment is due once the seller confirms availability.', user.id);
+  await repository.updateOrder(order);
+
+  return json(200, { order });
+}
+
+export const bookOrderRoute = handler(bookOrder);
+export const acceptOrderRoute = handler(acceptOrder);
+export const cancelOrderRoute = handler(cancelOrder);
+export const requestReversalDetailsRoute = handler(requestReversalDetails);
+export const confirmReversalDetailsRoute = handler(confirmReversalDetails);
+export const submitReversalRoute = handler(submitReversal);
+export const ackReversalRoute = handler(ackReversal);
+export const raiseDisputeRoute = handler(raiseDispute);
+
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('purchases-pay', { ...anon, methods: ['POST'], route: 'me/purchases/pay', handler: payMoreRoute });
@@ -991,3 +1480,11 @@ app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/conf
 app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
 app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state', handler: orderStateRoute });
 app.http('order-checkout', { ...anon, methods: ['GET'], route: 'orders/{id}/checkout', handler: checkoutRoute });
+app.http('order-book', { ...anon, methods: ['POST'], route: 'orders/{id}/book', handler: bookOrderRoute });
+app.http('order-accept', { ...anon, methods: ['POST'], route: 'orders/{id}/accept', handler: acceptOrderRoute });
+app.http('order-cancel', { ...anon, methods: ['POST'], route: 'orders/{id}/cancel', handler: cancelOrderRoute });
+app.http('order-reversal-request-details', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/request-details', handler: requestReversalDetailsRoute });
+app.http('order-reversal-confirm-details', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/confirm-details', handler: confirmReversalDetailsRoute });
+app.http('order-reversal-submit', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/submit', handler: submitReversalRoute });
+app.http('order-reversal-ack', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/ack', handler: ackReversalRoute });
+app.http('order-reversal-dispute', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/dispute', handler: raiseDisputeRoute });

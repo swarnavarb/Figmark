@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import { inLot, isDirect } from '../../../shared/fulfilment.js';
+import { isCancelledLike } from '../../../shared/orders.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
 import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
@@ -279,7 +280,7 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
       // and a place on the last one means nothing here.
       currentStep: index,
       stageHistory: [...order.stageHistory, event],
-      status: order.status === 'cancelled' ? order.status : 'in_fulfilment',
+      status: isCancelledLike(order.status) ? order.status : 'in_fulfilment',
       updatedAt: now,
     },
     order.lotId,

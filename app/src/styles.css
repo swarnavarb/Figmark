@@ -4052,6 +4052,7 @@ a.order__name:hover { color: var(--accent-text); }
 }
 .orow__act.is-on { color: var(--ok); background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.3); }
 .orow__act--danger:hover { color: var(--danger-text); background: var(--danger-soft); border-color: rgba(244, 63, 94, 0.32); }
+.orow__act--ok:hover { color: var(--ok); background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.3); }
 .orow__act:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* On a phone the badge and price drop under the name rather than competing

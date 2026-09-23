@@ -1,4 +1,5 @@
 import type { Listing, Order, Pledge, PreOrder } from '../../../shared/models.js';
+import { isCancelledLike } from '../../../shared/orders.js';
 import { personRef, type PartyRef } from '../../../shared/parties.js';
 import { NEARLY_FRACTION, preOrderView, type PreOrderState, type PreOrderView } from '../../../shared/preorder.js';
 import type { getRepository } from '../data/index.js';
@@ -67,7 +68,7 @@ function counts(listing: Listing, pledges: readonly Pledge[], orders: readonly O
   // from. Cancelled orders are not in it - somebody who pulled out is not still
   // holding a place.
   const filledCount = orders
-    .filter((order) => order.status !== 'cancelled')
+    .filter((order) => !isCancelledLike(order.status))
     .reduce((total, order) => total + order.quantity, 0);
   return { live, pledgedCount, filledCount };
 }
@@ -235,7 +236,7 @@ export async function rosterOf(
   if (!view) return null;
 
   const live = pledges.filter((pledge) => pledge.convertedOrderId === null);
-  const placed = orders.filter((order) => order.status !== 'cancelled');
+  const placed = orders.filter((order) => !isCancelledLike(order.status));
 
   const rows = [
     ...placed.map((order) => ({

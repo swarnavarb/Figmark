@@ -30,8 +30,9 @@ export interface EvidenceDraft {
   caption: string;
 }
 import type {
-  Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty,
-  Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent, StoreManager,
+  BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
+  MessageParty, Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
+  StoreManager,
 } from '@shared/models';
 
 /**
@@ -341,6 +342,13 @@ export interface SaleRow {
   deliveredAt: string | null;
   /** The route its Quick Post template set up for the lot that will carry it. */
   lotRouteId: string | null;
+  /** True once the buyer chose Book: no charge yet, waiting on acceptance. */
+  bookingOnly: boolean;
+  accepted: boolean;
+  cancelReason: string | null;
+  reversal: Order['reversal'];
+  canAccept: boolean;
+  canCancel: boolean;
 }
 
 /** Everything a shop's payments screen has to answer, in three piles. */
@@ -445,6 +453,8 @@ export interface OrderState {
   theirReview: Review | null;
   theirReviewPending: boolean;
   dispute: Dispute | null;
+  /** Seller-side only: whether the buyer has somewhere for a reversal to go. */
+  buyerHasReversalDetails: boolean | null;
 }
 
 /** Out of 100, or null when nobody has rated that side of them yet. */
@@ -1175,6 +1185,28 @@ export const api = {
   /** The seller cannot serve an order. Puts the stock and the place back. */
   rejectOrder: (id: string, reason: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reject`, { reason }),
+
+  /** The buyer chooses Book instead of paying now. */
+  bookOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/book`, {}),
+  /** The seller says yes to a fresh order or booking. */
+  acceptOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/accept`, {}),
+  /** The seller calls off an already-accepted order. */
+  cancelOrder: (id: string, body: { reason: string; message?: string }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/cancel`, body),
+  requestReversalDetails: (id: string, message?: string) =>
+    post<{ sent: boolean }>(`/orders/${encodeURIComponent(id)}/reversal/request-details`, { message }),
+  confirmReversalDetails: (id: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/confirm-details`, {}),
+  submitReversal: (id: string, body: { reference?: string; screenshot?: string; amountMinor?: number }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/submit`, body),
+  ackReversal: (id: string, received: boolean) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/ack`, { received }),
+  raiseDispute: (id: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/dispute`, {}),
+  reversalDetails: () => request<{ reversalDetails: BuyerReversalDetails | null }>('/me/reversal-details'),
+  saveReversalDetails: (body: {
+    method: string; identifier: string; accountName: string; notes?: string; qrCodeUrl?: string;
+  }) => post<{ reversalDetails: BuyerReversalDetails | null }>('/me/reversal-details/save', body),
 
   powerSales: (storeId?: string) =>
     request<{ sales: PowerSaleView[] }>(

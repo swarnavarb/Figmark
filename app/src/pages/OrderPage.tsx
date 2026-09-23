@@ -14,7 +14,7 @@ import { Ladder } from '../components/Ladder';
 import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink, StepMark } from '../components/ui';
-import { formatDate, formatMoney, timeAgo } from '../format';
+import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 
 /**
  * One order, as the buyer sees it.
@@ -24,6 +24,24 @@ import { formatDate, formatMoney, timeAgo } from '../format';
  * than rewinding, and the only facts inherited from the lot are the tracking
  * reference and the dispatch estimate.
  */
+/**
+ * Colour for the order's own status chip.
+ *
+ * Kept distinct on purpose - `rejected` and `cancelled` read the same colour
+ * only by accident, and section 21 is explicit that the two must never be
+ * confused. Colour is never the only signal: the word beside it is the same
+ * `order.status` text either way.
+ */
+function statusTone(status: Order['status']): string {
+  switch (status) {
+    case 'delivered': case 'cancelled_reversed': return 'ok';
+    case 'rejected': case 'dispute_raised': return 'danger';
+    case 'cancelled': return 'quiet';
+    case 'payment_reversal_pending': return 'accent';
+    default: return 'warn';
+  }
+}
+
 export function OrderPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -76,7 +94,7 @@ export function OrderPage() {
             {timeAgo(order.createdAt)}
           </p>
         </div>
-        <span className={`badge badge--${order.status === 'delivered' ? 'ok' : 'warn'}`}>
+        <span className={`badge badge--${statusTone(order.status)}`}>
           {order.status.replace(/_/g, ' ')}
         </span>
       </div>
@@ -173,7 +191,7 @@ export function OrderPage() {
                   {/* The step as the seller wrote it, where there is one: their
                       words are what the buyer has been reading all along. */}
                   <span className="comment__who">{event.step ?? labelFor(event.stage)}</span>
-                  <span className="faint">{formatDate(event.enteredAt)}</span>
+                  <span className="faint">{formatDateOrdinal(event.enteredAt)}</span>
                 </div>
                 {event.note && <p className="muted">{event.note}</p>}
               </div>
@@ -341,6 +359,8 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [paying, setPaying] = useState(() => state.actions.includes('pay'));
   const [settling, setSettling] = useState(false);
   const [disputing, setDisputing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [reversing, setReversing] = useState(false);
 
   const { order, actions } = state;
   const disputeId = order.escrow.disputeId;
@@ -354,6 +374,8 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       setPaying(false);
       setSettling(false);
       setDisputing(false);
+      setCancelling(false);
+      setReversing(false);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
     } finally {
@@ -371,7 +393,10 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
    * empty rounded rectangle above the timeline. Adding an action without a
    * button can no longer produce one.
    */
-  const DRAWN_HERE = ['pay', 'settle_claim', 'confirm', 'dispute', 'pay_more'] as const;
+  const DRAWN_HERE = [
+    'pay', 'settle_claim', 'confirm', 'dispute', 'pay_more', 'accept', 'cancel',
+    'submit_reversal', 'confirm_reversal_details', 'ack_reversal', 'raise_dispute',
+  ] as const;
   const nothingToDo = !actions.some((action) =>
     (DRAWN_HERE as readonly string[]).includes(action));
 
@@ -457,13 +482,74 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
                 Something is wrong
               </button>
             )}
+            {actions.includes('accept') && (
+              <button className="btn btn--lg" disabled={busy !== null}
+                onClick={() => void run('accept', () => api.acceptOrder(order.id))}>
+                {busy === 'accept' ? 'Accepting…' : `✅ Accept${order.bookingOnly ? ' booking' : ''}`}
+              </button>
+            )}
+            {actions.includes('cancel') && !cancelling && (
+              <button className="btn btn--quiet" onClick={() => setCancelling(true)}>
+                ❌ Cancel order
+              </button>
+            )}
+            {(actions.includes('submit_reversal') || actions.includes('request_reversal_details')) && !reversing && (
+              <button className="btn btn--lg" onClick={() => setReversing(true)}>
+                ↩️ Payment reversal
+              </button>
+            )}
+            {actions.includes('confirm_reversal_details') && (
+              <button className="btn btn--lg" disabled={busy !== null}
+                onClick={() => void run('confirm-details', () => api.confirmReversalDetails(order.id))}>
+                {busy === 'confirm-details' ? 'Sending…' : "I've Updated My Payment Details"}
+              </button>
+            )}
+            {actions.includes('ack_reversal') && (
+              <span className="row" style={{ flexWrap: 'wrap' }}>
+                <button className="btn btn--lg" disabled={busy !== null}
+                  onClick={() => void run('ack', () => api.ackReversal(order.id, true))}>
+                  {busy === 'ack' ? 'Sending…' : 'Payment Received'}
+                </button>
+                <button className="btn btn--quiet" disabled={busy !== null}
+                  onClick={() => void run('ack-no', () => api.ackReversal(order.id, false))}>
+                  Payment Not Received
+                </button>
+              </span>
+            )}
+            {actions.includes('raise_dispute') && (
+              <button className="btn btn--danger" disabled={busy !== null}
+                onClick={() => void run('dispute-reversal', () => api.raiseDispute(order.id))}>
+                {busy === 'dispute-reversal' ? 'Raising…' : 'Raise a Dispute'}
+              </button>
+            )}
           </div>
+
+          {cancelling && (
+            <CancelOrder
+              order={order}
+              busy={busy}
+              onCancel={(body) => run('cancel', () => api.cancelOrder(order.id, body))}
+              onClose={() => setCancelling(false)}
+            />
+          )}
+
+          {reversing && (
+            <ReversalPanel
+              order={order}
+              buyerHasReversalDetails={state.buyerHasReversalDetails}
+              busy={busy}
+              onRequestDetails={(message) => run('request-details', () => api.requestReversalDetails(order.id, message))}
+              onSubmit={(body) => run('submit-reversal', () => api.submitReversal(order.id, body))}
+              onClose={() => setReversing(false)}
+            />
+          )}
 
           {paying && (
             <BuyPanel
               order={order}
               busy={busy}
               onPaid={(body) => run('claim', () => api.claimPayment(order.id, body))}
+              onBook={() => run('book', () => api.bookOrder(order.id))}
               onCancel={() => setPaying(false)}
             />
           )}
@@ -506,10 +592,11 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
  * with what each one costs and gives up written on it, rather than a tick box
  * on a single Pay button.
  */
-function BuyPanel({ order, busy, onPaid, onCancel }: {
+function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   order: Order;
   busy: string | null;
   onPaid: (body: { reference: string; screenshot: string | null; plan?: 'full' | 'advance' }) => void | Promise<void>;
+  onBook: () => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [plan, setPlan] = useState<'full' | 'advance'>('full');
@@ -591,9 +678,10 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
           if (!chosen) setPicking(true);
         }}>
         <span className="buyway__title">Add buyer protection</span>
+        <span className="badge badge--accent" style={{ justifySelf: 'start' }}>Escrow: Community Manager</span>
         <span className="buyway__note">
           {canProtect
-            ? 'An escrow holds the money until you confirm the item arrived, and settles it if the two of you disagree. Their fee is on top.'
+            ? 'The payment is considered held by Figmark until you confirm the item arrived, and settled if the two of you disagree. Their fee is on top.'
             : 'Nobody approved to hold payments can be neutral in this trade.'}
         </span>
         <span className="buyway__price">
@@ -602,6 +690,16 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
             : `${formatMoney(quote.itemMinor, quote.currency)} + fee`}
         </span>
       </button>
+
+      {!order.bookingOnly && (
+        <button type="button" className="buyway" onClick={() => void onBook()}>
+          <span className="buyway__title">📘 Book</span>
+          <span className="buyway__note">
+            Payment to be done immediately as the seller confirms the availability of the item. Booking
+            itself does not count as payment.
+          </span>
+        </button>
+      )}
 
       {route === 'protected' && chosen && (
         <div className="card card--pad stack">
@@ -958,6 +1056,122 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
           <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Calling off an order already accepted or placed.
+ *
+ * Distinct from the pre-acceptance Reject dialog on the orders list: the
+ * buyer was already told yes, so the reason and the message to them matter
+ * more, not less. If anything was paid, cancelling here starts the reversal
+ * instead of finishing straight away — the money needs somewhere to go
+ * first.
+ */
+function CancelOrder({ order, busy, onCancel, onClose }: {
+  order: Order;
+  busy: string | null;
+  onCancel: (body: { reason: string; message?: string }) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [message, setMessage] = useState('');
+  const paid = orderMoney(order).paidMinor > 0;
+
+  return (
+    <div className="stack">
+      <label className="field">
+        <span>Why is this being cancelled</span>
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+          placeholder="Out of stock, buyer requested it, could not fulfil…" />
+      </label>
+      <label className="field">
+        <span>Message to the buyer</span>
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={2}
+          placeholder={`Your order for ${order.itemName} has been cancelled${reason ? `: ${reason}` : '.'}`} />
+        <span className="field__hint">Sent to them as a message. Edit it, or leave it blank for the default.</span>
+      </label>
+      {paid && (
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          Money has already been paid on this order. Cancelling starts a payment reversal — the order
+          moves to <strong>Payment Reversal Pending</strong> until it is recorded.
+        </p>
+      )}
+      <div className="row">
+        <button type="button" className="btn btn--danger" disabled={busy !== null || reason.trim().length < 4}
+          onClick={() => void onCancel({ reason: reason.trim(), message: message.trim() || undefined })}>
+          {busy === 'cancel' ? 'Cancelling…' : 'Cancel order'}
+        </button>
+        <button type="button" className="btn btn--quiet" onClick={onClose}>Back</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The reversal of a paid, cancelled order - one step at a time.
+ *
+ * Refuses to let the seller submit proof until the buyer has somewhere for
+ * the money to go, and offers the nudge-the-buyer message instead.
+ */
+function ReversalPanel({ order, buyerHasReversalDetails, busy, onRequestDetails, onSubmit, onClose }: {
+  order: Order;
+  buyerHasReversalDetails: boolean | null;
+  busy: string | null;
+  onRequestDetails: (message?: string) => void | Promise<void>;
+  onSubmit: (body: { reference?: string; screenshot?: string }) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [reference, setReference] = useState('');
+  const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const reversal = order.reversal;
+
+  if (buyerHasReversalDetails === false) {
+    return (
+      <div className="stack">
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          The buyer has not added their Payment Reversal Details yet, so there is nowhere to send
+          {' '}{formatMoney(reversal?.amountMinor ?? 0, order.currency)} back to.
+        </p>
+        <label className="field">
+          <span>Message to the buyer</span>
+          <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
+            placeholder={`Your order for ${order.itemName} is being cancelled and your payment will be reversed. `
+              + 'Please update your Payment Reversal Details so we can send it back.'} />
+        </label>
+        <div className="row">
+          <button type="button" className="btn" disabled={busy !== null}
+            onClick={() => void onRequestDetails(message.trim() || undefined)}>
+            {busy === 'request-details' ? 'Sending…' : 'Send reminder'}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stack">
+      <div className="kv"><dt>Reversal amount</dt><dd>{formatMoney(reversal?.amountMinor ?? 0, order.currency)}</dd></div>
+      <label className="field">
+        <span>Transaction reference</span>
+        <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UTR / reference" />
+      </label>
+      <label className="field">
+        <span>Screenshot of the reversal (optional if you have a reference)</span>
+        <input type="file" accept="image/*"
+          onChange={(e) => { const file = e.target.files?.[0]; if (file) void downscale(file).then(setScreenshot); }} />
+      </label>
+      {screenshot && <img src={screenshot} alt="Reversal proof" className="proof" />}
+      <div className="row">
+        <button type="button" className="btn" disabled={busy !== null || (!reference.trim() && !screenshot)}
+          onClick={() => void onSubmit({ reference: reference.trim() || undefined, screenshot: screenshot ?? undefined })}>
+          {busy === 'submit-reversal' ? 'Recording…' : 'Payment Reversed'}
+        </button>
+        <button type="button" className="btn btn--quiet" onClick={onClose}>Close</button>
+      </div>
     </div>
   );
 }

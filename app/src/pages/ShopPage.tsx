@@ -772,6 +772,7 @@ function Orders({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<SalesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<SaleRow | null>(null);
+  const [cancelling, setCancelling] = useState<SaleRow | null>(null);
   const [filing, setFiling] = useState<SaleRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [filter, setFilter] = useState<OrderFilter>('all');
@@ -800,6 +801,19 @@ function Orders({ store }: { store: StoreAccess }) {
       await load();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function accept(row: SaleRow) {
+    setBusy(row.id);
+    setError(null);
+    try {
+      await api.acceptOrder(row.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not accept that.');
     } finally {
       setBusy(null);
     }
@@ -878,6 +892,8 @@ function Orders({ store }: { store: StoreAccess }) {
             onWarehouse={(on) => void markWarehouse(row, on)}
             onFile={() => setFiling(row)}
             onReject={() => setRejecting(row)}
+            onAccept={() => void accept(row)}
+            onCancel={() => setCancelling(row)}
           />
           ))}
         </div>
@@ -888,6 +904,14 @@ function Orders({ store }: { store: StoreAccess }) {
           row={rejecting}
           onClose={() => setRejecting(null)}
           onDone={() => { setRejecting(null); void load(); }}
+        />
+      )}
+
+      {cancelling && (
+        <CancelOrderRow
+          row={cancelling}
+          onClose={() => setCancelling(null)}
+          onDone={() => { setCancelling(null); void load(); }}
         />
       )}
 
@@ -1224,9 +1248,16 @@ const ESCROW_WORDS: Record<string, string> = {
  * that has landed, then everything quietly in progress.
  */
 function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: string } {
+  if (row.status === 'dispute_raised') return { tone: 'danger', label: 'Dispute Raised' };
+  if (row.status === 'payment_reversal_pending') return { tone: 'accent', label: 'Payment Reversal Pending' };
+  if (row.status === 'cancelled_reversed') return { tone: 'ok', label: 'Cancelled + Reversed' };
+  if (row.status === 'rejected') return { tone: 'danger', label: 'Rejected' };
+  if (row.status === 'cancelled') return { tone: 'quiet', label: 'Cancelled' };
   if (row.escrowState === 'disputed') return { tone: 'danger', label: 'In dispute' };
+  if (row.bookingOnly && !row.accepted) return { tone: 'warn', label: '📘 Book — awaiting acceptance' };
   if (needsAnswer) return { tone: 'warn', label: PAYMENT_WORDS[row.paymentStatus] ?? 'To answer' };
   if (row.paymentStatus === 'paid') return { tone: 'ok', label: 'Paid' };
+  if (row.paymentStatus === 'partially_paid') return { tone: 'pink', label: 'Partially paid' };
   if (row.paymentStatus === 'refunded') return { tone: 'quiet', label: 'Refunded' };
   return { tone: 'quiet', label: PAYMENT_WORDS[row.paymentStatus] ?? row.paymentStatus };
 }
@@ -1245,7 +1276,7 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
  * They are quiet until the row is under the pointer, which is a different
  * thing from being absent.
  */
-function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject }: {
+function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject, onAccept, onCancel }: {
   row: SaleRow;
   store: StoreAccess;
   busy: boolean;
@@ -1253,6 +1284,8 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
   onWarehouse: (on: boolean) => void;
   onFile: () => void;
   onReject: () => void;
+  onAccept: () => void;
+  onCancel: () => void;
 }) {
   const received = Boolean(row.chinaReceivedAt);
   const lotHref = row.lotId
@@ -1317,9 +1350,21 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
             )}
           </>
         )}
-        {needsAnswer && (
+        {row.canAccept && (
+          <button type="button" className="orow__act orow__act--ok"
+            aria-label="Accept this order" onClick={onAccept}>
+            <Icon name="check" size={15} />
+          </button>
+        )}
+        {needsAnswer && !row.canCancel && (
           <button type="button" className="orow__act orow__act--danger"
             aria-label="Can't serve this order" onClick={onReject}>
+            <Icon name="close" size={15} />
+          </button>
+        )}
+        {row.canCancel && (
+          <button type="button" className="orow__act orow__act--danger"
+            aria-label="Cancel this order" onClick={onCancel}>
             <Icon name="close" size={15} />
           </button>
         )}
@@ -1482,6 +1527,76 @@ function RejectOrder({ row, onClose, onDone }: {
         </p>
         <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
           {busy ? 'Sending…' : 'Turn it down'}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Calling off an order already accepted or placed.
+ *
+ * The X button's other meaning: once the buyer has been told yes, turning the
+ * order down is `Cancel`, never `Reject` again — the two statuses must stay
+ * apart, and this dialog is the one that produces `Cancelled` (or, once
+ * anything was paid, starts the payment reversal that ends in
+ * `Cancelled + Reversed`).
+ */
+function CancelOrderRow({ row, onClose, onDone }: {
+  row: SaleRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const paid = row.paymentStatus === 'paid' || row.paymentStatus === 'partially_paid';
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.cancelOrder(row.id, { reason: reason.trim(), message: message.trim() || undefined });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not cancel that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Cancel this order" onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        <p className="muted">
+          {row.itemName} — {row.buyer.name}, {formatMoney(row.totalMinor, row.currency)}.
+        </p>
+        <label className="field">
+          <span>Why</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3}
+            placeholder="Out of stock, buyer requested it…" />
+        </label>
+        <label className="field">
+          <span>Message to the buyer</span>
+          <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2}
+            placeholder={`Your order for ${row.itemName} has been cancelled.`} />
+          <span className="field__hint">Edit it, or leave it blank for the default.</span>
+        </label>
+        {error && <p className="notice notice--error">{error}</p>}
+        {paid ? (
+          <p className="notice notice--warn" style={{ margin: 0 }}>
+            Money has already been paid. This moves the order to <strong>Payment Reversal Pending</strong>
+            {' '}until the reversal is recorded on the order page.
+          </p>
+        ) : (
+          <p className="notice notice--warn" style={{ margin: 0 }}>
+            The order becomes <strong>Cancelled</strong>. This cannot be undone.
+          </p>
+        )}
+        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
+          {busy ? 'Cancelling…' : 'Cancel order'}
         </button>
       </form>
     </Modal>

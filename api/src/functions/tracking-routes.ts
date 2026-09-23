@@ -5,7 +5,7 @@ import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
   BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
 } from '../../../shared/routes.js';
-import { actionsFor } from '../../../shared/orders.js';
+import { actionsFor, isCancelledLike } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -287,7 +287,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
         stage: coarseStage(route, at),
         currentStep: at,
         stageHistory: [...order.stageHistory, event],
-        status: order.status === 'cancelled' ? order.status : 'in_fulfilment',
+        status: isCancelledLike(order.status) ? order.status : 'in_fulfilment',
         updatedAt: now,
       },
       AWAITING_LOT_ID,
@@ -383,7 +383,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   });
 
   const orders = await repository.listOrdersForLot(lot.id);
-  const live = orders.filter((order) => order.status !== 'cancelled');
+  const live = orders.filter((order) => !isCancelledLike(order.status));
   await Promise.all(
     live.map((order) =>
       repository.updateOrder({
@@ -492,7 +492,7 @@ async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
      ladder and a position left pointing at the old one is a buyer reading a
      step that is no longer on their timeline. */
   const orders = (await repository.listOrdersForLot(lot.id))
-    .filter((order) => order.status !== 'cancelled');
+    .filter((order) => !isCancelledLike(order.status));
   await Promise.all(orders.map((order) =>
     repository.updateOrder({
       ...order,
@@ -572,7 +572,7 @@ async function noteOnLot(request: HttpRequest, _context: InvocationContext) {
   });
 
   const orders = (await repository.listOrdersForLot(lot.id))
-    .filter((order) => order.status !== 'cancelled');
+    .filter((order) => !isCancelledLike(order.status));
   await Promise.all(orders.map((order) =>
     repository.updateOrder({
       ...order,
@@ -686,7 +686,7 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
       ? {
           currentStep: target,
           stage,
-          status: last ? 'delivered' : order.status === 'cancelled' ? order.status : 'in_fulfilment',
+          status: last ? 'delivered' : isCancelledLike(order.status) ? order.status : 'in_fulfilment',
           completedAt: last ? now : order.completedAt,
         }
       : {}),
@@ -718,7 +718,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
 
   const orders = (await repository.listOrdersForBuyer(user.id))
-    .filter((order) => order.status !== 'cancelled');
+    .filter((order) => !isCancelledLike(order.status));
 
   // One read per lot rather than one per item: three items in one lot are
   // one journey, and asking three times would be three chances to disagree.

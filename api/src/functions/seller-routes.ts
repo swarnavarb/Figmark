@@ -4,6 +4,7 @@ import type { Lot, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
 import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
+import { actionsFor, isCancelledLike } from '../../../shared/orders.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
@@ -213,14 +214,14 @@ async function dashboard(request: HttpRequest, _context: InvocationContext) {
   }));
 
   const openLots = lots.filter((lot) => lot.status === 'open');
-  const inFlight = orders.filter((order) => order.status !== 'delivered' && order.status !== 'cancelled');
+  const inFlight = orders.filter((order) => order.status !== 'delivered' && !isCancelledLike(order.status));
 
   /* Analytics: the numbers a seller checks, and nothing they cannot act on. */
   const revenueMinor = orders
-    .filter((order) => order.status !== 'cancelled')
+    .filter((order) => !isCancelledLike(order.status))
     .reduce((sum, order) => sum + order.quantity * order.unitPriceMinor, 0);
   const unitsSold = orders
-    .filter((order) => order.status !== 'cancelled')
+    .filter((order) => !isCancelledLike(order.status))
     .reduce((sum, order) => sum + order.quantity, 0);
   const views = listings.reduce((sum, listing) => sum + listing.viewCount, 0);
   const saves = listings.reduce((sum, listing) => sum + listing.likeCount, 0);
@@ -232,7 +233,7 @@ async function dashboard(request: HttpRequest, _context: InvocationContext) {
   const daily = Array.from({ length: 30 }, (_, index) => {
     const day = new Date(start + index * dayMs);
     const key = day.toISOString().slice(0, 10);
-    const onDay = orders.filter((order) => order.createdAt.slice(0, 10) === key && order.status !== 'cancelled');
+    const onDay = orders.filter((order) => order.createdAt.slice(0, 10) === key && !isCancelledLike(order.status));
     return {
       date: key,
       orders: onDay.length,
@@ -248,7 +249,7 @@ async function dashboard(request: HttpRequest, _context: InvocationContext) {
       viewCount: listing.viewCount,
       likeCount: listing.likeCount,
       unitsSold: orders
-        .filter((order) => order.listingId === listing.id && order.status !== 'cancelled')
+        .filter((order) => order.listingId === listing.id && !isCancelledLike(order.status))
         .reduce((sum, order) => sum + order.quantity, 0),
     }))
     .sort((a, b) => b.unitsSold - a.unitsSold || b.viewCount - a.viewCount)
@@ -271,7 +272,7 @@ async function dashboard(request: HttpRequest, _context: InvocationContext) {
     analytics: {
       revenueMinor,
       unitsSold,
-      orderCount: orders.filter((order) => order.status !== 'cancelled').length,
+      orderCount: orders.filter((order) => !isCancelledLike(order.status)).length,
       activeListings: listings.length,
       views,
       saves,
@@ -370,24 +371,38 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
        * template once, and the buyer's whole journey is configured.
        */
       lotRouteId: listings.get(order.listingId)?.lotRouteId ?? null,
+      /** Whether the buyer chose Book: no charge yet, waiting on acceptance. */
+      bookingOnly: order.bookingOnly ?? false,
+      accepted: order.accepted ?? false,
+      cancelReason: order.cancelReason ?? null,
+      reversal: order.reversal ?? null,
+      /** From the one shared rule, so this card never offers a button the
+       *  server would refuse. */
+      canAccept: actionsFor(order, storeId).includes('accept'),
+      canCancel: actionsFor(order, storeId).includes('cancel'),
     };
   };
 
-  // Three piles, because they need three different things from the seller.
+  // Four piles, because they need four different things from the seller.
   // Somebody who has said they paid is waiting on a yes or no about money.
   // Somebody who has only ordered is waiting to hear whether it can be served
   // at all - that used to be invisible here, so an order the shop could not
   // fill simply sat there and the buyer found out by never receiving anything.
+  // A payment being reversed is waiting on the seller too, for as long as it
+  // takes to record it.
   const waiting = orders
-    .filter((order) => order.paymentStatus === 'claimed' && order.status !== 'cancelled')
-    .sort((a, b) => (a.paymentClaim?.claimedAt ?? '').localeCompare(b.paymentClaim?.claimedAt ?? ''));
+    .filter((order) =>
+      (order.paymentStatus === 'claimed' || order.status === 'payment_reversal_pending')
+      && !isCancelledLike(order.status))
+    .sort((a, b) => (a.paymentClaim?.claimedAt ?? a.updatedAt).localeCompare(b.paymentClaim?.claimedAt ?? b.updatedAt));
 
   const placed = orders
     .filter((order) => order.status === 'pending_payment' && order.paymentStatus === 'unpaid')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   const answered = orders
-    .filter((order) => order.paymentClaim?.decision || order.status === 'cancelled')
+    .filter((order) => order.paymentClaim?.decision || isCancelledLike(order.status)
+      || order.status === 'cancelled_reversed' || order.status === 'dispute_raised')
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 12);
 
@@ -399,7 +414,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
        need an answer about money; this is the shop's whole book, which is what
        the seller is actually working from. */
     orders: orders
-      .filter((order) => order.status !== 'cancelled')
+      .filter((order) => !isCancelledLike(order.status))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(row),
   });

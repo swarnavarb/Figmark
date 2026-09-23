@@ -112,6 +112,17 @@ export const ORDER_STATUSES = [
   'delivered',
   'cancelled',
   'refunded',
+  /** Seller turned it down before it was accepted or placed. Never used once accepted. */
+  'rejected',
+  /**
+   * Accepted or placed, then called off by the seller with nothing paid.
+   * Distinct from `rejected`: this order had already been accepted.
+   */
+  'payment_reversal_pending',
+  /** A paid, accepted order that was cancelled and the reversal has been recorded. */
+  'cancelled_reversed',
+  /** The buyer says a marked reversal never arrived. */
+  'dispute_raised',
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 

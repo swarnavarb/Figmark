@@ -1,6 +1,7 @@
 import { countCheckpoints, type CheckpointCount } from './board.js';
 import { ORDER_CHECKPOINTS, type OrderCheckpoint } from './enums.js';
 import type { Lot, Order } from './models.js';
+import { isCancelledLike } from './orders.js';
 
 /**
  * What a shop's consignments have actually been doing.
@@ -32,7 +33,7 @@ const DAY_MS = 86_400_000;
 
 /** Orders that still count. A cancelled one is not demand, stock or money. */
 export function live(orders: readonly Order[]): Order[] {
-  return orders.filter((order) => order.status !== 'cancelled');
+  return orders.filter((order) => !isCancelledLike(order.status));
 }
 
 function ticked(order: Order, checkpoint: OrderCheckpoint): string | null {
