@@ -9,7 +9,7 @@ import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
   itemStepOn, joinIndexOf, lotOffset, routeOf, stepForStage,
-  type LotRoute, type StageIcon, type StepSide, type StepTrigger,
+  type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger,
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
 import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
@@ -33,6 +33,23 @@ const CHECKPOINT_EVENT_TEXT: Record<OrderCheckpoint, string> = {
   dispatched: 'Dispatched to the buyer.',
   delivered: 'Delivered.',
 };
+
+/**
+ * Which rung a checkpoint's note belongs under.
+ *
+ * A lot's own route reliably tags its steps with the checkpoint that reaches
+ * them (`trigger`), so that lookup works there. The built-in pre-lot route
+ * does not - it is two fixed steps with no triggers at all, and the second
+ * one simply *is* "received at the warehouse" by construction, the same way
+ * `beforeReached` below already assumes. A custom pre-lot route from a
+ * template can go either way, so the trigger is tried first regardless.
+ */
+function stepForCheckpoint(
+  steps: RouteStep[], checkpoint: OrderCheckpoint, order: Pick<Order, 'lotId'>,
+): RouteStep | undefined {
+  return steps.find((step) => step.trigger === checkpoint)
+    ?? (!inLot(order) && checkpoint === 'china_received' ? steps.at(-1) : undefined);
+}
 
 /**
  * Seller-side shipment lots.
@@ -723,6 +740,29 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
      same two events, and drawing both put "at the China warehouse" on the
      screen twice, ticked in one ladder and hollow in the other. */
   const before = preLotRouteOf(order);
+
+  /*
+   * Older orders ticked a checkpoint before every tick wrote a dated note of
+   * its own - the flag on the order is real, but nothing on the timeline
+   * ever said when. Filled in here, at read time, rather than by rewriting
+   * stored history: synthesised only for a checkpoint with no matching note
+   * already on the order, so a tick recorded properly is never duplicated.
+   */
+  const stepsForNotes = route ? route.steps : before.steps;
+  const notedTexts = new Set(order.stageHistory.map((event) => event.note));
+  const healedHistory = [
+    ...order.stageHistory,
+    ...ORDER_CHECKPOINTS.filter((checkpoint) => order.checkpoints?.[checkpoint] && !notedTexts.has(CHECKPOINT_EVENT_TEXT[checkpoint]))
+      .map((checkpoint) => ({
+        stage: order.stage,
+        step: stepForCheckpoint(stepsForNotes, checkpoint, order)?.name,
+        enteredAt: order.checkpoints![checkpoint]!,
+        note: CHECKPOINT_EVENT_TEXT[checkpoint],
+        recordedBy: order.sellerId,
+      })),
+  ];
+  const orderForClient = healedHistory.length === order.stageHistory.length ? order : { ...order, stageHistory: healedHistory };
+
   /*
    * A checkpoint that has been ticked has happened.
    *
@@ -763,7 +803,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   );
 
   return json(200, {
-    order,
+    order: orderForClient,
     stages: stagesFor(order),
     currentStage: furthestStage(order),
     preLot: {
@@ -1000,7 +1040,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   // and would otherwise leave the note stranded under whatever rung the
   // order happened to be at, however much later the tick came.
   const stepsForTick = lot ? routeOf(lot).steps : preLotRouteOf(order).steps;
-  const tickedStep = stepsForTick.find((step) => step.trigger === checkpoint);
+  const tickedStep = stepForCheckpoint(stepsForTick, checkpoint, order);
   order.stageHistory = [
     ...order.stageHistory,
     {

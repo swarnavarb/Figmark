@@ -449,7 +449,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       {/* A claimed payment is the one state where each side is waiting on a
           different thing, so each is told which. */}
       {order.paymentStatus === 'claimed' && (
-        <p className="notice notice--info">
+        <p className="notice notice--purple">
           {state.side === 'buyer'
             ? 'You have told the seller you paid. They confirm it landed in their account before this moves — nothing else is needed from you.'
             : 'The buyer says they have paid. Check your own account, then say whether it arrived.'}
@@ -1052,14 +1052,25 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
   const [denying, setDenying] = useState(false);
   const [reason, setReason] = useState('');
   const claim = order.paymentClaim;
+  // What this claim is actually for - not the order's full price, which is
+  // what an advance or a further instalment is never asking to be confirmed
+  // against. Absent only on a claim recorded before this field existed.
+  const claimedMinor = claim?.amountMinor ?? order.unitPriceMinor * order.quantity;
+  const money = orderMoney(order);
+  const balanceAfter = Math.max(0, money.outstandingMinor - claimedMinor);
+  const claimLabel = claim?.plan === 'additional' ? 'Additional payment'
+    : claim?.plan === 'advance' ? 'Advance payment' : 'Full payment';
 
   return (
     <div className="stack">
-      <div className="card card--pad stack">
-        <div className="kv">
-          <dt>Amount</dt>
-          <dd>{formatMoney(order.unitPriceMinor * order.quantity, order.currency)}</dd>
+      <div className="card card--pad stack claimcard">
+        <div className="claimcard__hero">
+          <span className="claimcard__label">{claimLabel}</span>
+          <span className="claimcard__amount">{formatMoney(claimedMinor, order.currency)}</span>
         </div>
+        <div className="kv"><dt>Already paid before this</dt><dd>{formatMoney(money.paidMinor, order.currency)}</dd></div>
+        <div className="kv"><dt>Order total</dt><dd>{formatMoney(money.totalMinor, order.currency)}</dd></div>
+        <div className="kv"><dt>Balance left if accepted</dt><dd>{formatMoney(balanceAfter, order.currency)}</dd></div>
         {claim?.reference && (
           <div className="kv"><dt>Reference</dt><dd><code>{claim.reference}</code></dd></div>
         )}
@@ -1074,7 +1085,7 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
       </div>
 
       <p className="faint" style={{ margin: 0 }}>
-        Check your own account before answering. Accepting is you saying the money is there.
+        Check your own account before answering. Accepting is you saying this {formatMoney(claimedMinor, order.currency)} is there.
       </p>
 
       {denying ? (

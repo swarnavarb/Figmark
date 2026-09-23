@@ -774,6 +774,7 @@ function Orders({ store }: { store: StoreAccess }) {
   const [rejecting, setRejecting] = useState<SaleRow | null>(null);
   const [cancelling, setCancelling] = useState<SaleRow | null>(null);
   const [filing, setFiling] = useState<SaleRow | null>(null);
+  const [denyingClaim, setDenyingClaim] = useState<SaleRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [filter, setFilter] = useState<OrderFilter>('all');
   /** Delivered is done; everything else is still being worked. */
@@ -814,6 +815,23 @@ function Orders({ store }: { store: StoreAccess }) {
       await load();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not accept that.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /* Confirming that a claimed payment arrived is the same one-tap shape as
+     Accept: nothing left to say, so nothing here should make the seller open
+     the order to say it. Denying still needs a reason, so that opens its own
+     small dialog rather than firing straight away. */
+  async function settleReceived(row: SaleRow) {
+    setBusy(row.id);
+    setError(null);
+    try {
+      await api.settleClaim(row.id, { accept: true });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not confirm that.');
     } finally {
       setBusy(null);
     }
@@ -894,6 +912,8 @@ function Orders({ store }: { store: StoreAccess }) {
             onReject={() => setRejecting(row)}
             onAccept={() => void accept(row)}
             onCancel={() => setCancelling(row)}
+            onSettleReceived={() => void settleReceived(row)}
+            onSettleDenied={() => setDenyingClaim(row)}
           />
           ))}
         </div>
@@ -904,6 +924,14 @@ function Orders({ store }: { store: StoreAccess }) {
           row={rejecting}
           onClose={() => setRejecting(null)}
           onDone={() => { setRejecting(null); void load(); }}
+        />
+      )}
+
+      {denyingClaim && (
+        <DenyClaimRow
+          row={denyingClaim}
+          onClose={() => setDenyingClaim(null)}
+          onDone={() => { setDenyingClaim(null); void load(); }}
         />
       )}
 
@@ -1257,7 +1285,7 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
   if (row.bookingOnly && !row.accepted) return { tone: 'warn', label: '📘 Book — awaiting acceptance' };
   if (needsAnswer) return { tone: 'warn', label: PAYMENT_WORDS[row.paymentStatus] ?? 'To answer' };
   if (row.paymentStatus === 'paid') return { tone: 'ok', label: 'Paid' };
-  if (row.paymentStatus === 'partially_paid') return { tone: 'pink', label: 'Partially paid' };
+  if (row.paymentStatus === 'partially_paid') return { tone: 'purple', label: 'Partially paid' };
   if (row.paymentStatus === 'refunded') return { tone: 'quiet', label: 'Refunded' };
   return { tone: 'quiet', label: PAYMENT_WORDS[row.paymentStatus] ?? row.paymentStatus };
 }
@@ -1276,7 +1304,10 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
  * They are quiet until the row is under the pointer, which is a different
  * thing from being absent.
  */
-function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject, onAccept, onCancel }: {
+function OrderRow({
+  row, store, busy, needsAnswer, onWarehouse, onFile, onReject, onAccept, onCancel,
+  onSettleReceived, onSettleDenied,
+}: {
   row: SaleRow;
   store: StoreAccess;
   busy: boolean;
@@ -1286,7 +1317,10 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
   onReject: () => void;
   onAccept: () => void;
   onCancel: () => void;
+  onSettleReceived: () => void;
+  onSettleDenied: () => void;
 }) {
+  const awaitingClaim = Boolean(row.claim && row.claim.decision === null);
   const received = Boolean(row.chinaReceivedAt);
   const lotHref = row.lotId
     ? `/lot/${row.lotId}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`
@@ -1362,7 +1396,20 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
             </button>
           </>
         )}
-        {needsAnswer && !row.canCancel && !row.canAccept && (
+        {awaitingClaim && (
+          <>
+            <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
+              aria-label={`Confirm the ${row.claim ? formatMoney(row.claim.amountMinor ?? 0, row.currency) : ''} payment arrived`}
+              onClick={onSettleReceived}>
+              <Icon name="check" size={14} /> Received
+            </button>
+            <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
+              aria-label="Say the payment has not arrived" onClick={onSettleDenied}>
+              <Icon name="close" size={14} /> Not received
+            </button>
+          </>
+        )}
+        {needsAnswer && !row.canCancel && !row.canAccept && !awaitingClaim && (
           <button type="button" className="orow__act orow__act--danger"
             aria-label="Can't serve this order" onClick={onReject}>
             <Icon name="close" size={15} />
@@ -1533,6 +1580,55 @@ function RejectOrder({ row, onClose, onDone }: {
         </p>
         <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
           {busy ? 'Sending…' : 'Turn it down'}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Saying a claimed payment has not landed, from the row rather than the
+ * order screen - the same "did it arrive" question, just answered "no"
+ * here, which is the one answer that needs a reason attached for the buyer.
+ */
+function DenyClaimRow({ row, onClose, onDone }: {
+  row: SaleRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.settleClaim(row.id, { accept: false, reason: reason.trim() });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Say this payment has not arrived" onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        <p className="muted">
+          {row.itemName} — {row.buyer.name}, {formatMoney(row.claim?.amountMinor ?? row.totalMinor, row.currency)}.
+        </p>
+        <label className="field">
+          <span>What is wrong</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={2}
+            placeholder="Nothing has arrived, the amount is short, the reference does not match…" />
+          <span className="field__hint">The buyer reads this and acts on it.</span>
+        </label>
+        {error && <p className="notice notice--error">{error}</p>}
+        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
+          {busy ? 'Sending…' : 'It has not arrived'}
         </button>
       </form>
     </Modal>

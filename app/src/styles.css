@@ -921,6 +921,10 @@ code, kbd, samp, pre {
 .badge--warn { background: var(--warn-soft); color: var(--warn); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
 .badge--danger { background: var(--danger-soft); color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.32); }
 .badge--accent { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-line); }
+/* A partial payment is neither a warning nor merely informational - it is
+   its own state on the colour scheme, and a full, solid purple rather than
+   the pale lavender wash `badge--accent` uses for plain info reads as one. */
+.badge--purple { background: linear-gradient(135deg, var(--violet), #9333EA); color: #F5F3FF; box-shadow: 0 2px 8px rgba(124, 58, 237, 0.4); }
 .badge--aqua { background: var(--aqua-soft); color: var(--aqua); box-shadow: inset 0 0 0 1px var(--aqua-line); }
 .badge--pink { background: var(--pink-soft); color: var(--pink-text); box-shadow: inset 0 0 0 1px var(--pink-line); }
 .badge--lime { background: var(--lime-soft); color: var(--lime); box-shadow: inset 0 0 0 1px var(--lime-line); }
@@ -1170,6 +1174,16 @@ code, kbd, samp, pre {
 .notice--ok { background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.34); color: var(--ok); }
 .notice--info { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-text); }
 .notice--warn { background: var(--warn-soft); border-color: rgba(251, 191, 36, 0.34); color: var(--warn); }
+/* A full, saturated purple rather than the pale lavender wash `notice--info`
+   uses everywhere else - for the one moment on this screen that is neither
+   informational nor a warning, but a real decision waiting on the seller. */
+.notice--purple {
+  background: linear-gradient(135deg, var(--violet), #9333EA);
+  border-color: var(--violet);
+  color: #F5F3FF;
+  font-weight: var(--w-medium);
+  box-shadow: 0 4px 18px rgba(124, 58, 237, 0.35);
+}
 
 /* ── Auth page ─────────────────────────────────────────────────────────── */
 
@@ -2700,6 +2714,20 @@ code, kbd, samp, pre {
   border: 1px solid var(--border);
 }
 
+/* The card a seller answers a claimed payment from - the exact amount this
+   claim is for leads it, in a solid colour box rather than a line in a kv
+   list, because it is the one number the whole card exists to confirm. */
+.claimcard { gap: 10px; }
+.claimcard__hero {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--violet), #9333EA);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.35);
+}
+.claimcard__label { font-size: var(--t-sm); font-weight: var(--w-semi); color: rgba(245, 243, 255, 0.85); }
+.claimcard__amount { font-size: var(--t-xl); font-weight: var(--w-bold); color: #FFFFFF; letter-spacing: -0.02em; }
+
 /* One order in the shop's payments queue. */
 .salerow {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -4050,14 +4078,17 @@ a.order__name:hover { color: var(--accent-text); }
 .orow--ok .orow__stripe { background: var(--ok); box-shadow: 0 0 10px rgba(52, 211, 153, 0.55); }
 .orow--warn .orow__stripe { background: var(--warn); box-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
 .orow--danger .orow__stripe { background: var(--danger); box-shadow: 0 0 10px rgba(244, 63, 94, 0.5); }
+.orow--purple .orow__stripe { background: var(--violet); box-shadow: 0 0 10px rgba(124, 58, 237, 0.55); }
 .orow--quiet .orow__stripe { background: var(--border-strong); }
 
 /* A whisper of the same colour behind the row it marks - enough to catch the
    eye scanning a long list, never loud enough to fight the text on it. */
 .orow--warn { background: linear-gradient(90deg, rgba(245, 158, 11, 0.07), transparent 60%); }
 .orow--danger { background: linear-gradient(90deg, rgba(244, 63, 94, 0.06), transparent 60%); }
+.orow--purple { background: linear-gradient(90deg, rgba(124, 58, 237, 0.08), transparent 60%); }
 .orow--warn:hover { background: linear-gradient(90deg, rgba(245, 158, 11, 0.12), var(--surface-2) 60%); }
 .orow--danger:hover { background: linear-gradient(90deg, rgba(244, 63, 94, 0.1), var(--surface-2) 60%); }
+.orow--purple:hover { background: linear-gradient(90deg, rgba(124, 58, 237, 0.14), var(--surface-2) 60%); }
 
 .orow__main { min-width: 0; display: grid; gap: 2px; }
 .orow__name {

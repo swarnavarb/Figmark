@@ -5784,6 +5784,50 @@ await check('several additional payments stay separate dated records', async () 
   assert.ok(a.stageHistory.some((e) => /Additional payment received — ₹500/.test(e.note ?? '')));
 });
 
+await check('a checkpoint tick on the built-in pre-lot route is dated and filed under its own rung', async () => {
+  // The built-in route's two steps carry no `trigger` at all, unlike a
+  // custom template's - the exact case that was leaving the tick with no
+  // date and no rung of its own, stranding it (and everything paid after it)
+  // under "Order placed".
+  const item = await list({ title: 'Plain overseas item', priceMinor: 9_000, sourcing: 'import' });
+  const order = (await buy(item.id)).jsonBody.order;
+  const paid = await paidBy(order.id, 'full');
+  assert.equal(paid.paymentStatus, 'paid');
+
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+
+  const tracking = (await orderTracking(req({ headers: payAuth, params: { id: order.id } }), ctx)).jsonBody;
+  const warehouseNote = tracking.order.stageHistory.find(
+    (event) => event.note === 'Received at the international warehouse.',
+  );
+  assert.ok(warehouseNote, 'the tick is a dated event, not just a flag');
+  assert.equal(warehouseNote.step, 'Received at China / international warehouse', 'filed under its own rung');
+  assert.ok(warehouseNote.enteredAt, 'and it carries a real timestamp');
+});
+
+await check('an older checkpoint tick with no note of its own is healed with a dated one at read time', async () => {
+  // Data written before every tick got a note of its own: the flag on the
+  // order is real, nothing on the timeline says when. Simulated by ticking
+  // the checkpoint straight on the stored order, bypassing the route.
+  const item = await list({ title: 'Legacy overseas item', priceMinor: 4_000, sourcing: 'import' });
+  const order = (await buy(item.id)).jsonBody.order;
+  const repository = await getRepository();
+  const stored = await repository.getOrder(order.id);
+  await repository.updateOrder({ ...stored, checkpoints: { china_received: new Date().toISOString() } });
+
+  const tracking = (await orderTracking(req({ headers: payAuth, params: { id: order.id } }), ctx)).jsonBody;
+  const healed = tracking.order.stageHistory.find((event) => event.note === 'Received at the international warehouse.');
+  assert.ok(healed, 'the gap is filled in at read time');
+  assert.ok(healed.enteredAt, 'with the real tick time, not "now"');
+
+  // Never written back - the stored order keeps its original gap.
+  const stillStored = await repository.getOrder(order.id);
+  assert.ok(!stillStored.stageHistory.some((event) => event.note === 'Received at the international warehouse.'));
+});
+
 await check('one payment clears the chosen items in order and spills the rest onto the group', async () => {
   // A now owes 2000, B 2000, C 1000. Pay 6000 for A + B.
   const paid = await payMoreAndSettle([oA.id, oB.id], 600_000);
