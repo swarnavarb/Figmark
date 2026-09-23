@@ -704,14 +704,21 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (body.accept) {
-    order.status = 'confirmed';
-    order.accepted = true;
-    order.acceptedAt = order.acceptedAt ?? now;
+    // Only the order's first claim moves it into 'confirmed' - a further
+    // instalment towards a balance is settling money on an order already
+    // under way, and must not rewind its status or restamp its accept time.
+    if (order.status === 'pending_payment') {
+      order.status = 'confirmed';
+      order.accepted = true;
+      order.acceptedAt = order.acceptedAt ?? now;
+    }
     order.paymentMethod = 'direct';
     record(order, {
-      kind: claim?.plan ?? 'full',
+      kind: claim?.plan === 'additional' ? 'additional' : (claim?.plan ?? 'full'),
       method: 'direct',
       amountMinor: claim?.amountMinor ?? order.unitPriceMinor * order.quantity,
+      batchId: claim?.batchId ?? null,
+      batchTotalMinor: claim?.batchTotalMinor ?? null,
       reference: claim?.reference ?? null,
       recordedBy: user.id,
     });
@@ -721,8 +728,30 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
     // which is exactly what buying without protection means.
     order.escrow = { ...order.escrow, state: 'none' };
     note(order, 'Seller confirmed the payment arrived.', user.id);
+
+    // The part of this payment that overshot this order's own balance,
+    // spilling from the same allocation `pay_more` already does for an
+    // immediately-confirmed method - just held back until this order's own
+    // claim is settled, so it is not banked as a credit before the seller has
+    // said the money arrived at all.
+    if (claim?.excessMinor) {
+      order.credits = [
+        ...(order.credits ?? []),
+        {
+          id: `crd_${randomUUID().slice(0, 12)}`,
+          createdAt: now,
+          amountMinor: claim.excessMinor,
+          batchId: claim.batchId ?? null,
+          refundedMinor: 0,
+          refundedAt: null,
+          refundedBy: null,
+          status: 'open',
+        },
+      ];
+      note(order, `💰 Extra payment / credit — ${rupees(claim.excessMinor)}`, user.id);
+    }
   } else {
-    order.paymentStatus = 'unpaid';
+    statusFromMoney(order);
     note(order, `Seller says the payment has not arrived: ${reason}`, user.id);
   }
 
@@ -799,11 +828,57 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
 
   const batchId = `bat_${randomUUID().slice(0, 12)}`;
   const touched = new Map<string, Order>();
+  const now = new Date().toISOString();
+  const reference = body.reference?.trim() || null;
+  const holderId = plan.lines.at(-1)?.orderId ?? first.id;
+
+  // Direct money is exactly the claim this order already asks for on the
+  // first payment: the buyer's account of having sent it, put in front of the
+  // seller before it counts as paid. A further instalment is no different -
+  // it went outside the app the same way the first one did, so it gets the
+  // same "did this arrive?" before it is recorded.
+  if (method === 'direct') {
+    for (const line of plan.lines) {
+      const order = byId.get(line.orderId)!;
+      order.paymentStatus = 'claimed';
+      order.paymentClaim = {
+        claimedAt: now, reference, screenshot: null, decision: null, decidedAt: null, decidedReason: null,
+        plan: 'additional', amountMinor: line.amountMinor, batchId, batchTotalMinor: amountMinor,
+        excessMinor: line.orderId === holderId ? plan.extraMinor : undefined,
+      };
+      note(order, reference ? `Buyer paid directly — reference ${reference}.` : 'Buyer paid directly.', user.id);
+      touched.set(order.id, order);
+    }
+    // Everything owing was covered and there is still money left over: it
+    // has nowhere to land but the group's own last order, claimed on its own.
+    if (plan.extraMinor > 0 && !touched.has(holderId)) {
+      const holder = byId.get(holderId)!;
+      holder.paymentStatus = 'claimed';
+      holder.paymentClaim = {
+        claimedAt: now, reference, screenshot: null, decision: null, decidedAt: null, decidedReason: null,
+        plan: 'additional', amountMinor: 0, batchId, batchTotalMinor: amountMinor, excessMinor: plan.extraMinor,
+      };
+      note(holder, reference ? `Buyer paid directly — reference ${reference}.` : 'Buyer paid directly.', user.id);
+      touched.set(holder.id, holder);
+    }
+    const saved: Order[] = [];
+    for (const order of touched.values()) saved.push(await repository.updateOrder({ ...order, updatedAt: now }));
+
+    await notify(repository, [first.sellerId], {
+      kind: 'payment_claimed',
+      title: `A buyer says they paid ${rupees(amountMinor)}`,
+      body: saved.map((o) => o.itemName).join(', '),
+      link: `/order/${first.id}`,
+    });
+
+    return json(200, { allocation: plan, method, orders: saved, awaiting: 'seller', simulatedPayment: false });
+  }
+
   for (const line of plan.lines) {
     const order = byId.get(line.orderId)!;
     record(order, {
       kind: 'additional', method, amountMinor: line.amountMinor, batchId, batchTotalMinor: amountMinor,
-      reference: body.reference?.trim() || null, recordedBy: user.id,
+      reference, recordedBy: user.id,
     });
     statusFromMoney(order);
     if (order.escrow.state === 'held') {
@@ -814,12 +889,12 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
 
   // Over the balance: kept against the last item it reached, never dropped.
   if (plan.extraMinor > 0) {
-    const holder = byId.get(plan.lines.at(-1)?.orderId ?? first.id)!;
+    const holder = byId.get(holderId)!;
     holder.credits = [
       ...(holder.credits ?? []),
       {
         id: `crd_${randomUUID().slice(0, 12)}`,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
         amountMinor: plan.extraMinor,
         batchId,
         refundedMinor: 0,
@@ -832,7 +907,6 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
     touched.set(holder.id, holder);
   }
 
-  const now = new Date().toISOString();
   const saved: Order[] = [];
   for (const order of touched.values()) saved.push(await repository.updateOrder({ ...order, updatedAt: now }));
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { isLotEvent, labelFor } from '@shared/fulfilment';
+import { isDirect, isLotEvent, labelFor } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, WAITING_FOR_LOT } from '@shared/routes';
 import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
 import { reasonsFor } from '@shared/disputes';
@@ -49,6 +49,18 @@ export function OrderPage() {
   const [state, setState] = useState<OrderState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
+  const [tab, setTab] = useState<'tracking' | 'details'>('tracking');
+  const [checkpointBusy, setCheckpointBusy] = useState(false);
+
+  async function toggleWarehouse(order: Order) {
+    setCheckpointBusy(true);
+    try {
+      await api.setCheckpoint(order.id, 'china_received', !order.checkpoints?.china_received);
+      await load();
+    } finally {
+      setCheckpointBusy(false);
+    }
+  }
 
   // Two calls because they answer different questions - where the parcel is,
   // and what may be done about it - and the second settles the escrow clock on
@@ -74,8 +86,19 @@ export function OrderPage() {
   const currentIndex = stages.indexOf(currentStage);
   /** The lot it is in now, as opposed to the ones it has been in. */
   const latestLotAt = [...order.stageHistory].reverse().find(isLotEvent)?.enteredAt ?? null;
-  // Newest first: what just happened matters more than what happened first.
-  const history = [...order.stageHistory].reverse();
+  /*
+   * One timeline, in the order things actually happened.
+   *
+   * The ladder above still groups notes by which rung they were said at, which
+   * is right for a seller writing one as they go - but a payment recorded
+   * while an item's coarse stage still read "preparing" was landing here
+   * before "received at the warehouse", even when the payment came later by
+   * the clock. Sorted by the real timestamp instead, so what is newest is
+   * always what is read first.
+   */
+  const timeline = [...order.stageHistory].sort(
+    (a, b) => new Date(b.enteredAt).getTime() - new Date(a.enteredAt).getTime(),
+  );
 
   return (
     <main className="page">
@@ -104,9 +127,33 @@ export function OrderPage() {
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
 
-      <div className="detail">
+      <div className="tabs">
+        <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
+          onClick={() => setTab('tracking')}>
+          Tracking
+        </button>
+        <button type="button" className={`tab${tab === 'details' ? ' is-on' : ''}`}
+          onClick={() => setTab('details')}>
+          Details
+        </button>
+      </div>
+
+      {tab === 'tracking' && (
         <div className="card card--pad stack">
-          <h2>Where it is</h2>
+          <div className="row row--between">
+            <h2 style={{ margin: 0 }}>Where it is</h2>
+            {/* The same tick the order row offers, so a seller working from
+                this screen never has to go back to the list for it. */}
+            {state.side === 'seller' && !isDirect(order) && (
+              <button type="button" className={`orow__toggle${order.checkpoints?.china_received ? ' is-on' : ''}`}
+                aria-pressed={Boolean(order.checkpoints?.china_received)}
+                onClick={() => void toggleWarehouse(order)}
+                disabled={checkpointBusy}>
+                <Icon name={order.checkpoints?.china_received ? 'check' : 'box'} size={13} />
+                <span>China WH</span>
+              </button>
+            )}
+          </div>
 
           {/* The lot's own ladder, in the seller's words, when there is a
               lot. An item waiting for one gets what has actually happened
@@ -131,12 +178,12 @@ export function OrderPage() {
                 <span className="field__hint">
                   Travelling in {data.route.lotName} · lot #{data.route.lotNumber}
                 </span>
-                {/* With what the seller actually said along the way. The
-                    ladder is unchanged - the notes and the hand-overs hang off
-                    the rungs they happened at, which is where they were meant
-                    to be read. */}
+                {/* Notes are read below, in one shared timeline sorted by
+                    when they actually happened, rather than hung off the
+                    rung each was filed under - a note said while the order's
+                    coarse stage still read "preparing" otherwise reads as
+                    older than a warehouse tick it actually followed. */}
                 <Ladder steps={data.route.steps} current={data.route.currentStep}
-                  history={data.order.stageHistory}
                   waitingFor={data.route.waitingForLot ? WAITING_FOR_LOT : null}
                   /* The lot is where a seller's next question leads - change
                      it, or go and move it on - so the answers sit on the lot
@@ -161,7 +208,6 @@ export function OrderPage() {
             ) : (
               <>
                 <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
-                  history={data.order.stageHistory}
                   waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
                 <p className="notice notice--info">
                   <strong>Not yet added to a shipment lot.</strong> The rest of the journey
@@ -184,8 +230,8 @@ export function OrderPage() {
           )}
 
           <div className="detail__section" style={{ marginTop: 8 }}>
-            <h3>History</h3>
-            {history.map((event, index) => (
+            <h3>Timeline</h3>
+            {timeline.map((event, index) => (
               <div key={`${event.stage}-${event.enteredAt}-${index}`} className="comment">
                 <div className="comment__head">
                   {/* The step as the seller wrote it, where there is one: their
@@ -198,8 +244,10 @@ export function OrderPage() {
             ))}
           </div>
         </div>
+      )}
 
-        <aside className="stack">
+      {tab === 'details' && (
+        <div className="detail">
           <div className="card card--pad stack">
             <div className="row row--between">
               <span className="muted">Total</span>
@@ -228,26 +276,40 @@ export function OrderPage() {
             ) : (
               <p className="faint">No tracking reference yet. It appears once the seller dispatches.</p>
             )}
+
+            {data.listing && (
+              <Link to={`/listing/${data.listing.id}`} className="order-product">
+                {data.listing.photoUrl
+                  ? <img src={data.listing.photoUrl} alt="" className="order-product__thumb" />
+                  : <span className="order-product__thumb order-product__thumb--none" aria-hidden="true" />}
+                <span className="order-product__body">
+                  <span className="order-product__name">{data.listing.title}</span>
+                  <span className="faint">View item</span>
+                </span>
+              </Link>
+            )}
           </div>
 
-          <PaymentHistory order={order} side={state.side} onChanged={load} />
+          <aside className="stack">
+            <PaymentHistory order={order} side={state.side} onChanged={load} />
 
-          {/* Only while it is actually held. On a finished order this was still
-              explaining a hold that had already been released. */}
-          {order.escrow.state === 'held' && (
-            <p className="notice notice--info">
-              {order.protection?.escrowName ?? 'An escrow'} is holding this, and passes it to the seller
-              when you confirm delivery — or on its own {AUTO_RELEASE_DAYS} days after dispatch if you
-              neither confirm nor dispute it.
-            </p>
-          )}
-          {order.escrow.state === 'released' && order.completedAt && (
-            <p className="notice notice--ok">
-              Payment released to the seller on {formatDate(order.completedAt)}.
-            </p>
-          )}
-        </aside>
-      </div>
+            {/* Only while it is actually held. On a finished order this was still
+                explaining a hold that had already been released. */}
+            {order.escrow.state === 'held' && (
+              <p className="notice notice--info">
+                {order.protection?.escrowName ?? 'An escrow'} is holding this, and passes it to the seller
+                when you confirm delivery — or on its own {AUTO_RELEASE_DAYS} days after dispatch if you
+                neither confirm nor dispute it.
+              </p>
+            )}
+            {order.escrow.state === 'released' && order.completedAt && (
+              <p className="notice notice--ok">
+                Payment released to the seller on {formatDate(order.completedAt)}.
+              </p>
+            )}
+          </aside>
+        </div>
+      )}
 
       {changing && data.route && (
         <ChangeLotDialog
@@ -361,6 +423,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [disputing, setDisputing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reversing, setReversing] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   const { order, actions } = state;
   const disputeId = order.escrow.disputeId;
@@ -376,6 +439,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       setDisputing(false);
       setCancelling(false);
       setReversing(false);
+      setRejecting(false);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
     } finally {
@@ -387,14 +451,11 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
    * Whether this card has anything in it.
    *
    * Derived from the buttons the card can actually draw rather than from a
-   * hand-kept list of actions to ignore, because the two drifted: `reject` is
-   * offered to a seller on an unshipped order, has no button here, and was not
-   * in the ignore list - so a seller looking at a paid direct sale got an
-   * empty rounded rectangle above the timeline. Adding an action without a
-   * button can no longer produce one.
+   * hand-kept list of actions to ignore, because the two can drift. Adding an
+   * action without a button can no longer produce an empty rounded rectangle.
    */
   const DRAWN_HERE = [
-    'pay', 'settle_claim', 'confirm', 'dispute', 'pay_more', 'accept', 'cancel',
+    'pay', 'settle_claim', 'confirm', 'dispute', 'pay_more', 'accept', 'reject', 'cancel',
     'submit_reversal', 'confirm_reversal_details', 'ack_reversal', 'raise_dispute',
   ] as const;
   const nothingToDo = !actions.some((action) =>
@@ -483,9 +544,15 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
               </button>
             )}
             {actions.includes('accept') && (
-              <button className="btn btn--lg" disabled={busy !== null}
+              <button className="btn btn--ok" disabled={busy !== null}
                 onClick={() => void run('accept', () => api.acceptOrder(order.id))}>
                 {busy === 'accept' ? 'Accepting…' : `✅ Accept${order.bookingOnly ? ' booking' : ''}`}
+              </button>
+            )}
+            {actions.includes('reject') && !rejecting && (
+              <button type="button" className="btn btn--danger" disabled={busy !== null}
+                onClick={() => setRejecting(true)}>
+                ❌ Reject
               </button>
             )}
             {actions.includes('cancel') && !cancelling && (
@@ -523,6 +590,15 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
               </button>
             )}
           </div>
+
+          {rejecting && (
+            <RejectOrder
+              order={order}
+              busy={busy === 'reject'}
+              onReject={(reason) => run('reject', () => api.rejectOrder(order.id, reason))}
+              onClose={() => setRejecting(false)}
+            />
+          )}
 
           {cancelling && (
             <CancelOrder
@@ -1057,6 +1133,46 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Turning an order down before it is accepted - the same dialog the orders
+ * list offers, reachable from the order's own page too, so nothing here is a
+ * row-only action.
+ */
+function RejectOrder({ order, busy, onReject, onClose }: {
+  order: Order;
+  busy: boolean;
+  onReject: (reason: string) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState('');
+
+  return (
+    <Modal title="Turn this order down" onClose={onClose}>
+      <div className="form">
+        <p className="muted">
+          {order.itemName} — {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}.
+        </p>
+        <label className="field">
+          <span>Why</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3}
+            placeholder="Sold the last one this morning — sorry. Happy to put you first on the next run." />
+          <span className="field__hint">
+            They see this word for word. If they have already sent money, say what happens to it.
+          </span>
+        </label>
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          The stock goes back on sale and, if they paid, the payment is marked for refund. This
+          cannot be undone — a new order would have to be placed.
+        </p>
+        <button type="button" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}
+          onClick={() => void onReject(reason.trim())}>
+          {busy ? 'Sending…' : 'Turn it down'}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

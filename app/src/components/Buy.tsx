@@ -283,13 +283,13 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
           <button className="btn btn--lg" disabled={busy}>
             {expired ? '✨ Make available again' : 'Save'}
           </button>
-          <button type="button" className="btn btn--danger" disabled={busy}
+          <button type="button" className="btn btn--danger" disabled={busy || expired}
             onClick={() => {
-              if (window.confirm('Delete this item? Orders already placed keep their history.')) {
-                void run(async () => { await api.deleteListing(listing.id); return null; });
+              if (window.confirm('Expire this item? It comes off sale immediately - you can put it back on with a new expiry any time.')) {
+                void run(async () => { await api.expireListing(listing.id); return null; });
               }
             }}>
-            Delete
+            Expire
           </button>
         </div>
       </form>

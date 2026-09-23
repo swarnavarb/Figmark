@@ -23,6 +23,17 @@ import { getRepository } from '../data/index.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
+/** What to write on the timeline when a checkpoint is ticked. */
+const CHECKPOINT_EVENT_TEXT: Record<OrderCheckpoint, string> = {
+  china_received: 'Received at the international warehouse.',
+  china_packed: 'Packed at the international warehouse.',
+  india_received: 'Received at the India warehouse.',
+  ready_to_dispatch: 'Ready to dispatch.',
+  packed: 'Packed.',
+  dispatched: 'Dispatched to the buyer.',
+  delivered: 'Delivered.',
+};
+
 /**
  * Seller-side shipment lots.
  *
@@ -697,6 +708,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
 
   const lot = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
   const sellers = await repository.listUsersByIds([order.sellerId]);
+  const listing = await repository.getListing(order.listingId);
+  const leadPhoto = listing?.photos.find((photo) => photo.isPrimary) ?? listing?.photos[0] ?? null;
 
   /* The timeline the buyer reads is the lot's route, in the seller's own
      words. Without a lot there is no route to read, and the honest answer is
@@ -778,6 +791,9 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
     // The only two things the lot contributes to the buyer's view.
     trackingReference: lot?.forwarder?.trackingReference ?? null,
     estimatedDispatchAt: lot?.estimatedDispatchAt ?? null,
+    // For the Details tab's product card - the listing as it is now, not the
+    // order's own frozen snapshot, so a photo added after the sale still shows.
+    listing: listing ? { id: listing.id, title: listing.title, photoUrl: leadPhoto?.url ?? null } : null,
   });
 }
 
@@ -978,6 +994,21 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   order.checkpoints = { ...(order.checkpoints ?? {}), [checkpoint]: on ? now : null };
   order.updatedAt = now;
 
+  // Every tick is a real, dated thing that happened, and belongs on the one
+  // timeline the buyer and seller both read - not just a silent flag flipped
+  // on the order. Recorded at the moment it is ticked, so it lands in true
+  // time order among the payments and other notes rather than wherever the
+  // order's coarse stage happens to place it.
+  order.stageHistory = [
+    ...order.stageHistory,
+    {
+      stage: order.stage,
+      enteredAt: now,
+      note: on ? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
+      recordedBy: user.id,
+    },
+  ];
+
   // Dispatching is already recorded here, so the order takes its shipped state
   // from this tick rather than from a second screen saying the same thing. It
   // is also what starts the auto-release clock: the window has to open when the
@@ -987,15 +1018,6 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   if (checkpoint === 'dispatched' && order.escrow.state === 'held') {
     order.status = on ? 'shipped' : 'confirmed';
     order.escrow = { ...order.escrow, autoReleaseAt: on ? daysFrom(AUTO_RELEASE_DAYS) : null };
-    order.stageHistory = [
-      ...order.stageHistory,
-      {
-        stage: order.stage,
-        enteredAt: now,
-        note: on ? 'Dispatched to the buyer.' : 'Dispatch un-marked.',
-        recordedBy: user.id,
-      },
-    ];
   }
 
   const saved = await repository.updateOrder(order);

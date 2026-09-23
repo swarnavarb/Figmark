@@ -1008,9 +1008,22 @@ export interface PaymentClaim {
   decidedAt: string | null;
   /** Why they denied it. Read by the buyer, so it has to say something. */
   decidedReason: string | null;
-  /** What the claim is for: the full amount, or the advance. Absent on older claims. */
-  plan?: 'full' | 'advance';
+  /**
+   * What the claim is for: the full amount, the advance, or a further
+   * instalment towards a balance already partly paid. Absent on older claims.
+   */
+  plan?: 'full' | 'advance' | 'additional';
   amountMinor?: number;
+  /** Part of a payment spread over several items - carried through so the
+   *  seller sees "this is part of a ₹X payment" while it is still pending. */
+  batchId?: string | null;
+  batchTotalMinor?: number | null;
+  /**
+   * Overpaid beyond this order's own balance, waiting to become a credit once
+   * the seller confirms the payment arrived - the same overflow `pay_more`
+   * already turns into a refundable credit, just not banked until it is real.
+   */
+  excessMinor?: number;
 }
 
 /** Buyer protection, as bought: who holds it, and on what terms. */

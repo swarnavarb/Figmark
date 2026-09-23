@@ -671,21 +671,19 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
 /**
  * POST /api/listings/{id}/delete - take an item down.
  *
- * An item somebody has bought is withdrawn rather than erased, because their
- * order and its payment history point at it. One nobody bought is removed.
+ * Expired, never erased: a listing is withdrawn by the same clock a listing
+ * expiring on its own already uses, so it leaves the shelf the same way and
+ * the seller can always put it back with a new expiry. Nothing is deleted -
+ * an order can point at this listing long after the seller stops selling it.
  */
 async function deleteListing(request: HttpRequest, _context: InvocationContext) {
   const found = await manageable(request);
   if ('refusal' in found) return found.refusal;
   const { listing, repository } = found;
 
-  const orders = await repository.listOrdersForListing(listing.id);
-  if (orders.length > 0) {
-    await repository.updateListing({ ...listing, status: 'archived', updatedAt: new Date().toISOString() });
-    return json(200, { deleted: true, kept: 'archived' });
-  }
-  await repository.deleteListing(listing.sellerId, listing.id);
-  return json(200, { deleted: true, kept: null });
+  const now = new Date().toISOString();
+  await repository.updateListing({ ...listing, expiresAt: now, updatedAt: now });
+  return json(200, { expired: true });
 }
 
 /** GET /api/forwarders - the freight forwarder directory. */

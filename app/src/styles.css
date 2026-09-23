@@ -1259,6 +1259,16 @@ code, kbd, samp, pre {
 .kv dt { color: var(--text-dim); }
 .kv dd { margin: 0; text-align: right; font-weight: var(--w-medium); }
 
+.order-product {
+  display: flex; align-items: center; gap: 12px; padding: 10px;
+  border: 1px solid var(--border); border-radius: var(--r-md); text-decoration: none; color: inherit;
+}
+.order-product:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.order-product__thumb { width: 52px; height: 52px; border-radius: var(--r-sm); object-fit: cover; flex-shrink: 0; background: var(--surface-2); }
+.order-product__thumb--none { display: block; }
+.order-product__body { display: grid; gap: 2px; min-width: 0; }
+.order-product__name { font-weight: var(--w-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* A button that has to read as a link, because what it does is navigate. */
 .linklike {
   border: 0; padding: 0; background: none; font: inherit;
@@ -2585,6 +2595,12 @@ code, kbd, samp, pre {
 .btn--danger { background: var(--danger-solid); border-color: var(--danger-solid); color: var(--danger-ink); font-weight: var(--w-bold); box-shadow: 0 2px 10px rgba(225, 29, 72, 0.36); }
 .btn--danger:hover:not(:disabled) { filter: brightness(1.08); }
 .btn--danger:disabled { opacity: 0.45; }
+
+/* Accept gets the same treatment, in green: a decision this consequential
+   reads by colour before anyone parses the label. */
+.btn--ok { background: var(--ok); border-color: var(--ok); color: var(--ok-ink); font-weight: var(--w-bold); box-shadow: 0 2px 10px rgba(52, 211, 153, 0.36); }
+.btn--ok:hover:not(:disabled) { filter: brightness(1.08); }
+.btn--ok:disabled { opacity: 0.45; }
 
 .ops { display: grid; gap: 16px; }
 .ops__head {
@@ -4021,6 +4037,25 @@ a.order__name:hover { color: var(--accent-text); }
 .orow__lot--none { color: var(--text-faint); }
 .orow__step { color: var(--aqua); }
 
+/* Accept / Reject, the first decision a fresh order needs, colour-coded and
+ * labelled rather than a bare tick and cross - a seller scanning a list of
+ * rows should never have to tap in to find out which icon means what. */
+.orow__decide {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 28px; padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-size: var(--t-2xs);
+  font-weight: var(--w-bold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter var(--dur-1) var(--ease);
+}
+.orow__decide:disabled { opacity: 0.45; cursor: not-allowed; }
+.orow__decide:hover:not(:disabled) { filter: brightness(1.08); }
+.orow__decide--ok { background: var(--ok); color: var(--ok-ink); }
+.orow__decide--danger { background: var(--danger-solid); color: var(--danger-ink); }
+
 .orow__price {
   font-family: var(--mono);
   font-size: var(--t-sm);
@@ -4052,7 +4087,6 @@ a.order__name:hover { color: var(--accent-text); }
 }
 .orow__act.is-on { color: var(--ok); background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.3); }
 .orow__act--danger:hover { color: var(--danger-text); background: var(--danger-soft); border-color: rgba(244, 63, 94, 0.32); }
-.orow__act--ok:hover { color: var(--ok); background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.3); }
 .orow__act:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* On a phone the badge and price drop under the name rather than competing

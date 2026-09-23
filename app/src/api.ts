@@ -225,6 +225,8 @@ export interface OrderTracking {
   sellerName: string;
   trackingReference: string | null;
   estimatedDispatchAt: string | null;
+  /** The item bought, as it is now - for the Details tab's product card. */
+  listing: { id: string; title: string; photoUrl: string | null } | null;
 }
 
 /* ── The order lifecycle ───────────────────────────────────────────────── */
@@ -1053,8 +1055,8 @@ export const api = {
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
   editListing: (id: string, body: Partial<NewListing>) =>
     post<{ listing: Listing }>(`/listings/${encodeURIComponent(id)}/edit`, body),
-  deleteListing: (id: string) =>
-    post<{ deleted: boolean; kept: 'archived' | null }>(`/listings/${encodeURIComponent(id)}/delete`),
+  expireListing: (id: string) =>
+    post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
   payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
     post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
   refundCredit: (id: string, creditId?: string) =>

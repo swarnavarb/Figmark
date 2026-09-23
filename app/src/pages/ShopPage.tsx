@@ -1351,12 +1351,18 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
           </>
         )}
         {row.canAccept && (
-          <button type="button" className="orow__act orow__act--ok"
-            aria-label="Accept this order" onClick={onAccept}>
-            <Icon name="check" size={15} />
-          </button>
+          <>
+            <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
+              aria-label="Accept this order" onClick={onAccept}>
+              <Icon name="check" size={14} /> Accept
+            </button>
+            <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
+              aria-label="Reject this order" onClick={onReject}>
+              <Icon name="close" size={14} /> Reject
+            </button>
+          </>
         )}
-        {needsAnswer && !row.canCancel && (
+        {needsAnswer && !row.canCancel && !row.canAccept && (
           <button type="button" className="orow__act orow__act--danger"
             aria-label="Can't serve this order" onClick={onReject}>
             <Icon name="close" size={15} />
