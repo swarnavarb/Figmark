@@ -4,7 +4,7 @@ import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { threadIdFor } from '../../../shared/handles.js';
 import type {
-  Dispute, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
+  CreditRecord, Dispute, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
 } from '../../../shared/models.js';
 import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
@@ -952,36 +952,183 @@ async function refundCredit(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'nothing_to_refund', 'There is no extra payment waiting to be returned.');
   }
 
-  const body = await bodyOf<{ creditId: string; reference: string; message: string }>(request);
+  const body = await bodyOf<{ creditId: string; reference: string; message: string; amountMinor: number }>(request);
   const reference = body.reference?.trim() || null;
+  // A part-refund is one refund, named: returning "some" of everything on the
+  // order at once would leave no way to say which balance is left where.
+  const partial = body.amountMinor !== undefined && body.amountMinor !== null;
+  if (partial && !body.creditId) return error(400, 'invalid_request', 'Say which refund this part-payment is for.');
   const now = new Date().toISOString();
   let total = 0;
+  let refusal: ReturnType<typeof error> | null = null;
   order.credits = (order.credits ?? []).map((credit) => {
     if (!creditIsLive(credit) || (body.creditId && credit.id !== body.creditId)) return credit;
-    const amount = creditLeft(credit);
-    if (amount <= 0) return credit;
+    const left = creditLeft(credit);
+    const amount = partial ? Math.round(Number(body.amountMinor)) : left;
+    if (!(amount > 0)) { refusal = error(400, 'invalid_amount', 'Enter an amount above zero.'); return credit; }
+    if (amount > left) { refusal = error(400, 'too_much', `Only ${rupees(left)} is left to refund here.`); return credit; }
     total += amount;
-    return { ...credit, status: 'refund_pending', pendingRefund: { amountMinor: amount, reference, sentAt: now, sentBy: user.id } };
+    return startReturn(credit, amount, reference, now, user.id);
   });
-  if (total === 0) return error(404, 'not_found', 'No such extra payment on this order.');
+  if (refusal) return refusal;
+  if (total === 0) return error(404, 'not_found', 'No such refund on this order.');
 
-  note(order, `↩️ Seller returned the extra payment — ${rupees(total)}${reference ? ` (reference ${reference})` : ''}. Waiting for the buyer to confirm it arrived.`, user.id);
+  note(order, `↩️ Seller refunded ${rupees(total)}${reference ? ` (reference ${reference})` : ''}. Waiting for the buyer to confirm it arrived.`, user.id);
   order.updatedAt = now;
   const saved = await repository.updateOrder(order);
 
+  await tellBuyerRefunded(repository, order, total, reference, body.message);
+  return json(200, { order: saved, sentMinor: total });
+}
+
+/** A credit with one more return on its way, logged, waiting on the buyer. */
+function startReturn(
+  credit: CreditRecord, amountMinor: number, reference: string | null, at: string, by: string,
+): CreditRecord {
+  return {
+    ...credit,
+    status: 'refund_pending',
+    pendingRefund: { amountMinor, reference, sentAt: at, sentBy: by },
+    refundLog: [...(credit.refundLog ?? []), {
+      id: `rfd_${randomUUID().slice(0, 12)}`, amountMinor, reference, sentAt: at, sentBy: by, status: 'awaiting', answeredAt: null,
+    }],
+  };
+}
+
+/** The buyer hears about a refund twice: a notification, and a message in the thread they already have. */
+async function tellBuyerRefunded(
+  repository: Repo, order: Order, amountMinor: number, reference: string | null, message?: string,
+): Promise<void> {
   await notify(repository, [order.buyerId], {
     kind: 'credit_refund_sent',
-    title: `The seller says they returned ${rupees(total)} to you`,
+    title: `The seller says they refunded ${rupees(amountMinor)} to you`,
     body: `${order.itemName} — tell them whether it arrived.`,
-    link: `/order/${order.id}`,
+    link: '/refunds',
   });
   const [seller, buyer] = await Promise.all([repository.getUserById(order.sellerId), repository.getUserById(order.buyerId)]);
   if (seller && buyer) {
-    await systemMessage(repository, seller, buyer, body.message?.trim()
-      || `I have returned your extra payment of ${rupees(total)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm on the order once it reaches you.`);
+    await systemMessage(repository, seller, buyer, message?.trim()
+      || `I have refunded ${rupees(amountMinor)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm under My refunds once it reaches you.`);
+  }
+}
+
+/**
+ * POST /api/orders/{id}/refund-new - the seller starts a refund nobody asked the app for.
+ *
+ * A dispute settled between the two of them, a goodwill part-refund, a
+ * damaged box: the money owed back exists only because the seller says so,
+ * so the amount is whatever they type - never pre-filled - and never more
+ * than the buyer actually paid on this order less what has already gone back.
+ * It is sent at once and, like every refund, waits on the buyer to confirm.
+ */
+async function startRefund(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  if (order.sellerId !== user.id) return error(403, 'not_the_seller', 'Only the seller can refund this order.');
+
+  const body = await bodyOf<{ amountMinor: number; reason: string; reference: string; message: string }>(request);
+  const amountMinor = Math.round(Number(body.amountMinor) || 0);
+  const reason = body.reason?.trim() ?? '';
+  const reference = body.reference?.trim() || null;
+  if (amountMinor <= 0) return error(400, 'invalid_amount', 'Enter the amount you are refunding.');
+  if (reason.length < 3) return error(400, 'no_reason', 'Say what this refund is for, so the buyer knows.');
+
+  // An overpayment was never part of what was paid for the item, so it does
+  // not use any of it up. A cancellation or an earlier refund of this kind
+  // does, whole, whether or not it has gone back yet.
+  const alreadyBack = (order.credits ?? [])
+    .filter((credit) => credit.origin === 'cancelled' || credit.origin === 'manual')
+    .reduce((sum, credit) => sum + credit.amountMinor, 0);
+  const ceiling = orderMoney(order).paidMinor - alreadyBack;
+  if (amountMinor > ceiling) {
+    return error(400, 'too_much', ceiling > 0
+      ? `The buyer has paid ${rupees(ceiling)} on this order that has not already been refunded.`
+      : 'Nothing paid on this order is left to refund.');
   }
 
-  return json(200, { order: saved, sentMinor: total });
+  const now = new Date().toISOString();
+  const credit = startReturn({
+    id: `crd_${randomUUID().slice(0, 12)}`, createdAt: now, amountMinor, batchId: null,
+    refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'open', origin: 'manual', reason,
+  }, amountMinor, reference, now, user.id);
+  order.credits = [...(order.credits ?? []), credit];
+  note(order, `↩️ Seller refunded ${rupees(amountMinor)} — ${reason}${reference ? ` (reference ${reference})` : ''}. Waiting for the buyer to confirm it arrived.`, user.id);
+  order.updatedAt = now;
+  const saved = await repository.updateOrder(order);
+
+  await tellBuyerRefunded(repository, order, amountMinor, reference, body.message);
+  return json(201, { order: saved, credit });
+}
+
+/**
+ * GET /api/me/refunds - every refund owed to or sent to this buyer.
+ *
+ * Their side of the Refunds screen: what each one is for, what has come
+ * back and when, what is still owed, and anything waiting on them to say
+ * whether it arrived.
+ */
+async function myRefunds(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const orders = (await repository.listOrdersForBuyer(user.id)).filter((order) => (order.credits ?? []).length > 0);
+  const sellers = new Map((await repository.listUsersByIds([...new Set(orders.map((order) => order.sellerId))]))
+    .map((seller) => [seller.id, seller]));
+  const refunds = orders.flatMap((order) => (order.credits ?? []).map((credit) => {
+    const seller = sellers.get(order.sellerId);
+    return {
+      orderId: order.id,
+      itemName: order.itemName,
+      currency: order.currency,
+      sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'Seller',
+      creditId: credit.id,
+      origin: credit.origin ?? 'overpaid',
+      reason: credit.reason ?? null,
+      createdAt: credit.createdAt,
+      amountMinor: credit.amountMinor,
+      refundedMinor: credit.refundedMinor,
+      leftMinor: creditLeft(credit),
+      status: credit.status,
+      pendingRefund: credit.pendingRefund ?? null,
+      log: credit.refundLog ?? [],
+      applications: credit.applications ?? [],
+    };
+  })).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  return json(200, { refunds });
+}
+
+/**
+ * A cancelled order's reversal is done once its refund has all come back.
+ *
+ * The same ending `submitReversal` writes - `Cancelled + Reversed`, with the
+ * buyer's answer already recorded because it is the answer that finished it -
+ * just reached through Refunds instead, possibly in several part-payments.
+ */
+function finishReversalIfRefunded(order: Order, reference: string | null, at: string): void {
+  if (order.status !== 'payment_reversal_pending') return;
+  const cancelled = (order.credits ?? []).find((credit) => credit.origin === 'cancelled');
+  if (!cancelled || creditLeft(cancelled) > 0 || cancelled.status === 'refund_pending') return;
+  order.status = 'cancelled_reversed';
+  order.paymentStatus = 'refunded';
+  if (order.reversal) {
+    order.reversal = {
+      ...order.reversal,
+      reference: order.reversal.reference ?? reference,
+      reversedAt: at,
+      reversedBy: cancelled.refundedBy,
+      amountMinor: cancelled.refundedMinor,
+      buyerResponse: 'received',
+      buyerRespondedAt: at,
+    };
+  }
+  note(order, `Payment reversed — ${rupees(cancelled.refundedMinor)}`, order.buyerId);
 }
 
 /**
@@ -1014,22 +1161,26 @@ async function ackCreditRefund(request: HttpRequest, _context: InvocationContext
     const sent = credit.pendingRefund;
     total += sent.amountMinor;
     reference = reference ?? sent.reference;
+    const refundLog = (credit.refundLog ?? []).map((entry) => (entry.status === 'awaiting'
+      ? { ...entry, status: body.received ? 'received' as const : 'not_received' as const, answeredAt: now }
+      : entry));
     if (!body.received) {
       return {
-        ...credit, status: 'open', pendingRefund: null,
+        ...credit, status: 'open', pendingRefund: null, refundLog,
         refundDenials: [...(credit.refundDenials ?? []), { at: now, amountMinor: sent.amountMinor }],
       };
     }
-    const next = { ...credit, refundedMinor: credit.refundedMinor + sent.amountMinor, refundedAt: now, refundedBy: sent.sentBy, pendingRefund: null };
+    const next = { ...credit, refundedMinor: credit.refundedMinor + sent.amountMinor, refundedAt: now, refundedBy: sent.sentBy, pendingRefund: null, refundLog };
     return { ...next, status: creditLeft(next) > 0 ? 'open' : 'refunded' };
   });
   if (total === 0) return error(404, 'not_found', 'No such returned payment on this order.');
 
   if (body.received) {
     record(order, { kind: 'refund', method: methodOf(order), amountMinor: total, reference, recordedBy: user.id });
-    note(order, 'Buyer confirmed the returned extra payment arrived.', user.id);
+    note(order, 'Buyer confirmed the refund arrived.', user.id);
+    finishReversalIfRefunded(order, reference, now);
   } else {
-    note(order, `Buyer says the returned ${rupees(total)} has not arrived.`, user.id);
+    note(order, `Buyer says the refunded ${rupees(total)} has not arrived.`, user.id);
   }
   order.updatedAt = now;
   const saved = await repository.updateOrder(order);
@@ -1109,7 +1260,18 @@ async function applyCredit(request: HttpRequest, _context: InvocationContext) {
     };
     return { ...next, status: creditLeft(next) > 0 ? entry.status : 'applied' };
   });
-  note(source, `💰 ${rupees(amount)} of the extra payment moved to "${target.itemName}".`, user.id);
+  note(source, `💰 ${rupees(amount)} of the refund moved to "${target.itemName}".`, user.id);
+  // A cancelled order whose money has all gone somewhere - back, or onto
+  // another order - has nothing left to reverse.
+  const cancelledLeft = (source.credits ?? []).find((entry) => entry.origin === 'cancelled');
+  if (source.status === 'payment_reversal_pending' && cancelledLeft && creditLeft(cancelledLeft) === 0
+    && cancelledLeft.status !== 'refund_pending') {
+    if (cancelledLeft.refundedMinor > 0) finishReversalIfRefunded(source, null, now);
+    else {
+      source.status = 'cancelled';
+      note(source, 'Cancelled — the payment was moved to another order instead of being reversed.', user.id);
+    }
+  }
   source.updatedAt = now;
 
   const [savedSource, savedTarget] = [await repository.updateOrder(source), await repository.updateOrder(target)];
@@ -1171,6 +1333,8 @@ export const refundCreditRoute = handler(refundCredit);
 export const ackCreditRefundRoute = handler(ackCreditRefund);
 export const applyCreditRoute = handler(applyCredit);
 export const holdCreditRoute = handler(holdCredit);
+export const startRefundRoute = handler(startRefund);
+export const myRefundsRoute = handler(myRefunds);
 export const claimPaymentRoute = handler(claimPayment);
 /**
  * POST /api/orders/{id}/reject - the seller cannot serve this order.
@@ -1414,6 +1578,13 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
     buyerRespondedAt: null,
     disputeRaisedAt: null,
   };
+  // What was paid is now owed back, and it goes where every refund goes: onto
+  // the seller's Refunds list, to return in one go or in parts, or to put
+  // towards another of this buyer's orders.
+  order.credits = [...(order.credits ?? []), {
+    id: `crd_${randomUUID().slice(0, 12)}`, createdAt: now, amountMinor: money.paidMinor, batchId: null,
+    refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'open', origin: 'cancelled', reason,
+  }];
   note(order, `Order cancelled by seller, payment reversal pending: ${reason}`, user.id);
   note(order, `Payment reversal initiated — ${rupees(money.paidMinor)}`, user.id);
   await repository.updateOrder(order);
@@ -1582,8 +1753,28 @@ async function submitReversal(request: HttpRequest, _context: InvocationContext)
   }
 
   const reversal = order.reversal as NonNullable<Order['reversal']>;
-  const amountMinor = Math.round(Number(body.amountMinor) || reversal.amountMinor);
+  // Whatever Refunds has not already sent back - a reversal finished here
+  // after a part-refund there must not pay the first part twice.
+  const cancelled = (order.credits ?? []).find((credit) => credit.origin === 'cancelled');
+  const owed = cancelled ? creditLeft(cancelled) : reversal.amountMinor;
+  if (cancelled?.status === 'refund_pending') {
+    return error(409, 'refund_pending', 'A refund on this order is waiting on the buyer. Let them answer first.');
+  }
+  const amountMinor = Math.round(Number(body.amountMinor) || owed);
   const now = new Date().toISOString();
+  if (cancelled) {
+    order.credits = (order.credits ?? []).map((credit) => (credit.id !== cancelled.id ? credit : {
+      ...credit,
+      refundedMinor: credit.refundedMinor + amountMinor,
+      refundedAt: now,
+      refundedBy: user.id,
+      status: 'refunded',
+      refundLog: [...(credit.refundLog ?? []), {
+        id: `rfd_${randomUUID().slice(0, 12)}`, amountMinor, reference: reference || null,
+        sentAt: now, sentBy: user.id, status: 'awaiting', answeredAt: null,
+      }],
+    }));
+  }
 
   // The refund itself goes through the same ledger every other payment does,
   // so `Total Paid` and the payment history never disagree with what this
@@ -1649,6 +1840,12 @@ async function ackReversal(request: HttpRequest, _context: InvocationContext) {
     buyerResponse: body.received ? 'received' : 'not_received',
     buyerRespondedAt: now,
   };
+  // The same answer on the Refunds history, so both screens tell one story.
+  order.credits = (order.credits ?? []).map((credit) => (credit.origin !== 'cancelled' ? credit : {
+    ...credit,
+    refundLog: (credit.refundLog ?? []).map((entry) => (entry.status !== 'awaiting' ? entry
+      : { ...entry, status: body.received ? 'received' : 'not_received', answeredAt: now })),
+  }));
   order.updatedAt = now;
   note(order, body.received ? 'Buyer confirmed payment received.' : 'Buyer says payment not received.', user.id);
   await repository.updateOrder(order);
@@ -1746,6 +1943,8 @@ app.http('purchases-pay', { ...anon, methods: ['POST'], route: 'me/purchases/pay
 app.http('order-refund-credit', { ...anon, methods: ['POST'], route: 'orders/{id}/refund-credit', handler: refundCreditRoute });
 app.http('order-credit-ack', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-ack', handler: ackCreditRefundRoute });
 app.http('order-credit-apply', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-apply', handler: applyCreditRoute });
+app.http('order-refund-new', { ...anon, methods: ['POST'], route: 'orders/{id}/refund-new', handler: startRefundRoute });
+app.http('my-refunds', { ...anon, methods: ['GET'], route: 'me/refunds', handler: myRefundsRoute });
 app.http('order-credit-hold', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-hold', handler: holdCreditRoute });
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });
 app.http('order-claim-payment', { ...anon, methods: ['POST'], route: 'orders/{id}/claim-payment', handler: claimPaymentRoute });

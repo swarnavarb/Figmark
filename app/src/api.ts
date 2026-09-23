@@ -32,7 +32,7 @@ export interface EvidenceDraft {
 import type {
   BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
   MessageParty, Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
-  StoreManager,
+  StoreManager, RefundLogEntry, RefundOrigin,
 } from '@shared/models';
 
 /**
@@ -365,7 +365,10 @@ export interface ShopCredit {
   buyer: PartyRef;
   creditId: string;
   createdAt: string;
+  origin: RefundOrigin;
+  reason: string | null;
   amountMinor: number;
+  refundedMinor: number;
   leftMinor: number;
   status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
   pendingRefund: { amountMinor: number; reference: string | null; sentAt: string } | null;
@@ -375,8 +378,57 @@ export interface ShopCredit {
 }
 
 /** Everything a shop's payments screen has to answer, in three piles. */
+/** One refund sent, or one amount moved onto another order instead. */
+export interface RefundHistoryEntry {
+  id: string;
+  kind: 'refund' | 'moved';
+  orderId: string;
+  itemName: string;
+  currency: string;
+  buyer: PartyRef;
+  origin: RefundOrigin;
+  reason: string | null;
+  amountMinor: number;
+  at: string;
+  reference: string | null;
+  status: RefundLogEntry['status'];
+  answeredAt: string | null;
+  movedTo: string | null;
+}
+
+/** An order a fresh refund could be started on, and how much of it could go back. */
+export interface RefundableOrder {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  createdAt: string;
+  buyer: PartyRef;
+  refundableMinor: number;
+}
+
+/** A buyer's own view of one refund owed to them. */
+export interface MyRefund {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  sellerName: string;
+  creditId: string;
+  origin: RefundOrigin;
+  reason: string | null;
+  createdAt: string;
+  amountMinor: number;
+  refundedMinor: number;
+  leftMinor: number;
+  status: ShopCredit['status'];
+  pendingRefund: ShopCredit['pendingRefund'];
+  log: RefundLogEntry[];
+  applications: ShopCredit['applications'];
+}
+
 export interface SalesResponse {
   credits: ShopCredit[];
+  refundHistory: RefundHistoryEntry[];
+  refundable: RefundableOrder[];
   waiting: SaleRow[];
   placed: SaleRow[];
   answered: SaleRow[];
@@ -1081,12 +1133,15 @@ export const api = {
     post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
   payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
     post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
-  refundCredit: (id: string, body: { creditId?: string; reference?: string; message?: string } = {}) =>
+  refundCredit: (id: string, body: { creditId?: string; reference?: string; message?: string; amountMinor?: number } = {}) =>
     post<{ order: Order; sentMinor: number }>(`/orders/${encodeURIComponent(id)}/refund-credit`, body),
   ackCreditRefund: (id: string, received: boolean, creditId?: string) =>
     post<{ order: Order; answeredMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-ack`, { received, creditId }),
   applyCredit: (id: string, body: { creditId: string; targetOrderId: string; amountMinor?: number }) =>
     post<{ source: Order; target: Order; appliedMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-apply`, body),
+  startRefund: (id: string, body: { amountMinor: number; reason: string; reference?: string; message?: string }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
+  myRefunds: () => request<{ refunds: MyRefund[] }>('/me/refunds'),
   holdCredit: (id: string, creditId?: string) =>
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
   myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),

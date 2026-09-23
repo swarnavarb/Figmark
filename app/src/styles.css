@@ -1959,6 +1959,24 @@ code, kbd, samp, pre {
 .sections::-webkit-scrollbar { display: none; }
 .sections .chip { flex: none; }
 
+/* Refunds: the same row as Items and Orders, pushed to the far right and
+   dressed differently - money going back out is a different kind of task
+   from selling, and should never be mistaken for the next tab along. */
+.sections .chip--refunds { margin-left: auto; }
+.chip--refunds {
+  border: 1px dashed rgba(240, 171, 252, 0.6);
+  background: linear-gradient(135deg, rgba(217, 70, 239, 0.14), rgba(6, 214, 231, 0.10));
+  color: #F0ABFC;
+  font-weight: var(--w-semi);
+}
+.chip--refunds:hover { color: #FAE8FF; border-color: #F0ABFC; }
+.chip--refunds.is-on {
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, #D946EF, #7C3AED 60%, #06B6D4);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(217, 70, 239, 0.45);
+}
+
 /* ── A consignment ─────────────────────────────────────────────────────────
    One card for the whole life of a lot: opening it, filling it, watching it
    move. It replaced two - an admin card on its own page and a tracking card in
@@ -4207,23 +4225,6 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   box-shadow: 0 4px 14px rgba(225, 29, 72, 0.4);
 }
 
-/* The door into every buyer's extra payments. */
-.creditbtn {
-  display: flex; align-items: center; gap: 12px; width: 100%;
-  padding: 12px 14px; border-radius: 16px; border: 0; cursor: pointer; text-align: left;
-  color: var(--text);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-.creditbtn.has-some {
-  background: linear-gradient(135deg, rgba(217, 70, 239, 0.22), rgba(124, 58, 237, 0.22) 55%, rgba(6, 214, 231, 0.14));
-  box-shadow: inset 0 0 0 1px rgba(217, 70, 239, 0.45), 0 8px 24px rgba(147, 51, 234, 0.25);
-}
-.creditbtn__icon { font-size: 22px; }
-.creditbtn__body { display: grid; gap: 1px; flex: 1 1 auto; }
-.creditbtn__body small { color: var(--text-dim); font-size: var(--t-xs); }
-.creditbtn__amt { font-family: var(--mono); font-weight: var(--w-bold); font-size: var(--t-md); color: #F0ABFC; }
-
 .xcredit {
   display: grid; gap: 10px; padding: 12px; border-radius: 14px;
   background: var(--surface-2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
@@ -4234,6 +4235,54 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .xcredit__who { display: grid; gap: 1px; flex: 1 1 140px; min-width: 0; }
 .xcredit__who small { color: var(--text-faint); font-size: var(--t-xs); }
 .xcredit__note { margin: 0; font-size: var(--t-xs); }
+.xcredit__tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.xcredit--from-cancelled { box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.35); }
+.xcredit--from-manual { box-shadow: inset 0 0 0 1px rgba(6, 214, 231, 0.35); }
+.xcredit--refund_pending { box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.4); }
+.xcredit--refunded, .xcredit--applied { opacity: 0.8; }
+
+/* The top of Refunds, on both sides: one number - what is still owed back. */
+.rfhero {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  padding: 16px 18px; border-radius: 20px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(217, 70, 239, 0.35), transparent 60%),
+    radial-gradient(90% 120% at 100% 100%, rgba(6, 182, 212, 0.25), transparent 60%),
+    linear-gradient(160deg, #1E1633, var(--surface));
+  box-shadow: inset 0 0 0 1px rgba(240, 171, 252, 0.3), 0 10px 30px rgba(147, 51, 234, 0.25);
+}
+.rfhero__main { display: grid; gap: 2px; }
+.rfhero__main small { color: rgba(250, 232, 255, 0.75); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.06em; }
+.rfhero__main b { font-family: var(--mono); font-size: var(--t-xl); color: #FAE8FF; letter-spacing: -0.02em; }
+.rfhero__main span { color: var(--text-dim); font-size: var(--t-xs); }
+.rfhero__new {
+  height: 40px; padding: 0 16px; border: 0; border-radius: 999px; cursor: pointer;
+  font-weight: var(--w-bold); color: #1E1633;
+  background: linear-gradient(135deg, #F0ABFC, #67E8F9);
+  box-shadow: 0 4px 14px rgba(240, 171, 252, 0.4);
+}
+.rfnew {
+  display: grid; gap: 10px; padding: 14px; border-radius: 16px;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px rgba(6, 214, 231, 0.4);
+}
+.rfnew h3 { margin: 0; }
+
+/* Refund history: to whom, for what, how much, when, and whether it arrived. */
+.rfhist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rfhist__row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--surface-2); box-shadow: inset 3px 0 0 var(--border-strong);
+}
+.rfhist__row--received { box-shadow: inset 3px 0 0 var(--ok); }
+.rfhist__row--awaiting { box-shadow: inset 3px 0 0 var(--warn); }
+.rfhist__row--not_received { box-shadow: inset 3px 0 0 var(--danger); }
+.rfhist__row--moved { box-shadow: inset 3px 0 0 var(--aqua); }
+.rfhist__icon { font-size: 18px; }
+.rfhist__body { display: grid; gap: 1px; min-width: 0; }
+.rfhist__body small { color: var(--text-faint); font-size: var(--t-xs); overflow-wrap: anywhere; }
+.rfhist__side { display: grid; justify-items: end; gap: 4px; }
+.rfhist__side b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .xcredit__acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .xcredit__form { display: grid; gap: 10px; }
 

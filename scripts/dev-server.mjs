@@ -43,7 +43,7 @@ const {
   claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
   acceptOrderRoute, cancelOrderRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
   submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
-  ackCreditRefundRoute, applyCreditRoute, holdCreditRoute,
+  ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, myRefundsRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
@@ -141,6 +141,8 @@ const routes = [
   ['POST', '/api/orders/:id/credit-ack', ackCreditRefundRoute],
   ['POST', '/api/orders/:id/credit-apply', applyCreditRoute],
   ['POST', '/api/orders/:id/credit-hold', holdCreditRoute],
+  ['POST', '/api/orders/:id/refund-new', startRefundRoute],
+  ['GET', '/api/me/refunds', myRefundsRoute],
   ['POST', '/api/me/purchases/pay', payMoreRoute],
   ['POST', '/api/orders/:id/claim-payment', claimPaymentRoute],
   ['POST', '/api/orders/:id/settle-claim', settleClaimRoute],

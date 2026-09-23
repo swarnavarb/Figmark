@@ -1000,6 +1000,29 @@ export interface CreditRecord {
   pendingRefund?: { amountMinor: number; reference: string | null; sentAt: string; sentBy: string } | null;
   /** Every time the buyer said a return did not arrive - kept, not overwritten. */
   refundDenials?: { at: string; amountMinor: number }[];
+  /**
+   * Why this money is owed back. Absent on records from before refunds had
+   * more than one source, which were all overpayments.
+   */
+  origin?: RefundOrigin;
+  /** The seller's reason, for a cancellation or a refund they started themselves. */
+  reason?: string | null;
+  /** Every return sent against this refund, and what the buyer said about it. */
+  refundLog?: RefundLogEntry[];
+}
+
+export type RefundOrigin = 'overpaid' | 'cancelled' | 'manual';
+
+/** One return of money to a buyer: how much, when, and whether it arrived. */
+export interface RefundLogEntry {
+  id: string;
+  amountMinor: number;
+  reference: string | null;
+  sentAt: string;
+  sentBy: string;
+  /** `awaiting` until the buyer answers. */
+  status: 'awaiting' | 'received' | 'not_received';
+  answeredAt: string | null;
 }
 
 /** One buyer's assertion that they sent the money, and the seller's answer. */
@@ -1399,6 +1422,7 @@ export type NotificationKind =
   | 'credit_refund_sent'
   | 'credit_refund_answered'
   | 'credit_applied'
+  | 'refund_started'
   | 'payment_settled'
   | 'dispute_opened'
   | 'dispute_replied'

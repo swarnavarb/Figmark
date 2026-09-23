@@ -160,6 +160,13 @@ export const PAYMENT_KIND_LABELS = {
   credit: 'Extra payment applied',
 } as const;
 
+/** Why a refund is owed, in the words both screens use. */
+export const REFUND_ORIGIN_LABELS = {
+  overpaid: 'Extra payment',
+  cancelled: 'Cancelled order',
+  manual: 'Refund started by seller',
+} as const;
+
 /** What is still the buyer's on one credit: neither returned nor moved onto another order. */
 export function creditLeft(credit: Pick<CreditRecord, 'amountMinor' | 'refundedMinor' | 'appliedMinor'>): number {
   return Math.max(0, credit.amountMinor - credit.refundedMinor - (credit.appliedMinor ?? 0));

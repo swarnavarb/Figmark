@@ -63,6 +63,7 @@ const {
   claimPaymentRoute: claimPayment, settleClaimRoute: settleClaim,
   payMoreRoute: payMore, refundCreditRoute: refundCredit,
   ackCreditRefundRoute: ackCreditRefund, applyCreditRoute: applyCredit, holdCreditRoute: holdCredit,
+  startRefundRoute: startRefund, myRefundsRoute: myRefunds,
 } = await import(new URL('order-routes.js', fns));
 const { editListingRoute: editListing, deleteListingRoute: deleteListing } =
   await import(new URL('catalog-routes.js', fns));
@@ -6174,6 +6175,92 @@ await check('the buyer can save and read back their Payment Reversal Details', a
 
   const read = await readReversalDetails(req({ headers: buyer.headers }), ctx);
   assert.equal(read.jsonBody.reversalDetails.accountName, 'Settings Buyer');
+});
+
+/* ── refunds: cancellations, part-refunds, seller-started refunds, history ── */
+console.log('\nrefunds');
+
+await check('a cancelled paid order lands on Refunds, and part-refunds leave the balance there', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Refund Me In Parts', 30_000);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Supplier ran out.' } }), ctx);
+
+  const listed = (await sales(req({ headers: auth }), ctx)).jsonBody.credits.find((c) => c.orderId === orderId);
+  assert.ok(listed, 'the cancelled payment is on Refunds');
+  assert.equal(listed.origin, 'cancelled');
+  assert.equal(listed.leftMinor, 30_000);
+  assert.equal(listed.reason, 'Supplier ran out.');
+
+  const tooMuch = await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 40_000 } }), ctx);
+  assert.equal(tooMuch.status, 400, 'never more than is owed');
+
+  const part = (await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 10_000, reference: 'P1' } }), ctx)).jsonBody;
+  assert.equal(part.sentMinor, 10_000);
+  await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true } }), ctx);
+
+  const after = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  const left = after.credits.find((c) => c.orderId === orderId);
+  assert.equal(left.leftMinor, 20_000, 'the balance stays to refund later');
+  assert.equal(left.status, 'open');
+  const history = after.refundHistory.filter((h) => h.orderId === orderId);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].amountMinor, 10_000);
+  assert.equal(history[0].status, 'received');
+  assert.equal(history[0].reference, 'P1');
+  assert.ok(history[0].buyer.name && history[0].at, 'to whom, and when');
+
+  // The rest, and the reversal finishes on its own.
+  await refundCredit(req({ headers: auth, params: { id: orderId }, body: { creditId: listed.creditId, amountMinor: 20_000 } }), ctx);
+  const done = (await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true } }), ctx)).jsonBody.order;
+  assert.equal(done.status, 'cancelled_reversed');
+  assert.equal(done.paymentStatus, 'refunded');
+  assert.equal(done.reversal.buyerResponse, 'received');
+  assert.ok(!(await sales(req({ headers: auth }), ctx)).jsonBody.credits.some((c) => c.orderId === orderId));
+});
+
+await check('a seller can start a refund themselves, for an amount they type and a reason', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Dented Box', 50_000);
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(board.refundable.find((r) => r.orderId === orderId).refundableMinor, 50_000);
+
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId }, body: { reason: 'Dent' } }), ctx)).status, 400,
+    'no amount, no refund - nothing is filled in for a fresh one');
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId }, body: { amountMinor: 5_000 } }), ctx)).status, 400,
+    'and it has to say what it is for');
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 60_000, reason: 'Too much' } }), ctx)).status, 400, 'never more than was paid');
+  assert.equal((await startRefund(req({ headers: buyer.headers, params: { id: orderId },
+    body: { amountMinor: 5_000, reason: 'Me' } }), ctx)).status, 403, 'only the seller');
+
+  const started = await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 8_000, reason: 'Box arrived dented', reference: 'D1' } }), ctx);
+  assert.equal(started.status, 201, JSON.stringify(started.jsonBody));
+  assert.equal(started.jsonBody.credit.origin, 'manual');
+  assert.equal(started.jsonBody.credit.status, 'refund_pending');
+
+  // The buyer's own list, with the button to answer it.
+  const mine = (await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody.refunds;
+  const theirs = mine.find((r) => r.orderId === orderId);
+  assert.equal(theirs.origin, 'manual');
+  assert.equal(theirs.reason, 'Box arrived dented');
+  assert.equal(theirs.pendingRefund.amountMinor, 8_000);
+  assert.equal(theirs.log[0].status, 'awaiting');
+
+  await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true, creditId: theirs.creditId } }), ctx);
+  const settled = (await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody.refunds.find((r) => r.orderId === orderId);
+  assert.equal(settled.leftMinor, 0);
+  assert.equal(settled.log[0].status, 'received');
+  assert.ok(settled.log[0].answeredAt);
+
+  const after = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(after.refundable.find((r) => r.orderId === orderId).refundableMinor, 42_000, 'what is left to refund shrinks');
+  assert.ok(after.refundHistory.some((h) => h.orderId === orderId && h.reason === 'Box arrived dented'));
+});
+
+await check('somebody else’s refunds are not on your list', async () => {
+  const stranger = await newBuyer('Refund Stranger');
+  assert.deepEqual((await myRefunds(req({ headers: stranger.headers }), ctx)).jsonBody.refunds, []);
 });
 
 console.log(`\n${passed} checks passed`);

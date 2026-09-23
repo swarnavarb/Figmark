@@ -20,7 +20,7 @@ import {
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { Listing, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
-import { isExpired } from '@shared/payments';
+import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import type { StoreAccess } from '@shared/stores';
 import {
@@ -36,16 +36,17 @@ import {
   type SaleRow,
   type SalesResponse,
   type ShopCredit,
+  type RefundableOrder,
   type RoutesResponse,
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
 import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
-import { formatDate, formatMoney, timeAgo } from '../format';
+import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Section = 'items' | 'payments' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -54,6 +55,9 @@ const SECTIONS: { id: Section; label: string }[] = [
   // to live. The id stays `payments` - it is the identity, and renaming it
   // would only be a way to break the rights that reference it.
   { id: 'payments', label: 'Orders' },
+  // Every amount owed back to a buyer - overpaid, cancelled, or a refund the
+  // seller starts - in one place, set apart on the right of the same row.
+  { id: 'refunds', label: '↩️ Refunds' },
   { id: 'lots', label: 'Track' },
   { id: 'routes', label: 'Routes' },
   { id: 'packing', label: 'Packing' },
@@ -68,7 +72,7 @@ const SECTIONS: { id: Section; label: string }[] = [
  * eight at once.
  */
 const SECTION_GROUPS: Record<string, Section[]> = {
-  items: ['items', 'payments'],
+  items: ['items', 'payments', 'refunds'],
   manage: ['storefront', 'people', 'packing'],
   lots: ['lots'],
   routes: ['routes'],
@@ -304,7 +308,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
               type="button"
               role="tab"
               aria-selected={active === entry.id}
-              className={`chip${active === entry.id ? ' is-on' : ''}`}
+              className={`chip${entry.id === 'refunds' ? ' chip--refunds' : ''}${active === entry.id ? ' is-on' : ''}`}
               onClick={() => setSection(entry.id)}
             >
               {entry.label}
@@ -320,6 +324,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         <div className="tab-view" style={{ marginTop: chips.length > 1 ? 14 : 20 }} key={`${store.ownerId}:${active}`}>
           {active === 'items' && <MyItems store={store} />}
           {active === 'payments' && <Orders store={store} />}
+          {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'packing' && <PackingList storeId={store.ownerId} />}
@@ -776,7 +781,6 @@ function Orders({ store }: { store: StoreAccess }) {
   const [cancelling, setCancelling] = useState<SaleRow | null>(null);
   const [filing, setFiling] = useState<SaleRow | null>(null);
   const [denyingClaim, setDenyingClaim] = useState<SaleRow | null>(null);
-  const [managingCredits, setManagingCredits] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   /*
    * Both filters live in the URL, so opening an order and coming back lands
@@ -895,30 +899,9 @@ function Orders({ store }: { store: StoreAccess }) {
     );
   }
 
-  const liveCredits = data.credits.filter((credit) => credit.status !== 'refund_pending');
-  const creditTotal = liveCredits.reduce((sum, credit) => sum + credit.leftMinor, 0);
-
   return (
     <div className="stack">
       {error && <ErrorNotice message={error} />}
-
-      {/* Every buyer's extra payment, in one place to decide about - the
-          order each one happened to land on is no place to manage it from. */}
-      <button type="button" className={`creditbtn${liveCredits.length ? ' has-some' : ''}`}
-        onClick={() => setManagingCredits(true)}>
-        <span className="creditbtn__icon" aria-hidden="true">💰</span>
-        <span className="creditbtn__body">
-          <b>Extra payments</b>
-          <small>
-            {data.credits.length === 0
-              ? 'Nothing overpaid right now'
-              : `${liveCredits.length} to decide${data.credits.length > liveCredits.length
-                ? ` · ${data.credits.length - liveCredits.length} awaiting buyer` : ''}`}
-          </small>
-        </span>
-        {creditTotal > 0 && <span className="creditbtn__amt">{formatMoney(creditTotal, liveCredits[0]!.currency)}</span>}
-        <Icon name="right" size={15} />
-      </button>
 
       <div className="seg" role="tablist" aria-label="Order status">
         {(['active', 'completed'] as const).map((entry) => (
@@ -982,14 +965,6 @@ function Orders({ store }: { store: StoreAccess }) {
           row={rejecting}
           onClose={() => setRejecting(null)}
           onDone={() => { setRejecting(null); void load(); }}
-        />
-      )}
-
-      {managingCredits && (
-        <ExtraPayments
-          credits={data.credits}
-          onClose={() => setManagingCredits(false)}
-          onChanged={load}
         />
       )}
 
@@ -1521,34 +1496,146 @@ function OrderRow({
 }
 
 /**
- * Every buyer's extra payment, and the three things a seller can do with one.
+ * Everything the shop owes back, and everything it has sent back.
  *
- * Send it back - which, like every other money claim here, the buyer then
- * confirms. Put it towards another of that buyer's orders that still owes
- * something. Or keep it for whatever they order next, which is only a
- * recorded decision until one of those orders exists to move it onto.
+ * Three ways money ends up owed to a buyer - they paid more than the item
+ * cost, the seller cancelled after they had paid, or the seller decided to
+ * refund some of it themselves (a dispute settled between them, a damaged
+ * box) - and one place to deal with all three. Each can be returned whole or
+ * in parts, moved onto another of that buyer's orders, or kept for their
+ * next one; every return waits on the buyer to say it arrived, and every
+ * one is kept in the history: to whom, for what, how much and when.
  */
-function ExtraPayments({ credits, onClose, onChanged }: {
-  credits: ShopCredit[];
-  onClose: () => void;
-  onChanged: () => Promise<void>;
-}) {
-  const [open, setOpen] = useState<{ creditId: string; mode: 'refund' | 'apply' } | null>(null);
+function Refunds({ store }: { store: StoreAccess }) {
+  const [data, setData] = useState<SalesResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'owed' | 'history'>('owed');
+  const [starting, setStarting] = useState(false);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setData(await api.sales(store.ownerId));
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load refunds.');
+    }
+  }, [store.ownerId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (error && !data) return <ErrorNotice message={error} />;
+  if (!data) return <p className="muted">Loading…</p>;
+
+  const deciding = data.credits.filter((credit) => credit.status !== 'refund_pending');
+  const waiting = data.credits.filter((credit) => credit.status === 'refund_pending');
+  const owedMinor = data.credits.reduce((sum, credit) => sum + credit.leftMinor, 0);
+  const sentMinor = data.refundHistory
+    .filter((entry) => entry.kind === 'refund' && entry.status === 'received')
+    .reduce((sum, entry) => sum + entry.amountMinor, 0);
+  const currency = data.credits[0]?.currency ?? data.refundHistory[0]?.currency ?? 'INR';
+
+  return (
+    <div className="stack">
+      {error && <ErrorNotice message={error} />}
+
+      <section className="rfhero">
+        <div className="rfhero__main">
+          <small>Still to refund</small>
+          <b>{formatMoney(owedMinor, currency)}</b>
+          <span>
+            {deciding.length} to decide · {waiting.length} waiting on the buyer · {formatMoney(sentMinor, currency)} refunded so far
+          </span>
+        </div>
+        <button type="button" className="rfhero__new" onClick={() => setStarting((open) => !open)}>
+          {starting ? 'Close' : '＋ New refund'}
+        </button>
+      </section>
+
+      {starting && (
+        <NewRefund refundable={data.refundable} onClose={() => setStarting(false)}
+          onDone={async () => { setStarting(false); setView('history'); await load(); }} />
+      )}
+
+      <div className="seg" role="tablist" aria-label="Refunds">
+        <button type="button" role="tab" aria-selected={view === 'owed'} className={view === 'owed' ? 'is-on' : ''}
+          onClick={() => setView('owed')}>
+          To refund {data.credits.length}
+        </button>
+        <button type="button" role="tab" aria-selected={view === 'history'} className={view === 'history' ? 'is-on' : ''}
+          onClick={() => setView('history')}>
+          History {data.refundHistory.length}
+        </button>
+      </div>
+
+      {view === 'owed' && (data.credits.length === 0 ? (
+        <EmptyState title="Nothing to refund">
+          When a buyer pays more than they owe, or you cancel an order they have paid for, the money
+          they are owed lands here. You can also start a refund yourself with New refund.
+        </EmptyState>
+      ) : data.credits.map((credit) => <RefundCard key={credit.creditId} credit={credit} onChanged={load} />))}
+
+      {view === 'history' && (data.refundHistory.length === 0 ? (
+        <p className="muted">No refunds sent yet.</p>
+      ) : (
+        <ul className="rfhist">
+          {data.refundHistory.map((entry) => (
+            <li key={entry.id} className={`rfhist__row rfhist__row--${entry.kind === 'moved' ? 'moved' : entry.status}`}>
+              <span className="rfhist__icon" aria-hidden="true">{entry.kind === 'moved' ? '➡️' : '↩️'}</span>
+              <span className="rfhist__body">
+                <b>{entry.buyer.name}</b>
+                <small>
+                  {entry.kind === 'moved' ? `Moved to ${entry.movedTo} · from ${entry.itemName}` : entry.itemName}
+                  {' · '}{REFUND_ORIGIN_LABELS[entry.origin]}{entry.reason ? ` — ${entry.reason}` : ''}
+                </small>
+                <small>
+                  {formatDateOrdinal(entry.at)}{entry.reference ? ` · ref ${entry.reference}` : ''}
+                </small>
+              </span>
+              <span className="rfhist__side">
+                <b>{formatMoney(entry.amountMinor, entry.currency)}</b>
+                <span className={`badge ${entry.kind === 'moved' ? 'badge--aqua'
+                  : entry.status === 'received' ? 'badge--ok' : entry.status === 'awaiting' ? 'badge--warn' : 'badge--danger'}`}>
+                  {entry.kind === 'moved' ? 'Moved' : entry.status === 'received' ? 'Received'
+                    : entry.status === 'awaiting' ? 'Awaiting buyer' : 'Not received'}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ))}
+    </div>
+  );
+}
+
+/** One amount owed back, and the three things a seller can do with it. */
+function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () => Promise<void> }) {
+  const [mode, setMode] = useState<'refund' | 'apply' | null>(null);
+  const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
   const [message, setMessage] = useState('');
   const [target, setTarget] = useState('');
-  const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pending = credit.status === 'refund_pending';
+  const chosen = credit.targets.find((entry) => entry.orderId === target);
+  const typedMinor = Math.round(Number(amount) * 100) || 0;
+  const cap = mode === 'apply' && chosen ? Math.min(credit.leftMinor, chosen.outstandingMinor) : credit.leftMinor;
 
-  function start(credit: ShopCredit, mode: 'refund' | 'apply') {
-    setOpen({ creditId: credit.creditId, mode });
+  function open(next: 'refund' | 'apply') {
+    setMode(next);
     setError(null);
     setReference('');
-    setMessage(`I have returned your extra payment of ${formatMoney(credit.leftMinor, credit.currency)} for "${credit.itemName}". Please confirm on the order once it reaches you.`);
-    const first = credit.targets[0];
-    setTarget(first?.orderId ?? '');
-    setAmount(first ? String(Math.min(credit.leftMinor, first.outstandingMinor) / 100) : '');
+    // Filled with what is owed, and editable: refund less and the rest stays here.
+    if (next === 'refund') {
+      setAmount(String(credit.leftMinor / 100));
+      setMessage('');
+    } else {
+      const first = credit.targets[0];
+      setTarget(first?.orderId ?? '');
+      setAmount(first ? String(Math.min(credit.leftMinor, first.outstandingMinor) / 100) : '');
+    }
   }
 
   async function run(key: string, fn: () => Promise<unknown>) {
@@ -1556,8 +1643,8 @@ function ExtraPayments({ credits, onClose, onChanged }: {
     setError(null);
     try {
       await fn();
+      setMode(null);
       await onChanged();
-      setOpen(null);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {
@@ -1566,133 +1653,214 @@ function ExtraPayments({ credits, onClose, onChanged }: {
   }
 
   return (
-    <Modal title="💰 Extra payments" onClose={onClose}>
-      <div className="stack">
-        {credits.length === 0 ? (
-          <p className="muted">
-            Nobody has paid more than they owe. When a buyer does, the extra lands here for you to
-            return, put towards another of their orders, or keep for their next one.
-          </p>
-        ) : credits.map((credit) => {
-          const editing = open?.creditId === credit.creditId ? open.mode : null;
-          const pending = credit.status === 'refund_pending';
-          const chosen = credit.targets.find((entry) => entry.orderId === target);
-          return (
-            <section key={credit.creditId} className={`xcredit xcredit--${credit.status}`}>
-              <div className="xcredit__head">
-                <span className="xcredit__amt">{formatMoney(credit.leftMinor, credit.currency)}</span>
-                <span className="xcredit__who">
-                  <b>{credit.buyer.name}</b>
-                  <small>from {credit.itemName} · {timeAgo(credit.createdAt)}</small>
-                </span>
-                <span className={`badge ${pending ? 'badge--warn' : credit.status === 'held' ? 'badge--purple' : 'badge--accent'}`}>
-                  {pending ? 'Awaiting buyer' : credit.status === 'held' ? 'Kept for future' : 'To decide'}
-                </span>
-              </div>
-
-              {credit.applications.length > 0 && (
-                <p className="faint xcredit__note">
-                  Already moved: {credit.applications.map((moved) =>
-                    `${formatMoney(moved.amountMinor, credit.currency)} → ${moved.itemName}`).join(', ')}
-                </p>
-              )}
-              {credit.refundDenials > 0 && !pending && (
-                <p className="notice notice--warn xcredit__note">
-                  The buyer said a return of this did not arrive. Check, and send it again.
-                </p>
-              )}
-              {pending && credit.pendingRefund && (
-                <p className="faint xcredit__note">
-                  ↩️ You returned {formatMoney(credit.pendingRefund.amountMinor, credit.currency)}
-                  {credit.pendingRefund.reference ? ` (ref ${credit.pendingRefund.reference})` : ''} {timeAgo(credit.pendingRefund.sentAt)} —
-                  waiting for {credit.buyer.name} to confirm it arrived.
-                </p>
-              )}
-
-              {!pending && !editing && (
-                <div className="xcredit__acts">
-                  <button type="button" className="btn btn--sm" onClick={() => start(credit, 'refund')}>
-                    ↩️ Pay it back
-                  </button>
-                  <button type="button" className="btn btn--sm btn--ghost" disabled={credit.targets.length === 0}
-                    title={credit.targets.length === 0 ? 'This buyer has no other order that still owes anything' : undefined}
-                    onClick={() => start(credit, 'apply')}>
-                    ➡️ Use for an order
-                  </button>
-                  {credit.status === 'open' && (
-                    <button type="button" className="btn btn--sm btn--quiet" disabled={busy !== null}
-                      onClick={() => void run(`hold-${credit.creditId}`, () => api.holdCredit(credit.orderId, credit.creditId))}>
-                      {busy === `hold-${credit.creditId}` ? 'Saving…' : '🕒 Keep for future orders'}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {editing === 'refund' && (
-                <div className="xcredit__form">
-                  <label className="field">
-                    <span>Reference (UTR or transaction id)</span>
-                    <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" />
-                  </label>
-                  <label className="field">
-                    <span>Message to {credit.buyer.name}</span>
-                    <textarea rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
-                    <span className="field__hint">Sent to their messages. They are asked to confirm it arrived.</span>
-                  </label>
-                  <div className="row" style={{ flexWrap: 'wrap' }}>
-                    <button type="button" className="btn btn--ok" disabled={busy !== null}
-                      onClick={() => void run('refund', () => api.refundCredit(credit.orderId, {
-                        creditId: credit.creditId, reference: reference.trim() || undefined, message: message.trim() || undefined,
-                      }))}>
-                      {busy === 'refund' ? 'Sending…' : `I've paid back ${formatMoney(credit.leftMinor, credit.currency)}`}
-                    </button>
-                    <button type="button" className="btn btn--quiet" onClick={() => setOpen(null)}>Back</button>
-                  </div>
-                </div>
-              )}
-
-              {editing === 'apply' && (
-                <div className="xcredit__form">
-                  <label className="field">
-                    <span>Put it towards</span>
-                    <select value={target} onChange={(e) => {
-                      setTarget(e.target.value);
-                      const next = credit.targets.find((entry) => entry.orderId === e.target.value);
-                      if (next) setAmount(String(Math.min(credit.leftMinor, next.outstandingMinor) / 100));
-                    }}>
-                      {credit.targets.map((entry) => (
-                        <option key={entry.orderId} value={entry.orderId}>
-                          {entry.itemName} — {formatMoney(entry.outstandingMinor, credit.currency)} owed
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Amount (₹)</span>
-                    <input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} />
-                    {chosen && (
-                      <span className="field__hint">
-                        Up to {formatMoney(Math.min(credit.leftMinor, chosen.outstandingMinor), credit.currency)}.
-                      </span>
-                    )}
-                  </label>
-                  <div className="row" style={{ flexWrap: 'wrap' }}>
-                    <button type="button" className="btn btn--ok" disabled={busy !== null || !target || !(Number(amount) > 0)}
-                      onClick={() => void run('apply', () => api.applyCredit(credit.orderId, {
-                        creditId: credit.creditId, targetOrderId: target, amountMinor: Math.round(Number(amount) * 100),
-                      }))}>
-                      {busy === 'apply' ? 'Moving…' : 'Apply to this order'}
-                    </button>
-                    <button type="button" className="btn btn--quiet" onClick={() => setOpen(null)}>Back</button>
-                  </div>
-                </div>
-              )}
-            </section>
-          );
-        })}
-        {error && <ErrorNotice message={error} />}
+    <section className={`xcredit xcredit--${credit.status} xcredit--from-${credit.origin}`}>
+      <div className="xcredit__head">
+        <span className="xcredit__amt">{formatMoney(credit.leftMinor, credit.currency)}</span>
+        <span className="xcredit__who">
+          <b>{credit.buyer.name}</b>
+          <small>
+            <Link to={`/order/${credit.orderId}`}>{credit.itemName}</Link> · {timeAgo(credit.createdAt)}
+          </small>
+        </span>
+        <span className="xcredit__tags">
+          <span className="badge badge--accent">{REFUND_ORIGIN_LABELS[credit.origin]}</span>
+          <span className={`badge ${pending ? 'badge--warn' : credit.status === 'held' ? 'badge--purple' : 'badge--pink'}`}>
+            {pending ? 'Awaiting buyer' : credit.status === 'held' ? 'Kept for future' : 'To decide'}
+          </span>
+        </span>
       </div>
-    </Modal>
+
+      {credit.reason && <p className="faint xcredit__note">“{credit.reason}”</p>}
+      {(credit.refundedMinor > 0 || credit.applications.length > 0) && (
+        <p className="faint xcredit__note">
+          Of {formatMoney(credit.amountMinor, credit.currency)}:
+          {credit.refundedMinor > 0 && ` ${formatMoney(credit.refundedMinor, credit.currency)} refunded`}
+          {credit.applications.map((moved) => ` · ${formatMoney(moved.amountMinor, credit.currency)} → ${moved.itemName}`)}
+        </p>
+      )}
+      {credit.refundDenials > 0 && !pending && (
+        <p className="notice notice--warn xcredit__note">
+          The buyer said an earlier refund of this did not arrive. Check, and send it again.
+        </p>
+      )}
+      {pending && credit.pendingRefund && (
+        <p className="faint xcredit__note">
+          ↩️ You refunded {formatMoney(credit.pendingRefund.amountMinor, credit.currency)}
+          {credit.pendingRefund.reference ? ` (ref ${credit.pendingRefund.reference})` : ''} {timeAgo(credit.pendingRefund.sentAt)} —
+          waiting for {credit.buyer.name} to confirm it arrived.
+        </p>
+      )}
+
+      {!pending && !mode && (
+        <div className="xcredit__acts">
+          <button type="button" className="btn btn--sm btn--ok" onClick={() => open('refund')}>↩️ Refund</button>
+          <button type="button" className="btn btn--sm btn--ghost" disabled={credit.targets.length === 0}
+            title={credit.targets.length === 0 ? 'This buyer has no other order that still owes anything' : undefined}
+            onClick={() => open('apply')}>
+            ➡️ Use for an order
+          </button>
+          {credit.status === 'open' && (
+            <button type="button" className="btn btn--sm btn--quiet" disabled={busy !== null}
+              onClick={() => void run('hold', () => api.holdCredit(credit.orderId, credit.creditId))}>
+              {busy === 'hold' ? 'Saving…' : '🕒 Keep for future orders'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {mode && (
+        <div className="xcredit__form">
+          {mode === 'apply' && (
+            <label className="field">
+              <span>Put it towards</span>
+              <select value={target} onChange={(e) => {
+                setTarget(e.target.value);
+                const next = credit.targets.find((entry) => entry.orderId === e.target.value);
+                if (next) setAmount(String(Math.min(credit.leftMinor, next.outstandingMinor) / 100));
+              }}>
+                {credit.targets.map((entry) => (
+                  <option key={entry.orderId} value={entry.orderId}>
+                    {entry.itemName} — {formatMoney(entry.outstandingMinor, credit.currency)} owed
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            <span>Amount (₹)</span>
+            <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <span className="field__hint">
+              {typedMinor > cap
+                ? `At most ${formatMoney(cap, credit.currency)}.`
+                : typedMinor > 0 && typedMinor < credit.leftMinor
+                  ? `${formatMoney(credit.leftMinor - typedMinor, credit.currency)} stays here to refund later.`
+                  : `The full ${formatMoney(credit.leftMinor, credit.currency)}.`}
+            </span>
+          </label>
+          {mode === 'refund' && (
+            <>
+              <label className="field">
+                <span>Reference (UTR or transaction id)</span>
+                <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" />
+              </label>
+              <label className="field">
+                <span>Message to {credit.buyer.name}</span>
+                <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Optional — a standard note is sent if you leave this empty." />
+                <span className="field__hint">They are notified and asked to confirm it arrived.</span>
+              </label>
+            </>
+          )}
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--ok"
+              disabled={busy !== null || typedMinor <= 0 || typedMinor > cap || (mode === 'apply' && !target)}
+              onClick={() => void run(mode, () => (mode === 'refund'
+                ? api.refundCredit(credit.orderId, {
+                    creditId: credit.creditId, amountMinor: typedMinor,
+                    reference: reference.trim() || undefined, message: message.trim() || undefined,
+                  })
+                : api.applyCredit(credit.orderId, { creditId: credit.creditId, targetOrderId: target, amountMinor: typedMinor })))}>
+              {busy ? 'Saving…' : mode === 'refund'
+                ? `I've refunded ${formatMoney(typedMinor, credit.currency)}`
+                : 'Apply to this order'}
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={() => setMode(null)}>Back</button>
+          </div>
+        </div>
+      )}
+      {error && <ErrorNotice message={error} />}
+    </section>
+  );
+}
+
+/**
+ * A refund the seller starts themselves - after a dispute, a damaged box, a
+ * goodwill gesture. Nothing is owed until they say so, so nothing is filled
+ * in for them: they choose the order, type the amount, and say why.
+ */
+function NewRefund({ refundable, onClose, onDone }: {
+  refundable: RefundableOrder[];
+  onClose: () => void;
+  onDone: () => Promise<void>;
+}) {
+  const [orderId, setOrderId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [reference, setReference] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const chosen = refundable.find((entry) => entry.orderId === orderId);
+  const typedMinor = Math.round(Number(amount) * 100) || 0;
+
+  async function submit() {
+    if (!chosen) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.startRefund(chosen.orderId, {
+        amountMinor: typedMinor, reason: reason.trim(),
+        reference: reference.trim() || undefined, message: message.trim() || undefined,
+      });
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not start that refund.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rfnew">
+      <h3>＋ New refund</h3>
+      {refundable.length === 0 ? (
+        <p className="muted">No order has a payment on it that has not already been refunded.</p>
+      ) : (
+        <>
+          <label className="field">
+            <span>Order</span>
+            <select value={orderId} onChange={(e) => setOrderId(e.target.value)}>
+              <option value="">Choose an order…</option>
+              {refundable.map((entry) => (
+                <option key={entry.orderId} value={entry.orderId}>
+                  {entry.buyer.name} — {entry.itemName} (up to {formatMoney(entry.refundableMinor, entry.currency)})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Amount (₹)</span>
+            <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+            {chosen && typedMinor > chosen.refundableMinor && (
+              <span className="field__hint">At most {formatMoney(chosen.refundableMinor, chosen.currency)} on this order.</span>
+            )}
+          </label>
+          <label className="field">
+            <span>What is it for?</span>
+            <input value={reason} onChange={(e) => setReason(e.target.value)}
+              placeholder="Box arrived dented — settled after the dispute" />
+          </label>
+          <label className="field">
+            <span>Reference (UTR or transaction id)</span>
+            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" />
+          </label>
+          <label className="field">
+            <span>Message to the buyer</span>
+            <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)}
+              placeholder="Optional — a standard note is sent if you leave this empty." />
+          </label>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--ok"
+              disabled={busy || !chosen || typedMinor <= 0 || typedMinor > (chosen?.refundableMinor ?? 0) || reason.trim().length < 3}
+              onClick={() => void submit()}>
+              {busy ? 'Sending…' : typedMinor > 0 && chosen ? `Refund ${formatMoney(typedMinor, chosen.currency)}` : 'Refund'}
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={onClose}>Cancel</button>
+          </div>
+        </>
+      )}
+      {error && <ErrorNotice message={error} />}
+    </section>
   );
 }
 

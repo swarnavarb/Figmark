@@ -433,7 +433,10 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       buyer: buyers.get(order.buyerId) ?? personRef(null),
       creditId: credit.id,
       createdAt: credit.createdAt,
+      origin: credit.origin ?? 'overpaid',
+      reason: credit.reason ?? null,
       amountMinor: credit.amountMinor,
+      refundedMinor: credit.refundedMinor,
       leftMinor: creditLeft(credit),
       status: credit.status,
       pendingRefund: credit.pendingRefund ?? null,
@@ -447,8 +450,46 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     })))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  /* Every refund this shop has ever sent, and every amount it moved onto
+     another order instead - to whom, for what, and when - newest first. */
+  const refundHistory = orders.flatMap((order) => (order.credits ?? []).flatMap((credit) => {
+    const common = {
+      orderId: order.id, itemName: order.itemName, currency: order.currency,
+      buyer: buyers.get(order.buyerId) ?? personRef(null),
+      origin: credit.origin ?? 'overpaid', reason: credit.reason ?? null,
+    };
+    return [
+      ...(credit.refundLog ?? []).map((entry) => ({
+        ...common, id: entry.id, kind: 'refund' as const, amountMinor: entry.amountMinor, at: entry.sentAt,
+        reference: entry.reference, status: entry.status, answeredAt: entry.answeredAt, movedTo: null,
+      })),
+      ...(credit.applications ?? []).map((moved, at) => ({
+        ...common, id: `${credit.id}-mv${at}`, kind: 'moved' as const, amountMinor: moved.amountMinor, at: moved.at,
+        reference: null, status: 'received' as const, answeredAt: moved.at, movedTo: moved.itemName,
+      })),
+    ];
+  })).sort((a, b) => b.at.localeCompare(a.at));
+
+  /* What a fresh refund could be started against: anything paid for that a
+     cancellation or an earlier refund has not already claimed. */
+  const refundable = orders
+    .map((order) => {
+      const reserved = (order.credits ?? [])
+        .filter((credit) => credit.origin === 'cancelled' || credit.origin === 'manual')
+        .reduce((sum, credit) => sum + credit.amountMinor, 0);
+      return {
+        orderId: order.id, itemName: order.itemName, currency: order.currency, createdAt: order.createdAt,
+        buyer: buyers.get(order.buyerId) ?? personRef(null),
+        refundableMinor: Math.max(0, orderMoney(order).paidMinor - reserved),
+      };
+    })
+    .filter((entry) => entry.refundableMinor > 0)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
   return json(200, {
     credits,
+    refundHistory,
+    refundable,
     waiting: waiting.map(row),
     placed: placed.map(row),
     answered: answered.map(row),

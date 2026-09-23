@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { CreditRecord, Listing, Order } from '@shared/models';
 import {
-  PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
+  PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, REFUND_ORIGIN_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
   isMultiple, methodOf, orderMoney, timeLeft,
 } from '@shared/payments';
 import { ApiRequestError, api } from '../api';
@@ -79,7 +79,7 @@ export function PaymentHistory({ order, side, onChanged }: {
   const open = (order.credits ?? []).filter(creditIsLive);
 
   async function refund() {
-    if (!window.confirm('Mark the extra payment as returned? The buyer is told and asked to confirm it arrived.')) return;
+    if (!window.confirm('Mark the full amount as refunded? The buyer is told and asked to confirm it arrived. To refund part of it, use Sell → Refunds.')) return;
     setBusy(true);
     setError(null);
     try {
@@ -124,14 +124,14 @@ export function PaymentHistory({ order, side, onChanged }: {
         <div key={credit.id}
           className={`creditline${credit.status === 'refunded' || credit.status === 'applied' ? ' is-done' : ''}`}>
           <span>
-            💰 Extra payment / credit: <b>{formatMoney(credit.amountMinor, order.currency)}</b>
+            ↩️ {REFUND_ORIGIN_LABELS[credit.origin ?? 'overpaid']}: <b>{formatMoney(credit.amountMinor, order.currency)}</b>
           </span>
           <span className="faint">{creditStory(credit, order.currency)}</span>
         </div>
       ))}
       {side === 'seller' && open.length > 0 && (
         <button type="button" className="btn" disabled={busy} onClick={() => void refund()}>
-          {busy ? 'Sending…' : `↩️ Return extra payment (${formatMoney(money.creditMinor, order.currency)})`}
+          {busy ? 'Sending…' : `↩️ Refund ${formatMoney(money.creditMinor, order.currency)}`}
         </button>
       )}
       {error && <ErrorNotice message={error} />}
@@ -149,11 +149,11 @@ function creditStory(credit: CreditRecord, currency: string): string {
     parts.push(`${formatMoney(moved.amountMinor, currency)} put towards ${moved.itemName}`);
   }
   if (credit.status === 'refund_pending' && credit.pendingRefund) {
-    parts.push(`${formatMoney(credit.pendingRefund.amountMinor, currency)} sent back — waiting for the buyer to confirm`);
+    parts.push(`${formatMoney(credit.pendingRefund.amountMinor, currency)} refunded — waiting for the buyer to confirm`);
   } else if (credit.status === 'held') {
     parts.push(`${formatMoney(creditLeft(credit), currency)} kept as credit for future orders`);
   } else if (credit.status === 'open') {
-    parts.push(`${formatMoney(creditLeft(credit), currency)} waiting for the seller to decide`);
+    parts.push(`${formatMoney(creditLeft(credit), currency)} still to refund`);
   }
   return parts.join(' · ');
 }

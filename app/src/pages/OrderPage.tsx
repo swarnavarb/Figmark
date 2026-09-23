@@ -567,7 +567,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
             {actions.includes('ack_credit_refund') && (
               <div className="claimcard__ask">
                 <p style={{ margin: 0 }}>
-                  ↩️ The seller says they returned your extra payment of{' '}
+                  ↩️ The seller says they refunded{' '}
                   <b>{formatMoney(returnedMinor, order.currency)}</b>
                   {returned[0]?.pendingRefund?.reference ? ` (reference ${returned[0].pendingRefund.reference})` : ''}.
                   Did it reach you?
