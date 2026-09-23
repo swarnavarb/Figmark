@@ -313,11 +313,27 @@ function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, Sta
   const index = new Map<string, number>();
   steps.forEach((step, at) => { if (!index.has(step.name)) index.set(step.name, at); });
 
+  /*
+   * Walked in the order things happened, not the order they were stored.
+   *
+   * A payment, a claim, a credit - anything the order records without naming
+   * a rung - only knows the order's coarse stage, and that stage does not move
+   * when a checkpoint is ticked. Filed by stage alone, a payment made the day
+   * after the parcel reached the warehouse sat under "Order placed", above the
+   * warehouse rung, reading as if it came first. So an unnamed event goes no
+   * higher than the furthest rung a named one had already reached by then.
+   */
+  const time = (event: StageEvent) => new Date(event.enteredAt).getTime() || 0;
+  const ordered = history.map((event, at) => ({ event, at }))
+    .sort((a, b) => time(a.event) - time(b.event) || a.at - b.at);
+
+  let reached = -1;
   const out = new Map<number, StageEvent[]>();
-  for (const event of history) {
-    if (!event.note && !event.trackingId && !event.shipper && !isLotEvent(event)) continue;
+  for (const { event } of ordered) {
     const named = event.step ? index.get(event.step) : undefined;
-    const at = named ?? stepForStage({ steps }, event.stage as LotStage);
+    if (named !== undefined) reached = Math.max(reached, named);
+    if (!event.note && !event.trackingId && !event.shipper && !isLotEvent(event)) continue;
+    const at = named ?? Math.max(stepForStage({ steps }, event.stage as LotStage), reached);
     const existing = out.get(at);
     if (existing) existing.push(event);
     else out.set(at, [event]);

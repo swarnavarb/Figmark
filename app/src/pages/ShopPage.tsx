@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LOT_CARD_LABELS, LOT_STAGES,
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
@@ -35,6 +35,7 @@ import {
   type LotsResponse,
   type SaleRow,
   type SalesResponse,
+  type ShopCredit,
   type RoutesResponse,
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
@@ -775,10 +776,29 @@ function Orders({ store }: { store: StoreAccess }) {
   const [cancelling, setCancelling] = useState<SaleRow | null>(null);
   const [filing, setFiling] = useState<SaleRow | null>(null);
   const [denyingClaim, setDenyingClaim] = useState<SaleRow | null>(null);
+  const [managingCredits, setManagingCredits] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [filter, setFilter] = useState<OrderFilter>('all');
+  /*
+   * Both filters live in the URL, so opening an order and coming back lands
+   * on the same list it was opened from - not "All, Active" with the order
+   * somewhere below the fold.
+   */
+  const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const filter = (['all', 'answer', 'nolot'] as const).find((entry) => entry === params.get('show')) ?? 'all';
   /** Delivered is done; everything else is still being worked. */
-  const [statusFilter, setStatusFilter] = useState<'active' | 'completed'>('active');
+  const statusFilter = params.get('state') === 'completed' ? 'completed' : 'active';
+  const setParam = (key: string, value: string) => setParams((current) => {
+    const copy = new URLSearchParams(current);
+    copy.set(key, value);
+    return copy;
+  }, { replace: true });
+  const setFilter = (next: OrderFilter) => setParam('show', next);
+  const setStatusFilter = (next: 'active' | 'completed') => setParam('state', next);
+  const here = `${location.pathname}${location.search}`;
+  const focusOrder = (location.state as { focusOrder?: string } | null)?.focusOrder ?? null;
+  const [glowing, setGlowing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -792,6 +812,20 @@ function Orders({ store }: { store: StoreAccess }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /* Coming back from an order: put it in the middle of the screen and let it
+     glow for a moment, then forget the request so a reload does not repeat it. */
+  useEffect(() => {
+    if (!data || !focusOrder) return;
+    const card = document.getElementById(`order-${focusOrder}`);
+    if (card) {
+      card.scrollIntoView({ block: 'center' });
+      setGlowing(focusOrder);
+    }
+    navigate(here, { replace: true, state: null });
+    const timer = window.setTimeout(() => setGlowing(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [data, focusOrder, here, navigate]);
 
   /** The one tick this screen makes. Everything else opens something. */
   async function markWarehouse(row: SaleRow, on: boolean) {
@@ -861,9 +895,30 @@ function Orders({ store }: { store: StoreAccess }) {
     );
   }
 
+  const liveCredits = data.credits.filter((credit) => credit.status !== 'refund_pending');
+  const creditTotal = liveCredits.reduce((sum, credit) => sum + credit.leftMinor, 0);
+
   return (
     <div className="stack">
       {error && <ErrorNotice message={error} />}
+
+      {/* Every buyer's extra payment, in one place to decide about - the
+          order each one happened to land on is no place to manage it from. */}
+      <button type="button" className={`creditbtn${liveCredits.length ? ' has-some' : ''}`}
+        onClick={() => setManagingCredits(true)}>
+        <span className="creditbtn__icon" aria-hidden="true">💰</span>
+        <span className="creditbtn__body">
+          <b>Extra payments</b>
+          <small>
+            {data.credits.length === 0
+              ? 'Nothing overpaid right now'
+              : `${liveCredits.length} to decide${data.credits.length > liveCredits.length
+                ? ` · ${data.credits.length - liveCredits.length} awaiting buyer` : ''}`}
+          </small>
+        </span>
+        {creditTotal > 0 && <span className="creditbtn__amt">{formatMoney(creditTotal, liveCredits[0]!.currency)}</span>}
+        <Icon name="right" size={15} />
+      </button>
 
       <div className="seg" role="tablist" aria-label="Order status">
         {(['active', 'completed'] as const).map((entry) => (
@@ -900,11 +955,14 @@ function Orders({ store }: { store: StoreAccess }) {
         </p>
       ) : (
         <div className="orows">
-          {shown.map((row) => (
+          {shown.map((row, index) => (
           <OrderRow
             key={row.id}
+            index={index}
             row={row}
             store={store}
+            from={here}
+            glowing={glowing === row.id}
             busy={busy === row.id}
             needsAnswer={needsAnswer.has(row.id)}
             onWarehouse={(on) => void markWarehouse(row, on)}
@@ -924,6 +982,14 @@ function Orders({ store }: { store: StoreAccess }) {
           row={rejecting}
           onClose={() => setRejecting(null)}
           onDone={() => { setRejecting(null); void load(); }}
+        />
+      )}
+
+      {managingCredits && (
+        <ExtraPayments
+          credits={data.credits}
+          onClose={() => setManagingCredits(false)}
+          onChanged={load}
         />
       )}
 
@@ -1291,25 +1357,26 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
 }
 
 /**
- * One purchase, as a row rather than a card.
+ * One purchase, as a card that reads top to bottom: what it is and who
+ * bought it, where the money has got to, and then - on a line of its own -
+ * whatever it needs from the seller right now.
  *
- * This was a 219px card 1140px wide, which put four orders on a desktop screen
- * and made reviewing thirty-eight of them ten screens of scrolling. A shop
- * works this list in a sitting, so it is a table now: the facts on one line,
- * the state in the edge, and the two controls that are actually used from here
- * kept on the row rather than promoted to full-width buttons.
- *
- * The actions stay in the markup at every width instead of appearing on hover,
- * because hover does not exist on the device most of this app is read on.
- * They are quiet until the row is under the pointer, which is a different
- * thing from being absent.
+ * A card needing an answer wears a slowly turning aura in its own colour, so
+ * a seller scrolling a long list sees what is waiting on them before reading
+ * a word. The decisions themselves are always labelled and coloured - green
+ * for yes, red for no - because touch has no hover and a bare glyph is a
+ * guess.
  */
 function OrderRow({
-  row, store, busy, needsAnswer, onWarehouse, onFile, onReject, onAccept, onCancel,
+  index, row, store, from, glowing, busy, needsAnswer, onWarehouse, onFile, onReject, onAccept, onCancel,
   onSettleReceived, onSettleDenied,
 }: {
+  index: number;
   row: SaleRow;
   store: StoreAccess;
+  /** Where this list is, so the order page can come back to exactly here. */
+  from: string;
+  glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
   onWarehouse: (on: boolean) => void;
@@ -1326,46 +1393,102 @@ function OrderRow({
     ? `/lot/${row.lotId}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`
     : null;
   const { tone, label } = orderTone(row, needsAnswer);
+  const paidShare = row.totalMinor > 0 ? Math.min(100, Math.round((row.paidMinor / row.totalMinor) * 100)) : 0;
+  const orderLink = { pathname: `/order/${row.id}` };
+  const linkState = { from };
 
   return (
-    <article className={`orow orow--${tone}${busy ? ' is-busy' : ''}`}>
-      <span className="orow__stripe" aria-hidden="true" />
-
-      <div className="orow__main">
-        <Link to={`/order/${row.id}`} className="orow__name">{row.itemName}</Link>
-        <div className="orow__meta">
-          <span>{row.buyer.handle
-            ? <Link to={`/${row.buyer.handle}`} className="orow__buyer">{row.buyer.name}</Link>
-            : row.buyer.name}
-          </span>
-          <span>{timeAgo(row.createdAt)}</span>
-          {row.quantity > 1 && <span>{row.quantity} units</span>}
-          {!row.inHand && (
-            lotHref
-              /* The lot by the name the seller gave it, which is what the
-                 lot page is headed with. Showing the generated number here
-                 and the name over there gave one lot two labels and made
-                 the link look like it went somewhere else. */
-              ? <Link to={lotHref} className="orow__lot">{row.lotName ?? `LOT ${row.lotNumber}`}</Link>
-              : <span className="orow__lot orow__lot--none">no lot</span>
-          )}
-          {row.lotStep && <span className="orow__step">{row.lotStep}</span>}
+    <article id={`order-${row.id}`}
+      className={`ocard ocard--${tone}${needsAnswer ? ' is-urgent' : ''}${glowing ? ' is-glowing' : ''}${busy ? ' is-busy' : ''}`}
+      style={{ '--i': Math.min(index, 12) } as CSSProperties}>
+      <div className="ocard__head">
+        <Link to={orderLink} state={linkState} className="ocard__thumb" tabIndex={-1} aria-hidden="true">
+          <Thumb seed={row.id} label={row.itemName} photo={row.photoUrl ? { url: row.photoUrl } : null}
+            className="thumb ocard__img" />
+        </Link>
+        <div className="ocard__title">
+          <Link to={orderLink} state={linkState} className="ocard__name">{row.itemName}</Link>
+          <div className="ocard__meta">
+            {row.buyer.handle
+              ? <Link to={`/${row.buyer.handle}`} className="ocard__buyer">{row.buyer.name}</Link>
+              : <span className="ocard__buyer">{row.buyer.name}</span>}
+            <span aria-hidden="true">·</span>
+            <span>{timeAgo(row.createdAt)}</span>
+            {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
+          </div>
+        </div>
+        <div className="ocard__price">
+          <b>{formatMoney(row.totalMinor, row.currency)}</b>
+          <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>
         </div>
       </div>
 
-      <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>
-      <span className="orow__price">{formatMoney(row.totalMinor, row.currency)}</span>
+      {/* The money, as a bar rather than a sentence: how much of this has
+          actually landed is the first thing a seller wants to know. */}
+      <div className="ocard__money">
+        <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${paidShare}%` }} /></div>
+        <div className="ocard__moneytext">
+          <span><b>{formatMoney(row.paidMinor, row.currency)}</b> paid</span>
+          {row.outstandingMinor > 0
+            ? <span><b>{formatMoney(row.outstandingMinor, row.currency)}</b> left</span>
+            : row.paidMinor > 0 && <span className="ocard__done">✨ Fully paid</span>}
+          {row.creditMinor > 0 && <span className="ocard__extra">💰 {formatMoney(row.creditMinor, row.currency)} extra</span>}
+        </div>
+      </div>
 
-      <div className="orow__acts">
-        {/* A domestic sale has neither of these: it never goes near a
-            warehouse and never joins a lot. */}
+      {!row.inHand && (
+        <div className="ocard__chips">
+          {lotHref
+            /* The lot by the name the seller gave it, which is what the lot
+               page is headed with. */
+            ? <Link to={lotHref} className="ocard__chip ocard__chip--lot">📦 {row.lotName ?? `LOT ${row.lotNumber}`}</Link>
+            : <span className="ocard__chip ocard__chip--none">No lot yet</span>}
+          {row.lotStep && <span className="ocard__chip ocard__chip--step">🚚 {row.lotStep}</span>}
+          {received && <span className="ocard__chip ocard__chip--ok">✓ At warehouse</span>}
+        </div>
+      )}
+
+      {awaitingClaim && row.claim && (
+        <div className="ocard__claim">
+          💸 Buyer says they paid <b>{formatMoney(row.claim.amountMinor ?? row.totalMinor, row.currency)}</b>
+          {row.claim.reference && <span className="ocard__ref"> · ref {row.claim.reference}</span>}
+        </div>
+      )}
+
+      {/* The decision, when there is one, gets a row of its own: two equal
+          buttons, yes on the left in green and no on the right in red. */}
+      {(row.canAccept || awaitingClaim) && (
+        <div className="ocard__decide">
+          {row.canAccept ? (
+            <>
+              <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
+                aria-label="Accept this order" onClick={onAccept}>
+                <Icon name="check" size={15} /> Accept
+              </button>
+              <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
+                aria-label="Reject this order" onClick={onReject}>
+                <Icon name="close" size={15} /> Reject
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
+                aria-label="Confirm the payment arrived" onClick={onSettleReceived}>
+                <Icon name="check" size={15} /> Received
+              </button>
+              <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
+                aria-label="Say the payment has not arrived" onClick={onSettleDenied}>
+                <Icon name="close" size={15} /> Not received
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="ocard__acts">
+        {/* A domestic sale never goes near a warehouse and never joins a lot. */}
         {!row.inHand && (
           <>
-            {/* Labelled, not a bare tick. This was a full-width button reading
-                "China WH received" before the row rewrite, and shrinking it to
-                an icon with a `title` left it undiscoverable on the device most
-                of this is used on: touch has no hover, so the tooltip never
-                appears and the control becomes a mystery glyph. */}
             <button type="button" disabled={busy} aria-pressed={received}
               className={`orow__toggle${received ? ' is-on' : ''}`}
               aria-label={received
@@ -1376,56 +1499,200 @@ function OrderRow({
               <span>China WH</span>
             </button>
             {!lotHref && (
-              <button type="button" className="orow__toggle" aria-label="Add this order to a lot"
-                onClick={onFile}>
+              <button type="button" className="orow__toggle" aria-label="Add this order to a lot" onClick={onFile}>
                 <Icon name="plus" size={13} />
                 <span>Lot</span>
               </button>
             )}
           </>
         )}
-        {row.canAccept && (
-          <>
-            <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
-              aria-label="Accept this order" onClick={onAccept}>
-              <Icon name="check" size={14} /> Accept
-            </button>
-            <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
-              aria-label="Reject this order" onClick={onReject}>
-              <Icon name="close" size={14} /> Reject
-            </button>
-          </>
-        )}
-        {awaitingClaim && (
-          <>
-            <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
-              aria-label={`Confirm the ${row.claim ? formatMoney(row.claim.amountMinor ?? 0, row.currency) : ''} payment arrived`}
-              onClick={onSettleReceived}>
-              <Icon name="check" size={14} /> Received
-            </button>
-            <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
-              aria-label="Say the payment has not arrived" onClick={onSettleDenied}>
-              <Icon name="close" size={14} /> Not received
-            </button>
-          </>
-        )}
-        {needsAnswer && !row.canCancel && !row.canAccept && !awaitingClaim && (
-          <button type="button" className="orow__act orow__act--danger"
-            aria-label="Can't serve this order" onClick={onReject}>
-            <Icon name="close" size={15} />
+        <span className="ocard__spacer" />
+        {row.canCancel && !awaitingClaim && (
+          <button type="button" className="ocard__x" aria-label="Cancel this order" onClick={onCancel}>
+            <Icon name="close" size={14} />
           </button>
         )}
-        {row.canCancel && (
-          <button type="button" className="orow__act orow__act--danger"
-            aria-label="Cancel this order" onClick={onCancel}>
-            <Icon name="close" size={15} />
-          </button>
-        )}
-        <Link to={`/order/${row.id}`} className="orow__act" aria-label="Open this order">
-          <Icon name="right" size={15} />
+        <Link to={orderLink} state={linkState} className="ocard__open" aria-label="Open this order">
+          Open <Icon name="right" size={13} />
         </Link>
       </div>
     </article>
+  );
+}
+
+/**
+ * Every buyer's extra payment, and the three things a seller can do with one.
+ *
+ * Send it back - which, like every other money claim here, the buyer then
+ * confirms. Put it towards another of that buyer's orders that still owes
+ * something. Or keep it for whatever they order next, which is only a
+ * recorded decision until one of those orders exists to move it onto.
+ */
+function ExtraPayments({ credits, onClose, onChanged }: {
+  credits: ShopCredit[];
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState<{ creditId: string; mode: 'refund' | 'apply' } | null>(null);
+  const [reference, setReference] = useState('');
+  const [message, setMessage] = useState('');
+  const [target, setTarget] = useState('');
+  const [amount, setAmount] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function start(credit: ShopCredit, mode: 'refund' | 'apply') {
+    setOpen({ creditId: credit.creditId, mode });
+    setError(null);
+    setReference('');
+    setMessage(`I have returned your extra payment of ${formatMoney(credit.leftMinor, credit.currency)} for "${credit.itemName}". Please confirm on the order once it reaches you.`);
+    const first = credit.targets[0];
+    setTarget(first?.orderId ?? '');
+    setAmount(first ? String(Math.min(credit.leftMinor, first.outstandingMinor) / 100) : '');
+  }
+
+  async function run(key: string, fn: () => Promise<unknown>) {
+    setBusy(key);
+    setError(null);
+    try {
+      await fn();
+      await onChanged();
+      setOpen(null);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Modal title="💰 Extra payments" onClose={onClose}>
+      <div className="stack">
+        {credits.length === 0 ? (
+          <p className="muted">
+            Nobody has paid more than they owe. When a buyer does, the extra lands here for you to
+            return, put towards another of their orders, or keep for their next one.
+          </p>
+        ) : credits.map((credit) => {
+          const editing = open?.creditId === credit.creditId ? open.mode : null;
+          const pending = credit.status === 'refund_pending';
+          const chosen = credit.targets.find((entry) => entry.orderId === target);
+          return (
+            <section key={credit.creditId} className={`xcredit xcredit--${credit.status}`}>
+              <div className="xcredit__head">
+                <span className="xcredit__amt">{formatMoney(credit.leftMinor, credit.currency)}</span>
+                <span className="xcredit__who">
+                  <b>{credit.buyer.name}</b>
+                  <small>from {credit.itemName} · {timeAgo(credit.createdAt)}</small>
+                </span>
+                <span className={`badge ${pending ? 'badge--warn' : credit.status === 'held' ? 'badge--purple' : 'badge--accent'}`}>
+                  {pending ? 'Awaiting buyer' : credit.status === 'held' ? 'Kept for future' : 'To decide'}
+                </span>
+              </div>
+
+              {credit.applications.length > 0 && (
+                <p className="faint xcredit__note">
+                  Already moved: {credit.applications.map((moved) =>
+                    `${formatMoney(moved.amountMinor, credit.currency)} → ${moved.itemName}`).join(', ')}
+                </p>
+              )}
+              {credit.refundDenials > 0 && !pending && (
+                <p className="notice notice--warn xcredit__note">
+                  The buyer said a return of this did not arrive. Check, and send it again.
+                </p>
+              )}
+              {pending && credit.pendingRefund && (
+                <p className="faint xcredit__note">
+                  ↩️ You returned {formatMoney(credit.pendingRefund.amountMinor, credit.currency)}
+                  {credit.pendingRefund.reference ? ` (ref ${credit.pendingRefund.reference})` : ''} {timeAgo(credit.pendingRefund.sentAt)} —
+                  waiting for {credit.buyer.name} to confirm it arrived.
+                </p>
+              )}
+
+              {!pending && !editing && (
+                <div className="xcredit__acts">
+                  <button type="button" className="btn btn--sm" onClick={() => start(credit, 'refund')}>
+                    ↩️ Pay it back
+                  </button>
+                  <button type="button" className="btn btn--sm btn--ghost" disabled={credit.targets.length === 0}
+                    title={credit.targets.length === 0 ? 'This buyer has no other order that still owes anything' : undefined}
+                    onClick={() => start(credit, 'apply')}>
+                    ➡️ Use for an order
+                  </button>
+                  {credit.status === 'open' && (
+                    <button type="button" className="btn btn--sm btn--quiet" disabled={busy !== null}
+                      onClick={() => void run(`hold-${credit.creditId}`, () => api.holdCredit(credit.orderId, credit.creditId))}>
+                      {busy === `hold-${credit.creditId}` ? 'Saving…' : '🕒 Keep for future orders'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {editing === 'refund' && (
+                <div className="xcredit__form">
+                  <label className="field">
+                    <span>Reference (UTR or transaction id)</span>
+                    <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" />
+                  </label>
+                  <label className="field">
+                    <span>Message to {credit.buyer.name}</span>
+                    <textarea rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
+                    <span className="field__hint">Sent to their messages. They are asked to confirm it arrived.</span>
+                  </label>
+                  <div className="row" style={{ flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn--ok" disabled={busy !== null}
+                      onClick={() => void run('refund', () => api.refundCredit(credit.orderId, {
+                        creditId: credit.creditId, reference: reference.trim() || undefined, message: message.trim() || undefined,
+                      }))}>
+                      {busy === 'refund' ? 'Sending…' : `I've paid back ${formatMoney(credit.leftMinor, credit.currency)}`}
+                    </button>
+                    <button type="button" className="btn btn--quiet" onClick={() => setOpen(null)}>Back</button>
+                  </div>
+                </div>
+              )}
+
+              {editing === 'apply' && (
+                <div className="xcredit__form">
+                  <label className="field">
+                    <span>Put it towards</span>
+                    <select value={target} onChange={(e) => {
+                      setTarget(e.target.value);
+                      const next = credit.targets.find((entry) => entry.orderId === e.target.value);
+                      if (next) setAmount(String(Math.min(credit.leftMinor, next.outstandingMinor) / 100));
+                    }}>
+                      {credit.targets.map((entry) => (
+                        <option key={entry.orderId} value={entry.orderId}>
+                          {entry.itemName} — {formatMoney(entry.outstandingMinor, credit.currency)} owed
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Amount (₹)</span>
+                    <input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                    {chosen && (
+                      <span className="field__hint">
+                        Up to {formatMoney(Math.min(credit.leftMinor, chosen.outstandingMinor), credit.currency)}.
+                      </span>
+                    )}
+                  </label>
+                  <div className="row" style={{ flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn--ok" disabled={busy !== null || !target || !(Number(amount) > 0)}
+                      onClick={() => void run('apply', () => api.applyCredit(credit.orderId, {
+                        creditId: credit.creditId, targetOrderId: target, amountMinor: Math.round(Number(amount) * 100),
+                      }))}>
+                      {busy === 'apply' ? 'Moving…' : 'Apply to this order'}
+                    </button>
+                    <button type="button" className="btn btn--quiet" onClick={() => setOpen(null)}>Back</button>
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })}
+        {error && <ErrorNotice message={error} />}
+      </div>
+    </Modal>
   );
 }
 

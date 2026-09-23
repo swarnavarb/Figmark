@@ -1,4 +1,4 @@
-import type { Listing, Order } from './models.js';
+import type { CreditRecord, Listing, Order } from './models.js';
 
 /**
  * Stock, expiry and money-in-instalments, shared by the API and the app.
@@ -87,7 +87,7 @@ export function orderMoney(order: MoneyShape): OrderMoney {
     ? records.filter((p) => p.kind !== 'refund').reduce((sum, p) => sum + p.amountMinor, 0)
     : order.paymentStatus === 'paid' ? totalMinor : 0;
   const credits = order.credits ?? [];
-  const creditMinor = credits.reduce((sum, c) => sum + c.amountMinor - c.refundedMinor, 0);
+  const creditMinor = credits.reduce((sum, c) => sum + creditLeft(c), 0);
   const refundedMinor = credits.reduce((sum, c) => sum + c.refundedMinor, 0);
   return {
     totalMinor,
@@ -157,7 +157,18 @@ export const PAYMENT_KIND_LABELS = {
   advance: 'Advance',
   additional: 'Additional payment',
   refund: 'Refund',
+  credit: 'Extra payment applied',
 } as const;
+
+/** What is still the buyer's on one credit: neither returned nor moved onto another order. */
+export function creditLeft(credit: Pick<CreditRecord, 'amountMinor' | 'refundedMinor' | 'appliedMinor'>): number {
+  return Math.max(0, credit.amountMinor - credit.refundedMinor - (credit.appliedMinor ?? 0));
+}
+
+/** Still the seller's to decide about: return it, move it, or keep holding it. */
+export function creditIsLive(credit: Pick<CreditRecord, 'status'>): boolean {
+  return credit.status === 'open' || credit.status === 'held';
+}
 
 export const PAYMENT_METHOD_LABELS = {
   direct: 'Direct to seller (UPI / bank)',

@@ -965,7 +965,8 @@ export type PaymentMethod = 'direct' | 'protected';
 export interface PaymentRecord {
   id: string;
   at: string;
-  kind: 'full' | 'advance' | 'additional' | 'refund';
+  /** `credit` is a buyer's extra payment on another order, moved onto this one. */
+  kind: 'full' | 'advance' | 'additional' | 'refund' | 'credit';
   method: PaymentMethod;
   /** The part of the payment allocated to this order. */
   amountMinor: number;
@@ -986,7 +987,19 @@ export interface CreditRecord {
   refundedMinor: number;
   refundedAt: string | null;
   refundedBy: string | null;
-  status: 'open' | 'refunded';
+  /**
+   * `open` - nobody has decided yet. `held` - the seller is keeping it for
+   * the buyer's future orders. `refund_pending` - the seller says they sent it
+   * back and the buyer has not answered. `refunded` / `applied` - nothing left.
+   */
+  status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
+  /** Moved onto the buyer's other orders from this seller. */
+  appliedMinor?: number;
+  applications?: { orderId: string; itemName: string; amountMinor: number; at: string }[];
+  /** The return the seller says they made, waiting on the buyer's answer. */
+  pendingRefund?: { amountMinor: number; reference: string | null; sentAt: string; sentBy: string } | null;
+  /** Every time the buyer said a return did not arrive - kept, not overwritten. */
+  refundDenials?: { at: string; amountMinor: number }[];
 }
 
 /** One buyer's assertion that they sent the money, and the seller's answer. */
@@ -1383,6 +1396,9 @@ export type NotificationKind =
   | 'payment_claimed'
   | 'payment_received'
   | 'credit_refunded'
+  | 'credit_refund_sent'
+  | 'credit_refund_answered'
+  | 'credit_applied'
   | 'payment_settled'
   | 'dispute_opened'
   | 'dispute_replied'

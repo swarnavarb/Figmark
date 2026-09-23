@@ -5,6 +5,7 @@ import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
 import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, isCancelledLike } from '../../../shared/orders.js';
+import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
@@ -335,7 +336,14 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
 
   const row = (order: (typeof orders)[number]) => {
     const lot = inLot(order) ? lots.get(order.lotId) ?? null : null;
+    const listing = listings.get(order.listingId);
+    const photo = listing?.photos.find((entry) => entry.isPrimary) ?? listing?.photos[0] ?? null;
+    const money = orderMoney(order);
     return {
+      photoUrl: photo?.url ?? null,
+      paidMinor: money.paidMinor,
+      outstandingMinor: money.outstandingMinor,
+      creditMinor: money.creditMinor,
       id: order.id,
       itemName: order.itemName,
       quantity: order.quantity,
@@ -406,7 +414,41 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 12);
 
+  /*
+   * Every extra payment a buyer has made in this shop, in one place.
+   *
+   * An overpayment lands on whichever order the payment happened to reach
+   * last, which is no place to manage it from. Collected here with the
+   * buyer's other orders that still owe something, so the seller can decide
+   * in one step: send it back, move it onto one of those, or keep it for
+   * whatever the buyer orders next. Settled ones drop off; one waiting on the
+   * buyer to confirm a return stays, so it is not forgotten either.
+   */
+  const credits = orders.flatMap((order) => (order.credits ?? [])
+    .filter((credit) => creditIsLive(credit) || credit.status === 'refund_pending')
+    .map((credit) => ({
+      orderId: order.id,
+      itemName: order.itemName,
+      currency: order.currency,
+      buyer: buyers.get(order.buyerId) ?? personRef(null),
+      creditId: credit.id,
+      createdAt: credit.createdAt,
+      amountMinor: credit.amountMinor,
+      leftMinor: creditLeft(credit),
+      status: credit.status,
+      pendingRefund: credit.pendingRefund ?? null,
+      refundDenials: credit.refundDenials?.length ?? 0,
+      applications: credit.applications ?? [],
+      targets: orders
+        .filter((other) => other.id !== order.id && other.buyerId === order.buyerId
+          && !isCancelledLike(other.status) && other.paymentStatus !== 'claimed'
+          && orderMoney(other).outstandingMinor > 0)
+        .map((other) => ({ orderId: other.id, itemName: other.itemName, outstandingMinor: orderMoney(other).outstandingMinor })),
+    })))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
   return json(200, {
+    credits,
     waiting: waiting.map(row),
     placed: placed.map(row),
     answered: answered.map(row),

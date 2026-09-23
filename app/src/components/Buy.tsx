@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import type { Listing, Order } from '@shared/models';
+import type { CreditRecord, Listing, Order } from '@shared/models';
 import {
-  PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, availabilityLabel, expiresSoon, isExpired, isMultiple,
-  methodOf, orderMoney, timeLeft,
+  PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
+  isMultiple, methodOf, orderMoney, timeLeft,
 } from '@shared/payments';
 import { ApiRequestError, api } from '../api';
 import { formatDate, formatMoney } from '../format';
@@ -76,9 +76,10 @@ export function PaymentHistory({ order, side, onChanged }: {
   const [error, setError] = useState<string | null>(null);
   const money = orderMoney(order);
   const records = order.payments ?? [];
-  const open = (order.credits ?? []).filter((credit) => credit.status === 'open');
+  const open = (order.credits ?? []).filter(creditIsLive);
 
   async function refund() {
+    if (!window.confirm('Mark the extra payment as returned? The buyer is told and asked to confirm it arrived.')) return;
     setBusy(true);
     setError(null);
     try {
@@ -104,7 +105,9 @@ export function PaymentHistory({ order, side, onChanged }: {
         <ul className="payhist__list">
           {records.map((record) => (
             <li key={record.id} className={`payhist__row payhist__row--${record.kind}`}>
-              <span className="payhist__icon" aria-hidden="true">{record.kind === 'refund' ? '↩️' : '💳'}</span>
+              <span className="payhist__icon" aria-hidden="true">
+                {record.kind === 'refund' ? '↩️' : record.kind === 'credit' ? '💰' : '💳'}
+              </span>
               <span className="payhist__what">
                 <b>{PAYMENT_KIND_LABELS[record.kind]}</b>
                 <small>{formatDate(record.at)}{record.batchTotalMinor && record.batchTotalMinor !== record.amountMinor
@@ -118,25 +121,41 @@ export function PaymentHistory({ order, side, onChanged }: {
         </ul>
       )}
       {(order.credits ?? []).map((credit) => (
-        <div key={credit.id} className={`creditline${credit.status === 'refunded' ? ' is-done' : ''}`}>
+        <div key={credit.id}
+          className={`creditline${credit.status === 'refunded' || credit.status === 'applied' ? ' is-done' : ''}`}>
           <span>
             💰 Extra payment / credit: <b>{formatMoney(credit.amountMinor, order.currency)}</b>
           </span>
-          <span className="faint">
-            {credit.status === 'refunded' && credit.refundedAt
-              ? `Refunded ${formatMoney(credit.refundedMinor, order.currency)} on ${formatDate(credit.refundedAt)}`
-              : 'Waiting for the seller to refund'}
-          </span>
+          <span className="faint">{creditStory(credit, order.currency)}</span>
         </div>
       ))}
       {side === 'seller' && open.length > 0 && (
         <button type="button" className="btn" disabled={busy} onClick={() => void refund()}>
-          {busy ? 'Recording…' : `↩️ Refund extra amount (${formatMoney(money.creditMinor, order.currency)})`}
+          {busy ? 'Sending…' : `↩️ Return extra payment (${formatMoney(money.creditMinor, order.currency)})`}
         </button>
       )}
       {error && <ErrorNotice message={error} />}
     </div>
   );
+}
+
+/** Where one extra payment has got to, in a sentence either side can read. */
+function creditStory(credit: CreditRecord, currency: string): string {
+  const parts: string[] = [];
+  if (credit.refundedMinor > 0 && credit.refundedAt) {
+    parts.push(`${formatMoney(credit.refundedMinor, currency)} returned on ${formatDate(credit.refundedAt)}`);
+  }
+  for (const moved of credit.applications ?? []) {
+    parts.push(`${formatMoney(moved.amountMinor, currency)} put towards ${moved.itemName}`);
+  }
+  if (credit.status === 'refund_pending' && credit.pendingRefund) {
+    parts.push(`${formatMoney(credit.pendingRefund.amountMinor, currency)} sent back — waiting for the buyer to confirm`);
+  } else if (credit.status === 'held') {
+    parts.push(`${formatMoney(creditLeft(credit), currency)} kept as credit for future orders`);
+  } else if (credit.status === 'open') {
+    parts.push(`${formatMoney(creditLeft(credit), currency)} waiting for the seller to decide`);
+  }
+  return parts.join(' · ');
 }
 
 /** A datetime-local value for an ISO string, in the viewer's own clock. */

@@ -62,6 +62,7 @@ const {
   orderStateRoute: orderState, checkoutRoute: checkout,
   claimPaymentRoute: claimPayment, settleClaimRoute: settleClaim,
   payMoreRoute: payMore, refundCreditRoute: refundCredit,
+  ackCreditRefundRoute: ackCreditRefund, applyCreditRoute: applyCredit, holdCreditRoute: holdCredit,
 } = await import(new URL('order-routes.js', fns));
 const { editListingRoute: editListing, deleteListingRoute: deleteListing } =
   await import(new URL('catalog-routes.js', fns));
@@ -5847,18 +5848,67 @@ await check('a paid-up item takes no more payments', async () => {
   assert.equal(again.status, 409);
 });
 
-await check('the seller refunds the extra, and the timeline says so', async () => {
-  const holder = (await getRepository()).getOrder(oC.id);
-  const order = await holder;
-  assert.ok((await orderState(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody.actions.includes('refund_credit'));
-  assert.equal((await refundCredit(req({ headers: payAuth, params: { id: order.id }, body: {} }), ctx)).status, 409);
-  const refunded = (await refundCredit(req({ headers: auth, params: { id: order.id }, body: {} }), ctx)).jsonBody;
-  assert.equal(refunded.refundedMinor, 100_000);
-  const credit = refunded.order.credits[0];
+await check('returning an extra payment waits on the buyer to say it arrived', async () => {
+  const id = oC.id;
+  const stateOf = async (headers) => (await orderState(req({ headers, params: { id } }), ctx)).jsonBody.actions;
+  assert.ok((await stateOf(auth)).includes('refund_credit'));
+  assert.equal((await refundCredit(req({ headers: payAuth, params: { id }, body: {} }), ctx)).status, 409);
+
+  const sent = (await refundCredit(req({ headers: auth, params: { id }, body: { reference: 'RTN1' } }), ctx)).jsonBody;
+  assert.equal(sent.sentMinor, 100_000);
+  assert.equal(sent.order.credits[0].status, 'refund_pending');
+  assert.ok(!sent.order.payments.some((p) => p.kind === 'refund'), 'nothing is refunded until the buyer says so');
+  assert.ok(!(await stateOf(auth)).includes('refund_credit'), 'no second return while one is pending');
+  assert.ok((await stateOf(payAuth)).includes('ack_credit_refund'));
+  assert.ok((await noticesFor(payBuyer.jsonBody.user.id)).some((n) => n.kind === 'credit_refund_sent'));
+
+  // The buyer says it never came: it goes back in the seller's hands, on record.
+  const denied = (await ackCreditRefund(req({ headers: payAuth, params: { id }, body: { received: false } }), ctx)).jsonBody;
+  assert.equal(denied.order.credits[0].status, 'open');
+  assert.equal(denied.order.credits[0].refundDenials.length, 1);
+  assert.ok(denied.order.stageHistory.some((e) => /has not arrived/.test(e.note ?? '')));
+  assert.ok((await stateOf(auth)).includes('refund_credit'));
+});
+
+await check('an extra payment can be kept for later, then moved onto the buyer\'s next order', async () => {
+  const later = await list({ title: 'Item F', priceMinor: 300_000 });
+  const next = (await buy(later.id)).jsonBody.order;
+
+  const held = (await holdCredit(req({ headers: auth, params: { id: oC.id }, body: {} }), ctx)).jsonBody;
+  assert.equal(held.order.credits[0].status, 'held');
+
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  const listed = board.credits.find((c) => c.orderId === oC.id);
+  assert.ok(listed, 'every extra payment is on the Extra payments list');
+  assert.equal(listed.leftMinor, 100_000);
+  assert.ok(listed.targets.some((t) => t.orderId === next.id), 'with the buyer\'s orders it could go towards');
+
+  const moved = (await applyCredit(req({ headers: auth, params: { id: oC.id },
+    body: { creditId: listed.creditId, targetOrderId: next.id, amountMinor: 40_000 } }), ctx)).jsonBody;
+  assert.equal(moved.appliedMinor, 40_000);
+  assert.equal(moved.target.payments.at(-1).kind, 'credit');
+  assert.equal(moved.target.paymentStatus, 'partially_paid');
+  assert.equal(moved.source.credits[0].status, 'held', 'what is left is still kept');
+  assert.equal(moved.source.credits[0].appliedMinor, 40_000);
+
+  // Somebody else's order is not a place to put it.
+  const stranger = await applyCredit(req({ headers: auth, params: { id: oC.id },
+    body: { creditId: listed.creditId, targetOrderId: 'ord_nope' } }), ctx);
+  assert.equal(stranger.status, 404);
+});
+
+await check('the rest is returned, the buyer confirms, and only then is it a refund', async () => {
+  const id = oC.id;
+  const sent = (await refundCredit(req({ headers: auth, params: { id }, body: {} }), ctx)).jsonBody;
+  assert.equal(sent.sentMinor, 60_000, 'only what was not moved elsewhere');
+  const got = (await ackCreditRefund(req({ headers: payAuth, params: { id }, body: { received: true } }), ctx)).jsonBody;
+  const credit = got.order.credits[0];
   assert.equal(credit.status, 'refunded');
+  assert.equal(credit.refundedMinor, 60_000);
   assert.ok(credit.refundedAt && credit.refundedBy);
-  assert.equal(refunded.order.payments.at(-1).kind, 'refund');
-  assert.ok(refunded.order.stageHistory.some((e) => /Refund processed — ₹1,000/.test(e.note ?? '')));
+  assert.equal(got.order.payments.at(-1).kind, 'refund');
+  assert.ok(got.order.stageHistory.some((e) => /Refund processed — ₹600/.test(e.note ?? '')));
+  assert.ok(!(await sales(req({ headers: auth }), ctx)).jsonBody.credits.some((c) => c.orderId === id), 'settled ones leave the list');
 });
 
 await check('a group paid two different ways is refused rather than switched', async () => {

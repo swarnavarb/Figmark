@@ -7,7 +7,7 @@ import type {
   Dispute, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
 } from '../../../shared/models.js';
 import {
-  PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, methodOf, orderMoney, rupees,
+  PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
@@ -18,6 +18,7 @@ import {
   autoReleaseDue,
   protectionFeeMinor,
   daysFrom,
+  isCancelledLike,
   reviewRevealed,
   scoreFrom,
   sideOf,
@@ -85,7 +86,8 @@ function record(
       ...entry,
     },
   ];
-  const label = entry.kind === 'refund' ? '↩️ Refund processed' : `💳 ${PAYMENT_KIND_LABELS[entry.kind]} received`;
+  const label = entry.kind === 'refund' ? '↩️ Refund processed'
+    : entry.kind === 'credit' ? '💰 Extra payment applied' : `💳 ${PAYMENT_KIND_LABELS[entry.kind]} received`;
   const part = entry.batchTotalMinor && entry.batchTotalMinor !== entry.amountMinor
     ? ` (from a ${rupees(entry.batchTotalMinor)} payment)` : '';
   note(order, `${label} — ${rupees(entry.amountMinor)}${part}`, entry.recordedBy);
@@ -920,12 +922,23 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
   return json(200, { allocation: plan, method, orders: saved, simulatedPayment: method === 'protected' });
 }
 
+/** The request body, or an empty one: every credit route has sensible defaults. */
+async function bodyOf<T>(request: HttpRequest): Promise<Partial<T>> {
+  try {
+    return ((await request.json()) ?? {}) as Partial<T>;
+  } catch {
+    return {};
+  }
+}
+
 /**
- * POST /api/orders/{id}/refund-credit - the seller hands back an overpayment.
+ * POST /api/orders/{id}/refund-credit - the seller says they sent an extra payment back.
  *
- * Marks the credit refunded with who did it and when, and writes the refund
- * into the order's payments and timeline. The credit row stays: it is the
- * record of what was overpaid in the first place.
+ * The same shape as every other money claim on this marketplace: one side
+ * says the money moved, the other side - the one whose account it landed in -
+ * says whether it did. So this does not mark the credit refunded; it marks it
+ * `refund_pending`, tells the buyer in a notification and in their messages,
+ * and waits for their answer. Only a yes writes the refund into the payments.
  */
 async function refundCredit(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -936,43 +949,228 @@ async function refundCredit(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
   if (!actionsFor(order, user.id).includes('refund_credit')) {
-    return error(409, 'nothing_to_refund', 'There is no extra payment waiting to be refunded.');
+    return error(409, 'nothing_to_refund', 'There is no extra payment waiting to be returned.');
   }
 
-  let body: { creditId?: string } = {};
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    // No body: refund every open credit.
-  }
-
+  const body = await bodyOf<{ creditId: string; reference: string; message: string }>(request);
+  const reference = body.reference?.trim() || null;
   const now = new Date().toISOString();
   let total = 0;
   order.credits = (order.credits ?? []).map((credit) => {
-    if (credit.status !== 'open' || (body.creditId && credit.id !== body.creditId)) return credit;
-    const amount = credit.amountMinor - credit.refundedMinor;
+    if (!creditIsLive(credit) || (body.creditId && credit.id !== body.creditId)) return credit;
+    const amount = creditLeft(credit);
+    if (amount <= 0) return credit;
     total += amount;
-    return { ...credit, refundedMinor: credit.amountMinor, refundedAt: now, refundedBy: user.id, status: 'refunded' };
+    return { ...credit, status: 'refund_pending', pendingRefund: { amountMinor: amount, reference, sentAt: now, sentBy: user.id } };
   });
-  if (total === 0) return error(404, 'not_found', 'No such open credit on this order.');
+  if (total === 0) return error(404, 'not_found', 'No such extra payment on this order.');
 
-  record(order, { kind: 'refund', method: methodOf(order), amountMinor: total, recordedBy: user.id });
+  note(order, `↩️ Seller returned the extra payment — ${rupees(total)}${reference ? ` (reference ${reference})` : ''}. Waiting for the buyer to confirm it arrived.`, user.id);
   order.updatedAt = now;
   const saved = await repository.updateOrder(order);
 
   await notify(repository, [order.buyerId], {
-    kind: 'credit_refunded',
-    title: `${rupees(total)} refunded to you`,
+    kind: 'credit_refund_sent',
+    title: `The seller says they returned ${rupees(total)} to you`,
+    body: `${order.itemName} — tell them whether it arrived.`,
+    link: `/order/${order.id}`,
+  });
+  const [seller, buyer] = await Promise.all([repository.getUserById(order.sellerId), repository.getUserById(order.buyerId)]);
+  if (seller && buyer) {
+    await systemMessage(repository, seller, buyer, body.message?.trim()
+      || `I have returned your extra payment of ${rupees(total)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm on the order once it reaches you.`);
+  }
+
+  return json(200, { order: saved, sentMinor: total });
+}
+
+/**
+ * POST /api/orders/{id}/credit-ack - the buyer answers whether the returned money arrived.
+ *
+ * Yes writes the refund into the payments and closes the credit. No puts it
+ * back in the seller's hands, keeps a record that this return was denied, and
+ * tells the seller - the extra payment is still theirs to send again.
+ */
+async function ackCreditRefund(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  if (!actionsFor(order, user.id).includes('ack_credit_refund')) {
+    return error(409, 'nothing_to_confirm', 'No returned payment is waiting on you.');
+  }
+  const body = await bodyOf<{ creditId: string; received: boolean }>(request);
+  if (typeof body.received !== 'boolean') return error(400, 'invalid_request', 'Say whether it arrived.');
+
+  const now = new Date().toISOString();
+  let total = 0;
+  let reference: string | null = null;
+  order.credits = (order.credits ?? []).map((credit) => {
+    if (credit.status !== 'refund_pending' || !credit.pendingRefund) return credit;
+    if (body.creditId && credit.id !== body.creditId) return credit;
+    const sent = credit.pendingRefund;
+    total += sent.amountMinor;
+    reference = reference ?? sent.reference;
+    if (!body.received) {
+      return {
+        ...credit, status: 'open', pendingRefund: null,
+        refundDenials: [...(credit.refundDenials ?? []), { at: now, amountMinor: sent.amountMinor }],
+      };
+    }
+    const next = { ...credit, refundedMinor: credit.refundedMinor + sent.amountMinor, refundedAt: now, refundedBy: sent.sentBy, pendingRefund: null };
+    return { ...next, status: creditLeft(next) > 0 ? 'open' : 'refunded' };
+  });
+  if (total === 0) return error(404, 'not_found', 'No such returned payment on this order.');
+
+  if (body.received) {
+    record(order, { kind: 'refund', method: methodOf(order), amountMinor: total, reference, recordedBy: user.id });
+    note(order, 'Buyer confirmed the returned extra payment arrived.', user.id);
+  } else {
+    note(order, `Buyer says the returned ${rupees(total)} has not arrived.`, user.id);
+  }
+  order.updatedAt = now;
+  const saved = await repository.updateOrder(order);
+
+  await notify(repository, [order.sellerId], {
+    kind: 'credit_refund_answered',
+    title: body.received ? `The buyer got the ${rupees(total)} you returned` : `The buyer says the ${rupees(total)} you returned has not arrived`,
     body: order.itemName,
     link: `/order/${order.id}`,
   });
+  if (!body.received) {
+    const [buyer, seller] = await Promise.all([repository.getUserById(order.buyerId), repository.getUserById(order.sellerId)]);
+    if (buyer && seller) {
+      await systemMessage(repository, buyer, seller,
+        `The ${rupees(total)} you said you returned for "${order.itemName}" has not reached me yet. Could you check and send it again?`);
+    }
+  }
 
-  return json(200, { order: saved, refundedMinor: total });
+  return json(200, { order: saved, answeredMinor: total, received: body.received });
+}
+
+/**
+ * POST /api/orders/{id}/credit-apply - move an extra payment onto another of the buyer's orders.
+ *
+ * The money never left the seller, so nothing needs confirming: it is written
+ * as a dated `credit` payment on the order it pays towards, and as a moved
+ * amount on the credit it came from. Only onto the same buyer's orders from
+ * the same shop, and never more than that order still owes.
+ */
+async function applyCredit(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const source = found.order;
+  if (!actionsFor(source, user.id).includes('refund_credit')) {
+    return error(409, 'nothing_to_apply', 'There is no extra payment on this order to move.');
+  }
+  const body = await bodyOf<{ creditId: string; targetOrderId: string; amountMinor: number }>(request);
+  const credit = (source.credits ?? []).find((entry) => creditIsLive(entry) && (!body.creditId || entry.id === body.creditId));
+  if (!credit) return error(404, 'not_found', 'No such extra payment on this order.');
+
+  if (!body.targetOrderId || body.targetOrderId === source.id) {
+    return error(400, 'invalid_target', 'Choose another of this buyer\'s orders to put it towards.');
+  }
+  const target = await repository.getOrder(body.targetOrderId);
+  if (!target || target.sellerId !== source.sellerId || target.buyerId !== source.buyerId) {
+    return error(404, 'not_found', 'That order is not one of this buyer\'s from your shop.');
+  }
+  if (isCancelledLike(target.status) || target.paymentStatus === 'claimed') {
+    return error(409, 'not_payable', `${target.itemName} cannot take a payment right now.`);
+  }
+  const owing = orderMoney(target).outstandingMinor;
+  const available = creditLeft(credit);
+  const amount = Math.min(available, owing, Math.round(Number(body.amountMinor) || available));
+  if (amount <= 0) return error(409, 'nothing_owed', `${target.itemName} has nothing left to pay.`);
+
+  const now = new Date().toISOString();
+  target.paymentMethod = target.paymentMethod ?? methodOf(source);
+  record(target, { kind: 'credit', method: methodOf(target), amountMinor: amount, recordedBy: user.id });
+  statusFromMoney(target);
+  if (target.status === 'pending_payment') {
+    target.status = 'confirmed';
+    target.accepted = true;
+    target.acceptedAt = target.acceptedAt ?? now;
+  }
+  target.updatedAt = now;
+
+  source.credits = (source.credits ?? []).map((entry) => {
+    if (entry.id !== credit.id) return entry;
+    const next = {
+      ...entry,
+      appliedMinor: (entry.appliedMinor ?? 0) + amount,
+      applications: [...(entry.applications ?? []), { orderId: target.id, itemName: target.itemName, amountMinor: amount, at: now }],
+    };
+    return { ...next, status: creditLeft(next) > 0 ? entry.status : 'applied' };
+  });
+  note(source, `💰 ${rupees(amount)} of the extra payment moved to "${target.itemName}".`, user.id);
+  source.updatedAt = now;
+
+  const [savedSource, savedTarget] = [await repository.updateOrder(source), await repository.updateOrder(target)];
+
+  await notify(repository, [source.buyerId], {
+    kind: 'credit_applied',
+    title: `${rupees(amount)} of your extra payment went towards ${target.itemName}`,
+    body: `From ${source.itemName}`,
+    link: `/order/${target.id}`,
+  });
+
+  return json(200, { source: savedSource, target: savedTarget, appliedMinor: amount });
+}
+
+/**
+ * POST /api/orders/{id}/credit-hold - keep an extra payment as credit for the buyer's future orders.
+ *
+ * Nothing moves. It only records the seller's decision, so the buyer knows
+ * their money is being kept rather than forgotten, and so the Extra payments
+ * list can tell a considered hold from one nobody has looked at yet.
+ */
+async function holdCredit(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  if (!actionsFor(order, user.id).includes('refund_credit')) {
+    return error(409, 'nothing_to_hold', 'There is no extra payment on this order.');
+  }
+  const body = await bodyOf<{ creditId: string }>(request);
+  let total = 0;
+  order.credits = (order.credits ?? []).map((credit) => {
+    if (credit.status !== 'open' || (body.creditId && credit.id !== body.creditId)) return credit;
+    total += creditLeft(credit);
+    return { ...credit, status: 'held' };
+  });
+  if (total === 0) return error(404, 'not_found', 'No undecided extra payment on this order.');
+
+  note(order, `💰 Extra payment of ${rupees(total)} kept as credit for the buyer's future orders.`, user.id);
+  order.updatedAt = new Date().toISOString();
+  const saved = await repository.updateOrder(order);
+
+  await notify(repository, [order.buyerId], {
+    kind: 'credit_applied',
+    title: `Your extra ${rupees(total)} is kept as credit`,
+    body: `The seller will put it towards your next order with them. (${order.itemName})`,
+    link: `/order/${order.id}`,
+  });
+
+  return json(200, { order: saved, heldMinor: total });
 }
 
 export const payRoute = handler(pay);
 export const payMoreRoute = handler(payMore);
 export const refundCreditRoute = handler(refundCredit);
+export const ackCreditRefundRoute = handler(ackCreditRefund);
+export const applyCreditRoute = handler(applyCredit);
+export const holdCreditRoute = handler(holdCredit);
 export const claimPaymentRoute = handler(claimPayment);
 /**
  * POST /api/orders/{id}/reject - the seller cannot serve this order.
@@ -1546,6 +1744,9 @@ const anon = { authLevel: 'anonymous' } as const;
 
 app.http('purchases-pay', { ...anon, methods: ['POST'], route: 'me/purchases/pay', handler: payMoreRoute });
 app.http('order-refund-credit', { ...anon, methods: ['POST'], route: 'orders/{id}/refund-credit', handler: refundCreditRoute });
+app.http('order-credit-ack', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-ack', handler: ackCreditRefundRoute });
+app.http('order-credit-apply', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-apply', handler: applyCreditRoute });
+app.http('order-credit-hold', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-hold', handler: holdCreditRoute });
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });
 app.http('order-claim-payment', { ...anon, methods: ['POST'], route: 'orders/{id}/claim-payment', handler: claimPaymentRoute });
 app.http('order-settle-claim', { ...anon, methods: ['POST'], route: 'orders/{id}/settle-claim', handler: settleClaimRoute });

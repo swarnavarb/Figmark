@@ -351,10 +351,32 @@ export interface SaleRow {
   reversal: Order['reversal'];
   canAccept: boolean;
   canCancel: boolean;
+  photoUrl: string | null;
+  paidMinor: number;
+  outstandingMinor: number;
+  creditMinor: number;
+}
+
+/** One buyer's extra payment, with the orders of theirs it could still go towards. */
+export interface ShopCredit {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  buyer: PartyRef;
+  creditId: string;
+  createdAt: string;
+  amountMinor: number;
+  leftMinor: number;
+  status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
+  pendingRefund: { amountMinor: number; reference: string | null; sentAt: string } | null;
+  refundDenials: number;
+  applications: { orderId: string; itemName: string; amountMinor: number; at: string }[];
+  targets: { orderId: string; itemName: string; outstandingMinor: number }[];
 }
 
 /** Everything a shop's payments screen has to answer, in three piles. */
 export interface SalesResponse {
+  credits: ShopCredit[];
   waiting: SaleRow[];
   placed: SaleRow[];
   answered: SaleRow[];
@@ -1059,8 +1081,14 @@ export const api = {
     post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
   payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
     post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
-  refundCredit: (id: string, creditId?: string) =>
-    post<{ order: Order; refundedMinor: number }>(`/orders/${encodeURIComponent(id)}/refund-credit`, { creditId }),
+  refundCredit: (id: string, body: { creditId?: string; reference?: string; message?: string } = {}) =>
+    post<{ order: Order; sentMinor: number }>(`/orders/${encodeURIComponent(id)}/refund-credit`, body),
+  ackCreditRefund: (id: string, received: boolean, creditId?: string) =>
+    post<{ order: Order; answeredMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-ack`, { received, creditId }),
+  applyCredit: (id: string, body: { creditId: string; targetOrderId: string; amountMinor?: number }) =>
+    post<{ source: Order; target: Order; appliedMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-apply`, body),
+  holdCredit: (id: string, creditId?: string) =>
+    post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
   myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),
   bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>

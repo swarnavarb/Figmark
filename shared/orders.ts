@@ -43,7 +43,9 @@ export type OrderAction =
   // Accepting a fresh order or booking, and calling one off once it is.
   | 'accept' | 'cancel'
   // The reversal of a paid, cancelled order, and the dispute at the end of it.
-  | 'request_reversal_details' | 'submit_reversal' | 'confirm_reversal_details' | 'ack_reversal' | 'raise_dispute';
+  | 'request_reversal_details' | 'submit_reversal' | 'confirm_reversal_details' | 'ack_reversal' | 'raise_dispute'
+  // The buyer answering whether a returned extra payment reached them.
+  | 'ack_credit_refund';
 
 /** Protection is only offered where the company has granted the seller it. */
 export function protectionFeeMinor(totalMinor: number, feeBasisPoints: number): number {
@@ -113,8 +115,11 @@ export function actionsFor(
   if (side === 'buyer' && live && order.paymentStatus === 'partially_paid') actions.push('pay_more');
 
   // Money paid over the balance is the buyer's, and only the seller holds it.
-  if (side === 'seller' && order.credits?.some((credit) => credit.status === 'open')) {
+  if (side === 'seller' && order.credits?.some((credit) => credit.status === 'open' || credit.status === 'held')) {
     actions.push('refund_credit');
+  }
+  if (side === 'buyer' && order.credits?.some((credit) => credit.status === 'refund_pending')) {
+    actions.push('ack_credit_refund');
   }
 
   // A brand new order or booking is waiting on the seller to say yes before

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent, labelFor } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, WAITING_FOR_LOT } from '@shared/routes';
 import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
@@ -45,6 +45,7 @@ function statusTone(status: Order['status']): string {
 export function OrderPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const cameFrom = (useLocation().state as { from?: string } | null)?.from ?? null;
   const [data, setData] = useState<OrderTracking | null>(null);
   const [state, setState] = useState<OrderState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,11 +90,16 @@ export function OrderPage() {
 
   return (
     <main className="page">
-      {/* Both sides read this screen, so it goes back to whichever list they
-          came from rather than always to the buyer's. */}
+      {/* Back to exactly where they came from - the list, its filters, and
+          this order within it - rather than to the top of some list. Opened
+          from anywhere that did not say (a notification, a shared link), a
+          seller lands on their orders with this one in view. */}
       <button className="btn btn--quiet" style={{ marginBottom: 16 }}
-        onClick={() => navigate(state.side === 'seller' ? '/me?tab=sales' : '/purchases')}>
-        <Icon name="back" size={14} /> {state.side === 'seller' ? 'My sales' : 'My Purchases'}
+        onClick={() => navigate(
+          cameFrom ?? (state.side === 'seller' ? '/shop?tab=payments' : '/purchases'),
+          { state: { focusOrder: order.id } },
+        )}>
+        <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : 'My Purchases'}
       </button>
 
       <div className="page__head">
@@ -429,8 +435,10 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
    */
   const DRAWN_HERE = [
     'pay', 'settle_claim', 'confirm', 'dispute', 'pay_more', 'accept', 'reject', 'cancel',
-    'submit_reversal', 'confirm_reversal_details', 'ack_reversal', 'raise_dispute',
+    'submit_reversal', 'confirm_reversal_details', 'ack_reversal', 'raise_dispute', 'ack_credit_refund',
   ] as const;
+  const returned = (order.credits ?? []).filter((credit) => credit.status === 'refund_pending' && credit.pendingRefund);
+  const returnedMinor = returned.reduce((sum, credit) => sum + (credit.pendingRefund?.amountMinor ?? 0), 0);
   const nothingToDo = !actions.some((action) =>
     (DRAWN_HERE as readonly string[]).includes(action));
 
@@ -555,6 +563,26 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
                   Payment Not Received
                 </button>
               </span>
+            )}
+            {actions.includes('ack_credit_refund') && (
+              <div className="claimcard__ask">
+                <p style={{ margin: 0 }}>
+                  ↩️ The seller says they returned your extra payment of{' '}
+                  <b>{formatMoney(returnedMinor, order.currency)}</b>
+                  {returned[0]?.pendingRefund?.reference ? ` (reference ${returned[0].pendingRefund.reference})` : ''}.
+                  Did it reach you?
+                </p>
+                <span className="row" style={{ flexWrap: 'wrap' }}>
+                  <button className="btn btn--ok" disabled={busy !== null}
+                    onClick={() => void run('credit-yes', () => api.ackCreditRefund(order.id, true))}>
+                    {busy === 'credit-yes' ? 'Sending…' : '✅ Received'}
+                  </button>
+                  <button className="btn btn--danger" disabled={busy !== null}
+                    onClick={() => void run('credit-no', () => api.ackCreditRefund(order.id, false))}>
+                    {busy === 'credit-no' ? 'Sending…' : '❌ Not received'}
+                  </button>
+                </span>
+              </div>
             )}
             {actions.includes('raise_dispute') && (
               <button className="btn btn--danger" disabled={busy !== null}
