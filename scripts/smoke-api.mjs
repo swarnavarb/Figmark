@@ -63,7 +63,7 @@ const {
   claimPaymentRoute: claimPayment, settleClaimRoute: settleClaim,
   payMoreRoute: payMore, refundCreditRoute: refundCredit,
   ackCreditRefundRoute: ackCreditRefund, applyCreditRoute: applyCredit, holdCreditRoute: holdCredit,
-  startRefundRoute: startRefund, myRefundsRoute: myRefunds,
+  startRefundRoute: startRefund, myRefundsRoute: myRefunds, flagDisputeRoute: flagDispute, myDisputesRoute: myDisputes,
 } = await import(new URL('order-routes.js', fns));
 const { editListingRoute: editListing, deleteListingRoute: deleteListing } =
   await import(new URL('catalog-routes.js', fns));
@@ -5900,7 +5900,8 @@ await check('an extra payment can be kept for later, then moved onto the buyer\'
 
 await check('the rest is returned, the buyer confirms, and only then is it a refund', async () => {
   const id = oC.id;
-  const sent = (await refundCredit(req({ headers: auth, params: { id }, body: {} }), ctx)).jsonBody;
+  // A screenshot alone is proof enough.
+  const sent = (await refundCredit(req({ headers: auth, params: { id }, body: { screenshotUrl: '/api/photos/rtn2.jpg' } }), ctx)).jsonBody;
   assert.equal(sent.sentMinor, 60_000, 'only what was not moved elsewhere');
   const got = (await ackCreditRefund(req({ headers: payAuth, params: { id }, body: { received: true } }), ctx)).jsonBody;
   const credit = got.order.credits[0];
@@ -6190,8 +6191,14 @@ await check('a cancelled paid order lands on Refunds, and part-refunds leave the
   assert.equal(listed.leftMinor, 30_000);
   assert.equal(listed.reason, 'Supplier ran out.');
 
+  const noProof = await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 10_000 } }), ctx);
+  assert.equal(noProof.jsonBody.error, 'no_proof', 'a transaction id or a screenshot, at least one');
+  const badShot = await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 10_000, screenshotUrl: 'javascript:alert(1)' } }), ctx);
+  assert.equal(badShot.jsonBody.error, 'invalid_screenshot');
   const tooMuch = await refundCredit(req({ headers: auth, params: { id: orderId },
-    body: { creditId: listed.creditId, amountMinor: 40_000 } }), ctx);
+    body: { creditId: listed.creditId, amountMinor: 40_000, reference: 'X' } }), ctx);
   assert.equal(tooMuch.status, 400, 'never more than is owed');
 
   const part = (await refundCredit(req({ headers: auth, params: { id: orderId },
@@ -6211,7 +6218,10 @@ await check('a cancelled paid order lands on Refunds, and part-refunds leave the
   assert.ok(history[0].buyer.name && history[0].at, 'to whom, and when');
 
   // The rest, and the reversal finishes on its own.
-  await refundCredit(req({ headers: auth, params: { id: orderId }, body: { creditId: listed.creditId, amountMinor: 20_000 } }), ctx);
+  await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 20_000, screenshotUrl: '/api/photos/p2.jpg' } }), ctx);
+  const shots = (await sales(req({ headers: auth }), ctx)).jsonBody.refundHistory.filter((h) => h.orderId === orderId);
+  assert.ok(shots.some((h) => h.screenshotUrl === '/api/photos/p2.jpg'), 'the screenshot is kept in the history');
   const done = (await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true } }), ctx)).jsonBody.order;
   assert.equal(done.status, 'cancelled_reversed');
   assert.equal(done.paymentStatus, 'refunded');
@@ -6229,7 +6239,9 @@ await check('a seller can start a refund themselves, for an amount they type and
   assert.equal((await startRefund(req({ headers: auth, params: { id: orderId }, body: { amountMinor: 5_000 } }), ctx)).status, 400,
     'and it has to say what it is for');
   assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
-    body: { amountMinor: 60_000, reason: 'Too much' } }), ctx)).status, 400, 'never more than was paid');
+    body: { amountMinor: 5_000, reason: 'No proof' } }), ctx)).jsonBody.error, 'no_proof');
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 60_000, reason: 'Too much', reference: 'X' } }), ctx)).jsonBody.error, 'too_much', 'never more than was paid');
   assert.equal((await startRefund(req({ headers: buyer.headers, params: { id: orderId },
     body: { amountMinor: 5_000, reason: 'Me' } }), ctx)).status, 403, 'only the seller');
 
@@ -6261,6 +6273,70 @@ await check('a seller can start a refund themselves, for an amount they type and
 await check('somebody else’s refunds are not on your list', async () => {
   const stranger = await newBuyer('Refund Stranger');
   assert.deepEqual((await myRefunds(req({ headers: stranger.headers }), ctx)).jsonBody.refunds, []);
+});
+
+/* ── disputes: the record of "I paid, they say it never came" ───────────── */
+console.log('\ndisputes');
+
+await check('a buyer whose payment the seller denies can dispute it, once', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Denied Payment Item', priceMinor: 12_000, quantityAvailable: 2 } }), ctx);
+  const buyer = await newBuyer('Denied Buyer');
+  const orderId = (await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx)).jsonBody.order.id;
+  await claimPayment(req({ headers: buyer.headers, params: { id: orderId }, body: { reference: 'UTR9' } }), ctx);
+  await settleClaim(req({ headers: auth, params: { id: orderId }, body: { accept: false, reason: 'Nothing arrived' } }), ctx);
+
+  const mine = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody.disputable;
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].kind, 'payment_rejected');
+  assert.equal(mine[0].amountMinor, 12_000);
+  assert.deepEqual((await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody.disputable, [],
+    'only the side that paid can dispute the rejection');
+
+  const raised = await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: { subject: mine[0].subject } }), ctx);
+  assert.equal(raised.status, 201, JSON.stringify(raised.jsonBody));
+  assert.equal(raised.jsonBody.order.status, 'pending_payment', 'recording a dispute changes nothing else');
+  assert.ok(raised.jsonBody.order.stageHistory.some((e) => /Dispute raised by the buyer/.test(e.note ?? '')));
+  assert.equal((await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: { subject: mine[0].subject } }), ctx)).status, 409);
+
+  const theirs = (await myDisputes(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.equal(theirs.asBuyer.filter((d) => d.orderId === orderId).length, 1);
+  assert.equal(theirs.asBuyer.find((d) => d.orderId === orderId).raisedByMe, true);
+  const store = (await myDisputes(req({ headers: auth }), ctx)).jsonBody;
+  const row = store.asStore.find((d) => d.orderId === orderId);
+  assert.ok(row, 'and it is on the store’s list too');
+  assert.equal(row.raisedBySide, 'buyer');
+  assert.ok((await noticesFor(raised.jsonBody.order.sellerId)).some((n) => n.kind === 'payment_dispute'),
+    'the seller is told');
+});
+
+await check('a seller whose refund the buyer says never came can dispute it', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Refund Not Received', 20_000);
+  await startRefund(req({ headers: auth, params: { id: orderId }, body: { amountMinor: 5_000, reason: 'Goodwill', reference: 'GW1' } }), ctx);
+  await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: false } }), ctx);
+
+  const offered = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody.disputable;
+  assert.equal(offered.length, 1);
+  assert.equal(offered[0].kind, 'refund_rejected');
+  const credit = (await sales(req({ headers: auth }), ctx)).jsonBody.credits.find((c) => c.orderId === orderId);
+  assert.equal(credit.disputable.length, 1, 'offered right on the Refunds card too');
+
+  assert.equal((await flagDispute(req({ headers: auth, params: { id: orderId }, body: { subject: offered[0].subject } }), ctx)).status, 201);
+  const store = (await myDisputes(req({ headers: auth }), ctx)).jsonBody.asStore.find((d) => d.orderId === orderId);
+  assert.equal(store.kind, 'refund_rejected');
+  assert.equal(store.raisedByMe, true);
+});
+
+await check('either side can raise a dispute about anything, with a reason', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('General Dispute Item', 9_000);
+  assert.equal((await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: {} }), ctx)).status, 400);
+  const raised = await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: { reason: 'Arrived broken' } }), ctx);
+  assert.equal(raised.status, 201);
+  assert.equal(raised.jsonBody.dispute.kind, 'general');
+  const stranger = await newBuyer('Dispute Stranger');
+  assert.equal((await flagDispute(req({ headers: stranger.headers, params: { id: orderId }, body: { reason: 'Not mine' } }), ctx)).status, 403);
+  const listed = (await myDisputes(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.ok(listed.asBuyer.some((d) => d.orderId === orderId && d.reason === 'Arrived broken'));
+  assert.ok(listed.orders.some((o) => o.id === orderId && o.side === 'buyer'), 'and the order is offered to raise another');
 });
 
 console.log(`\n${passed} checks passed`);

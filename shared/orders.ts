@@ -1,5 +1,6 @@
 import type { OrderStatus } from './enums.js';
-import type { Order, Review } from './models.js';
+import type { Order, PaymentDisputeKind, Review } from './models.js';
+import { rupees } from './payments.js';
 
 /**
  * What may happen to an order, and who may do it.
@@ -222,4 +223,61 @@ export function daysFrom(days: number, from = new Date()): string {
  */
 export function isCancelledLike(status: OrderStatus): boolean {
   return status === 'cancelled' || status === 'rejected';
+}
+
+/** One rejection the viewer could dispute, and what to call it. */
+export interface DisputeSubject {
+  subject: string;
+  kind: Exclude<PaymentDisputeKind, 'general'>;
+  amountMinor: number;
+  label: string;
+}
+
+/**
+ * Every "I paid, they say it never came" on this order that the viewer - the
+ * side that paid - could raise a dispute about, and has not yet.
+ *
+ * The buyer, when the seller denied a payment they claimed. The seller, when
+ * the buyer said a refund or a payment reversal they sent did not arrive.
+ * Keyed by what was rejected, so each rejection can be disputed once, and a
+ * fresh claim that is then denied again is a fresh thing to dispute.
+ */
+export function disputeSubjects(
+  order: Pick<Order, 'buyerId' | 'sellerId' | 'unitPriceMinor' | 'quantity'>
+    & Partial<Pick<Order, 'paymentClaim' | 'credits' | 'reversal' | 'paymentDisputes'>>,
+  viewerId: string,
+): DisputeSubject[] {
+  const side = sideOf(order, viewerId);
+  if (!side) return [];
+  const out: DisputeSubject[] = [];
+
+  const claim = order.paymentClaim;
+  if (side === 'buyer' && claim?.decision === 'denied') {
+    const amount = claim.amountMinor ?? order.unitPriceMinor * order.quantity;
+    out.push({
+      subject: `claim:${claim.claimedAt}`, kind: 'payment_rejected', amountMinor: amount,
+      label: `The seller says your payment of ${rupees(amount)} did not arrive`,
+    });
+  }
+  if (side === 'seller') {
+    for (const credit of order.credits ?? []) {
+      for (const entry of credit.refundLog ?? []) {
+        if (entry.status !== 'not_received') continue;
+        out.push({
+          subject: `refund:${entry.id}`, kind: 'refund_rejected', amountMinor: entry.amountMinor,
+          label: `The buyer says the ${rupees(entry.amountMinor)} you refunded did not arrive`,
+        });
+      }
+    }
+    const reversal = order.reversal;
+    if (reversal?.buyerResponse === 'not_received' && reversal.reversedAt) {
+      out.push({
+        subject: `reversal:${reversal.reversedAt}`, kind: 'reversal_rejected', amountMinor: reversal.amountMinor,
+        label: `The buyer says the ${rupees(reversal.amountMinor)} reversal did not arrive`,
+      });
+    }
+  }
+
+  const raised = new Set((order.paymentDisputes ?? []).map((dispute) => dispute.subject));
+  return out.filter((entry) => !raised.has(entry.subject));
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { REFUND_ORIGIN_LABELS } from '@shared/payments';
 import { ApiRequestError, api, type MyRefund } from '../api';
+import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 
@@ -16,6 +17,9 @@ export function MyRefundsPage() {
   const [refunds, setRefunds] = useState<MyRefund[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // In the URL, so a notification asking for reversal details lands on that tab.
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'details' ? 'details' : 'refunds';
 
   const load = useCallback(async () => {
     try {
@@ -43,6 +47,28 @@ export function MyRefundsPage() {
     }
   }
 
+  const tabs = (
+    <div className="tabs tabs--vivid">
+      <button type="button" className={`tab${tab === 'refunds' ? ' is-on' : ''}`} onClick={() => setParams({}, { replace: true })}>
+        Refunds
+      </button>
+      <button type="button" className={`tab${tab === 'details' ? ' is-on' : ''}`}
+        onClick={() => setParams({ tab: 'details' }, { replace: true })}>
+        Payment reversal details
+      </button>
+    </div>
+  );
+
+  if (tab === 'details') {
+    return (
+      <main className="page stack page--top">
+        <div className="page__head"><h1>↩️ My refunds</h1></div>
+        {tabs}
+        <ReversalDetailsForm />
+      </main>
+    );
+  }
+
   if (error && !refunds) return <main className="page"><ErrorNotice message={error} /></main>;
   if (!refunds) return <main className="page"><p className="muted">Loading…</p></main>;
 
@@ -52,10 +78,11 @@ export function MyRefundsPage() {
   const waiting = refunds.filter((refund) => refund.status === 'refund_pending');
 
   return (
-    <main className="page stack">
+    <main className="page stack page--top">
       <div className="page__head">
         <h1>↩️ My refunds</h1>
       </div>
+      {tabs}
 
       <section className="rfhero">
         <div className="rfhero__main">
@@ -99,6 +126,10 @@ export function MyRefundsPage() {
                 <p style={{ margin: 0 }}>
                   {refund.sellerName} says they refunded <b>{formatMoney(refund.pendingRefund.amountMinor, refund.currency)}</b>
                   {refund.pendingRefund.reference ? ` (reference ${refund.pendingRefund.reference})` : ''}. Did it reach you?
+                  {refund.pendingRefund.screenshotUrl && (
+                    <> <a href={refund.pendingRefund.screenshotUrl} target="_blank" rel="noopener noreferrer"
+                      className="claimcard__link">📎 See their screenshot</a></>
+                  )}
                 </p>
                 <span className="row" style={{ flexWrap: 'wrap' }}>
                   <button type="button" className="btn btn--ok" disabled={busy !== null}
@@ -120,7 +151,12 @@ export function MyRefundsPage() {
                     <span className="rfhist__icon" aria-hidden="true">↩️</span>
                     <span className="rfhist__body">
                       <b>Refund sent</b>
-                      <small>{formatDateOrdinal(entry.sentAt)}{entry.reference ? ` · ref ${entry.reference}` : ''}</small>
+                      <small>
+                        {formatDateOrdinal(entry.sentAt)}{entry.reference ? ` · ref ${entry.reference}` : ''}
+                        {entry.screenshotUrl && (
+                          <> · <a href={entry.screenshotUrl} target="_blank" rel="noopener noreferrer">📎 screenshot</a></>
+                        )}
+                      </small>
                     </span>
                     <span className="rfhist__side">
                       <b>{formatMoney(entry.amountMinor, refund.currency)}</b>

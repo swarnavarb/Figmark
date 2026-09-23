@@ -4,7 +4,7 @@ import type { Lot, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
 import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
-import { actionsFor, isCancelledLike } from '../../../shared/orders.js';
+import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
 import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
@@ -441,6 +441,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       status: credit.status,
       pendingRefund: credit.pendingRefund ?? null,
       refundDenials: credit.refundDenials?.length ?? 0,
+      /** A refund of this the buyer said never came, which the seller may dispute. */
+      disputable: disputeSubjects(order, storeId).filter((entry) =>
+        (credit.refundLog ?? []).some((logged) => entry.subject === `refund:${logged.id}`)),
       applications: credit.applications ?? [],
       targets: orders
         .filter((other) => other.id !== order.id && other.buyerId === order.buyerId
@@ -461,11 +464,12 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     return [
       ...(credit.refundLog ?? []).map((entry) => ({
         ...common, id: entry.id, kind: 'refund' as const, amountMinor: entry.amountMinor, at: entry.sentAt,
-        reference: entry.reference, status: entry.status, answeredAt: entry.answeredAt, movedTo: null,
+        reference: entry.reference, screenshotUrl: entry.screenshotUrl ?? null,
+        status: entry.status, answeredAt: entry.answeredAt, movedTo: null,
       })),
       ...(credit.applications ?? []).map((moved, at) => ({
         ...common, id: `${credit.id}-mv${at}`, kind: 'moved' as const, amountMinor: moved.amountMinor, at: moved.at,
-        reference: null, status: 'received' as const, answeredAt: moved.at, movedTo: moved.itemName,
+        reference: null, screenshotUrl: null, status: 'received' as const, answeredAt: moved.at, movedTo: moved.itemName,
       })),
     ];
   })).sort((a, b) => b.at.localeCompare(a.at));

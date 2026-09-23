@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react';
 import { ApiRequestError, api } from '../api';
-import { ErrorNotice } from '../components/ui';
+import { ErrorNotice } from './ui';
 
 /**
- * Buyer Settings - where a buyer says where a cancelled order's payment
- * should be reversed to.
+ * Payment Reversal Details - where a seller sends this buyer's money back.
  *
- * One section, deliberately: `Payment Reversal Details` is the only thing
- * this page is for. Free text throughout and no provider hard-coded, the same
- * discipline a seller's own payment details use - the platform is not moving
- * this money and must not pretend to have validated an account it cannot see.
+ * Lives under My refunds, beside the refunds it is used for. Free text
+ * throughout and no provider hard-coded: the platform is not moving this
+ * money and must not pretend to have validated an account it cannot see.
  */
-export function BuyerSettingsPage() {
+export function ReversalDetailsForm() {
   const [method, setMethod] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [accountName, setAccountName] = useState('');
@@ -75,19 +73,14 @@ export function BuyerSettingsPage() {
     }
   }
 
-  if (loading) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (loading) return <p className="muted">Loading…</p>;
 
   return (
-    <main className="page">
-      <div className="page__head">
-        <h1>💳 Buyer Settings</h1>
-      </div>
-
-      <div className="card card--pad stack">
+    <div className="card card--pad stack">
         <h2 style={{ margin: 0 }}>Payment Reversal Details</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          If a seller cancels a paid order, this is where they send your money back. Save it once and
-          every reversal uses it.
+          Where a seller sends your money back - for a refund, or a paid order they cancel. Save it
+          once and every seller uses it.
         </p>
 
         <label className="field">
@@ -122,7 +115,6 @@ export function BuyerSettingsPage() {
           onClick={() => void save()}>
           {busy ? 'Saving…' : 'Save'}
         </button>
-      </div>
-    </main>
+    </div>
   );
 }

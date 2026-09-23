@@ -22,6 +22,7 @@ import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handl
 import type { Listing, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
+import { ProofPicker } from '../components/ProofPicker';
 import type { StoreAccess } from '@shared/stores';
 import {
   ApiRequestError,
@@ -1591,6 +1592,9 @@ function Refunds({ store }: { store: StoreAccess }) {
                 </small>
                 <small>
                   {formatDateOrdinal(entry.at)}{entry.reference ? ` · ref ${entry.reference}` : ''}
+                  {entry.screenshotUrl && (
+                    <> · <a href={entry.screenshotUrl} target="_blank" rel="noopener noreferrer">📎 screenshot</a></>
+                  )}
                 </small>
               </span>
               <span className="rfhist__side">
@@ -1614,6 +1618,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
   const [mode, setMode] = useState<'refund' | 'apply' | null>(null);
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
+  const [shot, setShot] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [target, setTarget] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -1627,6 +1632,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
     setMode(next);
     setError(null);
     setReference('');
+    setShot(null);
     // Filled with what is owed, and editable: refund less and the rest stays here.
     if (next === 'refund') {
       setAmount(String(credit.leftMinor / 100));
@@ -1678,9 +1684,18 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           {credit.applications.map((moved) => ` · ${formatMoney(moved.amountMinor, credit.currency)} → ${moved.itemName}`)}
         </p>
       )}
-      {credit.refundDenials > 0 && !pending && (
+      {credit.disputable.map((entry) => (
+        <div key={entry.subject} className="disputebar">
+          <span>⚠️ {entry.label}. Check, and send it again - or dispute it.</span>
+          <button type="button" className="btn btn--sm btn--danger" disabled={busy !== null}
+            onClick={() => void run(`dispute-${entry.subject}`, () => api.flagDispute(credit.orderId, { subject: entry.subject }))}>
+            {busy === `dispute-${entry.subject}` ? 'Recording…' : '⚖️ Dispute'}
+          </button>
+        </div>
+      ))}
+      {credit.refundDenials > 0 && !pending && credit.disputable.length === 0 && (
         <p className="notice notice--warn xcredit__note">
-          The buyer said an earlier refund of this did not arrive. Check, and send it again.
+          The buyer said an earlier refund of this did not arrive - it is on record under My disputes.
         </p>
       )}
       {pending && credit.pendingRefund && (
@@ -1740,9 +1755,14 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           {mode === 'refund' && (
             <>
               <label className="field">
-                <span>Reference (UTR or transaction id)</span>
-                <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" />
+                <span>Transaction id (UTR)</span>
+                <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. 412345678901" />
               </label>
+              <div className="field">
+                <span>Screenshot of the transfer</span>
+                <ProofPicker value={shot} onChange={setShot} />
+                <span className="field__hint">The transaction id or a screenshot - at least one of the two.</span>
+              </div>
               <label className="field">
                 <span>Message to {credit.buyer.name}</span>
                 <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)}
@@ -1753,10 +1773,11 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           )}
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <button type="button" className="btn btn--ok"
-              disabled={busy !== null || typedMinor <= 0 || typedMinor > cap || (mode === 'apply' && !target)}
+              disabled={busy !== null || typedMinor <= 0 || typedMinor > cap || (mode === 'apply' && !target)
+                || (mode === 'refund' && !reference.trim() && !shot)}
               onClick={() => void run(mode, () => (mode === 'refund'
                 ? api.refundCredit(credit.orderId, {
-                    creditId: credit.creditId, amountMinor: typedMinor,
+                    creditId: credit.creditId, amountMinor: typedMinor, screenshotUrl: shot ?? undefined,
                     reference: reference.trim() || undefined, message: message.trim() || undefined,
                   })
                 : api.applyCredit(credit.orderId, { creditId: credit.creditId, targetOrderId: target, amountMinor: typedMinor })))}>
@@ -1787,6 +1808,7 @@ function NewRefund({ refundable, onClose, onDone }: {
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [reference, setReference] = useState('');
+  const [shot, setShot] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1799,7 +1821,7 @@ function NewRefund({ refundable, onClose, onDone }: {
     setError(null);
     try {
       await api.startRefund(chosen.orderId, {
-        amountMinor: typedMinor, reason: reason.trim(),
+        amountMinor: typedMinor, reason: reason.trim(), screenshotUrl: shot ?? undefined,
         reference: reference.trim() || undefined, message: message.trim() || undefined,
       });
       await onDone();
@@ -1841,9 +1863,14 @@ function NewRefund({ refundable, onClose, onDone }: {
               placeholder="Box arrived dented — settled after the dispute" />
           </label>
           <label className="field">
-            <span>Reference (UTR or transaction id)</span>
-            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" />
+            <span>Transaction id (UTR)</span>
+            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. 412345678901" />
           </label>
+          <div className="field">
+            <span>Screenshot of the transfer</span>
+            <ProofPicker value={shot} onChange={setShot} />
+            <span className="field__hint">The transaction id or a screenshot - at least one of the two.</span>
+          </div>
           <label className="field">
             <span>Message to the buyer</span>
             <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)}
@@ -1851,7 +1878,8 @@ function NewRefund({ refundable, onClose, onDone }: {
           </label>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <button type="button" className="btn btn--ok"
-              disabled={busy || !chosen || typedMinor <= 0 || typedMinor > (chosen?.refundableMinor ?? 0) || reason.trim().length < 3}
+              disabled={busy || !chosen || typedMinor <= 0 || typedMinor > (chosen?.refundableMinor ?? 0)
+                || reason.trim().length < 3 || (!reference.trim() && !shot)}
               onClick={() => void submit()}>
               {busy ? 'Sending…' : typedMinor > 0 && chosen ? `Refund ${formatMoney(typedMinor, chosen.currency)}` : 'Refund'}
             </button>

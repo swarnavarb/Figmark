@@ -19,7 +19,7 @@ const QUALITY = 0.82;
  * API's own size cap will catch and explain, which is better than silently
  * uploading nothing.
  */
-async function shrink(file: File): Promise<string> {
+export async function shrink(file: File): Promise<string> {
   const original = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));

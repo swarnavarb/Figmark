@@ -4,7 +4,7 @@ import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { threadIdFor } from '../../../shared/handles.js';
 import type {
-  CreditRecord, Dispute, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
+  CreditRecord, Dispute, Message, MessageParty, Order, PaymentDispute, PaymentDisputeKind, PaymentRecord, Review, SellerPaymentDetails, User,
 } from '../../../shared/models.js';
 import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
@@ -18,6 +18,7 @@ import {
   autoReleaseDue,
   protectionFeeMinor,
   daysFrom,
+  disputeSubjects,
   isCancelledLike,
   reviewRevealed,
   scoreFrom,
@@ -549,6 +550,8 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     // seller's name goes to the shop, a buyer's to the person.
     counterparty: side === 'buyer' ? sellerRef(other) : personRef(other, 'the buyer'),
     actions: actionsFor(order, user.id, mine !== null),
+    /** Rejections of a payment this viewer made, that they could dispute. */
+    disputable: disputeSubjects(order, user.id),
     simulatedPayment: true,
     // Lets the seller's cancel/reversal screen know, before they try, whether
     // the buyer has somewhere for the money to go.
@@ -952,8 +955,13 @@ async function refundCredit(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'nothing_to_refund', 'There is no extra payment waiting to be returned.');
   }
 
-  const body = await bodyOf<{ creditId: string; reference: string; message: string; amountMinor: number }>(request);
+  const body = await bodyOf<{
+    creditId: string; reference: string; screenshotUrl: string; message: string; amountMinor: number;
+  }>(request);
   const reference = body.reference?.trim() || null;
+  const proof = refundProof(reference, body.screenshotUrl);
+  if ('refusal' in proof) return proof.refusal;
+  const screenshotUrl = proof.screenshotUrl;
   // A part-refund is one refund, named: returning "some" of everything on the
   // order at once would leave no way to say which balance is left where.
   const partial = body.amountMinor !== undefined && body.amountMinor !== null;
@@ -968,7 +976,7 @@ async function refundCredit(request: HttpRequest, _context: InvocationContext) {
     if (!(amount > 0)) { refusal = error(400, 'invalid_amount', 'Enter an amount above zero.'); return credit; }
     if (amount > left) { refusal = error(400, 'too_much', `Only ${rupees(left)} is left to refund here.`); return credit; }
     total += amount;
-    return startReturn(credit, amount, reference, now, user.id);
+    return startReturn(credit, amount, reference, screenshotUrl, now, user.id);
   });
   if (refusal) return refusal;
   if (total === 0) return error(404, 'not_found', 'No such refund on this order.');
@@ -981,16 +989,36 @@ async function refundCredit(request: HttpRequest, _context: InvocationContext) {
   return json(200, { order: saved, sentMinor: total });
 }
 
+/**
+ * Every refund carries proof of the transfer: the transaction id, a
+ * screenshot of it, or both - never neither, because the buyer is about to be
+ * asked whether it arrived and needs something to look for. The screenshot
+ * is uploaded to the photo store first and arrives here as its address.
+ */
+function refundProof(
+  reference: string | null, rawUrl: string | undefined,
+): { screenshotUrl: string | null } | { refusal: ReturnType<typeof error> } {
+  const screenshotUrl = rawUrl?.trim() || null;
+  if (screenshotUrl && !screenshotUrl.startsWith('/api/photos/') && !screenshotUrl.startsWith('https://')) {
+    return { refusal: error(400, 'invalid_screenshot', 'That screenshot did not upload properly. Try attaching it again.') };
+  }
+  if (!reference && !screenshotUrl) {
+    return { refusal: error(400, 'no_proof', 'Add the transaction id or attach a screenshot of the transfer.') };
+  }
+  return { screenshotUrl };
+}
+
 /** A credit with one more return on its way, logged, waiting on the buyer. */
 function startReturn(
-  credit: CreditRecord, amountMinor: number, reference: string | null, at: string, by: string,
+  credit: CreditRecord, amountMinor: number, reference: string | null, screenshotUrl: string | null, at: string, by: string,
 ): CreditRecord {
   return {
     ...credit,
     status: 'refund_pending',
-    pendingRefund: { amountMinor, reference, sentAt: at, sentBy: by },
+    pendingRefund: { amountMinor, reference, screenshotUrl, sentAt: at, sentBy: by },
     refundLog: [...(credit.refundLog ?? []), {
-      id: `rfd_${randomUUID().slice(0, 12)}`, amountMinor, reference, sentAt: at, sentBy: by, status: 'awaiting', answeredAt: null,
+      id: `rfd_${randomUUID().slice(0, 12)}`, amountMinor, reference, screenshotUrl, sentAt: at, sentBy: by,
+      status: 'awaiting', answeredAt: null,
     }],
   };
 }
@@ -1031,12 +1059,14 @@ async function startRefund(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
   if (order.sellerId !== user.id) return error(403, 'not_the_seller', 'Only the seller can refund this order.');
 
-  const body = await bodyOf<{ amountMinor: number; reason: string; reference: string; message: string }>(request);
+  const body = await bodyOf<{ amountMinor: number; reason: string; reference: string; screenshotUrl: string; message: string }>(request);
   const amountMinor = Math.round(Number(body.amountMinor) || 0);
   const reason = body.reason?.trim() ?? '';
   const reference = body.reference?.trim() || null;
   if (amountMinor <= 0) return error(400, 'invalid_amount', 'Enter the amount you are refunding.');
   if (reason.length < 3) return error(400, 'no_reason', 'Say what this refund is for, so the buyer knows.');
+  const proof = refundProof(reference, body.screenshotUrl);
+  if ('refusal' in proof) return proof.refusal;
 
   // An overpayment was never part of what was paid for the item, so it does
   // not use any of it up. A cancellation or an earlier refund of this kind
@@ -1055,7 +1085,7 @@ async function startRefund(request: HttpRequest, _context: InvocationContext) {
   const credit = startReturn({
     id: `crd_${randomUUID().slice(0, 12)}`, createdAt: now, amountMinor, batchId: null,
     refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'open', origin: 'manual', reason,
-  }, amountMinor, reference, now, user.id);
+  }, amountMinor, reference, proof.screenshotUrl, now, user.id);
   order.credits = [...(order.credits ?? []), credit];
   note(order, `↩️ Seller refunded ${rupees(amountMinor)} — ${reason}${reference ? ` (reference ${reference})` : ''}. Waiting for the buyer to confirm it arrived.`, user.id);
   order.updatedAt = now;
@@ -1327,6 +1357,140 @@ async function holdCredit(request: HttpRequest, _context: InvocationContext) {
   return json(200, { order: saved, heldMinor: total });
 }
 
+
+/** The words a dispute of each kind is shown under, on both sides. */
+const DISPUTE_KIND_LABELS: Record<PaymentDisputeKind, string> = {
+  payment_rejected: 'Payment not acknowledged',
+  refund_rejected: 'Refund not acknowledged',
+  reversal_rejected: 'Reversal not acknowledged',
+  general: 'Dispute',
+};
+
+/**
+ * POST /api/orders/{id}/flag-dispute - either side puts a dispute on record.
+ *
+ * Two ways in. With a `subject`: the side that paid disputes the other side
+ * saying the money never came - the subject has to be one `disputeSubjects`
+ * offers them, so a rejection can only be disputed by the person who paid,
+ * and only once. Without one: a dispute about anything else, which needs a
+ * reason because otherwise there is nothing on record to work from.
+ *
+ * Recording only. Nothing about the order changes; the other side is told,
+ * the timeline says so, and it appears under My disputes for both of them.
+ * Working it through comes later.
+ */
+async function flagDispute(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  const side = sideOf(order, user.id)!;
+
+  const body = await bodyOf<{ subject: string; reason: string }>(request);
+  const reason = body.reason?.trim() || null;
+  let dispute: PaymentDispute;
+  const now = new Date().toISOString();
+  const base = { id: `pdp_${randomUUID().slice(0, 12)}`, raisedBy: user.id, raisedBySide: side, raisedAt: now, status: 'open' as const };
+
+  if (body.subject) {
+    const offered = disputeSubjects(order, user.id).find((entry) => entry.subject === body.subject);
+    if (!offered) return error(409, 'not_disputable', 'There is nothing of yours to dispute there, or it is already disputed.');
+    dispute = { ...base, subject: offered.subject, kind: offered.kind, amountMinor: offered.amountMinor, reason };
+  } else {
+    if (!reason || reason.length < 4) return error(400, 'no_reason', 'Say what the dispute is about.');
+    dispute = { ...base, subject: `general:${base.id}`, kind: 'general', amountMinor: null, reason };
+  }
+
+  order.paymentDisputes = [...(order.paymentDisputes ?? []), dispute];
+  note(order, `⚖️ Dispute raised by the ${side} — ${DISPUTE_KIND_LABELS[dispute.kind]}${reason ? `: ${reason}` : ''}`, user.id);
+  order.updatedAt = now;
+  const saved = await repository.updateOrder(order);
+
+  await notify(repository, [side === 'buyer' ? order.sellerId : order.buyerId], {
+    kind: 'payment_dispute',
+    title: `The ${side} raised a dispute on ${order.itemName}`,
+    body: reason ?? DISPUTE_KIND_LABELS[dispute.kind],
+    link: '/disputes',
+  });
+
+  return json(201, { order: saved, dispute });
+}
+
+/**
+ * GET /api/me/disputes - every dispute on this person's orders, from both sides.
+ *
+ * Split the way they will be worked: the ones on things they bought, and the
+ * ones on their store's sales. Includes the two older kinds recorded
+ * elsewhere on an order - a buyer's dispute over a reversal, and an escrow
+ * dispute - so this is the one list of everything in dispute.
+ */
+async function myDisputes(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const bought = await repository.listOrdersForBuyer(user.id);
+  const sold = await repository.listOrdersForSeller(user.id);
+  const people = new Map((await repository.listUsersByIds([
+    ...new Set([...bought.map((order) => order.sellerId), ...sold.map((order) => order.buyerId)]),
+  ])).map((person) => [person.id, person]));
+  const nameOf = (id: string) => {
+    const person = people.get(id);
+    return person?.sellerProfile?.storefrontName ?? person?.displayName ?? 'Someone';
+  };
+
+  // The older escrow disputes live in their own collection; read the ones these orders point at.
+  const escrowDisputes = new Map<string, Dispute>();
+  for (const order of [...bought, ...sold]) {
+    if (!order.escrow.disputeId || escrowDisputes.has(order.escrow.disputeId)) continue;
+    const found = await repository.getDispute(order.id, order.escrow.disputeId);
+    if (found) escrowDisputes.set(found.id, found);
+  }
+
+  const rows = (order: Order, side: 'buyer' | 'seller') => {
+    const other = nameOf(side === 'buyer' ? order.sellerId : order.buyerId);
+    const common = { orderId: order.id, itemName: order.itemName, currency: order.currency, counterpartyName: other };
+    const out = (order.paymentDisputes ?? []).map((dispute) => ({
+      ...common, id: dispute.id, kind: dispute.kind, label: DISPUTE_KIND_LABELS[dispute.kind],
+      amountMinor: dispute.amountMinor, reason: dispute.reason, raisedAt: dispute.raisedAt,
+      raisedByMe: dispute.raisedBy === user.id, raisedBySide: dispute.raisedBySide, status: dispute.status, link: null as string | null,
+    }));
+    if (order.reversal?.disputeRaisedAt) {
+      out.push({
+        ...common, id: `rev-${order.id}`, kind: 'reversal_rejected', label: 'Reversal not received',
+        amountMinor: order.reversal.amountMinor, reason: 'The buyer says the reversed payment never arrived.',
+        raisedAt: order.reversal.disputeRaisedAt, raisedByMe: side === 'buyer', raisedBySide: 'buyer', status: 'open', link: null,
+      });
+    }
+    const escrowed = order.escrow.disputeId ? escrowDisputes.get(order.escrow.disputeId) : undefined;
+    if (escrowed) {
+      out.push({
+        ...common, id: escrowed.id, kind: 'general', label: 'Escrow dispute',
+        amountMinor: order.escrow.amountMinor, reason: escrowed.reason, raisedAt: escrowed.createdAt,
+        raisedByMe: escrowed.raisedBy === user.id, raisedBySide: escrowed.raisedSide, status: 'open',
+        link: `/dispute/${escrowed.id}`,
+      });
+    }
+    return out;
+  };
+  const newest = <T extends { raisedAt: string }>(list: T[]) => list.sort((a, b) => b.raisedAt.localeCompare(a.raisedAt));
+
+  // What a new dispute could be raised on: their recent orders, either side.
+  const orders = [
+    ...bought.map((order) => ({ id: order.id, itemName: order.itemName, side: 'buyer' as const, counterpartyName: nameOf(order.sellerId), createdAt: order.createdAt })),
+    ...sold.map((order) => ({ id: order.id, itemName: order.itemName, side: 'seller' as const, counterpartyName: nameOf(order.buyerId), createdAt: order.createdAt })),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 80);
+
+  return json(200, {
+    asBuyer: newest(bought.flatMap((order) => rows(order, 'buyer'))),
+    asStore: newest(sold.flatMap((order) => rows(order, 'seller'))),
+    orders,
+  });
+}
+
 export const payRoute = handler(pay);
 export const payMoreRoute = handler(payMore);
 export const refundCreditRoute = handler(refundCredit);
@@ -1334,6 +1498,8 @@ export const ackCreditRefundRoute = handler(ackCreditRefund);
 export const applyCreditRoute = handler(applyCredit);
 export const holdCreditRoute = handler(holdCredit);
 export const startRefundRoute = handler(startRefund);
+export const flagDisputeRoute = handler(flagDispute);
+export const myDisputesRoute = handler(myDisputes);
 export const myRefundsRoute = handler(myRefunds);
 export const claimPaymentRoute = handler(claimPayment);
 /**
@@ -1601,7 +1767,7 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
       kind: 'reversal_details_needed',
       title: 'Add your payment reversal details',
       body: `${order.itemName} was cancelled and needs somewhere to send your ${rupees(money.paidMinor)} back.`,
-      link: '/buyer-settings',
+      link: '/refunds?tab=details',
     });
     if (seller) {
       const text = (body.message ?? '').trim()
@@ -1657,7 +1823,7 @@ async function requestReversalDetails(request: HttpRequest, _context: Invocation
     kind: 'reversal_details_needed',
     title: 'Add your payment reversal details',
     body: `${order.itemName} needs somewhere to send your reversal.`,
-    link: '/buyer-settings',
+    link: '/refunds?tab=details',
   });
 
   return json(200, { sent: true });
@@ -1944,6 +2110,8 @@ app.http('order-refund-credit', { ...anon, methods: ['POST'], route: 'orders/{id
 app.http('order-credit-ack', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-ack', handler: ackCreditRefundRoute });
 app.http('order-credit-apply', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-apply', handler: applyCreditRoute });
 app.http('order-refund-new', { ...anon, methods: ['POST'], route: 'orders/{id}/refund-new', handler: startRefundRoute });
+app.http('order-flag-dispute', { ...anon, methods: ['POST'], route: 'orders/{id}/flag-dispute', handler: flagDisputeRoute });
+app.http('my-disputes', { ...anon, methods: ['GET'], route: 'me/disputes', handler: myDisputesRoute });
 app.http('my-refunds', { ...anon, methods: ['GET'], route: 'me/refunds', handler: myRefundsRoute });
 app.http('order-credit-hold', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-hold', handler: holdCreditRoute });
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });

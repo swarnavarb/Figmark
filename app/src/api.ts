@@ -14,7 +14,7 @@ import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from 
 import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
-import type { OrderAction, OrderSide } from '@shared/orders';
+import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type { DisputeAction } from '@shared/disputes';
 import type { Allocation, OrderMoney } from '@shared/payments';
 
@@ -371,8 +371,9 @@ export interface ShopCredit {
   refundedMinor: number;
   leftMinor: number;
   status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
-  pendingRefund: { amountMinor: number; reference: string | null; sentAt: string } | null;
+  pendingRefund: { amountMinor: number; reference: string | null; screenshotUrl?: string | null; sentAt: string } | null;
   refundDenials: number;
+  disputable: DisputeSubject[];
   applications: { orderId: string; itemName: string; amountMinor: number; at: string }[];
   targets: { orderId: string; itemName: string; outstandingMinor: number }[];
 }
@@ -391,6 +392,7 @@ export interface RefundHistoryEntry {
   amountMinor: number;
   at: string;
   reference: string | null;
+  screenshotUrl: string | null;
   status: RefundLogEntry['status'];
   answeredAt: string | null;
   movedTo: string | null;
@@ -423,6 +425,31 @@ export interface MyRefund {
   pendingRefund: ShopCredit['pendingRefund'];
   log: RefundLogEntry[];
   applications: ShopCredit['applications'];
+}
+
+/** One dispute, as either side's list shows it. */
+export interface DisputeRow {
+  id: string;
+  orderId: string;
+  itemName: string;
+  currency: string;
+  counterpartyName: string;
+  kind: 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
+  label: string;
+  amountMinor: number | null;
+  reason: string | null;
+  raisedAt: string;
+  raisedByMe: boolean;
+  raisedBySide: 'buyer' | 'seller';
+  status: 'open';
+  /** Where a dispute worked on its own screen lives, for the escrow kind. */
+  link: string | null;
+}
+
+export interface MyDisputesResponse {
+  asBuyer: DisputeRow[];
+  asStore: DisputeRow[];
+  orders: { id: string; itemName: string; side: 'buyer' | 'seller'; counterpartyName: string; createdAt: string }[];
 }
 
 export interface SalesResponse {
@@ -522,6 +549,8 @@ export interface OrderState {
   /** The other party, named from this viewer's side of the order. */
   counterparty: PartyRef;
   actions: OrderAction[];
+  /** Rejections of a payment this viewer made, that they could dispute. */
+  disputable: DisputeSubject[];
   /** True while no payment provider is wired; the hold is recorded, not taken. */
   simulatedPayment: boolean;
   myReview: Review | null;
@@ -1133,15 +1162,22 @@ export const api = {
     post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
   payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
     post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
-  refundCredit: (id: string, body: { creditId?: string; reference?: string; message?: string; amountMinor?: number } = {}) =>
+  refundCredit: (id: string, body: {
+    creditId?: string; reference?: string; screenshotUrl?: string; message?: string; amountMinor?: number;
+  } = {}) =>
     post<{ order: Order; sentMinor: number }>(`/orders/${encodeURIComponent(id)}/refund-credit`, body),
   ackCreditRefund: (id: string, received: boolean, creditId?: string) =>
     post<{ order: Order; answeredMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-ack`, { received, creditId }),
   applyCredit: (id: string, body: { creditId: string; targetOrderId: string; amountMinor?: number }) =>
     post<{ source: Order; target: Order; appliedMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-apply`, body),
-  startRefund: (id: string, body: { amountMinor: number; reason: string; reference?: string; message?: string }) =>
+  startRefund: (id: string, body: {
+    amountMinor: number; reason: string; reference?: string; screenshotUrl?: string; message?: string;
+  }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
   myRefunds: () => request<{ refunds: MyRefund[] }>('/me/refunds'),
+  myDisputes: () => request<MyDisputesResponse>('/me/disputes'),
+  flagDispute: (id: string, body: { subject?: string; reason?: string }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/flag-dispute`, body),
   holdCredit: (id: string, creditId?: string) =>
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
   myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),

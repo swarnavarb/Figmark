@@ -892,6 +892,8 @@ export interface Order extends BaseDocument {
   payments?: PaymentRecord[];
   /** Money paid over the balance, held for the seller to refund. */
   credits?: CreditRecord[];
+  /** Disputes either side has raised about this order's money. */
+  paymentDisputes?: PaymentDispute[];
   /**
    * Placed as a booking - the buyer's word that they want it, with no payment
    * yet. Payment is asked for only once the seller has accepted; on any other
@@ -997,7 +999,9 @@ export interface CreditRecord {
   appliedMinor?: number;
   applications?: { orderId: string; itemName: string; amountMinor: number; at: string }[];
   /** The return the seller says they made, waiting on the buyer's answer. */
-  pendingRefund?: { amountMinor: number; reference: string | null; sentAt: string; sentBy: string } | null;
+  pendingRefund?: {
+    amountMinor: number; reference: string | null; screenshotUrl?: string | null; sentAt: string; sentBy: string;
+  } | null;
   /** Every time the buyer said a return did not arrive - kept, not overwritten. */
   refundDenials?: { at: string; amountMinor: number }[];
   /**
@@ -1013,11 +1017,37 @@ export interface CreditRecord {
 
 export type RefundOrigin = 'overpaid' | 'cancelled' | 'manual';
 
+/**
+ * Why somebody raised a dispute. The first three are the same shape - one
+ * side says it paid, the other says the money never came - and `general` is
+ * anything else either side wants on record.
+ */
+export type PaymentDisputeKind = 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
+
+/**
+ * A dispute, recorded. Deliberately only the record for now: who raised it,
+ * about what, and when - the working-it-out comes later.
+ */
+export interface PaymentDispute {
+  id: string;
+  /** What it is about, so the same rejection cannot be disputed twice. */
+  subject: string;
+  kind: PaymentDisputeKind;
+  raisedBy: string;
+  raisedBySide: 'buyer' | 'seller';
+  raisedAt: string;
+  amountMinor: number | null;
+  reason: string | null;
+  status: 'open';
+}
+
 /** One return of money to a buyer: how much, when, and whether it arrived. */
 export interface RefundLogEntry {
   id: string;
   amountMinor: number;
   reference: string | null;
+  /** The seller's screenshot of the transfer, from the photo store. */
+  screenshotUrl?: string | null;
   sentAt: string;
   sentBy: string;
   /** `awaiting` until the buyer answers. */
@@ -1423,6 +1453,7 @@ export type NotificationKind =
   | 'credit_refund_answered'
   | 'credit_applied'
   | 'refund_started'
+  | 'payment_dispute'
   | 'payment_settled'
   | 'dispute_opened'
   | 'dispute_replied'

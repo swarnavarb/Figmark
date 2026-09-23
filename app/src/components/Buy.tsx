@@ -4,6 +4,7 @@ import {
   PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, REFUND_ORIGIN_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
   isMultiple, methodOf, orderMoney, timeLeft,
 } from '@shared/payments';
+import { Link } from 'react-router-dom';
 import { ApiRequestError, api } from '../api';
 import { formatDate, formatMoney } from '../format';
 import { Modal } from './LotFields';
@@ -72,25 +73,9 @@ export function MoneyBar({ totalMinor, paidMinor, outstandingMinor, creditMinor 
 export function PaymentHistory({ order, side, onChanged }: {
   order: Order; side: 'buyer' | 'seller' | null; onChanged: () => void | Promise<void>;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const money = orderMoney(order);
   const records = order.payments ?? [];
   const open = (order.credits ?? []).filter(creditIsLive);
-
-  async function refund() {
-    if (!window.confirm('Mark the full amount as refunded? The buyer is told and asked to confirm it arrived. To refund part of it, use Sell → Refunds.')) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.refundCredit(order.id);
-      await onChanged();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not record the refund.');
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="card card--pad stack payhist">
@@ -130,11 +115,10 @@ export function PaymentHistory({ order, side, onChanged }: {
         </div>
       ))}
       {side === 'seller' && open.length > 0 && (
-        <button type="button" className="btn" disabled={busy} onClick={() => void refund()}>
-          {busy ? 'Sending…' : `↩️ Refund ${formatMoney(money.creditMinor, order.currency)}`}
-        </button>
+        <Link to="/shop?tab=refunds" className="btn">
+          ↩️ Refund {formatMoney(money.creditMinor, order.currency)} in Refunds
+        </Link>
       )}
-      {error && <ErrorNotice message={error} />}
     </div>
   );
 }

@@ -119,6 +119,7 @@ export function OrderPage() {
           screen with a payment to make should not have to scroll past a
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
+      <DisputePanel state={state} onDone={load} />
 
       <div className="tabs tabs--vivid">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
@@ -654,6 +655,88 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       )}
 
       {order.completedAt && <ReviewPanel state={state} onDone={onDone} />}
+    </div>
+  );
+}
+
+/**
+ * Disputes on this order - the first, recording-only version.
+ *
+ * When the side that paid is told the money never came, they get a Dispute
+ * button right there. Either side can also raise a dispute about anything
+ * else, with a reason. Both only put it on record - on the timeline, in
+ * My disputes for both people, and in a notification to the other side.
+ */
+function DisputePanel({ state, onDone }: { state: OrderState; onDone: () => Promise<void> }) {
+  const [writing, setWriting] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { order } = state;
+  const raised = order.paymentDisputes ?? [];
+
+  async function raise(key: string, body: { subject?: string; reason?: string }) {
+    setBusy(key);
+    setError(null);
+    try {
+      await api.flagDispute(order.id, body);
+      setWriting(false);
+      setReason('');
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not record that.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="stack" style={{ marginBottom: 20 }}>
+      {state.disputable.map((entry) => (
+        <div key={entry.subject} className="disputebar">
+          <span>⚠️ {entry.label}.</span>
+          <button type="button" className="btn btn--sm btn--danger" disabled={busy !== null}
+            onClick={() => void raise(entry.subject, { subject: entry.subject })}>
+            {busy === entry.subject ? 'Recording…' : '⚖️ Dispute'}
+          </button>
+        </div>
+      ))}
+
+      {raised.map((dispute) => (
+        <Link key={dispute.id} to="/disputes" className="disputebar disputebar--done">
+          <span>
+            ⚖️ Dispute raised by the {dispute.raisedBySide} on {formatDateOrdinal(dispute.raisedAt)}
+            {dispute.reason ? ` — ${dispute.reason}` : ''}
+          </span>
+          <Icon name="right" size={14} />
+        </Link>
+      ))}
+
+      {writing ? (
+        <div className="card card--pad stack">
+          <label className="field">
+            <span>What is the dispute about?</span>
+            <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
+              placeholder="The item arrived damaged and the seller is not answering…" />
+            <span className="field__hint">
+              It is recorded and the other side is told. It shows under My disputes for both of you.
+            </span>
+          </label>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--danger" disabled={busy !== null || reason.trim().length < 4}
+              onClick={() => void raise('general', { reason: reason.trim() })}>
+              {busy === 'general' ? 'Recording…' : 'Raise dispute'}
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={() => setWriting(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
+          onClick={() => setWriting(true)}>
+          ⚖️ Raise a dispute
+        </button>
+      )}
+      {error && <ErrorNotice message={error} />}
     </div>
   );
 }
