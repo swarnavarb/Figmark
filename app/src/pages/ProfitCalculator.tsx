@@ -128,7 +128,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   const underTarget = result !== null && !losing && result.marginPercent !== null && result.marginPercent < target;
 
   return (
-    <div className="stack royal">
+    <div className="stack prozone">
       <section className="inshero">
         <div className="inshero__title">
           <h2>🧮 Profit calculator <span className="probadge">PRO</span></h2>
