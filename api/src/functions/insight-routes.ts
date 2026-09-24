@@ -47,7 +47,7 @@ export async function shopFor(
 }
 
 /** Everybody named on this screen, resolved once. */
-async function names(repository: Repo, ids: Iterable<string>): Promise<Map<string, PartyRef>> {
+export async function names(repository: Repo, ids: Iterable<string>): Promise<Map<string, PartyRef>> {
   const unique = [...new Set(ids)];
   const people: User[] = await repository.listUsersByIds(unique);
   const found = new Map(people.map((person) => [person.id, personRef(person)]));

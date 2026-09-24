@@ -290,3 +290,50 @@ export function starterLines(): CostLine[] {
 }
 
 export const COMMON_CURRENCIES = ['USD', 'JPY', 'CNY', 'EUR', 'GBP', 'HKD', 'KRW', 'SGD', 'AED', 'THB'] as const;
+
+/* ── An item's own costs ───────────────────────────────────────────────── */
+
+/**
+ * One step of what a single unit of an item cost to bring in, in paise.
+ *
+ * Fixed amounts rather than formulas: once the seller has saved an item's
+ * costs, those are what that stock actually cost, and editing the template
+ * later - a new forex rate, a new forwarder - must not rewrite what an item
+ * already on the shelf was bought at.
+ */
+export interface CostStep {
+  id: string;
+  label: string;
+  stage: CostStage;
+  amountMinor: number;
+}
+
+/** The costs saved against a listing. Only the steps the seller kept. */
+export interface ItemCostSheet {
+  /** The calculator it came from, if any, as it was named then. */
+  templateId: string | null;
+  templateName: string | null;
+  steps: CostStep[];
+  savedAt: string;
+}
+
+/** Everything one unit cost, in paise. */
+export const sheetTotal = (sheet: ItemCostSheet | null | undefined): number =>
+  (sheet?.steps ?? []).reduce((sum, step) => sum + step.amountMinor, 0);
+
+/**
+ * A calculator result as the steps to save against an item: the item price
+ * first, then each line that is switched on and came to something.
+ */
+export function stepsFromResult(result: ProfitResult): CostStep[] {
+  const steps: CostStep[] = [];
+  if (result.itemCost > 0) {
+    steps.push({ id: 'item', label: 'Item price', stage: 'buying', amountMinor: Math.round(result.itemCost * 100) });
+  }
+  for (const line of result.lines) {
+    if (line.enabled && line.perItem > 0) {
+      steps.push({ id: line.id, label: line.label, stage: line.stage, amountMinor: Math.round(line.perItem * 100) });
+    }
+  }
+  return steps;
+}

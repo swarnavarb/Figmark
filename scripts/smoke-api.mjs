@@ -113,6 +113,9 @@ const {
 } = await import(new URL('profit-routes.js', fns));
 const { calculateProfit, starterLines } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
 const {
+  costsRoute: costsRead, saveCostSheetRoute: saveCostSheet, deepRoute: deepRead, salesReportRoute: salesReport, nudgeRoute: nudge,
+} = await import(new URL('pro-routes.js', fns));
+const {
   servicesHubRoute: servicesHub, serviceDirectoryRoute: serviceDirectory,
   offerServiceRoute: offerService, consignmentsRoute: consignments,
   distributionRoute: distribution, distributionDetailRoute: distributionDetail,
@@ -6674,6 +6677,122 @@ await check('market trends show other shops’ items without the shops', async (
   assert.ok(!text.includes(listingId) && !text.includes('Rival Shop') && !text.includes('rival_shop') && !text.includes('Rival Figures'), 'nothing leads back to the shop');
   assert.ok(read.jsonBody.categories.some((row) => row.category === 'Scale figures'));
   assert.ok(!read.jsonBody.items.some((row) => row.title === 'My Resin Statue'), 'and never the shop’s own items');
+});
+
+console.log('\nreal profit, and what the shop does with it');
+
+const listItem = async (title, priceMinor, quantityAvailable = 5) =>
+  (await createListing(req({ headers: auth, body: { title, priceMinor, quantityAvailable } }), ctx)).jsonBody.listing.id;
+const bookFor = async (buyer, listingId) => {
+  const orderId = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  const booked = await bookOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(booked.status, 200, JSON.stringify(booked.jsonBody));
+  return orderId;
+};
+
+await check('an item keeps its own cost steps, and profit follows per item and customer', async () => {
+  const listingId = await listItem('Costed Figure', 12_000);
+  const buyer = await newBuyer('Costed Buyer');
+  await bookFor(buyer, listingId);
+
+  const steps = [
+    { id: 'item', label: 'Item price', stage: 'buying', amountMinor: 5_000 },
+    { id: 'freight', label: 'Freight', stage: 'international', amountMinor: 1_000 },
+  ];
+  const saved = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { templateId: null, templateName: 'Air', steps } } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.costMinor, 6_000);
+
+  const read = (await costsRead(req({ headers: auth }), ctx)).jsonBody;
+  const item = read.items.active.find((row) => row.key === listingId);
+  assert.ok(item, 'an item on sale is active');
+  assert.equal(item.revenueMinor, 12_000);
+  assert.equal(item.costMinor, 6_000);
+  assert.equal(item.profitMinor, 6_000);
+  assert.equal(item.marginPercent, 50);
+  assert.equal(item.stages.international, 1_000);
+  assert.deepEqual(item.steps.map((step) => step.label), ['Item price', 'Freight'], 'only the steps the seller kept');
+  const customer = [...read.customers.active, ...read.customers.closed].find((row) => row.name === 'Costed Buyer');
+  assert.ok(customer && customer.profitMinor >= 6_000, 'and the customer who bought it');
+  assert.ok(read.sheets.some((row) => row.listingId === listingId && row.sheet), 'listed among the items to cost');
+
+  const edited = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { steps: [{ ...steps[0], amountMinor: 7_000 }] } } }), ctx);
+  assert.equal(edited.jsonBody.costMinor, 7_000, 'a step can be changed, and a step dropped');
+  const stranger = await newBuyer('Cost Snoop');
+  assert.equal((await saveCostSheet(req({ headers: stranger.headers, params: { id: listingId }, body: { sheet: null } }), ctx)).status, 404);
+  const cleared = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: null } }), ctx);
+  assert.equal(cleared.jsonBody.sheet, null);
+  const after = (await costsRead(req({ headers: auth }), ctx)).jsonBody.items.active.find((row) => row.key === listingId);
+  assert.equal(after.uncostedUnits, 1, 'without costs, no profit is claimed');
+  assert.equal(after.profitMinor, 0);
+});
+
+await check('a cheaper or restocked item finds the people who saved it, once a day', async () => {
+  const listingId = await listItem('Saved Then Gone', 20_000, 1);
+  const saver = await newBuyer('Patient Saver');
+  await toggleLike(req({ headers: saver.headers, params: { id: listingId } }), ctx);
+  await bookFor(await newBuyer('Quick Hands'), listingId);
+  const edited = await editListing(req({ headers: auth, params: { id: listingId }, body: { priceMinor: 15_000, quantityAvailable: 2 } }), ctx);
+  assert.equal(edited.status, 200);
+  assert.equal(edited.jsonBody.listing.priceHistory.length, 2, 'the old price is kept');
+  assert.ok(edited.jsonBody.listing.restockedAt, 'and when it came back');
+
+  const deep = (await deepRead(req({ headers: auth }), ctx)).jsonBody;
+  const row = deep.reminders.find((entry) => entry.listingId === listingId);
+  assert.ok(row, 'the saver is worth reminding');
+  assert.equal(row.reason, 'cheaper');
+  assert.equal(row.wasMinor, 20_000);
+  assert.ok(deep.pricing.some((entry) => entry.listingId === listingId && entry.periods.length === 2));
+
+  const body = { kind: 'saved', listingId, buyerId: row.buyerId };
+  assert.equal((await nudge(req({ headers: auth, body }), ctx)).status, 200);
+  assert.equal((await nudge(req({ headers: auth, body }), ctx)).status, 429, 'not twice in a day');
+  assert.ok((await noticesFor(row.buyerId)).some((n) => n.kind === 'seller_nudge' && n.link === `/listing/${listingId}`));
+  const stranger = await newBuyer('Not A Saver');
+  assert.equal((await nudge(req({ headers: auth, body: { ...body, buyerId: stranger.id } }), ctx)).status, 404);
+});
+
+await check('a stalled checkout and an unpaid order can be nudged', async () => {
+  const listingId = await listItem('Nudge Me', 5_000);
+  const buyer = await newBuyer('Hesitant');
+  const draft = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.equal((await nudge(req({ headers: auth, body: { kind: 'checkout', orderId: draft } }), ctx)).status, 200);
+  const placed = await bookFor(await newBuyer('Owes Money'), listingId);
+  assert.equal((await nudge(req({ headers: auth, body: { kind: 'payment', orderId: placed } }), ctx)).status, 200);
+  assert.equal((await nudge(req({ headers: auth, body: { kind: 'checkout', orderId: placed } }), ctx)).status, 409, 'already an order');
+});
+
+await check('items bought together, retention and the next-lot forecast', async () => {
+  const first = await listItem('Pair Left', 3_000);
+  const second = await listItem('Pair Right', 4_000);
+  for (const name of ['Pair Buyer One', 'Pair Buyer Two']) {
+    const buyer = await newBuyer(name);
+    await bookFor(buyer, first);
+    await bookFor(buyer, second);
+  }
+  const deep = (await deepRead(req({ headers: auth }), ctx)).jsonBody;
+  const pair = deep.bundles.find((entry) => entry.items.map((item) => item.listingId).sort().join() === [first, second].sort().join());
+  assert.equal(pair?.count, 2);
+  assert.ok(deep.cohorts.length > 0 && deep.cohorts[0].size > 0);
+  const labelled = Object.values(deep.value.counts).reduce((sum, count) => sum + count, 0);
+  assert.ok(labelled >= deep.value.rows.length);
+  assert.ok(deep.forecast.rows.some((row) => row.listingId === first && row.next >= 1));
+  assert.ok(deep.returns.overall.orders > 0);
+});
+
+await check('sales over a period, ageing, stock alerts and the spreadsheet rows', async () => {
+  const read = await salesReport(req({ headers: auth, query: { days: '30' } }), ctx);
+  assert.equal(read.status, 200);
+  const body = read.jsonBody;
+  assert.equal(body.bucket, 'day');
+  assert.ok(body.series.length >= 30);
+  assert.ok(body.totals.orders >= 1);
+  assert.equal(body.rows.length >= body.totals.orders, true, 'every order is a row, cancelled ones too');
+  assert.ok(body.best.units.length > 0);
+  assert.ok(body.sources.reduce((sum, row) => sum + row.orders, 0) === body.totals.orders, 'every order has one source');
+  assert.equal((await salesReport(req({ headers: auth, query: { days: '365' } }), ctx)).jsonBody.bucket, 'month');
+  const stranger = await newBuyer('Sales Snoop');
+  assert.equal((await salesReport(req({ headers: stranger.headers, query: { store: 'usr_demo' } }), ctx)).status, 403);
 });
 
 console.log(`\n${passed} checks passed`);

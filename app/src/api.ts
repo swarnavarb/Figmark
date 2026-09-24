@@ -11,7 +11,7 @@ import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
-import type { CostLine, ProfitTemplate } from '@shared/profit';
+import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate } from '@shared/profit';
 import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
@@ -772,6 +772,111 @@ export interface TrendingRow {
   soldOut: boolean; stockLeft: number | null; daysLeft: number | null; perWeek: number;
 }
 
+/** One lot, item or customer's real profit, from each item's saved costs. */
+export interface ProfitRow {
+  key: string;
+  name: string;
+  sub: string | null;
+  photo: string | null;
+  orders: number;
+  units: number;
+  revenueMinor: number;
+  costMinor: number;
+  profitMinor: number;
+  marginPercent: number | null;
+  uncostedUnits: number;
+  stages: Record<CostStage, number>;
+  steps: { id: string; label: string; stage: CostStage; amountMinor: number }[];
+}
+
+export interface ProfitSplit { active: ProfitRow[]; closed: ProfitRow[] }
+
+export interface SheetItem {
+  listingId: string;
+  title: string;
+  photo: string | null;
+  priceMinor: number;
+  currency: string;
+  lotName: string | null;
+  onSale: boolean;
+  sold: number;
+  sheet: ItemCostSheet | null;
+  costMinor: number;
+}
+
+/** `GET /api/me/costs` - real profit per lot, item and customer. */
+export interface CostsResponse {
+  totals: { active: ProfitRow; closed: ProfitRow };
+  lots: ProfitSplit;
+  items: ProfitSplit;
+  customers: ProfitSplit;
+  handles: Record<string, string | null>;
+  sheets: SheetItem[];
+}
+
+export type ValueLabel = 'vip' | 'regular' | 'at_risk' | 'one_time' | 'new';
+
+/** `GET /api/me/deep` - the deeper Pro figures. */
+export interface DeepResponse {
+  cohorts: { month: string; size: number; back: (number | null)[] }[];
+  value: {
+    counts: Record<ValueLabel, number>;
+    averageMinor: number;
+    rows: { who: PartyRef; orders: number; spentMinor: number; lastAt: string; label: ValueLabel }[];
+  };
+  pricing: {
+    listingId: string; title: string; photo: string | null; currency: string;
+    periods: { priceMinor: number; from: string; days: number; saves: number; units: number; perWeek: number }[];
+  }[];
+  forecast: {
+    cycleDays: number;
+    conversionPercent: number;
+    rows: { listingId: string; title: string; photo: string | null; perWeek: number; waiting: number; pledged: number; inStock: number | null; next: number }[];
+  };
+  reminders: {
+    buyerId: string; who: PartyRef; listingId: string; title: string; photo: string | null; currency: string;
+    wasMinor: number; nowMinor: number; reason: 'cheaper' | 'restocked'; savedAt: string;
+  }[];
+  bundles: { count: number; items: { listingId: string; title: string; photo: string | null; priceMinor: number }[] }[];
+  returns: {
+    overall: { orders: number; cancelled: number; disputed: number; ratePercent: number };
+    items: { listingId: string; title: string; orders: number; cancelled: number; disputed: number; ratePercent: number }[];
+    categories: { category: string; orders: number; cancelled: number; disputed: number; ratePercent: number }[];
+  };
+}
+
+export interface SalesFigures { orders: number; units: number; revenueMinor: number; customers: number }
+
+/** `GET /api/me/sales` - the free Analytics figures. */
+export interface SalesResponse {
+  days: number;
+  bucket: 'day' | 'week' | 'month';
+  totals: SalesFigures;
+  before: SalesFigures;
+  series: { start: string; orders: number; revenueMinor: number }[];
+  best: {
+    units: { listingId: string; title: string; photo: string | null; units: number; revenueMinor: number }[];
+    revenue: { listingId: string; title: string; photo: string | null; units: number; revenueMinor: number }[];
+  };
+  ageing: {
+    fresh: { count: number; amountMinor: number };
+    week: { count: number; amountMinor: number };
+    old: { count: number; amountMinor: number };
+    rows: { orderId: string; who: PartyRef; title: string; outstandingMinor: number; currency: string; days: number }[];
+  };
+  sources: ({ source: 'shared' | 'sale' | 'preorder' | 'shop' } & SalesFigures)[];
+  stock: { listingId: string; title: string; photo: string | null; left: number; soldRecently: number }[];
+  rows: {
+    date: string; orderId: string; item: string; buyer: string; handle: string | null; quantity: number;
+    unitPriceMinor: number; totalMinor: number; paidMinor: number; outstandingMinor: number;
+    currency: string; status: string; payment: string; lot: string;
+  }[];
+}
+
+export type NudgeRequest =
+  | { kind: 'payment' | 'checkout'; orderId: string }
+  | { kind: 'saved'; listingId: string; buyerId: string };
+
 /** `GET /api/me/market` - other sellers' items in this shop's categories, as rough levels only. */
 export interface MarketResponse {
   categories: {
@@ -1519,6 +1624,17 @@ export const api = {
   deleteProfitTemplate: (id: string, storeId?: string) =>
     post<{ templates: ProfitTemplate[] }>(
       `/me/profit-templates/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
+  costs: (storeId?: string) =>
+    request<CostsResponse>(`/me/costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  saveCostSheet: (listingId: string, sheet: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null, storeId?: string) =>
+    post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
+      `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { sheet }),
+  deep: (storeId?: string) =>
+    request<DeepResponse>(`/me/deep${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  salesReport: (days: number, storeId?: string) =>
+    request<SalesResponse>(`/me/sales-report?days=${days}${storeId ? `&store=${encodeURIComponent(storeId)}` : ''}`),
+  nudge: (body: NudgeRequest, storeId?: string) =>
+    post<{ sent: true }>(`/me/nudge${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, body),
 
   socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),

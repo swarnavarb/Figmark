@@ -42,6 +42,7 @@ import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, lea
 import { PowerSalePanel } from '../components/PowerSale';
 import { InsightsPanel } from './InsightsPanel';
 import { ProfitCalculator } from './ProfitCalculator';
+import { SalesPanel } from './SalesPanel';
 import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
@@ -2708,6 +2709,7 @@ function Analytics({ store }: { store: StoreAccess }) {
 
       {proError && <p className="faint">{proError}</p>}
       {pro && <RunningShop data={pro} />}
+      <SalesPanel shop={store.isOwner ? undefined : store.ownerId} />
     </div>
   );
 }

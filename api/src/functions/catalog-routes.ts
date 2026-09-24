@@ -651,6 +651,13 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   if (body.priceMinor !== undefined) {
     if (!(body.priceMinor > 0)) return error(400, 'invalid_listing', 'A price above zero is required.');
     next.priceMinor = Math.round(body.priceMinor);
+    // Kept so Insights can say what a price change did to demand.
+    if (next.priceMinor !== listing.priceMinor) {
+      const history = listing.priceHistory?.length
+        ? listing.priceHistory
+        : [{ priceMinor: listing.priceMinor, at: listing.createdAt }];
+      next.priceHistory = [...history, { priceMinor: next.priceMinor, at: next.updatedAt }].slice(-20);
+    }
   }
   if (body.quantityAvailable !== undefined) {
     next.quantityAvailable = Math.max(0, Math.round(body.quantityAvailable));
@@ -661,6 +668,8 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   // Stock decides whether it is on the shelf; a multiple is never sold out.
   if (next.status === 'active' || next.status === 'sold_out') {
     next.status = isMultiple(next) || next.quantityAvailable > 0 ? 'active' : 'sold_out';
+    // Back on the shelf: the people who saved it while it was gone are worth telling.
+    if (listing.status === 'sold_out' && next.status === 'active') next.restockedAt = next.updatedAt;
   }
 
   return json(200, { listing: await repository.updateListing(next) });

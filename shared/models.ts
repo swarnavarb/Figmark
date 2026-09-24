@@ -1,4 +1,4 @@
-import type { ProfitTemplate } from './profit.js';
+import type { ItemCostSheet, ProfitTemplate } from './profit.js';
 import type { LotRoute } from './routes.js';
 import type {
   ConditionTag,
@@ -479,6 +479,18 @@ export interface Listing extends BaseDocument {
    * so bumping cannot be used to camp the top of the catalog.
    */
   bumpedAt: string | null;
+  /**
+   * What one unit really cost to bring in, step by step, as the seller saved
+   * it from the profit calculator (Pro). Absent until they do.
+   */
+  costSheet?: ItemCostSheet | null;
+  /**
+   * Every price this item has been on sale at, oldest first, appended when the
+   * seller edits the price. Absent for items never repriced.
+   */
+  priceHistory?: { priceMinor: number; at: string }[];
+  /** Last time it went from sold out back on sale. */
+  restockedAt?: string | null;
 }
 
 /**
@@ -1504,7 +1516,9 @@ export type NotificationKind =
   | 'reversal_details_updated'
   | 'payment_reversed'
   | 'reversal_ack'
-  | 'dispute_raised_reversal';
+  | 'dispute_raised_reversal'
+  /** A shop nudging a buyer: a balance to pay, a checkout left open, a saved item back. */
+  | 'seller_nudge';
 
 /**
  * A run of channel posts that sells things, on a timer the shop sets.

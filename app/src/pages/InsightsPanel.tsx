@@ -3,11 +3,13 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import { PHASE_LABELS, SEGMENTS, SEGMENT_LABELS } from '@shared/insights';
 import {
-  ApiRequestError, api, type CustomerRow, type InsightsResponse, type InterestResponse, type MarketResponse,
+  ApiRequestError, api, type CostsResponse, type CustomerRow, type DeepResponse, type InsightsResponse, type InterestResponse, type MarketResponse,
   type PartyRef, type TrendingRow,
 } from '../api';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
+import { NudgeButton } from '../components/NudgeButton';
+import { Bundles, Digest, Forecast, Loyalty, Pricing, RealProfit, Reminders, Returns } from './ProPanels';
 
 /**
  * Insights (Pro): who wants what, before and after they buy.
@@ -20,9 +22,11 @@ import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/
  */
 
 type Category =
-  | 'saved' | 'checkout' | 'funnel' | 'trending' | 'market' | 'customers' | 'leads' | 'packing' | 'lots' | 'timing';
+  | 'saved' | 'checkout' | 'funnel' | 'trending' | 'market' | 'customers' | 'leads' | 'packing' | 'lots' | 'timing'
+  | 'profit' | 'loyalty' | 'pricing' | 'forecast' | 'reminders' | 'bundles' | 'returns';
 
 const CATEGORIES: { id: Category; icon: string; label: string; tone: string }[] = [
+  { id: 'profit', icon: '💰', label: 'Real profit', tone: 'gold' },
   { id: 'trending', icon: '🔥', label: 'Trending', tone: 'hot' },
   { id: 'market', icon: '🌐', label: 'Market trends', tone: 'aqua' },
   { id: 'saved', icon: '❤️', label: 'Saved', tone: 'pink' },
@@ -32,14 +36,24 @@ const CATEGORIES: { id: Category; icon: string; label: string; tone: string }[] 
   { id: 'leads', icon: '💬', label: 'Worth a message', tone: 'aqua' },
   { id: 'packing', icon: '📦', label: 'Packing', tone: 'warn' },
   { id: 'lots', icon: '🚚', label: 'Lots', tone: 'violet' },
-  { id: 'timing', icon: '⏰', label: 'Best time', tone: 'pink' },
+  { id: 'timing', icon: '⏰', label: 'Best time to post', tone: 'pink' },
+  { id: 'loyalty', icon: '🔁', label: 'Retention & value', tone: 'ok' },
+  { id: 'forecast', icon: '🔮', label: 'Next lot forecast', tone: 'violet' },
+  { id: 'reminders', icon: '🔔', label: 'Wishlist reminders', tone: 'pink' },
+  { id: 'pricing', icon: '🏷️', label: 'Price changes', tone: 'aqua' },
+  { id: 'bundles', icon: '🧺', label: 'Bought together', tone: 'ok' },
+  { id: 'returns', icon: '↩️', label: 'Returns', tone: 'warn' },
 ];
+
+const DEEP_VIEWS: Category[] = ['loyalty', 'pricing', 'forecast', 'reminders', 'bundles', 'returns'];
 
 const HOUR = (hour: number) => `${hour % 12 || 12}${hour < 12 ? 'am' : 'pm'}`;
 
 export function InsightsPanel({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<InterestResponse | null>(null);
   const [lots, setLots] = useState<InsightsResponse | null>(null);
+  const [deep, setDeep] = useState<DeepResponse | null>(null);
+  const [costs, setCosts] = useState<CostsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
   const shop = store.isOwner ? undefined : store.ownerId;
@@ -64,7 +78,10 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load insights.'));
     // The lot figures are a second read; a shop without lots still gets the rest.
     void api.insights(shop).then(setLots).catch(() => setLots(null));
+    void api.deep(shop).then(setDeep).catch(() => setDeep(null));
+    void api.costs(shop).then(setCosts).catch(() => setCosts(null));
   }, [shop]);
+  const reloadCosts = () => void api.costs(shop).then(setCosts).catch(() => undefined);
 
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
@@ -78,7 +95,7 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
           <h2 className="insview__title"><span aria-hidden="true">{entry.icon}</span> {entry.label} <span className="probadge">PRO</span></h2>
         </div>
         {view === 'saved' && <Saved data={data} />}
-        {view === 'checkout' && <Checkout data={data} />}
+        {view === 'checkout' && <Checkout data={data} shop={shop} />}
         {view === 'funnel' && <Funnel data={data} />}
         {view === 'trending' && <Trending data={data} />}
         {view === 'market' && <Market shop={shop} />}
@@ -87,11 +104,19 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
         {view === 'packing' && <Packing data={lots} />}
         {view === 'lots' && <Lots data={lots} />}
         {view === 'timing' && <Timing data={data} />}
+        {view === 'profit' && <RealProfit shop={shop} data={costs} reload={reloadCosts} />}
+        {DEEP_VIEWS.includes(view) && !deep && <p className="muted">Loading…</p>}
+        {deep && view === 'loyalty' && <Loyalty deep={deep} />}
+        {deep && view === 'pricing' && <Pricing deep={deep} />}
+        {deep && view === 'forecast' && <Forecast deep={deep} />}
+        {deep && view === 'reminders' && <Reminders deep={deep} shop={shop} />}
+        {deep && view === 'bundles' && <Bundles deep={deep} />}
+        {deep && view === 'returns' && <Returns deep={deep} />}
       </div>
     );
   }
 
-  return <Dashboard data={data} lots={lots} open={open} />;
+  return <Dashboard data={data} lots={lots} deep={deep} costs={costs} open={open} />;
 }
 
 /** A week's change as an arrow and a percentage. */
@@ -121,8 +146,9 @@ function Spark({ values, tone = 'violet' }: { values: number[]; tone?: string })
  * category with the one thing worth knowing from it. Everything deeper is a
  * tap away rather than stacked on one long page.
  */
-function Dashboard({ data, lots, open }: {
-  data: InterestResponse; lots: InsightsResponse | null; open: (next: Category) => void;
+function Dashboard({ data, lots, deep, costs, open }: {
+  data: InterestResponse; lots: InsightsResponse | null; deep: DeepResponse | null; costs: CostsResponse | null;
+  open: (next: Category) => void;
 }) {
   const { summary, customers, week, daily } = data;
   const series = (key: 'saves' | 'buys' | 'orders') => daily.map((day) => day[key]);
@@ -170,7 +196,31 @@ function Dashboard({ data, lots, open }: {
     packing: { big: String(boxes), line: lots && lots.boxes.openLots ? `boxes across ${lots.boxes.openLots} lot${lots.boxes.openLots === 1 ? '' : 's'}` : 'Nothing to pack' },
     lots: { big: String(lots?.headline.openLots ?? 0), line: lots ? `${formatMoney(lots.headline.valueInFlightMinor)} moving` : 'No lots yet' },
     timing: { big: peakHour === null ? '—' : HOUR(peakHour), line: 'your busiest hour' },
+    profit: costs
+      ? { big: formatMoney(costs.totals.active.profitMinor + costs.totals.closed.profitMinor, 'INR'),
+        line: `per lot, item and customer · ${costs.sheets.filter((row) => row.sheet).length}/${costs.sheets.length} items costed` }
+      : { big: '₹', line: 'per lot, item and customer' },
+    loyalty: deep
+      ? { big: String(deep.value.counts.vip), line: `VIPs · ${deep.value.counts.at_risk} at risk` }
+      : { big: '—', line: 'who comes back, and what they are worth' },
+    forecast: deep?.forecast.rows[0]
+      ? { big: `≈${deep.forecast.rows[0].next}`, line: deep.forecast.rows[0].title }
+      : { big: '—', line: 'how many to bring next time' },
+    reminders: { big: String(deep?.reminders.length ?? 0), line: 'saved items now back or cheaper' },
+    pricing: { big: String(deep?.pricing.length ?? 0), line: 'items repriced, and what it did' },
+    bundles: deep?.bundles[0]
+      ? { big: String(deep.bundles.length), line: `${deep.bundles[0].items.map((item) => item.title).join(' + ')}` }
+      : { big: '0', line: 'items bought together' },
+    returns: deep
+      ? { big: `${deep.returns.overall.ratePercent}%`, line: 'of orders cancelled or disputed' }
+      : { big: '—', line: 'cancellations and disputes' },
   };
+  const reminders = deep?.reminders.length ?? 0;
+  if (reminders > 0) todo.push({ key: 'remind', icon: '🔔', go: 'reminders', tone: 'pink',
+    text: `${reminders} saved item${reminders === 1 ? ' is' : 's are'} back or cheaper — remind the people who saved them` });
+  const atRisk = deep?.value.counts.at_risk ?? 0;
+  if (atRisk > 0) todo.push({ key: 'risk', icon: '⚠️', go: 'loyalty', tone: 'warn',
+    text: `${atRisk} regular${atRisk === 1 ? ' is' : 's are'} overdue for an order` });
 
   return (
     <div className="stack ins">
@@ -193,6 +243,8 @@ function Dashboard({ data, lots, open }: {
         </div>
         <small className="inshero__foot">Last 7 days against the 7 before.</small>
       </section>
+
+      <Digest data={data} deep={deep} costs={costs} />
 
       <section className="card card--pad stack">
         <h2>Needs you</h2>
@@ -297,7 +349,7 @@ function Saved({ data }: { data: InterestResponse }) {
   );
 }
 
-function Checkout({ data }: { data: InterestResponse }) {
+function Checkout({ data, shop }: { data: InterestResponse; shop?: string }) {
   if (data.checkout.length === 0) {
     return (
       <EmptyState icon="🛒" title="Nobody stopped at Buy">
@@ -323,6 +375,9 @@ function Checkout({ data }: { data: InterestResponse }) {
             </div>
             <MessageButton who={row.who} />
           </header>
+          {row.stillForSale && !row.boughtElsewhere && (
+            <NudgeButton request={{ kind: 'checkout', orderId: row.orderId }} shop={shop} label="🔔 Nudge to finish" />
+          )}
           <div className="inscard__facts">
             <span>🕐 Pressed Buy {timeAgo(row.firstAt)}</span>
             {row.clicks > 1 && <span>🔁 {row.clicks} times, last {timeAgo(row.lastAt)}</span>}

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { StoreAccess } from '@shared/stores';
 import {
-  BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, STAGE_LABELS, calculateProfit,
-  type CostBasis, type CostKind, type CostLine, type CostStage, type ProfitInput, type ProfitTemplate,
+  BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, STAGE_LABELS, calculateProfit, stepsFromResult,
+  type CostBasis, type ProfitResult, type CostKind, type CostLine, type CostStage, type ProfitInput, type ProfitTemplate,
 } from '@shared/profit';
-import { ApiRequestError, api } from '../api';
+import { ApiRequestError, api, type SheetItem } from '../api';
+import { formatMoney } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
 
 /**
@@ -21,7 +22,7 @@ const STORAGE_KEY = 'figmark:profit-input';
 
 const BLANK_INPUT: ProfitInput = { itemPrice: 0, quantity: 1, weightKg: 0, sellingPrice: 0 };
 
-const STAGE_TONES: Record<CostStage, string> = {
+export const STAGE_TONES: Record<CostStage, string> = {
   buying: 'pink', origin: 'aqua', international: 'violet', customs: 'warn', domestic: 'ok', selling: 'coral',
 };
 
@@ -255,6 +256,11 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
             </section>
           )}
 
+          {result && !draft && active.id && (
+            <SaveToItem template={active} result={result} shop={shop}
+              onPrice={(price) => set({ sellingPrice: price })} />
+          )}
+
           {templates.length > 1 && !draft && (
             <Compare templates={templates} input={input} activeId={activeId} onPick={setActiveId} />
           )}
@@ -297,7 +303,7 @@ function Num({ label, value, onChange, step = 0.01 }: {
 }
 
 /** The selling price, split into where each rupee goes, with profit (or the loss) at the end. */
-function StageBar({ stages, selling, profit }: { stages: Record<CostStage, number>; selling: number; profit: number }) {
+export function StageBar({ stages, selling, profit }: { stages: Record<CostStage, number>; selling: number; profit: number }) {
   const whole = Math.max(selling, Object.values(stages).reduce((sum, value) => sum + value, 0), 1);
   return (
     <div className="stack" style={{ gap: 8 }}>
@@ -480,6 +486,76 @@ function Editor({ draft, onChange, busy, onSave, onCancel }: {
         </button>
         {onCancel && <button type="button" className="btn btn--ghost" disabled={busy} onClick={onCancel}>Cancel</button>}
       </div>
+    </section>
+  );
+}
+
+/**
+ * Keep this result as an item's own costs. Only the lines switched on come
+ * across, and each can be changed afterwards under Insights → Real profit.
+ */
+function SaveToItem({ template, result, shop, onPrice }: {
+  template: ProfitTemplate; result: ProfitResult; shop?: string; onPrice: (price: number) => void;
+}) {
+  const [items, setItems] = useState<SheetItem[] | null>(null);
+  const [pick, setPick] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.costs(shop).then((data) => setItems(data.sheets)).catch(() => setItems([]));
+  }, [shop]);
+
+  if (!items || items.length === 0) return null;
+  const item = items.find((row) => row.listingId === pick);
+  const steps = stepsFromResult(result);
+
+  function choose(id: string) {
+    setPick(id);
+    setNote(null);
+    const chosen = items?.find((row) => row.listingId === id);
+    // Percentages of the selling price only mean something at the item's own price.
+    if (chosen) onPrice(chosen.priceMinor / 100);
+  }
+
+  async function save() {
+    if (!item) return;
+    if (item.sheet && !window.confirm(`Replace the costs already saved for ${item.title}?`)) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const saved = await api.saveCostSheet(item.listingId, { templateId: template.id, templateName: template.name, steps }, shop);
+      setItems((current) => current?.map((row) => (row.listingId === item.listingId ? { ...row, sheet: saved.sheet, costMinor: saved.costMinor } : row)) ?? null);
+      setNote(`Saved ${steps.length} steps to ${item.title}. Edit them any time in Insights → Real profit.`);
+    } catch (err) {
+      setNote(err instanceof ApiRequestError ? err.message : 'Could not save those costs.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card card--pad stack">
+      <div>
+        <h2>Save to an item</h2>
+        <span className="field__hint">Keeps these costs on the item, so Insights can show its real profit per lot, item and customer.</span>
+      </div>
+      <label className="field">
+        <span>Item</span>
+        <select value={pick} onChange={(e) => choose(e.target.value)}>
+          <option value="">Choose an item…</option>
+          {items.map((row) => (
+            <option key={row.listingId} value={row.listingId}>
+              {row.sheet ? '✓ ' : ''}{row.title} · {formatMoney(row.priceMinor, row.currency)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {item && <span className="field__hint">{steps.length} steps · {inr(result.landed)} per unit · selling price set to the item's</span>}
+      <button type="button" className="btn btn--sm" disabled={!item || busy || steps.length === 0} onClick={() => void save()}>
+        Save costs to this item
+      </button>
+      {note && <p className="faint">{note}</p>}
     </section>
   );
 }

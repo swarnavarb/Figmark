@@ -5346,3 +5346,75 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   .pc__cmp { grid-template-columns: minmax(0, 1fr) auto auto; }
   .pc__cmp > .faint { display: none; }
 }
+
+/* ── Nudges ───────────────────────────────────────────────────────────── */
+.nudge { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.nudge__note { color: var(--warn); font-size: 11px; max-width: 220px; }
+
+/* ── Real profit ──────────────────────────────────────────────────────── */
+.inscard--loss { border-color: rgba(244, 63, 94, 0.45); }
+.inscard__big.is-loss { color: #FCA5A5; }
+.pc__line--total.is-loss span:last-child { color: #FCA5A5; }
+.pc__fill { padding: 12px; border: 1px dashed var(--border); border-radius: var(--r-md); }
+.pc__steprow {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) minmax(0, 150px) 110px auto; gap: 8px; align-items: center;
+}
+.pc__steprow input, .pc__steprow select {
+  min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text); font-size: var(--t-sm);
+}
+.pc__steprow input:focus, .pc__steprow select:focus { border-color: var(--accent-line); background: var(--surface-hover); }
+.pc__steprow { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.pc__stepamt { display: flex; align-items: center; gap: 4px; }
+@media (max-width: 560px) {
+  .pc__steprow { grid-template-columns: 10px minmax(0, 1fr) auto; }
+  .pc__steprow select, .pc__steprow .pc__stepamt { grid-column: 2 / 3; }
+}
+
+/* ── Retention ────────────────────────────────────────────────────────── */
+.coh__table { display: grid; gap: 4px; overflow-x: auto; }
+.coh__tr { display: grid; grid-template-columns: 1.3fr 0.8fr repeat(3, 1fr); gap: 4px; align-items: center; font-size: var(--t-sm); }
+.coh__tr--head { color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.coh__cell { padding: 6px 4px; border-radius: 6px; text-align: center; font-family: var(--mono); background: var(--surface-2, rgba(255, 255, 255, 0.03)); }
+
+/* ── Price changes ────────────────────────────────────────────────────── */
+.insprices { display: grid; gap: 6px; }
+.insprices__row {
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) auto auto auto; gap: 8px; align-items: center;
+  padding: 8px 10px; border-radius: var(--r-md); background: rgba(255, 255, 255, 0.03); font-size: var(--t-sm);
+}
+.insprices__row.is-best { box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.5); }
+@media (max-width: 480px) { .insprices__row { grid-template-columns: 1fr auto auto auto; } .insprices__row small { grid-column: 1 / -1; order: 5; } }
+
+/* ── Bought together ──────────────────────────────────────────────────── */
+.insbundle { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.insbundle__item { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.insbundle__plus { color: var(--text-faint); font-size: var(--t-lg); }
+
+/* ── Weekly digest ────────────────────────────────────────────────────── */
+.insdigest { border-color: rgba(251, 191, 36, 0.35); background: radial-gradient(140% 120% at 0% 0%, rgba(251, 191, 36, 0.08), transparent 60%), var(--surface); }
+.insdigest__cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.insdigest__cols ul, .insdigest__cols ol { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: var(--t-sm); }
+.insdigest__head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.insdigest__head--ok { color: var(--ok); }
+.insdigest__head--warn { color: var(--warn); }
+.insdigest__head--violet { color: #C4B5FD; }
+
+/* ── Sales (Analytics) ────────────────────────────────────────────────── */
+.sales__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.sales__chart { display: flex; align-items: flex-end; gap: 2px; height: 110px; }
+.sales__col { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.sales__bar { width: 100%; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, #A78BFA, #7C3AED); }
+.sales__bar.is-empty { background: var(--border); }
+.sales__axis { display: flex; justify-content: space-between; font-size: 11px; }
+.sales__best { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sales__best li { display: grid; grid-template-columns: 22px auto minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.sales__rank { font-family: var(--mono); color: var(--text-faint); text-align: right; }
+.sales__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sales__fig { display: grid; justify-items: end; }
+.sales__ages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sales__age { display: grid; gap: 2px; padding: 10px; border-radius: var(--r-md); border: 1px solid var(--border); background: rgba(52, 211, 153, 0.06); }
+.sales__age b { font-family: var(--mono); }
+.sales__age small { color: var(--text-faint); font-size: 11px; }
+.sales__age--warn { background: rgba(251, 191, 36, 0.08); }
+.sales__age--bad { background: rgba(244, 63, 94, 0.1); }
