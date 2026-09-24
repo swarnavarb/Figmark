@@ -69,12 +69,21 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
     onChange(next.length ? { templateId: template.id, templateName: template.name, steps: next } : null);
   }
 
+  // Folded away, what was entered stays: the switch only hides the box.
   if (!open) {
     return (
-      <button type="button" className="costfield__open" onClick={() => setOpen(true)}>
-        <CalcIcon /> Add what it cost you <span className="probadge">PRO</span>
-        <small>Tracks real profit per lot, item and customer</small>
-      </button>
+      <div className="costfield__open" role="button" tabIndex={0} onClick={() => setOpen(true)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(true); } }}>
+        <span className="costfield__openrow">
+          <span><CalcIcon /> {steps.length ? 'What it cost you' : 'Add what it cost you'} <span className="probadge">PRO</span></span>
+          <CostSwitch on={false} onToggle={() => setOpen(true)} />
+        </span>
+        <small>
+          {steps.length
+            ? `${formatMoney(total)} per unit · ${steps.length} step${steps.length === 1 ? '' : 's'} saved`
+            : 'Tracks real profit per lot, item and customer'}
+        </small>
+      </div>
     );
   }
 
@@ -82,9 +91,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
     <div className="costfield stack">
       <div className="costfield__head">
         <b><CalcIcon /> Costs per unit <span className="probadge">PRO</span></b>
-        {collapsible && !value && (
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setOpen(false)}>Not now</button>
-        )}
+        {collapsible && <CostSwitch on onToggle={() => setOpen(false)} />}
       </div>
 
       {templates === null ? <p className="faint">Loading your calculators…</p> : templates.length > 0 ? (
@@ -243,5 +250,16 @@ export function EditCalcLink({ templateId, shop, onLeave }: { templateId: string
       className="btn btn--quiet btn--sm" onClick={onLeave}>
       ✏️ Edit calculator
     </Link>
+  );
+}
+
+/** The slide switch that opens and folds the costs box. */
+function CostSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={on ? 'Fold the costs away' : 'Open the costs'}
+      className={`costswitch${on ? ' is-on' : ''}`}
+      onClick={(event) => { event.stopPropagation(); onToggle(); }}>
+      <span className="costswitch__knob" />
+    </button>
   );
 }

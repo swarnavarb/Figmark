@@ -14,6 +14,8 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { TermsFields, termsBody, termsDraft } from '../components/Buy';
 import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
+import { CalcIcon } from '../components/CalcIcon';
+import { useGoBack } from '../components/ScrollManager';
 
 /**
  * The template this browser used last.
@@ -67,9 +69,44 @@ type Shape = 'single' | 'waiting' | 'lot';
  * pattern is that listing is a two-minute job, not a form to be endured. The
  * live preview on the right is the same card the feed renders.
  */
+const DRAFT_KEY = 'figmark:sell-draft';
+
+type SellDraft = {
+  title: string; description: string; category: string; condition: string; price: string;
+  costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>; bundle: boolean;
+  shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; cutoffDays: string;
+  tags: string; calc: SavedCalc | null; quickPost: boolean; templateId: string; photos: PhotoDraft[];
+  preLot: RouteStep[] | null; shape: Shape; lotId: string;
+};
+
+function readDraft(key: string): SellDraft | null {
+  try {
+    return JSON.parse(sessionStorage.getItem(key) ?? 'null') as SellDraft | null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(key: string, draft: SellDraft) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    /* A private window: the form just is not kept. */
+  }
+}
+
+function clearDraft(key: string) {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    /* Nothing kept, nothing to clear. */
+  }
+}
+
 export function SellPage() {
   const { user } = useSession();
   const navigate = useNavigate();
+  const goBack = useGoBack('/shop');
   // Which shop this goes into. The sell tab passes it when a store is open, so
   // a manager lists into the shop they were looking at rather than their own.
   const [params] = useSearchParams();
@@ -87,35 +124,67 @@ export function SellPage() {
   } | null;
   const deal = prefill?.privateDeal ?? null;
 
-  const [title, setTitle] = useState(prefill?.title ?? '');
-  const [description, setDescription] = useState(prefill?.description ?? '');
-  const [category, setCategory] = useState<string>(CATEGORIES[0]!);
-  const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
-  const [price, setPrice] = useState(() => (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
-  const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(prefill?.costSheet ?? null);
-  const [terms, setTerms] = useState(() => termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
-  const [bundle, setBundle] = useState(false);
-  const [shareToChannel, setShareToChannel] = useState(prefill?.share?.channel ?? true);
-  const [shareToFeed, setShareToFeed] = useState(prefill?.share?.feed ?? false);
-  const [preOrderMode, setPreOrderMode] = useState(false);
-  const [fillThreshold, setFillThreshold] = useState('20');
-  const [cutoffDays, setCutoffDays] = useState('14');
-  const [tags, setTags] = useState('');
+  // What was typed here, kept against this visit - so leaving for the
+  // calculator and coming back finds the form exactly as it was left.
+  const location = useLocation();
+  const draftKey = `${DRAFT_KEY}:${location.key}`;
+  const [restored] = useState(() => readDraft(draftKey));
+
+  const [title, setTitle] = useState(restored?.title ?? prefill?.title ?? '');
+  const [description, setDescription] = useState(restored?.description ?? prefill?.description ?? '');
+  const [category, setCategory] = useState<string>(restored?.category ?? CATEGORIES[0]!);
+  const [condition, setCondition] = useState<string>(restored?.condition ?? CONDITION_TAGS[0]);
+  const [price, setPrice] = useState(() => restored?.price ?? (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
+  const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(restored ? restored.costSheet : prefill?.costSheet ?? null);
+  const [terms, setTerms] = useState(() => restored?.terms
+    ?? termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
+  const [bundle, setBundle] = useState(restored?.bundle ?? false);
+  const [shareToChannel, setShareToChannel] = useState(restored?.shareToChannel ?? prefill?.share?.channel ?? true);
+  const [shareToFeed, setShareToFeed] = useState(restored?.shareToFeed ?? prefill?.share?.feed ?? false);
+  const [preOrderMode, setPreOrderMode] = useState(restored?.preOrderMode ?? false);
+  const [fillThreshold, setFillThreshold] = useState(restored?.fillThreshold ?? '20');
+  const [cutoffDays, setCutoffDays] = useState(restored?.cutoffDays ?? '14');
+  const [tags, setTags] = useState(restored?.tags ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The saved calculation this listing is made from, marked with the item once it is published. */
+  const [calc, setCalc] = useState<SavedCalc | null>(restored?.calc ?? prefill?.calc ?? null);
+  const [calcs, setCalcs] = useState<SavedCalc[]>([]);
 
   /* Quick Post is on by default and remembers the last template used, because
      a shop lists forty of the same kind of thing a month and typing the same
      category, tags and two lines each time is how a listing screen becomes a
      chore. Everything it fills in stays editable. */
-  const [quickPost, setQuickPost] = useState(true);
+  const [quickPost, setQuickPost] = useState(restored?.quickPost ?? true);
   const [templates, setTemplates] = useState<PostTemplate[]>([]);
-  const [templateId, setTemplateId] = useState<string>(() => lastTemplate() ?? '');
-  const [photos, setPhotos] = useState<PhotoDraft[]>([]);
-  const [preLot, setPreLot] = useState<RouteStep[] | null>(null);
-  const [shape, setShape] = useState<Shape>('single');
+  const [templateId, setTemplateId] = useState<string>(() => restored?.templateId ?? lastTemplate() ?? '');
+  const [photos, setPhotos] = useState<PhotoDraft[]>(restored?.photos ?? []);
+  const [preLot, setPreLot] = useState<RouteStep[] | null>(restored?.preLot ?? null);
+  const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
   const [lots, setLots] = useState<Lot[]>([]);
-  const [lotId, setLotId] = useState('');
+  const [lotId, setLotId] = useState(restored?.lotId ?? '');
+
+  useEffect(() => {
+    writeDraft(draftKey, {
+      title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
+      preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    });
+  }, [draftKey, title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
+    preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId]);
+
+  useEffect(() => {
+    void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
+  }, [storeId]);
+
+  /** Fill the form from a saved calculation: its name, price and costs. */
+  function fillFromSaved(id: string) {
+    const picked = calcs.find((entry) => entry.id === id);
+    if (!picked) return;
+    setCalc(picked);
+    setTitle(picked.title);
+    if (picked.sellingPriceMinor) setPrice(String(picked.sellingPriceMinor / 100));
+    setCostSheet(picked.steps.length ? { templateId: picked.templateId, templateName: picked.templateName, steps: picked.steps } : null);
+  }
   const [creatingLot, setCreatingLot] = useState(false);
 
   // The seller's open lots, so an item can be filed as it is listed rather
@@ -146,7 +215,8 @@ export function SellPage() {
         // The last one used, when it still exists; otherwise the first.
         const remembered = result.templates.find((row) => row.id === lastTemplate());
         const chosen = remembered ?? result.templates[0];
-        if (chosen) {
+        // Coming back to a form already filled in: leave it as it was.
+        if (chosen && !restored) {
           setTemplateId(chosen.id);
           applyTemplate(chosen);
         }
@@ -231,8 +301,9 @@ export function SellPage() {
       });
       // Remembered for the next item, which is the point of a template.
       if (quickPost && templateId) rememberTemplate(templateId);
-      if (prefill?.calc) {
-        await api.saveCalc({ ...prefill.calc, listingId: result.listing.id }, storeId).catch(() => undefined);
+      clearDraft(draftKey);
+      if (calc) {
+        await api.saveCalc({ ...calc, listingId: result.listing.id }, storeId).catch(() => undefined);
       }
       if (deal) {
         // The item is made; the deal card in the chat is what the buyer opens it from.
@@ -272,6 +343,7 @@ export function SellPage() {
 
   return (
     <main className="page">
+      <button type="button" className="backlink" onClick={goBack}>← Back</button>
       <div className="page__head">
         <div>
           <h1>{deal ? `🤝 Private deal for ${deal.displayName}` : 'Sell something'}</h1>
@@ -330,6 +402,20 @@ export function SellPage() {
               )
             )}
           </div>
+
+          {calcs.length > 0 && (
+            <label className="field">
+              <span><CalcIcon size={15} /> From your saved items</span>
+              <select value={calc?.id ?? ''} onChange={(e) => fillFromSaved(e.target.value)}>
+                <option value="">Pick a saved calculation to fill this in…</option>
+                {calcs.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.title} · {formatMoney(entry.sellingPriceMinor)}{entry.listingId ? ' (listed)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="field">
             <span>Title</span>

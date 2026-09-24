@@ -9,7 +9,7 @@ import { ApiRequestError, api, type SheetItem } from '../api';
 import { formatMoney } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
-import { scrollToTopOf } from '../components/ScrollManager';
+import { scrollToTopOf, useGoBack } from '../components/ScrollManager';
 import { CalcIcon } from '../components/CalcIcon';
 
 /**
@@ -66,6 +66,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   const [sizeOpen, setSizeOpen] = useState(false);
   const [floating, setFloating] = useFloatingCalc();
   const [params] = useSearchParams();
+  const goBack = useGoBack('/sell');
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
   const [keepTitle, setKeepTitle] = useState('');
 
@@ -79,7 +80,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
         const first = editing ?? result.templates.find((entry) => entry.isDefault) ?? result.templates[0];
         if (editing) {
           setDraft(structuredClone(editing));
-          window.setTimeout(() => scrollToTopOf(document.querySelector('.pc__editor')), 120);
+          window.setTimeout(() => scrollToTopOf(document.querySelector('.pc__editback') ?? document.querySelector('.pc__editor')), 120);
         }
         if (first) setActiveId(first.id);
         // Nothing saved yet: open a full sheet to fill in rather than an empty page.
@@ -115,6 +116,8 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
       setActiveId(template.id);
       setDraft(null);
       setFlash(`Saved "${template.name}".`);
+      // Opened from a listing: saving is done, so back to it, as it was left.
+      if (params.get('edit')) goBack();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that calculator.');
     } finally {
@@ -163,6 +166,10 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
 
   return (
     <div className="stack prozone">
+      {params.get('edit') && (
+        // Opened from "Edit calculator" on a listing: back to it, as it was left.
+        <button type="button" className="backlink" onClick={goBack}>← Back to your listing</button>
+      )}
       <section className="inshero">
         <div className="inshero__title">
           <h2><CalcIcon size={24} /> Profit calculator <span className="probadge">PRO</span></h2>
@@ -322,6 +329,9 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
             <Compare templates={templates} input={input} activeId={activeId} onPick={setActiveId} />
           )}
 
+          {draft && params.get('edit') && (
+            <button type="button" className="backlink pc__editback" onClick={goBack}>← Back to your listing, without saving</button>
+          )}
           {draft ? (
             <Editor draft={draft} onChange={setDraft} busy={busy} onSave={save}
               onCancel={templates.length ? () => setDraft(null) : undefined} />

@@ -34,6 +34,15 @@ export function useBack(parent: string) {
   };
 }
 
+/**
+ * Back to exactly where you came from - the page, and the spot on it -
+ * or to `fallback` when this page was opened directly.
+ */
+export function useGoBack(fallback: string) {
+  const navigate = useNavigate();
+  return () => (indexNow() > 0 ? navigate(-1) : navigate(fallback));
+}
+
 /** A "← Parent" link that goes back to the spot you left, when it can. */
 export function BackLink({ to, children }: { to: string; children: ReactNode }) {
   const back = useBack(to);
