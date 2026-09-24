@@ -1,3 +1,4 @@
+import type { ProfitTemplate } from './profit.js';
 import type { LotRoute } from './routes.js';
 import type {
   ConditionTag,
@@ -129,6 +130,13 @@ export interface User extends BaseDocument {
    * makes an account a seller - not a role, not a separate signup.
    */
   sellerProfile: SellerProfile | null;
+  /**
+   * The shop's profit-calculator cost sheets (Pro). Kept on the account rather
+   * than in a container: a shop has a handful, reads them all at once, and the
+   * database is at its container ceiling. Never sent anywhere but the
+   * calculator's own route.
+   */
+  profitTemplates?: ProfitTemplate[];
   /**
    * Freight forwarders share the same account base rather than living in a
    * separate system; this extension is what puts one in the directory.

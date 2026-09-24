@@ -11,6 +11,7 @@ import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
+import type { CostLine, ProfitTemplate } from '@shared/profit';
 import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
@@ -758,6 +759,33 @@ export interface DashboardResponse {
 
 /* ── Pro analytics ─────────────────────────────────────────────────────── */
 
+export interface WeekFigures { saves: number; buys: number; orders: number; revenueMinor: number }
+
+/** One of the shop's own items, and how it is moving. */
+export interface TrendingRow {
+  listingId: string; title: string; photo: string | null; category: string;
+  saves: number; buys: number; orders: number; score: number;
+  /** Fourteen days of weighted activity, oldest first. */
+  spark: number[];
+  rank: number; prevRank: number | null;
+  trend: 'new' | 'up' | 'steady' | 'down';
+  soldOut: boolean; stockLeft: number | null; daysLeft: number | null; perWeek: number;
+}
+
+/** `GET /api/me/market` - other sellers' items in this shop's categories, as rough levels only. */
+export interface MarketResponse {
+  categories: {
+    category: string; level: 'hot' | 'rising' | 'steady' | 'quiet';
+    trend: 'up' | 'steady' | 'down'; supply: 'crowded' | 'some' | 'few';
+  }[];
+  items: { title: string; photo: string | null; category: string; priceMinor: number; currency: string; level: 'hot' | 'rising' | 'steady' }[];
+  prices: {
+    listingId: string; title: string; category: string; priceMinor: number; currency: string;
+    low: number; mid: number; high: number; position: 'below' | 'within' | 'above';
+  }[];
+  wanted: { title: string; category: string; budgetMinor: number | null; demand: 'many' | 'several' | 'one' }[];
+}
+
 /** One customer of a shop, as Insights (Pro) reads them. */
 export interface CustomerRow {
   who: PartyRef; orders: number; spentMinor: number; firstAt: string; lastAt: string;
@@ -795,10 +823,11 @@ export interface InterestResponse {
     repeatPercent: number | null; avgOrderMinor: number;
     top: CustomerRow[]; returningList: CustomerRow[]; newList: CustomerRow[]; dormantList: CustomerRow[];
   };
-  trending: {
-    listingId: string; title: string; photo: string | null; saves: number; buys: number; orders: number;
-    score: number; trend: 'new' | 'up' | 'steady' | 'down'; soldOut: boolean;
-  }[];
+  trending: TrendingRow[];
+  categories: { category: string; score: number; before: number }[];
+  week: { now: WeekFigures; before: WeekFigures };
+  /** Oldest first, today last. */
+  daily: { saves: number; buys: number; orders: number }[];
   overlooked: { listingId: string; title: string; photo: string | null; views: number }[];
   expiring: { listingId: string; title: string; expiresAt: string | null; saves: number; buyClicks: number }[];
   activity: string[];
@@ -1479,6 +1508,17 @@ export const api = {
     request<InsightsResponse>(`/me/insights${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
   interest: (storeId?: string) =>
     request<InterestResponse>(`/me/interest${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  market: (storeId?: string) =>
+    request<MarketResponse>(`/me/market${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  profitTemplates: (storeId?: string) =>
+    request<{ templates: ProfitTemplate[]; starter: CostLine[] }>(
+      `/me/profit-templates${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  saveProfitTemplate: (template: Partial<ProfitTemplate>, storeId?: string) =>
+    post<{ template: ProfitTemplate; templates: ProfitTemplate[] }>(
+      `/me/profit-templates/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, template),
+  deleteProfitTemplate: (id: string, storeId?: string) =>
+    post<{ templates: ProfitTemplate[] }>(
+      `/me/profit-templates/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
 
   socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),

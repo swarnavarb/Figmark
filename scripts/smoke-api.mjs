@@ -106,7 +106,12 @@ const {
 const {
   saveReversalDetailsRoute: saveReversalDetails, reversalDetailsRoute: readReversalDetails,
 } = await import(new URL('profile-routes.js', fns));
-const { insightsRoute: insights, interestRoute: interest } = await import(new URL('insight-routes.js', fns));
+const { insightsRoute: insights, interestRoute: interest, marketRoute: market } = await import(new URL('insight-routes.js', fns));
+const {
+  listProfitTemplatesRoute: listProfitTemplates, saveProfitTemplateRoute: saveProfitTemplate,
+  deleteProfitTemplateRoute: deleteProfitTemplate,
+} = await import(new URL('profit-routes.js', fns));
+const { calculateProfit, starterLines } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
 const {
   servicesHubRoute: servicesHub, serviceDirectoryRoute: serviceDirectory,
   offerServiceRoute: offerService, consignmentsRoute: consignments,
@@ -6559,6 +6564,116 @@ await check('insights know returning customers and what is trending', async () =
 
   const free = (await insights(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(Array.isArray(free.toCollect), 'what is owed sits with the free figures');
+});
+
+/* ── the profit calculator, and trends across the market ───────────────── */
+console.log('\nthe profit calculator, and trends across the market');
+
+await check('the calculator works a landed cost out line by line, in order', () => {
+  const template = {
+    id: 't', name: 'Air', currency: 'USD', rate: 80, volumetricDivisor: 5000, targetMarginPercent: 25, isDefault: true,
+    createdAt: '', updatedAt: '',
+    lines: [
+      { id: 'freight', label: 'Freight', stage: 'international', kind: 'per_kg', amount: 10, currency: 'foreign', minKg: 1, stepKg: 0.5, enabled: true },
+      { id: 'duty', label: 'Duty', stage: 'customs', kind: 'percent', amount: 10, currency: 'INR', basis: 'cif', enabled: true },
+      { id: 'igst', label: 'IGST', stage: 'customs', kind: 'percent', amount: 18, currency: 'INR', basis: 'cif_duty', enabled: true },
+      { id: 'off', label: 'Not mine', stage: 'domestic', kind: 'per_item', amount: 9999, currency: 'INR', enabled: false },
+      { id: 'packing', label: 'Packing', stage: 'domestic', kind: 'per_item', amount: 50, currency: 'INR', enabled: true },
+      { id: 'gst', label: 'GST', stage: 'selling', kind: 'percent', amount: 18, currency: 'INR', basis: 'selling_inclusive', enabled: true },
+    ],
+  };
+  const result = calculateProfit(template, { itemPrice: 20, quantity: 2, weightKg: 0.3, sellingPrice: 3000 });
+  const line = (id) => result.lines.find((row) => row.id === id).perItem;
+  assert.equal(result.itemCost, 1600);
+  assert.equal(line('freight'), 400, '0.6 kg rounds to the 1 kg minimum, split over two');
+  assert.equal(line('duty'), 200, 'duty on item + freight');
+  assert.equal(line('igst'), 396, 'IGST on item + freight + duty');
+  assert.equal(line('off'), 0, 'a switched-off line costs nothing');
+  assert.ok(Math.abs(line('gst') - 3000 * 18 / 118) < 1e-6, 'GST taken out of the price, not added to it');
+  assert.ok(Math.abs(result.profit - (3000 - 2646 - 3000 * 18 / 118)) < 1e-6);
+  assert.ok(result.profit < 0);
+  const slope = 1 - 18 / 118;
+  assert.ok(Math.abs(result.breakEven - 2646 / slope) < 1e-6, 'break-even solves the price-linked lines');
+  assert.ok(Math.abs(result.suggested - 2646 / (slope - 0.25)) < 1e-6);
+  assert.ok(Math.abs(calculateProfit(template, { itemPrice: 20, quantity: 2, weightKg: 0.3, sellingPrice: result.suggested }).marginPercent - 25) < 1e-6,
+    'and the suggested price really makes the target margin');
+
+  const bulky = calculateProfit({ ...template, lines: [{ ...template.lines[0], volumetric: true, minKg: 0, stepKg: 0 }] },
+    { itemPrice: 0, quantity: 1, weightKg: 1, lengthCm: 50, widthCm: 40, heightCm: 30, sellingPrice: 0 });
+  assert.equal(bulky.volumetricKg, 12);
+  assert.equal(bulky.landed, 12 * 800, 'a light, large box is charged on its volume');
+});
+
+await check('a shop keeps its own calculators, and only its people read them', async () => {
+  const first = await listProfitTemplates(req({ headers: auth }), ctx);
+  assert.equal(first.status, 200);
+  assert.equal(first.jsonBody.starter.length, starterLines().length);
+  assert.ok(first.jsonBody.starter.some((line) => line.id === 'igst'), 'every provision is on the starter sheet');
+
+  const made = await saveProfitTemplate(req({ headers: auth, body: {
+    name: 'Japan by air', currency: 'jpy', rate: 0.56, targetMarginPercent: 30, lines: starterLines(),
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  assert.equal(made.jsonBody.template.currency, 'JPY');
+  assert.equal(made.jsonBody.template.isDefault, true, 'the first one is the default');
+  const second = await saveProfitTemplate(req({ headers: auth, body: {
+    name: 'China by sea', currency: 'CNY', rate: 11.6, isDefault: true, lines: starterLines().slice(0, 3),
+  } }), ctx);
+  assert.equal(second.status, 201);
+  assert.deepEqual(second.jsonBody.templates.filter((entry) => entry.isDefault).map((entry) => entry.name), ['China by sea'],
+    'one default at a time');
+
+  const backwards = await saveProfitTemplate(req({ headers: auth, body: {
+    name: 'Broken', rate: 1, lines: [{ id: 'a', label: 'Fuel', kind: 'percent', basis: 'line', basisLineId: 'b', stage: 'international', enabled: true },
+      { id: 'b', label: 'Freight', kind: 'per_kg', stage: 'international', enabled: true }],
+  } }), ctx);
+  assert.equal(backwards.status, 400, 'a percentage of a later line is refused');
+
+  const stranger = await newBuyer('Nosy Neighbour');
+  assert.equal((await listProfitTemplates(req({ headers: stranger.headers, query: { store: 'usr_demo' } }), ctx)).status, 403);
+
+  const gone = await deleteProfitTemplate(req({ headers: auth, params: { id: second.jsonBody.template.id } }), ctx);
+  assert.equal(gone.status, 200);
+  assert.deepEqual(gone.jsonBody.templates.map((entry) => [entry.name, entry.isDefault]), [['Japan by air', true]]);
+});
+
+await check('insights compare this week with last, and rank what is trending', async () => {
+  const read = (await interest(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(read.daily.length, 14);
+  assert.ok(read.week.now.orders >= 1, 'orders placed in the tests above land in this week');
+  const hot = read.trending[0];
+  assert.equal(hot.rank, 1);
+  assert.equal(hot.spark.length, 14);
+  assert.ok(read.categories.length > 0);
+});
+
+await check('market trends show other shops’ items without the shops', async () => {
+  const mine = await createListing(req({ headers: auth, body: { title: 'My Resin Statue', priceMinor: 30_000, quantityAvailable: 3, category: 'Scale figures' } }), ctx);
+  assert.equal(mine.status, 201, JSON.stringify(mine.jsonBody));
+  const rival = await newBuyer('Rival Shop');
+  const opened = await saveStorefront(req({ headers: rival.headers, body: { storefrontName: 'Rival Figures Co' } }), ctx);
+  assert.equal(opened.status, 200, JSON.stringify(opened.jsonBody));
+  const theirs = await createListing(req({ headers: rival.headers, body: { title: 'Their Hot Statue', priceMinor: 25_000, quantityAvailable: 9, category: 'Scale figures' } }), ctx);
+  assert.equal(theirs.status, 201, JSON.stringify(theirs.jsonBody));
+  const listingId = theirs.jsonBody.listing.id;
+  for (const name of ['Fan One', 'Fan Two']) {
+    const fan = await newBuyer(name);
+    await toggleLike(req({ headers: fan.headers, params: { id: listingId } }), ctx);
+  }
+  const quiet = (await market(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(!quiet.items.some((row) => row.title === 'Their Hot Statue'), 'two people are not enough to show');
+
+  const third = await newBuyer('Fan Three');
+  await toggleLike(req({ headers: third.headers, params: { id: listingId } }), ctx);
+  const read = await market(req({ headers: auth }), ctx);
+  assert.equal(read.status, 200);
+  const item = read.jsonBody.items.find((row) => row.title === 'Their Hot Statue');
+  assert.ok(item, 'three interested people put it on the chart');
+  assert.deepEqual(Object.keys(item).sort(), ['category', 'currency', 'level', 'photo', 'priceMinor', 'title']);
+  const text = JSON.stringify(read.jsonBody);
+  assert.ok(!text.includes(listingId) && !text.includes('Rival Shop') && !text.includes('rival_shop') && !text.includes('Rival Figures'), 'nothing leads back to the shop');
+  assert.ok(read.jsonBody.categories.some((row) => row.category === 'Scale figures'));
+  assert.ok(!read.jsonBody.items.some((row) => row.title === 'My Resin Statue'), 'and never the shop’s own items');
 });
 
 console.log(`\n${passed} checks passed`);

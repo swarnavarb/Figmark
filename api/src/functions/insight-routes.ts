@@ -33,7 +33,7 @@ import { error, handler, json } from './http.js';
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** The shop being read, and whether this account may read it. */
-async function shopFor(
+export async function shopFor(
   request: HttpRequest,
   repository: Repo,
   user: { id: string },
@@ -462,48 +462,105 @@ async function interest(request: HttpRequest, _context: InvocationContext) {
   };
 
   /* ── Trending ──────────────────────────────────────────────────────────
-     Saves, Buy presses and orders in the last seven days against the seven
-     before. Views carry no timestamp, so they cannot say what is rising. */
-  const week = (at: string) => {
-    const age = now - Date.parse(at);
-    return age <= 7 * DAY ? 0 : age <= 14 * DAY ? 1 : -1;
-  };
-  const heat = new Map<string, { saves: number; buys: number; orders: number; before: number }>();
-  const bump = (listingId: string, at: string, key: 'saves' | 'buys' | 'orders', weight: number) => {
-    const when = week(at);
-    if (when < 0) return;
-    const row = heat.get(listingId) ?? { saves: 0, buys: 0, orders: 0, before: 0 };
-    if (when === 0) row[key] += 1;
-    else row.before += weight;
+     Saves, Buy presses and orders, day by day over two weeks, weighted by
+     how far along each one is (a save 1, a Buy press 2, an order 3). Views
+     carry no timestamp, so they cannot say what is rising. */
+  const DAYS = 14;
+  const dayOf = (at: string) => Math.floor((now - Date.parse(at)) / DAY);
+  interface Heat { saves: number; buys: number; orders: number; units: number; spark: number[] }
+  const heat = new Map<string, Heat>();
+  const bump = (listingId: string, at: string, key: 'saves' | 'buys' | 'orders', weight: number, units = 0) => {
+    const ago = dayOf(at);
+    if (ago < 0 || ago >= DAYS) return;
+    const row = heat.get(listingId) ?? { saves: 0, buys: 0, orders: 0, units: 0, spark: Array.from({ length: DAYS }, () => 0) };
+    row.spark[DAYS - 1 - ago]! += weight;
+    if (ago < 7) row[key] += 1;
+    row.units += units;
     heat.set(listingId, row);
   };
   for (const like of likes) bump(like.listingId, like.createdAt, 'saves', 1);
   for (const order of stalled) bump(order.listingId, order.createdAt, 'buys', 2);
-  for (const order of real) bump(order.listingId, order.placedAt ?? order.createdAt, 'orders', 3);
-  const trending = [...heat]
-    .map(([listingId, row]) => {
+  for (const order of real) bump(order.listingId, order.placedAt ?? order.createdAt, 'orders', 3, order.quantity);
+
+  const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
+  const heated = [...heat].map(([listingId, row]) => ({
+    listingId,
+    score: sum(row.spark.slice(7)),
+    before: sum(row.spark.slice(0, 7)),
+    row,
+  }));
+  const rankBy = (key: 'score' | 'before') => new Map(
+    [...heated].filter((entry) => entry[key] > 0).sort((x, y) => y[key] - x[key]).map((entry, at) => [entry.listingId, at + 1]),
+  );
+  const rankNow = rankBy('score');
+  const rankBefore = rankBy('before');
+
+  const trending = heated
+    .filter((entry) => entry.score > 0)
+    .map(({ listingId, score, before, row }) => {
       const listing = byId.get(listingId);
-      const score = row.saves + row.buys * 2 + row.orders * 3;
       const buyable = Boolean(listing && listing.status === 'active' && !isExpired(listing)
         && (listing.quantityMode === 'multiple' || listing.quantityAvailable > 0));
+      const stockLeft = listing && listing.quantityMode !== 'multiple' ? listing.quantityAvailable : null;
+      const pace = row.units / DAYS;
+      const listedDays = listing ? Math.max(1, (now - Date.parse(listing.createdAt)) / DAY) : DAYS;
+      const soldEver = real.filter((order) => order.listingId === listingId).reduce((total, order) => total + order.quantity, 0);
       return {
         listingId,
         title: listing?.title ?? 'An item',
         photo: photoOf(listing),
+        category: listing?.category ?? '',
         saves: row.saves,
         buys: row.buys,
         orders: row.orders,
         score,
-        trend: row.before === 0 ? 'new' as const
-          : score > row.before * 1.2 ? 'up' as const
-          : score < row.before * 0.8 ? 'down' as const : 'steady' as const,
+        spark: row.spark,
+        rank: rankNow.get(listingId)!,
+        prevRank: rankBefore.get(listingId) ?? null,
+        trend: before === 0 ? 'new' as const
+          : score > before * 1.2 ? 'up' as const
+          : score < before * 0.8 ? 'down' as const : 'steady' as const,
         /** Wanted this week and nothing left to sell - restock or relist. */
         soldOut: !buyable,
+        stockLeft,
+        /** At the last fortnight's pace, days until it is gone. Null when it is not selling or not counted. */
+        daysLeft: buyable && stockLeft !== null && pace > 0 ? Math.round(stockLeft / pace) : null,
+        /** Units sold per week since it was listed. */
+        perWeek: Math.round((soldEver / listedDays) * 7 * 10) / 10,
       };
     })
-    .filter((row) => row.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
+    .sort((x, y) => x.rank - y.rank)
+    .slice(0, 30);
+
+  /** The shop's categories, warming or cooling. */
+  const categoryHeat = new Map<string, { score: number; before: number }>();
+  for (const entry of heated) {
+    const category = byId.get(entry.listingId)?.category || 'Other';
+    const row = categoryHeat.get(category) ?? { score: 0, before: 0 };
+    row.score += entry.score;
+    row.before += entry.before;
+    categoryHeat.set(category, row);
+  }
+  const categories = [...categoryHeat]
+    .map(([category, row]) => ({ category, ...row }))
+    .filter((row) => row.score + row.before > 0)
+    .sort((x, y) => y.score - x.score);
+
+  /* ── This week against last ──────────────────────────────────────────── */
+  const blank = () => ({ saves: 0, buys: 0, orders: 0, revenueMinor: 0 });
+  const week = { now: blank(), before: blank() };
+  const daily = Array.from({ length: DAYS }, () => ({ saves: 0, buys: 0, orders: 0 }));
+  const count = (at: string, key: 'saves' | 'buys' | 'orders', money = 0) => {
+    const ago = dayOf(at);
+    if (ago < 0 || ago >= DAYS) return;
+    const bucket = ago < 7 ? week.now : week.before;
+    bucket[key] += 1;
+    bucket.revenueMinor += money;
+    daily[DAYS - 1 - ago]![key] += 1;
+  };
+  for (const like of likes) count(like.createdAt, 'saves');
+  for (const order of [...stalled, ...real]) count(order.createdAt, 'buys');
+  for (const order of real) count(order.placedAt ?? order.createdAt, 'orders', order.quantity * order.unitPriceMinor);
 
   /** Looked at plenty, nobody saving or pressing Buy - the price or photos may be the problem. */
   const overlooked = items
@@ -540,7 +597,10 @@ async function interest(request: HttpRequest, _context: InvocationContext) {
     expiring,
     customers,
     trending,
+    categories,
     overlooked,
+    week,
+    daily,
     /** When people act - saves, Buy presses and orders - for a by-hour chart drawn in the viewer's clock. */
     activity: [
       ...likes.map((like) => like.createdAt),
@@ -550,8 +610,149 @@ async function interest(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/**
+ * GET /api/me/market - what is moving in this shop's categories elsewhere.
+ *
+ * Other sellers' items only as things, never as shops: a title, a photo, a
+ * price and a rough level. No id, no link, no seller - the listing page would
+ * say whose it is - and no counts, so a small shop's sales cannot be read off
+ * it. An item appears only once several different people have shown interest,
+ * for the same reason.
+ */
+async function market(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const repository = await getRepository();
+
+  const sellerId = await shopFor(request, repository, user);
+  if (!sellerId) return error(403, 'forbidden', 'You cannot read the numbers for that shop.');
+
+  const own = (await repository.listListings({ sellerId, includeHidden: true }))
+    .filter((listing) => listing.status !== 'archived');
+  const categories = [...new Set(own.map((listing) => listing.category).filter(Boolean))];
+  if (categories.length === 0) {
+    return json(200, { categories: [], items: [], prices: [], wanted: [] });
+  }
+
+  const DAY = 86_400_000;
+  const now = Date.now();
+  const others = (await repository.listListings({ categories, limit: 400 }))
+    .filter((listing) => listing.sellerId !== sellerId && listing.status === 'active' && !isExpired(listing));
+  const likes = (await repository.listLikesForListings(others.map((listing) => listing.id)))
+    .filter((like) => now - Date.parse(like.createdAt) < 14 * DAY);
+
+  // Orders are read for the most-liked candidates only: one query per item,
+  // and an item nobody saved is not going to be trending on orders alone.
+  const likeTally = new Map<string, number>();
+  for (const like of likes) likeTally.set(like.listingId, (likeTally.get(like.listingId) ?? 0) + 1);
+  const candidates = [...others]
+    .sort((a, b) => (likeTally.get(b.id) ?? 0) - (likeTally.get(a.id) ?? 0) || (b.likeCount ?? 0) - (a.likeCount ?? 0))
+    .slice(0, 40);
+  const orders = (await Promise.all(candidates.map((listing) => repository.listOrdersForListing(listing.id))))
+    .flat()
+    .filter((order) => !isCancelledLike(order.status) && now - Date.parse(order.placedAt ?? order.createdAt) < 14 * DAY);
+
+  const signal = new Map<string, { now: number; before: number; people: Set<string> }>();
+  const add = (listingId: string, at: string, who: string, weight: number) => {
+    const row = signal.get(listingId) ?? { now: 0, before: 0, people: new Set<string>() };
+    if (now - Date.parse(at) < 7 * DAY) row.now += weight;
+    else row.before += weight;
+    row.people.add(who);
+    signal.set(listingId, row);
+  };
+  for (const like of likes) add(like.listingId, like.createdAt, like.userId, 1);
+  for (const order of orders) add(order.listingId, order.placedAt ?? order.createdAt, order.buyerId, 3);
+
+  const levelOf = (score: number, before: number) =>
+    score >= 10 ? 'hot' as const : before === 0 || score > before * 1.2 ? 'rising' as const : 'steady' as const;
+  const byId = new Map(others.map((listing) => [listing.id, listing]));
+  const items = [...signal]
+    .filter(([, row]) => row.people.size >= 3 && row.now > 0)
+    .sort(([, a], [, b]) => b.now - a.now)
+    .slice(0, 16)
+    .map(([listingId, row]) => {
+      const listing = byId.get(listingId)!;
+      return {
+        title: listing.title,
+        photo: photoOf(listing),
+        category: listing.category,
+        priceMinor: listing.priceMinor,
+        currency: listing.currency,
+        level: levelOf(row.now, row.before),
+      };
+    });
+
+  /** Each of the shop's categories, across the whole market. */
+  const categoryRows = categories.map((category) => {
+    let score = 0;
+    let before = 0;
+    for (const [listingId, row] of signal) {
+      if (byId.get(listingId)?.category !== category) continue;
+      score += row.now;
+      before += row.before;
+    }
+    const live = others.filter((listing) => listing.category === category).length;
+    return {
+      category,
+      level: score === 0 ? 'quiet' as const : levelOf(score, before),
+      trend: before === 0 ? (score > 0 ? 'up' as const : 'steady' as const)
+        : score > before * 1.2 ? 'up' as const : score < before * 0.8 ? 'down' as const : 'steady' as const,
+      /** Rough, like everything else here. */
+      supply: live >= 30 ? 'crowded' as const : live >= 8 ? 'some' as const : 'few' as const,
+    };
+  }).sort((a, b) => ['hot', 'rising', 'steady', 'quiet'].indexOf(a.level) - ['hot', 'rising', 'steady', 'quiet'].indexOf(b.level));
+
+  /** The shop's own live items against what the same category sells for elsewhere. */
+  const quartiles = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1)))]!;
+    return { low: at(0.25), mid: at(0.5), high: at(0.75) };
+  };
+  const prices = own
+    .filter((listing) => listing.status === 'active' && !isExpired(listing))
+    .map((listing) => {
+      const peers = others.filter((other) => other.category === listing.category && other.currency === listing.currency)
+        .map((other) => other.priceMinor);
+      if (peers.length < 3) return null;
+      const range = quartiles(peers);
+      return {
+        listingId: listing.id,
+        title: listing.title,
+        category: listing.category,
+        priceMinor: listing.priceMinor,
+        currency: listing.currency,
+        ...range,
+        position: listing.priceMinor < range.low ? 'below' as const : listing.priceMinor > range.high ? 'above' as const : 'within' as const,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null)
+    .slice(0, 20);
+
+  /** What buyers have asked for on the wants board, in these categories. */
+  const wants = (await Promise.all(categories.map((category) => repository.listOpenWants({ category, limit: 20 })))).flat();
+  const wanted = wants
+    .sort((a, b) => (b.seekerCount ?? 0) - (a.seekerCount ?? 0))
+    .slice(0, 12)
+    .map((want) => ({
+      title: want.title,
+      category: want.category,
+      budgetMinor: want.budgetMinor,
+      demand: (want.seekerCount ?? 0) >= 5 ? 'many' as const : (want.seekerCount ?? 0) >= 2 ? 'several' as const : 'one' as const,
+    }));
+
+  return json(200, { categories: categoryRows, items, prices, wanted });
+}
+
 export const insightsRoute = handler(insights);
 export const interestRoute = handler(interest);
+export const marketRoute = handler(market);
+
+app.http('me-market', {
+  authLevel: 'anonymous',
+  methods: ['GET'],
+  route: 'me/market',
+  handler: marketRoute,
+});
 
 app.http('me-interest', {
   authLevel: 'anonymous',

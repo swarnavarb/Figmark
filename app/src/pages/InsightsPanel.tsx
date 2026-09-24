@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import { PHASE_LABELS, SEGMENTS, SEGMENT_LABELS } from '@shared/insights';
 import {
-  ApiRequestError, api, type CustomerRow, type InsightsResponse, type InterestResponse, type PartyRef,
+  ApiRequestError, api, type CustomerRow, type InsightsResponse, type InterestResponse, type MarketResponse,
+  type PartyRef, type TrendingRow,
 } from '../api';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
@@ -18,50 +19,157 @@ import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/
  * shop can act on interest instead of waiting for it.
  */
 
-type Category = 'saved' | 'checkout' | 'funnel' | 'trending' | 'customers' | 'leads' | 'packing' | 'lots' | 'timing';
+type Category =
+  | 'saved' | 'checkout' | 'funnel' | 'trending' | 'market' | 'customers' | 'leads' | 'packing' | 'lots' | 'timing';
 
-const CATEGORIES: { id: Category; icon: string; label: string }[] = [
-  { id: 'saved', icon: '❤️', label: 'Saved' },
-  { id: 'checkout', icon: '🛒', label: 'Stopped at Buy' },
-  { id: 'funnel', icon: '📈', label: 'Funnel' },
-  { id: 'trending', icon: '🔥', label: 'Trending' },
-  { id: 'customers', icon: '👥', label: 'Customers' },
-  { id: 'leads', icon: '💬', label: 'Worth a message' },
-  { id: 'packing', icon: '📦', label: 'Packing' },
-  { id: 'lots', icon: '🚚', label: 'Lots' },
-  { id: 'timing', icon: '⏰', label: 'Best time' },
+const CATEGORIES: { id: Category; icon: string; label: string; tone: string }[] = [
+  { id: 'trending', icon: '🔥', label: 'Trending', tone: 'hot' },
+  { id: 'market', icon: '🌐', label: 'Market trends', tone: 'aqua' },
+  { id: 'saved', icon: '❤️', label: 'Saved', tone: 'pink' },
+  { id: 'checkout', icon: '🛒', label: 'Stopped at Buy', tone: 'warn' },
+  { id: 'funnel', icon: '📈', label: 'Funnel', tone: 'violet' },
+  { id: 'customers', icon: '👥', label: 'Customers', tone: 'ok' },
+  { id: 'leads', icon: '💬', label: 'Worth a message', tone: 'aqua' },
+  { id: 'packing', icon: '📦', label: 'Packing', tone: 'warn' },
+  { id: 'lots', icon: '🚚', label: 'Lots', tone: 'violet' },
+  { id: 'timing', icon: '⏰', label: 'Best time', tone: 'pink' },
 ];
+
+const HOUR = (hour: number) => `${hour % 12 || 12}${hour < 12 ? 'am' : 'pm'}`;
 
 export function InsightsPanel({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<InterestResponse | null>(null);
   const [lots, setLots] = useState<InsightsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState<Category>('saved');
+  const [params, setParams] = useSearchParams();
+  const shop = store.isOwner ? undefined : store.ownerId;
+
+  // The open category lives in the address, so the phone's back button
+  // returns to the dashboard and a category can be linked to.
+  const requested = params.get('view') as Category | null;
+  const view = CATEGORIES.some((entry) => entry.id === requested) ? requested : null;
+  const open = (next: Category | null) => {
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      if (next) copy.set('view', next);
+      else copy.delete('view');
+      return copy;
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   useEffect(() => {
-    const shop = store.isOwner ? undefined : store.ownerId;
     void api.interest(shop)
       .then(setData)
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load insights.'));
     // The lot figures are a second read; a shop without lots still gets the rest.
     void api.insights(shop).then(setLots).catch(() => setLots(null));
-  }, [store.isOwner, store.ownerId]);
+  }, [shop]);
 
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
 
-  const { summary, customers } = data;
-  const wantedGone = data.trending.filter((row) => row.soldOut).length;
-  const count: Record<Category, number | null> = {
-    saved: summary.saves,
-    checkout: summary.stalled,
-    funnel: null,
-    trending: data.trending.length,
-    customers: customers.total,
-    leads: data.leads.length,
-    packing: lots ? lots.boxes.small + lots.boxes.medium + lots.boxes.large : null,
-    lots: lots ? lots.perLot.length : null,
-    timing: null,
+  if (view) {
+    const entry = CATEGORIES.find((row) => row.id === view)!;
+    return (
+      <div className="stack ins">
+        <div className="insview__bar">
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => open(null)}>← Insights</button>
+          <h2 className="insview__title"><span aria-hidden="true">{entry.icon}</span> {entry.label} <span className="probadge">PRO</span></h2>
+        </div>
+        {view === 'saved' && <Saved data={data} />}
+        {view === 'checkout' && <Checkout data={data} />}
+        {view === 'funnel' && <Funnel data={data} />}
+        {view === 'trending' && <Trending data={data} />}
+        {view === 'market' && <Market shop={shop} />}
+        {view === 'customers' && <Customers data={data} lots={lots} />}
+        {view === 'leads' && <Leads data={data} />}
+        {view === 'packing' && <Packing data={lots} />}
+        {view === 'lots' && <Lots data={lots} />}
+        {view === 'timing' && <Timing data={data} />}
+      </div>
+    );
+  }
+
+  return <Dashboard data={data} lots={lots} open={open} />;
+}
+
+/** A week's change as an arrow and a percentage. */
+function Delta({ now, before }: { now: number; before: number }) {
+  if (before === 0 && now === 0) return <small className="insdelta">—</small>;
+  if (before === 0) return <small className="insdelta insdelta--up">▲ new</small>;
+  const change = Math.round(((now - before) / before) * 100);
+  if (change === 0) return <small className="insdelta">■ same</small>;
+  return <small className={`insdelta insdelta--${change > 0 ? 'up' : 'down'}`}>{change > 0 ? '▲' : '▼'} {Math.abs(change)}%</small>;
+}
+
+/** Fourteen tiny bars, oldest first, the last seven lit. */
+function Spark({ values, tone = 'violet' }: { values: number[]; tone?: string }) {
+  const peak = Math.max(1, ...values);
+  return (
+    <span className="insspark" aria-hidden="true">
+      {values.map((value, at) => (
+        <span key={at} className={`insspark__bar insspark__bar--${tone}${at >= values.length - 7 ? ' is-now' : ''}`}
+          style={{ height: `${Math.max(8, Math.round((value / peak) * 100))}%` }} />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The landing page: how this week compares, what needs doing, and a card per
+ * category with the one thing worth knowing from it. Everything deeper is a
+ * tap away rather than stacked on one long page.
+ */
+function Dashboard({ data, lots, open }: {
+  data: InterestResponse; lots: InsightsResponse | null; open: (next: Category) => void;
+}) {
+  const { summary, customers, week, daily } = data;
+  const series = (key: 'saves' | 'buys' | 'orders') => daily.map((day) => day[key]);
+  const wentAhead = (figures: { buys: number; orders: number }) =>
+    figures.buys ? Math.round((figures.orders / figures.buys) * 100) : 0;
+
+  const hours = Array.from({ length: 24 }, () => 0);
+  for (const at of data.activity) {
+    const date = new Date(at);
+    if (!Number.isNaN(date.getTime())) hours[date.getHours()]! += 1;
+  }
+  const peakHour = data.activity.length ? hours.indexOf(Math.max(...hours)) : null;
+
+  const soldOut = data.trending.filter((row) => row.soldOut);
+  const runningLow = data.trending.filter((row) => row.daysLeft !== null && row.daysLeft <= 7);
+  const boxes = lots ? lots.boxes.small + lots.boxes.medium + lots.boxes.large : 0;
+  const hottest = data.trending[0];
+
+  const todo: { key: string; icon: string; text: string; go: Category; tone: string }[] = [];
+  if (summary.stalled > 0) todo.push({ key: 'cart', icon: '🛒', go: 'checkout', tone: 'warn',
+    text: `${summary.stalled} stopped at Buy · ${formatMoney(summary.stalledMinor, 'INR')} not yet ordered` });
+  if (soldOut.length > 0) todo.push({ key: 'gone', icon: '🔥', go: 'trending', tone: 'hot',
+    text: `${soldOut.length} wanted item${soldOut.length === 1 ? ' is' : 's are'} sold out — restock or relist` });
+  if (runningLow.length > 0) todo.push({ key: 'low', icon: '⚡', go: 'trending', tone: 'warn',
+    text: `${runningLow.length} item${runningLow.length === 1 ? '' : 's'} will sell out within a week` });
+  if (data.expiring.length > 0) todo.push({ key: 'ending', icon: '⏳', go: 'trending', tone: 'pink',
+    text: `${data.expiring.length} wanted item${data.expiring.length === 1 ? '' : 's'} ending in 3 days` });
+  if (customers.dormant > 0) todo.push({ key: 'quiet', icon: '💤', go: 'customers', tone: 'ok',
+    text: `${customers.dormant} customer${customers.dormant === 1 ? ' has' : 's have'} gone quiet — say hello` });
+  if (boxes > 0) todo.push({ key: 'boxes', icon: '📦', go: 'packing', tone: 'violet',
+    text: `${boxes} box${boxes === 1 ? '' : 'es'} to pack across your lots` });
+  if (data.overlooked.length > 0) todo.push({ key: 'looks', icon: '👀', go: 'trending', tone: 'aqua',
+    text: `${data.overlooked.length} item${data.overlooked.length === 1 ? ' gets' : 's get'} looks but no takers` });
+
+  const preview: Record<Category, { big: string; line: string }> = {
+    trending: hottest
+      ? { big: `#1`, line: hottest.title }
+      : { big: '—', line: 'Nothing heating up yet' },
+    market: { big: '🌐', line: 'What sells in your categories elsewhere' },
+    saved: { big: String(summary.saves), line: data.saved[0] ? `Most saved: ${data.saved[0].title}` : 'No saves yet' },
+    checkout: { big: String(summary.stalled), line: summary.stalled ? `${formatMoney(summary.stalledMinor, 'INR')} waiting` : 'Nobody stuck' },
+    funnel: { big: summary.placedPercent === null ? '—' : `${summary.placedPercent}%`, line: 'of Buy presses became orders' },
+    customers: { big: String(customers.total), line: customers.repeatPercent === null ? 'No customers yet' : `${customers.repeatPercent}% come back` },
+    leads: { big: String(data.leads.length), line: 'interested, never ordered' },
+    packing: { big: String(boxes), line: lots && lots.boxes.openLots ? `boxes across ${lots.boxes.openLots} lot${lots.boxes.openLots === 1 ? '' : 's'}` : 'Nothing to pack' },
+    lots: { big: String(lots?.headline.openLots ?? 0), line: lots ? `${formatMoney(lots.headline.valueInFlightMinor)} moving` : 'No lots yet' },
+    timing: { big: peakHour === null ? '—' : HOUR(peakHour), line: 'your busiest hour' },
   };
 
   return (
@@ -69,60 +177,65 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
       <section className="inshero">
         <div className="inshero__title">
           <h2>✨ Insights <span className="probadge">PRO</span></h2>
-          <p>Who is looking, who is saving, who stopped just short of buying, and who to bring back.</p>
+          <p>This week against last, what needs you, and everything underneath - one tap each.</p>
         </div>
-        {(summary.stalled > 0 || customers.dormant > 0 || wantedGone > 0) && (
-          <div className="inshero__alerts">
-            {summary.stalled > 0 && (
-              <button type="button" className="insalert insalert--cart" onClick={() => setCategory('checkout')}>
-                🛒 {summary.stalled} stopped at Buy · {formatMoney(summary.stalledMinor, 'INR')} not yet ordered
+        <div className="inskpis">
+          <Kpi label="Saves" value={String(week.now.saves)} delta={<Delta now={week.now.saves} before={week.before.saves} />}
+            spark={<Spark values={series('saves')} tone="pink" />} />
+          <Kpi label="Pressed Buy" value={String(week.now.buys)} delta={<Delta now={week.now.buys} before={week.before.buys} />}
+            spark={<Spark values={series('buys')} tone="warn" />} />
+          <Kpi label="Orders" value={String(week.now.orders)} delta={<Delta now={week.now.orders} before={week.before.orders} />}
+            spark={<Spark values={series('orders')} tone="ok" />} />
+          <Kpi label="Order value" value={formatMoney(week.now.revenueMinor, 'INR')}
+            delta={<Delta now={week.now.revenueMinor} before={week.before.revenueMinor} />} />
+          <Kpi label="Went ahead" value={`${wentAhead(week.now)}%`}
+            delta={<Delta now={wentAhead(week.now)} before={wentAhead(week.before)} />} />
+        </div>
+        <small className="inshero__foot">Last 7 days against the 7 before.</small>
+      </section>
+
+      <section className="card card--pad stack">
+        <h2>Needs you</h2>
+        {todo.length === 0 ? (
+          <p className="muted">All clear. Nothing waiting on you right now.</p>
+        ) : (
+          <div className="instodo">
+            {todo.map((row) => (
+              <button key={row.key} type="button" className={`instodo__row instodo__row--${row.tone}`} onClick={() => open(row.go)}>
+                <span aria-hidden="true">{row.icon}</span>
+                <span>{row.text}</span>
+                <span aria-hidden="true" className="instodo__go">›</span>
               </button>
-            )}
-            {wantedGone > 0 && (
-              <button type="button" className="insalert insalert--hot" onClick={() => setCategory('trending')}>
-                🔥 {wantedGone} wanted item{wantedGone === 1 ? '' : 's'} sold out
-              </button>
-            )}
-            {customers.dormant > 0 && (
-              <button type="button" className="insalert insalert--money" onClick={() => setCategory('customers')}>
-                💤 {customers.dormant} customer{customers.dormant === 1 ? '' : 's'} gone quiet
-              </button>
-            )}
+            ))}
           </div>
         )}
       </section>
 
-      {data.expiring.length > 0 && (
-        <div className="insexpire">
-          <b>⏳ Ending soon, still wanted</b>
-          {data.expiring.map((row) => (
-            <span key={row.listingId}>
-              <Link to={`/listing/${row.listingId}`}>{row.title}</Link>
-              {' '}— {row.saves} saved, {row.buyClicks} pressed Buy{row.expiresAt ? `, ends ${formatDate(row.expiresAt)}` : ''}
-            </span>
-          ))}
-        </div>
-      )}
-
-      <div className="inscats" role="tablist" aria-label="Insight categories">
+      <div className="insgrid">
         {CATEGORIES.map((entry) => (
-          <button key={entry.id} type="button" role="tab" aria-selected={category === entry.id}
-            className={`inscat${category === entry.id ? ' is-on' : ''}`} onClick={() => setCategory(entry.id)}>
-            <span aria-hidden="true">{entry.icon}</span> {entry.label}
-            {count[entry.id] !== null && <span className="inscat__n">{count[entry.id]}</span>}
+          <button key={entry.id} type="button" className={`instile instile--${entry.tone}`} onClick={() => open(entry.id)}>
+            <span className="instile__head"><span aria-hidden="true">{entry.icon}</span> {entry.label}</span>
+            <b className="instile__big">{preview[entry.id].big}</b>
+            <small className="instile__line">{preview[entry.id].line}</small>
           </button>
         ))}
+        <Link to="/shop?tab=calculator" className="instile instile--gold">
+          <span className="instile__head"><span aria-hidden="true">🧮</span> Profit calculator</span>
+          <b className="instile__big">₹</b>
+          <small className="instile__line">Landed cost and margin, your rates</small>
+        </Link>
       </div>
+    </div>
+  );
+}
 
-      {category === 'saved' && <Saved data={data} />}
-      {category === 'checkout' && <Checkout data={data} />}
-      {category === 'funnel' && <Funnel data={data} />}
-      {category === 'trending' && <Trending data={data} />}
-      {category === 'customers' && <Customers data={data} lots={lots} />}
-      {category === 'leads' && <Leads data={data} />}
-      {category === 'packing' && <Packing data={lots} />}
-      {category === 'lots' && <Lots data={lots} />}
-      {category === 'timing' && <Timing data={data} />}
+function Kpi({ label, value, delta, spark }: { label: string; value: string; delta: ReactNode; spark?: ReactNode }) {
+  return (
+    <div className="inskpi">
+      <small>{label}</small>
+      <b>{value}</b>
+      {delta}
+      {spark}
     </div>
   );
 }
@@ -371,39 +484,129 @@ const TREND: Record<'new' | 'up' | 'steady' | 'down', { text: string; tone: stri
   down: { text: '▼ Cooling', tone: 'warn' },
 };
 
-/** What people are going for this week, and what gets looks but no takers. */
+type TrendSort = 'hot' | 'saves' | 'buys' | 'orders' | 'fast';
+
+const TREND_SORTS: { id: TrendSort; label: string; key: (row: TrendingRow) => number; hint: string }[] = [
+  { id: 'hot', label: '🔥 Hottest', key: (row) => -row.rank, hint: 'Saves, Buy presses and orders this week, weighted - an order counts three times a save.' },
+  { id: 'saves', label: '❤️ Most saved', key: (row) => row.saves, hint: 'Saved in the last 7 days. The wishlist before the order.' },
+  { id: 'buys', label: '🛒 Most Buy presses', key: (row) => row.buys, hint: 'Pressed Buy and stopped this week - wanted, but something held them back.' },
+  { id: 'orders', label: '📦 Most ordered', key: (row) => row.orders, hint: 'Orders placed in the last 7 days.' },
+  { id: 'fast', label: '⚡ Selling fastest', key: (row) => row.perWeek, hint: 'Units sold per week since it was listed.' },
+];
+
+/** The shop's own items: what is heating up, what will run out, what nobody wants. */
 function Trending({ data }: { data: InterestResponse }) {
+  const [sort, setSort] = useState<TrendSort>('hot');
   if (data.trending.length === 0 && data.overlooked.length === 0) {
-    return <EmptyState icon="🔥" title="Nothing heating up yet">Items people save, press Buy on and order this week show up here.</EmptyState>;
+    return <EmptyState icon="🔥" title="Nothing heating up yet">Items people save, press Buy on and order in the last two weeks show up here.</EmptyState>;
   }
+  const chosen = TREND_SORTS.find((entry) => entry.id === sort)!;
+  const rows = [...data.trending].filter((row) => sort === 'hot' || chosen.key(row) > 0)
+    .sort((x, y) => chosen.key(y) - chosen.key(x));
+  const soldOut = data.trending.filter((row) => row.soldOut);
+  const runningLow = data.trending.filter((row) => row.daysLeft !== null && row.daysLeft <= 7);
+  const peakCategory = Math.max(1, ...data.categories.map((row) => Math.max(row.score, row.before)));
+
   return (
     <div className="stack">
+      {(soldOut.length > 0 || runningLow.length > 0) && (
+        <div className="insgrid insgrid--two">
+          {soldOut.length > 0 && (
+            <div className="insnote insnote--hot">
+              <b>🔥 Sold out, still wanted</b>
+              {soldOut.map((row) => <Link key={row.listingId} to={`/listing/${row.listingId}`}>{row.title}</Link>)}
+              <small>Restock or relist while people are looking.</small>
+            </div>
+          )}
+          {runningLow.length > 0 && (
+            <div className="insnote insnote--warn">
+              <b>⚡ Running out this week</b>
+              {runningLow.map((row) => (
+                <span key={row.listingId}>
+                  <Link to={`/listing/${row.listingId}`}>{row.title}</Link> — {row.stockLeft} left, about {row.daysLeft} day{row.daysLeft === 1 ? '' : 's'}
+                </span>
+              ))}
+              <small>At the last fortnight's pace. Order more now.</small>
+            </div>
+          )}
+        </div>
+      )}
+
       {data.trending.length > 0 && (
         <>
-          <p className="faint">Saves, Buy presses and orders in the last 7 days, against the 7 before. Hottest first.</p>
-          {data.trending.map((row) => (
-            <article key={row.listingId} className={`inscard${row.soldOut ? ' inscard--cart' : ''}`}>
-              <header className="inscard__head">
-                <Thumb seed={row.listingId} label={row.title} photo={row.photo ? { url: row.photo } : null} className="thumb insthumb" />
-                <div>
-                  <Link to={`/listing/${row.listingId}`} className="inscard__title">{row.title}</Link>
-                  <small>
-                    {[row.saves && `❤️ ${row.saves} saved`, row.buys && `🛒 ${row.buys} at Buy`, row.orders && `📦 ${row.orders} ordered`]
-                      .filter(Boolean).join(' · ')}
-                  </small>
+          <div className="inssegs" role="tablist" aria-label="Sort trending items">
+            {TREND_SORTS.map((entry) => (
+              <button key={entry.id} type="button" role="tab" aria-selected={sort === entry.id}
+                className={`inscat${sort === entry.id ? ' is-on' : ''}`} onClick={() => setSort(entry.id)}>
+                {entry.label}
+              </button>
+            ))}
+          </div>
+          <p className="faint">{chosen.hint}</p>
+          {rows.length === 0 && <p className="muted">Nothing here this week.</p>}
+          {rows.map((row) => {
+            const moved = row.prevRank === null ? null : row.prevRank - row.rank;
+            return (
+              <article key={row.listingId} className={`inscard${row.soldOut ? ' inscard--cart' : ''}`}>
+                <header className="inscard__head">
+                  <Thumb seed={row.listingId} label={row.title} photo={row.photo ? { url: row.photo } : null} className="thumb insthumb" />
+                  <div>
+                    <Link to={`/listing/${row.listingId}`} className="inscard__title">{row.title}</Link>
+                    <small>
+                      #{row.rank}
+                      {moved === null ? ' · new in the chart' : moved > 0 ? ` · ▲ up ${moved}` : moved < 0 ? ` · ▼ down ${-moved}` : ' · same place'}
+                      {row.category && ` · ${row.category}`}
+                    </small>
+                  </div>
+                  <span className={`badge badge--${TREND[row.trend].tone}`}>{TREND[row.trend].text}</span>
+                </header>
+                <div className="instrend">
+                  <Spark values={row.spark} tone={row.trend === 'down' ? 'warn' : 'ok'} />
+                  <div className="instrend__facts">
+                    <span>❤️ {row.saves} saved</span>
+                    <span>🛒 {row.buys} at Buy</span>
+                    <span>📦 {row.orders} ordered</span>
+                    <span>⚡ {row.perWeek} sold a week</span>
+                  </div>
                 </div>
-                <span className={`badge badge--${TREND[row.trend].tone}`}>{TREND[row.trend].text}</span>
-              </header>
-              {row.soldOut && (
                 <div className="inscard__facts">
-                  <span className="badge badge--warn">Sold out or ended — still wanted</span>
-                  <span>Restock or relist it while people are looking.</span>
+                  {row.soldOut ? (
+                    <span className="badge badge--warn">Sold out or ended — still wanted</span>
+                  ) : row.stockLeft !== null ? (
+                    <span className={row.daysLeft !== null && row.daysLeft <= 7 ? 'ins__owed' : ''}>
+                      📦 {row.stockLeft} left{row.daysLeft !== null ? ` · about ${row.daysLeft} days at this pace` : ''}
+                    </span>
+                  ) : (
+                    <span>♾️ Made to order</span>
+                  )}
                 </div>
-              )}
-            </article>
-          ))}
+              </article>
+            );
+          })}
+          <small className="faint">The bars are the last 14 days, this week lit.</small>
         </>
       )}
+
+      {data.categories.length > 0 && (
+        <div className="card card--pad stack">
+          <div>
+            <h2>Your categories</h2>
+            <span className="field__hint">This week against last, across your items.</span>
+          </div>
+          {data.categories.map((row) => (
+            <div key={row.category} className="inscatrow">
+              <span className="inscatrow__name">{row.category}</span>
+              <span className="inscatrow__bars">
+                <span className="insbar__track"><span className="insbar__fill insbar__fill--violet" style={{ width: `${Math.round((row.before / peakCategory) * 100)}%` }} /></span>
+                <span className="insbar__track"><span className="insbar__fill insbar__fill--ok" style={{ width: `${Math.round((row.score / peakCategory) * 100)}%` }} /></span>
+              </span>
+              <Delta now={row.score} before={row.before} />
+            </div>
+          ))}
+          <small className="faint">Top bar last week, bottom bar this week.</small>
+        </div>
+      )}
+
       {data.overlooked.length > 0 && (
         <div className="card card--pad stack">
           <div>
@@ -416,6 +619,129 @@ function Trending({ data }: { data: InterestResponse }) {
               <span className="badge">{row.views} views</span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const LEVEL: Record<'hot' | 'rising' | 'steady' | 'quiet', { text: string; tone: string }> = {
+  hot: { text: '🔥 Hot', tone: 'hot' },
+  rising: { text: '📈 Rising', tone: 'ok' },
+  steady: { text: '■ Steady', tone: 'purple' },
+  quiet: { text: '💤 Quiet', tone: 'quiet' },
+};
+const SUPPLY = { crowded: 'Lots of sellers', some: 'Some sellers', few: 'Few sellers' } as const;
+const DEMAND = { many: 'Many looking', several: 'A few looking', one: 'Someone looking' } as const;
+const POSITION = {
+  below: { text: 'Below market', tone: 'aqua' },
+  within: { text: 'In range', tone: 'ok' },
+  above: { text: 'Above market', tone: 'warn' },
+} as const;
+
+/**
+ * What is moving in this shop's categories across Figmark. Items only, as
+ * rough levels: never a seller, never a count, never a link.
+ */
+function Market({ shop }: { shop: string | undefined }) {
+  const [data, setData] = useState<MarketResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void api.market(shop).then(setData)
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load market trends.'));
+  }, [shop]);
+
+  if (error) return <ErrorNotice message={error} />;
+  if (!data) return <p className="muted">Loading…</p>;
+  if (data.categories.length === 0) {
+    return <EmptyState icon="🌐" title="List something first">Market trends follow the categories you sell in.</EmptyState>;
+  }
+
+  return (
+    <div className="stack">
+      <p className="faint">
+        Across Figmark, in the categories you sell in. Items only - no sellers, no exact numbers, and nothing
+        shows until several different people are interested.
+      </p>
+
+      <div className="card card--pad stack">
+        <h2>Your categories, market-wide</h2>
+        {data.categories.map((row) => (
+          <div key={row.category} className="ins__row">
+            <span className="ins__name">{row.category}</span>
+            <span className="insmkt__tags">
+              <span className={`badge badge--${LEVEL[row.level].tone}`}>{LEVEL[row.level].text}</span>
+              <span className="faint">{row.trend === 'up' ? '▲' : row.trend === 'down' ? '▼' : '■'} · {SUPPLY[row.supply]}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="stack">
+        <h2>Trending elsewhere</h2>
+        {data.items.length === 0 ? (
+          <p className="muted">Nothing is standing out in your categories this week.</p>
+        ) : (
+          <div className="insmkt">
+            {data.items.map((row, at) => (
+              <div key={`${row.title}:${at}`} className="insmkt__item">
+                <Thumb seed={`${row.title}:${at}`} label={row.title} photo={row.photo ? { url: row.photo } : null} className="thumb insmkt__thumb" />
+                <span className={`badge badge--${LEVEL[row.level].tone} insmkt__level`}>{LEVEL[row.level].text}</span>
+                <b>{row.title}</b>
+                <small>{row.category} · {formatMoney(row.priceMinor, row.currency)}</small>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {data.prices.length > 0 && (
+        <div className="card card--pad stack">
+          <div>
+            <h2>Your price against the market</h2>
+            <span className="field__hint">The middle half of what the same category is listed for elsewhere, and where yours sits.</span>
+          </div>
+          {data.prices.map((row) => {
+            const span = Math.max(1, row.high - row.low);
+            const lo = row.low - span * 0.5;
+            const width = span * 2;
+            const at = Math.min(100, Math.max(0, ((row.priceMinor - lo) / width) * 100));
+            return (
+              <div key={row.listingId} className="insprice">
+                <div className="ins__row">
+                  <Link to={`/listing/${row.listingId}`} className="ins__name">{row.title}</Link>
+                  <span className={`badge badge--${POSITION[row.position].tone}`}>{POSITION[row.position].text}</span>
+                </div>
+                <span className="insprice__track">
+                  <span className="insprice__range" style={{ left: '25%', width: '50%' }} />
+                  <span className="insprice__you" style={{ left: `${at}%` }} title={`You: ${formatMoney(row.priceMinor, row.currency)}`} />
+                </span>
+                <small className="faint">
+                  You {formatMoney(row.priceMinor, row.currency)} · market {formatMoney(row.low, row.currency)}–{formatMoney(row.high, row.currency)}
+                  {' '}(typical {formatMoney(row.mid, row.currency)})
+                </small>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {data.wanted.length > 0 && (
+        <div className="card card--pad stack">
+          <div>
+            <h2>Buyers are looking for</h2>
+            <span className="field__hint">Open requests on the wants board in your categories. Have one? Make an offer.</span>
+          </div>
+          {data.wanted.map((row, at) => (
+            <div key={`${row.title}:${at}`} className="ins__row">
+              <span style={{ minWidth: 0 }}>
+                <span className="ins__name">{row.title}</span>
+                <span className="faint"> · {row.category}{row.budgetMinor ? ` · budget ${formatMoney(row.budgetMinor, 'INR')}` : ''}</span>
+              </span>
+              <span className="badge">{DEMAND[row.demand]}</span>
+            </div>
+          ))}
+          <Link to="/social?view=wanted" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}>Open the wants board →</Link>
         </div>
       )}
     </div>
