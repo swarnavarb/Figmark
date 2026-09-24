@@ -8,6 +8,7 @@ import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
 import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
+import { cleanCostSheet } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -95,6 +96,11 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   if (!listing) return error(404, 'not_found', 'No such listing.');
 
   const viewer = await auth.getCurrentUser(request);
+  // A private deal is visible to the buyer it was made for and the shop that
+  // made it, and to nobody else - not even as "sold".
+  if (listing.privateFor && viewer?.id !== listing.privateFor && !(await mayManage(repository, listing, viewer?.id))) {
+    return error(404, 'not_found', 'No such listing.');
+  }
   const [sellers, rawComments, likedIds, followed] = await Promise.all([
     repository.listUsersByIds([listing.sellerId]),
     repository.listComments(id),
@@ -140,6 +146,14 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     following: followed.includes(listing.sellerId),
     isOwn: viewer?.id === listing.sellerId,
   });
+}
+
+/** Whether this person may manage the shop a listing belongs to. */
+async function mayManage(repository: Awaited<ReturnType<typeof getRepository>>, listing: Listing, userId: string | undefined) {
+  if (!userId) return false;
+  if (userId === listing.sellerId) return true;
+  const owner = await repository.getUserById(listing.sellerId);
+  return Boolean(owner && can(owner, userId, 'listings'));
 }
 
 /** POST /api/listings - publish a listing. Requires the `sell` capability. */
@@ -196,6 +210,22 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
 
   const title = body.title?.trim();
   if (!title) return error(400, 'invalid_listing', 'A title is required.');
+
+  // A private deal is for one named buyer, never the shop itself.
+  let privateFor: string | null = null;
+  if (body.privateFor) {
+    const buyer = await repository.getUserById(body.privateFor);
+    if (!buyer || buyer.id === sellerId) return error(400, 'invalid_listing', 'Pick who this private deal is for.');
+    privateFor = buyer.id;
+  }
+
+  // What it cost to bring in (Pro), when the seller filled it in while listing.
+  let costSheet: Listing['costSheet'] = null;
+  try {
+    costSheet = cleanCostSheet(body.costSheet, new Date().toISOString());
+  } catch (err) {
+    return error(400, 'invalid_listing', (err as Error).message);
+  }
   if (!body.priceMinor || body.priceMinor <= 0) {
     return error(400, 'invalid_listing', 'A price above zero is required.');
   }
@@ -251,7 +281,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
     preOrder:
-      body.preOrder && body.preOrder.fillThreshold > 0
+      !privateFor && body.preOrder && body.preOrder.fillThreshold > 0
         ? {
             fillThreshold: Math.round(body.preOrder.fillThreshold),
             filledCount: 0,
@@ -284,6 +314,9 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     likeCount: 0,
     viewCount: 0,
     bumpedAt: null,
+    costSheet,
+    // Private: out of the catalog, the shop's grid, channels and the feed.
+    ...(privateFor ? { privateFor, unlisted: true } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -294,7 +327,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // channel is where a shop's followers already are; the feed is everybody.
   // Both are opt-in per listing, because a shop that posts every item to
   // everything is a shop people mute.
-  if (body.shareToChannel || body.shareToFeed) {
+  if (!privateFor && (body.shareToChannel || body.shareToFeed)) {
     const shop = await repository.getUserById(sellerId);
     const name = shop?.sellerProfile?.storefrontName ?? user.displayName;
     const now2 = new Date().toISOString();
@@ -420,6 +453,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   if (listing.sellerId === user.id) {
     return error(400, 'invalid_order', 'You cannot buy your own listing.');
   }
+  if (listing.privateFor && listing.privateFor !== user.id) return error(404, 'not_found', 'No such listing.');
 
   // Enforced here, not only by hiding the button: an expired or withdrawn item
   // is not for sale whatever the client sends.

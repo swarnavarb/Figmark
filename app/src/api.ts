@@ -32,7 +32,7 @@ export interface EvidenceDraft {
 }
 import type {
   BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
-  MessageParty, Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
+  MessageDeal, MessageParty, Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
   StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
 } from '@shared/models';
 
@@ -322,6 +322,8 @@ export interface Checkout {
 export interface SaleRow {
   id: string;
   itemName: string;
+  /** Bought from a private deal made in a chat. */
+  privateDeal?: boolean;
   quantity: number;
   totalMinor: number;
   currency: string;
@@ -525,6 +527,7 @@ export interface PowerSaleDraft {
     listPriceMinor: number;
     quantity: number;
     allowMultiple: boolean;
+    costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
   }[];
 }
 
@@ -583,6 +586,10 @@ export interface ReviewsAbout {
 }
 
 export interface NewListing {
+  /** What one unit cost (Pro), step by step. */
+  costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
+  /** A private deal for this one buyer: never in the catalog, channels or feed. */
+  privateFor?: string | null;
   title: string;
   description: string;
   category: string;
@@ -1587,8 +1594,8 @@ export const api = {
   inbox: () => request<Inbox>('/messages'),
   thread: (handle: string, as?: string) =>
     request<Thread>(`/messages/${encodeURIComponent(handle)}${as ? `?as=${encodeURIComponent(as)}` : ''}`),
-  sendMessage: (handle: string, body: string, as?: string) =>
-    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as }),
+  sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>) =>
+    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as, ...(deal ? { deal } : {}) }),
   profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
   credit: (userId: string) => request<Credit>(`/users/${encodeURIComponent(userId)}/credit`),
   pageReviews: (userId: string) => request<PageReviews>(`/users/${encodeURIComponent(userId)}/page-reviews`),

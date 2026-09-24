@@ -337,3 +337,33 @@ export function stepsFromResult(result: ProfitResult): CostStep[] {
   }
   return steps;
 }
+
+const MAX_SHEET_STEPS = 40;
+
+/**
+ * Whatever a client sent as an item's costs, made safe to keep - or null when
+ * there is nothing worth keeping. The one reader every place that takes costs
+ * uses: the item cost editor, listing an item, a power sale item, a private
+ * deal. Throws a message a person can read when the sheet is malformed.
+ */
+export function cleanCostSheet(raw: unknown, now: string): ItemCostSheet | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const body = raw as Partial<ItemCostSheet>;
+  const rows = Array.isArray(body.steps) ? body.steps : [];
+  if (rows.length === 0) return null;
+  if (rows.length > MAX_SHEET_STEPS) throw new Error(`An item holds up to ${MAX_SHEET_STEPS} cost steps.`);
+  const steps: CostStep[] = rows.map((step: Partial<CostStep>, at) => ({
+    id: typeof step.id === 'string' && /^[\w-]{1,40}$/.test(step.id) ? step.id : `step_${at}`,
+    label: (typeof step.label === 'string' ? step.label.trim() : '').slice(0, 80) || 'Cost',
+    stage: COST_STAGES.includes(step.stage as CostStage) ? (step.stage as CostStage) : 'selling',
+    amountMinor: typeof step.amountMinor === 'number' && Number.isFinite(step.amountMinor)
+      ? Math.min(1e11, Math.max(0, Math.round(step.amountMinor)))
+      : 0,
+  }));
+  return {
+    templateId: typeof body.templateId === 'string' ? body.templateId.slice(0, 40) : null,
+    templateName: typeof body.templateName === 'string' ? body.templateName.slice(0, 60) : null,
+    steps,
+    savedAt: now,
+  };
+}

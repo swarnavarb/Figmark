@@ -3,8 +3,8 @@ import type { Listing, Lot, Order, User } from '../../../shared/models.js';
 import type { OrderStatus } from '../../../shared/enums.js';
 import { isExpired, orderMoney } from '../../../shared/payments.js';
 import {
-  COST_STAGES, sheetTotal,
-  type CostStage, type CostStep, type ItemCostSheet,
+  COST_STAGES, cleanCostSheet, sheetTotal,
+  type CostStage, type ItemCostSheet,
 } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -205,8 +205,6 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
-const MAX_STEPS = 40;
-
 /** POST /api/me/listings/{id}/cost-sheet - save, correct or clear one item's costs. */
 async function saveCostSheet(request: HttpRequest, _context: InvocationContext) {
   const { repository, shopId } = await open(request);
@@ -224,23 +222,12 @@ async function saveCostSheet(request: HttpRequest, _context: InvocationContext) 
 
   let sheet: ItemCostSheet | null = null;
   if (body.sheet) {
-    const raw = Array.isArray(body.sheet.steps) ? body.sheet.steps : [];
-    if (raw.length === 0) return error(400, 'invalid_sheet', 'Keep at least one cost step, or clear the costs.');
-    if (raw.length > MAX_STEPS) return error(400, 'invalid_sheet', `An item holds up to ${MAX_STEPS} cost steps.`);
-    const steps: CostStep[] = raw.map((step: Partial<CostStep>, at) => ({
-      id: typeof step.id === 'string' && /^[\w-]{1,40}$/.test(step.id) ? step.id : `step_${at}`,
-      label: (typeof step.label === 'string' ? step.label.trim() : '').slice(0, 80) || 'Cost',
-      stage: COST_STAGES.includes(step.stage as CostStage) ? (step.stage as CostStage) : 'selling',
-      amountMinor: typeof step.amountMinor === 'number' && Number.isFinite(step.amountMinor)
-        ? Math.min(1e11, Math.max(0, Math.round(step.amountMinor)))
-        : 0,
-    }));
-    sheet = {
-      templateId: typeof body.sheet.templateId === 'string' ? body.sheet.templateId.slice(0, 40) : null,
-      templateName: typeof body.sheet.templateName === 'string' ? body.sheet.templateName.slice(0, 60) : null,
-      steps,
-      savedAt: now,
-    };
+    try {
+      sheet = cleanCostSheet(body.sheet, now);
+    } catch (err) {
+      return error(400, 'invalid_sheet', (err as Error).message);
+    }
+    if (!sheet) return error(400, 'invalid_sheet', 'Keep at least one cost step, or remove the costs.');
   }
 
   const saved = await repository.updateListing({ ...listing, costSheet: sheet, updatedAt: now });

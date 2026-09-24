@@ -1,15 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  COST_STAGES, STAGE_LABELS, calculateProfit, stepsFromResult,
-  type CostStage, type CostStep, type ProfitTemplate,
-} from '@shared/profit';
+import { COST_STAGES, STAGE_LABELS, type CostStage } from '@shared/profit';
 import {
   ApiRequestError, api, type CostsResponse, type DeepResponse, type InterestResponse, type ProfitRow,
   type SheetItem, type ValueLabel,
 } from '../api';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { NudgeButton } from '../components/NudgeButton';
+import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
 import { scrollToTopOf } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
 import { STAGE_TONES, StageBar } from './ProfitCalculator';
@@ -81,7 +79,7 @@ export function RealProfit({ shop, data, reload }: { shop?: string; data: CostsR
       </div>
 
       {view === 'costs' ? (
-        <ItemCosts sheets={data.sheets} onEdit={setEditing} />
+        <ItemCosts sheets={data.sheets} onEdit={setEditing} shop={shop} onChanged={reload} />
       ) : (
         <>
           <div className="inssegs" role="tablist" aria-label="Active or closed">
@@ -187,8 +185,21 @@ function ProfitCard({ row, view, onEdit }: { row: ProfitRow; view: ProfitView; o
 }
 
 /** Every item, with what one unit cost and what that leaves at today's price. */
-function ItemCosts({ sheets, onEdit }: { sheets: SheetItem[]; onEdit: (item: SheetItem) => void }) {
+function ItemCosts({ sheets, onEdit, shop, onChanged }: {
+  sheets: SheetItem[]; onEdit: (item: SheetItem) => void; shop?: string; onChanged: () => void;
+}) {
   const [filter, setFilter] = useState<'all' | 'missing'>('missing');
+  const [busy, setBusy] = useState<string | null>(null);
+  async function remove(row: SheetItem) {
+    if (!window.confirm(`Remove the costs from ${row.title}? Its profit stops being counted.`)) return;
+    setBusy(row.listingId);
+    try {
+      await api.saveCostSheet(row.listingId, null, shop);
+      onChanged();
+    } finally {
+      setBusy(null);
+    }
+  }
   const shown = sheets.filter((row) => filter === 'all' || !row.sheet);
   return (
     <div className="stack">
@@ -221,7 +232,13 @@ function ItemCosts({ sheets, onEdit }: { sheets: SheetItem[]; onEdit: (item: She
                     {margin !== null && <span className={`badge badge--${margin < 0 ? 'danger' : 'ok'}`}>{margin}%</span>}
                   </span>
                 ) : <span className="badge badge--warn">No costs</span>}
-                <button type="button" className="btn btn--sm" onClick={() => onEdit(row)}>{row.sheet ? 'Edit' : 'Add costs'}</button>
+                <span className="insleads__tags">
+                  <button type="button" className="btn btn--sm" onClick={() => onEdit(row)}>{row.sheet ? 'Edit' : 'Add costs'}</button>
+                  {row.sheet && (
+                    <button type="button" className="btn btn--ghost btn--sm" disabled={busy === row.listingId}
+                      onClick={() => void remove(row)}>Remove</button>
+                  )}
+                </span>
               </li>
             );
           })}
@@ -231,53 +248,19 @@ function ItemCosts({ sheets, onEdit }: { sheets: SheetItem[]; onEdit: (item: She
   );
 }
 
-let stepCounter = 0;
-const newStepId = () => `own_${Date.now().toString(36)}_${(stepCounter += 1)}`;
-
-/**
- * One item's costs, step by step. Filled from a calculator (only the lines
- * switched on there come across) and then every step can be changed, removed,
- * or added to.
- */
+/** One item's costs, in the same editor every other place costs are entered uses. */
 function SheetEditor({ item, shop, onDone }: { item: SheetItem; shop?: string; onDone: (changed: boolean) => void }) {
-  const [steps, setSteps] = useState<CostStep[]>(item.sheet?.steps ?? []);
-  const [source, setSource] = useState<{ id: string | null; name: string | null }>({
-    id: item.sheet?.templateId ?? null, name: item.sheet?.templateName ?? null,
-  });
-  const [templates, setTemplates] = useState<ProfitTemplate[]>([]);
-  const [pick, setPick] = useState('');
-  const [abroad, setAbroad] = useState(0);
-  const [weight, setWeight] = useState(0);
+  const [draft, setDraft] = useState<CostSheetDraft | null>(item.sheet
+    ? { templateId: item.sheet.templateId, templateName: item.sheet.templateName, steps: item.sheet.steps }
+    : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void api.profitTemplates(shop).then((result) => {
-      setTemplates(result.templates);
-      const first = result.templates.find((entry) => entry.id === item.sheet?.templateId)
-        ?? result.templates.find((entry) => entry.isDefault) ?? result.templates[0];
-      if (first) setPick(first.id);
-    }).catch(() => setTemplates([]));
-  }, [shop, item.sheet?.templateId]);
-
-  const template = templates.find((entry) => entry.id === pick);
-  const total = steps.reduce((sum, step) => sum + step.amountMinor, 0);
-  const profit = item.priceMinor - total;
-
-  function fill() {
-    if (!template) return;
-    const result = calculateProfit(template, { itemPrice: abroad, quantity: 1, weightKg: weight, sellingPrice: item.priceMinor / 100 });
-    setSteps(stepsFromResult(result));
-    setSource({ id: template.id, name: template.name });
-  }
-  const change = (at: number, patch: Partial<CostStep>) =>
-    setSteps((current) => current.map((step, index) => (index === at ? { ...step, ...patch } : step)));
-
-  async function save(clear = false) {
+  async function save(sheet: CostSheetDraft | null) {
     setBusy(true);
     setError(null);
     try {
-      await api.saveCostSheet(item.listingId, clear ? null : { templateId: source.id, templateName: source.name, steps }, shop);
+      await api.saveCostSheet(item.listingId, sheet, shop);
       onDone(true);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save those costs.');
@@ -287,78 +270,17 @@ function SheetEditor({ item, shop, onDone }: { item: SheetItem; shop?: string; o
 
   return (
     <div className="stack">
-      <button type="button" className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => onDone(false)}>← Back</button>
+      <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => onDone(false)}>← Back</button>
       <section className="card card--pad stack">
         <h2>Costs for {item.title}</h2>
         <span className="field__hint">Per unit. Selling at {formatMoney(item.priceMinor, item.currency)}.</span>
-        {templates.length > 0 ? (
-          <div className="stack pc__fill">
-            <b>Fill from a calculator</b>
-            <div className="pc__fields">
-              <label className="field">
-                <span>Calculator</span>
-                <select value={pick} onChange={(e) => setPick(e.target.value)}>
-                  {templates.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
-                </select>
-              </label>
-              <label className="field">
-                <span>Price abroad ({template?.currency ?? ''})</span>
-                <input type="number" inputMode="decimal" min={0} value={abroad || ''} placeholder="0"
-                  onChange={(e) => setAbroad(Number(e.target.value) || 0)} />
-              </label>
-              <label className="field">
-                <span>Weight per item (kg)</span>
-                <input type="number" inputMode="decimal" min={0} step={0.01} value={weight || ''} placeholder="0"
-                  onChange={(e) => setWeight(Number(e.target.value) || 0)} />
-              </label>
-            </div>
-            <button type="button" className="btn btn--sm" disabled={!template} onClick={fill}>
-              {steps.length ? 'Refill the steps' : 'Fill the steps'}
-            </button>
-          </div>
-        ) : (
-          <p className="faint">
-            No calculators yet. <Link to="/shop?tab=calculator">Set one up</Link>, or type the steps in below.
-          </p>
-        )}
-      </section>
-
-      <section className="card card--pad stack">
-        <h2>Steps</h2>
-        {source.name && <span className="field__hint">From “{source.name}”. Change any amount - it is this item's own copy.</span>}
-        {steps.length === 0 && <p className="muted">No steps yet.</p>}
-        {steps.map((step, at) => (
-          <div key={step.id} className="pc__steprow">
-            <span className={`pc__dot pc__dot--${STAGE_TONES[step.stage]}`} />
-            <input aria-label="Step" value={step.label} onChange={(e) => change(at, { label: e.target.value })} />
-            <select aria-label="Stage" value={step.stage} onChange={(e) => change(at, { stage: e.target.value as CostStage })}>
-              {COST_STAGES.map((stage) => <option key={stage} value={stage}>{STAGE_LABELS[stage]}</option>)}
-            </select>
-            <label className="pc__stepamt">
-              <span>₹</span>
-              <input type="number" inputMode="decimal" min={0} step={0.01} aria-label="Amount per unit"
-                value={step.amountMinor ? step.amountMinor / 100 : ''} placeholder="0"
-                onChange={(e) => change(at, { amountMinor: Math.round((Number(e.target.value) || 0) * 100) })} />
-            </label>
-            <button type="button" className="btn btn--ghost btn--sm" aria-label={`Remove ${step.label}`}
-              onClick={() => setSteps((current) => current.filter((_, index) => index !== at))}>✕</button>
-          </div>
-        ))}
-        <button type="button" className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-start' }}
-          onClick={() => setSteps((current) => [...current, { id: newStepId(), label: 'Other cost', stage: 'selling', amountMinor: 0 }])}>
-          ＋ Add a step
-        </button>
-        <div className="pc__line pc__line--total"><span>Cost per unit</span><span>{money(total)}</span></div>
-        <div className={`pc__line pc__line--total${profit < 0 ? ' is-loss' : ''}`}>
-          <span>Profit per unit at {formatMoney(item.priceMinor, item.currency)}</span>
-          <span>{money(profit)}{item.priceMinor > 0 ? ` · ${Math.round((profit / item.priceMinor) * 100)}%` : ''}</span>
-        </div>
+        <CostSheetField value={draft} onChange={setDraft} sellingPriceMinor={item.priceMinor} shop={shop} collapsible={false} />
         {error && <ErrorNotice message={error} />}
         <div className="pc__actions">
-          <button type="button" className="btn" disabled={busy || steps.length === 0} onClick={() => void save()}>Save costs</button>
+          <button type="button" className="btn" disabled={busy || !draft} onClick={() => void save(draft)}>Save costs</button>
           {item.sheet && (
             <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
-              onClick={() => { if (window.confirm('Clear the costs for this item?')) void save(true); }}>Clear costs</button>
+              onClick={() => { if (window.confirm(`Remove the costs from ${item.title}?`)) void save(null); }}>Remove costs</button>
           )}
         </div>
       </section>

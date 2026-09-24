@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
 import type { Lot } from '@shared/models';
@@ -12,6 +12,7 @@ import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { TermsFields, termsBody, termsDraft } from '../components/Buy';
+import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
 
 /**
  * The template this browser used last.
@@ -72,12 +73,16 @@ export function SellPage() {
   // a manager lists into the shop they were looking at rather than their own.
   const [params] = useSearchParams();
   const storeId = params.get('store') ?? undefined;
+  // Arriving from the profit calculator's "List a new item": its selling price
+  // and the costs it worked out come along.
+  const prefill = useLocation().state as { priceMinor?: number; costSheet?: CostSheetDraft } | null;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<string>(CATEGORIES[0]!);
   const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState(() => (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
+  const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(prefill?.costSheet ?? null);
   const [terms, setTerms] = useState(() => termsDraft());
   const [bundle, setBundle] = useState(false);
   const [shareToChannel, setShareToChannel] = useState(true);
@@ -191,6 +196,7 @@ export function SellPage() {
         bundle,
         shareToChannel,
         shareToFeed,
+        costSheet,
         preOrder: preOrderMode
           ? {
               fillThreshold: Math.max(2, Number(fillThreshold) || 2),
@@ -481,6 +487,8 @@ export function SellPage() {
               </label>
             )}
           </div>
+
+          <CostSheetField value={costSheet} onChange={setCostSheet} sellingPriceMinor={priceMinor} shop={storeId} />
 
           {error && <ErrorNotice message={error} />}
 

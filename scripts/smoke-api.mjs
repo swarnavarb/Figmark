@@ -6795,4 +6795,71 @@ await check('sales over a period, ageing, stock alerts and the spreadsheet rows'
   assert.equal((await salesReport(req({ headers: stranger.headers, query: { store: 'usr_demo' } }), ctx)).status, 403);
 });
 
+console.log('\ncosts while listing, and private deals');
+
+await check('costs go on while listing, and can be removed again', async () => {
+  const made = await createListing(req({ headers: auth, body: {
+    title: 'Listed With Costs', priceMinor: 10_000, quantityAvailable: 2,
+    costSheet: { templateId: null, templateName: 'Air', steps: [
+      { id: 'item', label: 'Item price', stage: 'buying', amountMinor: 4_000 },
+      { id: 'ship', label: 'Freight', stage: 'international', amountMinor: 1_000 },
+    ] },
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  assert.equal(made.jsonBody.listing.costSheet.steps.length, 2);
+  const id = made.jsonBody.listing.id;
+  const sheets = (await costsRead(req({ headers: auth }), ctx)).jsonBody.sheets;
+  assert.equal(sheets.find((row) => row.listingId === id).costMinor, 5_000);
+  const removed = await saveCostSheet(req({ headers: auth, params: { id }, body: { sheet: null } }), ctx);
+  assert.equal(removed.jsonBody.sheet, null, 'removed');
+  assert.equal((await createListing(req({ headers: auth, body: {
+    title: 'Plain', priceMinor: 1_000, costSheet: { steps: [] },
+  } }), ctx)).jsonBody.listing.costSheet, null, 'an empty sheet is no sheet');
+});
+
+await check('a private deal is for one buyer, and becomes an ordinary order', async () => {
+  const buyer = await newBuyer('Deal Buyer');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'deal_buyer' } }), ctx);
+  const made = await createListing(req({ headers: auth, body: {
+    title: 'Just For You', priceMinor: 7_500, quantityAvailable: 1, privateFor: buyer.id,
+    shareToChannel: true, shareToFeed: true,
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const listing = made.jsonBody.listing;
+  assert.equal(listing.unlisted, true, 'never in the catalog or the shop grid');
+  assert.equal(listing.privateFor, buyer.id);
+  const everyone = JSON.stringify((await feed(req({}), ctx)).jsonBody);
+  assert.ok(!everyone.includes(listing.id), 'not in the feed, and nothing was posted');
+
+  const stranger = await newBuyer('Deal Stranger');
+  assert.equal((await listingDetail(req({ headers: stranger.headers, params: { id: listing.id } }), ctx)).status, 404);
+  assert.equal((await openCheckout(req({ headers: stranger.headers, body: { listingId: listing.id } }), ctx)).status, 404);
+  assert.equal((await listingDetail(req({ headers: buyer.headers, params: { id: listing.id } }), ctx)).status, 200);
+  assert.equal((await listingDetail(req({ headers: auth, params: { id: listing.id } }), ctx)).status, 200, 'the shop sees it');
+
+  const offer = await sendMessage(req({ headers: auth, params: { handle: 'deal_buyer' },
+    body: { body: '', as: 'arjun_collects', deal: { kind: 'offer', listingId: listing.id } } }), ctx);
+  assert.equal(offer.status, 201, JSON.stringify(offer.jsonBody));
+  assert.equal(offer.jsonBody.message.deal.title, 'Just For You');
+  assert.equal((await sendMessage(req({ headers: auth, params: { handle: 'deal_buyer' },
+    body: { as: 'arjun', deal: { kind: 'offer', listingId: listing.id } } }), ctx)).status, 400, 'only the shop that made it can offer it');
+
+  const orderId = (await openCheckout(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order.id;
+  assert.equal((await bookOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).status, 200);
+  const row = (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((entry) => entry.id === orderId);
+  assert.ok(row, 'in the order book like any other');
+  assert.equal(row.privateDeal, true);
+});
+
+await check('a buyer can ask a shop for a private deal', async () => {
+  const buyer = await newBuyer('Deal Asker');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'deal_asker' } }), ctx);
+  const ask = await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun_collects' },
+    body: { deal: { kind: 'request', title: 'Two sealed boosters', priceMinor: 90_000, quantity: 2 } } }), ctx);
+  assert.equal(ask.status, 201, JSON.stringify(ask.jsonBody));
+  assert.deepEqual([ask.jsonBody.message.deal.kind, ask.jsonBody.message.deal.quantity], ['request', 2]);
+  assert.equal((await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun' },
+    body: { deal: { kind: 'request', title: 'x' } } }), ctx)).status, 400, 'deals are asked of shops');
+});
+
 console.log(`\n${passed} checks passed`);

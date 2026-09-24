@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { MessageParty } from '@shared/models';
+import type { MessageDeal, MessageParty } from '@shared/models';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
+import { DealCard, DealForm } from '../components/PrivateDeal';
 import { timeAgo } from '../format';
 
 /**
@@ -173,6 +174,8 @@ export function ThreadPage() {
   const [error, setError] = useState<string | null>(null);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
+  // The private deal form: open, and the buyer's ask it answers, if any.
+  const [dealing, setDealing] = useState<{ from: MessageDeal | null } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -343,7 +346,11 @@ export function ThreadPage() {
                 {startsRun && !mine && message.from.isStore && (
                   <div className="bubble__from">{message.from.displayName}</div>
                 )}
-                <div className="bubble__body">{message.body}</div>
+                {message.deal ? (
+                  <DealCard message={message} mine={mine} us={data.us} onAnswer={(deal) => setDealing({ from: deal })} />
+                ) : (
+                  <div className="bubble__body">{message.body}</div>
+                )}
                 {endsRun && <div className="bubble__meta">{timeAgo(message.createdAt)}</div>}
               </div>
             );
@@ -354,7 +361,19 @@ export function ThreadPage() {
 
       {error && <div className="chat__error"><ErrorNotice message={error} /></div>}
 
-      <form className="composer" onSubmit={send}>
+      {dealing && (
+        <DealForm us={data.us} them={data.them} from={dealing.from} onClose={() => setDealing(null)}
+          onSent={() => { setDealing(null); void load(); }} />
+      )}
+
+      <form className={`composer${data.us.isStore !== data.them.isStore ? ' composer--deal' : ''}`} onSubmit={send}>
+        {data.us.isStore !== data.them.isStore && (
+          <button type="button" className="composer__deal" onClick={() => setDealing({ from: null })}
+            aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}
+            title={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}>
+            {data.us.isStore ? '🔒' : '🤝'}
+          </button>
+        )}
         <textarea
           ref={input}
           value={body}

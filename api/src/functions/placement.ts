@@ -43,6 +43,8 @@ export async function placeOrder(
   if (!isMultiple(listing) && order.quantity > listing.quantityAvailable) {
     return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
   }
+  if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
+  if (listing.privateFor) order.privateDeal = true;
 
   const now = new Date().toISOString();
   order.placedAt = now;

@@ -6,6 +6,7 @@ import {
   ApiRequestError, api, type PowerSaleDraft, type PowerSaleView,
 } from '../api';
 import { EmptyState, ErrorNotice, Icon, Modal } from './ui';
+import { CostSheetField, type CostSheetDraft } from './CostSheetField';
 import { formatMoney, timeAgo } from '../format';
 
 /**
@@ -264,6 +265,7 @@ interface ItemDraft {
   listPrice: string;
   quantity: string;
   allowMultiple: boolean;
+  costSheet: CostSheetDraft | null;
 }
 
 let nextKey = 1;
@@ -277,6 +279,7 @@ const blankItem = (): ItemDraft => ({
   listPrice: '',
   quantity: '1',
   allowMultiple: false,
+  costSheet: null,
 });
 
 /**
@@ -335,6 +338,7 @@ function SaleBuilder({ storeId, onClose, onSaved }: {
           listPriceMinor: Math.round(Number(item.listPrice) * 100),
           quantity: Math.max(1, Number(item.quantity) || 1),
           allowMultiple: item.allowMultiple,
+          costSheet: item.costSheet,
         })),
       };
       await api.createPowerSale(draft);
@@ -408,6 +412,8 @@ function SaleBuilder({ storeId, onClose, onSaved }: {
                     onChange={(e) => set(item.key, { allowMultiple: e.target.checked })} />
                   One buyer may take more than one
                 </label>
+                <CostSheetField value={item.costSheet} onChange={(costSheet) => set(item.key, { costSheet })}
+                  sellingPriceMinor={Math.round(Number(item.price || 0) * 100)} shop={storeId} />
                 {Number(item.listPrice) > 0 && Number(item.listPrice) <= Number(item.price) && (
                   <span className="field__hint" style={{ color: 'var(--danger)' }}>
                     The price after the window has to be above the members&rsquo; price — otherwise the

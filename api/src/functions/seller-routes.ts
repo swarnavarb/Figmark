@@ -346,6 +346,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     const money = orderMoney(order);
     return {
       photoUrl: photo?.url ?? null,
+      /** Bought from a private deal made in a chat. */
+      privateDeal: order.privateDeal === true,
       paidMinor: money.paidMinor,
       outstandingMinor: money.outstandingMinor,
       creditMinor: money.creditMinor,

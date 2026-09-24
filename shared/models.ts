@@ -491,6 +491,13 @@ export interface Listing extends BaseDocument {
   priceHistory?: { priceMinor: number; at: string }[];
   /** Last time it went from sold out back on sale. */
   restockedAt?: string | null;
+  /**
+   * A private deal: made in a chat for one buyer, and only they can see or
+   * buy it. Always `unlisted` too, so it is never in the catalog, the shop's
+   * grid, a channel or the feed - but once bought it is an ordinary order,
+   * in the order book, lots and tracking like any other.
+   */
+  privateFor?: string | null;
 }
 
 /**
@@ -947,6 +954,8 @@ export interface Order extends BaseDocument {
   placedAt?: string | null;
   /** Times the buyer pressed Buy on this item before going ahead (or not). */
   buyClicks?: number;
+  /** Bought from a private deal made in a chat, not from the catalog. */
+  privateDeal?: boolean;
 }
 
 /**
@@ -1594,6 +1603,8 @@ export interface PowerSaleItem {
   liftedAt: string | null;
   /** The listing this became, once posted. */
   listingId: string | null;
+  /** What one unit cost (Pro), carried onto the listing when it posts. */
+  costSheet?: ItemCostSheet | null;
 }
 
 /**
@@ -1646,4 +1657,22 @@ export interface Message extends BaseDocument {
   to: MessageParty;
   body: string;
   readAt: string | null;
+  /** A private deal card, when the message carries one. */
+  deal?: MessageDeal | null;
+}
+
+/**
+ * A private deal in a chat, either way round.
+ *
+ * `offer`: the shop made an item for this buyer alone - `listingId` is it, and
+ * the buyer buys it like any other item. `request`: the buyer asked for one -
+ * what, at what price - and the shop answers by making the offer.
+ */
+export interface MessageDeal {
+  kind: 'offer' | 'request';
+  listingId: string | null;
+  title: string;
+  priceMinor: number;
+  quantity: number;
+  photo: string | null;
 }

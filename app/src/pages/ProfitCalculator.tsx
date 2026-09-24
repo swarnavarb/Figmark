@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import {
   BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, STAGE_LABELS, calculateProfit, stepsFromResult,
@@ -257,7 +258,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
           )}
 
           {result && !draft && active.id && (
-            <SaveToItem template={active} result={result} shop={shop}
+            <SaveToItem template={active} result={result} shop={shop} sellingPrice={input.sellingPrice}
               onPrice={(price) => set({ sellingPrice: price })} />
           )}
 
@@ -494,9 +495,10 @@ function Editor({ draft, onChange, busy, onSave, onCancel }: {
  * Keep this result as an item's own costs. Only the lines switched on come
  * across, and each can be changed afterwards under Insights → Real profit.
  */
-function SaveToItem({ template, result, shop, onPrice }: {
-  template: ProfitTemplate; result: ProfitResult; shop?: string; onPrice: (price: number) => void;
+function SaveToItem({ template, result, shop, sellingPrice, onPrice }: {
+  template: ProfitTemplate; result: ProfitResult; shop?: string; sellingPrice: number; onPrice: (price: number) => void;
 }) {
+  const navigate = useNavigate();
   const [items, setItems] = useState<SheetItem[] | null>(null);
   const [pick, setPick] = useState('');
   const [busy, setBusy] = useState(false);
@@ -506,9 +508,19 @@ function SaveToItem({ template, result, shop, onPrice }: {
     void api.costs(shop).then((data) => setItems(data.sheets)).catch(() => setItems([]));
   }, [shop]);
 
-  if (!items || items.length === 0) return null;
-  const item = items.find((row) => row.listingId === pick);
+  const item = items?.find((row) => row.listingId === pick);
   const steps = stepsFromResult(result);
+
+  // A new item through the ordinary listing form, with this price and these
+  // costs already filled in - everything else about listing stays the same.
+  function listNew() {
+    navigate(shop ? `/sell?store=${encodeURIComponent(shop)}` : '/sell', {
+      state: {
+        priceMinor: Math.round(sellingPrice * 100),
+        costSheet: { templateId: template.id, templateName: template.name, steps },
+      },
+    });
+  }
 
   function choose(id: string) {
     setPick(id);
@@ -537,11 +549,15 @@ function SaveToItem({ template, result, shop, onPrice }: {
   return (
     <section className="card card--pad stack">
       <div>
-        <h2>Save to an item</h2>
-        <span className="field__hint">Keeps these costs on the item, so Insights can show its real profit per lot, item and customer.</span>
+        <h2>Use these costs</h2>
+        <span className="field__hint">Keep them on an item, so Insights can show its real profit per lot, item and customer.</span>
       </div>
+      <button type="button" className="btn" disabled={steps.length === 0} onClick={listNew}>
+        ＋ List a new item with these costs
+      </button>
+      {items && items.length > 0 && <>
       <label className="field">
-        <span>Item</span>
+        <span>Or save them to an item you already have</span>
         <select value={pick} onChange={(e) => choose(e.target.value)}>
           <option value="">Choose an item…</option>
           {items.map((row) => (
@@ -555,6 +571,7 @@ function SaveToItem({ template, result, shop, onPrice }: {
       <button type="button" className="btn btn--sm" disabled={!item || busy || steps.length === 0} onClick={() => void save()}>
         Save costs to this item
       </button>
+      </>}
       {note && <p className="faint">{note}</p>}
     </section>
   );

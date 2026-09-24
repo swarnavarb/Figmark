@@ -112,6 +112,9 @@ export function ListingPage() {
 
           <div className="detail__section" style={{ marginTop: 22 }}>
             <h1>{listing.title}</h1>
+            {listing.privateFor && (
+              <div className="badges"><span className="badge badge--pink">🔒 Private deal - {user?.id === listing.privateFor ? 'made just for you' : 'only your buyer can see this'}</span></div>
+            )}
             {listing.expiresAt && <div className="badges"><ExpiryChip listing={listing} big /><StockChip listing={listing} /></div>}
             <div className="spread muted">
               <span>{listing.category}</span>

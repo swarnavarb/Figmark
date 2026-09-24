@@ -5510,3 +5510,39 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   .prozone .inshero, .probadge, .chip--pro.is-on, .door.door--pro { animation: none; }
   .prozone .instile:hover { transform: none; }
 }
+
+/* ── Costs while listing (Pro) ───────────────────────────────────────── */
+.costfield__open {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 8px; width: 100%;
+  padding: 12px 14px; border-radius: var(--r-md); cursor: pointer; text-align: left; color: #FDE68A;
+  font: inherit; font-weight: var(--w-semi);
+  border: 1px dashed rgba(251, 191, 36, 0.55); background: rgba(245, 158, 11, 0.06);
+}
+.costfield__open small { grid-column: 1 / -1; color: var(--text-faint); font-weight: var(--w-normal); }
+.costfield__open:hover { background: rgba(245, 158, 11, 0.12); }
+.costfield {
+  padding: 12px; border-radius: var(--r-md); border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(135deg, rgba(251, 191, 36, 0.55), rgba(236, 72, 153, 0.4) 50%, rgba(139, 92, 246, 0.45)) border-box;
+}
+.costfield__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #FDE68A; }
+.costfield__fill { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; align-items: end; }
+.costfield__row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ── Private deals in a chat ─────────────────────────────────────────── */
+.composer--deal { grid-template-columns: auto minmax(0, 1fr) auto; }
+.composer__deal {
+  width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 18px;
+  border: 1px solid rgba(236, 72, 153, 0.5); background: rgba(236, 72, 153, 0.12);
+}
+.composer__deal:hover { background: rgba(236, 72, 153, 0.22); }
+.dealcard {
+  display: grid; gap: 4px; justify-items: start; min-width: 200px; padding: 10px 12px; border-radius: 14px;
+  border: 1px solid rgba(251, 191, 36, 0.45); background: rgba(245, 158, 11, 0.08);
+}
+.dealcard--offer { border-color: rgba(236, 72, 153, 0.55); background: rgba(236, 72, 153, 0.1); }
+.dealcard__tag { font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0.04em; color: #F9A8D4; }
+.dealcard__title { font-size: var(--t-base); overflow-wrap: anywhere; }
+.dealcard__meta { font-size: var(--t-sm); color: var(--text-dim); }
+.dealcard .btn { margin-top: 4px; }
