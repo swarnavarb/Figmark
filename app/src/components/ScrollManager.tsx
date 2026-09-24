@@ -40,6 +40,18 @@ export function BackLink({ to, children }: { to: string; children: ReactNode }) 
   return <button type="button" className="backlink" onClick={back}>{children}</button>;
 }
 
+/**
+ * Scroll so an element sits at the top of the screen, just under the app's
+ * sticky header - for a screen that opens inside a page, whose "top" is its
+ * own back button rather than the page's header.
+ */
+export function scrollToTopOf(element: Element | null) {
+  if (!element) return;
+  const header = document.querySelector('.nav')?.getBoundingClientRect().height ?? 0;
+  const top = element.getBoundingClientRect().top + window.scrollY - header - 8;
+  window.scrollTo(0, Math.max(0, top));
+}
+
 const GIVE_UP_MS = 5000;
 
 function readSaved(): Record<string, number> {

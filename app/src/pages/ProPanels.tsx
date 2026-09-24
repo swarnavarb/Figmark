@@ -10,6 +10,7 @@ import {
 } from '../api';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { NudgeButton } from '../components/NudgeButton';
+import { scrollToTopOf } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
 import { STAGE_TONES, StageBar } from './ProfitCalculator';
 
@@ -50,7 +51,7 @@ export function RealProfit({ shop, data, reload }: { shop?: string; data: CostsR
     setEditingState(item);
   };
   useLayoutEffect(() => {
-    if (editing) window.scrollTo(0, 0);
+    if (editing) scrollToTopOf(document.querySelector('.insview__bar'));
     else if (listScroll.current !== null) {
       window.scrollTo(0, listScroll.current);
       listScroll.current = null;

@@ -5418,3 +5418,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .sales__age small { color: var(--text-faint); font-size: 11px; }
 .sales__age--warn { background: rgba(251, 191, 36, 0.08); }
 .sales__age--bad { background: rgba(244, 63, 94, 0.1); }
+
+/* An opened Insights section is at least a screen tall, so it can always
+   start with its "← Insights" bar at the top of the screen. */
+.insview { min-height: 100dvh; align-content: start; justify-content: flex-start; }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import { PHASE_LABELS, SEGMENTS, SEGMENT_LABELS } from '@shared/insights';
@@ -9,7 +9,7 @@ import {
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
 import { NudgeButton } from '../components/NudgeButton';
-import { useBack } from '../components/ScrollManager';
+import { scrollToTopOf, useBack } from '../components/ScrollManager';
 import { Bundles, Digest, Forecast, Loyalty, Pricing, RealProfit, Reminders, Returns } from './ProPanels';
 
 /**
@@ -71,10 +71,18 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
       else copy.delete('view');
       return copy;
     });
-    // A category opens at its top; coming back is the history's job, so the
-    // dashboard reappears exactly where it was left.
-    window.scrollTo(0, 0);
+    // A category opens with its "← Insights" bar at the top of the screen;
+    // coming back is the history's job, so the dashboard reappears exactly
+    // where it was left.
+    jumpToBar.current = Boolean(next);
   };
+  const barRef = useRef<HTMLDivElement>(null);
+  const jumpToBar = useRef(false);
+  useLayoutEffect(() => {
+    if (!view || !jumpToBar.current || !barRef.current) return;
+    jumpToBar.current = false;
+    scrollToTopOf(barRef.current);
+  }, [view, data]);
   const dashboard = new URLSearchParams(params);
   dashboard.delete('view');
   const back = useBack(`${pathname}${dashboard.toString() ? `?${dashboard}` : ''}`);
@@ -96,8 +104,8 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
   if (view) {
     const entry = CATEGORIES.find((row) => row.id === view)!;
     return (
-      <div className="stack ins">
-        <div className="insview__bar">
+      <div className="stack ins insview">
+        <div className="insview__bar" ref={barRef}>
           <button type="button" className="btn btn--ghost btn--sm" onClick={back}>← Insights</button>
           <h2 className="insview__title"><span aria-hidden="true">{entry.icon}</span> {entry.label} <span className="probadge">PRO</span></h2>
         </div>
