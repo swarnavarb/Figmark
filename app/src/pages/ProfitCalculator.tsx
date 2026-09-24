@@ -9,6 +9,7 @@ import { ApiRequestError, api, type SheetItem } from '../api';
 import { formatMoney } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
+import { CalcIcon } from '../components/CalcIcon';
 
 /**
  * The profit calculator (Pro).
@@ -156,7 +157,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
     <div className="stack prozone">
       <section className="inshero">
         <div className="inshero__title">
-          <h2>🧮 Profit calculator <span className="probadge">PRO</span></h2>
+          <h2><CalcIcon size={24} /> Profit calculator <span className="probadge">PRO</span></h2>
           <p>Your rates, your charges. Enter the price abroad, the weight and your selling price - the margin follows.</p>
         </div>
         <div className="inssegs" role="tablist" aria-label="Calculators">
@@ -180,7 +181,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
         <input type="checkbox" checked={floating} onChange={(e) => setFloating(e.target.checked)} />
         <span>
           <b>Floating calculator button</b>
-          <small>A 🧮 button on every screen, bottom right. Opens this calculator over whatever you are doing.</small>
+          <small>A <CalcIcon size={13} /> button on every screen, bottom right. Opens this calculator over whatever you are doing.</small>
         </span>
       </label>
 
@@ -188,7 +189,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
       {error && <ErrorNotice message={error} />}
 
       {!active ? (
-        <EmptyState icon="🧮" title="No calculator yet">Make one with ＋ New.</EmptyState>
+        <EmptyState icon={<CalcIcon size={26} />} title="No calculator yet">Make one with ＋ New.</EmptyState>
       ) : (
         <>
           <div className="pc__grid">

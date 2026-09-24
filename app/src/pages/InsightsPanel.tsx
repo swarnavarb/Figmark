@@ -11,6 +11,7 @@ import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/
 import { NudgeButton } from '../components/NudgeButton';
 import { scrollToTopOf, useBack } from '../components/ScrollManager';
 import { Bundles, Digest, Forecast, Loyalty, Pricing, RealProfit, Reminders, Returns } from './ProPanels';
+import { CalcIcon } from '../components/CalcIcon';
 
 /**
  * Insights (Pro): who wants what, before and after they buy.
@@ -291,7 +292,7 @@ function Dashboard({ data, lots, deep, costs, open }: {
           </button>
         ))}
         <Link to="/shop?tab=calculator" className="instile instile--gold">
-          <span className="instile__head"><span aria-hidden="true">🧮</span> Profit calculator</span>
+          <span className="instile__head"><CalcIcon size={16} /> Profit calculator</span>
           <b className="instile__big">₹</b>
           <small className="instile__line">Landed cost and margin, your rates</small>
         </Link>

@@ -48,6 +48,7 @@ import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { CalcIcon } from '../components/CalcIcon';
 
 type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
 
@@ -61,7 +62,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   // Who saved what, who stopped at Buy, and how items convert - the Pro tab.
   { id: 'insights', label: '✨ Insights' },
   // Landed cost and margin on the seller's own rates - Pro, beside Insights.
-  { id: 'calculator', label: '🧮 Calculator' },
+  { id: 'calculator', label: 'Calculator' },
   // Every amount owed back to a buyer - overpaid, cancelled, or a refund the
   // seller starts - in one place, set apart on the right of the same row.
   { id: 'refunds', label: '↩️ Refunds' },
@@ -325,6 +326,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
               className={`chip${entry.id === 'refunds' ? ' chip--refunds' : ''}${PRO_SECTIONS.includes(entry.id) ? ' chip--pro' : ''}${active === entry.id ? ' is-on' : ''}`}
               onClick={() => setSection(entry.id)}
             >
+              {entry.id === 'calculator' && <CalcIcon size={16} />}
               {entry.label}
               {PRO_SECTIONS.includes(entry.id) && <span className="probadge">PRO</span>}
             </button>

@@ -6,6 +6,7 @@ import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
 import { CostSheetField, type CostSheetDraft } from './CostSheetField';
 import { ErrorNotice, Modal } from './ui';
+import { CalcIcon } from './CalcIcon';
 
 /**
  * Private deals, made in a chat, either way round.
@@ -105,7 +106,7 @@ export function DealForm({ us, them, from, calc, onClose, onSent }: {
         </p>
         {shopMaking && calcs.length > 0 && (
           <label className="field">
-            <span>🧮 From your saved calculations</span>
+            <span><CalcIcon size={15} /> From your saved calculations</span>
             <select value="" onChange={(e) => fillFromCalc(e.target.value)}>
               <option value="">Pick one to fill this in…</option>
               {calcs.map((entry) => (

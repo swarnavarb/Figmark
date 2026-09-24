@@ -6,6 +6,7 @@ import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
 import { CalcInputs, CalcLines } from './CostSheetField';
 import { ErrorNotice } from './ui';
+import { CalcIcon } from './CalcIcon';
 
 /**
  * The calculator, one tap from anywhere (Pro).
@@ -203,7 +204,7 @@ export function FloatingCalc() {
     <>
       <button type="button" className={`fcalc__fab${open ? ' is-open' : ''}`} aria-label={open ? 'Close the calculator' : 'Open the calculator'}
         aria-expanded={open} onClick={() => (open ? close() : setOpen(true))}>
-        <CalcGlyph open={open} />
+        <CalcIcon size={22} open={open} />
       </button>
       {open && (
         <div className={`fcalc${closing ? ' is-closing' : ''}`}>
@@ -286,7 +287,7 @@ function QuickCalc({ onLeave }: { onLeave: () => void }) {
 
   const head = (
     <div className="fcalc__head">
-      <b>🧮 Calculator <span className="probadge">PRO</span></b>
+      <b><CalcIcon /> Calculator <span className="probadge">PRO</span></b>
       <div className="inssegs" role="tablist" aria-label="Calculator">
         <button type="button" role="tab" aria-selected={tab === 'calc'} className={`inscat${tab === 'calc' ? ' is-on' : ''}`}
           onClick={() => setTab('calc')}>Work out</button>
@@ -314,7 +315,7 @@ function QuickCalc({ onLeave }: { onLeave: () => void }) {
         {tab === 'saved' ? (
           <SavedCalcList calcs={calcs} store={store} onChanged={setCalcs} onAct={onLeave} />
         ) : templates === null ? <p className="muted">Loading your calculators…</p> : !template ? (
-          <p className="muted">No calculator saved yet. Set one up under Sell → 🧮 Calculator first.</p>
+          <p className="muted">No calculator saved yet. Set one up under Sell → Calculator first.</p>
         ) : (
           <>
             <div className="costfield__fill">
@@ -360,23 +361,5 @@ function QuickCalc({ onLeave }: { onLeave: () => void }) {
         )}
       </div>
     </>
-  );
-}
-
-/** A plain line-drawn calculator that turns into a cross while open. */
-function CalcGlyph({ open }: { open: boolean }) {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {open ? (
-        <path d="M6 6l12 12M18 6L6 18" />
-      ) : (
-        <>
-          <rect x="5" y="3" width="14" height="18" rx="3" />
-          <path d="M8.5 7.5h7" />
-          <path d="M9 12h.01M12 12h.01M15 12h.01M9 15.5h.01M12 15.5h.01M15 15.5h.01" strokeWidth="2.4" />
-        </>
-      )}
-    </svg>
   );
 }

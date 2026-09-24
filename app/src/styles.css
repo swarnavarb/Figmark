@@ -5629,3 +5629,4 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .pc__float small { color: var(--text-dim); font-size: var(--t-xs); }
 .pc__keep { display: flex; gap: 8px; }
 .pc__keep input { flex: 1; min-width: 0; }
+.calcicon { display: inline-block; vertical-align: -0.16em; flex: none; }

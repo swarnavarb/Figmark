@@ -9,6 +9,7 @@ import { EmptyState, ErrorNotice, Icon, Modal } from './ui';
 import type { SavedCalc } from '@shared/profit';
 import { CostSheetField, type CostSheetDraft } from './CostSheetField';
 import { formatMoney, timeAgo } from '../format';
+import { CalcIcon } from './CalcIcon';
 
 /**
  * Power selling: a channel sale a shop schedules once and walks away from.
@@ -445,7 +446,7 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
             </button>
             {calcs.length > 0 && (
               <label className="field">
-                <span>🧮 Add from your saved calculations</span>
+                <span><CalcIcon size={15} /> Add from your saved calculations</span>
                 <select value="" onChange={(e) => {
                   const calc = calcs.find((entry) => entry.id === e.target.value);
                   if (calc) setItems((rows) => [...rows.filter((row) => row.title.trim() || row.price), itemFromCalc(calc)]);

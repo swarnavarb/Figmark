@@ -7,6 +7,7 @@ import {
 import { api } from '../api';
 import { formatMoney } from '../format';
 import { STAGE_TONES } from '../pages/ProfitCalculator';
+import { CalcIcon } from './CalcIcon';
 
 /**
  * An item's costs (Pro), wherever an item is made or kept.
@@ -71,7 +72,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
   if (!open) {
     return (
       <button type="button" className="costfield__open" onClick={() => setOpen(true)}>
-        <span aria-hidden="true">🧮</span> Add what it cost you <span className="probadge">PRO</span>
+        <CalcIcon /> Add what it cost you <span className="probadge">PRO</span>
         <small>Tracks real profit per lot, item and customer</small>
       </button>
     );
@@ -80,7 +81,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
   return (
     <div className="costfield stack">
       <div className="costfield__head">
-        <b><span aria-hidden="true">🧮</span> Costs per unit <span className="probadge">PRO</span></b>
+        <b><CalcIcon /> Costs per unit <span className="probadge">PRO</span></b>
         {collapsible && !value && (
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => setOpen(false)}>Not now</button>
         )}
