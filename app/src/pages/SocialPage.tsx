@@ -10,6 +10,12 @@ import {
 } from '../api';
 import type { StoreAccess } from '@shared/stores';
 import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { Confetti, SocialPostCard } from '../components/SocialPost';
+import { shrink } from '../components/PhotoManager';
+import {
+  POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_PHOTOS, VIBES, VIBE_MAX_CHARS,
+  type Vibe,
+} from '@shared/social';
 import type { IconName } from '../components/Icon';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
@@ -84,6 +90,29 @@ export function SocialPage() {
 
 /* ── Feed ───────────────────────────────────────────────────────────────── */
 
+type FeedFilter = 'all' | 'photos' | 'polls' | 'sale' | 'hot';
+
+const FILTERS: { id: FeedFilter; label: string }[] = [
+  { id: 'all', label: 'Everything' },
+  { id: 'photos', label: '📸 Photos' },
+  { id: 'polls', label: '📊 Polls' },
+  { id: 'sale', label: '🏷️ For sale' },
+  { id: 'hot', label: '🔥 Popular' },
+];
+
+function matches(card: PostCard, filter: FeedFilter): boolean {
+  const { post, social } = card;
+  const inner = card.original ?? null;
+  const hasPhotos = (entry: PostCard) => (entry.post.photoUrls?.length ?? 0) > 0 || Boolean(entry.post.photoUrl);
+  switch (filter) {
+    case 'photos': return hasPhotos(card) || Boolean(inner && hasPhotos(inner));
+    case 'polls': return Boolean(social.poll || inner?.social.poll);
+    case 'sale': return post.kind === 'sale' || inner?.post.kind === 'sale';
+    case 'hot': return social.reactions.total + social.commentCount * 2 >= 10;
+    default: return true;
+  }
+}
+
 /**
  * Everything from everyone you follow, newest first, sale posts included.
  *
@@ -94,6 +123,7 @@ export function SocialPage() {
 function FollowingFeed() {
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FeedFilter>('all');
 
   const load = useCallback(async () => {
     try {
@@ -108,19 +138,95 @@ function FollowingFeed() {
   }, [load]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!posts) return <p className="muted">Loading…</p>;
+
+  const shown = (posts ?? []).filter((card) => matches(card, filter));
 
   return (
-    <div className="stack">
+    <div className="feed">
       <Composer onPosted={load} />
-      {posts.length === 0 ? (
+
+      <div className="feed__filters" role="toolbar" aria-label="Show">
+        {FILTERS.map((entry) => (
+          <button key={entry.id} type="button" className={`chip${filter === entry.id ? ' is-on' : ''}`}
+            aria-pressed={filter === entry.id} onClick={() => setFilter(entry.id)}>
+            {entry.label}
+          </button>
+        ))}
+      </div>
+
+      {!posts ? (
+        <FeedSkeleton />
+      ) : posts.length === 0 ? (
         <EmptyState title="Nothing here yet">
           Follow a seller from their listing and their updates show up here.
         </EmptyState>
+      ) : shown.length === 0 ? (
+        <EmptyState title="Nothing like that yet">
+          Nobody you follow has posted one of those. Try another filter, or be the first.
+        </EmptyState>
       ) : (
-        posts.map((card) => <PostView key={card.post.id} card={card} />)
+        shown.map((card) => (
+          <SocialPostCard key={card.post.id} card={card}
+            onRemoved={(id) => setPosts((list) => list?.filter((entry) => entry.post.id !== id) ?? null)}
+            onReposted={(repost) => setPosts((list) => [repost, ...(list ?? [])])} />
+        ))
       )}
     </div>
+  );
+}
+
+/** Grey shapes where posts are about to be, so the page does not jump when they land. */
+function FeedSkeleton() {
+  return (
+    <>
+      {[0, 1].map((key) => (
+        <div key={key} className="spost" aria-hidden="true">
+          <div className="spost__head">
+            <span className="skel" style={{ width: 42, height: 42, borderRadius: '50%' }} />
+            <span className="skel" style={{ width: '38%', height: 12 }} />
+          </div>
+          <span className="skel" style={{ width: '92%', height: 12 }} />
+          <span className="skel" style={{ width: '64%', height: 12 }} />
+          <span className="skel" style={{ width: '100%', aspectRatio: '4 / 3', borderRadius: 12 }} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * One post on its own page, with its conversation open.
+ *
+ * Where a shared link and a notification land, so it has to stand without the
+ * feed around it.
+ */
+export function PostPage() {
+  const { channel, id } = useParams<{ channel: string; id: string }>();
+  const [card, setCard] = useState<PostCard | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [gone, setGone] = useState(false);
+
+  useEffect(() => {
+    if (!channel || !id) return;
+    let live = true;
+    api.socialPost(channel, id)
+      .then((detail) => live && setCard(detail.card))
+      .catch((err: unknown) => live && setError(err instanceof ApiRequestError ? err.message : 'Could not load that post.'));
+    return () => {
+      live = false;
+    };
+  }, [channel, id]);
+
+  return (
+    <main className="page feedpage">
+      <Link to="/social" className="btn btn--quiet" style={{ marginBottom: 12 }}>
+        <Icon name="back" size={14} /> Social
+      </Link>
+      {error && <ErrorNotice message={error} />}
+      {gone && <EmptyState title="Post deleted">It is gone, along with its reactions and comments.</EmptyState>}
+      {!card && !error && <FeedSkeleton />}
+      {card && !gone && <SocialPostCard card={card} openComments onRemoved={() => setGone(true)} />}
+    </main>
   );
 }
 
@@ -555,23 +661,46 @@ function Forums() {
 
 /* ── Shared pieces ──────────────────────────────────────────────────────── */
 
+/** How long a poll runs, as offered. */
+const POLL_LENGTHS: { hours: number; label: string }[] = [
+  { hours: 24, label: '1 day' },
+  { hours: 72, label: '3 days' },
+  { hours: 168, label: '1 week' },
+  { hours: 0, label: 'No end' },
+];
+
+interface DraftPhoto {
+  key: string;
+  preview: string;
+  url: string | null;
+  failed: boolean;
+}
+
 /**
- * Write an update, or a post into a forum.
+ * Write an update: words, photos, a poll, or a line on a colour.
  *
- * Outside a forum the post goes somewhere: your own profile, or a shop you run.
- * The choice only appears when there is one to make - one shop and no picker,
- * no shops and no picker either.
+ * Closed it is one tap-target with the three things you might add, so the
+ * feed starts with an invitation rather than a form. Open, it grows only the
+ * parts you asked for. The post goes to your own profile, or a shop you run -
+ * the choice only appears when there is one to make.
  */
-function Composer({ forumId, onPosted }: { forumId?: string; onPosted: () => void | Promise<void> }) {
+function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
   const { user } = useSession();
+  const [open, setOpen] = useState(false);
   const [body, setBody] = useState('');
+  const [photos, setPhotos] = useState<DraftPhoto[]>([]);
+  const [poll, setPoll] = useState<string[] | null>(null);
+  const [pollHours, setPollHours] = useState(24);
+  const [vibe, setVibe] = useState<Vibe | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stores, setStores] = useState<StoreAccess[]>([]);
   const [as, setAs] = useState('');
+  const [party, setParty] = useState(0);
+  const picker = useRef<HTMLInputElement | null>(null);
+  const text = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    if (forumId) return;
     let cancelled = false;
     void api
       .stores()
@@ -583,19 +712,73 @@ function Composer({ forumId, onPosted }: { forumId?: string; onPosted: () => voi
     return () => {
       cancelled = true;
     };
-  }, [forumId]);
+  }, []);
+
+  const first = user?.displayName.split(' ')[0] ?? 'there';
+  const uploading = photos.some((photo) => !photo.url && !photo.failed);
+  const pollReady = !poll || poll.filter((option) => option.trim()).length >= POLL_MIN_OPTIONS;
+  const canPost = !busy && !uploading && pollReady
+    && (body.trim().length >= 2 || photos.some((photo) => photo.url))
+    && (!vibe || body.trim().length <= VIBE_MAX_CHARS)
+    && (!poll || body.trim().length >= 2);
+
+  function expand(then?: () => void) {
+    setOpen(true);
+    window.setTimeout(() => {
+      text.current?.focus();
+      then?.();
+    }, 0);
+  }
+
+  async function addFiles(files: FileList | null) {
+    if (!files) return;
+    setVibe(null);
+    const room = POST_MAX_PHOTOS - photos.length;
+    const chosen = [...files].filter((file) => file.type.startsWith('image/')).slice(0, room);
+    if (files.length > room) setError(`Up to ${POST_MAX_PHOTOS} photos on one post.`);
+    const drafts = chosen.map((file) => ({
+      key: `${file.name}-${file.size}-${Math.random().toString(36).slice(2, 7)}`,
+      preview: URL.createObjectURL(file),
+      url: null,
+      failed: false,
+    }));
+    setPhotos((list) => [...list, ...drafts]);
+    await Promise.all(chosen.map(async (file, index) => {
+      const key = drafts[index]!.key;
+      try {
+        const stored = await api.uploadPhoto(await shrink(file));
+        setPhotos((list) => list.map((photo) => (photo.key === key ? { ...photo, url: stored.url } : photo)));
+      } catch (err) {
+        setPhotos((list) => list.map((photo) => (photo.key === key ? { ...photo, failed: true } : photo)));
+        setError(err instanceof ApiRequestError ? err.message : 'A photo would not upload.');
+      }
+    }));
+  }
+
+  function reset() {
+    photos.forEach((photo) => URL.revokeObjectURL(photo.preview));
+    setBody('');
+    setPhotos([]);
+    setPoll(null);
+    setVibe(null);
+    setOpen(false);
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!canPost) return;
     setBusy(true);
     setError(null);
     try {
-      await api.createPost(
-        forumId
-          ? { body: body.trim(), forumId }
-          : { body: body.trim(), ...(as ? { storeId: as } : {}) },
-      );
-      setBody('');
+      await api.createPost({
+        body: body.trim(),
+        ...(as ? { storeId: as } : {}),
+        photoUrls: photos.map((photo) => photo.url).filter((url): url is string => Boolean(url)),
+        ...(poll ? { poll: { options: poll.map((option) => option.trim()).filter(Boolean), closesInHours: pollHours } } : {}),
+        ...(vibe ? { vibe } : {}),
+      });
+      reset();
+      setParty((count) => count + 1);
       await onPosted();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not post that.');
@@ -604,78 +787,166 @@ function Composer({ forumId, onPosted }: { forumId?: string; onPosted: () => voi
     }
   }
 
-  return (
-    <form className="card card--pad form" onSubmit={submit}>
-      <label className="field">
-        <span>{forumId ? 'Post to this forum' : 'Post an update'}</span>
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2}
-          placeholder={forumId ? 'Ask something, or answer something.' : `What's new in your shop, ${user?.displayName.split(' ')[0] ?? 'there'}?`} />
-        {!forumId && (
-          <span className="field__hint">Goes to everyone following you, on their feed and in your channel.</span>
-        )}
-      </label>
-      {!forumId && stores.length > 0 && (
-        <label className="field">
-          <span>Post as</span>
-          <select value={as} onChange={(e) => setAs(e.target.value)}>
-            <option value="">{user?.displayName ?? 'Me'} — my profile</option>
-            {stores.map((store) => (
-              <option key={store.ownerId} value={store.ownerId}>{store.name}</option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      {error && <ErrorNotice message={error} />}
-      <button type="submit" className="btn" disabled={busy || body.trim().length < 2}
-        style={{ justifySelf: 'start' }}>
-        {busy ? 'Posting…' : 'Post'}
+  const tools = (
+    <div className="writer__tools">
+      <button type="button" className="writer__tool writer__tool--photo"
+        disabled={photos.length >= POST_MAX_PHOTOS}
+        onClick={() => (open ? picker.current?.click() : expand(() => picker.current?.click()))}>
+        <Icon name="image" size={18} /> <span>Photo</span>
       </button>
-    </form>
+      <button type="button" className={`writer__tool writer__tool--poll${poll ? ' is-on' : ''}`}
+        onClick={() => {
+          if (!open) expand();
+          setVibe(null);
+          setPoll(poll ? null : ['', '']);
+        }}>
+        <Icon name="poll" size={18} /> <span>Poll</span>
+      </button>
+      <button type="button" className={`writer__tool writer__tool--vibe${vibe ? ' is-on' : ''}`}
+        onClick={() => {
+          if (!open) expand();
+          if (vibe) {
+            setVibe(null);
+          } else {
+            setPoll(null);
+            setPhotos([]);
+            setVibe('hero');
+          }
+        }}>
+        <Icon name="spark" size={18} /> <span>Colour</span>
+      </button>
+    </div>
   );
-}
 
-/** One post, with the item attached when it is a sale post. */
-function PostView({ card }: { card: PostCard }) {
-  const { post, listing, author } = card;
+  if (!open) {
+    return (
+      <div className="writer writer--closed">
+        <Confetti run={party} />
+        <div className="writer__prompt">
+          <Avatar name={user?.displayName ?? 'Me'} size={40} />
+          <button type="button" className="writer__fake" onClick={() => expand()}>
+            What's new, {first}?
+          </button>
+        </div>
+        {tools}
+      </div>
+    );
+  }
+
+  const left = VIBE_MAX_CHARS - body.trim().length;
 
   return (
-    <article className="card card--pad post">
-      <div className="post__head">
-        <Avatar name={post.authorName} size={38} />
-        <div className="post__who">
-          {/* The name opens who wrote it, which is what a name is for. Their
-              feed is still one tap away, on the line below — it used to be
-              what the name did, and losing that path was not the point. */}
-          <PersonLink party={author} className="post__name">{post.authorName}</PersonLink>
-          <span className="faint">
-            {post.kind === 'sale' && <><Icon name="tag" size={12} /> For sale · </>}
-            {post.kind === 'thread' && <><Icon name="forum" size={12} /> Forum · </>}
-            <Link to={`/social/c/${post.channelId}`} className="personlink">their feed</Link>
-            {' · '}
-            {timeAgo(post.createdAt)}
-          </span>
+    <form className="writer" onSubmit={submit}>
+      <div className="writer__prompt">
+        <Avatar name={user?.displayName ?? 'Me'} size={40} />
+        <div className="writer__as">
+          <strong>{stores.find((store) => store.ownerId === as)?.name ?? user?.displayName}</strong>
+          {stores.length > 0 ? (
+            <select value={as} onChange={(e) => setAs(e.target.value)} aria-label="Post as">
+              <option value="">My profile</option>
+              {stores.map((store) => (
+                <option key={store.ownerId} value={store.ownerId}>{store.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="faint">To everyone following you</span>
+          )}
         </div>
+        <button type="button" className="iconbtn" aria-label="Close" onClick={reset}>
+          <Icon name="close" size={16} />
+        </button>
       </div>
 
-      <p className="post__body">{post.body}</p>
+      <div className={vibe ? `vibe vibe--${vibe} vibe--edit` : 'writer__textwrap'}>
+        <textarea ref={text} className="writer__text" value={body} rows={vibe ? 3 : 3}
+          maxLength={vibe ? VIBE_MAX_CHARS : 2000}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder={poll ? 'Ask a question…' : vibe ? 'Say it big…' : `What's new, ${first}?`} />
+      </div>
 
-      {listing && (
-        <Link to={`/listing/${listing.id}`} className="channel" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
-          <div className="channel__body">
-            <div className="channel__top">
-              <span className="channel__name">{listing.title}</span>
-              <span className="badge badge--accent">{formatMoney(listing.priceMinor, listing.currency)}</span>
-            </div>
-            <span className="channel__last">{listing.condition} · tap to open the listing</span>
-          </div>
-        </Link>
+      {vibe && (
+        <div className="writer__vibes" role="radiogroup" aria-label="Colour">
+          {VIBES.map((entry) => (
+            <button key={entry} type="button" role="radio" aria-checked={vibe === entry}
+              aria-label={entry} className={`writer__swatch vibe--${entry}${vibe === entry ? ' is-on' : ''}`}
+              onClick={() => setVibe(entry)} />
+          ))}
+          <span className={`faint writer__left${left < 20 ? ' is-low' : ''}`}>{left}</span>
+        </div>
       )}
 
-      <div className="post__foot">
-        <span><Icon name="heart" size={12} /> {post.likeCount}</span>
-        <span>{post.replyCount} replies</span>
+      {photos.length > 0 && (
+        <div className="writer__photos">
+          {photos.map((photo, index) => (
+            <div key={photo.key} className={`writer__photo${photo.failed ? ' is-failed' : ''}`}>
+              <img src={photo.preview} alt={`Attached photo ${index + 1}`} />
+              {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
+              {photo.failed && <span className="writer__failed">Failed</span>}
+              <button type="button" className="writer__unphoto" aria-label="Remove photo"
+                onClick={() => {
+                  URL.revokeObjectURL(photo.preview);
+                  setPhotos((list) => list.filter((entry) => entry.key !== photo.key));
+                }}>
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+          ))}
+          {photos.length < POST_MAX_PHOTOS && (
+            <button type="button" className="writer__addphoto" onClick={() => picker.current?.click()}
+              aria-label="Add more photos">
+              <Icon name="plus" size={20} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {poll && (
+        <div className="writer__poll">
+          {poll.map((option, index) => (
+            <div key={index} className="writer__pollrow">
+              <input value={option} maxLength={POLL_OPTION_MAX_CHARS}
+                placeholder={`Option ${index + 1}`}
+                onChange={(e) => setPoll(poll.map((entry, at) => (at === index ? e.target.value : entry)))} />
+              {poll.length > POLL_MIN_OPTIONS && (
+                <button type="button" className="iconbtn iconbtn--sm" aria-label={`Remove option ${index + 1}`}
+                  onClick={() => setPoll(poll.filter((_, at) => at !== index))}>
+                  <Icon name="close" size={12} />
+                </button>
+              )}
+            </div>
+          ))}
+          <div className="writer__pollfoot">
+            {poll.length < POLL_MAX_OPTIONS && (
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setPoll([...poll, ''])}>
+                <Icon name="plus" size={12} /> Add option
+              </button>
+            )}
+            <label className="writer__pollfor">
+              <span className="faint">Runs for</span>
+              <select value={pollHours} onChange={(e) => setPollHours(Number(e.target.value))}>
+                {POLL_LENGTHS.map((entry) => (
+                  <option key={entry.hours} value={entry.hours}>{entry.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
+
+      <input ref={picker} type="file" accept="image/*" multiple hidden
+        onChange={(e) => {
+          void addFiles(e.target.files);
+          e.target.value = '';
+        }} />
+
+      {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
+
+      <div className="writer__foot">
+        {tools}
+        <button type="submit" className="btn writer__post" disabled={!canPost}>
+          {busy ? 'Posting…' : uploading ? 'Uploading…' : 'Post'}
+        </button>
       </div>
-    </article>
+    </form>
   );
 }

@@ -15,6 +15,9 @@ import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { OrderAction, OrderSide } from '@shared/orders';
+import type {
+  CommentThread, PollView, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
+} from '@shared/social';
 import type { DisputeAction } from '@shared/disputes';
 
 /** Somebody named on a screen, and the page their name opens. */
@@ -506,6 +509,16 @@ export interface PostCard {
   listing: { id: string; title: string; priceMinor: number; currency: string; condition: string } | null;
   /** Where the author's name goes. Resolved on read, not frozen into the post. */
   author: PartyRef;
+  /** Reactions, comments, shares and the poll, as this viewer sees them. */
+  social: PostSocial;
+  /** What a repost passes on. Null when the original has been taken down. */
+  original?: PostCard | null;
+}
+
+/** One post read in full, with everything said under it. */
+export interface PostDetail {
+  card: PostCard;
+  comments: CommentThread[];
 }
 
 export interface ChannelRow {
@@ -535,6 +548,11 @@ export interface ChannelThread {
   /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
   shareable: { id: string; title: string; priceMinor: number; currency: string }[];
   posts: PostCard[];
+}
+
+/** Where one post lives on the API. */
+function postPath(channelId: string, id: string): string {
+  return `/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(id)}`;
 }
 
 /* ── Wanted ────────────────────────────────────────────────────────────── */
@@ -1241,8 +1259,28 @@ export const api = {
   createPost: (body: {
     body: string; forumId?: string; listingId?: string; storeId?: string;
     channelId?: string; announcement?: boolean;
+    photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
   }) =>
     post<{ post: Post }>('/social/posts', body),
+  socialPost: (channelId: string, id: string) => request<PostDetail>(postPath(channelId, id)),
+  react: (channelId: string, id: string, kind: ReactionKind | null) =>
+    post<{ reactions: ReactionSummary }>(`${postPath(channelId, id)}/react`, { kind }),
+  reactors: (channelId: string, id: string) =>
+    request<{ reactors: ReactorRow[] }>(`${postPath(channelId, id)}/reactions`),
+  commentOnPost: (channelId: string, id: string, body: string, parentId?: string | null) =>
+    post<PostDetail & { comment: string }>(`${postPath(channelId, id)}/comments`, { body, parentId: parentId ?? null }),
+  likePostComment: (channelId: string, id: string, commentId: string) =>
+    post<{ liked: boolean; likeCount: number }>(
+      `${postPath(channelId, id)}/comments/${encodeURIComponent(commentId)}/like`,
+    ),
+  deletePostComment: (channelId: string, id: string, commentId: string) =>
+    post<PostDetail>(`${postPath(channelId, id)}/comments/${encodeURIComponent(commentId)}/delete`),
+  sharePost: (channelId: string, id: string, mode: 'repost' | 'link', body?: string) =>
+    post<{ shareCount: number; repost: PostCard | null }>(`${postPath(channelId, id)}/share`, { mode, body }),
+  votePoll: (channelId: string, id: string, optionId: string) =>
+    post<{ poll: PollView }>(`${postPath(channelId, id)}/vote`, { optionId }),
+  deletePost: (channelId: string, id: string) =>
+    post<{ deleted: string }>(`${postPath(channelId, id)}/delete`),
   forums: () => request<ForumsResponse>('/social/forums'),
 
   wants: (options: { category?: string; q?: string } = {}) => {

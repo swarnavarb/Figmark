@@ -18,6 +18,7 @@ import type {
   WantOffer,
 } from '../../../shared/models.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
+import type { ReactionKind, StoredComment } from '../../../shared/social.js';
 import { hashPassword } from '../auth/passwords.js';
 
 /**
@@ -1074,6 +1075,12 @@ interface PostSeed {
   replyCount: number;
   ageDays: number;
   ageHours?: number;
+  /** Seed art for a carousel: a caption and a gradient each. */
+  art?: [string, string, string][];
+  /** A conversation under it, as [author id, author name, text, replies]. */
+  talk?: [string, string, string, [string, string, string][]?][];
+  poll?: string[];
+  vibe?: Post['vibe'];
 }
 
 const POSTS: PostSeed[] = [
@@ -1083,6 +1090,11 @@ const POSTS: PostSeed[] = [
     authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
     body: 'September Guangzhou run is open. Dragon Knight resin is in — 20 units needed before I place the order, 3 booked so far.',
     listingId: 'lst_dragon_knight', likeCount: 24, replyCount: 6, ageDays: -1,
+    talk: [
+      ['usr_b_rohit', 'Rohit Deshmukh', 'Booked two. Let\'s get this to 20!', [
+        ['usr_kaiju', 'Kaiju Imports', 'Thank you Rohit — 5 booked now 🔥'],
+      ]],
+    ],
   },
   {
     id: 'pst_kaiju_2', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
@@ -1113,12 +1125,51 @@ const POSTS: PostSeed[] = [
     authorId: 'usr_sneakervault', authorName: 'Sneaker Vault',
     body: 'Deadstock UK 9 retro high-top, authenticated in-house. One pair, original box.',
     listingId: 'lst_sneaker_retro', likeCount: 47, replyCount: 12, ageDays: 0, ageHours: -5,
+    talk: [
+      ['usr_b_nikhil', 'Nikhil Raghavan', 'Any chance of a UK 10 in the next drop?', [
+        ['usr_sneakervault', 'Sneaker Vault', 'One pair coming in October. I will tag you.'],
+        ['usr_b_nikhil', 'Nikhil Raghavan', 'Legend 🙌'],
+      ]],
+      ['usr_b_aisha', 'Aisha Fernandes', 'The box alone is a collector piece.'],
+    ],
   },
   {
     id: 'pst_demo_1', channelId: 'usr_demo', channel: 'seller', kind: 'update',
     authorId: 'usr_demo', authorName: 'Arjun Collects',
     body: 'Clearing shelf space this week — garage kit statue and a card binder up. Collection preferred in Mumbai.',
     likeCount: 3, replyCount: 0, ageDays: -5,
+  },
+
+  {
+    id: 'pst_tokyo_poll', channelId: 'usr_tokyoline', channel: 'seller', kind: 'update',
+    authorId: 'usr_tokyoline', authorName: 'Tokyo Line',
+    body: 'Picking the next case to split. Which one are you in for?',
+    likeCount: 9, replyCount: 0, ageDays: 0, ageHours: -3,
+    poll: ['Pokémon 151 (JP)', 'One Piece OP-07', 'Dragon Ball Fusion World'],
+  },
+  {
+    id: 'pst_kaiju_qc', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'QC shots from the August lot, straight off the warehouse bench. Swipe through — paint on the capes came out clean this time.',
+    likeCount: 13, replyCount: 0, ageDays: 0, ageHours: -9,
+    art: [
+      ['Warehouse bench', '#7C3AED', '#EC4899'],
+      ['Cape detail', '#06D6E7', '#3B82F6'],
+      ['Boxed & tagged', '#A3E635', '#06D6E7'],
+      ['Ready for the forwarder', '#EC4899', '#FF5A5F'],
+    ],
+    talk: [
+      ['usr_b_sana', 'Sana Qureshi', 'That cape paint is so much better than the July batch 😍', [
+        ['usr_kaiju', 'Kaiju Imports', 'Changed factories for the capes. Worth every rupee.'],
+      ]],
+      ['usr_b_karan', 'Karan Malhotra', 'Is mine the third one from the left? 👀'],
+    ],
+  },
+  {
+    id: 'pst_gadget_vibe', channelId: 'usr_gadgetgrid', channel: 'seller', kind: 'update',
+    authorId: 'usr_gadgetgrid', authorName: 'Gadget Grid',
+    body: 'Customs cleared in 36 hours. Personal best. ⚡',
+    likeCount: 18, replyCount: 0, ageDays: -1, ageHours: -2, vibe: 'sea',
   },
 
   /* Forums. */
@@ -1148,22 +1199,90 @@ const POSTS: PostSeed[] = [
   },
 ];
 
+/**
+ * Seed pictures, drawn rather than fetched.
+ *
+ * The demo store has no photos in it and the app must run with the network
+ * blocked, so a carousel in the seed feed carries small SVG posters instead of
+ * links to somebody else's server.
+ */
+function seedArt([caption, from, to]: [string, string, string], index: number): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">`
+    + `<defs><linearGradient id="g${index}" x1="0" y1="0" x2="1" y2="1">`
+    + `<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>`
+    + `<rect width="800" height="1000" fill="url(#g${index})"/>`
+    + `<circle cx="600" cy="230" r="150" fill="#fff" fill-opacity=".14"/>`
+    + `<circle cx="190" cy="800" r="230" fill="#000" fill-opacity=".10"/>`
+    + `<text x="400" y="540" text-anchor="middle" font-family="system-ui,sans-serif" font-size="56" font-weight="700" fill="#fff">${caption}</text>`
+    + `</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Everyone who can plausibly react in the demo: the shop's customers.
+ *
+ * A function rather than a constant because the customer list is declared
+ * further down the file, and a constant here would read it before it exists.
+ */
+const reactorIds = (): string[] => LOT_BUYERS.map(([id]) => id);
+const SEED_KINDS: ReactionKind[] = ['love', 'fire', 'love', 'clap', 'haha', 'wow', 'love', 'fire'];
+
 export function seedPosts(): Post[] {
-  return POSTS.map((entry) => ({
-    id: entry.id,
-    channelId: entry.channelId,
-    channel: entry.channel,
-    kind: entry.kind,
-    authorId: entry.authorId,
-    authorName: entry.authorName,
-    body: entry.body,
-    listingId: entry.listingId ?? null,
-    photoUrl: null,
-    likeCount: entry.likeCount,
-    replyCount: entry.replyCount,
-    createdAt: iso(entry.ageDays, entry.ageHours ?? 0),
-    updatedAt: iso(entry.ageDays, entry.ageHours ?? 0),
-  }));
+  const everyone = reactorIds();
+  return POSTS.map((entry, postIndex) => {
+    const at = iso(entry.ageDays, entry.ageHours ?? 0);
+    // Reactions from real seed accounts, so "who reacted" has names to show.
+    // Never more than there are people, and never the demo account, whose own
+    // reaction is left for whoever is trying the app to add.
+    const reactors = everyone.filter((id) => id !== entry.authorId).slice(0, entry.likeCount);
+    const reactions = reactors.map((userId, index) => ({
+      userId,
+      kind: SEED_KINDS[(index + postIndex) % SEED_KINDS.length]!,
+      at,
+    }));
+    const comments: StoredComment[] = [];
+    (entry.talk ?? []).forEach(([authorId, authorName, body, replies], index) => {
+      const id = `cmt_${entry.id}_${index}`;
+      comments.push({ id, authorId, authorName, body, parentId: null, likedBy: reactors.slice(0, 3 - index), createdAt: at });
+      (replies ?? []).forEach(([replyAuthor, replyName, replyBody], replyIndex) => {
+        comments.push({
+          id: `${id}_${replyIndex}`, authorId: replyAuthor, authorName: replyName, body: replyBody,
+          parentId: id, likedBy: reactors.slice(0, 1), createdAt: at,
+        });
+      });
+    });
+    const photoUrls = (entry.art ?? []).map((art, index) => seedArt(art, index));
+    return {
+      id: entry.id,
+      channelId: entry.channelId,
+      channel: entry.channel,
+      kind: entry.kind,
+      authorId: entry.authorId,
+      authorName: entry.authorName,
+      body: entry.body,
+      listingId: entry.listingId ?? null,
+      photoUrl: photoUrls[0] ?? null,
+      likeCount: reactions.length,
+      replyCount: comments.length || entry.replyCount,
+      photoUrls,
+      reactions,
+      comments,
+      shareCount: Math.floor(entry.likeCount / 5),
+      poll: entry.poll
+        ? {
+            options: entry.poll.map((label, index) => ({
+              id: `opt_${index + 1}`,
+              label,
+              voterIds: reactors.filter((_, voter) => voter % entry.poll!.length === index),
+            })),
+            closesAt: soon(2),
+          }
+        : null,
+      vibe: entry.vibe ?? null,
+      createdAt: at,
+      updatedAt: at,
+    };
+  });
 }
 
 /* -------------------------------------------------------------------------- */

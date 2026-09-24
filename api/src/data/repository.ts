@@ -319,6 +319,17 @@ export interface Repository {
   /** The feed: posts across many channels, newest first. */
   listPostsForChannels(channelIds: readonly string[], limit?: number): Promise<Post[]>;
   createPost(post: Post): Promise<Post>;
+  getPost(channelId: string, id: string): Promise<Post | null>;
+  /**
+   * Change one post in place: react, comment, vote, count a share.
+   *
+   * A read-change-write rather than a save, because two people reacting in
+   * the same second are both reacting - the store retries the change against
+   * whatever landed first instead of letting the second write erase the first.
+   * `change` returns the new post, or null to leave it alone. Null back when
+   * there is no such post.
+   */
+  mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null>;
 
   listForums(): Promise<Forum[]>;
   getForum(id: string): Promise<Forum | null>;

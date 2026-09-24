@@ -1,4 +1,5 @@
 import type { LotRoute } from './routes.js';
+import type { RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
   ConditionTag,
   FulfilmentStage,
@@ -1107,6 +1108,32 @@ export interface Post extends BaseDocument {
    * reads them as announcements rather than hiding them.
    */
   announcement?: boolean;
+  /**
+   * Every photo on the post, in the order the author put them.
+   *
+   * `photoUrl` stays as the first of these, so anything that only ever read
+   * one picture keeps reading the right one.
+   */
+  photoUrls?: string[];
+  /**
+   * Who reacted, and how. One per person.
+   *
+   * On the post rather than in a container of its own: a post and its
+   * reactions are always read together, a shared-throughput database has a
+   * ceiling on containers, and the count is then never out of step with the
+   * list it counts. `likeCount` is kept equal to its length.
+   */
+  reactions?: StoredReaction[];
+  /** The conversation under the post, flat, replies pointing at their parent. `replyCount` is its length. */
+  comments?: StoredComment[];
+  /** How many times it was passed on - reposted, or sent out as a link. */
+  shareCount?: number;
+  /** A question with a few answers to pick from. */
+  poll?: StoredPoll | null;
+  /** Set when this post is somebody else's, passed on to the reposter's followers. */
+  repostOf?: RepostRef | null;
+  /** A short line set on one of the brand gradients. */
+  vibe?: Vibe | null;
 }
 
 /**
@@ -1235,7 +1262,11 @@ export type NotificationKind =
   | 'preorder_closed'
   | 'sale_opened'
   | 'sale_item'
-  | 'order_rejected';
+  | 'order_rejected'
+  | 'post_reacted'
+  | 'post_commented'
+  | 'comment_replied'
+  | 'post_shared';
 
 /**
  * A run of channel posts that sells things, on a timer the shop sets.

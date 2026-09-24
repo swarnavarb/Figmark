@@ -1272,6 +1272,42 @@ export class CosmosRepository implements Repository {
     return resource ?? post;
   }
 
+  async getPost(channelId: string, id: string): Promise<Post | null> {
+    try {
+      const { resource } = await this.container('posts').item(id, channelId).read<Post>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null> {
+    // Optimistic: replace only if nobody else wrote in between, and on losing
+    // that race read again and redo the change against what won. A handful of
+    // attempts is plenty for a reaction; past that something else is wrong.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const { resource, etag } = await this.container('posts').item(id, channelId).read<Post>()
+        .catch((error: unknown) => {
+          if (isNotFound(error)) return { resource: undefined, etag: undefined };
+          throw error;
+        });
+      if (!resource) return null;
+      const next = change(resource);
+      if (!next) return resource;
+      try {
+        const { resource: saved } = await this.container('posts').item(id, channelId).replace<Post>(next, {
+          accessCondition: { type: 'IfMatch', condition: etag ?? '' },
+        });
+        return saved ?? next;
+      } catch (error) {
+        if ((error as { code?: number }).code === 412) continue;
+        throw error;
+      }
+    }
+    throw new Error('That post is too busy to change right now. Try again.');
+  }
+
   async listForums(): Promise<Forum[]> {
     const { resources } = await this.container('forums')
       .items.query<Forum>({ query: 'SELECT * FROM c ORDER BY c.name' })

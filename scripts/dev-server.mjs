@@ -33,7 +33,9 @@ const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, u
   await import(new URL('seller-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute,
-  listForumsRoute, createForumRoute,
+  listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
+  addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
+  removePostRoute,
 } = await import(new URL('social-routes.js', apiRoot));
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute } =
   await import(new URL('message-routes.js', apiRoot));
@@ -120,6 +122,15 @@ const routes = [
   ['POST', '/api/social/posts', createPostRoute],
   ['GET', '/api/social/forums', listForumsRoute],
   ['POST', '/api/social/forums/new', createForumRoute],
+  ['GET', '/api/social/posts/:channel/:id', readPostRoute],
+  ['POST', '/api/social/posts/:channel/:id/react', reactRoute],
+  ['GET', '/api/social/posts/:channel/:id/reactions', reactorsRoute],
+  ['POST', '/api/social/posts/:channel/:id/comments', addPostCommentRoute],
+  ['POST', '/api/social/posts/:channel/:id/comments/:comment/like', likeCommentRoute],
+  ['POST', '/api/social/posts/:channel/:id/comments/:comment/delete', deletePostCommentRoute],
+  ['POST', '/api/social/posts/:channel/:id/share', sharePostRoute],
+  ['POST', '/api/social/posts/:channel/:id/vote', voteRoute],
+  ['POST', '/api/social/posts/:channel/:id/delete', removePostRoute],
   ['GET', '/api/messages', inboxRoute],
   ['GET', '/api/messages/:handle', threadRoute],
   ['POST', '/api/messages/:handle/send', sendMessageRoute],

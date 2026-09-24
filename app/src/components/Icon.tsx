@@ -21,7 +21,8 @@ export type IconName =
   | 'tag' | 'bolt' | 'lock' | 'bell' | 'message' | 'mail' | 'megaphone'
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image'
-  | 'trash' | 'sort' | 'filter' | 'external' | 'home';
+  | 'trash' | 'sort' | 'filter' | 'external' | 'home'
+  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link';
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>),
@@ -61,6 +62,12 @@ const PATHS: Record<IconName, ReactNode> = {
   filter: <path d="M3.6 5.4h16.8l-6.6 7.6v6l-3.6 2v-8Z" />,
   external: (<><path d="M14 4.6h5.4V10" /><path d="m19.4 4.6-8 8" /><path d="M18 14v4.6a1.4 1.4 0 0 1-1.4 1.4H5.6a1.4 1.4 0 0 1-1.4-1.4V7.4A1.4 1.4 0 0 1 5.6 6H10" /></>),
   home: (<><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9.4h12V10" /><path d="M10 19.4v-6h4v6" /></>),
+  share: (<><path d="M12 15V3.6" /><path d="m7.6 8 4.4-4.4L16.4 8" /><path d="M5 12.4v6.2A1.4 1.4 0 0 0 6.4 20h11.2a1.4 1.4 0 0 0 1.4-1.4v-6.2" /></>),
+  repost: (<><path d="M5 10.4V9a3 3 0 0 1 3-3h11" /><path d="m16 3 3 3-3 3" /><path d="M19 13.6V15a3 3 0 0 1-3 3H5" /><path d="m8 21-3-3 3-3" /></>),
+  more: (<><circle cx="5.6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18.4" cy="12" r="1.3" /></>),
+  poll: (<><path d="M4.4 19.6h15.2" /><path d="M7 16.4V10M12 16.4V5.4M17 16.4v-3.6" /></>),
+  smile: (<><circle cx="12" cy="12" r="8.4" /><path d="M8.6 14.2a4 4 0 0 0 6.8 0" /><path d="M9.2 9.6h.01M14.8 9.6h.01" /></>),
+  link: (<><path d="M10.4 13.6a3.6 3.6 0 0 0 5.1 0l3-3a3.6 3.6 0 0 0-5.1-5.1l-1.2 1.2" /><path d="M13.6 10.4a3.6 3.6 0 0 0-5.1 0l-3 3a3.6 3.6 0 0 0 5.1 5.1l1.2-1.2" /></>),
 };
 
 /** Glyphs that read better filled than stroked. */

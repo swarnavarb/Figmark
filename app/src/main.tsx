@@ -16,7 +16,7 @@ import { ShopPage } from './pages/ShopPage';
 import {
   ConsignmentsPage, DistributionPage, MyServicesPage, ServiceDirectoryPage, ServicesPage,
 } from './pages/ServicesPage';
-import { ChannelPage, SocialPage } from './pages/SocialPage';
+import { ChannelPage, PostPage, SocialPage } from './pages/SocialPage';
 import { ThreadPage } from './pages/MessagesPage';
 import { DisputePage } from './pages/DisputePage';
 import { EscrowPage } from './pages/EscrowPage';
@@ -69,6 +69,7 @@ function App() {
         <Route path="/services/:kind" element={<ServiceDirectoryPage />} />
         <Route path="/social" element={<SocialPage />} />
         <Route path="/social/c/:id" element={<ChannelPage />} />
+        <Route path="/social/p/:channel/:id" element={<PostPage />} />
         <Route path="/messages/:handle" element={<ThreadPage />} />
         <Route path="/packing" element={<SupplierPage />} />
         <Route path="/packing/:id" element={<PackingLotPage />} />

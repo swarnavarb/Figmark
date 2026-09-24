@@ -751,6 +751,20 @@ export class MemoryRepository implements Repository {
     return post;
   }
 
+  async getPost(channelId: string, id: string): Promise<Post | null> {
+    const post = this.posts.get(id);
+    return post && post.channelId === channelId ? structuredClone(post) : null;
+  }
+
+  async mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null> {
+    const current = await this.getPost(channelId, id);
+    if (!current) return null;
+    const next = change(current);
+    if (!next) return current;
+    this.posts.set(id, next);
+    return structuredClone(next);
+  }
+
   async listForums(): Promise<Forum[]> {
     return [...this.forums.values()].sort((a, b) => a.name.localeCompare(b.name));
   }

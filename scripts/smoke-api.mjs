@@ -28,6 +28,10 @@ const {
 const {
   socialFeedRoute: socialFeed, channelsRoute: channels, channelThreadRoute: channelThread,
   createPostRoute: createPost, listForumsRoute: listForums, createForumRoute: createForum,
+  readPostRoute: readPost, reactRoute: reactTo, reactorsRoute: reactors,
+  addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
+  deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
+  removePostRoute: removePost,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -957,6 +961,188 @@ await check('a shop chooses which of its messages is an announcement', async () 
     body: { body: 'Lot closes Friday.', channelId: 'usr_demo', announcement: true },
   }), ctx);
   assert.equal(news.jsonBody.post.announcement, true);
+});
+
+/* ── reactions, comments, shares, polls ────────────────────────────────── */
+console.log('\nreactions, comments, shares, polls');
+
+const on = (post) => ({ channel: post.channelId, id: post.id });
+
+await check('a post takes photos, in order, and refuses anything not uploaded here', async () => {
+  const made = await createPost(req({
+    headers: auth, body: { body: 'Unboxing.', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'] },
+  }), ctx);
+  assert.equal(made.status, 201);
+  assert.deepEqual(made.jsonBody.post.photoUrls, ['/api/photos/a.jpg', '/api/photos/b.jpg']);
+  assert.equal(made.jsonBody.post.photoUrl, '/api/photos/a.jpg', 'the first stays the lead photo');
+
+  // A photo alone is a post; nothing at all is not.
+  assert.equal((await createPost(req({ headers: auth, body: { body: '', photoUrls: ['/api/photos/c.jpg'] } }), ctx)).status, 201);
+  assert.equal((await createPost(req({ headers: auth, body: { body: '' } }), ctx)).status, 400);
+  for (const bad of [['javascript:alert(1)'], ['data:image/png;base64,AAAA'], Array(11).fill('/api/photos/x.jpg')]) {
+    assert.equal((await createPost(req({ headers: auth, body: { body: 'x', photoUrls: bad } }), ctx)).status, 400);
+  }
+});
+
+await check('one reaction per person: a new one replaces it, the same one takes it back', async () => {
+  const post = (await createPost(req({ headers: auth, body: { body: 'React to me.' } }), ctx)).jsonBody.post;
+
+  const loved = await reactTo(req({ headers: auth, params: on(post), body: { kind: 'love' } }), ctx);
+  assert.equal(loved.status, 200);
+  assert.equal(loved.jsonBody.reactions.total, 1);
+  assert.equal(loved.jsonBody.reactions.mine, 'love');
+
+  const fire = (await reactTo(req({ headers: auth, params: on(post), body: { kind: 'fire' } }), ctx)).jsonBody;
+  assert.equal(fire.reactions.total, 1, 'changed, not added');
+  assert.deepEqual(fire.reactions.counts, [{ kind: 'fire', count: 1 }]);
+
+  const undone = (await reactTo(req({ headers: auth, params: on(post), body: { kind: 'fire' } }), ctx)).jsonBody;
+  assert.equal(undone.reactions.total, 0);
+  assert.equal(undone.reactions.mine, null);
+
+  assert.equal((await reactTo(req({ headers: auth, params: on(post), body: { kind: 'meh' } }), ctx)).status, 400);
+  assert.equal((await reactTo(req({ headers: auth, params: { channel: post.channelId, id: 'pst_nope' }, body: { kind: 'love' } }), ctx)).status, 404);
+});
+
+await check('who reacted is a list of names and how each reacted', async () => {
+  const body = (await reactors(req({ headers: auth, params: { channel: 'usr_kaiju', id: 'pst_kaiju_1' } }), ctx)).jsonBody;
+  assert.ok(body.reactors.length > 5);
+  assert.ok(body.reactors.every((row) => typeof row.party.name === 'string' && row.kind));
+  assert.notEqual(body.reactors[0].party.name, 'Someone', 'reactors resolve to real accounts');
+});
+
+await check('the feed summarises reactions without handing out the list', async () => {
+  const cards = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts;
+  const card = cards.find((entry) => entry.post.id === 'pst_kaiju_1');
+  assert.ok(card.social.reactions.total > 0);
+  assert.equal(card.post.reactions, undefined, 'who reacted is its own request');
+  assert.equal(card.post.comments, undefined);
+  assert.equal(card.social.reactions.names.length, 2);
+  assert.ok(card.social.preview.length > 0, 'a feed shows there is a conversation');
+});
+
+await check('comments thread two deep, and a reply to a reply names who it answers', async () => {
+  const post = (await createPost(req({ headers: auth, body: { body: 'Talk to me.' } }), ctx)).jsonBody.post;
+  const first = await commentOn(req({ headers: auth, params: on(post), body: { body: 'First!' } }), ctx);
+  assert.equal(first.status, 201);
+  const top = first.jsonBody.comment;
+
+  const reply = (await commentOn(req({ headers: auth, params: on(post), body: { body: 'Reply', parentId: top } }), ctx)).jsonBody;
+  const deeper = (await commentOn(req({
+    headers: auth, params: on(post), body: { body: 'Deeper', parentId: reply.comment },
+  }), ctx)).jsonBody;
+
+  assert.equal(deeper.comments.length, 1, 'one top-level comment');
+  assert.equal(deeper.comments[0].replies.length, 2, 'both replies filed under it');
+  assert.equal(deeper.comments[0].replies[1].replyToName, 'Arjun Mehta');
+  assert.equal(deeper.card.social.commentCount, 3);
+
+  assert.equal((await commentOn(req({ headers: auth, params: on(post), body: { body: '  ' } }), ctx)).status, 400);
+  assert.equal((await commentOn(req({ headers: auth, params: on(post), body: { body: 'x', parentId: 'cmt_nope' } }), ctx)).status, 404);
+
+  const liked = (await likeComment(req({ headers: auth, params: { ...on(post), comment: top } }), ctx)).jsonBody;
+  assert.deepEqual(liked, { liked: true, likeCount: 1 });
+
+  // Removing the top comment takes its replies with it.
+  const gone = (await deleteComment(req({ headers: auth, params: { ...on(post), comment: top } }), ctx)).jsonBody;
+  assert.equal(gone.comments.length, 0);
+  assert.equal(gone.card.social.commentCount, 0);
+});
+
+await check('only the writer or the post\'s author can delete a comment', async () => {
+  const stranger = await signup(req({
+    body: { displayName: 'Commenter', email: 'commenter@figmark.example', phone: '+919000045811', password: 'longenough1' },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
+  const post = (await createPost(req({ headers: auth, body: { body: 'Mine.' } }), ctx)).jsonBody.post;
+  const mine = (await commentOn(req({ headers: auth, params: on(post), body: { body: 'By the author' } }), ctx)).jsonBody.comment;
+  const refused = await deleteComment(req({ headers: theirs, params: { ...on(post), comment: mine } }), ctx);
+  assert.equal(refused.status, 403);
+
+  const theirComment = (await commentOn(req({ headers: theirs, params: on(post), body: { body: 'Hello' } }), ctx)).jsonBody.comment;
+  assert.equal((await deleteComment(req({ headers: auth, params: { ...on(post), comment: theirComment } }), ctx)).status, 200,
+    'the post\'s author may tidy their own post');
+  assert.equal((await removePost(req({ headers: theirs, params: on(post) }), ctx)).status, 403);
+});
+
+await check('a repost reaches your followers and points at the original', async () => {
+  const shared = await sharePost(req({
+    headers: auth, params: { channel: 'usr_tokyoline', id: 'pst_tokyo_1' }, body: { mode: 'repost', body: 'Worth a look' },
+  }), ctx);
+  assert.equal(shared.status, 201);
+  assert.ok(shared.jsonBody.shareCount >= 1);
+  const repost = shared.jsonBody.repost;
+  assert.equal(repost.original.post.id, 'pst_tokyo_1');
+
+  const feedNow = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts;
+  const inFeed = feedNow.find((card) => card.post.id === repost.post.id);
+  assert.ok(inFeed, 'the repost is in the feed');
+  assert.equal(inFeed.original.post.id, 'pst_tokyo_1');
+
+  // Passing on a repost passes on the original.
+  const again = await sharePost(req({ headers: auth, params: on(repost.post), body: { mode: 'repost' } }), ctx);
+  assert.equal(again.jsonBody.repost.original.post.id, 'pst_tokyo_1');
+
+  const counted = await sharePost(req({ headers: auth, params: { channel: 'usr_tokyoline', id: 'pst_tokyo_1' }, body: { mode: 'link' } }), ctx);
+  assert.equal(counted.status, 200);
+  assert.equal(counted.jsonBody.repost, null);
+  assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount + 1);
+
+  assert.equal((await sharePost(req({ headers: auth, params: on(repost.post), body: { mode: 'tweet' } }), ctx)).status, 400);
+});
+
+await check('a poll counts one vote per person and lets them change it', async () => {
+  const made = await createPost(req({
+    headers: auth, body: { body: 'Which one?', poll: { options: ['Red', 'Blue'], closesInHours: 24 } },
+  }), ctx);
+  assert.equal(made.status, 201);
+  const post = made.jsonBody.post;
+  const [red, blue] = post.poll.options.map((option) => option.id);
+
+  let poll = (await vote(req({ headers: auth, params: on(post), body: { optionId: red } }), ctx)).jsonBody.poll;
+  assert.equal(poll.total, 1);
+  assert.equal(poll.myVote, red);
+  poll = (await vote(req({ headers: auth, params: on(post), body: { optionId: blue } }), ctx)).jsonBody.poll;
+  assert.equal(poll.total, 1, 'changed, not doubled');
+  assert.equal(poll.myVote, blue);
+
+  const card = (await readPost(req({ headers: auth, params: on(post) }), ctx)).jsonBody.card;
+  assert.equal(card.post.poll, undefined, 'who voted is nobody\'s business');
+  assert.equal(card.social.poll.options.find((option) => option.id === blue).votes, 1);
+
+  assert.equal((await vote(req({ headers: auth, params: on(post), body: { optionId: 'opt_9' } }), ctx)).status, 400);
+  for (const bad of [{ options: ['Only one'] }, { options: ['a', 'b', 'c', 'd', 'e'] }, { options: ['Same', 'same'] }]) {
+    assert.equal((await createPost(req({ headers: auth, body: { body: 'Q?', poll: bad } }), ctx)).status, 400);
+  }
+});
+
+await check('a colour post is a short line and nothing else', async () => {
+  const ok = await createPost(req({ headers: auth, body: { body: 'Big news!', vibe: 'hero' } }), ctx);
+  assert.equal(ok.status, 201);
+  assert.equal(ok.jsonBody.post.vibe, 'hero');
+  assert.equal((await createPost(req({ headers: auth, body: { body: 'x'.repeat(200), vibe: 'hero' } }), ctx)).status, 400);
+  assert.equal((await createPost(req({ headers: auth, body: { body: 'Hi', vibe: 'neon' } }), ctx)).status, 400);
+  assert.equal((await createPost(req({
+    headers: auth, body: { body: 'Hi', vibe: 'sea', photoUrls: ['/api/photos/a.jpg'] },
+  }), ctx)).status, 400);
+});
+
+await check('the author hears about reactions and comments, and can take the post down', async () => {
+  const fan = await signup(req({
+    body: { displayName: 'Big Fan', email: 'bigfan@figmark.example', phone: '+919000045812', password: 'longenough1' },
+  }), ctx);
+  const theirs = { authorization: `Bearer ${fan.jsonBody.token}` };
+  const post = (await createPost(req({ headers: auth, body: { body: 'Notice me.' } }), ctx)).jsonBody.post;
+
+  await reactTo(req({ headers: theirs, params: on(post), body: { kind: 'clap' } }), ctx);
+  await commentOn(req({ headers: theirs, params: on(post), body: { body: 'Noticed!' } }), ctx);
+  const inbox = (await notifications(req({ headers: auth }), ctx)).jsonBody.notifications;
+  const about = inbox.filter((notice) => notice.link.includes(post.id));
+  assert.ok(about.some((notice) => notice.kind === 'post_reacted'));
+  assert.ok(about.some((notice) => notice.kind === 'post_commented'));
+
+  assert.equal((await removePost(req({ headers: auth, params: on(post) }), ctx)).status, 200);
+  assert.equal((await readPost(req({ headers: auth, params: on(post) }), ctx)).status, 404);
 });
 
 await check('a customer cannot announce in somebody else\'s room', async () => {
