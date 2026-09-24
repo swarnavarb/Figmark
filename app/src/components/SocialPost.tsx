@@ -145,7 +145,8 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
   );
 
   return (
-    <article className={`spost${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
+    <article className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
+      {!nested && <span className="spost__glow" aria-hidden="true" />}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
@@ -297,6 +298,24 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
       )}
     </article>
   );
+}
+
+/**
+ * What kind of post this is, for its colours.
+ *
+ * Each kind gets its own pair of hues, so a feed reads at a glance - the
+ * item, the poll, the photo dump - before a word of it is. The first match
+ * wins, in the order a reader would name it: an item for sale is a sale post
+ * even if it has photos too.
+ */
+function categoryOf(card: PostCard): 'item' | 'poll' | 'photo' | 'vibe' | 'repost' | 'text' {
+  const { post, listing, social } = card;
+  if (listing || post.kind === 'sale') return 'item';
+  if (social.poll) return 'poll';
+  if ((post.photoUrls?.length ?? 0) > 0 || post.photoUrl) return 'photo';
+  if (post.vibe) return 'vibe';
+  if (post.repostOf) return 'repost';
+  return 'text';
 }
 
 /** Long text folds after a few lines, so one essay does not push the feed off the screen. */

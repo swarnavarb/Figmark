@@ -6459,13 +6459,14 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 .social .spost {
   border-radius: 20px;
-  border-color: rgba(255, 255, 255, 0.06);
-  background:
-    radial-gradient(130% 60% at 0% 0%, rgba(255, 91, 31, 0.09), transparent 55%),
-    var(--surface);
-  transition: border-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
+  border-color: transparent;
+  background: var(--surface);
+  isolation: isolate;
+  transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }
-.social .spost:hover { border-color: var(--sx-line); }
+@media (hover: hover) {
+  .social .spost:not(.spost--nested):hover { box-shadow: 0 14px 34px rgb(var(--c1) / 0.16); }
+}
 .social .spost--nested { background: var(--surface-2); border-radius: 14px; }
 .spost--ranked { margin-top: 10px; }
 .spost__rank {
@@ -6532,7 +6533,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   border-color: var(--sx-line);
   background: var(--sx-wash), var(--surface);
 }
-.social .writer:not(.writer--closed) { border-color: var(--sx-blaze); box-shadow: var(--sx-glow); }
+.social .writer:not(.writer--closed) { box-shadow: var(--sx-glow); }
 .social .writer__fake {
   background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.08);
   color: var(--text-dim); font-weight: var(--w-medium);
@@ -6634,4 +6635,106 @@ a.ocard__buyer:hover { color: var(--accent-text); }
    inside the feed's column instead of bleeding past it. */
 @media (min-width: 720px) {
   .hotstrip__row, .feed__filters { margin-inline: 0; padding-inline: 0; }
+}
+
+/* ── Post colours: two hues per kind of post, pushing against each other ──
+
+   Every post carries a pair of colours for what it is - an item, a poll, a
+   photo post, a line of text - so a feed reads by kind before it is read by
+   word. Each colour is a soft blob in one corner; they drift towards each
+   other and back on different clocks, so the two are always mid-scuffle and
+   no two cards are in step. Kept to a quarter strength over the dark card:
+   vivid at the edges, quiet behind the words.
+
+   Only transform is animated, on layers of their own, so a long feed costs
+   the compositor and never the layout. */
+
+.spost--text   { --c1: 255 122 26;  --c2: 192 38 211; }
+.spost--item   { --c1: 212 255 58;  --c2: 255 91 31; }
+.spost--photo  { --c1: 255 46 126;  --c2: 34 211 238; }
+.spost--poll   { --c1: 6 214 231;   --c2: 139 92 246; }
+.spost--vibe   { --c1: 255 184 0;   --c2: 236 72 153; }
+.spost--repost { --c1: 59 130 246;  --c2: 255 90 95; }
+
+.spost__glow {
+  position: absolute; inset: 0; z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.spost__glow::before,
+.spost__glow::after {
+  content: '';
+  position: absolute;
+  width: 85%; aspect-ratio: 1;
+  border-radius: 50%;
+  will-change: transform;
+}
+.spost__glow::before {
+  left: -30%; top: -35%;
+  background: radial-gradient(circle, rgb(var(--c1) / 0.3), rgb(var(--c1) / 0.1) 38%, transparent 66%);
+  animation: glow-lunge-a 11s ease-in-out infinite alternate;
+}
+.spost__glow::after {
+  right: -30%; bottom: -35%;
+  background: radial-gradient(circle, rgb(var(--c2) / 0.3), rgb(var(--c2) / 0.1) 38%, transparent 66%);
+  animation: glow-lunge-b 13s ease-in-out infinite alternate;
+}
+.spost:nth-child(3n + 1) .spost__glow::before { animation-delay: -4s; }
+.spost:nth-child(3n + 2) .spost__glow::after { animation-delay: -7s; }
+.spost:nth-child(4n) .spost__glow::before { animation-duration: 9s; }
+@keyframes glow-lunge-a {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(38%, 22%) scale(1.18); }
+  100% { transform: translate(62%, 8%) scale(0.92); }
+}
+@keyframes glow-lunge-b {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-40%, -26%) scale(1.2); }
+  100% { transform: translate(-60%, -6%) scale(0.95); }
+}
+
+/* The edge: a hairline in the post's two colours, so the card is framed by
+   its kind even where the blobs have drifted away. */
+.social .spost:not(.spost--nested)::before {
+  content: '';
+  position: absolute; inset: 0; z-index: -1;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(125deg, rgb(var(--c1) / 0.6), rgba(255, 255, 255, 0.05) 45%, rgb(var(--c2) / 0.55));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ── The composer: a line forever running round it ─────────────────────── */
+
+.social .writer { isolation: isolate; border-color: transparent; }
+.social .writer::before {
+  content: '';
+  position: absolute; inset: 0; z-index: -1;
+  padding: 2px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--spin),
+    rgba(255, 91, 31, 0.08), #FF5B1F 12%, #FF2E7E 22%, #D4FF3A 30%, rgba(255, 46, 126, 0.08) 42%,
+    rgba(255, 91, 31, 0.08) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: writer-spin 4s linear infinite;
+  pointer-events: none;
+}
+.social .writer:not(.writer--closed)::before { animation-duration: 2.4s; padding: 2.5px; }
+@keyframes writer-spin { to { --spin: 360deg; } }
+
+/* ── Bars that step aside while you read ───────────────────────────────── */
+
+.nav, .tabbar { transition: transform 280ms var(--ease); }
+:root[data-bars='hidden'] .nav { transform: translateY(-100%); }
+:root[data-bars='hidden'] .tabbar { transform: translateY(100%); }
+
+@media (prefers-reduced-motion: reduce) {
+  .spost__glow::before, .spost__glow::after, .social .writer::before { animation: none; }
+  .nav, .tabbar { transition: none; }
 }
