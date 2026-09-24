@@ -758,6 +758,38 @@ export interface DashboardResponse {
 
 /* ── Pro analytics ─────────────────────────────────────────────────────── */
 
+/** `GET /api/me/interest` - the Insights (Pro) tab: who wants what. */
+export interface InterestResponse {
+  summary: {
+    views: number;
+    saves: number;
+    buyClicks: number;
+    stalled: number;
+    stalledMinor: number;
+    orders: number;
+    paid: number;
+    placedPercent: number | null;
+    toCollectMinor: number;
+  };
+  saved: {
+    listingId: string; title: string; photo: string | null; priceMinor: number; currency: string;
+    people: { who: PartyRef; savedAt: string; state: 'saved' | 'checkout' | 'bought' }[];
+  }[];
+  checkout: {
+    orderId: string; listingId: string; title: string; photo: string | null; who: PartyRef;
+    firstAt: string; lastAt: string; clicks: number; amountMinor: number; currency: string;
+    stillForSale: boolean; boughtElsewhere: boolean;
+  }[];
+  items: {
+    listingId: string; title: string; photo: string | null; live: boolean; views: number; saves: number;
+    buyClicks: number; orders: number; paid: number; revenueMinor: number; currency: string; expiresAt: string | null;
+  }[];
+  leads: { who: PartyRef; saves: number; checkouts: number; lastAt: string }[];
+  toCollect: { who: PartyRef; outstandingMinor: number; orders: number; currency: string }[];
+  expiring: { listingId: string; title: string; expiresAt: string | null; saves: number; buyClicks: number }[];
+  activity: string[];
+}
+
 /**
  * What the consignments have been doing, read off the packing board.
  *
@@ -990,6 +1022,8 @@ export interface ItemGroup {
     photo: string | null;
     method: PaymentMethod;
     canPayMore: boolean;
+    /** False while the buyer has pressed Buy but not yet paid or booked. */
+    placed: boolean;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
   })[];
 }
@@ -1427,6 +1461,8 @@ export const api = {
   dashboard: () => request<DashboardResponse>('/me/dashboard'),
   insights: (storeId?: string) =>
     request<InsightsResponse>(`/me/insights${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  interest: (storeId?: string) =>
+    request<InterestResponse>(`/me/interest${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
 
   socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),

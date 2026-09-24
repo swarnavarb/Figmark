@@ -63,6 +63,14 @@ export function sideOf(order: Pick<Order, 'buyerId' | 'sellerId'>, viewerId: str
 }
 
 /**
+ * Whether the buyer has gone past Buy - paid, paid an advance, or booked.
+ * Until then the order is the buyer's checkout and nobody else's business.
+ */
+export function isPlaced(order: Pick<Order, 'placedAt'>): boolean {
+  return order.placedAt !== null;
+}
+
+/**
  * The auto-release deadline is due and nothing is contesting it.
  *
  * Evaluated when an order is read rather than by a timer, because a deadline
@@ -87,12 +95,14 @@ export function actionsFor(
   order: Pick<
     Order,
     'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
-  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck'>>,
+  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck' | 'placedAt'>>,
   viewerId: string,
   reviewed = false,
 ): OrderAction[] {
   const side = sideOf(order, viewerId);
   if (!side) return [];
+  // A checkout the buyer has not gone ahead with is not the seller's yet.
+  if (side === 'seller' && order.placedAt === null) return [];
 
   const actions: OrderAction[] = [];
 

@@ -791,6 +791,8 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         photo: photoOf.get(order.listingId) ?? null,
         method: methodOf(order),
         canPayMore: actionsFor(order, user.id).includes('pay_more'),
+        /** False while the buyer has pressed Buy but not yet paid or booked. */
+        placed: order.placedAt !== null,
         ...orderMoney(order),
         /** Ticked once the seller has this one in hand and is finishing it. */
         checkpoints: order.checkpoints ?? {},

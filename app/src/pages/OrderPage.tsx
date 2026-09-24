@@ -801,6 +801,11 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
 
   return (
     <div className="stack">
+      {order.placedAt === null && (
+        <p className="notice notice--info">
+          🛒 Not placed yet — the seller gets your order once you pick one: pay in full, pay an advance, or book.
+        </p>
+      )}
       <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
 
       {/* Full or advance, offered only where the seller takes an advance. The

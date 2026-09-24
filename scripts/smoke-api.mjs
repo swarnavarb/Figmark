@@ -14,9 +14,27 @@ const { loginRoute: login, signupRoute: signup, meRoute: me } = await import(new
 const {
   feedRoute: feed, listingDetailRoute: listingDetail, createListingRoute: createListing,
   toggleLikeRoute: toggleLike, bumpListingRoute: bump, addCommentRoute: addComment,
-  toggleFollowRoute: toggleFollow, createOrderRoute: createOrder,
+  toggleFollowRoute: toggleFollow, createOrderRoute: openCheckout,
   myActivityRoute: myActivity, forwardersRoute: forwarders,
 } = await import(new URL('catalog-routes.js', fns));
+const { placeOrder } = await import(new URL('placement.js', fns));
+/**
+ * Pressing Buy only opens a checkout now; the order reaches the seller when
+ * the buyer pays, pays an advance or books. Every fixture below was written
+ * when Buy was the order, and is about what happens after it - so this places
+ * the checkout straight away, through the same function the pay and book
+ * routes use (quietly, so no fixture's notification count moves). The tests
+ * about the checkout itself call `openCheckout`.
+ */
+const createOrder = async (request, ctx) => {
+  const opened = await openCheckout(request, ctx);
+  const order = opened.jsonBody?.order;
+  if (opened.status >= 300 || !order || order.placedAt !== null) return opened;
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const refusal = await placeOrder(repository, order, 'paid', order.buyerId, { tellSeller: false });
+  if (refusal) throw new Error(refusal);
+  return { ...opened, status: 201, jsonBody: { ...opened.jsonBody, order: await repository.getOrder(order.id) } };
+};
 const {
   myLotsRoute: myLots, createLotRoute: createLotHandler, lotContentsRoute: lotContents,
   updateLotDetailsRoute: updateLotDetails,
@@ -88,7 +106,7 @@ const {
 const {
   saveReversalDetailsRoute: saveReversalDetails, reversalDetailsRoute: readReversalDetails,
 } = await import(new URL('profile-routes.js', fns));
-const { insightsRoute: insights } = await import(new URL('insight-routes.js', fns));
+const { insightsRoute: insights, interestRoute: interest } = await import(new URL('insight-routes.js', fns));
 const {
   servicesHubRoute: servicesHub, serviceDirectoryRoute: serviceDirectory,
   offerServiceRoute: offerService, consignmentsRoute: consignments,
@@ -6426,6 +6444,97 @@ await check('a seller unsure the details are current asks, and refunds once the 
 
   assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
     body: { amountMinor: 2_000, reason: 'Late', reference: 'L1' } }), ctx)).status, 201, 'and the seller can go ahead');
+});
+
+/* ── pressing Buy, and who wants what ─────────────────────────────────── */
+console.log('\npressing Buy, and who wants what');
+
+const sellerSees = async (orderId) =>
+  (await sales(req({ headers: auth }), ctx)).jsonBody.orders.some((row) => row.id === orderId);
+
+await check('pressing Buy opens a checkout the seller cannot see, and holds no stock', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Checkout Only', priceMinor: 12_000, quantityAvailable: 3 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const buyer = await newBuyer('Window Shopper');
+  const opened = await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx);
+  assert.equal(opened.status, 201);
+  const orderId = opened.jsonBody.order.id;
+  assert.equal(opened.jsonBody.order.placedAt, null);
+  assert.equal((await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody.listing.quantityAvailable, 3);
+  assert.equal(await sellerSees(orderId), false, 'not in the order book');
+  assert.equal((await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).status, 404, 'nor by its link');
+  assert.ok(!(await noticesFor('usr_demo')).some((n) => n.link === `/order/${orderId}`), 'and nobody was told');
+  assert.ok((await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody.actions.includes('pay'));
+
+  const again = await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx);
+  assert.equal(again.jsonBody.order.id, orderId, 'Buy again goes back to the same checkout');
+  assert.equal(again.jsonBody.order.buyClicks, 2);
+});
+
+await check('booking from the checkout places the order and tells the seller', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Booked Later', priceMinor: 9_000, quantityAvailable: 2 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const buyer = await newBuyer('Booker');
+  const orderId = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  const booked = await bookOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(booked.status, 200);
+  assert.ok(booked.jsonBody.order.placedAt);
+  assert.equal((await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody.listing.quantityAvailable, 1);
+  assert.ok(await sellerSees(orderId));
+  assert.ok((await noticesFor('usr_demo')).some((n) => n.kind === 'order_placed' && n.link === `/order/${orderId}`));
+  assert.ok((await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody.actions.includes('accept'));
+});
+
+await check('saying you paid places the order too, with the claim as the only notice', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Paid At Checkout', priceMinor: 8_000, quantityAvailable: 2 } }), ctx);
+  const buyer = await newBuyer('Quick Payer');
+  const orderId = (await openCheckout(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx)).jsonBody.order.id;
+  const claimed = await claimPayment(req({ headers: buyer.headers, params: { id: orderId }, body: { reference: 'UTR123' } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  assert.ok(claimed.jsonBody.order.placedAt);
+  assert.ok(await sellerSees(orderId));
+  const told = (await noticesFor('usr_demo')).filter((n) => n.link === `/order/${orderId}`);
+  assert.deepEqual(told.map((n) => n.kind), ['payment_claimed']);
+});
+
+await check('a checkout cannot be placed once the item has gone', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Last One', priceMinor: 5_000, quantityAvailable: 1 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const slow = await newBuyer('Slow Buyer');
+  const fast = await newBuyer('Fast Buyer');
+  const slowId = (await openCheckout(req({ headers: slow.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  const fastId = (await openCheckout(req({ headers: fast.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.equal((await bookOrder(req({ headers: fast.headers, params: { id: fastId } }), ctx)).status, 200);
+  const late = await bookOrder(req({ headers: slow.headers, params: { id: slowId } }), ctx);
+  assert.equal(late.status, 409);
+  assert.equal(late.jsonBody.error, 'unavailable');
+});
+
+await check('insights name who saved what and who stopped at Buy', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Much Wanted', priceMinor: 20_000, quantityAvailable: 4 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const saver = await newBuyer('Keen Saver');
+  const stopper = await newBuyer('Cart Leaver');
+  await toggleLike(req({ headers: saver.headers, params: { id: listingId } }), ctx);
+  await toggleLike(req({ headers: stopper.headers, params: { id: listingId } }), ctx);
+  await openCheckout(req({ headers: stopper.headers, body: { listingId } }), ctx);
+
+  const read = await interest(req({ headers: auth }), ctx);
+  assert.equal(read.status, 200);
+  const item = read.jsonBody.saved.find((row) => row.listingId === listingId);
+  assert.deepEqual(item.people.map((p) => [p.who.name, p.state]).sort(),
+    [['Cart Leaver', 'checkout'], ['Keen Saver', 'saved']]);
+  const stalled = read.jsonBody.checkout.filter((row) => row.listingId === listingId);
+  assert.deepEqual(stalled.map((row) => row.who.name), ['Cart Leaver']);
+  assert.ok(read.jsonBody.leads.some((row) => row.who.name === 'Cart Leaver' && row.checkouts === 1));
+  const funnel = read.jsonBody.items.find((row) => row.listingId === listingId);
+  assert.equal(funnel.saves, 2);
+  assert.equal(funnel.buyClicks, 1);
+  assert.equal(funnel.orders, 0);
+  assert.ok(read.jsonBody.summary.stalled >= 1);
+
+  assert.equal((await interest(req({ headers: saver.headers, query: { store: 'usr_demo' } }), ctx)).status, 403,
+    'and only the shop reads them');
 });
 
 console.log(`\n${passed} checks passed`);

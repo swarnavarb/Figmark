@@ -42,12 +42,13 @@ import {
 } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
+import { InsightsPanel } from './InsightsPanel';
 import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Section = 'items' | 'payments' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'insights' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -56,6 +57,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   // to live. The id stays `payments` - it is the identity, and renaming it
   // would only be a way to break the rights that reference it.
   { id: 'payments', label: 'Orders' },
+  // Who saved what, who stopped at Buy, and how items convert - the Pro tab.
+  { id: 'insights', label: '✨ Insights' },
   // Every amount owed back to a buyer - overpaid, cancelled, or a refund the
   // seller starts - in one place, set apart on the right of the same row.
   { id: 'refunds', label: '↩️ Refunds' },
@@ -73,7 +76,7 @@ const SECTIONS: { id: Section; label: string }[] = [
  * eight at once.
  */
 const SECTION_GROUPS: Record<string, Section[]> = {
-  items: ['items', 'payments', 'refunds'],
+  items: ['items', 'payments', 'insights', 'refunds'],
   manage: ['storefront', 'people', 'packing'],
   lots: ['lots'],
   routes: ['routes'],
@@ -264,7 +267,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
   // worse than a tab that is not there.
   const visible = SECTIONS.filter((entry) => {
     if (entry.id === 'items') return store.permissions.includes('listings');
-    if (entry.id === 'analytics') return store.permissions.includes('analytics');
+    if (entry.id === 'analytics' || entry.id === 'insights') return store.permissions.includes('analytics');
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'packing') return store.permissions.includes('export');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
@@ -309,10 +312,11 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
               type="button"
               role="tab"
               aria-selected={active === entry.id}
-              className={`chip${entry.id === 'refunds' ? ' chip--refunds' : ''}${active === entry.id ? ' is-on' : ''}`}
+              className={`chip${entry.id === 'refunds' ? ' chip--refunds' : ''}${entry.id === 'insights' ? ' chip--pro' : ''}${active === entry.id ? ' is-on' : ''}`}
               onClick={() => setSection(entry.id)}
             >
               {entry.label}
+              {entry.id === 'insights' && <span className="probadge">PRO</span>}
             </button>
           ))}
         </div>
@@ -325,6 +329,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         <div className="tab-view" style={{ marginTop: chips.length > 1 ? 14 : 20 }} key={`${store.ownerId}:${active}`}>
           {active === 'items' && <MyItems store={store} />}
           {active === 'payments' && <Orders store={store} />}
+          {active === 'insights' && <InsightsPanel store={store} />}
           {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}

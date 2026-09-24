@@ -1,5 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { Lot, Order, User } from '../../../shared/models.js';
+import type { Listing, Lot, Order, User } from '../../../shared/models.js';
+import { isCancelledLike } from '../../../shared/orders.js';
+import { isExpired, orderMoney } from '../../../shared/payments.js';
 import { can } from '../../../shared/stores.js';
 import { personRef, type PartyRef } from '../../../shared/parties.js';
 import {
@@ -264,7 +266,201 @@ async function insights(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/** The item's lead photo, for a thumbnail beside its name. */
+function photoOf(listing: Listing | undefined): string | null {
+  const lead = listing?.photos.find((photo) => photo.isPrimary) ?? listing?.photos[0];
+  return lead?.url || null;
+}
+
+/**
+ * GET /api/me/interest - who wants what, before and after they buy.
+ *
+ * The Insights (Pro) tab. Everything the order book cannot show because it
+ * never became an order: who saved which item, who pressed Buy and stopped at
+ * the checkout, and how each item turns looking into paying. Plus the two
+ * lists a shop acts on every day - people worth a message, and money still
+ * to collect.
+ */
+async function interest(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const repository = await getRepository();
+
+  const sellerId = await shopFor(request, repository, user);
+  if (!sellerId) return error(403, 'forbidden', 'You cannot read the numbers for that shop.');
+
+  const [listings, orders, drafts] = await Promise.all([
+    repository.listListings({ sellerId, includeHidden: true })
+      .then((rows) => rows.filter((row) => row.status !== 'archived')),
+    repository.listOrdersForSeller(sellerId),
+    repository.listCheckoutDrafts(sellerId),
+  ]);
+  const likes = (await repository.listLikesForListings(listings.map((listing) => listing.id)))
+    .filter((like) => like.userId !== sellerId);
+  const byId = new Map(listings.map((listing) => [listing.id, listing]));
+  const real = orders.filter((order) => !isCancelledLike(order.status));
+  const stalled = drafts.filter((order) => order.status === 'pending_payment');
+
+  const boughtBy = new Set(real.map((order) => `${order.buyerId}:${order.listingId}`));
+  const stalledBy = new Set(stalled.map((order) => `${order.buyerId}:${order.listingId}`));
+  const customers = new Set(real.map((order) => order.buyerId));
+
+  const who = await names(repository, [
+    ...likes.map((like) => like.userId),
+    ...stalled.map((order) => order.buyerId),
+    ...real.map((order) => order.buyerId),
+  ]);
+
+  /* ── Saved ─────────────────────────────────────────────────────────────
+     Per item, most-saved first, and for each person whether they went on to
+     buy it - a save that became an order is not a lead any more. */
+  const savesByItem = new Map<string, typeof likes>();
+  for (const like of likes) {
+    const rows = savesByItem.get(like.listingId);
+    if (rows) rows.push(like);
+    else savesByItem.set(like.listingId, [like]);
+  }
+  const saved = [...savesByItem]
+    .map(([listingId, rows]) => {
+      const listing = byId.get(listingId);
+      return {
+        listingId,
+        title: listing?.title ?? 'An item',
+        photo: photoOf(listing),
+        priceMinor: listing?.priceMinor ?? 0,
+        currency: listing?.currency ?? 'INR',
+        people: rows
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .map((like) => ({
+            who: who.get(like.userId)!,
+            savedAt: like.createdAt,
+            state: boughtBy.has(`${like.userId}:${listingId}`) ? 'bought' as const
+              : stalledBy.has(`${like.userId}:${listingId}`) ? 'checkout' as const : 'saved' as const,
+          })),
+      };
+    })
+    .sort((a, b) => b.people.length - a.people.length);
+
+  /* ── Pressed Buy, went no further ───────────────────────────────────── */
+  const checkout = stalled.map((order) => {
+    const listing = byId.get(order.listingId);
+    return {
+      orderId: order.id,
+      listingId: order.listingId,
+      title: order.itemName,
+      photo: photoOf(listing),
+      who: who.get(order.buyerId)!,
+      firstAt: order.createdAt,
+      lastAt: order.updatedAt,
+      clicks: order.buyClicks ?? 1,
+      amountMinor: order.unitPriceMinor * order.quantity,
+      currency: order.currency,
+      stillForSale: Boolean(listing && listing.status === 'active' && !isExpired(listing)),
+      boughtElsewhere: boughtBy.has(`${order.buyerId}:${order.listingId}`),
+    };
+  });
+
+  /* ── Each item, from a look to a payment ─────────────────────────────── */
+  const items = listings
+    .map((listing) => {
+      const placed = real.filter((order) => order.listingId === listing.id);
+      return {
+        listingId: listing.id,
+        title: listing.title,
+        photo: photoOf(listing),
+        live: listing.status === 'active' && !isExpired(listing),
+        views: listing.viewCount ?? 0,
+        saves: savesByItem.get(listing.id)?.length ?? 0,
+        buyClicks: placed.length + stalled.filter((order) => order.listingId === listing.id).length,
+        orders: placed.length,
+        paid: placed.filter((order) => order.paymentStatus === 'paid').length,
+        revenueMinor: placed.reduce((sum, order) => sum + orderMoney(order).paidMinor, 0),
+        currency: listing.currency,
+        expiresAt: listing.expiresAt ?? null,
+      };
+    })
+    .filter((row) => row.views + row.saves + row.buyClicks > 0)
+    .sort((a, b) => (b.buyClicks * 3 + b.saves * 2 + b.views) - (a.buyClicks * 3 + a.saves * 2 + a.views));
+
+  /* ── People worth a message ────────────────────────────────────────────
+     Interested and never ordered anything from this shop. */
+  const leadMap = new Map<string, { saves: number; checkouts: number; lastAt: string }>();
+  const touch = (id: string, at: string, key: 'saves' | 'checkouts') => {
+    if (customers.has(id)) return;
+    const row = leadMap.get(id) ?? { saves: 0, checkouts: 0, lastAt: at };
+    row[key] += 1;
+    if (at > row.lastAt) row.lastAt = at;
+    leadMap.set(id, row);
+  };
+  for (const like of likes) touch(like.userId, like.createdAt, 'saves');
+  for (const order of stalled) touch(order.buyerId, order.updatedAt, 'checkouts');
+  const leads = [...leadMap]
+    .map(([id, row]) => ({ who: who.get(id)!, ...row }))
+    .sort((a, b) => (b.checkouts * 2 + b.saves) - (a.checkouts * 2 + a.saves) || b.lastAt.localeCompare(a.lastAt))
+    .slice(0, 12);
+
+  /* ── Money still to collect ──────────────────────────────────────────── */
+  const owing = new Map<string, { outstandingMinor: number; orders: number; currency: string }>();
+  for (const order of real) {
+    if (!order.accepted && order.paymentStatus === 'unpaid') continue;
+    const { outstandingMinor } = orderMoney(order);
+    if (outstandingMinor <= 0) continue;
+    const row = owing.get(order.buyerId) ?? { outstandingMinor: 0, orders: 0, currency: order.currency };
+    row.outstandingMinor += outstandingMinor;
+    row.orders += 1;
+    owing.set(order.buyerId, row);
+  }
+  const toCollect = [...owing]
+    .map(([id, row]) => ({ who: who.get(id)!, ...row }))
+    .sort((a, b) => b.outstandingMinor - a.outstandingMinor)
+    .slice(0, 10);
+
+  /* ── Nearly gone and still wanted ─────────────────────────────────────── */
+  const soon = Date.now() + 3 * 86_400_000;
+  const expiring = items
+    .filter((row) => row.live && row.expiresAt && Date.parse(row.expiresAt) <= soon && row.saves + row.buyClicks > 0)
+    .map(({ listingId, title, expiresAt, saves, buyClicks }) => ({ listingId, title, expiresAt, saves, buyClicks }));
+
+  const views = listings.reduce((sum, listing) => sum + (listing.viewCount ?? 0), 0);
+  const clicks = real.length + stalled.length;
+
+  return json(200, {
+    summary: {
+      views,
+      saves: likes.length,
+      buyClicks: clicks,
+      stalled: stalled.length,
+      stalledMinor: stalled.reduce((sum, order) => sum + order.unitPriceMinor * order.quantity, 0),
+      orders: real.length,
+      paid: real.filter((order) => order.paymentStatus === 'paid').length,
+      /** Of everybody who pressed Buy, the share who went ahead. */
+      placedPercent: clicks ? Math.round((real.length / clicks) * 100) : null,
+      toCollectMinor: toCollect.reduce((sum, row) => sum + row.outstandingMinor, 0),
+    },
+    saved,
+    checkout,
+    items: items.slice(0, 20),
+    leads,
+    toCollect,
+    expiring,
+    /** When people act - saves, Buy presses and orders - for a by-hour chart drawn in the viewer's clock. */
+    activity: [
+      ...likes.map((like) => like.createdAt),
+      ...stalled.map((order) => order.createdAt),
+      ...real.map((order) => order.placedAt ?? order.createdAt),
+    ].slice(-1000),
+  });
+}
+
 export const insightsRoute = handler(insights);
+export const interestRoute = handler(interest);
+
+app.http('me-interest', {
+  authLevel: 'anonymous',
+  methods: ['GET'],
+  route: 'me/interest',
+  handler: interestRoute,
+});
 
 app.http('me-insights', {
   authLevel: 'anonymous',

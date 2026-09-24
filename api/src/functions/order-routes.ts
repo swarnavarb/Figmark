@@ -29,6 +29,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { notify } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
+import { placeOrder } from './placement.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -60,6 +61,10 @@ async function ownOrder(
   if (!order) return { refusal: error(404, 'not_found', 'No such order.') };
   if (!sideOf(order, viewerId)) {
     return { refusal: error(403, 'forbidden', 'That order is not yours.') };
+  }
+  // Until the buyer pays or books, it is their checkout, not the seller's order.
+  if (order.placedAt === null && order.sellerId === viewerId) {
+    return { refusal: error(404, 'not_found', 'No such order.') };
   }
   return { order };
 }
@@ -207,6 +212,10 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
 
   const terms = planAmount(order, body.plan);
   if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
+
+  // Choosing to pay is what makes a checkout an order the seller sees.
+  const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id);
+  if (refusal) return error(409, 'unavailable', refusal);
 
   const now = new Date().toISOString();
   const totalMinor = order.unitPriceMinor * order.quantity;
@@ -633,6 +642,10 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
         `${MAX_SCREENSHOT_BYTES / 1000} KB. A smaller crop of the confirmation is enough.`,
     );
   }
+
+  // The claim itself tells the seller, so placing stays quiet.
+  const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id, { tellSeller: false });
+  if (refusal) return error(409, 'unavailable', refusal);
 
   const now = new Date().toISOString();
   order.paymentStatus = 'claimed';
@@ -2129,6 +2142,9 @@ async function bookOrder(request: HttpRequest, _context: InvocationContext) {
   if (order.buyerId !== user.id || !actionsFor(order, user.id).includes('pay') || order.bookingOnly) {
     return error(409, 'cannot_book', 'This order cannot be booked.');
   }
+
+  const refusal = await placeOrder(repository, order, 'booked', user.id);
+  if (refusal) return error(409, 'unavailable', refusal);
 
   order.bookingOnly = true;
   order.updatedAt = new Date().toISOString();

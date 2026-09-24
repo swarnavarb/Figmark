@@ -90,6 +90,8 @@ export function PurchasesPage() {
                               <span>Balance <b className="purch__due">{formatMoney(item.outstandingMinor, item.currency)}</b></span>
                             ) : item.paidMinor > 0 ? (
                               <span className="badge badge--ok">✅ Paid in full</span>
+                            ) : !item.placed ? (
+                              <span className="badge badge--warn">🛒 Checkout not finished — pay or book to place it</span>
                             ) : (
                               <span className="badge badge--warn">Awaiting payment</span>
                             )}

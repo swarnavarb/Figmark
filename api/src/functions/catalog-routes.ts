@@ -11,6 +11,7 @@ import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { placeOrder } from './placement.js';
 import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -430,6 +431,19 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'insufficient_stock', `Only ${listing.quantityAvailable} left.`);
   }
 
+  // Pressing Buy again on an item already at the checkout goes back to that
+  // checkout rather than opening a second one nobody asked for.
+  if (body.plan !== 'book') {
+    const open = (await repository.listOrdersForBuyer(user.id)).find((entry) =>
+      entry.listingId === listing.id && entry.placedAt === null && entry.status === 'pending_payment');
+    if (open) {
+      open.quantity = quantity;
+      open.buyClicks = (open.buyClicks ?? 1) + 1;
+      open.updatedAt = new Date().toISOString();
+      return json(200, { order: await repository.updateOrder(open) });
+    }
+  }
+
   const now = new Date().toISOString();
   const amountMinor = listing.priceMinor * quantity;
   const now2 = new Date().toISOString();
@@ -513,33 +527,17 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // the seller has accepted - see acceptOrder in order-routes.ts.
     bookingOnly: body.plan === 'book',
     accepted: false,
+    // A checkout until the buyer picks pay, advance or book - see placement.ts.
+    placedAt: null,
+    buyClicks: 1,
   };
 
   const placed = await repository.createOrder(order);
 
-  // A pre-order booking is also a pledge being made good. The pledge row is
-  // kept rather than deleted: it carries who brought this person in, and a
-  // recruiter losing their credit the moment their recruit pays would be an
-  // odd way to thank them.
-  if (listing.preOrder) {
-    const pledges = await repository.listPledges(listing.id);
-    const mine = pledges.find((entry) => entry.userId === user.id && entry.convertedOrderId === null);
-    if (mine) {
-      await repository.savePledge({
-        ...mine,
-        convertedOrderId: placed.id,
-        updatedAt: new Date().toISOString(),
-      });
-      if (mine.broughtBy && !placed.broughtBy) {
-        await repository.updateOrder({ ...placed, broughtBy: mine.broughtBy });
-        placed.broughtBy = mine.broughtBy;
-      }
-    }
-
-    // Re-read: createOrder moved the fill counter, so the listing in hand is
-    // one version behind the thing being reconciled.
-    const fresh = await repository.getListing(listing.id);
-    if (fresh) await reconcilePreOrder(repository, fresh, { actorId: user.id });
+  // Book straight from the item page: the choice is made, so it is an order.
+  if (body.plan === 'book') {
+    const refusal = await placeOrder(repository, placed, 'booked', user.id);
+    if (refusal) return error(409, 'unavailable', refusal);
   }
 
   return json(201, { order: placed });

@@ -1,4 +1,5 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
+import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { CosmosClient, type Container, type ContainerRequest, type Database } from '@azure/cosmos';
@@ -751,7 +752,7 @@ export class CosmosRepository implements Repository {
         { partitionKey: AWAITING_LOT_ID },
       )
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   async moveOrderToLot(order: Order, fromLotId: string): Promise<Order> {
@@ -1216,7 +1217,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@id', value: escrowAgentId }],
       })
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
@@ -1229,7 +1230,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@sellerId', value: sellerId }],
       })
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   async listPosts(channelId: string, limit = 50): Promise<Post[]> {
@@ -1422,7 +1423,7 @@ export class CosmosRepository implements Repository {
         { partitionKey: lotId },
       )
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   async getListing(id: string): Promise<Listing | null> {
@@ -1534,7 +1535,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@listingId', value: listingId }],
       })
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   /**
@@ -1554,7 +1555,32 @@ export class CosmosRepository implements Repository {
   async createOrder(order: Order): Promise<Order> {
     const { resource } = await this.container('orders').items.create(order);
     const saved = resource ?? order;
+    if (isPlaced(order)) await this.takeStock(order);
+    return saved;
+  }
 
+  async listCheckoutDrafts(sellerId: string): Promise<Order[]> {
+    const { resources } = await this.container('orders')
+      .items.query<Order>({
+        query: 'SELECT * FROM c WHERE c.sellerId = @sellerId AND IS_NULL(c.placedAt) ORDER BY c.updatedAt DESC',
+        parameters: [{ name: '@sellerId', value: sellerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listLikesForListings(listingIds: readonly string[]): Promise<Like[]> {
+    if (listingIds.length === 0) return [];
+    const { resources } = await this.container('likes')
+      .items.query<Like>({
+        query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.listingId)',
+        parameters: [{ name: '@ids', value: [...listingIds] }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async takeStock(order: Order): Promise<void> {
     try {
       const listing = await this.getListing(order.listingId);
       if (listing) {
@@ -1577,8 +1603,6 @@ export class CosmosRepository implements Repository {
     } catch {
       // See above: the order stands.
     }
-
-    return saved;
   }
 
   async listComments(listingId: string): Promise<ListingComment[]> {

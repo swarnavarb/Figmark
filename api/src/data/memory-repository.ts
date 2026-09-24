@@ -1,5 +1,5 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
-import { isCancelledLike } from '../../../shared/orders.js';
+import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { ROUTE_TEMPLATES, normaliseSteps, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
@@ -234,6 +234,7 @@ export class MemoryRepository implements Repository {
     return [...this.orders.values()]
       .filter((order) =>
         order.sellerId === sellerId
+        && isPlaced(order)
         && order.lotId === AWAITING_LOT_ID
         && !isCancelledLike(order.status))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -368,12 +369,12 @@ export class MemoryRepository implements Repository {
   }
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
-    return [...this.orders.values()].filter((o) => o.lotId === lotId);
+    return [...this.orders.values()].filter((o) => o.lotId === lotId && isPlaced(o));
   }
 
   async listOrdersHeldBy(escrowAgentId: string): Promise<Order[]> {
     return [...this.orders.values()]
-      .filter((order) => order.protection?.escrowAgentId === escrowAgentId)
+      .filter((order) => order.protection?.escrowAgentId === escrowAgentId && isPlaced(order))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
@@ -385,12 +386,28 @@ export class MemoryRepository implements Repository {
 
   async listOrdersForListing(listingId: string): Promise<Order[]> {
     return [...this.orders.values()]
-      .filter((order) => order.listingId === listingId)
+      .filter((order) => order.listingId === listingId && isPlaced(order))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   async createOrder(order: Order): Promise<Order> {
     this.orders.set(order.id, order);
+    if (isPlaced(order)) await this.takeStock(order);
+    return order;
+  }
+
+  async listCheckoutDrafts(sellerId: string): Promise<Order[]> {
+    return [...this.orders.values()]
+      .filter((order) => order.sellerId === sellerId && !isPlaced(order))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async listLikesForListings(listingIds: readonly string[]): Promise<Like[]> {
+    const wanted = new Set(listingIds);
+    return [...this.likes.values()].filter((like) => wanted.has(like.listingId));
+  }
+
+  async takeStock(order: Order): Promise<void> {
     const listing = this.listings.get(order.listingId);
     // A "multiple" item has no count to run down, so it never sells out.
     if (listing && listing.quantityMode !== 'multiple') {
@@ -402,7 +419,6 @@ export class MemoryRepository implements Repository {
       // order rather than being counted at read time.
       if (listing.preOrder) listing.preOrder.filledCount += order.quantity;
     }
-    return order;
   }
 
   async getOrder(id: string): Promise<Order | null> {
@@ -769,7 +785,7 @@ export class MemoryRepository implements Repository {
   }
 
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
-    return [...this.orders.values()].filter((order) => order.sellerId === sellerId);
+    return [...this.orders.values()].filter((order) => order.sellerId === sellerId && isPlaced(order));
   }
 
   async listPosts(channelId: string, limit = 50): Promise<Post[]> {

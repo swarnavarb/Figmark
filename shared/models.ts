@@ -917,6 +917,16 @@ export interface Order extends BaseDocument {
   cancelReason?: string | null;
   /** The reversal of a paid, then cancelled, order - one record per order. */
   reversal?: OrderReversal | null;
+  /**
+   * When the buyer chose how to go ahead - pay, pay an advance, or book.
+   * Null while they have only pressed Buy: the checkout exists so the next
+   * screen can ask how to pay, but it is not an order the seller sees, holds
+   * stock for, or is told about. Absent on orders from before this existed,
+   * which were all placed.
+   */
+  placedAt?: string | null;
+  /** Times the buyer pressed Buy on this item before going ahead (or not). */
+  buyClicks?: number;
 }
 
 /**
@@ -1476,6 +1486,7 @@ export type NotificationKind =
   | 'preorder_closed'
   | 'sale_opened'
   | 'sale_item'
+  | 'order_placed'
   | 'order_rejected'
   | 'order_accepted'
   | 'booking_accepted'
