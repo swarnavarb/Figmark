@@ -1273,6 +1273,16 @@ export class CosmosRepository implements Repository {
     return resource ?? post;
   }
 
+  async listRecentPosts(limit: number): Promise<Post[]> {
+    const { resources } = await this.container('posts')
+      .items.query<Post>({
+        query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+        parameters: [{ name: '@limit', value: limit }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async getPost(channelId: string, id: string): Promise<Post | null> {
     try {
       const { resource } = await this.container('posts').item(id, channelId).read<Post>();

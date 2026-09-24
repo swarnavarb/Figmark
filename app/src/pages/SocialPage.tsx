@@ -7,10 +7,11 @@ import {
   type ChannelThread,
   type ForumsResponse,
   type PostCard,
+  type ShareableListing,
 } from '../api';
-import type { StoreAccess } from '@shared/stores';
 import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
-import { Confetti, SocialPostCard } from '../components/SocialPost';
+import { Confetti, SocialPostCard, postHref } from '../components/SocialPost';
+import { VoicePicker, VoiceProvider, useVoice } from '../components/SocialVoice';
 import { shrink } from '../components/PhotoManager';
 import {
   POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_PHOTOS, VIBES, VIBE_MAX_CHARS,
@@ -54,37 +55,41 @@ export function SocialPage() {
   );
 
   return (
-    <main className="page tab-view">
-      <div className="page__head">
-        <div>
-          <h1>Social</h1>
-          <p className="muted">{VIEWS.find((entry) => entry.id === view)?.hint}</p>
+    <VoiceProvider>
+      <main className="page tab-view social">
+        <header className="sochero">
+          <span className="sochero__streak" aria-hidden="true" />
+          <div className="sochero__text">
+            <p className="sochero__kicker">Figmark · live</p>
+            <h1 className="sochero__title">Social</h1>
+            <p className="sochero__hint">{VIEWS.find((entry) => entry.id === view)?.hint}</p>
+          </div>
+        </header>
+
+        <nav className="socnav" aria-label="Social sections">
+          {VIEWS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className={`socnav__item${view === entry.id ? ' is-on' : ''}`}
+              aria-pressed={view === entry.id}
+              onClick={() => setView(entry.id)}
+            >
+              <Icon name={entry.icon} size={17} />
+              <span>{entry.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="tab-view" key={view}>
+          {view === 'feed' && <FollowingFeed />}
+          {view === 'wanted' && <WantedPage />}
+          {view === 'channels' && <Channels />}
+          {view === 'forums' && <Forums />}
+          {view === 'messages' && <MessagesView />}
         </div>
-      </div>
-
-      <div className="pills" style={{ marginBottom: 18 }}>
-        {VIEWS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className={`pill${view === entry.id ? ' is-on' : ''}`}
-            aria-pressed={view === entry.id}
-            onClick={() => setView(entry.id)}
-          >
-            <span className="pill__glyph"><Icon name={entry.icon} size={19} /></span>
-            <span className="pill__label">{entry.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="tab-view" key={view}>
-        {view === 'feed' && <FollowingFeed />}
-        {view === 'wanted' && <WantedPage />}
-        {view === 'channels' && <Channels />}
-        {view === 'forums' && <Forums />}
-        {view === 'messages' && <MessagesView />}
-      </div>
-    </main>
+      </main>
+    </VoiceProvider>
   );
 }
 
@@ -113,37 +118,66 @@ function matches(card: PostCard, filter: FeedFilter): boolean {
   }
 }
 
+type Stream = 'following' | 'trending';
+
 /**
- * Everything from everyone you follow, newest first, sale posts included.
+ * The feed: who you follow, or what everyone is talking about.
  *
- * People and shops both land here. An account can post as either, and which
- * voice it used decides whose page the name opens — but the feed does not care
- * which it was: what you follow is what you see.
+ * Two streams rather than one blended one, because they answer different
+ * questions - "what did my people say" and "what am I missing" - and mixing
+ * them makes the first unreliable. The top of the first still carries a strip
+ * of the second, so nobody has to know the tab exists to find something new.
+ *
+ * Read in whichever voice is chosen, because "did I react to this" depends on
+ * who is asking; switching voice reads it again.
  */
 function FollowingFeed() {
+  const { voice } = useVoice();
+  const as = voice.storeId;
+  const [stream, setStream] = useState<Stream>('following');
   const [posts, setPosts] = useState<PostCard[] | null>(null);
+  const [hot, setHot] = useState<PostCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FeedFilter>('all');
 
   const load = useCallback(async () => {
+    setError(null);
     try {
-      setPosts((await api.socialFeed()).posts);
+      const [feed, trending] = await Promise.all([api.socialFeed(as), api.trending(as)]);
+      setPosts(feed.posts);
+      setHot(trending.posts);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your feed.');
     }
-  }, []);
+  }, [as]);
 
   useEffect(() => {
+    setPosts(null);
     void load();
   }, [load]);
 
-  if (error) return <ErrorNotice message={error} />;
-
-  const shown = (posts ?? []).filter((card) => matches(card, filter));
+  const list = stream === 'trending' ? hot : posts;
+  const shown = (list ?? []).filter((card) => matches(card, filter));
 
   return (
     <div className="feed">
       <Composer onPosted={load} />
+
+      {stream === 'following' && hot && hot.length > 0 && (
+        <TrendingStrip cards={hot.slice(0, 8)} onMore={() => setStream('trending')} />
+      )}
+
+      <div className="streams" role="tablist" aria-label="Which posts">
+        {([
+          ['following', 'For you', 'users'],
+          ['trending', 'Trending', 'bolt'],
+        ] as const).map(([id, label, icon]) => (
+          <button key={id} type="button" role="tab" aria-selected={stream === id}
+            className={`streams__tab${stream === id ? ' is-on' : ''}`} onClick={() => setStream(id)}>
+            <Icon name={icon} size={15} /> {label}
+          </button>
+        ))}
+      </div>
 
       <div className="feed__filters" role="toolbar" aria-label="Show">
         {FILTERS.map((entry) => (
@@ -154,26 +188,72 @@ function FollowingFeed() {
         ))}
       </div>
 
-      {!posts ? (
+      {error ? (
+        <ErrorNotice message={error} />
+      ) : !list ? (
         <FeedSkeleton />
-      ) : posts.length === 0 ? (
-        <EmptyState title="Nothing here yet">
-          Follow a seller from their listing and their updates show up here.
+      ) : list.length === 0 ? (
+        <EmptyState title={stream === 'trending' ? 'Quiet out there' : 'Nothing here yet'}>
+          {stream === 'trending'
+            ? 'Nothing is catching fire right now. Post something and start it.'
+            : 'Follow a shop or a person from Trending and their posts show up here.'}
         </EmptyState>
       ) : shown.length === 0 ? (
         <EmptyState title="Nothing like that yet">
-          Nobody you follow has posted one of those. Try another filter, or be the first.
+          Nothing matches that filter. Try another, or be the first.
         </EmptyState>
       ) : (
-        shown.map((card) => (
-          <SocialPostCard key={card.post.id} card={card}
-            onRemoved={(id) => setPosts((list) => list?.filter((entry) => entry.post.id !== id) ?? null)}
-            onReposted={(repost) => setPosts((list) => [repost, ...(list ?? [])])} />
+        shown.map((card, index) => (
+          <SocialPostCard key={`${as ?? 'me'}-${card.post.id}`} card={card}
+            rank={stream === 'trending' ? index + 1 : undefined}
+            onRemoved={(id) => {
+              setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null);
+              setHot((all) => all?.filter((entry) => entry.post.id !== id) ?? null);
+            }}
+            onReposted={(repost) => setPosts((all) => [repost, ...(all ?? [])])} />
         ))
       )}
     </div>
   );
 }
+
+/**
+ * The hottest few, as a row you swipe along.
+ *
+ * Numbered like a leaderboard, because that is what it is, and because a
+ * number is the fastest way to say "this one is bigger than that one".
+ */
+function TrendingStrip({ cards, onMore }: { cards: PostCard[]; onMore: () => void }) {
+  return (
+    <section className="hotstrip" aria-label="Trending now">
+      <div className="hotstrip__head">
+        <h2 className="hotstrip__title"><Icon name="bolt" size={16} /> Trending now</h2>
+        <button type="button" className="hotstrip__more" onClick={onMore}>See all</button>
+      </div>
+      <div className="hotstrip__row">
+        {cards.map((card, index) => {
+          const photo = card.post.photoUrls?.[0] ?? card.post.photoUrl ?? card.listing?.photoUrl ?? null;
+          return (
+            <Link key={card.post.id} to={postHref(card.post)}
+              className={`hotcard${photo ? '' : ` hotcard--${card.post.vibe ?? HOT_TONES[index % HOT_TONES.length]}`}`}>
+              {photo && <img className="hotcard__img" src={photo} alt="" loading="lazy" />}
+              <span className="hotcard__rank">{index + 1}</span>
+              <span className="hotcard__body">
+                <span className="hotcard__who">{card.post.authorName}</span>
+                <span className="hotcard__text">{card.post.body || 'Photo'}</span>
+                <span className="hotcard__stats">
+                  🔥 {card.social.reactions.total} · 💬 {card.social.commentCount}
+                </span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+const HOT_TONES = ['warm', 'hero', 'play', 'sea'] as const;
 
 /** Grey shapes where posts are about to be, so the page does not jump when they land. */
 function FeedSkeleton() {
@@ -201,7 +281,16 @@ function FeedSkeleton() {
  * feed around it.
  */
 export function PostPage() {
+  return (
+    <VoiceProvider>
+      <PostPageBody />
+    </VoiceProvider>
+  );
+}
+
+function PostPageBody() {
   const { channel, id } = useParams<{ channel: string; id: string }>();
+  const { voice } = useVoice();
   const [card, setCard] = useState<PostCard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
@@ -209,23 +298,28 @@ export function PostPage() {
   useEffect(() => {
     if (!channel || !id) return;
     let live = true;
-    api.socialPost(channel, id)
+    api.socialPost(channel, id, voice.storeId)
       .then((detail) => live && setCard(detail.card))
       .catch((err: unknown) => live && setError(err instanceof ApiRequestError ? err.message : 'Could not load that post.'));
     return () => {
       live = false;
     };
-  }, [channel, id]);
+  }, [channel, id, voice.storeId]);
 
   return (
-    <main className="page feedpage">
-      <Link to="/social" className="btn btn--quiet" style={{ marginBottom: 12 }}>
-        <Icon name="back" size={14} /> Social
-      </Link>
+    <main className="page feedpage social">
+      <div className="feedpage__bar">
+        <Link to="/social" className="btn btn--quiet">
+          <Icon name="back" size={14} /> Social
+        </Link>
+        <VoicePicker size={34} />
+      </div>
       {error && <ErrorNotice message={error} />}
       {gone && <EmptyState title="Post deleted">It is gone, along with its reactions and comments.</EmptyState>}
       {!card && !error && <FeedSkeleton />}
-      {card && !gone && <SocialPostCard card={card} openComments onRemoved={() => setGone(true)} />}
+      {card && !gone && (
+        <SocialPostCard key={voice.storeId ?? 'me'} card={card} openComments onRemoved={() => setGone(true)} />
+      )}
     </main>
   );
 }
@@ -686,6 +780,7 @@ interface DraftPhoto {
  */
 function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
   const { user } = useSession();
+  const { voice } = useVoice();
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState('');
   const [photos, setPhotos] = useState<DraftPhoto[]>([]);
@@ -694,31 +789,38 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
   const [vibe, setVibe] = useState<Vibe | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stores, setStores] = useState<StoreAccess[]>([]);
-  const [as, setAs] = useState('');
   const [party, setParty] = useState(0);
+  // An item from the shop's own stock, with the post's words on top of it.
+  const [item, setItem] = useState<ShareableListing | null>(null);
+  const [stock, setStock] = useState<ShareableListing[] | null>(null);
+  const [picking, setPicking] = useState(false);
   const picker = useRef<HTMLInputElement | null>(null);
   const text = useRef<HTMLTextAreaElement | null>(null);
 
+  // A different voice has different stock, and a person has none to attach.
   useEffect(() => {
-    let cancelled = false;
-    void api
-      .stores()
-      .then((result) => {
-        if (cancelled) return;
-        setStores(result.stores.filter((store) => store.permissions.includes('posts')));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setItem(null);
+    setStock(null);
+    setPicking(false);
+  }, [voice.storeId]);
 
-  const first = user?.displayName.split(' ')[0] ?? 'there';
+  async function openStock() {
+    setPicking(true);
+    if (stock || !voice.storeId) return;
+    try {
+      setStock((await api.shareable(voice.storeId)).listings);
+    } catch (err) {
+      setStock([]);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your items.');
+    }
+  }
+
+  // A shop is addressed by its name; a person by their first one.
+  const first = voice.storeId ? voice.name : (user?.displayName.split(' ')[0] ?? 'there');
   const uploading = photos.some((photo) => !photo.url && !photo.failed);
   const pollReady = !poll || poll.filter((option) => option.trim()).length >= POLL_MIN_OPTIONS;
   const canPost = !busy && !uploading && pollReady
-    && (body.trim().length >= 2 || photos.some((photo) => photo.url))
+    && (body.trim().length >= 2 || photos.some((photo) => photo.url) || Boolean(item))
     && (!vibe || body.trim().length <= VIBE_MAX_CHARS)
     && (!poll || body.trim().length >= 2);
 
@@ -761,6 +863,8 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
     setPhotos([]);
     setPoll(null);
     setVibe(null);
+    setItem(null);
+    setPicking(false);
     setOpen(false);
   }
 
@@ -771,8 +875,9 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
     setError(null);
     try {
       await api.createPost({
-        body: body.trim(),
-        ...(as ? { storeId: as } : {}),
+        body: body.trim() || (item ? `Now available: ${item.title}` : ''),
+        ...(voice.storeId ? { storeId: voice.storeId } : {}),
+        ...(item ? { listingId: item.id } : {}),
         photoUrls: photos.map((photo) => photo.url).filter((url): url is string => Boolean(url)),
         ...(poll ? { poll: { options: poll.map((option) => option.trim()).filter(Boolean), closesInHours: pollHours } } : {}),
         ...(vibe ? { vibe } : {}),
@@ -815,6 +920,17 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
         }}>
         <Icon name="spark" size={18} /> <span>Colour</span>
       </button>
+      {voice.storeId && (
+        <button type="button" className={`writer__tool writer__tool--item${item || picking ? ' is-on' : ''}`}
+          onClick={() => {
+            if (!open) expand();
+            setVibe(null);
+            if (picking) setPicking(false);
+            else void openStock();
+          }}>
+          <Icon name="tag" size={18} /> <span>Item</span>
+        </button>
+      )}
     </div>
   );
 
@@ -823,7 +939,7 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
       <div className="writer writer--closed">
         <Confetti run={party} />
         <div className="writer__prompt">
-          <Avatar name={user?.displayName ?? 'Me'} size={40} />
+          <VoicePicker size={44} />
           <button type="button" className="writer__fake" onClick={() => expand()}>
             What's new, {first}?
           </button>
@@ -838,19 +954,12 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
   return (
     <form className="writer" onSubmit={submit}>
       <div className="writer__prompt">
-        <Avatar name={user?.displayName ?? 'Me'} size={40} />
+        <VoicePicker size={44} />
         <div className="writer__as">
-          <strong>{stores.find((store) => store.ownerId === as)?.name ?? user?.displayName}</strong>
-          {stores.length > 0 ? (
-            <select value={as} onChange={(e) => setAs(e.target.value)} aria-label="Post as">
-              <option value="">My profile</option>
-              {stores.map((store) => (
-                <option key={store.ownerId} value={store.ownerId}>{store.name}</option>
-              ))}
-            </select>
-          ) : (
-            <span className="faint">To everyone following you</span>
-          )}
+          <strong>{voice.name}</strong>
+          <span className="faint">
+            {voice.storeId ? 'Posting as your storefront · tap the photo to switch' : 'To everyone following you'}
+          </span>
         </div>
         <button type="button" className="iconbtn" aria-label="Close" onClick={reset}>
           <Icon name="close" size={16} />
@@ -861,7 +970,13 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
         <textarea ref={text} className="writer__text" value={body} rows={vibe ? 3 : 3}
           maxLength={vibe ? VIBE_MAX_CHARS : 2000}
           onChange={(e) => setBody(e.target.value)}
-          placeholder={poll ? 'Ask a question…' : vibe ? 'Say it big…' : `What's new, ${first}?`} />
+          placeholder={poll
+            ? 'Ask a question…'
+            : vibe
+              ? 'Say it big…'
+              : item
+                ? `Say something about ${item.title}…`
+                : `What's new, ${first}?`} />
       </div>
 
       {vibe && (
@@ -897,6 +1012,51 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
               <Icon name="plus" size={20} />
             </button>
           )}
+        </div>
+      )}
+
+      {picking && !item && (
+        <div className="stockpick" role="listbox" aria-label="Pick an item to post">
+          {!stock ? (
+            <p className="faint">Loading your items…</p>
+          ) : stock.length === 0 ? (
+            <p className="faint">Nothing listed yet. List something from Sell and post it here.</p>
+          ) : (
+            stock.map((entry) => (
+              <button key={entry.id} type="button" role="option" aria-selected={false} className="stockpick__item"
+                onClick={() => {
+                  setItem(entry);
+                  setPicking(false);
+                  setPoll(null);
+                }}>
+                {entry.photoUrl ? (
+                  <img src={entry.photoUrl} alt="" className="stockpick__img" />
+                ) : (
+                  <Thumb seed={entry.id} label={entry.title} className="stockpick__img" />
+                )}
+                <span className="stockpick__name">{entry.title}</span>
+                <span className="stockpick__price">{formatMoney(entry.priceMinor, entry.currency)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+
+      {item && (
+        <div className="writer__item">
+          {item.photoUrl ? (
+            <img src={item.photoUrl} alt="" className="writer__itemimg" />
+          ) : (
+            <Thumb seed={item.id} label={item.title} className="writer__itemimg" />
+          )}
+          <span className="writer__itembody">
+            <span className="spost__itemtag">For sale</span>
+            <strong>{item.title}</strong>
+            <span className="spost__price">{formatMoney(item.priceMinor, item.currency)}</span>
+          </span>
+          <button type="button" className="iconbtn" aria-label="Remove item" onClick={() => setItem(null)}>
+            <Icon name="close" size={14} />
+          </button>
         </div>
       )}
 
@@ -944,7 +1104,7 @@ function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
       <div className="writer__foot">
         {tools}
         <button type="submit" className="btn writer__post" disabled={!canPost}>
-          {busy ? 'Posting…' : uploading ? 'Uploading…' : 'Post'}
+          {busy ? 'Posting…' : uploading ? 'Uploading…' : 'Post'} <Icon name="send" size={14} />
         </button>
       </div>
     </form>

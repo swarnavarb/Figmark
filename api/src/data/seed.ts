@@ -236,6 +236,10 @@ export function seedUsers(): User[] {
       'Deadstock sneakers, authenticated before dispatch.'),
     storefront('usr_gadgetgrid', 'Gadget Grid', 'Sneha Pillai', 'gadget-grid', 'Hyderabad, TS', 69, 40, 0.83,
       'Shenzhen electronics — audio, handhelds, accessories.'),
+    // Nobody in the demo follows this one, on purpose: it is what the
+    // trending view is for - finding a shop you did not know to look for.
+    storefront('usr_courtside', 'Courtside Kicks', 'Kabir Sethi', 'courtside-kicks', 'Mumbai, MH', 81, 72, 0.9,
+      'Performance basketball and running shoes, imported from the US and Japan.'),
 
     /* Freight forwarders. Directory entries, also not sign-in accounts. */
     forwarder('usr_fwd_lotus', 'Lotus Freight', 'lotus-freight', 'ops@lotusfreight.example',
@@ -1171,6 +1175,51 @@ const POSTS: PostSeed[] = [
     authorId: 'usr_gadgetgrid', authorName: 'Gadget Grid',
     body: 'Customs cleared in 36 hours. Personal best. ⚡',
     likeCount: 18, replyCount: 0, ageDays: -1, ageHours: -2, vibe: 'sea',
+  },
+
+  /* From accounts the demo does not follow - what Trending is for. */
+  {
+    id: 'pst_court_1', channelId: 'usr_courtside', channel: 'seller', kind: 'update',
+    authorId: 'usr_courtside', authorName: 'Courtside Kicks',
+    body: 'Match-day restock 🏀 Court shoes in every size from UK 7 to 12. First twenty orders get free socks.',
+    likeCount: 15, replyCount: 0, ageDays: 0, ageHours: -2,
+    art: [
+      ['Court day', '#FF5E1A', '#FF2D87'],
+      ['Fresh pairs', '#FFB800', '#FF5E1A'],
+      ['Sizes 7-12', '#C6FF3D', '#12D6A8'],
+    ],
+    talk: [
+      ['usr_b_vikram', 'Vikram Chauhan', 'Do you have the low-tops in UK 11?', [
+        ['usr_courtside', 'Courtside Kicks', 'Two pairs left. Want me to hold one?'],
+        ['usr_b_vikram', 'Vikram Chauhan', 'Yes please! 🙌'],
+      ]],
+      ['usr_b_farah', 'Farah Sheikh', 'Free socks is the real headline here 😄'],
+      ['usr_b_dev', 'Dev Anand Rao', 'Wore mine for a half-marathon last week. No blisters.'],
+    ],
+  },
+  {
+    id: 'pst_court_2', channelId: 'usr_courtside', channel: 'seller', kind: 'update',
+    authorId: 'usr_courtside', authorName: 'Courtside Kicks',
+    body: 'Race-day energy only ⚡',
+    likeCount: 12, replyCount: 0, ageDays: 0, ageHours: -6, vibe: 'warm',
+  },
+  {
+    id: 'pst_sana_1', channelId: 'usr_b_sana', channel: 'seller', kind: 'update',
+    authorId: 'usr_b_sana', authorName: 'Sana Qureshi',
+    body: 'Finally unboxed the Dragon Knight from the August lot. The cape is unreal in person.',
+    likeCount: 14, replyCount: 0, ageDays: 0, ageHours: -4,
+    art: [['Unboxing day', '#7C3AED', '#FF2D87']],
+    talk: [
+      ['usr_b_karan', 'Karan Malhotra', 'Mine is arriving Friday. Jealous!'],
+      ['usr_kaiju', 'Kaiju Imports', 'So glad it arrived safely 🧡'],
+    ],
+  },
+  {
+    id: 'pst_rohit_1', channelId: 'usr_b_rohit', channel: 'seller', kind: 'update',
+    authorId: 'usr_b_rohit', authorName: 'Rohit Deshmukh',
+    body: 'Which should I split next with the group?',
+    likeCount: 8, replyCount: 0, ageDays: 0, ageHours: -1,
+    poll: ['Retro runners', 'Court shoes', 'Trail shoes'],
   },
 
   /* Forums. */

@@ -65,7 +65,7 @@ const {
   readPostRoute: readPost, reactRoute: reactTo, reactorsRoute: reactors,
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
-  removePostRoute: removePost,
+  removePostRoute: removePost, trendingRoute: trending, shareableRoute: shareable,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -1203,6 +1203,83 @@ await check('a colour post is a short line and nothing else', async () => {
   assert.equal((await createPost(req({
     headers: auth, body: { body: 'Hi', vibe: 'sea', photoUrls: ['/api/photos/a.jpg'] },
   }), ctx)).status, 400);
+});
+
+await check('a shop owner reacts and comments as the shop or as themselves, and those are two voices', async () => {
+  const shop = (await storefront(req({ headers: auth }), ctx)).jsonBody.storefront;
+  const post = { channelId: 'usr_tokyoline', id: 'pst_tokyo_1' };
+  const asShop = { as: 'usr_demo' };
+
+  const mine = (await reactTo(req({ headers: auth, params: on(post), body: { kind: 'love' } }), ctx)).jsonBody;
+  const theirs = (await reactTo(req({ headers: auth, params: on(post), query: asShop, body: { kind: 'fire' } }), ctx)).jsonBody;
+  assert.equal(theirs.reactions.total, mine.reactions.total + 1, 'the shop\'s reaction is its own');
+  assert.equal(theirs.reactions.mine, 'fire', 'read as the shop');
+
+  const asPerson = (await readPost(req({ headers: auth, params: on(post) }), ctx)).jsonBody.card;
+  assert.equal(asPerson.social.reactions.mine, 'love', 'read as the person');
+
+  const who = (await reactors(req({ headers: auth, params: on(post) }), ctx)).jsonBody.reactors;
+  assert.ok(who.some((row) => row.party.name === shop.storefrontName && row.kind === 'fire'));
+  assert.ok(who.some((row) => row.party.name === 'Arjun Mehta' && row.kind === 'love'));
+
+  const said = (await commentOn(req({
+    headers: auth, params: on(post), query: asShop, body: { body: 'We stock these too!' },
+  }), ctx)).jsonBody;
+  const comment = said.comments.find((thread) => thread.id === said.comment);
+  assert.equal(comment.authorName, shop.storefrontName);
+  assert.equal(comment.author.name, shop.storefrontName, 'the name opens the shop');
+
+  const liked = (await likeComment(req({ headers: auth, params: { ...on(post), comment: said.comment }, query: asShop }), ctx)).jsonBody;
+  const alsoLiked = (await likeComment(req({ headers: auth, params: { ...on(post), comment: said.comment } }), ctx)).jsonBody;
+  assert.equal(alsoLiked.likeCount, liked.likeCount + 1, 'the person and the shop like separately');
+
+  const shared = (await sharePost(req({ headers: auth, params: on(post), query: asShop, body: { mode: 'repost' } }), ctx)).jsonBody;
+  assert.equal(shared.repost.post.authorName, shop.storefrontName);
+  assert.equal(shared.repost.post.channelId, 'usr_demo');
+});
+
+await check('nobody speaks for a shop they do not run', async () => {
+  const post = { channelId: 'usr_tokyoline', id: 'pst_tokyo_1' };
+  const refused = await reactTo(req({ headers: auth, params: on(post), query: { as: 'usr_kaiju' }, body: { kind: 'love' } }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal((await commentOn(req({
+    headers: auth, params: on(post), query: { as: 'usr_kaiju' }, body: { body: 'hi' },
+  }), ctx)).status, 403);
+  assert.equal((await socialFeed(req({ headers: auth, query: { as: 'usr_kaiju' } }), ctx)).status, 403);
+});
+
+await check('trending brings in people and shops you do not follow', async () => {
+  const body = (await trending(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.posts.length > 0);
+  assert.ok(body.posts.some((card) => card.post.channelId === 'usr_courtside' && card.following === false),
+    'a shop nobody here follows');
+  assert.ok(body.posts.some((card) => card.post.channelId === 'usr_b_sana'), 'a person, not only shops');
+  assert.ok(body.posts.every((card) => card.post.authorId !== 'usr_demo'), 'never your own');
+  assert.ok(body.posts.every((card) => (card.post.reach ?? 'feed') === 'feed'), 'never a room message');
+
+  // Following from trending puts them in the feed.
+  await toggleFollow(req({ headers: auth, params: { id: 'usr_courtside' } }), ctx);
+  const feedNow = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts;
+  const courtside = feedNow.find((card) => card.post.channelId === 'usr_courtside');
+  assert.ok(courtside);
+  assert.equal(courtside.following, true);
+  await toggleFollow(req({ headers: auth, params: { id: 'usr_courtside' } }), ctx);
+});
+
+await check('a shop posts one of its items with words on top', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  assert.ok(stock.length > 0, 'the demo shop has stock');
+  assert.equal((await shareable(req({ headers: auth, query: { as: 'usr_kaiju' } }), ctx)).status, 403);
+  assert.deepEqual((await shareable(req({ headers: auth }), ctx)).jsonBody.listings, [], 'a person has no stock');
+
+  const made = await createPost(req({
+    headers: auth, body: { body: 'Back in stock!', storeId: 'usr_demo', listingId: stock[0].id },
+  }), ctx);
+  assert.equal(made.status, 201);
+  assert.equal(made.jsonBody.post.kind, 'sale');
+  const card = (await readPost(req({ headers: auth, params: on(made.jsonBody.post) }), ctx)).jsonBody.card;
+  assert.equal(card.listing.id, stock[0].id);
+  assert.ok('photoUrl' in card.listing);
 });
 
 await check('the author hears about reactions and comments, and can take the post down', async () => {

@@ -810,6 +810,10 @@ export class MemoryRepository implements Repository {
     return post;
   }
 
+  async listRecentPosts(limit: number): Promise<Post[]> {
+    return [...this.posts.values()].sort(newestFirst).slice(0, limit);
+  }
+
   async getPost(channelId: string, id: string): Promise<Post | null> {
     const post = this.posts.get(id);
     return post && post.channelId === channelId ? structuredClone(post) : null;

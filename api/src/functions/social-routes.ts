@@ -4,7 +4,7 @@ import { FORUM_CAP } from '../../../shared/enums.js';
 import type { Forum, Listing, Post, User } from '../../../shared/models.js';
 import {
   COMMENT_MAX_CHARS, POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_COMMENTS,
-  POST_MAX_PHOTOS, REACTION_META, VIBE_MAX_CHARS, isReaction, isVibe, summarise,
+  POST_MAX_PHOTOS, REACTION_META, VIBE_MAX_CHARS, actorKey, isReaction, isVibe, reactionActor, summarise,
   type CommentThread, type CommentView, type PollView, type PostSocial, type ReactorRow,
   type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
@@ -27,7 +27,7 @@ import { notify } from './notify.js';
 interface PostCard {
   /** The post, without the lists `social` summarises - who voted is nobody's business. */
   post: Post;
-  listing: Pick<Listing, 'id' | 'title' | 'priceMinor' | 'currency' | 'condition'> | null;
+  listing: (Pick<Listing, 'id' | 'title' | 'priceMinor' | 'currency' | 'condition'> & { photoUrl: string | null }) | null;
   /**
    * Where the author's name goes when tapped.
    *
@@ -39,11 +39,51 @@ interface PostCard {
   author: PartyRef;
   /** Reactions, comments, shares and the poll, as this viewer sees them. */
   social: PostSocial;
+  /**
+   * Whether the viewer follows whoever's channel this is in.
+   *
+   * The feed only holds people you follow, so this is there for trending,
+   * which is mostly people you do not - and a trending post with no way to
+   * follow its author is a dead end.
+   */
+  following: boolean;
   /** The post this one passes on, when it is a repost. Null when that post has gone. */
   original?: PostCard | null;
 }
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
+
+/**
+ * Who is acting: the signed-in person, or a shop they speak for.
+ *
+ * Chosen by the viewer and sent as `?as=<shop id>` on every call, reads
+ * included, because "did I react to this" depends on which of your voices is
+ * asking. Rights are checked here, once, so no handler has to remember to.
+ */
+interface Actor {
+  userId: string;
+  storeId: string | null;
+  key: string;
+  name: string;
+}
+
+async function actorFor(request: HttpRequest, user: Viewer, repository: Repo): Promise<Actor | null> {
+  const asked = request.query?.get('as')?.trim() || null;
+  if (!asked) return { userId: user.id, storeId: null, key: user.id, name: user.displayName };
+  const owner = asked === user.id ? await repository.getUserById(user.id) : await repository.getUserById(asked);
+  if (!owner?.sellerProfile || !can(owner, user.id, 'posts')) return null;
+  return {
+    userId: user.id,
+    storeId: owner.id,
+    key: actorKey(user.id, owner.id),
+    name: owner.sellerProfile.storefrontName,
+  };
+}
+
+/** The signed-in account, as much of it as choosing a voice needs. */
+type Viewer = { id: string; displayName: string };
+
+const notYours = () => error(403, 'forbidden', 'You cannot speak for that shop.');
 
 /** The post as it goes over the wire: the heavy lists summarised elsewhere. */
 function publicPost(post: Post): Post {
@@ -67,32 +107,37 @@ function pollView(poll: StoredPoll | null | undefined, viewerId: string): PollVi
   };
 }
 
-function commentView(comment: StoredComment, post: Post, viewerId: string, people: Map<string, User>): CommentView {
+/** A name and an address for a reaction or a comment: the shop it was given as, or the person. */
+function partyOf(userId: string, asStore: string | null | undefined, people: Map<string, User>, fallback?: string): PartyRef {
+  return asStore ? sellerRef(people.get(asStore), fallback) : personRef(people.get(userId), fallback);
+}
+
+function commentView(comment: StoredComment, post: Post, viewer: Actor, people: Map<string, User>): CommentView {
   return {
     id: comment.id,
-    author: personRef(people.get(comment.authorId), comment.authorName),
+    author: partyOf(comment.authorId, comment.asStore, people, comment.authorName),
     authorName: comment.authorName,
     body: comment.body,
     parentId: comment.parentId,
     replyToName: comment.replyToName ?? null,
     likeCount: comment.likedBy.length,
-    likedByMe: comment.likedBy.includes(viewerId),
-    canDelete: comment.authorId === viewerId || post.authorId === viewerId,
+    likedByMe: comment.likedBy.includes(viewer.key),
+    canDelete: comment.authorId === viewer.userId || post.authorId === viewer.userId,
     createdAt: comment.createdAt,
   };
 }
 
 /** The whole conversation under a post: top-level oldest first, each with its replies. */
-function threadsOf(post: Post, viewerId: string, people: Map<string, User>): CommentThread[] {
+function threadsOf(post: Post, viewer: Actor, people: Map<string, User>): CommentThread[] {
   const comments = post.comments ?? [];
   const byTime = [...comments].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return byTime
     .filter((comment) => comment.parentId === null)
     .map((top) => ({
-      ...commentView(top, post, viewerId, people),
+      ...commentView(top, post, viewer, people),
       replies: byTime
         .filter((reply) => reply.parentId === top.id)
-        .map((reply) => commentView(reply, post, viewerId, people)),
+        .map((reply) => commentView(reply, post, viewer, people)),
     }));
 }
 
@@ -109,29 +154,46 @@ function previewOf(post: Post): StoredComment[] {
     .slice(0, 2);
 }
 
+const newestReactions = (post: Post) =>
+  [...(post.reactions ?? [])].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 2);
+
 /** Everyone a set of posts needs a name or an address for, in one read. */
 async function peopleFor(posts: readonly Post[], repository: Repo, extra: readonly string[] = []) {
   const ids = new Set<string>(extra);
   for (const post of posts) {
     ids.add(post.authorId);
+    // Whose channel it is decides whether the name opens a shop.
+    if (post.channel === 'seller') ids.add(post.channelId);
     // Only the names the summary line uses, not every reactor on a busy post.
-    for (const reaction of [...(post.reactions ?? [])].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 2)) {
-      ids.add(reaction.userId);
-    }
-    for (const comment of previewOf(post)) ids.add(comment.authorId);
+    for (const reaction of newestReactions(post)) ids.add(reaction.asStore ?? reaction.userId);
+    for (const comment of previewOf(post)) ids.add(comment.asStore ?? comment.authorId);
   }
   const users = await repository.listUsersByIds([...ids]);
   return new Map(users.map((user) => [user.id, user]));
 }
 
-async function decorate(posts: Post[], repository: Repo, viewerId: string, nested = false): Promise<PostCard[]> {
+/** The picture a listing leads with, if it has one. */
+function leadPhotoOf(listing: Listing): string | null {
+  const photos = listing.photos ?? [];
+  return (photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null;
+}
+
+async function decorate(
+  posts: Post[],
+  repository: Repo,
+  viewer: Actor,
+  options: { nested?: boolean; followed?: ReadonlySet<string> } = {},
+): Promise<PostCard[]> {
   // A sale post is worth nothing without the item on it, and fetching them one
   // at a time would be a request per post.
   const ids = [...new Set(posts.map((p) => p.listingId).filter((id): id is string => id !== null))];
   const listings = new Map<string, Listing>();
   const originals = new Map<string, Post>();
-  const [people] = await Promise.all([
+  const [people, followedIds] = await Promise.all([
     peopleFor(posts, repository),
+    options.followed
+      ? Promise.resolve(options.followed)
+      : repository.listFollowedSellerIds(viewer.userId).then((list) => new Set(list)),
     Promise.all(
       ids.map(async (id) => {
         const listing = await repository.getListing(id);
@@ -140,7 +202,7 @@ async function decorate(posts: Post[], repository: Repo, viewerId: string, neste
     ),
     // A repost shows what it passes on. One level only: a repost of a repost
     // already points at the original, so there is never a second hop.
-    nested
+    options.nested
       ? Promise.resolve()
       : Promise.all(
           posts
@@ -156,7 +218,9 @@ async function decorate(posts: Post[], repository: Repo, viewerId: string, neste
   const originalCards = new Map<string, PostCard>();
   if (originals.size > 0) {
     const entries = [...originals.entries()];
-    const cards = await decorate(entries.map(([, original]) => original), repository, viewerId, true);
+    const cards = await decorate(entries.map(([, original]) => original), repository, viewer, {
+      nested: true, followed: followedIds,
+    });
     entries.forEach(([repostId], index) => originalCards.set(repostId, cards[index]!));
   }
 
@@ -165,10 +229,12 @@ async function decorate(posts: Post[], repository: Repo, viewerId: string, neste
     const author = people.get(post.authorId);
     // A post made as the shop opens the shop; one made as the person opens the
     // person. The post already records which voice it was written in.
-    const spokenAsShop = author?.sellerProfile?.storefrontName === post.authorName;
+    const channelOwner = people.get(post.channelId);
+    const spokenAsShop = post.channel === 'seller' && (post.voice ?? 'store') === 'store'
+      && channelOwner?.sellerProfile?.storefrontName === post.authorName;
     const card: PostCard = {
       post: publicPost(post),
-      author: spokenAsShop ? sellerRef(author) : personRef(author),
+      author: spokenAsShop ? sellerRef(channelOwner) : personRef(author),
       listing: listing
         ? {
             id: listing.id,
@@ -176,16 +242,21 @@ async function decorate(posts: Post[], repository: Repo, viewerId: string, neste
             priceMinor: listing.priceMinor,
             currency: listing.currency,
             condition: listing.condition,
+            photoUrl: leadPhotoOf(listing),
           }
         : null,
       social: {
-        reactions: summarise(post.reactions ?? [], viewerId, (id) => people.get(id)?.displayName ?? null),
+        reactions: summarise(post.reactions ?? [], viewer.key, (reaction) => {
+          const who = people.get(reaction.asStore ?? reaction.userId);
+          return reaction.asStore ? who?.sellerProfile?.storefrontName ?? null : who?.displayName ?? null;
+        }),
         commentCount: post.comments?.length ?? post.replyCount,
-        preview: previewOf(post).map((comment) => commentView(comment, post, viewerId, people)),
+        preview: previewOf(post).map((comment) => commentView(comment, post, viewer, people)),
         shareCount: post.shareCount ?? 0,
-        poll: pollView(post.poll, viewerId),
-        mine: post.authorId === viewerId,
+        poll: pollView(post.poll, viewer.userId),
+        mine: post.authorId === viewer.userId,
       },
+      following: followedIds.has(post.channelId) || post.channelId === viewer.userId,
     };
     if (post.repostOf) card.original = originalCards.get(post.id) ?? null;
     return card;
@@ -221,10 +292,9 @@ function cleanPhotos(value: unknown): string[] | null {
   return ok ? urls : null;
 }
 
-/** Everyone whose posts belong in this user's feed: those they follow, plus themselves. */
-async function myChannelIds(userId: string, repository: Awaited<ReturnType<typeof getRepository>>) {
-  const followed = await repository.listFollowedSellerIds(userId);
-  return [...new Set([...followed, userId])];
+/** The viewer speaking as themselves, for reads that have no voice to choose. */
+function personActor(user: Viewer): Actor {
+  return { userId: user.id, storeId: null, key: user.id, name: user.displayName };
 }
 
 /** GET /api/social/feed - posts from everyone you follow, newest first. */
@@ -232,13 +302,87 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
+  const actor = await actorFor(request, user, repository);
+  if (!actor) return notYours();
 
-  const channelIds = await myChannelIds(user.id, repository);
+  const followed = await repository.listFollowedSellerIds(user.id);
+  const channelIds = [...new Set([...followed, user.id])];
   const posts = await repository.listPostsForChannels(channelIds);
   // Channel messages stay in their channel. A post written before the two were
   // separate carries no reach and was a broadcast, so absent reads as 'feed'.
   const broadcast = posts.filter((post) => (post.reach ?? 'feed') === 'feed');
-  return json(200, { posts: await decorate(broadcast, repository, user.id) });
+  return json(200, { posts: await decorate(broadcast, repository, actor, { followed: new Set(followed) }) });
+}
+
+/**
+ * How much is happening on a post, discounted by age.
+ *
+ * Shares weigh most because passing something on costs a reputation; comments
+ * next because they cost a sentence; a reaction costs a tap. The age discount
+ * is gentle - a day-old post with real conversation still beats a fresh one
+ * nobody has touched - but it is there, so the list turns over.
+ */
+function heat(post: Post, now: number): number {
+  const votes = post.poll?.options.reduce((sum, option) => sum + option.voterIds.length, 0) ?? 0;
+  const engagement = (post.reactions?.length ?? post.likeCount)
+    + 2 * (post.comments?.length ?? post.replyCount)
+    + 3 * (post.shareCount ?? 0)
+    + 0.5 * votes;
+  const hours = Math.max(0, (now - new Date(post.createdAt).getTime()) / 3_600_000);
+  return engagement / Math.pow(hours / 24 + 1, 0.6);
+}
+
+/**
+ * GET /api/social/trending - what everyone is reacting to, followed or not.
+ *
+ * The feed only shows people you already chose. This is how you find the next
+ * ones: the liveliest public posts from any person or shop, with a follow
+ * button attached. Your own posts are left out - you know about those.
+ */
+async function trending(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const actor = await actorFor(request, user, repository);
+  if (!actor) return notYours();
+
+  const now = Date.now();
+  const recent = await repository.listRecentPosts(200);
+  const ranked = recent
+    .filter((post) => post.channel === 'seller' && (post.reach ?? 'feed') === 'feed')
+    .filter((post) => post.authorId !== user.id && post.channelId !== user.id)
+    .map((post) => ({ post, score: heat(post, now) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12)
+    .map((entry) => entry.post);
+  return json(200, { posts: await decorate(ranked, repository, actor) });
+}
+
+/**
+ * GET /api/social/shareable?as=<shop> - the items a shop can put in a post.
+ *
+ * Only for whoever may speak for the shop: nobody else has a reason to see an
+ * unsorted list of somebody's stock, and posting it is theirs alone.
+ */
+async function shareable(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const actor = await actorFor(request, user, repository);
+  if (!actor) return notYours();
+  if (!actor.storeId) return json(200, { listings: [] });
+  const listings = await repository.listListings({ sellerId: actor.storeId, limit: 40 });
+  return json(200, {
+    listings: listings.map((listing) => ({
+      id: listing.id,
+      title: listing.title,
+      priceMinor: listing.priceMinor,
+      currency: listing.currency,
+      condition: listing.condition,
+      photoUrl: leadPhotoOf(listing),
+    })),
+  });
 }
 
 /** GET /api/me/posts - everything this account wrote, newest first, for its own profile. */
@@ -248,7 +392,7 @@ async function myPosts(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const posts = (await repository.listPostsByAuthor(user.id))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return json(200, { posts: await decorate(posts, repository, user.id) });
+  return json(200, { posts: await decorate(posts, repository, personActor(user)) });
 }
 
 /**
@@ -345,7 +489,7 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
           mine,
         },
     shareable,
-    posts: await decorate(posts, repository, viewer.id),
+    posts: await decorate(posts, repository, personActor(viewer)),
   });
 }
 
@@ -536,7 +680,8 @@ async function target(request: HttpRequest) {
   const channelId = request.params.channel;
   const postId = request.params.id;
   const post = channelId && postId ? await repository.getPost(channelId, postId) : null;
-  return { user, repository, post };
+  const actor = await actorFor(request, user, repository);
+  return { user, repository, post, actor };
 }
 
 async function readJson<T>(request: HttpRequest): Promise<T | null> {
@@ -548,26 +693,27 @@ async function readJson<T>(request: HttpRequest): Promise<T | null> {
 }
 
 /** One post, decorated, as this viewer sees it. */
-async function cardFor(post: Post, repository: Repo, viewerId: string): Promise<PostCard> {
-  return (await decorate([post], repository, viewerId))[0]!;
+async function cardFor(post: Post, repository: Repo, viewer: Actor): Promise<PostCard> {
+  return (await decorate([post], repository, viewer))[0]!;
 }
 
 /** The whole conversation, with every commenter's address resolved. */
-async function commentsFor(post: Post, repository: Repo, viewerId: string): Promise<CommentThread[]> {
-  const ids = [...new Set((post.comments ?? []).map((comment) => comment.authorId))];
+async function commentsFor(post: Post, repository: Repo, viewer: Actor): Promise<CommentThread[]> {
+  const ids = [...new Set((post.comments ?? []).map((comment) => comment.asStore ?? comment.authorId))];
   const people = new Map((await repository.listUsersByIds(ids)).map((user) => [user.id, user]));
-  return threadsOf(post, viewerId, people);
+  return threadsOf(post, viewer, people);
 }
 
 const noPost = () => error(404, 'not_found', 'That post is not there any more.');
 
 /** GET /api/social/posts/{channel}/{id} - one post and everything said under it. */
 async function readPost(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post } = await target(request);
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   return json(200, {
-    card: await cardFor(post, repository, user.id),
-    comments: await commentsFor(post, repository, user.id),
+    card: await cardFor(post, repository, actor),
+    comments: await commentsFor(post, repository, actor),
   });
 }
 
@@ -578,7 +724,8 @@ async function readPost(request: HttpRequest, _context: InvocationContext) {
  * it back, because that is what tapping a lit heart means everywhere else.
  */
 async function react(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post } = await target(request);
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   const body = await readJson<{ kind?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
@@ -589,11 +736,13 @@ async function react(request: HttpRequest, _context: InvocationContext) {
   let firstTime = false;
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
     const reactions = current.reactions ?? [];
-    const had = reactions.find((reaction) => reaction.userId === user.id);
-    const rest = reactions.filter((reaction) => reaction.userId !== user.id);
+    const had = reactions.find((reaction) => reactionActor(reaction) === actor.key);
+    const rest = reactions.filter((reaction) => reactionActor(reaction) !== actor.key);
     const kind = body.kind === null || had?.kind === body.kind ? null : (body.kind as StoredReaction['kind']);
     firstTime = !had && kind !== null;
-    const next = kind ? [...rest, { userId: user.id, kind, at: new Date().toISOString() }] : rest;
+    const next = kind
+      ? [...rest, { userId: user.id, asStore: actor.storeId, kind, at: new Date().toISOString() }]
+      : rest;
     return { ...current, reactions: next, likeCount: next.length, updatedAt: current.updatedAt };
   });
   if (!saved) return noPost();
@@ -604,26 +753,28 @@ async function react(request: HttpRequest, _context: InvocationContext) {
     const kind = body.kind as StoredReaction['kind'];
     await notify(repository, [post.authorId], {
       kind: 'post_reacted',
-      title: `${user.displayName} reacted ${REACTION_META[kind].emoji}`,
+      title: `${actor.name} reacted ${REACTION_META[kind].emoji}`,
       body: gist(post.body),
       link: linkTo(post),
     }, { except: user.id });
   }
 
-  const card = await cardFor(saved, repository, user.id);
+  const card = await cardFor(saved, repository, actor);
   return json(200, { reactions: card.social.reactions });
 }
 
 /** GET /api/social/posts/{channel}/{id}/reactions - who reacted, and with what. */
 async function reactors(request: HttpRequest, _context: InvocationContext) {
-  const { repository, post } = await target(request);
+  const { repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   const reactions = [...(post.reactions ?? [])].sort((a, b) => (a.at < b.at ? 1 : -1));
   const people = new Map(
-    (await repository.listUsersByIds(reactions.map((reaction) => reaction.userId))).map((user) => [user.id, user]),
+    (await repository.listUsersByIds(reactions.map((reaction) => reaction.asStore ?? reaction.userId)))
+      .map((user) => [user.id, user]),
   );
   const rows: ReactorRow[] = reactions.map((reaction) => ({
-    party: personRef(people.get(reaction.userId)),
+    party: partyOf(reaction.userId, reaction.asStore, people),
     kind: reaction.kind,
     at: reaction.at,
   }));
@@ -638,7 +789,8 @@ async function reactors(request: HttpRequest, _context: InvocationContext) {
  * levels deep however long the back-and-forth runs.
  */
 async function addPostComment(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post } = await target(request);
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   const body = await readJson<{ body?: unknown; parentId?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
@@ -663,7 +815,8 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   const comment: StoredComment = {
     id: `cmt_${randomUUID().slice(0, 12)}`,
     authorId: user.id,
-    authorName: user.displayName,
+    authorName: actor.name,
+    asStore: actor.storeId,
     body: text,
     parentId: parent?.id ?? null,
     replyToName: answering && answering.id !== parent?.id ? answering.authorName : null,
@@ -690,28 +843,29 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   if (answered && answered !== post.authorId) {
     await notify(repository, [answered], {
       kind: 'comment_replied',
-      title: `${user.displayName} replied to you`,
+      title: `${actor.name} replied to you`,
       body: gist(text),
       link: linkTo(post),
     }, { except: user.id });
   }
   await notify(repository, [post.authorId], {
     kind: answered === post.authorId ? 'comment_replied' : 'post_commented',
-    title: answered === post.authorId ? `${user.displayName} replied to you` : `${user.displayName} commented`,
+    title: answered === post.authorId ? `${actor.name} replied to you` : `${actor.name} commented`,
     body: gist(text),
     link: linkTo(post),
   }, { except: user.id });
 
   return json(201, {
     comment: comment.id,
-    card: await cardFor(saved, repository, user.id),
-    comments: await commentsFor(saved, repository, user.id),
+    card: await cardFor(saved, repository, actor),
+    comments: await commentsFor(saved, repository, actor),
   });
 }
 
 /** POST /api/social/posts/{channel}/{id}/comments/{comment}/like - a heart on a comment, or not. */
 async function likeComment(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post } = await target(request);
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   const commentId = request.params.comment;
   if (!post.comments?.some((comment) => comment.id === commentId)) {
@@ -725,15 +879,15 @@ async function likeComment(request: HttpRequest, _context: InvocationContext) {
         ? comment
         : {
             ...comment,
-            likedBy: comment.likedBy.includes(user.id)
-              ? comment.likedBy.filter((id) => id !== user.id)
-              : [...comment.likedBy, user.id],
+            likedBy: comment.likedBy.includes(actor.key)
+              ? comment.likedBy.filter((id) => id !== actor.key)
+              : [...comment.likedBy, actor.key],
           },
     ),
   }));
   if (!saved) return noPost();
   const liked = saved.comments?.find((comment) => comment.id === commentId);
-  return json(200, { liked: Boolean(liked?.likedBy.includes(user.id)), likeCount: liked?.likedBy.length ?? 0 });
+  return json(200, { liked: Boolean(liked?.likedBy.includes(actor.key)), likeCount: liked?.likedBy.length ?? 0 });
 }
 
 /**
@@ -744,7 +898,8 @@ async function likeComment(request: HttpRequest, _context: InvocationContext) {
  * answer.
  */
 async function deletePostComment(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post } = await target(request);
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   const commentId = request.params.comment;
   const comment = post.comments?.find((entry) => entry.id === commentId);
@@ -759,8 +914,8 @@ async function deletePostComment(request: HttpRequest, _context: InvocationConte
   });
   if (!saved) return noPost();
   return json(200, {
-    card: await cardFor(saved, repository, user.id),
-    comments: await commentsFor(saved, repository, user.id),
+    card: await cardFor(saved, repository, actor),
+    comments: await commentsFor(saved, repository, actor),
   });
 }
 
@@ -772,7 +927,8 @@ async function deletePostComment(request: HttpRequest, _context: InvocationConte
  * share sheet or the clipboard, which the server never sees.
  */
 async function sharePost(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post } = await target(request);
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   const body = await readJson<{ mode?: unknown; body?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
@@ -795,11 +951,12 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
     const now = new Date().toISOString();
     repost = await repository.createPost({
       id: `pst_${randomUUID().slice(0, 12)}`,
-      channelId: user.id,
+      // A shop passing something on does it in its own channel, to its own followers.
+      channelId: actor.storeId ?? user.id,
       channel: 'seller',
       kind: 'update',
       authorId: user.id,
-      authorName: user.displayName,
+      authorName: actor.name,
       body: text,
       listingId: null,
       photoUrl: null,
@@ -829,7 +986,7 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
   if (repost) {
     await notify(repository, [source.authorId], {
       kind: 'post_shared',
-      title: `${user.displayName} shared your post`,
+      title: `${actor.name} shared your post`,
       body: gist(source.body),
       link: linkTo(source),
     }, { except: user.id });
@@ -837,13 +994,14 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
 
   return json(repost ? 201 : 200, {
     shareCount: saved.shareCount ?? 0,
-    repost: repost ? await cardFor(repost, repository, user.id) : null,
+    repost: repost ? await cardFor(repost, repository, actor) : null,
   });
 }
 
 /** POST /api/social/posts/{channel}/{id}/vote - pick an answer, or change your mind. */
 async function vote(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post } = await target(request);
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   if (!post.poll) return error(400, 'invalid_vote', 'That post has nothing to vote on.');
   const body = await readJson<{ optionId?: unknown }>(request);
@@ -875,7 +1033,8 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
 
 /** POST /api/social/posts/{channel}/{id}/delete - take a post down. Its author only. */
 async function removePost(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post } = await target(request);
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
   if (!post) return noPost();
   if (post.authorId !== user.id) return error(403, 'forbidden', 'Only whoever posted it can take it down.');
   await repository.deletePost(post.channelId, post.id);
@@ -946,6 +1105,8 @@ export const createPostRoute = handler(createPost);
 export const listForumsRoute = handler(listForums);
 export const createForumRoute = handler(createForum);
 export const readPostRoute = handler(readPost);
+export const trendingRoute = handler(trending);
+export const shareableRoute = handler(shareable);
 export const reactRoute = handler(react);
 export const reactorsRoute = handler(reactors);
 export const addPostCommentRoute = handler(addPostComment);
@@ -974,3 +1135,5 @@ app.http('social-comment-delete', { ...anon, methods: ['POST'], route: 'social/p
 app.http('social-post-share', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/share', handler: sharePostRoute });
 app.http('social-post-vote', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/vote', handler: voteRoute });
 app.http('social-post-delete', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/delete', handler: removePostRoute });
+app.http('social-trending', { ...anon, methods: ['GET'], route: 'social/trending', handler: trendingRoute });
+app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });

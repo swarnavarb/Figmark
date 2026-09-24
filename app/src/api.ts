@@ -644,11 +644,15 @@ export interface LotDetails {
 
 export interface PostCard {
   post: Post;
-  listing: { id: string; title: string; priceMinor: number; currency: string; condition: string } | null;
+  listing: {
+    id: string; title: string; priceMinor: number; currency: string; condition: string; photoUrl?: string | null;
+  } | null;
   /** Where the author's name goes. Resolved on read, not frozen into the post. */
   author: PartyRef;
   /** Reactions, comments, shares and the poll, as this viewer sees them. */
   social: PostSocial;
+  /** Whether the viewer follows the channel it was posted in. */
+  following: boolean;
   /** What a repost passes on. Null when the original has been taken down. */
   original?: PostCard | null;
 }
@@ -686,6 +690,21 @@ export interface ChannelThread {
   /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
   shareable: { id: string; title: string; priceMinor: number; currency: string }[];
   posts: PostCard[];
+}
+
+/** Which voice a social call speaks in: a shop's id, or nothing for the person. */
+function voice(as?: string | null): string {
+  return as ? `?as=${encodeURIComponent(as)}` : '';
+}
+
+/** One of a shop's items, offered for putting in a post. */
+export interface ShareableListing {
+  id: string;
+  title: string;
+  priceMinor: number;
+  currency: string;
+  condition: string;
+  photoUrl: string | null;
 }
 
 /** Where one post lives on the API. */
@@ -1672,7 +1691,9 @@ export const api = {
   nudge: (body: NudgeRequest, storeId?: string) =>
     post<{ sent: true }>(`/me/nudge${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, body),
 
-  socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
+  socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
+  trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
+  shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),
   channelThread: (id: string) => request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}`),
   createPost: (body: {
@@ -1681,23 +1702,26 @@ export const api = {
     photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
   }) =>
     post<{ post: Post }>('/social/posts', body),
-  socialPost: (channelId: string, id: string) => request<PostDetail>(postPath(channelId, id)),
-  react: (channelId: string, id: string, kind: ReactionKind | null) =>
-    post<{ reactions: ReactionSummary }>(`${postPath(channelId, id)}/react`, { kind }),
+  socialPost: (channelId: string, id: string, as?: string | null) =>
+    request<PostDetail>(`${postPath(channelId, id)}${voice(as)}`),
+  react: (channelId: string, id: string, kind: ReactionKind | null, as?: string | null) =>
+    post<{ reactions: ReactionSummary }>(`${postPath(channelId, id)}/react${voice(as)}`, { kind }),
   reactors: (channelId: string, id: string) =>
     request<{ reactors: ReactorRow[] }>(`${postPath(channelId, id)}/reactions`),
-  commentOnPost: (channelId: string, id: string, body: string, parentId?: string | null) =>
-    post<PostDetail & { comment: string }>(`${postPath(channelId, id)}/comments`, { body, parentId: parentId ?? null }),
-  likePostComment: (channelId: string, id: string, commentId: string) =>
-    post<{ liked: boolean; likeCount: number }>(
-      `${postPath(channelId, id)}/comments/${encodeURIComponent(commentId)}/like`,
+  commentOnPost: (channelId: string, id: string, body: string, parentId?: string | null, as?: string | null) =>
+    post<PostDetail & { comment: string }>(
+      `${postPath(channelId, id)}/comments${voice(as)}`, { body, parentId: parentId ?? null },
     ),
-  deletePostComment: (channelId: string, id: string, commentId: string) =>
-    post<PostDetail>(`${postPath(channelId, id)}/comments/${encodeURIComponent(commentId)}/delete`),
-  sharePost: (channelId: string, id: string, mode: 'repost' | 'link', body?: string) =>
-    post<{ shareCount: number; repost: PostCard | null }>(`${postPath(channelId, id)}/share`, { mode, body }),
-  votePoll: (channelId: string, id: string, optionId: string) =>
-    post<{ poll: PollView }>(`${postPath(channelId, id)}/vote`, { optionId }),
+  likePostComment: (channelId: string, id: string, commentId: string, as?: string | null) =>
+    post<{ liked: boolean; likeCount: number }>(
+      `${postPath(channelId, id)}/comments/${encodeURIComponent(commentId)}/like${voice(as)}`,
+    ),
+  deletePostComment: (channelId: string, id: string, commentId: string, as?: string | null) =>
+    post<PostDetail>(`${postPath(channelId, id)}/comments/${encodeURIComponent(commentId)}/delete${voice(as)}`),
+  sharePost: (channelId: string, id: string, mode: 'repost' | 'link', body?: string, as?: string | null) =>
+    post<{ shareCount: number; repost: PostCard | null }>(`${postPath(channelId, id)}/share${voice(as)}`, { mode, body }),
+  votePoll: (channelId: string, id: string, optionId: string, as?: string | null) =>
+    post<{ poll: PollView }>(`${postPath(channelId, id)}/vote${voice(as)}`, { optionId }),
   deletePost: (channelId: string, id: string) =>
     post<{ deleted: string }>(`${postPath(channelId, id)}/delete`),
   forums: () => request<ForumsResponse>('/social/forums'),

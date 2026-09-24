@@ -8,8 +8,9 @@ import {
 } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
-import { Avatar, Modal, PersonLink } from './ui';
+import { Avatar, Modal, PersonLink, Thumb } from './ui';
 import { Icon } from './Icon';
+import { useVoice, VoiceAvatar } from './SocialVoice';
 
 /**
  * One post, and everything people do with it.
@@ -63,8 +64,10 @@ function reduceMotion(): boolean {
 
 /* ── The post ──────────────────────────────────────────────────────────── */
 
-export function SocialPostCard({ card: initial, openComments = false, onRemoved, onReposted, nested = false }: {
+export function SocialPostCard({ card: initial, openComments = false, onRemoved, onReposted, nested = false, rank }: {
   card: PostCard;
+  /** Its place on the trending board, when it is on one. */
+  rank?: number;
   /** Open with the conversation showing, as a post read on its own page does. */
   openComments?: boolean;
   onRemoved?: (id: string) => void;
@@ -73,6 +76,10 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
   nested?: boolean;
 }) {
   const [card, setCard] = useState(initial);
+  const { voice } = useVoice();
+  const as = voice.storeId;
+  const [following, setFollowing] = useState(initial.following);
+  const [followBusy, setFollowBusy] = useState(false);
   const [showComments, setShowComments] = useState(openComments);
   const [sharing, setSharing] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -80,7 +87,10 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
   const [burst, setBurst] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => setCard(initial), [initial]);
+  useEffect(() => {
+    setCard(initial);
+    setFollowing(initial.following);
+  }, [initial]);
 
   const { post, listing, author, social } = card;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
@@ -92,13 +102,13 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
     const optimistic = withReaction(before, kind);
     setCard((current) => ({ ...current, social: { ...current.social, reactions: optimistic } }));
     try {
-      const { reactions } = await api.react(post.channelId, post.id, kind ?? before.mine);
+      const { reactions } = await api.react(post.channelId, post.id, kind ?? before.mine, as);
       setCard((current) => ({ ...current, social: { ...current.social, reactions } }));
     } catch (err) {
       setCard((current) => ({ ...current, social: { ...current.social, reactions: before } }));
       setError(err instanceof ApiRequestError ? err.message : 'Could not react to that.');
     }
-  }, [card.social.reactions, post.channelId, post.id]);
+  }, [card.social.reactions, post.channelId, post.id, as]);
 
   // Double-tap a photo to love it, which never takes a love back: the gesture
   // means "more of this", and a second double-tap undoing the first would be a
@@ -121,7 +131,10 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
 
   const kindLine = (
     <>
-      {post.kind === 'sale' && <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>}
+      {/* The item card below already says it is for sale; the pill is for when it has gone. */}
+      {post.kind === 'sale' && !listing && (
+        <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>
+      )}
       {post.kind === 'thread' && <span className="spost__kind"><Icon name="forum" size={11} /> Forum</span>}
       {social.poll && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
       {hot && <span className="spost__kind spost__kind--hot">🔥 Hot</span>}
@@ -132,7 +145,8 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
   );
 
   return (
-    <article className={`spost${nested ? ' spost--nested' : ''}`}>
+    <article className={`spost${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
+      {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
@@ -148,6 +162,21 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
             {kindLine}
           </span>
         </div>
+        {!nested && !social.mine && !following && post.channel === 'seller' && (
+          <button type="button" className="followbtn" disabled={followBusy}
+            onClick={async () => {
+              setFollowBusy(true);
+              try {
+                setFollowing((await api.follow(post.channelId)).following);
+              } catch (err) {
+                setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
+              } finally {
+                setFollowBusy(false);
+              }
+            }}>
+            <Icon name="plus" size={12} /> Follow
+          </button>
+        )}
         {!nested && (
           <div className="spost__menuwrap">
             <button type="button" className="iconbtn" aria-label="More" aria-expanded={menu}
@@ -187,19 +216,27 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
       {social.poll && (
         <Poll poll={social.poll} disabled={nested}
           onVote={async (optionId) => {
-            const { poll } = await api.votePoll(post.channelId, post.id, optionId);
+            const { poll } = await api.votePoll(post.channelId, post.id, optionId, as);
             setCard((current) => ({ ...current, social: { ...current.social, poll } }));
           }} />
       )}
 
       {listing && (
         <Link to={`/listing/${listing.id}`} className="spost__item">
-          <span className="spost__itemglyph"><Icon name="tag" size={18} /></span>
+          {listing.photoUrl ? (
+            <img className="spost__itemphoto" src={listing.photoUrl} alt="" loading="lazy" />
+          ) : (
+            <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
+          )}
           <span className="spost__itembody">
+            <span className="spost__itemtag">For sale</span>
             <span className="spost__itemname">{listing.title}</span>
-            <span className="faint">{listing.condition} · tap to open</span>
+            <span className="spost__itemmeta">
+              <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+              <span className="faint">{listing.condition}</span>
+            </span>
           </span>
-          <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+          <span className="spost__itemcta">View <Icon name="right" size={12} /></span>
         </Link>
       )}
 
@@ -655,16 +692,18 @@ function Comments({ card, onCount }: {
   const [fresh, setFresh] = useState<string | null>(null);
   const input = useRef<HTMLTextAreaElement | null>(null);
   const { channelId, id } = card.post;
+  const { voice } = useVoice();
+  const as = voice.storeId;
 
   useEffect(() => {
     let live = true;
-    api.socialPost(channelId, id)
+    api.socialPost(channelId, id, as)
       .then((detail) => live && setThreads(detail.comments))
       .catch((err: unknown) => live && setError(err instanceof ApiRequestError ? err.message : 'Could not load the comments.'));
     return () => {
       live = false;
     };
-  }, [channelId, id]);
+  }, [channelId, id, as]);
 
   const apply = (detail: { card: PostCard; comments: CommentThread[] }) => {
     setThreads(detail.comments);
@@ -677,7 +716,7 @@ function Comments({ card, onCount }: {
     setBusy(true);
     setError(null);
     try {
-      const detail = await api.commentOnPost(channelId, id, body, replyTo?.id ?? null);
+      const detail = await api.commentOnPost(channelId, id, body, replyTo?.id ?? null, as);
       apply(detail);
       setFresh(detail.comment);
       setText('');
@@ -716,8 +755,13 @@ function Comments({ card, onCount }: {
           </div>
         )}
         <div className="cmts__row">
+          <span className="cmts__as" title={`Commenting as ${voice.name}`}>
+            <VoiceAvatar voice={voice} size={32} />
+          </span>
           <textarea ref={input} className="cmts__input" rows={1} value={text} maxLength={1000}
-            placeholder={replyTo ? `Reply to ${replyTo.authorName.split(' ')[0]}…` : 'Write a comment…'}
+            placeholder={replyTo
+              ? `Reply to ${replyTo.authorName.split(' ')[0]} as ${voice.name}…`
+              : `Comment as ${voice.name}…`}
             onChange={(event) => {
               setText(event.target.value);
               event.target.style.height = 'auto';
@@ -786,6 +830,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   const [liked, setLiked] = useState(comment.likedByMe);
   const [likes, setLikes] = useState(comment.likeCount);
   const { channelId, id } = card.post;
+  const { voice } = useVoice();
 
   useEffect(() => {
     setLiked(comment.likedByMe);
@@ -796,7 +841,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
     setLiked(!liked);
     setLikes(likes + (liked ? -1 : 1));
     try {
-      const result = await api.likePostComment(channelId, id, comment.id);
+      const result = await api.likePostComment(channelId, id, comment.id, voice.storeId);
       setLiked(result.liked);
       setLikes(result.likeCount);
     } catch {
@@ -808,7 +853,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   async function remove() {
     if (!window.confirm('Delete this comment?')) return;
     try {
-      onChanged(await api.deletePostComment(channelId, id, comment.id));
+      onChanged(await api.deletePostComment(channelId, id, comment.id, voice.storeId));
     } catch {
       /* It stays; the list is still the truth. */
     }
@@ -912,6 +957,7 @@ function ShareSheet({ card, onClose, onShared }: {
   onShared: (shareCount: number, repost: PostCard | null) => void;
 }) {
   const [thought, setThought] = useState('');
+  const { voice } = useVoice();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -921,7 +967,7 @@ function ShareSheet({ card, onClose, onShared }: {
   const canNative = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
   async function count(mode: 'repost' | 'link', body?: string) {
-    const result = await api.sharePost(target.channelId, target.id, mode, body);
+    const result = await api.sharePost(target.channelId, target.id, mode, body, voice.storeId);
     onShared(result.shareCount, result.repost);
     return result;
   }
@@ -931,7 +977,7 @@ function ShareSheet({ card, onClose, onShared }: {
     setError(null);
     try {
       await count('repost', thought.trim());
-      setDone('Shared to your feed 🎉');
+      setDone(voice.storeId ? `Shared as ${voice.name} 🎉` : 'Shared to your feed 🎉');
       window.setTimeout(onClose, 900);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not share that.');
@@ -965,7 +1011,7 @@ function ShareSheet({ card, onClose, onShared }: {
               placeholder="Say something about this (optional)…"
               onChange={(event) => setThought(event.target.value)} />
             <button type="button" className="btn btn--block" disabled={busy} onClick={() => void repost()}>
-              <Icon name="repost" size={16} /> {busy ? 'Sharing…' : 'Share to my feed'}
+              <Icon name="repost" size={16} /> {busy ? 'Sharing…' : voice.storeId ? `Share to ${voice.name}` : 'Share to my feed'}
             </button>
           </div>
         )}

@@ -52,12 +52,29 @@ export const POLL_OPTION_MAX_CHARS = 60;
 
 /* ── As stored, on the post ─────────────────────────────────────────────── */
 
-/** One person's reaction. One per person: reacting again changes it. */
+/**
+ * Who is doing something: a person, or a shop somebody speaks for.
+ *
+ * One account can react as itself and again as the shop it runs, and those are
+ * two reactions from two voices - which is the whole point of letting people
+ * choose. So everything that counts "one per person" counts one per actor, and
+ * this is the key it counts by.
+ */
+export function actorKey(userId: string, asStore: string | null | undefined): string {
+  return asStore ? `store:${asStore}` : userId;
+}
+
+/** One actor's reaction. One per actor: reacting again changes it. */
 export interface StoredReaction {
+  /** Whoever pressed it, for the record; the actor is `asStore` when set. */
   userId: string;
+  /** The shop it was given as. Absent or null: given as the person. */
+  asStore?: string | null;
   kind: ReactionKind;
   at: string;
 }
+
+export const reactionActor = (reaction: StoredReaction): string => actorKey(reaction.userId, reaction.asStore);
 
 /**
  * A comment, or a reply to one.
@@ -76,6 +93,9 @@ export interface StoredComment {
   parentId: string | null;
   /** Who a reply is answering, when it is a reply to a reply. */
   replyToName?: string | null;
+  /** The shop it was written as. Absent or null: written as the person. */
+  asStore?: string | null;
+  /** Actor keys - see `actorKey` - so a shop's like and its owner's are two likes. */
   likedBy: string[];
   createdAt: string;
 }
@@ -99,6 +119,14 @@ export interface RepostRef {
 }
 
 /* ── As the app reads them ─────────────────────────────────────────────── */
+
+/** A voice the viewer may use: themselves, or a shop they may post for. */
+export interface SocialIdentity {
+  /** The shop's owner id, or null for the person. */
+  storeId: string | null;
+  name: string;
+  handle: string | null;
+}
 
 /** Somebody named on a screen, and the page their name opens. */
 export interface SocialParty {
@@ -170,8 +198,8 @@ export interface ReactorRow {
  */
 export function summarise(
   reactions: readonly StoredReaction[],
-  viewerId: string | null,
-  nameOf: (userId: string) => string | null = () => null,
+  viewerKey: string | null,
+  nameOf: (actor: StoredReaction) => string | null = () => null,
 ): ReactionSummary {
   const tally = new Map<ReactionKind, number>();
   for (const reaction of reactions) tally.set(reaction.kind, (tally.get(reaction.kind) ?? 0) + 1);
@@ -180,13 +208,13 @@ export function summarise(
     .sort((a, b) => b.count - a.count || REACTIONS.indexOf(a.kind) - REACTIONS.indexOf(b.kind));
   const newest = [...reactions].sort((a, b) => (a.at < b.at ? 1 : -1));
   const names = newest
-    .map((reaction) => nameOf(reaction.userId))
+    .map((reaction) => nameOf(reaction))
     .filter((name): name is string => Boolean(name))
     .slice(0, 2);
   return {
     total: reactions.length,
     counts,
-    mine: reactions.find((reaction) => reaction.userId === viewerId)?.kind ?? null,
+    mine: reactions.find((reaction) => reactionActor(reaction) === viewerKey)?.kind ?? null,
     names,
   };
 }

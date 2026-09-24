@@ -334,6 +334,13 @@ export interface Repository {
   createPost(post: Post): Promise<Post>;
   getPost(channelId: string, id: string): Promise<Post | null>;
   /**
+   * The newest posts anywhere, for trending.
+   *
+   * Cross-partition by nature and bounded by `limit`: trending ranks a
+   * recent window, it never needs the whole history.
+   */
+  listRecentPosts(limit: number): Promise<Post[]>;
+  /**
    * Change one post in place: react, comment, vote, count a share.
    *
    * A read-change-write rather than a save, because two people reacting in
