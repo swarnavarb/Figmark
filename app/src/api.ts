@@ -758,6 +758,12 @@ export interface DashboardResponse {
 
 /* ── Pro analytics ─────────────────────────────────────────────────────── */
 
+/** One customer of a shop, as Insights (Pro) reads them. */
+export interface CustomerRow {
+  who: PartyRef; orders: number; spentMinor: number; firstAt: string; lastAt: string;
+  returning: boolean; daysSince: number;
+}
+
 /** `GET /api/me/interest` - the Insights (Pro) tab: who wants what. */
 export interface InterestResponse {
   summary: {
@@ -769,7 +775,6 @@ export interface InterestResponse {
     orders: number;
     paid: number;
     placedPercent: number | null;
-    toCollectMinor: number;
   };
   saved: {
     listingId: string; title: string; photo: string | null; priceMinor: number; currency: string;
@@ -785,7 +790,16 @@ export interface InterestResponse {
     buyClicks: number; orders: number; paid: number; revenueMinor: number; currency: string; expiresAt: string | null;
   }[];
   leads: { who: PartyRef; saves: number; checkouts: number; lastAt: string }[];
-  toCollect: { who: PartyRef; outstandingMinor: number; orders: number; currency: string }[];
+  customers: {
+    total: number; returning: number; newcomers: number; dormant: number;
+    repeatPercent: number | null; avgOrderMinor: number;
+    top: CustomerRow[]; returningList: CustomerRow[]; newList: CustomerRow[]; dormantList: CustomerRow[];
+  };
+  trending: {
+    listingId: string; title: string; photo: string | null; saves: number; buys: number; orders: number;
+    score: number; trend: 'new' | 'up' | 'steady' | 'down'; soldOut: boolean;
+  }[];
+  overlooked: { listingId: string; title: string; photo: string | null; views: number }[];
   expiring: { listingId: string; title: string; expiresAt: string | null; saves: number; buyClicks: number }[];
   activity: string[];
 }
@@ -845,6 +859,8 @@ export interface InsightsResponse {
     closedShort: boolean;
   }[];
   powerSales: { runs: number; posted: number; inWindow: number; handedOver: number };
+  /** Balances on accepted orders, by buyer. Largest first. */
+  toCollect: { who: PartyRef; outstandingMinor: number; orders: number; currency: string }[];
 }
 
 /* ── Services ──────────────────────────────────────────────────────────── */

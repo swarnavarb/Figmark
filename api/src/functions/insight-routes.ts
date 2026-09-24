@@ -234,6 +234,23 @@ async function insights(request: HttpRequest, _context: InvocationContext) {
   const soldInWindow = saleItems.filter((item) => item.listingId && !item.liftedAt).length;
   const handedOver = saleItems.filter((item) => item.liftedAt).length;
 
+  /* ── Money still to collect ──────────────────────────────────────────── */
+  const owing = new Map<string, { outstandingMinor: number; orders: number; currency: string }>();
+  for (const order of orders.filter((row) => !isCancelledLike(row.status))) {
+    if (!order.accepted && order.paymentStatus === 'unpaid') continue;
+    const { outstandingMinor } = orderMoney(order);
+    if (outstandingMinor <= 0) continue;
+    const row = owing.get(order.buyerId) ?? { outstandingMinor: 0, orders: 0, currency: order.currency };
+    row.outstandingMinor += outstandingMinor;
+    row.orders += 1;
+    owing.set(order.buyerId, row);
+  }
+  const collectNames = await names(repository, owing.keys());
+  const toCollect = [...owing]
+    .map(([id, row]) => ({ who: collectNames.get(id)!, ...row }))
+    .sort((a, b) => b.outstandingMinor - a.outstandingMinor)
+    .slice(0, 10);
+
   return json(200, {
     headline: {
       ordersInFlight: inFlight.length,
@@ -255,6 +272,8 @@ async function insights(request: HttpRequest, _context: InvocationContext) {
     dormant: dormantIds.slice(0, 8).map((row) => ({ ...row, who: who.get(row.buyerId)! })),
     bulk: bulk.slice(0, 8).map((row) => ({ ...row, who: who.get(row.buyerId)! })),
     preOrders,
+    /** Balances on accepted orders, by buyer. */
+    toCollect,
     powerSales: {
       runs: sales.length,
       posted: saleItems.length,
@@ -303,7 +322,7 @@ async function interest(request: HttpRequest, _context: InvocationContext) {
 
   const boughtBy = new Set(real.map((order) => `${order.buyerId}:${order.listingId}`));
   const stalledBy = new Set(stalled.map((order) => `${order.buyerId}:${order.listingId}`));
-  const customers = new Set(real.map((order) => order.buyerId));
+  const buyers = new Set(real.map((order) => order.buyerId));
 
   const who = await names(repository, [
     ...likes.map((like) => like.userId),
@@ -386,7 +405,7 @@ async function interest(request: HttpRequest, _context: InvocationContext) {
      Interested and never ordered anything from this shop. */
   const leadMap = new Map<string, { saves: number; checkouts: number; lastAt: string }>();
   const touch = (id: string, at: string, key: 'saves' | 'checkouts') => {
-    if (customers.has(id)) return;
+    if (buyers.has(id)) return;
     const row = leadMap.get(id) ?? { saves: 0, checkouts: 0, lastAt: at };
     row[key] += 1;
     if (at > row.lastAt) row.lastAt = at;
@@ -399,21 +418,99 @@ async function interest(request: HttpRequest, _context: InvocationContext) {
     .sort((a, b) => (b.checkouts * 2 + b.saves) - (a.checkouts * 2 + a.saves) || b.lastAt.localeCompare(a.lastAt))
     .slice(0, 12);
 
-  /* ── Money still to collect ──────────────────────────────────────────── */
-  const owing = new Map<string, { outstandingMinor: number; orders: number; currency: string }>();
+  /* ── Customers ─────────────────────────────────────────────────────────
+     Everyone who has placed an order, read as relationships rather than
+     orders: who keeps coming back, who is new, and who has gone quiet. */
+  const DAY = 86_400_000;
+  const now = Date.now();
+  const byBuyer = new Map<string, { orders: number; spentMinor: number; firstAt: string; lastAt: string }>();
   for (const order of real) {
-    if (!order.accepted && order.paymentStatus === 'unpaid') continue;
-    const { outstandingMinor } = orderMoney(order);
-    if (outstandingMinor <= 0) continue;
-    const row = owing.get(order.buyerId) ?? { outstandingMinor: 0, orders: 0, currency: order.currency };
-    row.outstandingMinor += outstandingMinor;
+    const at = order.placedAt ?? order.createdAt;
+    const row = byBuyer.get(order.buyerId) ?? { orders: 0, spentMinor: 0, firstAt: at, lastAt: at };
     row.orders += 1;
-    owing.set(order.buyerId, row);
+    row.spentMinor += order.quantity * order.unitPriceMinor;
+    if (at < row.firstAt) row.firstAt = at;
+    if (at > row.lastAt) row.lastAt = at;
+    byBuyer.set(order.buyerId, row);
   }
-  const toCollect = [...owing]
-    .map(([id, row]) => ({ who: who.get(id)!, ...row }))
-    .sort((a, b) => b.outstandingMinor - a.outstandingMinor)
-    .slice(0, 10);
+  const people = [...byBuyer].map(([id, row]) => ({
+    who: who.get(id)!,
+    ...row,
+    returning: row.orders > 1,
+    daysSince: Math.floor((now - Date.parse(row.lastAt)) / DAY),
+  }));
+  const bySpend = (a: { spentMinor: number }, b: { spentMinor: number }) => b.spentMinor - a.spentMinor;
+  const returning = people.filter((row) => row.returning).sort((a, b) => b.orders - a.orders || bySpend(a, b));
+  const newcomers = people
+    .filter((row) => now - Date.parse(row.firstAt) <= 30 * DAY)
+    .sort((a, b) => b.firstAt.localeCompare(a.firstAt));
+  /** Bought before, nothing in the last 60 days - worth a hello before they forget you. */
+  const dormant = people.filter((row) => row.daysSince > 60).sort(bySpend);
+  const customers = {
+    total: people.length,
+    returning: returning.length,
+    newcomers: newcomers.length,
+    dormant: dormant.length,
+    repeatPercent: people.length ? Math.round((returning.length / people.length) * 100) : null,
+    avgOrderMinor: real.length
+      ? Math.round(real.reduce((sum, order) => sum + order.quantity * order.unitPriceMinor, 0) / real.length)
+      : 0,
+    top: [...people].sort(bySpend).slice(0, 10),
+    returningList: returning.slice(0, 12),
+    newList: newcomers.slice(0, 12),
+    dormantList: dormant.slice(0, 12),
+  };
+
+  /* ── Trending ──────────────────────────────────────────────────────────
+     Saves, Buy presses and orders in the last seven days against the seven
+     before. Views carry no timestamp, so they cannot say what is rising. */
+  const week = (at: string) => {
+    const age = now - Date.parse(at);
+    return age <= 7 * DAY ? 0 : age <= 14 * DAY ? 1 : -1;
+  };
+  const heat = new Map<string, { saves: number; buys: number; orders: number; before: number }>();
+  const bump = (listingId: string, at: string, key: 'saves' | 'buys' | 'orders', weight: number) => {
+    const when = week(at);
+    if (when < 0) return;
+    const row = heat.get(listingId) ?? { saves: 0, buys: 0, orders: 0, before: 0 };
+    if (when === 0) row[key] += 1;
+    else row.before += weight;
+    heat.set(listingId, row);
+  };
+  for (const like of likes) bump(like.listingId, like.createdAt, 'saves', 1);
+  for (const order of stalled) bump(order.listingId, order.createdAt, 'buys', 2);
+  for (const order of real) bump(order.listingId, order.placedAt ?? order.createdAt, 'orders', 3);
+  const trending = [...heat]
+    .map(([listingId, row]) => {
+      const listing = byId.get(listingId);
+      const score = row.saves + row.buys * 2 + row.orders * 3;
+      const buyable = Boolean(listing && listing.status === 'active' && !isExpired(listing)
+        && (listing.quantityMode === 'multiple' || listing.quantityAvailable > 0));
+      return {
+        listingId,
+        title: listing?.title ?? 'An item',
+        photo: photoOf(listing),
+        saves: row.saves,
+        buys: row.buys,
+        orders: row.orders,
+        score,
+        trend: row.before === 0 ? 'new' as const
+          : score > row.before * 1.2 ? 'up' as const
+          : score < row.before * 0.8 ? 'down' as const : 'steady' as const,
+        /** Wanted this week and nothing left to sell - restock or relist. */
+        soldOut: !buyable,
+      };
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
+
+  /** Looked at plenty, nobody saving or pressing Buy - the price or photos may be the problem. */
+  const overlooked = items
+    .filter((row) => row.live && row.views >= 10 && row.saves === 0 && row.buyClicks === 0)
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 8)
+    .map(({ listingId, title, photo, views }) => ({ listingId, title, photo, views }));
 
   /* ── Nearly gone and still wanted ─────────────────────────────────────── */
   const soon = Date.now() + 3 * 86_400_000;
@@ -435,14 +532,15 @@ async function interest(request: HttpRequest, _context: InvocationContext) {
       paid: real.filter((order) => order.paymentStatus === 'paid').length,
       /** Of everybody who pressed Buy, the share who went ahead. */
       placedPercent: clicks ? Math.round((real.length / clicks) * 100) : null,
-      toCollectMinor: toCollect.reduce((sum, row) => sum + row.outstandingMinor, 0),
     },
     saved,
     checkout,
     items: items.slice(0, 20),
     leads,
-    toCollect,
     expiring,
+    customers,
+    trending,
+    overlooked,
     /** When people act - saves, Buy presses and orders - for a by-hour chart drawn in the viewer's clock. */
     activity: [
       ...likes.map((like) => like.createdAt),

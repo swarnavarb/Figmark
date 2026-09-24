@@ -6537,4 +6537,28 @@ await check('insights name who saved what and who stopped at Buy', async () => {
     'and only the shop reads them');
 });
 
+await check('insights know returning customers and what is trending', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Hot Seller', priceMinor: 10_000, quantityAvailable: 2 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const regular = await newBuyer('Regular Buyer');
+  for (let i = 0; i < 2; i += 1) {
+    const placed = await createOrder(req({ headers: regular.headers, body: { listingId } }), ctx);
+    assert.ok(placed.jsonBody.order.placedAt, JSON.stringify(placed.jsonBody));
+  }
+
+  const read = (await interest(req({ headers: auth }), ctx)).jsonBody;
+  const them = read.customers.newList.find((row) => row.who.name === 'Regular Buyer');
+  assert.equal(them?.orders, 2, 'new this month');
+  assert.equal(them.spentMinor, 20_000);
+  assert.equal(them.returning, true, 'and already back for more');
+  assert.ok(!read.customers.dormantList.some((row) => row.who.name === 'Regular Buyer'));
+  const hot = read.trending.find((row) => row.listingId === listingId);
+  assert.equal(hot.orders, 2);
+  assert.equal(hot.trend, 'new');
+  assert.equal(hot.soldOut, true, 'both sold, so it wants restocking');
+
+  const free = (await insights(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(Array.isArray(free.toCollect), 'what is owed sits with the free figures');
+});
+
 console.log(`\n${passed} checks passed`);

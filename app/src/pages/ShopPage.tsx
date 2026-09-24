@@ -12,9 +12,7 @@ import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
 import { RouteEditor, RoutesList } from './RoutesPage';
-import {
-  PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
-} from '@shared/insights';
+import { phaseOfCounts } from '@shared/insights';
 import {
   BUILT_IN_ROUTE, preSteps as preStepsOf, suggestLotName,
 } from '@shared/routes';
@@ -40,7 +38,7 @@ import {
   type RefundableOrder,
   type RoutesResponse,
 } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
 import { InsightsPanel } from './InsightsPanel';
 import { PackingList } from './SupplierPage';
@@ -674,7 +672,7 @@ function MyItems({ store }: { store: StoreAccess }) {
         </Link>
 
         <button type="button" className="door door--pro" onClick={() => setMode('power')}>
-          <span className="door__flag">Pro</span>
+          <span className="probadge door__flag">PRO</span>
           <span className="door__glyph" aria-hidden="true">{<Icon name="bolt" size={19} />}</span>
           <span className="door__title">Start power selling</span>
           <span className="door__note">A whole sale, on a timer, in your channel.</span>
@@ -2637,7 +2635,7 @@ function Analytics({ store }: { store: StoreAccess }) {
       .then(setPro)
       .catch((err: unknown) =>
         setProError(
-          err instanceof ApiRequestError ? err.message : 'Could not load your consignment figures.',
+          err instanceof ApiRequestError ? err.message : 'Could not load what is in flight.',
         ),
       );
   }, [store.ownerId, store.isOwner]);
@@ -2700,25 +2698,12 @@ function Analytics({ store }: { store: StoreAccess }) {
       </div>
 
       {proError && <p className="faint">{proError}</p>}
-      {pro && <ProInsights data={pro} />}
+      {pro && <RunningShop data={pro} />}
     </div>
   );
 }
 
-/* ── Pro analytics ──────────────────────────────────────────────────────── */
-
-/**
- * A stretch of time in the unit that suits it.
- *
- * "0.0d" beside a bar is a number that has been rounded until it says nothing.
- * A leg measured in hours is reported in hours, and one too short to have hours
- * says so in words.
- */
-function days(value: number): string {
-  if (value >= 1) return `${value.toFixed(1)}d`;
-  const hours = value * 24;
-  return hours >= 1 ? `${Math.round(hours)}h` : 'same day';
-}
+/* ── Running the shop ───────────────────────────────────────────────────── */
 
 /** A customer's name, linking to their page when they have one. */
 function Person({ who }: { who: PartyRef }) {
@@ -2730,324 +2715,71 @@ function Person({ who }: { who: PartyRef }) {
 }
 
 /**
- * What the consignments have been doing.
- *
- * Every figure below is the packing board read a different way - the same
- * checkpoints the seller ticks on a lot, counted and timed. Nothing here asks
- * anyone to fill in a second set of numbers, which is why it can be trusted:
- * a stat nobody maintains is a stat nobody believes.
- *
- * Added beneath the shop figures rather than replacing them. Revenue and views
- * answer "is the shop working"; these answer "where is everything, and who is
- * waiting", which is the question somebody running an import actually has.
+ * What is moving and who owes what - the day-to-day figures every shop needs,
+ * so they stay free. The why and the who-to-chase live in Insights (Pro).
  */
-function ProInsights({ data }: { data: InsightsResponse }) {
-  const { headline, boxes, timings, perLot, pending, cohorts, top, dormant, bulk, preOrders } = data;
-  const sales = data.powerSales;
-  const quiet =
-    perLot.length === 0 && preOrders.length === 0 && sales.runs === 0 && headline.ordersInFlight === 0;
-
-  // Segment bars are drawn against the slowest leg rather than against a fixed
-  // scale, so the one to fix is the one that fills the row.
-  const measured = SEGMENTS.filter((segment) => timings[segment] !== null);
-  const slowest = Math.max(0.1, ...measured.map((segment) => timings[segment]!));
-
+function RunningShop({ data }: { data: InsightsResponse }) {
+  const { headline, pending, toCollect } = data;
+  const owed = toCollect.reduce((sum, row) => sum + row.outstandingMinor, 0);
   return (
     <>
-      <div className="ins__head">
-        <span className="tag-pro">Pro</span>
-        <div style={{ minWidth: 0 }}>
-          <h2>Consignment analytics</h2>
-          <span className="field__hint">
-            Your packing board, read a different way. Nothing extra to fill in.
-          </span>
-        </div>
+      <div className="stats">
+        <Stat
+          label="In flight"
+          value={String(headline.ordersInFlight)}
+          note={`${headline.customers} customer${headline.customers === 1 ? '' : 's'} in all`}
+        />
+        <Stat
+          label="Awaiting payment"
+          value={formatMoney(headline.unpaidMinor)}
+          note={
+            headline.oldestWaitingDays > 0
+              ? `oldest landed ${headline.oldestWaitingDays} days ago`
+              : 'nothing landed and unpaid'
+          }
+        />
+        <Stat label="To collect" value={formatMoney(owed)} note="on orders you accepted" />
       </div>
 
-      {quiet ? (
-        <EmptyState icon="◷" title="Nothing has moved yet">
-          Open a lot and file some orders into it. These figures are counted off the checkpoints
-          you tick, so they fill themselves in as the consignment travels.
-        </EmptyState>
-      ) : (
-        <>
-          <div className="stats">
-            <Stat
-              label="In flight"
-              value={String(headline.ordersInFlight)}
-              note={`${headline.customers} customer${headline.customers === 1 ? '' : 's'} in all`}
-            />
-            <Stat
-              label="Value moving"
-              value={formatMoney(headline.valueInFlightMinor)}
-              note={`${headline.openLots} lot${headline.openLots === 1 ? '' : 'es'} open`}
-            />
-            <Stat
-              label="Awaiting payment"
-              value={formatMoney(headline.unpaidMinor)}
-              note={
-                headline.oldestWaitingDays > 0
-                  ? `oldest landed ${headline.oldestWaitingDays} days ago`
-                  : 'nothing landed and unpaid'
-              }
-            />
-            <Stat
-              label="Repeat customers"
-              value={String(data.repeat)}
-              note="bought across two lots or more"
-            />
+      {toCollect.length > 0 && (
+        <div className="card card--pad stack">
+          <div>
+            <h2>To collect</h2>
+            <span className="field__hint">Balances on orders you have accepted, by buyer. Largest first.</span>
           </div>
+          {toCollect.map((row) => (
+            <div key={row.who.handle ?? row.who.name} className="ins__row">
+              <span style={{ minWidth: 0 }}>
+                <Person who={row.who} />
+                <span className="faint"> · {row.orders} order{row.orders === 1 ? '' : 's'}</span>
+              </span>
+              <span className="badge badge--warn">{formatMoney(row.outstandingMinor, row.currency)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-          {boxes.byLot.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Boxes still to pack</h2>
-                <span className="field__hint">
-                  One parcel per customer per lot, sized off what is in it. A customer drops out
-                  once theirs is packed.
+      {pending.length > 0 && (
+        <div className="card card--pad stack">
+          <div>
+            <h2>Landed and not paid for</h2>
+            <span className="field__hint">In India, waiting on money. Most owed first.</span>
+          </div>
+          {pending.map((row) => (
+            <div key={row.buyerId} className="ins__row">
+              <span style={{ minWidth: 0 }}>
+                <Person who={row.who} />
+                <span className="faint">
+                  {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} ·{' '}
+                  {row.waitingDays === 0
+                    ? 'landed today'
+                    : `waiting ${row.waitingDays} day${row.waitingDays === 1 ? '' : 's'}`}
                 </span>
-              </div>
-              <div className="tiles">
-                <Tile value={String(boxes.small)} label="Small" />
-                <Tile value={String(boxes.medium)} label="Medium" tone="blue" />
-                <Tile value={String(boxes.large)} label="Large" tone="green" />
-              </div>
-              {boxes.byLot.map((row) => (
-                <div key={row.lotId} className="ins__row">
-                  <span className="ins__name">{row.lotName}</span>
-                  <span className="faint">
-                    {[
-                      row.small > 0 && `${row.small} small`,
-                      row.medium > 0 && `${row.medium} medium`,
-                      row.large > 0 && `${row.large} large`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </span>
-                </div>
-              ))}
+              </span>
+              <span className="badge badge--warn">{formatMoney(row.totalMinor)}</span>
             </div>
-          )}
-
-          {measured.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Time in each stage</h2>
-                <span className="field__hint">
-                  Average days, across every order you have moved. The long one is where to push.
-                </span>
-              </div>
-              <div className="legs">
-                {measured.map((segment) => (
-                  <div key={segment} className="leg">
-                    <span className="leg__label">{SEGMENT_LABELS[segment]}</span>
-                    <span className="leg__days">{days(timings[segment]!)}</span>
-                    <span className="leg__track">
-                      <span
-                        className="leg__fill"
-                        style={{ width: `${Math.max(3, (timings[segment]! / slowest) * 100)}%` }}
-                      />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {perLot.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Lot by lot</h2>
-                <span className="field__hint">
-                  Where each consignment actually is, and what is riding on it.
-                </span>
-              </div>
-              {perLot.map((row) => (
-                <div key={row.lotId} className="ins__lot">
-                  <div className="ins__row">
-                    <span className="ins__name">{row.lotName}</span>
-                    <span className="badge">{row.progress}%</span>
-                  </div>
-                  <span className="faint">{PHASE_LABELS[row.phase]}</span>
-                  <span className="ins__track">
-                    <span className="ins__fill" style={{ width: `${row.progress}%` }} />
-                  </span>
-                  <div className="ins__meta">
-                    <span>{formatMoney(row.valueMinor)}</span>
-                    <span className="faint">
-                      {row.customers} customer{row.customers === 1 ? '' : 's'} · {row.orders} order
-                      {row.orders === 1 ? '' : 's'}
-                    </span>
-                    {row.unpaidMinor > 0 && (
-                      <span className="ins__owed">{formatMoney(row.unpaidMinor)} unpaid</span>
-                    )}
-                    {row.doorToDoor !== null && (
-                      <span className="faint">{days(row.doorToDoor)} door to door</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {pending.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Landed and not paid for</h2>
-                <span className="field__hint">
-                  In India, waiting on money. Most owed first.
-                </span>
-              </div>
-              {pending.map((row) => (
-                <div key={row.buyerId} className="ins__row">
-                  <span style={{ minWidth: 0 }}>
-                    <Person who={row.who} />
-                    <span className="faint">
-                      {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} ·{' '}
-                      {row.waitingDays === 0
-                        ? 'landed today'
-                        : `waiting ${row.waitingDays} day${row.waitingDays === 1 ? '' : 's'}`}
-                    </span>
-                  </span>
-                  <span className="badge badge--warn">{formatMoney(row.totalMinor)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {top.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Best customers</h2>
-                <span className="field__hint">By what they have actually spent with you.</span>
-              </div>
-              {top.map((row) => (
-                <div key={row.buyerId} className="ins__row">
-                  <span style={{ minWidth: 0 }}>
-                    <Person who={row.who} />
-                    <span className="faint">
-                      {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} across {row.lots} lot
-                      {row.lots === 1 ? '' : 'es'}
-                    </span>
-                  </span>
-                  <span className="ins__money">{formatMoney(row.totalMinor)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {cohorts.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>New against returning</h2>
-                <span className="field__hint">
-                  Customers in each lot, and whether you had seen them before.
-                </span>
-              </div>
-              <div className="legs">
-                {cohorts.map((row, index) => (
-                  <div key={`${row.lotName}:${index}`} className="coh">
-                    <span className="coh__name">{row.lotName}</span>
-                    <span className="coh__count">
-                      {row.newCount} new · {row.returningCount} back
-                    </span>
-                    <span className="coh__track">
-                      <span className="coh__new" style={{ flexGrow: row.newCount }} />
-                      <span className="coh__old" style={{ flexGrow: row.returningCount }} />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(bulk.length > 0 || dormant.length > 0) && (
-            <div className="card card--pad stack">
-              {bulk.length > 0 && (
-                <>
-                  <div>
-                    <h2>Worth packing together</h2>
-                    <span className="field__hint">
-                      Several items in one lot, going to one person — one parcel, not three.
-                    </span>
-                  </div>
-                  {bulk.map((row) => (
-                    <div key={`${row.buyerId}:${row.lotName}`} className="ins__row">
-                      <span style={{ minWidth: 0 }}>
-                        <Person who={row.who} />
-                        <span className="faint"> · {row.lotName}</span>
-                      </span>
-                      <span className="badge">{row.count} items</span>
-                    </div>
-                  ))}
-                </>
-              )}
-
-              {dormant.length > 0 && (
-                <>
-                  <div style={{ marginTop: bulk.length > 0 ? 6 : 0 }}>
-                    <h2>Not seen lately</h2>
-                    <span className="field__hint">
-                      Bought before, nothing in your last three lots.
-                    </span>
-                  </div>
-                  {dormant.map((row) => (
-                    <div key={row.buyerId} className="ins__row">
-                      <span style={{ minWidth: 0 }}>
-                        <Person who={row.who} />
-                        <span className="faint"> · last in {row.lastLotName}</span>
-                      </span>
-                      <span className="badge">{row.lotsAgo} lots ago</span>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
-
-          {(sales.runs > 0 || preOrders.length > 0) && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Sales and pre-orders</h2>
-                <span className="field__hint">
-                  What the channel did, and which pre-orders got there.
-                </span>
-              </div>
-
-              {sales.runs > 0 && (
-                <div className="tiles">
-                  <Tile value={String(sales.posted)} label="Items dropped" />
-                  <Tile value={String(sales.inWindow)} label="In the window" tone="blue" />
-                  <Tile value={String(sales.handedOver)} label="Moved to the shop" tone="green" />
-                </div>
-              )}
-
-              {preOrders.map((row) => {
-                const percent = Math.min(
-                  100,
-                  Math.round(((row.booked + row.pledged) / Math.max(1, row.threshold)) * 100),
-                );
-                return (
-                  <div key={row.listingId} className="ins__lot">
-                    <div className="ins__row">
-                      <Link to={`/listing/${row.listingId}`} className="ins__name">{row.title}</Link>
-                      <span className={`badge${row.filled ? ' badge--ok' : row.closedShort ? ' badge--warn' : ''}`}>
-                        {row.filled ? 'Filled' : row.closedShort ? 'Closed short' : `${percent}%`}
-                      </span>
-                    </div>
-                    <span className="ins__track">
-                      <span className="ins__fill" style={{ width: `${percent}%` }} />
-                    </span>
-                    <span className="faint">
-                      {row.booked} paid{row.pledged > 0 && ` · ${row.pledged} pledged`} of{' '}
-                      {row.threshold} needed
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
     </>
   );
