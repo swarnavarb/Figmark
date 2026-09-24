@@ -1086,6 +1086,13 @@ interface PostSeed {
   talk?: [string, string, string, [string, string, string][]?][];
   poll?: string[];
   vibe?: Post['vibe'];
+  /** Room messages: said in the channel, not broadcast. */
+  voice?: Post['voice'];
+  reach?: Post['reach'];
+  announcement?: boolean;
+  pinned?: boolean;
+  /** The seed id of the message this one answers. */
+  replyToId?: string;
 }
 
 const POSTS: PostSeed[] = [
@@ -1177,6 +1184,40 @@ const POSTS: PostSeed[] = [
     likeCount: 18, replyCount: 0, ageDays: -1, ageHours: -2, vibe: 'sea',
   },
 
+  /* Inside Kaiju's room: a pinned note, and the shop talking with customers. */
+  {
+    id: 'pst_kaiju_pin', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: '📌 How our group-buys work: book a slot, pay the deposit when the lot fills, balance when it lands in India. Questions go right here.',
+    likeCount: 9, replyCount: 0, ageDays: -12, reach: 'channel', announcement: true, pinned: true,
+  },
+  {
+    id: 'pst_kaiju_q1', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_b_meghna', authorName: 'Meghna Iyer',
+    body: 'Is the Dragon Knight the painted version or the bare resin?',
+    likeCount: 2, replyCount: 0, ageDays: -1, ageHours: 3, voice: 'visitor', reach: 'channel', announcement: false,
+  },
+  {
+    id: 'pst_kaiju_a1', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'Painted! Factory finish, same as the photos. Bare resin is on request.',
+    likeCount: 4, replyCount: 0, ageDays: -1, ageHours: 4, reach: 'channel', announcement: false,
+    replyToId: 'pst_kaiju_q1',
+  },
+  {
+    id: 'pst_kaiju_q2', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_b_tanmay', authorName: 'Tanmay Bose',
+    body: 'Mine arrived today — the box survived the trip 🙌',
+    likeCount: 6, replyCount: 0, ageDays: 0, ageHours: -3, voice: 'visitor', reach: 'channel', announcement: false,
+    art: [['Arrived safe', '#FF5B1F', '#7C3AED']],
+  },
+  {
+    id: 'pst_kaiju_news', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'Customs cleared for the August lot. Dispatching Tuesday.',
+    likeCount: 11, replyCount: 0, ageDays: 0, ageHours: -1, reach: 'channel', announcement: true,
+  },
+
   /* From accounts the demo does not follow - what Trending is for. */
   {
     id: 'pst_court_1', channelId: 'usr_courtside', channel: 'seller', kind: 'update',
@@ -1256,7 +1297,10 @@ const POSTS: PostSeed[] = [
  * blocked, so a carousel in the seed feed carries small SVG posters instead of
  * links to somebody else's server.
  */
-function seedArt([caption, from, to]: [string, string, string], index: number): string {
+function seedArt([rawCaption, from, to]: [string, string, string], index: number): string {
+  // Written into XML, so an ampersand or a bracket in a caption would make
+  // the whole picture fail to decode.
+  const caption = rawCaption.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">`
     + `<defs><linearGradient id="g${index}" x1="0" y1="0" x2="1" y2="1">`
     + `<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>`
@@ -1329,6 +1373,16 @@ export function seedPosts(): Post[] {
           }
         : null,
       vibe: entry.vibe ?? null,
+      ...(entry.voice ? { voice: entry.voice } : {}),
+      ...(entry.reach ? { reach: entry.reach } : {}),
+      ...(entry.announcement !== undefined ? { announcement: entry.announcement } : {}),
+      ...(entry.pinned ? { pinned: true } : {}),
+      replyTo: entry.replyToId
+        ? (() => {
+            const original = POSTS.find((other) => other.id === entry.replyToId);
+            return original ? { postId: original.id, authorName: original.authorName, body: original.body } : null;
+          })()
+        : null,
       createdAt: at,
       updatedAt: at,
     };

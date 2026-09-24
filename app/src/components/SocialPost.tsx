@@ -41,7 +41,7 @@ function compact(count: number): string {
  * the count moves the instant it is tapped and does not jump when the answer
  * lands.
  */
-function withReaction(summary: ReactionSummary, kind: ReactionKind | null): ReactionSummary {
+export function withReaction(summary: ReactionSummary, kind: ReactionKind | null): ReactionSummary {
   const next = kind === summary.mine ? null : kind;
   const tally = new Map(summary.counts.map((entry) => [entry.kind, entry.count]));
   if (summary.mine) tally.set(summary.mine, (tally.get(summary.mine) ?? 1) - 1);
@@ -334,7 +334,7 @@ function Body({ text, long }: { text: string; long: boolean }) {
   );
 }
 
-async function copyLink(post: { channelId: string; id: string }): Promise<boolean> {
+export async function copyLink(post: { channelId: string; id: string }): Promise<boolean> {
   const url = `${window.location.origin}${postHref(post)}`;
   try {
     await navigator.clipboard.writeText(url);
@@ -444,7 +444,7 @@ function Carousel({ photos, alt, burst, onOpen, onDoubleTap }: {
 }
 
 /** A photo filling the screen, with the rest a swipe or an arrow key away. */
-function Lightbox({ photos, start, onClose }: { photos: string[]; start: number; onClose: () => void }) {
+export function Lightbox({ photos, start, onClose }: { photos: string[]; start: number; onClose: () => void }) {
   const [index, setIndex] = useState(start);
   const touch = useRef<number | null>(null);
 

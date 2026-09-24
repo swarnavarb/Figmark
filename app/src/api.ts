@@ -674,6 +674,14 @@ export interface ChannelRow {
   lastPost: string | null;
   lastPostAt: string | null;
   lastPostKind: string | null;
+  lastPostBy?: string | null;
+  bio?: string;
+  followerCount?: number;
+  following?: boolean;
+  /** Whether it has something pinned for newcomers. */
+  pinned?: boolean;
+  /** When its newest messages from other people arrived, for counting what is new. */
+  recent?: string[];
 }
 
 export interface ChannelThread {
@@ -684,11 +692,14 @@ export interface ChannelThread {
     description: string;
     handle?: string | null;
     photoUrl?: string | null;
+    tier?: string | null;
+    followerCount?: number;
+    following?: boolean;
     /** Whether you may post as this shop rather than as a customer. */
     mine: boolean;
   };
   /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
-  shareable: { id: string; title: string; priceMinor: number; currency: string }[];
+  shareable: { id: string; title: string; priceMinor: number; currency: string; condition?: string; photoUrl?: string | null }[];
   posts: PostCard[];
 }
 
@@ -1694,12 +1705,16 @@ export const api = {
   socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
   trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
-  channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),
-  channelThread: (id: string) => request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}`),
+  channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
+  channelThread: (id: string, as?: string | null) =>
+    request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}${voice(as)}`),
+  pinPost: (channelId: string, id: string) =>
+    post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
   createPost: (body: {
     body: string; forumId?: string; listingId?: string; storeId?: string;
     channelId?: string; announcement?: boolean;
     photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
+    replyToId?: string;
   }) =>
     post<{ post: Post }>('/social/posts', body),
   socialPost: (channelId: string, id: string, as?: string | null) =>

@@ -65,7 +65,7 @@ const {
   readPostRoute: readPost, reactRoute: reactTo, reactorsRoute: reactors,
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
-  removePostRoute: removePost, trendingRoute: trending, shareableRoute: shareable,
+  removePostRoute: removePost, trendingRoute: trending, shareableRoute: shareable, pinPostRoute: pinPost,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -1280,6 +1280,67 @@ await check('a shop posts one of its items with words on top', async () => {
   const card = (await readPost(req({ headers: auth, params: on(made.jsonBody.post) }), ctx)).jsonBody.card;
   assert.equal(card.listing.id, stock[0].id);
   assert.ok('photoUrl' in card.listing);
+});
+
+await check('the channel list counts what is new and suggests rooms you are not in', async () => {
+  const body = (await channels(req({ headers: auth }), ctx)).jsonBody;
+  const kaiju = body.channels.find((row) => row.sellerId === 'usr_kaiju');
+  assert.ok(Array.isArray(kaiju.recent) && kaiju.recent.length > 0, 'recent message times, for unread counts');
+  assert.equal(kaiju.following, true);
+  assert.equal(kaiju.pinned, true, 'the seeded welcome note is pinned');
+  assert.equal(typeof kaiju.followerCount, 'number');
+  assert.ok(body.discover.some((row) => row.sellerId === 'usr_courtside'), 'a shop you do not follow');
+  assert.ok(body.discover.every((row) => !row.following && !row.mine));
+});
+
+await check('a reply in a room quotes what it answers, and only from the same room', async () => {
+  const room = (await channelThread(req({ headers: auth, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  assert.equal(room.channel.following, true);
+  assert.equal(typeof room.channel.followerCount, 'number');
+  const question = room.posts.find((card) => card.post.id === 'pst_kaiju_q1');
+  const answer = room.posts.find((card) => card.post.id === 'pst_kaiju_a1');
+  assert.equal(answer.post.replyTo.postId, question.post.id, 'seeded replies point at their question');
+
+  const said = await createPost(req({
+    headers: auth, body: { body: 'Same question for the mecha kits?', channelId: 'usr_kaiju', replyToId: 'pst_kaiju_q1' },
+  }), ctx);
+  assert.equal(said.status, 201);
+  assert.equal(said.jsonBody.post.replyTo.authorName, 'Meghna Iyer');
+
+  const elsewhere = await createPost(req({
+    headers: auth, body: { body: 'Wrong room', channelId: 'usr_tokyoline', replyToId: 'pst_kaiju_q1' },
+  }), ctx);
+  assert.equal(elsewhere.status, 404);
+  const broadcast = await createPost(req({ headers: auth, body: { body: 'Not in a room', replyToId: 'pst_kaiju_q1' } }), ctx);
+  assert.equal(broadcast.status, 404, 'a feed post answers nothing');
+});
+
+await check('a customer who runs a shop can speak as it in somebody else\'s room', async () => {
+  const shop = (await storefront(req({ headers: auth }), ctx)).jsonBody.storefront;
+  const said = await createPost(req({
+    headers: auth, body: { body: 'Happy to split shipping on this.', channelId: 'usr_kaiju', storeId: 'usr_demo' },
+  }), ctx);
+  assert.equal(said.status, 201);
+  assert.equal(said.jsonBody.post.voice, 'visitor', 'still a visitor in Kaiju\'s room');
+  assert.equal(said.jsonBody.post.authorName, shop.storefrontName);
+  assert.equal((await createPost(req({
+    headers: auth, body: { body: 'Not mine', channelId: 'usr_kaiju', storeId: 'usr_tokyoline' },
+  }), ctx)).status, 403);
+});
+
+await check('only the shop pins in its room, three at most', async () => {
+  const mine = [];
+  for (const body of ['Opening hours', 'How lots work', 'Current drop', 'One too many']) {
+    mine.push((await createPost(req({ headers: auth, body: { body, channelId: 'usr_demo' } }), ctx)).jsonBody.post);
+  }
+  for (const post of mine.slice(0, 3)) {
+    assert.deepEqual((await pinPost(req({ headers: auth, params: on(post) }), ctx)).jsonBody, { pinned: true });
+  }
+  assert.equal((await pinPost(req({ headers: auth, params: on(mine[3]) }), ctx)).status, 409);
+  assert.deepEqual((await pinPost(req({ headers: auth, params: on(mine[0]) }), ctx)).jsonBody, { pinned: false });
+
+  // Somebody else's room is not yours to rearrange.
+  assert.equal((await pinPost(req({ headers: auth, params: { channel: 'usr_kaiju', id: 'pst_kaiju_q1' } }), ctx)).status, 403);
 });
 
 await check('the author hears about reactions and comments, and can take the post down', async () => {

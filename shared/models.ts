@@ -1415,6 +1415,21 @@ export interface Post extends BaseDocument {
   repostOf?: RepostRef | null;
   /** A short line set on one of the brand gradients. */
   vibe?: Vibe | null;
+  /**
+   * Pinned to the top of its channel by whoever runs the shop.
+   *
+   * The thing a newcomer should read first - opening hours, how the lots work,
+   * the current drop - kept above the conversation rather than buried in it.
+   */
+  pinned?: boolean;
+  /**
+   * The message this one answers, in a channel or a forum.
+   *
+   * A snapshot rather than a pointer alone, so the quote still reads after
+   * the original is edited away or deleted - and so a room can render without
+   * fetching every message it quotes.
+   */
+  replyTo?: { postId: string; authorName: string; body: string } | null;
 }
 
 /**

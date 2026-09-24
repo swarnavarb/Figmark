@@ -407,11 +407,14 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
 
   const followed = await repository.listFollowedSellerIds(user.id);
+  const followedSet = new Set(followed);
   // Your own shop is always here, whether or not you follow yourself, and
   // whether or not it has ever been posted in: it is the one channel you write
   // rather than read, so an empty one is a prompt, not an absence. Shops you
   // help run count too - a manager posting for a shop needs its channel.
-  const mineToo = [...new Set([...followed, user.id])];
+  const owners = await repository.listStoreOwners();
+  const run = owners.filter((owner) => can(owner, user.id, 'posts')).map((owner) => owner.id);
+  const mineToo = [...new Set([...followed, ...run, user.id])];
   const candidates = await repository.listUsersByIds(mineToo);
 
   // Only a shop has a channel. A person's page is where their own posts live;
@@ -419,29 +422,45 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   // would fill this list with rooms nobody has any reason to open.
   const shops = candidates.filter((account: User) => account.sellerProfile);
 
-  const rows = await Promise.all(
-    shops.map(async (seller: User) => {
-      const posts = await repository.listPosts(seller.id, 1);
-      const latest = posts[0] ?? null;
-      return {
-        sellerId: seller.id,
-        name: seller.sellerProfile?.storefrontName ?? seller.displayName,
-        handle: seller.sellerProfile?.username ?? seller.username ?? null,
-        photoUrl: seller.sellerProfile?.photoUrl ?? null,
-        tier: seller.sellerProfile?.tier ?? null,
-        mine: can(seller, user.id, 'posts'),
-        lastPost: latest?.body ?? null,
-        lastPostAt: latest?.createdAt ?? null,
-        lastPostKind: latest?.kind ?? null,
-      };
-    }),
-  );
+  const rowFor = async (seller: User) => {
+    // The newest few, not one: the app counts what arrived since you last
+    // looked, and it needs the times to do it without a read receipt per room.
+    const posts = await repository.listPosts(seller.id, 20);
+    const latest = posts[0] ?? null;
+    return {
+      sellerId: seller.id,
+      name: seller.sellerProfile?.storefrontName ?? seller.displayName,
+      handle: seller.sellerProfile?.username ?? seller.username ?? null,
+      photoUrl: seller.sellerProfile?.photoUrl ?? null,
+      tier: seller.sellerProfile?.tier ?? null,
+      bio: seller.sellerProfile?.bio ?? '',
+      followerCount: seller.sellerProfile?.followerCount ?? 0,
+      following: followedSet.has(seller.id),
+      mine: can(seller, user.id, 'posts'),
+      lastPost: latest?.body ?? null,
+      lastPostAt: latest?.createdAt ?? null,
+      lastPostKind: latest?.kind ?? null,
+      lastPostBy: latest?.authorName ?? null,
+      pinned: posts.some((post) => post.pinned),
+      recent: posts.filter((post) => post.authorId !== user.id).map((post) => post.createdAt),
+    };
+  };
 
+  const rows = await Promise.all(shops.map(rowFor));
   // Yours on top, then whoever spoke most recently.
   rows.sort(
     (a, b) => Number(b.mine) - Number(a.mine) || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''),
   );
-  return json(200, { channels: rows });
+
+  // Rooms you are not in yet, busiest first: a channel list that only ever
+  // shows what you already chose never grows.
+  const strangers = owners.filter((owner) => owner.sellerProfile && !mineToo.includes(owner.id));
+  const discover = (await Promise.all(strangers.map(rowFor)))
+    .filter((row) => row.lastPostAt)
+    .sort((a, b) => b.recent.length - a.recent.length || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''))
+    .slice(0, 8);
+
+  return json(200, { channels: rows, discover });
 }
 
 /** GET /api/social/channels/{id} - one channel or forum, newest first. */
@@ -452,7 +471,12 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
   if (!channelId) return error(400, 'invalid_channel', 'A channel id is required.');
 
   const repository = await getRepository();
-  const posts = await repository.listPosts(channelId);
+  const actor = await actorFor(request, viewer, repository);
+  if (!actor) return notYours();
+  const [posts, followed] = await Promise.all([
+    repository.listPosts(channelId, 100),
+    repository.listFollowedSellerIds(viewer.id),
+  ]);
   const forum = await repository.getForum(channelId);
   const seller = forum ? null : await repository.getUserById(channelId);
 
@@ -468,11 +492,13 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
   // channel to go and find it. Only for whoever runs it - nobody else has a
   // reason to see an unsorted list of somebody's stock.
   const shareable = mine
-    ? (await repository.listListings({ sellerId: channelId, limit: 8 })).map((listing) => ({
+    ? (await repository.listListings({ sellerId: channelId, limit: 30 })).map((listing) => ({
         id: listing.id,
         title: listing.title,
         priceMinor: listing.priceMinor,
         currency: listing.currency,
+        condition: listing.condition,
+        photoUrl: leadPhotoOf(listing),
       }))
     : [];
 
@@ -486,10 +512,13 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
           handle: seller!.sellerProfile!.username ?? seller!.username ?? null,
           description: seller!.sellerProfile!.bio ?? '',
           photoUrl: seller!.sellerProfile!.photoUrl ?? null,
+          tier: seller!.sellerProfile!.tier ?? null,
+          followerCount: seller!.sellerProfile!.followerCount ?? 0,
+          following: followed.includes(channelId),
           mine,
         },
     shareable,
-    posts: await decorate(posts, repository, personActor(viewer)),
+    posts: await decorate(posts, repository, actor, { followed: new Set(followed) }),
   });
 }
 
@@ -516,6 +545,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     poll?: { options?: unknown; closesInHours?: unknown } | null;
     /** A short line on one of the brand gradients. */
     vibe?: unknown;
+    /** The message in the same room this one answers. */
+    replyToId?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -604,7 +635,16 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
       authorName = owner.sellerProfile.storefrontName;
       voice = 'store';
     } else {
+      // A customer who runs a shop of their own may speak as it in somebody
+      // else's room - still a visitor there, just a named one.
       authorName = user.displayName;
+      if (body.storeId) {
+        const theirs = await repository.getUserById(body.storeId);
+        if (!theirs?.sellerProfile || !can(theirs, user.id, 'posts')) {
+          return error(403, 'forbidden', 'You cannot post as that store.');
+        }
+        authorName = theirs.sellerProfile.storefrontName;
+      }
       voice = 'visitor';
     }
     // A channel message stays in the channel. That is the whole point of
@@ -641,6 +681,18 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     kind = 'sale';
   }
 
+  // Answering something: only in a room, and only something said in the same one.
+  let replyTo: Post['replyTo'] = null;
+  let answeredAuthor: string | null = null;
+  if (typeof body.replyToId === 'string' && body.replyToId) {
+    const original = await repository.getPost(channelId, body.replyToId);
+    if (!original || reach !== 'channel') {
+      return error(404, 'not_found', 'That message is not in this room any more.');
+    }
+    replyTo = { postId: original.id, authorName: original.authorName, body: gist(original.body || 'Photo') };
+    answeredAuthor = original.authorId;
+  }
+
   const now = new Date().toISOString();
   const post: Post = {
     id: `pst_${randomUUID().slice(0, 12)}`,
@@ -663,11 +715,21 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     shareCount: 0,
     poll,
     vibe,
+    replyTo,
     createdAt: now,
     updatedAt: now,
   };
 
-  return json(201, { post: await repository.createPost(post) });
+  const saved = await repository.createPost(post);
+  if (answeredAuthor) {
+    await notify(repository, [answeredAuthor], {
+      kind: 'comment_replied',
+      title: `${authorName} replied to you`,
+      body: gist(text || 'Photo'),
+      link: `/social/c/${encodeURIComponent(channelId)}`,
+    }, { except: user.id });
+  }
+  return json(201, { post: saved });
 }
 
 /* ── Reacting, commenting, sharing, voting ─────────────────────────────── */
@@ -1031,6 +1093,33 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
   return json(200, { poll: pollView(saved.poll, user.id) });
 }
 
+/**
+ * POST /api/social/posts/{channel}/{id}/pin - pin it to the top of the room, or unpin it.
+ *
+ * Whoever speaks for the shop decides what a newcomer reads first; nobody
+ * else can move somebody's shop's furniture. At most three at a time, so the
+ * pins stay a noticeboard rather than becoming a second feed.
+ */
+async function pinPost(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
+  if (!post) return noPost();
+  const owner = post.channel === 'seller' ? await repository.getUserById(post.channelId) : null;
+  if (!owner?.sellerProfile || !can(owner, user.id, 'posts')) {
+    return error(403, 'forbidden', 'Only whoever runs the shop can pin in its channel.');
+  }
+  if (!post.pinned) {
+    const pinned = (await repository.listPosts(post.channelId, 100)).filter((entry) => entry.pinned);
+    if (pinned.length >= 3) return error(409, 'too_many_pins', 'Three pins at most. Unpin one first.');
+  }
+  const saved = await repository.mutatePost(post.channelId, post.id, (current) => ({
+    ...current,
+    pinned: !current.pinned,
+  }));
+  if (!saved) return noPost();
+  return json(200, { pinned: Boolean(saved.pinned) });
+}
+
 /** POST /api/social/posts/{channel}/{id}/delete - take a post down. Its author only. */
 async function removePost(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
@@ -1115,6 +1204,7 @@ export const deletePostCommentRoute = handler(deletePostComment);
 export const sharePostRoute = handler(sharePost);
 export const voteRoute = handler(vote);
 export const removePostRoute = handler(removePost);
+export const pinPostRoute = handler(pinPost);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -1137,3 +1227,4 @@ app.http('social-post-vote', { ...anon, methods: ['POST'], route: 'social/posts/
 app.http('social-post-delete', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/delete', handler: removePostRoute });
 app.http('social-trending', { ...anon, methods: ['GET'], route: 'social/trending', handler: trendingRoute });
 app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });
+app.http('social-post-pin', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/pin', handler: pinPostRoute });
