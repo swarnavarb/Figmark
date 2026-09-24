@@ -104,7 +104,7 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
   if (view) {
     const entry = CATEGORIES.find((row) => row.id === view)!;
     return (
-      <div className="stack ins insview">
+      <div className="stack ins insview royal">
         <div className="insview__bar" ref={barRef}>
           <button type="button" className="btn btn--ghost btn--sm" onClick={back}>← Insights</button>
           <h2 className="insview__title"><span aria-hidden="true">{entry.icon}</span> {entry.label} <span className="probadge">PRO</span></h2>
@@ -238,7 +238,7 @@ function Dashboard({ data, lots, deep, costs, open }: {
     text: `${atRisk} regular${atRisk === 1 ? ' is' : 's are'} overdue for an order` });
 
   return (
-    <div className="stack ins">
+    <div className="stack ins royal">
       <section className="inshero">
         <div className="inshero__title">
           <h2>✨ Insights <span className="probadge">PRO</span></h2>

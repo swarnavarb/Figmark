@@ -28,16 +28,16 @@ type ProfitView = 'lots' | 'items' | 'customers' | 'costs';
 type Status = 'active' | 'closed';
 
 const PROFIT_TABS: { id: ProfitView; label: string; hint: Record<Status, string> }[] = [
-  { id: 'lots', label: '🚚 Per lot', hint: {
+  { id: 'lots', label: 'Per lot', hint: {
     active: 'Lots still open or on their way.',
     closed: 'Lots closed, or with everything delivered.' } },
-  { id: 'items', label: '🏷️ Per item', hint: {
+  { id: 'items', label: 'Per item', hint: {
     active: 'Items still on sale.',
     closed: 'Items sold out, expired or taken down.' } },
-  { id: 'customers', label: '👥 Per customer', hint: {
+  { id: 'customers', label: 'Per customer', hint: {
     active: 'Customers with something still on its way.',
     closed: 'Customers whose orders have all been delivered.' } },
-  { id: 'costs', label: '🧾 Item costs', hint: { active: '', closed: '' } },
+  { id: 'costs', label: 'Item costs', hint: { active: '', closed: '' } },
 ];
 
 export function RealProfit({ shop, data, reload }: { shop?: string; data: CostsResponse | null; reload: () => void }) {
@@ -88,7 +88,7 @@ export function RealProfit({ shop, data, reload }: { shop?: string; data: CostsR
             {(['active', 'closed'] as const).map((entry) => (
               <button key={entry} type="button" role="tab" aria-selected={status === entry}
                 className={`inscat${status === entry ? ' is-on' : ''}`} onClick={() => setStatus(entry)}>
-                {entry === 'active' ? '🟢 Active' : '✅ Closed'}
+                {entry === 'active' ? 'Active' : 'Closed'}
                 <span className="inscat__n">{data[view][entry].length}</span>
               </button>
             ))}
@@ -354,7 +354,7 @@ function SheetEditor({ item, shop, onDone }: { item: SheetItem; shop?: string; o
           <span>{money(profit)}{item.priceMinor > 0 ? ` · ${Math.round((profit / item.priceMinor) * 100)}%` : ''}</span>
         </div>
         {error && <ErrorNotice message={error} />}
-        <div className="pc__actions pc__actions--sticky">
+        <div className="pc__actions">
           <button type="button" className="btn" disabled={busy || steps.length === 0} onClick={() => void save()}>Save costs</button>
           {item.sheet && (
             <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
