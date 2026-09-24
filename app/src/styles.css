@@ -36,6 +36,29 @@
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+/* Cormorant, for Pro headings and figures only: the one serif in the app,
+   so a Pro screen reads as a different room without a different app. */
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/cormorant-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+20B9, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/cormorant-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 @font-face {
   font-family: 'Bricolage Grotesque';
   font-style: normal;
@@ -5433,6 +5456,8 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   --border: rgba(212, 175, 55, 0.18); --border-strong: rgba(212, 175, 55, 0.34);
   --text: #FBF3E4; --text-dim: #DCC6A8; --text-faint: #A98F7B;
   --accent-line: rgba(212, 175, 55, 0.55); --accent-soft: rgba(212, 175, 55, 0.12); --accent-text: #F3DC8A;
+  --royal-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --gold: #D4AF37; --gold-hi: #F3DC8A; --ivory: #F6E7C1; --rose: #E8A0B4;
   padding: 16px 12px 22px; border-radius: 24px; color: var(--text);
   background:
     radial-gradient(120% 50% at 50% 0%, rgba(212, 175, 55, 0.10), transparent 60%),
@@ -5441,7 +5466,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.3), 0 18px 48px rgba(90, 6, 24, 0.45);
 }
 .royal h2, .royal .insview__title, .royal .inscard__title {
-  font-family: Georgia, 'Times New Roman', serif; letter-spacing: 0.005em;
+  font-family: var(--royal-serif); letter-spacing: 0.005em;
 }
 .royal h2 { color: #F6E7C1; }
 .royal .insview__title { color: #F3DC8A; font-size: var(--t-lg); }
@@ -5466,7 +5491,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 /* Figures: quieter tiles, the number in ivory serif. */
 .royal .tile { padding: 10px 8px; background: rgba(0, 0, 0, 0.24); border-color: var(--border); }
-.royal .tile__value { font-family: Georgia, 'Times New Roman', serif; font-size: var(--t-md); color: #F6E7C1; }
+.royal .tile__value { font-family: var(--royal-serif); font-size: var(--t-md); color: #F6E7C1; }
 .royal .tile__label { font-size: 9.5px; letter-spacing: 0.14em; color: var(--text-faint); }
 .royal .tile--green { border-color: rgba(134, 239, 172, 0.35); }
 .royal .tile--green .tile__value { color: #A7F3D0; }
@@ -5496,7 +5521,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 .royal .instile--gold { border-color: rgba(212, 175, 55, 0.6); box-shadow: inset 0 0 0 1px rgba(243, 220, 138, 0.18); }
 .royal .instile__head { color: #E9D3A6; }
-.royal .instile__big { font-family: Georgia, 'Times New Roman', serif; color: #F6E7C1; }
+.royal .instile__big { font-family: var(--royal-serif); color: #F6E7C1; }
 .royal .insnote { background: rgba(212, 175, 55, 0.08); border-color: rgba(212, 175, 55, 0.35); color: var(--text); }
 .royal .inscard { background: rgba(16, 4, 8, 0.55); border-color: var(--border); }
 .royal .inscard__big { color: #F3DC8A; }
@@ -5505,6 +5530,62 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .royal .inskpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .royal .inskpi { padding: 8px 9px; gap: 2px; border-radius: 12px; background: rgba(0, 0, 0, 0.26); box-shadow: inset 0 0 0 1px var(--border); }
 .royal .inskpi small { font-size: 10.5px; color: var(--text-faint); }
-.royal .inskpi b { font-family: Georgia, 'Times New Roman', serif; font-size: var(--t-md); color: #F6E7C1; }
+.royal .inskpi b { font-family: var(--royal-serif); font-size: var(--t-md); color: #F6E7C1; }
 .royal .inskpi .insspark { height: 18px; }
 .royal .insdigest__head--violet { color: #F3DC8A; }
+
+/* ── Pro, refined ─────────────────────────────────────────────────────────
+   One field of crimson edge to edge rather than a framed box; one thin gold
+   line per card and none on what sits inside a card; gold, ivory and rose
+   for everything, with green and red kept for profit and loss alone. */
+.royal {
+  margin-inline: calc(var(--page-pad) * -1); padding: 18px var(--page-pad) 26px;
+  border-radius: 0; box-shadow: none;
+  border-top: 1px solid rgba(212, 175, 55, 0.35); border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+}
+.royal h2 { font-weight: 600; font-size: calc(var(--t-lg) + 2px); line-height: 1.15; }
+.royal .insview__title { font-weight: 600; font-size: 26px; }
+.royal .inshero__title h2 { font-size: 28px; }
+.royal .inscard__title { font-weight: 600; font-size: var(--t-md); }
+.royal .tile__value, .royal .inskpi b, .royal .instile__big { font-weight: 600; font-size: calc(var(--t-md) + 3px); }
+
+.royal .card, .royal .inshero, .royal .inscard, .royal .instile, .royal .insnote, .royal .insdigest {
+  border: 1px solid rgba(212, 175, 55, 0.24); box-shadow: none;
+}
+.royal .card, .royal .inscard, .royal .insdigest { background: rgba(10, 2, 5, 0.42); }
+.royal .inshero { background: linear-gradient(165deg, rgba(212, 175, 55, 0.12), rgba(10, 2, 5, 0.3) 55%); }
+.royal .instile, .royal .instile--gold { background: rgba(10, 2, 5, 0.42); }
+.royal .instile--gold { border-color: rgba(212, 175, 55, 0.6); }
+/* Inside a card: fill only, no frame. */
+.royal .tile, .royal .inskpi, .royal .insstage, .royal .pc__fill, .royal .pc__group, .royal .sales__age {
+  border: 0; box-shadow: none; background: rgba(0, 0, 0, 0.26);
+}
+.royal .tile--green .tile__value { color: #A7F3D0; }
+
+/* Chip rails sit centred. */
+.royal .inssegs, .royal .inscats { justify-self: center; justify-content: center; margin-inline: auto; }
+
+/* One palette. */
+.royal .insdigest__head--ok, .royal .insdigest__head--violet { color: var(--gold-hi); }
+.royal .insdigest__head--warn { color: var(--rose); }
+.royal .insspark__bar { background: var(--gold); }
+.royal .instodo__row { box-shadow: inset 3px 0 0 var(--gold); border-color: rgba(212, 175, 55, 0.2); background: rgba(10, 2, 5, 0.35); }
+.royal .instodo__row--hot, .royal .instodo__row--pink, .royal .instodo__row--warn { box-shadow: inset 3px 0 0 var(--rose); }
+.royal .insbar__fill { background: linear-gradient(90deg, #9A7B1F, var(--gold-hi)); }
+.royal .insbar__fill--warn, .royal .insbar__fill--pink { background: linear-gradient(90deg, #A34A63, var(--rose)); }
+.royal .inshours__col > span { background: linear-gradient(180deg, var(--gold-hi), #9A7B1F); }
+.royal .inshours__col.is-peak > span { background: linear-gradient(180deg, #FFF3C4, var(--rose)); }
+.royal .badge:not(.badge--ok):not(.badge--danger) {
+  background: rgba(212, 175, 55, 0.12); color: var(--gold-hi); box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.4);
+}
+.royal .badge--warn { background: rgba(232, 160, 180, 0.12); color: var(--rose); box-shadow: inset 0 0 0 1px rgba(232, 160, 180, 0.4); }
+.royal .inscard__big, .royal .inscollect { color: var(--gold-hi); }
+/* Cost stages keep their own colours - they are a legend - in a royal key. */
+.royal .pc__seg--pink, .royal .pc__dot--pink { background: var(--rose); }
+.royal .pc__seg--aqua, .royal .pc__dot--aqua { background: #E9D3A6; }
+.royal .pc__seg--violet, .royal .pc__dot--violet { background: #B98CC9; }
+.royal .pc__seg--warn, .royal .pc__dot--warn { background: var(--gold); }
+.royal .pc__seg--ok, .royal .pc__dot--ok { background: #C9A27E; }
+.royal .pc__seg--coral, .royal .pc__dot--coral { background: #C0584F; }
+.royal a:not(.btn):not(.instile) { color: var(--ivory); }
+.royal { font-variant-numeric: lining-nums; }

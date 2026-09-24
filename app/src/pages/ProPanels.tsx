@@ -405,7 +405,7 @@ export function Loyalty({ deep }: { deep: DeepResponse }) {
               <span role="cell">{row.size}</span>
               {row.back.map((share, at) => (
                 <span key={at} role="cell" className="coh__cell"
-                  style={share === null ? undefined : { background: `rgba(52, 211, 153, ${0.08 + (share / 100) * 0.6})` }}>
+                  style={share === null ? undefined : { background: `rgba(212, 175, 55, ${0.08 + (share / 100) * 0.55})` }}>
                   {share === null ? '·' : `${share}%`}
                 </span>
               ))}
