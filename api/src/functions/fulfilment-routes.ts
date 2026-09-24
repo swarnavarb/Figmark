@@ -9,8 +9,9 @@ import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
   itemStepOn, joinIndexOf, lotOffset, routeOf, stepForStage,
-  type LotRoute, type StepSide, type StepTrigger,
+  type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger,
 } from '../../../shared/routes.js';
+import { COUNTRIES } from '../../../shared/countries.js';
 import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
 import {
   awaitingLot, furthestStage, inLot, stagesFor,
@@ -21,6 +22,34 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
+
+/** What to write on the timeline when a checkpoint is ticked. */
+const CHECKPOINT_EVENT_TEXT: Record<OrderCheckpoint, string> = {
+  china_received: 'Received at the international warehouse.',
+  china_packed: 'Packed at the international warehouse.',
+  india_received: 'Received at the India warehouse.',
+  ready_to_dispatch: 'Ready to dispatch.',
+  packed: 'Packed.',
+  dispatched: 'Dispatched to the buyer.',
+  delivered: 'Delivered.',
+};
+
+/**
+ * Which rung a checkpoint's note belongs under.
+ *
+ * A lot's own route reliably tags its steps with the checkpoint that reaches
+ * them (`trigger`), so that lookup works there. The built-in pre-lot route
+ * does not - it is two fixed steps with no triggers at all, and the second
+ * one simply *is* "received at the warehouse" by construction, the same way
+ * `beforeReached` below already assumes. A custom pre-lot route from a
+ * template can go either way, so the trigger is tried first regardless.
+ */
+function stepForCheckpoint(
+  steps: RouteStep[], checkpoint: OrderCheckpoint, order: Pick<Order, 'lotId'>,
+): RouteStep | undefined {
+  return steps.find((step) => step.trigger === checkpoint)
+    ?? (!inLot(order) && checkpoint === 'china_received' ? steps.at(-1) : undefined);
+}
 
 /**
  * Seller-side shipment lots.
@@ -42,6 +71,8 @@ interface LotDetailsBody {
   name?: string;
   description?: string;
   origin?: string;
+  originCountry?: string;
+  destinationCountry?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -110,6 +141,16 @@ async function updateLotDetails(request: HttpRequest, _context: InvocationContex
   }
   if (body.description !== undefined) lot.description = body.description.trim();
   if (body.origin !== undefined) lot.origin = body.origin.trim();
+  if (body.originCountry !== undefined) {
+    const value = body.originCountry.trim();
+    if (value && !COUNTRIES.includes(value)) return error(400, 'invalid_lot', 'Pick a country from the list.');
+    lot.originCountry = value || undefined;
+  }
+  if (body.destinationCountry !== undefined) {
+    const value = body.destinationCountry.trim();
+    if (value && !COUNTRIES.includes(value)) return error(400, 'invalid_lot', 'Pick a country from the list.');
+    lot.destinationCountry = value || undefined;
+  }
   if (body.estimatedDispatchAt !== undefined) lot.estimatedDispatchAt = body.estimatedDispatchAt;
   // The supplier moves as a unit: naming one sets it, clearing the name drops it.
   if (body.supplierName !== undefined || body.supplierHandle !== undefined) {
@@ -180,6 +221,9 @@ export interface NewLotBody {
   name?: string;
   description?: string;
   origin?: string;
+  /** Required: the two countries this lot travels between, e.g. "China" -> "India". */
+  originCountry?: string;
+  destinationCountry?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -192,7 +236,10 @@ export interface NewLotBody {
   /** A saved template to travel, or steps written here and now. */
   routeId?: string;
   routeName?: string;
-  routeSteps?: { id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+  routeSteps?: {
+    id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+    stageId?: string; stageName?: string; stageIcon?: string; locked?: boolean; forward?: boolean;
+  }[];
   /** Who gets it out when it lands. The supplier is named above. */
   handlerUserId?: string;
   handlerName?: string;
@@ -214,6 +261,15 @@ export async function buildLot(
   const name = body.name?.trim();
   if (!name) return refuse(400, 'invalid_lot', 'Give the lot a name you will recognise.');
 
+  const originCountry = body.originCountry?.trim();
+  const destinationCountry = body.destinationCountry?.trim();
+  if (!originCountry || !destinationCountry) {
+    return refuse(400, 'invalid_lot', 'Pick where this lot is coming from and going to.');
+  }
+  if (!COUNTRIES.includes(originCountry) || !COUNTRIES.includes(destinationCountry)) {
+    return refuse(400, 'invalid_lot', 'Pick a country from the list.');
+  }
+
   /* The ladder this lot travels, settled before anything is written: a lot
      created against a template that turns out not to exist should not exist
      either, tracking whatever the fallback happened to be. */
@@ -225,7 +281,9 @@ export async function buildLot(
     // timeline under a buyer who has been reading it for three weeks.
     route = { routeId: template.id, name: template.name, steps: template.steps };
   } else if (body.routeSteps && body.routeSteps.length > 0) {
-    const steps = normaliseSteps(body.routeSteps);
+    const steps = normaliseSteps(
+      body.routeSteps.map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
+    );
     if (steps.length < 2) return refuse(400, 'invalid_route', 'A route needs at least two steps.');
     route = { routeId: null, name: body.routeName?.trim() || 'Route', steps };
   }
@@ -284,6 +342,8 @@ export async function buildLot(
     handler: handlerNamed,
     description: body.description?.trim() ?? '',
     origin: body.origin?.trim() ?? '',
+    originCountry,
+    destinationCountry,
     supplier: supplierFrom(body, supplierTag),
     status: 'open',
     stage: opensAs,
@@ -665,6 +725,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
 
   const lot = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
   const sellers = await repository.listUsersByIds([order.sellerId]);
+  const listing = await repository.getListing(order.listingId);
+  const leadPhoto = listing?.photos.find((photo) => photo.isPrimary) ?? listing?.photos[0] ?? null;
 
   /* The timeline the buyer reads is the lot's route, in the seller's own
      words. Without a lot there is no route to read, and the honest answer is
@@ -678,6 +740,29 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
      same two events, and drawing both put "at the China warehouse" on the
      screen twice, ticked in one ladder and hollow in the other. */
   const before = preLotRouteOf(order);
+
+  /*
+   * Older orders ticked a checkpoint before every tick wrote a dated note of
+   * its own - the flag on the order is real, but nothing on the timeline
+   * ever said when. Filled in here, at read time, rather than by rewriting
+   * stored history: synthesised only for a checkpoint with no matching note
+   * already on the order, so a tick recorded properly is never duplicated.
+   */
+  const stepsForNotes = route ? route.steps : before.steps;
+  const notedTexts = new Set(order.stageHistory.map((event) => event.note));
+  const healedHistory = [
+    ...order.stageHistory,
+    ...ORDER_CHECKPOINTS.filter((checkpoint) => order.checkpoints?.[checkpoint] && !notedTexts.has(CHECKPOINT_EVENT_TEXT[checkpoint]))
+      .map((checkpoint) => ({
+        stage: order.stage,
+        step: stepForCheckpoint(stepsForNotes, checkpoint, order)?.name,
+        enteredAt: order.checkpoints![checkpoint]!,
+        note: CHECKPOINT_EVENT_TEXT[checkpoint],
+        recordedBy: order.sellerId,
+      })),
+  ];
+  const orderForClient = healedHistory.length === order.stageHistory.length ? order : { ...order, stageHistory: healedHistory };
+
   /*
    * A checkpoint that has been ticked has happened.
    *
@@ -718,7 +803,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   );
 
   return json(200, {
-    order,
+    order: orderForClient,
     stages: stagesFor(order),
     currentStage: furthestStage(order),
     preLot: {
@@ -746,6 +831,9 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
     // The only two things the lot contributes to the buyer's view.
     trackingReference: lot?.forwarder?.trackingReference ?? null,
     estimatedDispatchAt: lot?.estimatedDispatchAt ?? null,
+    // For the Details tab's product card - the listing as it is now, not the
+    // order's own frozen snapshot, so a photo added after the sale still shows.
+    listing: listing ? { id: listing.id, title: listing.title, photoUrl: leadPhoto?.url ?? null } : null,
   });
 }
 
@@ -907,6 +995,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const repository = await getRepository();
   const order = await repository.getOrder(orderId);
   if (!order) return error(404, 'not_found', 'No such order.');
+  const lot = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
 
   const sellerId = await lotsStoreFor(request, user, order.sellerId);
   if (sellerId === order.sellerId) {
@@ -921,7 +1010,6 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     // the record of work done, so the person who did it is the one who makes
     // them.
     const owner = await repository.getUserById(order.sellerId);
-    const lot = await repository.getLot(order.sellerId, order.lotId);
     const role: CrewRole | null =
       (owner && can(owner, user.id, 'export')) || (lot && supplierIdOf(lot) === user.id)
         ? 'supplier'
@@ -946,6 +1034,24 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   order.checkpoints = { ...(order.checkpoints ?? {}), [checkpoint]: on ? now : null };
   order.updatedAt = now;
 
+  // Every tick is a real, dated thing that happened, and belongs on the
+  // ladder's own timeline. Filed under the rung it actually is - not the
+  // order's coarse stage, which does not move when a checkpoint is ticked
+  // and would otherwise leave the note stranded under whatever rung the
+  // order happened to be at, however much later the tick came.
+  const stepsForTick = lot ? routeOf(lot).steps : preLotRouteOf(order).steps;
+  const tickedStep = stepForCheckpoint(stepsForTick, checkpoint, order);
+  order.stageHistory = [
+    ...order.stageHistory,
+    {
+      stage: order.stage,
+      step: tickedStep?.name,
+      enteredAt: now,
+      note: on ? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
+      recordedBy: user.id,
+    },
+  ];
+
   // Dispatching is already recorded here, so the order takes its shipped state
   // from this tick rather than from a second screen saying the same thing. It
   // is also what starts the auto-release clock: the window has to open when the
@@ -955,19 +1061,34 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   if (checkpoint === 'dispatched' && order.escrow.state === 'held') {
     order.status = on ? 'shipped' : 'confirmed';
     order.escrow = { ...order.escrow, autoReleaseAt: on ? daysFrom(AUTO_RELEASE_DAYS) : null };
-    order.stageHistory = [
-      ...order.stageHistory,
-      {
-        stage: order.stage,
-        enteredAt: now,
-        note: on ? 'Dispatched to the buyer.' : 'Dispatch un-marked.',
-        recordedBy: user.id,
-      },
-    ];
   }
 
   const saved = await repository.updateOrder(order);
   const siblings = await repository.listOrdersForLot(order.lotId);
+
+  /*
+   * `delivered` is deliberately not wired to `order.status`/escrow above -
+   * that state machine belongs to the buyer's own confirmation and to
+   * disputes, and a seller's tick must never be able to short-circuit it.
+   * What it does own is the lot: once every item in it has been ticked
+   * delivered, there is nothing left to pack, ship or watch, and the lot
+   * itself moves to the stage that already means "done" everywhere else
+   * that reads it.
+   */
+  if (checkpoint === 'delivered' && on && siblings.length > 0 && siblings.every((sibling) => Boolean(sibling.checkpoints?.delivered))) {
+    const lot = await repository.getLot(order.sellerId, order.lotId);
+    if (lot && lot.stage !== 'delivered') {
+      const route = routeOf(lot);
+      await repository.updateLot({
+        ...lot,
+        stage: 'delivered',
+        status: 'closed',
+        currentStep: route.steps.length - 1,
+        updatedAt: now,
+      });
+    }
+  }
+
   return json(200, { order: { id: saved.id, checkpoints: saved.checkpoints ?? {} }, tally: tally(siblings) });
 }
 

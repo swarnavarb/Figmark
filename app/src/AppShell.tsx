@@ -1,6 +1,8 @@
-import { useState, type FormEvent } from 'react';
-import { NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { FloatingCalc } from './components/FloatingCalc';
 import { Notifications } from './components/Notifications';
+import { ScrollManager } from './components/ScrollManager';
 import { TabBar } from './components/TabBar';
 import { Avatar, Icon } from './components/ui';
 import { useSession } from './session';
@@ -24,6 +26,7 @@ export function AppShell() {
 
   return (
     <div className="shell shell--tabbed">
+      <ScrollManager />
       <header className="nav">
         <NavLink to="/" className="brand" onClick={() => setTerm('')}>
           <span className="brand__mark" aria-hidden="true" />
@@ -54,12 +57,11 @@ export function AppShell() {
           {/* Before the avatar, because it is about you rather than about the
               app, and because that is where a thumb already goes. */}
           {user && <Notifications />}
-          <NavLink to="/me" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`} title={user?.displayName}>
-            {user ? <Avatar name={user.displayName} size={28} /> : 'Profile'}
-          </NavLink>
-          <button type="button" className="btn btn--quiet" onClick={() => void signOut()}>
-            Sign out
-          </button>
+          {user ? (
+            <ProfileMenu name={user.displayName} onSignOut={() => void signOut()} />
+          ) : (
+            <NavLink to="/me" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`}>Profile</NavLink>
+          )}
         </nav>
       </header>
 
@@ -93,7 +95,56 @@ export function AppShell() {
 
       <Outlet />
 
+      {user && <FloatingCalc />}
+
       <TabBar />
+    </div>
+  );
+}
+
+/**
+ * The avatar opens who you are: your page, your shop, what you bought, and the
+ * way out. "My Purchases" rather than "My Orders" - it is the buyer's word.
+ */
+function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const { pathname } = useLocation();
+
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => event.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+
+  return (
+    <div className="pmenu" ref={box}>
+      <button type="button" className="pmenu__btn" aria-haspopup="menu" aria-expanded={open}
+        title={name} onClick={() => setOpen((now) => !now)}>
+        <Avatar name={name} size={30} />
+      </button>
+      {open && (
+        <div className="pmenu__panel" role="menu">
+          <span className="pmenu__who">{name}</span>
+          <Link role="menuitem" to="/me" className="pmenu__item">🙂 My Profile</Link>
+          <Link role="menuitem" to="/shop" className="pmenu__item">🏪 My Storefront</Link>
+          <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>
+          <Link role="menuitem" to="/refunds" className="pmenu__item">↩️ My refunds</Link>
+          <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
+          <button role="menuitem" type="button" className="pmenu__item pmenu__item--out" onClick={onSignOut}>
+            👋 Sign Out
+          </button>
+        </div>
+      )}
     </div>
   );
 }

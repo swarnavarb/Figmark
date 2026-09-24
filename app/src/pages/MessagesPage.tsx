@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { MessageParty } from '@shared/models';
+import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
+import { DealCard, DealForm, useMakeDeal } from '../components/PrivateDeal';
 import { timeAgo } from '../format';
 
 /**
@@ -173,6 +175,24 @@ export function ThreadPage() {
   const [error, setError] = useState<string | null>(null);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
+  // The private deal form: open, and the buyer's ask it answers, if any.
+  // Arriving from a saved calculation's "Private deal": the form opens with it.
+  // Watched by the navigation's key, because "Private deal" pressed while this
+  // very chat is open lands on the same page rather than a fresh one.
+  const location = useLocation();
+  // The buyer's ask-for-a-deal form. A shop makes its deal on the full listing form instead.
+  const [asking, setAsking] = useState(false);
+  const makeDeal = useMakeDeal();
+  const us = data?.us;
+  const them = data?.them;
+  useEffect(() => {
+    const dealCalc = (location.state as { dealCalc?: SavedCalc } | null)?.dealCalc;
+    if (!dealCalc || !us?.isStore || !them) return;
+    // Spent here, so coming back from the form is the chat rather than the form again.
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    makeDeal(us, them, { calc: dealCalc });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key, us?.handle, them?.handle]);
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -343,7 +363,11 @@ export function ThreadPage() {
                 {startsRun && !mine && message.from.isStore && (
                   <div className="bubble__from">{message.from.displayName}</div>
                 )}
-                <div className="bubble__body">{message.body}</div>
+                {message.deal ? (
+                  <DealCard message={message} mine={mine} us={data.us} onAnswer={(deal) => makeDeal(data.us, data.them, { from: deal })} />
+                ) : (
+                  <div className="bubble__body">{message.body}</div>
+                )}
                 {endsRun && <div className="bubble__meta">{timeAgo(message.createdAt)}</div>}
               </div>
             );
@@ -354,7 +378,19 @@ export function ThreadPage() {
 
       {error && <div className="chat__error"><ErrorNotice message={error} /></div>}
 
-      <form className="composer" onSubmit={send}>
+      {asking && (
+        <DealForm us={data.us} them={data.them} onClose={() => setAsking(false)}
+          onSent={() => { setAsking(false); void load(); }} />
+      )}
+
+      <form className={`composer${data.us.isStore !== data.them.isStore ? ' composer--deal' : ''}`} onSubmit={send}>
+        {data.us.isStore !== data.them.isStore && (
+          <button type="button" className="composer__deal" onClick={() => (data.us.isStore ? makeDeal(data.us, data.them) : setAsking(true))}
+            aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}
+            title={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}>
+            🤝
+          </button>
+        )}
         <textarea
           ref={input}
           value={body}

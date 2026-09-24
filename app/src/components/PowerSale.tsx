@@ -6,7 +6,10 @@ import {
   ApiRequestError, api, type PowerSaleDraft, type PowerSaleView,
 } from '../api';
 import { EmptyState, ErrorNotice, Icon, Modal } from './ui';
+import type { SavedCalc } from '@shared/profit';
+import { CostSheetField, type CostSheetDraft } from './CostSheetField';
 import { formatMoney, timeAgo } from '../format';
+import { CalcIcon } from './CalcIcon';
 
 /**
  * Power selling: a channel sale a shop schedules once and walks away from.
@@ -36,10 +39,11 @@ const STATUS_TONE: Record<PowerSaleView['status'], string> = {
   cancelled: 'badge--danger',
 };
 
-export function PowerSalePanel({ storeId }: { storeId: string }) {
+export function PowerSalePanel({ storeId, startWith }: { storeId: string; startWith?: SavedCalc[] }) {
   const [sales, setSales] = useState<PowerSaleView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [building, setBuilding] = useState(false);
+  // Arriving with saved calculations: the builder opens with them as items.
+  const [building, setBuilding] = useState(Boolean(startWith?.length));
 
   const load = useCallback(async () => {
     setError(null);
@@ -92,6 +96,7 @@ export function PowerSalePanel({ storeId }: { storeId: string }) {
       {building && (
         <SaleBuilder
           storeId={storeId}
+          startWith={startWith}
           onClose={() => setBuilding(false)}
           onSaved={() => { setBuilding(false); void load(); }}
         />
@@ -264,6 +269,7 @@ interface ItemDraft {
   listPrice: string;
   quantity: string;
   allowMultiple: boolean;
+  costSheet: CostSheetDraft | null;
 }
 
 let nextKey = 1;
@@ -277,6 +283,7 @@ const blankItem = (): ItemDraft => ({
   listPrice: '',
   quantity: '1',
   allowMultiple: false,
+  costSheet: null,
 });
 
 /**
@@ -287,11 +294,25 @@ const blankItem = (): ItemDraft => ({
  * timing is last on purpose - it is the part that has a sensible default, and
  * the part nobody wants to think about before they have decided what to sell.
  */
-function SaleBuilder({ storeId, onClose, onSaved }: {
+/** A saved calculation as a sale item: its name, its price as the members' price, and its costs. */
+const itemFromCalc = (calc: SavedCalc): ItemDraft => ({
+  ...blankItem(),
+  title: calc.title,
+  price: calc.sellingPriceMinor ? String(calc.sellingPriceMinor / 100) : '',
+  quantity: String(calc.input.quantity || 1),
+  costSheet: calc.steps.length ? { templateId: calc.templateId, templateName: calc.templateName, steps: calc.steps } : null,
+});
+
+function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
   storeId: string;
+  startWith?: SavedCalc[];
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [calcs, setCalcs] = useState<SavedCalc[]>([]);
+  useEffect(() => {
+    void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
+  }, [storeId]);
   const [name, setName] = useState('');
   const [opening, setOpening] = useState('');
   const [closing, setClosing] = useState('');
@@ -300,7 +321,7 @@ function SaleBuilder({ storeId, onClose, onSaved }: {
   const [lead, setLead] = useState('0');
   const [every, setEvery] = useState('5');
   const [window_, setWindow] = useState('60');
-  const [items, setItems] = useState<ItemDraft[]>([blankItem()]);
+  const [items, setItems] = useState<ItemDraft[]>(() => (startWith?.length ? startWith.map(itemFromCalc) : [blankItem()]));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -335,6 +356,7 @@ function SaleBuilder({ storeId, onClose, onSaved }: {
           listPriceMinor: Math.round(Number(item.listPrice) * 100),
           quantity: Math.max(1, Number(item.quantity) || 1),
           allowMultiple: item.allowMultiple,
+          costSheet: item.costSheet,
         })),
       };
       await api.createPowerSale(draft);
@@ -408,6 +430,8 @@ function SaleBuilder({ storeId, onClose, onSaved }: {
                     onChange={(e) => set(item.key, { allowMultiple: e.target.checked })} />
                   One buyer may take more than one
                 </label>
+                <CostSheetField value={item.costSheet} onChange={(costSheet) => set(item.key, { costSheet })}
+                  sellingPriceMinor={Math.round(Number(item.price || 0) * 100)} shop={storeId} />
                 {Number(item.listPrice) > 0 && Number(item.listPrice) <= Number(item.price) && (
                   <span className="field__hint" style={{ color: 'var(--danger)' }}>
                     The price after the window has to be above the members&rsquo; price — otherwise the
@@ -420,6 +444,22 @@ function SaleBuilder({ storeId, onClose, onSaved }: {
               onClick={() => setItems((rows) => [...rows, blankItem()])}>
               <Icon name="plus" size={13} /> Another item
             </button>
+            {calcs.length > 0 && (
+              <label className="field">
+                <span><CalcIcon size={15} /> Add from your saved calculations</span>
+                <select value="" onChange={(e) => {
+                  const calc = calcs.find((entry) => entry.id === e.target.value);
+                  if (calc) setItems((rows) => [...rows.filter((row) => row.title.trim() || row.price), itemFromCalc(calc)]);
+                }}>
+                  <option value="">Pick one…</option>
+                  {calcs.map((calc) => (
+                    <option key={calc.id} value={calc.id}>
+                      {calc.title} · {formatMoney(calc.sellingPriceMinor)}{calc.listingId ? ' (listed)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
         </div>
 

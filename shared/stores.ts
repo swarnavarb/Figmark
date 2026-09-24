@@ -19,6 +19,8 @@ export interface StoreAccess {
   name: string;
   /** True when the viewer owns it rather than being granted rights in it. */
   isOwner: boolean;
+  /** The store's own handle, for speaking as it in messages. Null until it has one. */
+  handle?: string | null;
   /** What the viewer may do, with ownership and `admin` already expanded. */
   permissions: StorePermission[];
 }
@@ -68,6 +70,7 @@ export function accessFor(
     ownerId: owner.id,
     name: owner.sellerProfile?.storefrontName ?? owner.displayName,
     isOwner: owner.id === viewerId,
+    handle: owner.sellerProfile?.username ?? null,
     permissions,
   };
 }

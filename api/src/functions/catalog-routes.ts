@@ -7,9 +7,12 @@ import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulf
 import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
 import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
+import { isExpired, isMultiple } from '../../../shared/payments.js';
+import { cleanCostSheet } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { placeOrder } from './placement.js';
 import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -47,7 +50,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   // than stored on the row, so re-housing a category is an edit to one file
   // instead of a migration.
   const group = request.query.get('group')?.trim();
-  const listings = await repository.listListings({
+  const listings = (await repository.listListings({
     search: request.query.get('q') ?? undefined,
     category: request.query.get('category') ?? undefined,
     categories: group ? categoriesIn(group) : undefined,
@@ -56,7 +59,8 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     sort: request.query.get('sort') ?? undefined,
     maxPriceMinor: numeric(request.query.get('maxPrice')),
     followedSellerIds,
-  });
+  // Expired is read off the clock, so it is filtered here rather than stored.
+  })).filter((listing) => !isExpired(listing));
 
   const [sellers, lots] = await Promise.all([
     repository.listUsersByIds([...new Set(listings.map((l) => l.sellerId))]),
@@ -68,7 +72,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     listings: listings.map((listing) => ({
-      ...listing,
+      ...withoutCosts(listing),
       liked: likedIds.has(listing.id),
       seller: sellerById.get(listing.sellerId) ?? null,
       estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
@@ -83,6 +87,12 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** GET /api/listings/{id} - detail, with seller, lot, comments and like state. */
+/** A listing as anyone outside the shop may see it: without what it cost the shop. */
+function withoutCosts(listing: Listing): Listing {
+  const { costSheet: _cost, costSheetPrevious: _history, ...rest } = listing;
+  return rest;
+}
+
 async function listingDetail(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A listing id is required.');
@@ -92,6 +102,11 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   if (!listing) return error(404, 'not_found', 'No such listing.');
 
   const viewer = await auth.getCurrentUser(request);
+  // A private deal is visible to the buyer it was made for and the shop that
+  // made it, and to nobody else - not even as "sold".
+  if (listing.privateFor && viewer?.id !== listing.privateFor && !(await mayManage(repository, listing, viewer?.id))) {
+    return error(404, 'not_found', 'No such listing.');
+  }
   const [sellers, rawComments, likedIds, followed] = await Promise.all([
     repository.listUsersByIds([listing.sellerId]),
     repository.listComments(id),
@@ -127,7 +142,8 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     : null;
 
   return json(200, {
-    listing: settled.listing,
+    // What the item cost the shop is the shop's own business.
+    listing: (await mayManage(repository, listing, viewer?.id)) ? settled.listing : withoutCosts(settled.listing),
     /** The group behind the meter: counts, roster, and the reader's own place. */
     preOrder,
     seller: sellers[0] ? toSellerCard(sellers[0]) : null,
@@ -137,6 +153,14 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     following: followed.includes(listing.sellerId),
     isOwn: viewer?.id === listing.sellerId,
   });
+}
+
+/** Whether this person may manage the shop a listing belongs to. */
+async function mayManage(repository: Awaited<ReturnType<typeof getRepository>>, listing: Listing, userId: string | undefined) {
+  if (!userId) return false;
+  if (userId === listing.sellerId) return true;
+  const owner = await repository.getUserById(listing.sellerId);
+  return Boolean(owner && can(owner, userId, 'listings'));
 }
 
 /** POST /api/listings - publish a listing. Requires the `sell` capability. */
@@ -149,6 +173,9 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     preOrder?: { fillThreshold: number; cutoffAt: string };
     /** The store to list into; absent means the caller's own. */
     storeId?: string;
+    quantityMode?: 'fixed' | 'multiple';
+    expiresAt?: string | null;
+    advancePercent?: number | null;
     /** Announce it in the shop's channel, to its followers. */
     shareToChannel?: boolean;
     /** Announce it in the feed, to everyone. */
@@ -190,6 +217,22 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
 
   const title = body.title?.trim();
   if (!title) return error(400, 'invalid_listing', 'A title is required.');
+
+  // A private deal is for one named buyer, never the shop itself.
+  let privateFor: string | null = null;
+  if (body.privateFor) {
+    const buyer = await repository.getUserById(body.privateFor);
+    if (!buyer || buyer.id === sellerId) return error(400, 'invalid_listing', 'Pick who this private deal is for.');
+    privateFor = buyer.id;
+  }
+
+  // What it cost to bring in (Pro), when the seller filled it in while listing.
+  let costSheet: Listing['costSheet'] = null;
+  try {
+    costSheet = cleanCostSheet(body.costSheet, new Date().toISOString());
+  } catch (err) {
+    return error(400, 'invalid_listing', (err as Error).message);
+  }
   if (!body.priceMinor || body.priceMinor <= 0) {
     return error(400, 'invalid_listing', 'A price above zero is required.');
   }
@@ -240,11 +283,12 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     priceMinor: Math.round(body.priceMinor),
     currency: 'INR',
     quantityAvailable: Math.max(1, Math.round(body.quantityAvailable ?? 1)),
+    ...listingTerms(body),
     // Pre-order and shipment lot are independent: a listing opts into demand
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
     preOrder:
-      body.preOrder && body.preOrder.fillThreshold > 0
+      !privateFor && body.preOrder && body.preOrder.fillThreshold > 0
         ? {
             fillThreshold: Math.round(body.preOrder.fillThreshold),
             filledCount: 0,
@@ -277,6 +321,9 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     likeCount: 0,
     viewCount: 0,
     bumpedAt: null,
+    costSheet,
+    // Private: out of the catalog, the shop's grid, channels and the feed.
+    ...(privateFor ? { privateFor, unlisted: true } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -287,7 +334,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // channel is where a shop's followers already are; the feed is everybody.
   // Both are opt-in per listing, because a shop that posts every item to
   // everything is a shop people mute.
-  if (body.shareToChannel || body.shareToFeed) {
+  if (!privateFor && (body.shareToChannel || body.shareToFeed)) {
     const shop = await repository.getUserById(sellerId);
     const name = shop?.sellerProfile?.storefrontName ?? user.displayName;
     const now2 = new Date().toISOString();
@@ -400,7 +447,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
-  let body: { listingId?: string; quantity?: number; via?: string };
+  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book' };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -413,10 +460,29 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   if (listing.sellerId === user.id) {
     return error(400, 'invalid_order', 'You cannot buy your own listing.');
   }
+  if (listing.privateFor && listing.privateFor !== user.id) return error(404, 'not_found', 'No such listing.');
+
+  // Enforced here, not only by hiding the button: an expired or withdrawn item
+  // is not for sale whatever the client sends.
+  if (isExpired(listing)) return error(409, 'expired', 'This item has expired and cannot be bought.');
+  if (listing.status !== 'active') return error(409, 'unavailable', 'This item is not for sale.');
 
   const quantity = Math.max(1, Math.round(body.quantity ?? 1));
-  if (quantity > listing.quantityAvailable) {
+  if (!isMultiple(listing) && quantity > listing.quantityAvailable) {
     return error(409, 'insufficient_stock', `Only ${listing.quantityAvailable} left.`);
+  }
+
+  // Pressing Buy again on an item already at the checkout goes back to that
+  // checkout rather than opening a second one nobody asked for.
+  if (body.plan !== 'book') {
+    const open = (await repository.listOrdersForBuyer(user.id)).find((entry) =>
+      entry.listingId === listing.id && entry.placedAt === null && entry.status === 'pending_payment');
+    if (open) {
+      open.quantity = quantity;
+      open.buyClicks = (open.buyClicks ?? 1) + 1;
+      open.updatedAt = new Date().toISOString();
+      return json(200, { order: await repository.updateOrder(open) });
+    }
   }
 
   const now = new Date().toISOString();
@@ -465,6 +531,9 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     currency: listing.currency,
     status: 'pending_payment',
     paymentStatus: 'unpaid',
+    advancePercent: listing.advancePercent ?? null,
+    payments: [],
+    credits: [],
     stage: listing.lotId ? 'ordering' : 'preparing',
     // Copied from the listing, for the same reason a lot copies its route:
     // the template is a template, and editing it must not rewrite a timeline
@@ -495,33 +564,21 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     completedAt: null,
     createdAt: now,
     updatedAt: now,
+    // Book: a pledge to buy with no payment yet. Payment is asked for once
+    // the seller has accepted - see acceptOrder in order-routes.ts.
+    bookingOnly: body.plan === 'book',
+    accepted: false,
+    // A checkout until the buyer picks pay, advance or book - see placement.ts.
+    placedAt: null,
+    buyClicks: 1,
   };
 
   const placed = await repository.createOrder(order);
 
-  // A pre-order booking is also a pledge being made good. The pledge row is
-  // kept rather than deleted: it carries who brought this person in, and a
-  // recruiter losing their credit the moment their recruit pays would be an
-  // odd way to thank them.
-  if (listing.preOrder) {
-    const pledges = await repository.listPledges(listing.id);
-    const mine = pledges.find((entry) => entry.userId === user.id && entry.convertedOrderId === null);
-    if (mine) {
-      await repository.savePledge({
-        ...mine,
-        convertedOrderId: placed.id,
-        updatedAt: new Date().toISOString(),
-      });
-      if (mine.broughtBy && !placed.broughtBy) {
-        await repository.updateOrder({ ...placed, broughtBy: mine.broughtBy });
-        placed.broughtBy = mine.broughtBy;
-      }
-    }
-
-    // Re-read: createOrder moved the fill counter, so the listing in hand is
-    // one version behind the thing being reconciled.
-    const fresh = await repository.getListing(listing.id);
-    if (fresh) await reconcilePreOrder(repository, fresh, { actorId: user.id });
+  // Book straight from the item page: the choice is made, so it is an order.
+  if (body.plan === 'book') {
+    const refusal = await placeOrder(repository, placed, 'booked', user.id);
+    if (refusal) return error(409, 'unavailable', refusal);
   }
 
   return json(201, { order: placed });
@@ -534,7 +591,10 @@ async function myActivity(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
 
   const [listings, orders, sales, likedIds, followedIds] = await Promise.all([
-    repository.listListings({ sellerId: user.id }),
+    // Hidden ones too - sold out and expired are tabs of the seller's own
+    // stock - but not what was withdrawn or is waiting in a scheduled sale.
+    repository.listListings({ sellerId: user.id, includeHidden: true })
+      .then((rows) => rows.filter((row) => row.status !== 'archived' && !row.unlisted)),
     repository.listOrdersForBuyer(user.id),
     // Sales as well as purchases: a dispute is raised against the seller, and a
     // refund button nobody can reach is not a resolution path. One account is
@@ -552,6 +612,126 @@ async function myActivity(request: HttpRequest, _context: InvocationContext) {
     likedListingIds: likedIds,
     following: followed.map(toSellerCard),
   });
+}
+
+/**
+ * The seller-set terms shared by create and edit: stock mode, expiry, advance.
+ *
+ * Only fields present in the body are returned, so an edit that does not
+ * mention one leaves it alone.
+ */
+function listingTerms(body: {
+  quantityMode?: 'fixed' | 'multiple';
+  expiresAt?: string | null;
+  advancePercent?: number | null;
+}): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent'>> {
+  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent'>> = {};
+  if (body.quantityMode !== undefined) {
+    terms.quantityMode = body.quantityMode === 'multiple' ? 'multiple' : 'fixed';
+  }
+  if (body.expiresAt !== undefined) {
+    const at = body.expiresAt ? new Date(body.expiresAt) : null;
+    terms.expiresAt = at && !Number.isNaN(at.getTime()) ? at.toISOString() : null;
+  }
+  if (body.advancePercent !== undefined) {
+    const percent = Math.round(Number(body.advancePercent) || 0);
+    terms.advancePercent = percent > 0 && percent < 100 ? percent : null;
+  }
+  return terms;
+}
+
+/** The listing, if the caller may manage the store it is in. */
+async function manageable(request: HttpRequest): Promise<
+  { refusal: ReturnType<typeof error> }
+  | { listing: Listing; repository: Awaited<ReturnType<typeof getRepository>> }
+> {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const repository = await getRepository();
+  const id = request.params.id;
+  if (!id) return { refusal: error(400, 'invalid_request', 'A listing id is required.') };
+  const listing = await repository.getListing(id);
+  if (!listing || listing.status === 'archived') return { refusal: error(404, 'not_found', 'No such listing.') };
+  if (listing.sellerId !== user.id) {
+    const owner = await repository.getUserById(listing.sellerId);
+    if (!owner || !can(owner, user.id, 'listings')) {
+      return { refusal: error(403, 'forbidden', 'That item is not in a store you manage.') };
+    }
+  }
+  return { listing, repository };
+}
+
+/**
+ * POST /api/listings/{id}/edit - change an item's details, stock or expiry.
+ *
+ * Also how an expired item is made available again: a new expiry in the future
+ * (or none) puts it straight back in the catalog. Orders already placed are
+ * untouched - they carry their own snapshot of what was bought.
+ */
+async function editListing(request: HttpRequest, _context: InvocationContext) {
+  const found = await manageable(request);
+  if ('refusal' in found) return found.refusal;
+  const { listing, repository } = found;
+
+  let body: {
+    title?: string; description?: string; priceMinor?: number; quantityAvailable?: number;
+    quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
+  };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const next: Listing = { ...listing, ...listingTerms(body), updatedAt: new Date().toISOString() };
+  if (body.title !== undefined) {
+    if (!body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
+    next.title = body.title.trim();
+  }
+  if (body.description !== undefined) next.description = body.description.trim();
+  if (body.priceMinor !== undefined) {
+    if (!(body.priceMinor > 0)) return error(400, 'invalid_listing', 'A price above zero is required.');
+    next.priceMinor = Math.round(body.priceMinor);
+    // Kept so Insights can say what a price change did to demand.
+    if (next.priceMinor !== listing.priceMinor) {
+      const history = listing.priceHistory?.length
+        ? listing.priceHistory
+        : [{ priceMinor: listing.priceMinor, at: listing.createdAt }];
+      next.priceHistory = [...history, { priceMinor: next.priceMinor, at: next.updatedAt }].slice(-20);
+    }
+  }
+  if (body.quantityAvailable !== undefined) {
+    next.quantityAvailable = Math.max(0, Math.round(body.quantityAvailable));
+  }
+  if (next.expiresAt && isExpired(next) && body.expiresAt !== undefined) {
+    return error(400, 'invalid_expiry', 'Pick an expiry in the future, or none.');
+  }
+  // Stock decides whether it is on the shelf; a multiple is never sold out.
+  if (next.status === 'active' || next.status === 'sold_out') {
+    next.status = isMultiple(next) || next.quantityAvailable > 0 ? 'active' : 'sold_out';
+    // Back on the shelf: the people who saved it while it was gone are worth telling.
+    if (listing.status === 'sold_out' && next.status === 'active') next.restockedAt = next.updatedAt;
+  }
+
+  return json(200, { listing: await repository.updateListing(next) });
+}
+
+/**
+ * POST /api/listings/{id}/delete - take an item down.
+ *
+ * Expired, never erased: a listing is withdrawn by the same clock a listing
+ * expiring on its own already uses, so it leaves the shelf the same way and
+ * the seller can always put it back with a new expiry. Nothing is deleted -
+ * an order can point at this listing long after the seller stops selling it.
+ */
+async function deleteListing(request: HttpRequest, _context: InvocationContext) {
+  const found = await manageable(request);
+  if ('refusal' in found) return found.refusal;
+  const { listing, repository } = found;
+
+  const now = new Date().toISOString();
+  await repository.updateListing({ ...listing, expiresAt: now, updatedAt: now });
+  return json(200, { expired: true });
 }
 
 /** GET /api/forwarders - the freight forwarder directory. */
@@ -589,6 +769,8 @@ export const bumpListingRoute = handler(bumpListing);
 export const addCommentRoute = handler(addComment);
 export const toggleFollowRoute = handler(toggleFollow);
 export const createOrderRoute = handler(createOrder);
+export const editListingRoute = handler(editListing);
+export const deleteListingRoute = handler(deleteListing);
 export const myActivityRoute = handler(myActivity);
 export const forwardersRoute = handler(forwarders);
 
@@ -600,6 +782,8 @@ app.http('listing-like', { ...anon, methods: ['POST'], route: 'listings/{id}/lik
 app.http('listing-bump', { ...anon, methods: ['POST'], route: 'listings/{id}/bump', handler: bumpListingRoute });
 app.http('listing-comment', { ...anon, methods: ['POST'], route: 'listings/{id}/comments', handler: addCommentRoute });
 app.http('seller-follow', { ...anon, methods: ['POST'], route: 'sellers/{id}/follow', handler: toggleFollowRoute });
+app.http('listing-edit', { ...anon, methods: ['POST'], route: 'listings/{id}/edit', handler: editListingRoute });
+app.http('listing-delete', { ...anon, methods: ['POST'], route: 'listings/{id}/delete', handler: deleteListingRoute });
 app.http('order-create', { ...anon, methods: ['POST'], route: 'orders', handler: createOrderRoute });
 app.http('me-activity', { ...anon, methods: ['GET'], route: 'me/activity', handler: myActivityRoute });
 app.http('forwarders', { ...anon, methods: ['GET'], route: 'forwarders', handler: forwardersRoute });

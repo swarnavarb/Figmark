@@ -25,3 +25,7 @@ npm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+
+# graphify local/machine state — never shared across clones
+.graphify/branch.json
+.graphify/worktree.json

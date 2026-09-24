@@ -6,19 +6,21 @@ import type {
   LoginResponse,
   MeResponse,
 } from '@shared/contracts';
-import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
+import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
+import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
-import type { OrderAction, OrderSide } from '@shared/orders';
+import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type {
   CommentThread, PollView, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
 } from '@shared/social';
 import type { DisputeAction } from '@shared/disputes';
+import type { Allocation, OrderMoney } from '@shared/payments';
 
 /** Somebody named on a screen, and the page their name opens. */
 export interface PartyRef {
@@ -32,8 +34,9 @@ export interface EvidenceDraft {
   caption: string;
 }
 import type {
-  Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty,
-  Order, PaymentClaim, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent, StoreManager,
+  BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
+  MessageDeal, MessageParty, Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
+  StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
 } from '@shared/models';
 
 /**
@@ -226,6 +229,8 @@ export interface OrderTracking {
   sellerName: string;
   trackingReference: string | null;
   estimatedDispatchAt: string | null;
+  /** The item bought, as it is now - for the Details tab's product card. */
+  listing: { id: string; title: string; photoUrl: string | null } | null;
 }
 
 /* ── The order lifecycle ───────────────────────────────────────────────── */
@@ -303,6 +308,9 @@ export interface EscrowOption {
 
 export interface Checkout {
   itemMinor: number;
+  /** Null when the seller takes no advance on this item. */
+  advanceMinor: number | null;
+  advancePercent: number | null;
   currency: string;
   seller: PartyRef;
   /** Where to send the money on a direct sale. Null when the seller has set none. */
@@ -317,6 +325,8 @@ export interface Checkout {
 export interface SaleRow {
   id: string;
   itemName: string;
+  /** Bought from a private deal made in a chat. */
+  privateDeal?: boolean;
   quantity: number;
   totalMinor: number;
   currency: string;
@@ -336,12 +346,126 @@ export interface SaleRow {
   lotStep: string | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
+  /** When the seller ticked it delivered, on the lot's own item list. */
+  deliveredAt: string | null;
   /** The route its Quick Post template set up for the lot that will carry it. */
   lotRouteId: string | null;
+  /** True once the buyer chose Book: no charge yet, waiting on acceptance. */
+  bookingOnly: boolean;
+  accepted: boolean;
+  cancelReason: string | null;
+  reversal: Order['reversal'];
+  canAccept: boolean;
+  canCancel: boolean;
+  photoUrl: string | null;
+  paidMinor: number;
+  outstandingMinor: number;
+  creditMinor: number;
+}
+
+/** One buyer's extra payment, with the orders of theirs it could still go towards. */
+export interface ShopCredit {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  buyer: PartyRef;
+  creditId: string;
+  createdAt: string;
+  origin: RefundOrigin;
+  reason: string | null;
+  amountMinor: number;
+  refundedMinor: number;
+  leftMinor: number;
+  status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
+  pendingRefund: { amountMinor: number; reference: string | null; screenshotUrl?: string | null; sentAt: string } | null;
+  refundDenials: number;
+  disputable: DisputeSubject[];
+  /** Where the buyer's money goes back to, if they have said. */
+  buyerDetails: BuyerReversalDetails | null;
+  /** The seller asked them to add or check those details; open until they do. */
+  detailsCheck: Order['detailsCheck'];
+  applications: { orderId: string; itemName: string; amountMinor: number; at: string }[];
+  targets: { orderId: string; itemName: string; outstandingMinor: number }[];
 }
 
 /** Everything a shop's payments screen has to answer, in three piles. */
+/** One refund sent, or one amount moved onto another order instead. */
+export interface RefundHistoryEntry {
+  id: string;
+  kind: 'refund' | 'moved';
+  orderId: string;
+  itemName: string;
+  currency: string;
+  buyer: PartyRef;
+  origin: RefundOrigin;
+  reason: string | null;
+  amountMinor: number;
+  at: string;
+  reference: string | null;
+  screenshotUrl: string | null;
+  status: RefundLogEntry['status'];
+  answeredAt: string | null;
+  movedTo: string | null;
+}
+
+/** An order a fresh refund could be started on, and how much of it could go back. */
+export interface RefundableOrder {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  createdAt: string;
+  buyer: PartyRef;
+  buyerDetails: BuyerReversalDetails | null;
+  detailsCheck: Order['detailsCheck'];
+  refundableMinor: number;
+}
+
+/** A buyer's own view of one refund owed to them. */
+export interface MyRefund {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  sellerName: string;
+  creditId: string;
+  origin: RefundOrigin;
+  reason: string | null;
+  createdAt: string;
+  amountMinor: number;
+  refundedMinor: number;
+  leftMinor: number;
+  status: ShopCredit['status'];
+  pendingRefund: ShopCredit['pendingRefund'];
+  log: RefundLogEntry[];
+  applications: ShopCredit['applications'];
+}
+
+/** One dispute, as either side's list shows it. */
+export interface DisputeRow {
+  id: string;
+  orderId: string;
+  itemName: string;
+  currency: string;
+  counterpartyName: string;
+  topic: DisputeTopic;
+  label: string;
+  amountMinor: number | null;
+  reason: string;
+  raisedAt: string;
+  raisedByMe: boolean;
+  raisedBySide: 'buyer' | 'seller';
+  status: DisputeStatus;
+}
+
+export interface MyDisputesResponse {
+  asBuyer: DisputeRow[];
+  asStore: DisputeRow[];
+  orders: { id: string; itemName: string; side: 'buyer' | 'seller'; counterpartyName: string; createdAt: string }[];
+}
+
 export interface SalesResponse {
+  credits: ShopCredit[];
+  refundHistory: RefundHistoryEntry[];
+  refundable: RefundableOrder[];
   waiting: SaleRow[];
   placed: SaleRow[];
   answered: SaleRow[];
@@ -406,6 +530,7 @@ export interface PowerSaleDraft {
     listPriceMinor: number;
     quantity: number;
     allowMultiple: boolean;
+    costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
   }[];
 }
 
@@ -435,6 +560,8 @@ export interface OrderState {
   /** The other party, named from this viewer's side of the order. */
   counterparty: PartyRef;
   actions: OrderAction[];
+  /** Rejections of a payment this viewer made, that they could dispute. */
+  disputable: DisputeSubject[];
   /** True while no payment provider is wired; the hold is recorded, not taken. */
   simulatedPayment: boolean;
   myReview: Review | null;
@@ -442,6 +569,8 @@ export interface OrderState {
   theirReview: Review | null;
   theirReviewPending: boolean;
   dispute: Dispute | null;
+  /** Seller-side only: whether the buyer has somewhere for a reversal to go. */
+  buyerHasReversalDetails: boolean | null;
 }
 
 /** Out of 100, or null when nobody has rated that side of them yet. */
@@ -460,12 +589,19 @@ export interface ReviewsAbout {
 }
 
 export interface NewListing {
+  /** What one unit cost (Pro), step by step. */
+  costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
+  /** A private deal for this one buyer: never in the catalog, channels or feed. */
+  privateFor?: string | null;
   title: string;
   description: string;
   category: string;
   condition: string;
   priceMinor: number;
   quantityAvailable: number;
+  quantityMode?: 'fixed' | 'multiple';
+  expiresAt?: string | null;
+  advancePercent?: number | null;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
@@ -494,6 +630,8 @@ export interface LotDetails {
   name: string;
   description?: string;
   origin?: string;
+  originCountry?: string;
+  destinationCountry?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -646,6 +784,187 @@ export interface DashboardResponse {
 
 /* ── Pro analytics ─────────────────────────────────────────────────────── */
 
+export interface WeekFigures { saves: number; buys: number; orders: number; revenueMinor: number }
+
+/** One of the shop's own items, and how it is moving. */
+export interface TrendingRow {
+  listingId: string; title: string; photo: string | null; category: string;
+  saves: number; buys: number; orders: number; score: number;
+  /** Fourteen days of weighted activity, oldest first. */
+  spark: number[];
+  rank: number; prevRank: number | null;
+  trend: 'new' | 'up' | 'steady' | 'down';
+  soldOut: boolean; stockLeft: number | null; daysLeft: number | null; perWeek: number;
+}
+
+/** One lot, item or customer's real profit, from each item's saved costs. */
+export interface ProfitRow {
+  key: string;
+  name: string;
+  sub: string | null;
+  photo: string | null;
+  orders: number;
+  units: number;
+  revenueMinor: number;
+  costMinor: number;
+  profitMinor: number;
+  marginPercent: number | null;
+  uncostedUnits: number;
+  stages: Record<CostStage, number>;
+  steps: { id: string; label: string; stage: CostStage; amountMinor: number }[];
+}
+
+export interface ProfitSplit { active: ProfitRow[]; closed: ProfitRow[] }
+
+export interface SheetItem {
+  listingId: string;
+  title: string;
+  photo: string | null;
+  priceMinor: number;
+  currency: string;
+  lotName: string | null;
+  onSale: boolean;
+  sold: number;
+  sheet: ItemCostSheet | null;
+  costMinor: number;
+  /** What Remove steps back to; null when removing clears the costs. */
+  previousCostMinor: number | null;
+}
+
+/** `GET /api/me/costs` - real profit per lot, item and customer. */
+export interface CostsResponse {
+  totals: { active: ProfitRow; closed: ProfitRow };
+  lots: ProfitSplit;
+  items: ProfitSplit;
+  customers: ProfitSplit;
+  handles: Record<string, string | null>;
+  sheets: SheetItem[];
+}
+
+export type ValueLabel = 'vip' | 'regular' | 'at_risk' | 'one_time' | 'new';
+
+/** `GET /api/me/deep` - the deeper Pro figures. */
+export interface DeepResponse {
+  cohorts: { month: string; size: number; back: (number | null)[] }[];
+  value: {
+    counts: Record<ValueLabel, number>;
+    averageMinor: number;
+    rows: { who: PartyRef; orders: number; spentMinor: number; lastAt: string; label: ValueLabel }[];
+  };
+  pricing: {
+    listingId: string; title: string; photo: string | null; currency: string;
+    periods: { priceMinor: number; from: string; days: number; saves: number; units: number; perWeek: number }[];
+  }[];
+  forecast: {
+    cycleDays: number;
+    conversionPercent: number;
+    rows: { listingId: string; title: string; photo: string | null; perWeek: number; waiting: number; pledged: number; inStock: number | null; next: number }[];
+  };
+  reminders: {
+    buyerId: string; who: PartyRef; listingId: string; title: string; photo: string | null; currency: string;
+    wasMinor: number; nowMinor: number; reason: 'cheaper' | 'restocked'; savedAt: string;
+  }[];
+  bundles: { count: number; items: { listingId: string; title: string; photo: string | null; priceMinor: number }[] }[];
+  returns: {
+    overall: { orders: number; cancelled: number; disputed: number; ratePercent: number };
+    items: { listingId: string; title: string; orders: number; cancelled: number; disputed: number; ratePercent: number }[];
+    categories: { category: string; orders: number; cancelled: number; disputed: number; ratePercent: number }[];
+  };
+}
+
+export interface SalesFigures { orders: number; units: number; revenueMinor: number; customers: number }
+
+/** `GET /api/me/sales` - the free Analytics figures. */
+export interface SalesResponse {
+  days: number;
+  bucket: 'day' | 'week' | 'month';
+  totals: SalesFigures;
+  before: SalesFigures;
+  series: { start: string; orders: number; revenueMinor: number }[];
+  best: {
+    units: { listingId: string; title: string; photo: string | null; units: number; revenueMinor: number }[];
+    revenue: { listingId: string; title: string; photo: string | null; units: number; revenueMinor: number }[];
+  };
+  ageing: {
+    fresh: { count: number; amountMinor: number };
+    week: { count: number; amountMinor: number };
+    old: { count: number; amountMinor: number };
+    rows: { orderId: string; who: PartyRef; title: string; outstandingMinor: number; currency: string; days: number }[];
+  };
+  sources: ({ source: 'shared' | 'sale' | 'preorder' | 'shop' } & SalesFigures)[];
+  stock: { listingId: string; title: string; photo: string | null; left: number; soldRecently: number }[];
+  rows: {
+    date: string; orderId: string; item: string; buyer: string; handle: string | null; quantity: number;
+    unitPriceMinor: number; totalMinor: number; paidMinor: number; outstandingMinor: number;
+    currency: string; status: string; payment: string; lot: string;
+  }[];
+}
+
+export type NudgeRequest =
+  | { kind: 'payment' | 'checkout'; orderId: string }
+  | { kind: 'saved'; listingId: string; buyerId: string };
+
+/** `GET /api/me/market` - other sellers' items in this shop's categories, as rough levels only. */
+export interface MarketResponse {
+  categories: {
+    category: string; level: 'hot' | 'rising' | 'steady' | 'quiet';
+    trend: 'up' | 'steady' | 'down'; supply: 'crowded' | 'some' | 'few';
+  }[];
+  items: { title: string; photo: string | null; category: string; priceMinor: number; currency: string; level: 'hot' | 'rising' | 'steady' }[];
+  prices: {
+    listingId: string; title: string; category: string; priceMinor: number; currency: string;
+    low: number; mid: number; high: number; position: 'below' | 'within' | 'above';
+  }[];
+  wanted: { title: string; category: string; budgetMinor: number | null; demand: 'many' | 'several' | 'one' }[];
+}
+
+/** One customer of a shop, as Insights (Pro) reads them. */
+export interface CustomerRow {
+  who: PartyRef; orders: number; spentMinor: number; firstAt: string; lastAt: string;
+  returning: boolean; daysSince: number;
+}
+
+/** `GET /api/me/interest` - the Insights (Pro) tab: who wants what. */
+export interface InterestResponse {
+  summary: {
+    views: number;
+    saves: number;
+    buyClicks: number;
+    stalled: number;
+    stalledMinor: number;
+    orders: number;
+    paid: number;
+    placedPercent: number | null;
+  };
+  saved: {
+    listingId: string; title: string; photo: string | null; priceMinor: number; currency: string;
+    people: { who: PartyRef; savedAt: string; state: 'saved' | 'checkout' | 'bought' }[];
+  }[];
+  checkout: {
+    orderId: string; listingId: string; title: string; photo: string | null; who: PartyRef;
+    firstAt: string; lastAt: string; clicks: number; amountMinor: number; currency: string;
+    stillForSale: boolean; boughtElsewhere: boolean;
+  }[];
+  items: {
+    listingId: string; title: string; photo: string | null; live: boolean; views: number; saves: number;
+    buyClicks: number; orders: number; paid: number; revenueMinor: number; currency: string; expiresAt: string | null;
+  }[];
+  leads: { who: PartyRef; saves: number; checkouts: number; lastAt: string }[];
+  customers: {
+    total: number; returning: number; newcomers: number; dormant: number;
+    repeatPercent: number | null; avgOrderMinor: number;
+    top: CustomerRow[]; returningList: CustomerRow[]; newList: CustomerRow[]; dormantList: CustomerRow[];
+  };
+  trending: TrendingRow[];
+  categories: { category: string; score: number; before: number }[];
+  week: { now: WeekFigures; before: WeekFigures };
+  /** Oldest first, today last. */
+  daily: { saves: number; buys: number; orders: number }[];
+  overlooked: { listingId: string; title: string; photo: string | null; views: number }[];
+  expiring: { listingId: string; title: string; expiresAt: string | null; saves: number; buyClicks: number }[];
+  activity: string[];
+}
+
 /**
  * What the consignments have been doing, read off the packing board.
  *
@@ -701,6 +1020,8 @@ export interface InsightsResponse {
     closedShort: boolean;
   }[];
   powerSales: { runs: number; posted: number; inWindow: number; handedOver: number };
+  /** Balances on accepted orders, by buyer. Largest first. */
+  toCollect: { who: PartyRef; outstandingMinor: number; orders: number; currency: string }[];
 }
 
 /* ── Services ──────────────────────────────────────────────────────────── */
@@ -793,6 +1114,8 @@ export interface RoutesResponse {
   presets: RoutePreset[];
   /** What a blank route opens with, so nobody starts at an empty list. */
   suggested: RouteStep[];
+  /** The logistics-scenario cards: where an order enters the lot's journey. */
+  routeTemplates: (RoutePreset & { icon: StageIcon })[];
 }
 
 /** An item that could go in a lot: sold, bound for one, not in one. */
@@ -865,13 +1188,21 @@ export interface ItemGroup {
   } | null;
   sellerName: string;
   sellerHandle: string | null;
-  items: {
+  sellerId: string;
+  items: (OrderMoney & {
     id: string;
     itemName: string;
     quantity: number;
     status: string;
+    paymentStatus: string;
+    currency: string;
+    photo: string | null;
+    method: PaymentMethod;
+    canPayMore: boolean;
+    /** False while the buyer has pressed Buy but not yet paid or booked. */
+    placed: boolean;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
-  }[];
+  })[];
 }
 
 /* ── Quick Post templates and photos ───────────────────────────────────── */
@@ -1040,6 +1371,35 @@ export const api = {
   listing: (id: string) => request<ListingDetail>(`/listings/${encodeURIComponent(id)}`),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
+  editListing: (id: string, body: Partial<NewListing>) =>
+    post<{ listing: Listing }>(`/listings/${encodeURIComponent(id)}/edit`, body),
+  expireListing: (id: string) =>
+    post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
+  payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
+    post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
+  refundCredit: (id: string, body: {
+    creditId?: string; reference?: string; screenshotUrl?: string; message?: string; amountMinor?: number;
+  } = {}) =>
+    post<{ order: Order; sentMinor: number }>(`/orders/${encodeURIComponent(id)}/refund-credit`, body),
+  ackCreditRefund: (id: string, received: boolean, creditId?: string) =>
+    post<{ order: Order; answeredMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-ack`, { received, creditId }),
+  applyCredit: (id: string, body: { creditId: string; targetOrderId: string; amountMinor?: number }) =>
+    post<{ source: Order; target: Order; appliedMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-apply`, body),
+  startRefund: (id: string, body: {
+    amountMinor: number; reason: string; reference?: string; screenshotUrl?: string; message?: string;
+  }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
+  myRefunds: () => request<{
+    refunds: MyRefund[];
+    hasDetails: boolean;
+    detailsRequests: { orderId: string; itemName: string; sellerName: string; requestedAt: string }[];
+  }>('/me/refunds'),
+  myDisputes: () => request<MyDisputesResponse>('/me/disputes'),
+  flagDispute: (id: string, body: { subject?: string; reason?: string }) =>
+    post<{ order: Order; dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/flag-dispute`, body),
+  holdCredit: (id: string, creditId?: string) =>
+    post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
+  myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),
   bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
     post<{ comment: ListingComment & { author: PartyRef } }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
@@ -1069,7 +1429,10 @@ export const api = {
     body: LotDetails & {
       forwarderUserId?: string; forwarderName?: string; forwarderContact?: string;
       routeId?: string; routeName?: string;
-      routeSteps?: { id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+      routeSteps?: {
+        id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+        stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
+      }[];
       supplierHandle?: string; handlerUserId?: string; handlerName?: string;
     },
   ) => post<{ lot: Lot }>('/lots', body),
@@ -1108,7 +1471,8 @@ export const api = {
     name: string;
     steps: {
       id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
-      stageId?: string; stageName?: string; stageIcon?: StageIcon;
+      stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
+      waitMessage?: string; lastMile?: boolean;
     }[];
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),
@@ -1120,7 +1484,7 @@ export const api = {
   addItemsToLot: (id: string, orderIds: string[]) =>
     post<{ added: number; orderIds: string[] }>(`/lots/${encodeURIComponent(id)}/items`, { orderIds }),
   /** Move the lot along its route. Omit `to` for the next step. */
-  stepLot: (id: string, body: { to?: number; note?: string } = {}) =>
+  stepLot: (id: string, body: { to?: number; note?: string; trackingId?: string; shipper?: string } = {}) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
   /** Put the lot on a different ladder, carrying its position across. */
   setLotRoute: (id: string, routeId: string | null, note?: string) =>
@@ -1129,7 +1493,7 @@ export const api = {
   noteOnLot: (id: string, note: string, at?: number) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/note`, { note, at }),
   /** Move one item on its own, or note something about it. Omit `to` to just note. */
-  stepItem: (id: string, body: { to?: number; note?: string; at?: number }) =>
+  stepItem: (id: string, body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/step`, body),
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
 
@@ -1151,7 +1515,7 @@ export const api = {
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),
   checkout: (id: string) => request<Checkout>(`/orders/${encodeURIComponent(id)}/checkout`),
-  claimPayment: (id: string, body: { reference: string; screenshot: string | null }) =>
+  claimPayment: (id: string, body: { reference: string; screenshot: string | null; plan?: 'full' | 'advance' }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/claim-payment`, body),
   settleClaim: (id: string, body: { accept: boolean; reason?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/settle-claim`, body),
@@ -1161,6 +1525,28 @@ export const api = {
   /** The seller cannot serve an order. Puts the stock and the place back. */
   rejectOrder: (id: string, reason: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reject`, { reason }),
+
+  /** The buyer chooses Book instead of paying now. */
+  bookOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/book`, {}),
+  /** The seller says yes to a fresh order or booking. */
+  acceptOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/accept`, {}),
+  /** The seller calls off an already-accepted order. */
+  cancelOrder: (id: string, body: { reason: string; message?: string }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/cancel`, body),
+  requestReversalDetails: (id: string, message?: string) =>
+    post<{ sent: boolean }>(`/orders/${encodeURIComponent(id)}/reversal/request-details`, { message }),
+  confirmReversalDetails: (id: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/confirm-details`, {}),
+  submitReversal: (id: string, body: { reference?: string; screenshot?: string; amountMinor?: number }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/submit`, body),
+  ackReversal: (id: string, received: boolean) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/ack`, { received }),
+  raiseDispute: (id: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/dispute`, {}),
+  reversalDetails: () => request<{ reversalDetails: BuyerReversalDetails | null }>('/me/reversal-details'),
+  saveReversalDetails: (body: {
+    method: string; identifier: string; accountName: string; notes?: string; qrCodeUrl?: string;
+  }) => post<{ reversalDetails: BuyerReversalDetails | null; answeredRequests: number }>('/me/reversal-details/save', body),
 
   powerSales: (storeId?: string) =>
     request<{ sales: PowerSaleView[] }>(
@@ -1228,8 +1614,8 @@ export const api = {
   inbox: () => request<Inbox>('/messages'),
   thread: (handle: string, as?: string) =>
     request<Thread>(`/messages/${encodeURIComponent(handle)}${as ? `?as=${encodeURIComponent(as)}` : ''}`),
-  sendMessage: (handle: string, body: string, as?: string) =>
-    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as }),
+  sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>) =>
+    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as, ...(deal ? { deal } : {}) }),
   profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
   credit: (userId: string) => request<Credit>(`/users/${encodeURIComponent(userId)}/credit`),
   pageReviews: (userId: string) => request<PageReviews>(`/users/${encodeURIComponent(userId)}/page-reviews`),
@@ -1252,6 +1638,39 @@ export const api = {
   dashboard: () => request<DashboardResponse>('/me/dashboard'),
   insights: (storeId?: string) =>
     request<InsightsResponse>(`/me/insights${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  interest: (storeId?: string) =>
+    request<InterestResponse>(`/me/interest${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  market: (storeId?: string) =>
+    request<MarketResponse>(`/me/market${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  profitTemplates: (storeId?: string) =>
+    request<{ templates: ProfitTemplate[]; starter: CostLine[] }>(
+      `/me/profit-templates${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  saveProfitTemplate: (template: Partial<ProfitTemplate>, storeId?: string) =>
+    post<{ template: ProfitTemplate; templates: ProfitTemplate[] }>(
+      `/me/profit-templates/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, template),
+  deleteProfitTemplate: (id: string, storeId?: string) =>
+    post<{ templates: ProfitTemplate[] }>(
+      `/me/profit-templates/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
+  costs: (storeId?: string) =>
+    request<CostsResponse>(`/me/costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  savedCalcs: (storeId?: string) =>
+    request<{ calcs: SavedCalc[] }>(`/me/calcs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  saveCalc: (calc: Partial<SavedCalc>, storeId?: string) =>
+    post<{ calc: SavedCalc; calcs: SavedCalc[] }>(`/me/calcs/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, calc),
+  deleteCalc: (id: string, storeId?: string) =>
+    post<{ calcs: SavedCalc[] }>(`/me/calcs/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
+  restoreCostSheet: (listingId: string, storeId?: string) =>
+    post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
+      `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { restore: true }),
+  saveCostSheet: (listingId: string, sheet: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null, storeId?: string) =>
+    post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
+      `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { sheet }),
+  deep: (storeId?: string) =>
+    request<DeepResponse>(`/me/deep${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  salesReport: (days: number, storeId?: string) =>
+    request<SalesResponse>(`/me/sales-report?days=${days}${storeId ? `&store=${encodeURIComponent(storeId)}` : ''}`),
+  nudge: (body: NudgeRequest, storeId?: string) =>
+    post<{ sent: true }>(`/me/nudge${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, body),
 
   socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
   channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),

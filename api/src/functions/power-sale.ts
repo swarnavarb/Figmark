@@ -93,6 +93,7 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     // the members' window - without this it is a price difference anyone
     // browsing the buy page could take, which is not the same thing at all.
     unlisted: true,
+    costSheet: item.costSheet ?? null,
     photos: [],
     tags: [],
     likeCount: 0,

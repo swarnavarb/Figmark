@@ -14,13 +14,47 @@ const { loginRoute: login, signupRoute: signup, meRoute: me } = await import(new
 const {
   feedRoute: feed, listingDetailRoute: listingDetail, createListingRoute: createListing,
   toggleLikeRoute: toggleLike, bumpListingRoute: bump, addCommentRoute: addComment,
-  toggleFollowRoute: toggleFollow, createOrderRoute: createOrder,
+  toggleFollowRoute: toggleFollow, createOrderRoute: openCheckout,
   myActivityRoute: myActivity, forwardersRoute: forwarders,
 } = await import(new URL('catalog-routes.js', fns));
+const { placeOrder } = await import(new URL('placement.js', fns));
+/**
+ * Pressing Buy only opens a checkout now; the order reaches the seller when
+ * the buyer pays, pays an advance or books. Every fixture below was written
+ * when Buy was the order, and is about what happens after it - so this places
+ * the checkout straight away, through the same function the pay and book
+ * routes use (quietly, so no fixture's notification count moves). The tests
+ * about the checkout itself call `openCheckout`.
+ */
+const createOrder = async (request, ctx) => {
+  const opened = await openCheckout(request, ctx);
+  const order = opened.jsonBody?.order;
+  if (opened.status >= 300 || !order || order.placedAt !== null) return opened;
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const refusal = await placeOrder(repository, order, 'paid', order.buyerId, { tellSeller: false });
+  if (refusal) throw new Error(refusal);
+  return { ...opened, status: 201, jsonBody: { ...opened.jsonBody, order: await repository.getOrder(order.id) } };
+};
 const {
-  myLotsRoute: myLots, createLotRoute: createLot, lotContentsRoute: lotContents,
+  myLotsRoute: myLots, createLotRoute: createLotHandler, lotContentsRoute: lotContents,
   updateLotDetailsRoute: updateLotDetails,
 } = await import(new URL('fulfilment-routes.js', fns));
+/**
+ * `createLot` defaulted to a China -> India lot everywhere in this file
+ * before origin/destination country existed. Rather than touch every one of
+ * the sixteen fixtures below, the default is injected here; a fixture that
+ * wants to test the requirement itself passes its own (possibly empty)
+ * `originCountry`/`destinationCountry` and this leaves it alone.
+ */
+const createLot = (request, ctx) => {
+  const patched = {
+    json: async () => {
+      const body = await request.json().catch(() => ({}));
+      return { originCountry: 'China', destinationCountry: 'India', ...body };
+    },
+  };
+  return createLotHandler({ ...request, ...patched }, ctx);
+};
 const {
   storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, dashboardRoute: dashboard,
   myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales,
@@ -49,7 +83,12 @@ const {
   payRoute: payOrder, confirmRoute: confirmOrder, reviewRoute: reviewOrder,
   orderStateRoute: orderState, checkoutRoute: checkout,
   claimPaymentRoute: claimPayment, settleClaimRoute: settleClaim,
+  payMoreRoute: payMore, refundCreditRoute: refundCredit,
+  ackCreditRefundRoute: ackCreditRefund, applyCreditRoute: applyCredit, holdCreditRoute: holdCredit,
+  startRefundRoute: startRefund, myRefundsRoute: myRefunds, flagDisputeRoute: flagDispute, myDisputesRoute: myDisputes,
 } = await import(new URL('order-routes.js', fns));
+const { editListingRoute: editListing, deleteListingRoute: deleteListing } =
+  await import(new URL('catalog-routes.js', fns));
 const {
   wantsBoardRoute: wantsBoard, wantPostRoute: postWant, wantReadRoute: readWant,
   wantOfferRoute: offerOnWant, wantCloseRoute: closeWant, wantAlsoMeRoute: alsoMe,
@@ -63,7 +102,24 @@ const {
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
 } = await import(new URL('power-sale-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
-const { insightsRoute: insights } = await import(new URL('insight-routes.js', fns));
+const {
+  acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
+  requestReversalDetailsRoute: requestReversalDetails, confirmReversalDetailsRoute: confirmReversalDetails,
+  submitReversalRoute: submitReversal, ackReversalRoute: ackReversal, raiseDisputeRoute: raiseDispute,
+} = await import(new URL('order-routes.js', fns));
+const {
+  saveReversalDetailsRoute: saveReversalDetails, reversalDetailsRoute: readReversalDetails,
+} = await import(new URL('profile-routes.js', fns));
+const { insightsRoute: insights, interestRoute: interest, marketRoute: market } = await import(new URL('insight-routes.js', fns));
+const {
+  listProfitTemplatesRoute: listProfitTemplates, saveProfitTemplateRoute: saveProfitTemplate,
+  deleteProfitTemplateRoute: deleteProfitTemplate,
+  listSavedCalcsRoute: listSavedCalcs, saveSavedCalcRoute: saveSavedCalc, deleteSavedCalcRoute: deleteSavedCalc,
+} = await import(new URL('profit-routes.js', fns));
+const { calculateProfit, starterLines, sheetTotal } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
+const {
+  costsRoute: costsRead, saveCostSheetRoute: saveCostSheet, deepRoute: deepRead, salesReportRoute: salesReport, nudgeRoute: nudge,
+} = await import(new URL('pro-routes.js', fns));
 const {
   servicesHubRoute: servicesHub, serviceDirectoryRoute: serviceDirectory,
   offerServiceRoute: offerService, consignmentsRoute: consignments,
@@ -511,16 +567,38 @@ await check('a lot carries its origin and supplier', () => {
   assert.equal(lot.jsonBody.lot.supplier.reference, 'BH-1');
 });
 
-await check('the name is the only field a lot insists on', async () => {
+await check('a name and the two countries are all a lot insists on', async () => {
   const bare = await createLot(req({ headers: auth, body: { name: 'Bare lot' } }), ctx);
   assert.equal(bare.status, 201);
   assert.equal(bare.jsonBody.lot.origin, '');
+  assert.equal(bare.jsonBody.lot.originCountry, 'China');
+  assert.equal(bare.jsonBody.lot.destinationCountry, 'India');
   // A contact with nobody attached to it is not a supplier.
   assert.equal(bare.jsonBody.lot.supplier, null);
 
   const nameless = await createLot(req({ headers: auth, body: { origin: 'Shenzhen, CN' } }), ctx);
   assert.equal(nameless.status, 400);
   assert.equal(nameless.jsonBody.error, 'invalid_lot');
+});
+
+await check('a lot needs both an origin and a destination country', async () => {
+  const noCountries = await createLotHandler(req({
+    headers: auth, body: { name: 'No countries' },
+  }), ctx);
+  assert.equal(noCountries.status, 400);
+  assert.equal(noCountries.jsonBody.error, 'invalid_lot');
+
+  const badCountry = await createLotHandler(req({
+    headers: auth, body: { name: 'Bad country', originCountry: 'Narnia', destinationCountry: 'India' },
+  }), ctx);
+  assert.equal(badCountry.status, 400);
+
+  const ok = await createLotHandler(req({
+    headers: auth, body: { name: 'Good countries', originCountry: 'Vietnam', destinationCountry: 'United Arab Emirates' },
+  }), ctx);
+  assert.equal(ok.status, 201);
+  assert.equal(ok.jsonBody.lot.originCountry, 'Vietnam');
+  assert.equal(ok.jsonBody.lot.destinationCountry, 'United Arab Emirates');
 });
 
 await check('every detail can be corrected afterwards', async () => {
@@ -3908,7 +3986,7 @@ await check('a seller can turn an order down, and the stock comes back', async (
     body: { reason: 'Sold the last one this morning — sorry.' },
   }), ctx);
   assert.equal(turned.status, 200);
-  assert.equal(turned.jsonBody.order.status, 'cancelled');
+  assert.equal(turned.jsonBody.order.status, 'rejected');
 
   // The unit goes back, and so does the listing.
   const back = (await listingDetail(req({ params: { id } }), ctx)).jsonBody.listing;
@@ -3972,7 +4050,7 @@ await check('every order a shop has to answer is on one screen', async () => {
   for (const pile of ['waiting', 'placed', 'answered']) {
     assert.ok(Array.isArray(board[pile]), `${pile} should be a list`);
   }
-  assert.ok(board.answered.some((row) => row.status === 'cancelled'), 'a turned-down order is on the record');
+  assert.ok(board.answered.some((row) => row.status === 'rejected'), 'a turned-down order is on the record');
   assert.ok(board.placed.every((row) => row.paymentStatus === 'unpaid'));
 });
 
@@ -4071,6 +4149,11 @@ await check('progress is weighted across the journey, not just the last tick', (
   assert.equal(checkpointProgress(order('b1', 'x', 'MISB', { india_received: day(9) })), 0.5);
   assert.equal(
     checkpointProgress(order('b1', 'x', 'MISB', { china_received: day(2), dispatched: day(12) })),
+    0.95,
+    'dispatched is nearly there, not there - delivered is the one that means done',
+  );
+  assert.equal(
+    checkpointProgress(order('b1', 'x', 'MISB', { china_received: day(2), delivered: day(13) })),
     1,
   );
 });
@@ -4108,7 +4191,12 @@ await check('the status line and the counts under it cannot disagree', () => {
   assert.equal(phaseOf(landed), 'india');
   assert.equal(phaseOfCounts(tallyOf(landed).counts), 'india');
 
-  const done = rows.map((row) => ({ ...row, checkpoints: { dispatched: day(12) } }));
+  // Dispatched is on its way, not there yet - "completed" now means every
+  // piece has actually been marked delivered, not merely sent.
+  const dispatched = rows.map((row) => ({ ...row, checkpoints: { dispatched: day(12) } }));
+  assert.equal(phaseOf(dispatched), 'domestic');
+
+  const done = rows.map((row) => ({ ...row, checkpoints: { dispatched: day(12), delivered: day(13) } }));
   assert.equal(phaseOf(done), 'completed');
   // A cancelled order must not hold a finished lot open forever.
   assert.equal(phaseOf([...done, order('b3', 'C', 'MISB', {}, 'cancelled')]), 'completed');
@@ -4953,6 +5041,52 @@ await check('a route can be dropped, and the lots on it carry on', async () => {
   assert.equal(still.route.name, 'Guangzhou air express');
 });
 
+await check('a lot closes itself once every piece in it is marked delivered', async () => {
+  const listingA = await createListing(req({
+    headers: auth, body: { title: 'Last mile A', priceMinor: 5_000, sourcing: 'import' },
+  }), ctx);
+  const listingB = await createListing(req({
+    headers: auth, body: { title: 'Last mile B', priceMinor: 5_000, sourcing: 'import' },
+  }), ctx);
+  const buyerA = await newBuyer('Last Mile A');
+  const buyerB = await newBuyer('Last Mile B');
+  const orderA = (await createOrder(req({
+    headers: buyerA.headers, body: { listingId: listingA.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+  const orderB = (await createOrder(req({
+    headers: buyerB.headers, body: { listingId: listingB.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+
+  const lot = (await createLot(req({
+    headers: auth, body: { name: 'Two to deliver', origin: 'Guangzhou, CN' },
+  }), ctx)).jsonBody.lot;
+  await assignOrderToLot(req({ headers: auth, params: { id: orderA.id }, body: { lotId: lot.id } }), ctx);
+  await assignOrderToLot(req({ headers: auth, params: { id: orderB.id }, body: { lotId: lot.id } }), ctx);
+
+  // One of two: not everything has arrived, so the lot stays open.
+  const first = await setCheckpoint(req({
+    headers: auth, params: { id: orderA.id }, body: { checkpoint: 'delivered', on: true },
+  }), ctx);
+  assert.equal(first.status, 200);
+  const partway = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.notEqual(partway.lot.stage, 'delivered', 'one of two is not the whole lot');
+
+  // Delivered is deliberately not wired to `order.status` - the buyer's own
+  // confirmation and escrow release own that state, and a seller's tick must
+  // never be able to short-circuit it.
+  const stillEarning = (await orderTracking(req({ headers: buyerA.headers, params: { id: orderA.id } }), ctx)).jsonBody;
+  assert.notEqual(stillEarning.order.status, 'delivered', 'the checkpoint is not the order status');
+
+  // Two of two: the lot closes on its own, nothing else asked of the seller.
+  const second = await setCheckpoint(req({
+    headers: auth, params: { id: orderB.id }, body: { checkpoint: 'delivered', on: true },
+  }), ctx);
+  assert.equal(second.status, 200);
+  const finished = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.equal(finished.lot.stage, 'delivered');
+  assert.equal(finished.lot.status, 'closed');
+});
+
 /* ── the order in front of you ─────────────────────────────────────────── */
 console.log('\nthe order in front of you');
 
@@ -5189,7 +5323,7 @@ await check('one order, one move: a lot opened and the order filed into it', asy
     headers: auth, params: { id: templatedOrder.id },
     body: {
       newLot: {
-        name: 'Opened from an order', origin: 'Guangzhou, CN',
+        name: 'Opened from an order', origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India',
         routeId: undefined,
       },
     },
@@ -5470,7 +5604,7 @@ await check('a lot is named by the person opening it, never by the first thing i
   for (const name of [undefined, '', '   ']) {
     const refused = await assignOrderToLot(req({
       headers: auth, params: { id: order.id },
-      body: { newLot: { name, origin: 'Guangzhou, CN' } },
+      body: { newLot: { name, origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India' } },
     }), ctx);
     assert.equal(refused.status, 400, `"${name}" is not a name`);
   }
@@ -5715,6 +5849,1243 @@ await check('only the shop that sold it may file it, or tick it', async () => {
     headers: theirs, params: { id: templatedOrder.id }, body: { lotId: 'x' },
   }), ctx);
   assert.equal(refused.status, 403);
+});
+
+/* ── stock, expiry, advance, pay more, refunds ─────────────────────────── */
+console.log('\nstock, expiry and instalments');
+
+const payBuyer = await signup(req({
+  body: { displayName: 'Instalment Buyer', email: 'instal@figmark.example', phone: '+919000045599', password: 'longenough1' },
+}), ctx);
+const payAuth = { authorization: `Bearer ${payBuyer.jsonBody.token}` };
+await saveReversalDetails(req({ headers: payAuth,
+  body: { method: 'UPI', identifier: 'instal@upi', accountName: 'Instalment Buyer' } }), ctx);
+const list = async (body) => (await createListing(req({ headers: auth, body: { sourcing: 'in_hand', ...body } }), ctx)).jsonBody.listing;
+const buy = async (listingId, quantity = 1) => createOrder(req({ headers: payAuth, body: { listingId, quantity } }), ctx);
+/** Buyer claims the plan, seller accepts: the order as it then stands. */
+const paidBy = async (orderId, plan) => {
+  const claimed = await claimPayment(req({ headers: payAuth, params: { id: orderId }, body: { reference: 'UTR1', plan } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  return (await settleClaim(req({ headers: auth, params: { id: orderId }, body: { accept: true } }), ctx)).jsonBody.order;
+};
+
+await check('a numeric quantity counts down and sells out', async () => {
+  const item = await list({ title: 'Counted shelf', priceMinor: 10_000, quantityAvailable: 2 });
+  assert.equal((await buy(item.id, 2)).status, 201);
+  const after = (await listingDetail(req({ params: { id: item.id } }), ctx)).jsonBody.listing;
+  assert.equal(after.quantityAvailable, 0);
+  assert.equal(after.status, 'sold_out');
+  assert.equal((await buy(item.id)).status, 409);
+});
+
+await check('a "multiple" item stays available without a count', async () => {
+  const item = await list({ title: 'Big bin of keychains', priceMinor: 5_000, quantityMode: 'multiple' });
+  assert.equal(item.quantityMode, 'multiple');
+  assert.equal((await buy(item.id, 7)).status, 201);
+  assert.equal((await buy(item.id, 7)).status, 201);
+  const after = (await listingDetail(req({ params: { id: item.id } }), ctx)).jsonBody.listing;
+  assert.equal(after.status, 'active');
+});
+
+await check('an expired item cannot be bought, and can be made available again', async () => {
+  const item = await list({ title: 'Flash drop', priceMinor: 9_000, quantityAvailable: 5,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString() });
+  const earlier = (await buy(item.id)).jsonBody.order;
+  const repo = await getRepository();
+  await repo.updateListing({ ...(await repo.getListing(item.id)), expiresAt: new Date(Date.now() - 1000).toISOString() });
+
+  const refused = await buy(item.id);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'expired');
+  const catalog = (await feed(req({ query: { q: 'flash drop' } }), ctx)).jsonBody.listings;
+  assert.ok(!catalog.some((l) => l.id === item.id), 'expired items leave the catalog');
+  const mine = (await myActivity(req({ headers: auth }), ctx)).jsonBody.listings;
+  assert.ok(mine.some((l) => l.id === item.id), 'the seller still sees it, for the Expired tab');
+  assert.ok(await repo.getOrder(earlier.id), 'history survives expiry');
+
+  const past = await editListing(req({ headers: auth, params: { id: item.id },
+    body: { expiresAt: new Date(Date.now() - 5000).toISOString() } }), ctx);
+  assert.equal(past.status, 400);
+  const reopened = await editListing(req({ headers: auth, params: { id: item.id }, body: { expiresAt: null } }), ctx);
+  assert.equal(reopened.status, 200);
+  assert.equal((await buy(item.id)).status, 201);
+});
+
+await check('only the store can edit or expire an item; nothing a seller does erases it', async () => {
+  const item = await list({ title: 'Editable', priceMinor: 1_000, quantityAvailable: 3 });
+  assert.equal((await editListing(req({ headers: payAuth, params: { id: item.id }, body: { title: 'x' } }), ctx)).status, 403);
+  const edited = (await editListing(req({ headers: auth, params: { id: item.id },
+    body: { title: 'Edited', quantityMode: 'multiple' } }), ctx)).jsonBody.listing;
+  assert.equal(edited.title, 'Edited');
+  await buy(item.id);
+  const gone = (await deleteListing(req({ headers: auth, params: { id: item.id } }), ctx)).jsonBody;
+  assert.equal(gone.expired, true);
+  assert.equal((await buy(item.id)).status, 409);
+  assert.ok(await (await getRepository()).getListing(item.id), 'the listing itself still exists, only expired');
+});
+
+await check('a seller can manually expire an item that nobody has bought, never delete it', async () => {
+  const item = await list({ title: 'Never bought', priceMinor: 1_000, quantityAvailable: 3 });
+  const gone = (await deleteListing(req({ headers: auth, params: { id: item.id } }), ctx)).jsonBody;
+  assert.equal(gone.expired, true);
+  const stored = await (await getRepository()).getListing(item.id);
+  assert.ok(stored, 'the listing was expired, not erased');
+  assert.equal((await buy(item.id)).status, 409);
+});
+
+await check('full payment is recorded as one dated payment', async () => {
+  const item = await list({ title: 'Paid in one', priceMinor: 20_000, advancePercent: 30 });
+  const order = await paidBy((await buy(item.id)).jsonBody.order.id, 'full');
+  assert.equal(order.paymentStatus, 'paid');
+  assert.equal(order.paymentMethod, 'direct');
+  assert.deepEqual(order.payments.map((p) => [p.kind, p.amountMinor]), [['full', 20_000]]);
+});
+
+await check('an advance is refused where the seller does not take one', async () => {
+  const item = await list({ title: 'No advance here', priceMinor: 20_000 });
+  const order = (await buy(item.id)).jsonBody.order;
+  const refused = await claimPayment(req({ headers: payAuth, params: { id: order.id }, body: { reference: 'U', plan: 'advance' } }), ctx);
+  assert.equal(refused.jsonBody.error, 'no_advance');
+});
+
+// A = 5000 (40% → 3000 left), B = 4000 (50% → 2000 left), C = 2000 (50% → 1000 left), one store, direct.
+const [lA, lB, lC] = [
+  await list({ title: 'Item A', priceMinor: 500_000, advancePercent: 40 }),
+  await list({ title: 'Item B', priceMinor: 400_000, advancePercent: 50 }),
+  await list({ title: 'Item C', priceMinor: 200_000, advancePercent: 50 }),
+];
+const oA = await paidBy((await buy(lA.id)).jsonBody.order.id, 'advance');
+const oB = await paidBy((await buy(lB.id)).jsonBody.order.id, 'advance');
+const oC = await paidBy((await buy(lC.id)).jsonBody.order.id, 'advance');
+
+await check('an advance leaves a balance the buyer can pay more against', async () => {
+  assert.equal(oA.paymentStatus, 'partially_paid');
+  assert.deepEqual(oA.payments.map((p) => [p.kind, p.amountMinor]), [['advance', 200_000]]);
+  const state = (await orderState(req({ headers: payAuth, params: { id: oA.id } }), ctx)).jsonBody;
+  assert.ok(state.actions.includes('pay_more'));
+});
+
+// Direct money going towards a balance already partly paid asks the same
+// "did this arrive?" the first payment does - `pay_more` files a claim per
+// order and the seller settles it, just as `pay` itself does.
+const payMoreAndSettle = async (orderIds, amountMinor) => {
+  const claimed = await payMore(req({ headers: payAuth, body: { orderIds, amountMinor } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  assert.equal(claimed.jsonBody.awaiting, 'seller');
+  const orders = [];
+  for (const order of claimed.jsonBody.orders) {
+    assert.equal(order.paymentStatus, 'claimed');
+    const settled = await settleClaim(req({ headers: auth, params: { id: order.id }, body: { accept: true } }), ctx);
+    assert.equal(settled.status, 200, JSON.stringify(settled.jsonBody));
+    orders.push(settled.jsonBody.order);
+  }
+  return { method: claimed.jsonBody.method, allocation: claimed.jsonBody.allocation, orders };
+};
+
+await check('an additional payment asks the seller before it counts, same as the first', async () => {
+  const claimed = await payMore(req({ headers: payAuth, body: { orderIds: [oA.id], amountMinor: 50_000 } }), ctx);
+  assert.equal(claimed.status, 200);
+  assert.equal(claimed.jsonBody.method, 'direct', 'the original method is kept');
+  const claimedOrder = claimed.jsonBody.orders.find((o) => o.id === oA.id);
+  assert.equal(claimedOrder.paymentStatus, 'claimed');
+  const state = (await orderState(req({ headers: auth, params: { id: oA.id } }), ctx)).jsonBody;
+  assert.ok(state.actions.includes('settle_claim'), 'the seller is asked whether it arrived');
+  const denied = await settleClaim(req({ headers: auth, params: { id: oA.id }, body: { accept: false, reason: 'Never landed' } }), ctx);
+  assert.equal(denied.jsonBody.order.paymentStatus, 'partially_paid', 'a denial falls back to what was actually paid');
+});
+
+await check('several additional payments stay separate dated records', async () => {
+  await payMoreAndSettle([oA.id], 50_000);
+  const { orders: [a] } = await payMoreAndSettle([oA.id], 50_000);
+  assert.deepEqual(a.payments.map((p) => p.kind), ['advance', 'additional', 'additional']);
+  assert.ok(a.stageHistory.some((e) => /Additional payment received — ₹500/.test(e.note ?? '')));
+});
+
+await check('a checkpoint tick on the built-in pre-lot route is dated and filed under its own rung', async () => {
+  // The built-in route's two steps carry no `trigger` at all, unlike a
+  // custom template's - the exact case that was leaving the tick with no
+  // date and no rung of its own, stranding it (and everything paid after it)
+  // under "Order placed".
+  const item = await list({ title: 'Plain overseas item', priceMinor: 9_000, sourcing: 'import' });
+  const order = (await buy(item.id)).jsonBody.order;
+  const paid = await paidBy(order.id, 'full');
+  assert.equal(paid.paymentStatus, 'paid');
+
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+
+  const tracking = (await orderTracking(req({ headers: payAuth, params: { id: order.id } }), ctx)).jsonBody;
+  const warehouseNote = tracking.order.stageHistory.find(
+    (event) => event.note === 'Received at the international warehouse.',
+  );
+  assert.ok(warehouseNote, 'the tick is a dated event, not just a flag');
+  assert.equal(warehouseNote.step, 'Received at China / international warehouse', 'filed under its own rung');
+  assert.ok(warehouseNote.enteredAt, 'and it carries a real timestamp');
+});
+
+await check('an older checkpoint tick with no note of its own is healed with a dated one at read time', async () => {
+  // Data written before every tick got a note of its own: the flag on the
+  // order is real, nothing on the timeline says when. Simulated by ticking
+  // the checkpoint straight on the stored order, bypassing the route.
+  const item = await list({ title: 'Legacy overseas item', priceMinor: 4_000, sourcing: 'import' });
+  const order = (await buy(item.id)).jsonBody.order;
+  const repository = await getRepository();
+  const stored = await repository.getOrder(order.id);
+  await repository.updateOrder({ ...stored, checkpoints: { china_received: new Date().toISOString() } });
+
+  const tracking = (await orderTracking(req({ headers: payAuth, params: { id: order.id } }), ctx)).jsonBody;
+  const healed = tracking.order.stageHistory.find((event) => event.note === 'Received at the international warehouse.');
+  assert.ok(healed, 'the gap is filled in at read time');
+  assert.ok(healed.enteredAt, 'with the real tick time, not "now"');
+
+  // Never written back - the stored order keeps its original gap.
+  const stillStored = await repository.getOrder(order.id);
+  assert.ok(!stillStored.stageHistory.some((event) => event.note === 'Received at the international warehouse.'));
+});
+
+await check('one payment clears the chosen items in order and spills the rest onto the group', async () => {
+  // A now owes 2000, B 2000, C 1000. Pay 6000 for A + B.
+  const paid = await payMoreAndSettle([oA.id, oB.id], 600_000);
+  assert.deepEqual(paid.allocation.lines.map((l) => [l.orderId, l.amountMinor, l.completes, l.spill]), [
+    [oA.id, 200_000, true, false],
+    [oB.id, 200_000, true, false],
+    [oC.id, 100_000, true, true],
+  ]);
+  assert.equal(paid.allocation.extraMinor, 100_000);
+  assert.ok(paid.orders.every((o) => o.paymentStatus === 'paid'));
+  const holder = paid.orders.find((o) => o.credits?.length);
+  assert.equal(holder.credits[0].amountMinor, 100_000, 'the extra is kept as credit');
+});
+
+await check('a paid-up item takes no more payments', async () => {
+  const again = await payMore(req({ headers: payAuth, body: { orderIds: [oA.id], amountMinor: 1_000 } }), ctx);
+  assert.equal(again.status, 409);
+});
+
+await check('returning an extra payment waits on the buyer to say it arrived', async () => {
+  const id = oC.id;
+  const stateOf = async (headers) => (await orderState(req({ headers, params: { id } }), ctx)).jsonBody.actions;
+  assert.ok((await stateOf(auth)).includes('refund_credit'));
+  assert.equal((await refundCredit(req({ headers: payAuth, params: { id }, body: {} }), ctx)).status, 409);
+
+  const sent = (await refundCredit(req({ headers: auth, params: { id }, body: { reference: 'RTN1' } }), ctx)).jsonBody;
+  assert.equal(sent.sentMinor, 100_000);
+  assert.equal(sent.order.credits[0].status, 'refund_pending');
+  assert.ok(!sent.order.payments.some((p) => p.kind === 'refund'), 'nothing is refunded until the buyer says so');
+  assert.ok(!(await stateOf(auth)).includes('refund_credit'), 'no second return while one is pending');
+  assert.ok((await stateOf(payAuth)).includes('ack_credit_refund'));
+  assert.ok((await noticesFor(payBuyer.jsonBody.user.id)).some((n) => n.kind === 'credit_refund_sent'));
+
+  // The buyer says it never came: it goes back in the seller's hands, on record.
+  const denied = (await ackCreditRefund(req({ headers: payAuth, params: { id }, body: { received: false } }), ctx)).jsonBody;
+  assert.equal(denied.order.credits[0].status, 'open');
+  assert.equal(denied.order.credits[0].refundDenials.length, 1);
+  assert.ok(denied.order.stageHistory.some((e) => /has not arrived/.test(e.note ?? '')));
+  assert.ok((await stateOf(auth)).includes('refund_credit'));
+});
+
+await check('an extra payment can be kept for later, then moved onto the buyer\'s next order', async () => {
+  const later = await list({ title: 'Item F', priceMinor: 300_000 });
+  const next = (await buy(later.id)).jsonBody.order;
+
+  const held = (await holdCredit(req({ headers: auth, params: { id: oC.id }, body: {} }), ctx)).jsonBody;
+  assert.equal(held.order.credits[0].status, 'held');
+
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  const listed = board.credits.find((c) => c.orderId === oC.id);
+  assert.ok(listed, 'every extra payment is on the Extra payments list');
+  assert.equal(listed.leftMinor, 100_000);
+  assert.ok(listed.targets.some((t) => t.orderId === next.id), 'with the buyer\'s orders it could go towards');
+
+  const moved = (await applyCredit(req({ headers: auth, params: { id: oC.id },
+    body: { creditId: listed.creditId, targetOrderId: next.id, amountMinor: 40_000 } }), ctx)).jsonBody;
+  assert.equal(moved.appliedMinor, 40_000);
+  assert.equal(moved.target.payments.at(-1).kind, 'credit');
+  assert.equal(moved.target.paymentStatus, 'partially_paid');
+  assert.equal(moved.source.credits[0].status, 'held', 'what is left is still kept');
+  assert.equal(moved.source.credits[0].appliedMinor, 40_000);
+
+  // Somebody else's order is not a place to put it.
+  const stranger = await applyCredit(req({ headers: auth, params: { id: oC.id },
+    body: { creditId: listed.creditId, targetOrderId: 'ord_nope' } }), ctx);
+  assert.equal(stranger.status, 404);
+});
+
+await check('the rest is returned, the buyer confirms, and only then is it a refund', async () => {
+  const id = oC.id;
+  // A screenshot alone is proof enough.
+  const sent = (await refundCredit(req({ headers: auth, params: { id }, body: { screenshotUrl: '/api/photos/rtn2.jpg' } }), ctx)).jsonBody;
+  assert.equal(sent.sentMinor, 60_000, 'only what was not moved elsewhere');
+  const got = (await ackCreditRefund(req({ headers: payAuth, params: { id }, body: { received: true } }), ctx)).jsonBody;
+  const credit = got.order.credits[0];
+  assert.equal(credit.status, 'refunded');
+  assert.equal(credit.refundedMinor, 60_000);
+  assert.ok(credit.refundedAt && credit.refundedBy);
+  assert.equal(got.order.payments.at(-1).kind, 'refund');
+  assert.ok(got.order.stageHistory.some((e) => /Refund processed — ₹600/.test(e.note ?? '')));
+  assert.ok(!(await sales(req({ headers: auth }), ctx)).jsonBody.credits.some((c) => c.orderId === id), 'settled ones leave the list');
+});
+
+await check('a group paid two different ways is refused rather than switched', async () => {
+  const lD = await list({ title: 'Item D', priceMinor: 200_000, advancePercent: 50 });
+  const lE = await list({ title: 'Item E', priceMinor: 200_000, advancePercent: 50 });
+  const oD = await paidBy((await buy(lD.id)).jsonBody.order.id, 'advance');
+  const oE = await paidBy((await buy(lE.id)).jsonBody.order.id, 'advance');
+  const repo = await getRepository();
+  await repo.updateOrder({ ...(await repo.getOrder(oE.id)), paymentMethod: 'protected' });
+  const mixed = await payMore(req({ headers: payAuth, body: { orderIds: [oD.id, oE.id], amountMinor: 1000 } }), ctx);
+  assert.equal(mixed.jsonBody.error, 'mixed_method');
+});
+
+await check('my purchases group by store, then lot, with the money on every item', async () => {
+  const { groups } = (await myItems(req({ headers: payAuth }), ctx)).jsonBody;
+  assert.ok(groups.every((g) => g.key.startsWith(`${g.sellerId}:`)));
+  const a = groups.flatMap((g) => g.items).find((i) => i.id === oA.id);
+  assert.equal(a.totalMinor, 500_000);
+  assert.equal(a.paidMinor, 500_000);
+  assert.equal(a.outstandingMinor, 0);
+  assert.equal(a.method, 'direct');
+});
+
+/* ── booking, accepting, cancelling and reversing a paid order ───────────── */
+console.log('\naccepting, cancelling and reversing an order');
+
+await check('a fresh order waits on Accept or Reject, and Accept opens the door to pay', async () => {
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Fresh Order Item', priceMinor: 10_000, quantityAvailable: 3 },
+  }), ctx);
+  const buyer = await newBuyer('Fresh Order Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx);
+  const orderId = placed.jsonBody.order.id;
+
+  const state = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(state.actions.includes('accept'));
+  assert.ok(state.actions.includes('reject'));
+
+  const accepted = await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.jsonBody.order.accepted, true);
+
+  // Once accepted, the seller's X button is Cancel, never Reject again.
+  const after = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!after.actions.includes('reject'));
+  assert.ok(after.actions.includes('cancel'));
+});
+
+await check('booking does not count as payment, and asks the seller to confirm first', async () => {
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Bookable Item', priceMinor: 25_000, quantityAvailable: 2 },
+  }), ctx);
+  const buyer = await newBuyer('Booking Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx);
+  const orderId = placed.jsonBody.order.id;
+
+  const booked = await bookOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(booked.status, 200);
+  assert.equal(booked.jsonBody.order.bookingOnly, true);
+
+  // Payment is not on the table until the seller accepts.
+  const beforeAccept = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!beforeAccept.actions.includes('pay'));
+
+  const accepted = await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+  assert.equal(accepted.status, 200);
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'booking_accepted');
+  assert.equal(told.length, 1);
+
+  const afterAccept = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(afterAccept.actions.includes('pay'), 'payment opens up once the seller has accepted');
+});
+
+/** Places, accepts and pays an order in full, and returns its id and buyer. */
+let paidOrderSeq = 0;
+async function paidAcceptedOrder(title, priceMinor, { details = false } = {}) {
+  paidOrderSeq += 1;
+  const listed = await createListing(req({ headers: auth, body: { title, priceMinor, quantityAvailable: 5 } }), ctx);
+  const buyer = await newBuyer(`Paid Order Buyer ${paidOrderSeq}`);
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx);
+  const orderId = placed.jsonBody.order.id;
+  await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+  const paid = await payOrder(req({ headers: buyer.headers, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+  // A refund needs somewhere to go; the tests that refund say so.
+  if (details) {
+    await saveReversalDetails(req({ headers: buyer.headers,
+      body: { method: 'UPI', identifier: `${paidOrderSeq}@upi`, accountName: 'Test Buyer' } }), ctx);
+  }
+  return { orderId, buyer };
+}
+
+// Scenario A - cancel without payment.
+await check('Scenario A: cancelling an accepted order with no payment goes straight to Cancelled', async () => {
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'No Payment Yet', priceMinor: 15_000, quantityAvailable: 2 },
+  }), ctx);
+  const buyer = await newBuyer('Scenario A Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx);
+  const orderId = placed.jsonBody.order.id;
+  await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+
+  const noReason = await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: '' } }), ctx);
+  assert.equal(noReason.status, 400);
+
+  const cancelled = await cancelOrder(req({
+    headers: auth, params: { id: orderId }, body: { reason: 'Out of stock after all.' },
+  }), ctx);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.jsonBody.order.status, 'cancelled');
+  assert.ok(cancelled.jsonBody.order.stageHistory.some((e) => /Order cancelled by seller/.test(e.note ?? '')));
+
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'order_cancelled');
+  assert.equal(told.length, 1);
+
+  // The seller's message reached the buyer through the ordinary messaging system.
+  const repo = await getRepository();
+  const buyerRecord = await repo.getUserById(buyer.id);
+  const messages = await repo.listMessagesForHandles([buyerRecord.username ?? buyer.id]);
+  const note = messages.find((m) => /cancelled/i.test(m.body));
+  assert.ok(note);
+  assert.equal(note.from.isStore, true, 'the shop speaks as its storefront, not as the person behind it');
+  assert.equal(note.from.handle, 'arjun_collects');
+});
+
+// Scenario B - cancel after payment, with reversal details on file.
+await check('Scenario B: cancel after payment reverses cleanly once the buyer has reversal details', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Paid Order With Details', 20_000);
+
+  await saveReversalDetails(req({
+    headers: buyer.headers,
+    body: { method: 'UPI', identifier: 'buyer@upi', accountName: 'Scenario B Buyer' },
+  }), ctx);
+
+  const cancelled = await cancelOrder(req({
+    headers: auth, params: { id: orderId }, body: { reason: 'Buyer requested a cancel.' },
+  }), ctx);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.jsonBody.order.status, 'payment_reversal_pending');
+
+  const state = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.equal(state.buyerHasReversalDetails, true);
+  assert.ok(state.actions.includes('submit_reversal'));
+
+  const missingProof = await submitReversal(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(missingProof.status, 400);
+
+  const reversed = await submitReversal(req({
+    headers: auth, params: { id: orderId }, body: { reference: 'REV123' },
+  }), ctx);
+  assert.equal(reversed.status, 200);
+  assert.equal(reversed.jsonBody.order.status, 'cancelled_reversed');
+  assert.equal(reversed.jsonBody.order.paymentStatus, 'refunded');
+  // The original payment stays in the ledger; the reversal is a new event.
+  assert.ok(reversed.jsonBody.order.payments.some((p) => p.kind !== 'refund'));
+  assert.ok(reversed.jsonBody.order.payments.some((p) => p.kind === 'refund'));
+
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'payment_reversed');
+  assert.equal(told.length, 1);
+
+  // The buyer confirms receipt.
+  const acked = await ackReversal(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true } }), ctx);
+  assert.equal(acked.status, 200);
+  assert.equal(acked.jsonBody.order.reversal.buyerResponse, 'received');
+});
+
+// Scenario C - cancel after payment, buyer has no reversal details yet.
+await check('Scenario C: cancelling a paid order waits on the buyer to add reversal details', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Paid Order Without Details', 30_000);
+
+  const cancelled = await cancelOrder(req({
+    headers: auth, params: { id: orderId }, body: { reason: 'Cannot fulfil.' },
+  }), ctx);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.jsonBody.order.status, 'payment_reversal_pending');
+
+  const needsDetails = (await noticesFor(buyer.id)).filter((row) => row.kind === 'reversal_details_needed');
+  assert.equal(needsDetails.length, 1);
+
+  // The seller cannot finalise the reversal yet.
+  const tooSoon = await submitReversal(req({
+    headers: auth, params: { id: orderId }, body: { reference: 'REV999' },
+  }), ctx);
+  assert.equal(tooSoon.status, 409);
+  assert.equal(tooSoon.jsonBody.error, 'buyer_details_missing');
+
+  // The seller can nudge again.
+  const nudged = await requestReversalDetails(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(nudged.status, 200);
+
+  // The buyer adds their details - which, with the seller having asked,
+  // answers them on its own: the seller is told they can go ahead.
+  const saved = await saveReversalDetails(req({
+    headers: buyer.headers,
+    body: { method: 'Bank transfer', identifier: '000111222', accountName: 'Scenario C Buyer' },
+  }), ctx);
+  assert.equal(saved.jsonBody.answeredRequests, 1);
+  const sellerId = (await (await getRepository()).getOrder(orderId)).sellerId;
+  const toldSeller = (await noticesFor(sellerId)).filter((row) => row.kind === 'reversal_details_updated');
+  assert.equal(toldSeller.length, 1);
+  // Confirming explicitly still works too, and says so again.
+  const confirmed = await confirmReversalDetails(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(confirmed.status, 200);
+
+  // Now the seller retries and it goes through.
+  const retried = await submitReversal(req({
+    headers: auth, params: { id: orderId }, body: { reference: 'REV1000' },
+  }), ctx);
+  assert.equal(retried.status, 200);
+  assert.equal(retried.jsonBody.order.status, 'cancelled_reversed');
+});
+
+// Scenario D - reversal dispute.
+await check('Scenario D: a buyer who says the reversal never arrived can raise a dispute', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Disputed Reversal Order', 18_000);
+  await saveReversalDetails(req({
+    headers: buyer.headers,
+    body: { method: 'UPI', identifier: 'disputed@upi', accountName: 'Scenario D Buyer' },
+  }), ctx);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Cancelling.' } }), ctx);
+  const reversed = await submitReversal(req({
+    headers: auth, params: { id: orderId }, body: { reference: 'REV-D' },
+  }), ctx);
+  assert.equal(reversed.status, 200);
+
+  const notReceived = await ackReversal(req({
+    headers: buyer.headers, params: { id: orderId }, body: { received: false },
+  }), ctx);
+  assert.equal(notReceived.status, 200);
+  assert.equal(notReceived.jsonBody.order.reversal.buyerResponse, 'not_received');
+
+  const disputed = await raiseDispute(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(disputed.status, 200);
+  assert.equal(disputed.jsonBody.order.status, 'dispute_raised');
+  assert.ok(disputed.jsonBody.order.reversal.disputeRaisedAt);
+  // Everything before it is preserved: the original payment, the reversal, the history.
+  assert.ok(disputed.jsonBody.order.payments.length >= 2);
+  assert.ok(disputed.jsonBody.order.stageHistory.some((e) => /Dispute raised/.test(e.note ?? '')));
+
+  const toldSeller = (await noticesFor((await repository_user(disputed.jsonBody.order.sellerId)).id))
+    .filter((row) => row.kind === 'dispute_raised_reversal');
+  assert.equal(toldSeller.length, 1);
+});
+
+// Scenario E - one shared chronological timeline.
+await check('Scenario E: payment, cancellation and reversal events share one chronological timeline', async () => {
+  const { orderId } = await paidAcceptedOrder('Timeline Order', 12_000);
+  const repo = await getRepository();
+  const order = await repo.getOrder(orderId);
+  const kinds = order.stageHistory.map((e) => e.note);
+  assert.ok(kinds.some((n) => /Order accepted|Order placed/.test(n ?? '')) || order.stageHistory.length > 0);
+  // Every event carries an actual timestamp, and they are non-decreasing.
+  const times = order.stageHistory.map((e) => new Date(e.enteredAt).getTime());
+  for (let i = 1; i < times.length; i += 1) {
+    assert.ok(times[i] >= times[i - 1] - 1, 'events land on the timeline in the order they happened');
+  }
+  assert.ok(times.every((t) => Number.isFinite(t) && t > 0), 'every event has a real date');
+});
+
+await check('the buyer can save and read back their Payment Reversal Details', async () => {
+  const buyer = await newBuyer('Reversal Settings Buyer');
+  const empty = await readReversalDetails(req({ headers: buyer.headers }), ctx);
+  assert.equal(empty.jsonBody.reversalDetails, null);
+
+  const bad = await saveReversalDetails(req({ headers: buyer.headers, body: { method: '', identifier: '', accountName: '' } }), ctx);
+  assert.equal(bad.status, 400);
+
+  const saved = await saveReversalDetails(req({
+    headers: buyer.headers,
+    body: { method: 'UPI', identifier: 'settings@upi', accountName: 'Settings Buyer', qrCodeUrl: 'https://example.test/qr.png' },
+  }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.reversalDetails.identifier, 'settings@upi');
+
+  const read = await readReversalDetails(req({ headers: buyer.headers }), ctx);
+  assert.equal(read.jsonBody.reversalDetails.accountName, 'Settings Buyer');
+});
+
+/* ── refunds: cancellations, part-refunds, seller-started refunds, history ── */
+console.log('\nrefunds');
+
+await check('a cancelled paid order lands on Refunds, and part-refunds leave the balance there', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Refund Me In Parts', 30_000, { details: true });
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Supplier ran out.' } }), ctx);
+
+  const listed = (await sales(req({ headers: auth }), ctx)).jsonBody.credits.find((c) => c.orderId === orderId);
+  assert.ok(listed, 'the cancelled payment is on Refunds');
+  assert.equal(listed.origin, 'cancelled');
+  assert.equal(listed.leftMinor, 30_000);
+  assert.equal(listed.reason, 'Supplier ran out.');
+
+  const noProof = await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 10_000 } }), ctx);
+  assert.equal(noProof.jsonBody.error, 'no_proof', 'a transaction id or a screenshot, at least one');
+  const badShot = await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 10_000, screenshotUrl: 'javascript:alert(1)' } }), ctx);
+  assert.equal(badShot.jsonBody.error, 'invalid_screenshot');
+  const tooMuch = await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 40_000, reference: 'X' } }), ctx);
+  assert.equal(tooMuch.status, 400, 'never more than is owed');
+
+  const part = (await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 10_000, reference: 'P1' } }), ctx)).jsonBody;
+  assert.equal(part.sentMinor, 10_000);
+  await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true } }), ctx);
+
+  const after = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  const left = after.credits.find((c) => c.orderId === orderId);
+  assert.equal(left.leftMinor, 20_000, 'the balance stays to refund later');
+  assert.equal(left.status, 'open');
+  const history = after.refundHistory.filter((h) => h.orderId === orderId);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].amountMinor, 10_000);
+  assert.equal(history[0].status, 'received');
+  assert.equal(history[0].reference, 'P1');
+  assert.ok(history[0].buyer.name && history[0].at, 'to whom, and when');
+
+  // The rest, and the reversal finishes on its own.
+  await refundCredit(req({ headers: auth, params: { id: orderId },
+    body: { creditId: listed.creditId, amountMinor: 20_000, screenshotUrl: '/api/photos/p2.jpg' } }), ctx);
+  const shots = (await sales(req({ headers: auth }), ctx)).jsonBody.refundHistory.filter((h) => h.orderId === orderId);
+  assert.ok(shots.some((h) => h.screenshotUrl === '/api/photos/p2.jpg'), 'the screenshot is kept in the history');
+  const done = (await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true } }), ctx)).jsonBody.order;
+  assert.equal(done.status, 'cancelled_reversed');
+  assert.equal(done.paymentStatus, 'refunded');
+  assert.equal(done.reversal.buyerResponse, 'received');
+  assert.ok(!(await sales(req({ headers: auth }), ctx)).jsonBody.credits.some((c) => c.orderId === orderId));
+});
+
+await check('a seller can start a refund themselves, for an amount they type and a reason', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Dented Box', 50_000, { details: true });
+  const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(board.refundable.find((r) => r.orderId === orderId).refundableMinor, 50_000);
+
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId }, body: { reason: 'Dent' } }), ctx)).status, 400,
+    'no amount, no refund - nothing is filled in for a fresh one');
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId }, body: { amountMinor: 5_000 } }), ctx)).status, 400,
+    'and it has to say what it is for');
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 5_000, reason: 'No proof' } }), ctx)).jsonBody.error, 'no_proof');
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 60_000, reason: 'Too much', reference: 'X' } }), ctx)).jsonBody.error, 'too_much', 'never more than was paid');
+  assert.equal((await startRefund(req({ headers: buyer.headers, params: { id: orderId },
+    body: { amountMinor: 5_000, reason: 'Me' } }), ctx)).status, 403, 'only the seller');
+
+  const started = await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 8_000, reason: 'Box arrived dented', reference: 'D1' } }), ctx);
+  assert.equal(started.status, 201, JSON.stringify(started.jsonBody));
+  assert.equal(started.jsonBody.credit.origin, 'manual');
+  assert.equal(started.jsonBody.credit.status, 'refund_pending');
+
+  // The buyer's own list, with the button to answer it.
+  const mine = (await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody.refunds;
+  const theirs = mine.find((r) => r.orderId === orderId);
+  assert.equal(theirs.origin, 'manual');
+  assert.equal(theirs.reason, 'Box arrived dented');
+  assert.equal(theirs.pendingRefund.amountMinor, 8_000);
+  assert.equal(theirs.log[0].status, 'awaiting');
+
+  await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true, creditId: theirs.creditId } }), ctx);
+  const settled = (await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody.refunds.find((r) => r.orderId === orderId);
+  assert.equal(settled.leftMinor, 0);
+  assert.equal(settled.log[0].status, 'received');
+  assert.ok(settled.log[0].answeredAt);
+
+  const after = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(after.refundable.find((r) => r.orderId === orderId).refundableMinor, 42_000, 'what is left to refund shrinks');
+  assert.ok(after.refundHistory.some((h) => h.orderId === orderId && h.reason === 'Box arrived dented'));
+});
+
+await check('somebody else’s refunds are not on your list', async () => {
+  const stranger = await newBuyer('Refund Stranger');
+  assert.deepEqual((await myRefunds(req({ headers: stranger.headers }), ctx)).jsonBody.refunds, []);
+});
+
+/* ── disputes: the record of "I paid, they say it never came" ───────────── */
+console.log('\ndisputes');
+
+await check('a buyer whose payment the seller denies can dispute it, once', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Denied Payment Item', priceMinor: 12_000, quantityAvailable: 2 } }), ctx);
+  const buyer = await newBuyer('Denied Buyer');
+  const orderId = (await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx)).jsonBody.order.id;
+  await claimPayment(req({ headers: buyer.headers, params: { id: orderId }, body: { reference: 'UTR9' } }), ctx);
+  await settleClaim(req({ headers: auth, params: { id: orderId }, body: { accept: false, reason: 'Nothing arrived' } }), ctx);
+
+  const mine = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody.disputable;
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].kind, 'payment_rejected');
+  assert.equal(mine[0].amountMinor, 12_000);
+  assert.deepEqual((await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody.disputable, [],
+    'only the side that paid can dispute the rejection');
+
+  const raised = await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: { subject: mine[0].subject } }), ctx);
+  assert.equal(raised.status, 201, JSON.stringify(raised.jsonBody));
+  assert.equal(raised.jsonBody.order.status, 'pending_payment', 'recording a dispute changes nothing else');
+  assert.ok(raised.jsonBody.order.stageHistory.some((e) => /Dispute raised by the buyer/.test(e.note ?? '')));
+  assert.equal((await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: { subject: mine[0].subject } }), ctx)).status, 409);
+
+  const theirs = (await myDisputes(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.equal(theirs.asBuyer.filter((d) => d.orderId === orderId).length, 1);
+  assert.equal(theirs.asBuyer.find((d) => d.orderId === orderId).raisedByMe, true);
+  const store = (await myDisputes(req({ headers: auth }), ctx)).jsonBody;
+  const row = store.asStore.find((d) => d.orderId === orderId);
+  assert.ok(row, 'and it is on the store’s list too');
+  assert.equal(row.raisedBySide, 'buyer');
+  assert.ok((await noticesFor(raised.jsonBody.order.sellerId)).some((n) => n.kind === 'dispute_opened'),
+    'the seller is told');
+
+  // One kind of record for every dispute: the same page, the same thread.
+  const record = raised.jsonBody.dispute;
+  assert.equal(record.topic, 'payment_rejected');
+  const opened = (await readDispute(req({ headers: auth, params: { id: record.id } }), ctx)).jsonBody;
+  assert.equal(opened.dispute.amountMinor, 12_000);
+  assert.ok(opened.actions.includes('reply'));
+  assert.ok(!opened.actions.includes('offer'), 'nothing is held here, so there is nothing to split');
+  assert.equal(row.status, 'awaiting_response');
+
+  // Withdrawn by whoever raised it - and no money moves, because none was held.
+  const dropped = (await withdrawDispute(req({ headers: buyer.headers, params: { id: record.id } }), ctx)).jsonBody;
+  assert.equal(dropped.dispute.status, 'withdrawn');
+  assert.equal(dropped.order.status, 'pending_payment');
+  assert.equal(dropped.order.escrow.state, 'none');
+  assert.equal((await myDisputes(req({ headers: buyer.headers }), ctx)).jsonBody.asBuyer
+    .find((d) => d.id === record.id).status, 'withdrawn');
+});
+
+await check('a seller whose refund the buyer says never came can dispute it', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Refund Not Received', 20_000, { details: true });
+  await startRefund(req({ headers: auth, params: { id: orderId }, body: { amountMinor: 5_000, reason: 'Goodwill', reference: 'GW1' } }), ctx);
+  await ackCreditRefund(req({ headers: buyer.headers, params: { id: orderId }, body: { received: false } }), ctx);
+
+  const offered = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody.disputable;
+  assert.equal(offered.length, 1);
+  assert.equal(offered[0].kind, 'refund_rejected');
+  const credit = (await sales(req({ headers: auth }), ctx)).jsonBody.credits.find((c) => c.orderId === orderId);
+  assert.equal(credit.disputable.length, 1, 'offered right on the Refunds card too');
+
+  assert.equal((await flagDispute(req({ headers: auth, params: { id: orderId }, body: { subject: offered[0].subject } }), ctx)).status, 201);
+  const store = (await myDisputes(req({ headers: auth }), ctx)).jsonBody.asStore.find((d) => d.orderId === orderId);
+  assert.equal(store.topic, 'refund_rejected');
+  assert.equal(store.raisedByMe, true);
+});
+
+await check('either side can raise a dispute about anything, with a reason', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('General Dispute Item', 9_000);
+  assert.equal((await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: {} }), ctx)).status, 400);
+  const raised = await flagDispute(req({ headers: buyer.headers, params: { id: orderId }, body: { reason: 'Arrived broken' } }), ctx);
+  assert.equal(raised.status, 201);
+  assert.equal(raised.jsonBody.dispute.topic, 'general');
+  const stranger = await newBuyer('Dispute Stranger');
+  assert.equal((await flagDispute(req({ headers: stranger.headers, params: { id: orderId }, body: { reason: 'Not mine' } }), ctx)).status, 403);
+  const listed = (await myDisputes(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.ok(listed.asBuyer.some((d) => d.orderId === orderId && d.reason === 'Arrived broken'));
+  assert.ok(listed.orders.some((o) => o.id === orderId && o.side === 'buyer'), 'and the order is offered to raise another');
+});
+
+await check('the reversal dispute and the escrow dispute are the same kind of record, in the same list', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Merged Reversal Dispute', 14_000);
+  await saveReversalDetails(req({ headers: buyer.headers, body: { method: 'UPI', identifier: 'm@upi', accountName: 'M' } }), ctx);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Gone.' } }), ctx);
+  await submitReversal(req({ headers: auth, params: { id: orderId }, body: { reference: 'RV1' } }), ctx);
+  await ackReversal(req({ headers: buyer.headers, params: { id: orderId }, body: { received: false } }), ctx);
+  const raised = (await raiseDispute(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.equal(raised.order.status, 'dispute_raised');
+  assert.equal(raised.dispute.topic, 'reversal_rejected');
+  const listed = (await myDisputes(req({ headers: auth }), ctx)).jsonBody.asStore.find((d) => d.orderId === orderId);
+  assert.equal(listed.id, raised.dispute.id, 'listed from the record itself');
+});
+
+/* ── payment reversal details, asked for and answered from Refunds ───── */
+console.log('\nrefund details');
+
+await check('the refund window carries the buyer’s details, and refunds wait until there are some', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Details First', 16_000);
+  const blocked = await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 1_000, reason: 'Goodwill', reference: 'G1' } }), ctx);
+  assert.equal(blocked.jsonBody.error, 'buyer_details_missing', 'nowhere to send it yet');
+
+  let row = (await sales(req({ headers: auth }), ctx)).jsonBody.refundable.find((r) => r.orderId === orderId);
+  assert.equal(row.buyerDetails, null);
+
+  // Asked from the window: a message and a notification.
+  const asked = await requestReversalDetails(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
+  assert.ok((await noticesFor(buyer.id)).some((n) => n.kind === 'reversal_details_needed' && n.link === '/refunds?tab=details'));
+  const mine = (await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.equal(mine.hasDetails, false);
+  assert.ok(mine.detailsRequests.some((r) => r.orderId === orderId), 'the buyer sees who is waiting on them');
+
+  // Saving them answers the seller, and the refund goes through.
+  await saveReversalDetails(req({ headers: buyer.headers, body: { method: 'UPI', identifier: 'first@upi', accountName: 'First' } }), ctx);
+  row = (await sales(req({ headers: auth }), ctx)).jsonBody.refundable.find((r) => r.orderId === orderId);
+  assert.equal(row.buyerDetails.identifier, 'first@upi', 'shown to the seller in the refund window');
+  assert.ok(row.detailsCheck.confirmedAt);
+  assert.deepEqual((await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody.detailsRequests
+    .filter((r) => r.orderId === orderId), []);
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 1_000, reason: 'Goodwill', reference: 'G1' } }), ctx)).status, 201);
+});
+
+await check('a seller unsure the details are current asks, and refunds once the buyer confirms', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Details Check', 16_000, { details: true });
+  await requestReversalDetails(req({ headers: auth, params: { id: orderId }, body: { message: 'Still the same UPI?' } }), ctx);
+  const waiting = await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 2_000, reason: 'Late', reference: 'L1' } }), ctx);
+  assert.equal(waiting.jsonBody.error, 'awaiting_buyer_details');
+
+  const buyerActions = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody.actions;
+  assert.ok(buyerActions.includes('confirm_reversal_details'));
+  const confirmed = await confirmReversalDetails(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(confirmed.status, 200);
+  assert.ok(confirmed.jsonBody.order.detailsCheck.confirmedAt);
+  assert.ok((await noticesFor(confirmed.jsonBody.order.sellerId)).some((n) => n.kind === 'reversal_details_updated'));
+
+  assert.equal((await startRefund(req({ headers: auth, params: { id: orderId },
+    body: { amountMinor: 2_000, reason: 'Late', reference: 'L1' } }), ctx)).status, 201, 'and the seller can go ahead');
+});
+
+/* ── pressing Buy, and who wants what ─────────────────────────────────── */
+console.log('\npressing Buy, and who wants what');
+
+const sellerSees = async (orderId) =>
+  (await sales(req({ headers: auth }), ctx)).jsonBody.orders.some((row) => row.id === orderId);
+
+await check('pressing Buy opens a checkout the seller cannot see, and holds no stock', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Checkout Only', priceMinor: 12_000, quantityAvailable: 3 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const buyer = await newBuyer('Window Shopper');
+  const opened = await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx);
+  assert.equal(opened.status, 201);
+  const orderId = opened.jsonBody.order.id;
+  assert.equal(opened.jsonBody.order.placedAt, null);
+  assert.equal((await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody.listing.quantityAvailable, 3);
+  assert.equal(await sellerSees(orderId), false, 'not in the order book');
+  assert.equal((await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).status, 404, 'nor by its link');
+  assert.ok(!(await noticesFor('usr_demo')).some((n) => n.link === `/order/${orderId}`), 'and nobody was told');
+  assert.ok((await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody.actions.includes('pay'));
+
+  const again = await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx);
+  assert.equal(again.jsonBody.order.id, orderId, 'Buy again goes back to the same checkout');
+  assert.equal(again.jsonBody.order.buyClicks, 2);
+});
+
+await check('booking from the checkout places the order and tells the seller', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Booked Later', priceMinor: 9_000, quantityAvailable: 2 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const buyer = await newBuyer('Booker');
+  const orderId = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  const booked = await bookOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(booked.status, 200);
+  assert.ok(booked.jsonBody.order.placedAt);
+  assert.equal((await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody.listing.quantityAvailable, 1);
+  assert.ok(await sellerSees(orderId));
+  assert.ok((await noticesFor('usr_demo')).some((n) => n.kind === 'order_placed' && n.link === `/order/${orderId}`));
+  assert.ok((await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody.actions.includes('accept'));
+});
+
+await check('saying you paid places the order too, with the claim as the only notice', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Paid At Checkout', priceMinor: 8_000, quantityAvailable: 2 } }), ctx);
+  const buyer = await newBuyer('Quick Payer');
+  const orderId = (await openCheckout(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx)).jsonBody.order.id;
+  const claimed = await claimPayment(req({ headers: buyer.headers, params: { id: orderId }, body: { reference: 'UTR123' } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  assert.ok(claimed.jsonBody.order.placedAt);
+  assert.ok(await sellerSees(orderId));
+  const told = (await noticesFor('usr_demo')).filter((n) => n.link === `/order/${orderId}`);
+  assert.deepEqual(told.map((n) => n.kind), ['payment_claimed']);
+});
+
+await check('a checkout cannot be placed once the item has gone', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Last One', priceMinor: 5_000, quantityAvailable: 1 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const slow = await newBuyer('Slow Buyer');
+  const fast = await newBuyer('Fast Buyer');
+  const slowId = (await openCheckout(req({ headers: slow.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  const fastId = (await openCheckout(req({ headers: fast.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.equal((await bookOrder(req({ headers: fast.headers, params: { id: fastId } }), ctx)).status, 200);
+  const late = await bookOrder(req({ headers: slow.headers, params: { id: slowId } }), ctx);
+  assert.equal(late.status, 409);
+  assert.equal(late.jsonBody.error, 'unavailable');
+});
+
+await check('insights name who saved what and who stopped at Buy', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Much Wanted', priceMinor: 20_000, quantityAvailable: 4 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const saver = await newBuyer('Keen Saver');
+  const stopper = await newBuyer('Cart Leaver');
+  await toggleLike(req({ headers: saver.headers, params: { id: listingId } }), ctx);
+  await toggleLike(req({ headers: stopper.headers, params: { id: listingId } }), ctx);
+  await openCheckout(req({ headers: stopper.headers, body: { listingId } }), ctx);
+
+  const read = await interest(req({ headers: auth }), ctx);
+  assert.equal(read.status, 200);
+  const item = read.jsonBody.saved.find((row) => row.listingId === listingId);
+  assert.deepEqual(item.people.map((p) => [p.who.name, p.state]).sort(),
+    [['Cart Leaver', 'checkout'], ['Keen Saver', 'saved']]);
+  const stalled = read.jsonBody.checkout.filter((row) => row.listingId === listingId);
+  assert.deepEqual(stalled.map((row) => row.who.name), ['Cart Leaver']);
+  assert.ok(read.jsonBody.leads.some((row) => row.who.name === 'Cart Leaver' && row.checkouts === 1));
+  const funnel = read.jsonBody.items.find((row) => row.listingId === listingId);
+  assert.equal(funnel.saves, 2);
+  assert.equal(funnel.buyClicks, 1);
+  assert.equal(funnel.orders, 0);
+  assert.ok(read.jsonBody.summary.stalled >= 1);
+
+  assert.equal((await interest(req({ headers: saver.headers, query: { store: 'usr_demo' } }), ctx)).status, 403,
+    'and only the shop reads them');
+});
+
+await check('insights know returning customers and what is trending', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Hot Seller', priceMinor: 10_000, quantityAvailable: 2 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const regular = await newBuyer('Regular Buyer');
+  for (let i = 0; i < 2; i += 1) {
+    const placed = await createOrder(req({ headers: regular.headers, body: { listingId } }), ctx);
+    assert.ok(placed.jsonBody.order.placedAt, JSON.stringify(placed.jsonBody));
+  }
+
+  const read = (await interest(req({ headers: auth }), ctx)).jsonBody;
+  const them = read.customers.newList.find((row) => row.who.name === 'Regular Buyer');
+  assert.equal(them?.orders, 2, 'new this month');
+  assert.equal(them.spentMinor, 20_000);
+  assert.equal(them.returning, true, 'and already back for more');
+  assert.ok(!read.customers.dormantList.some((row) => row.who.name === 'Regular Buyer'));
+  const hot = read.trending.find((row) => row.listingId === listingId);
+  assert.equal(hot.orders, 2);
+  assert.equal(hot.trend, 'new');
+  assert.equal(hot.soldOut, true, 'both sold, so it wants restocking');
+
+  const free = (await insights(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(Array.isArray(free.toCollect), 'what is owed sits with the free figures');
+});
+
+/* ── the profit calculator, and trends across the market ───────────────── */
+console.log('\nthe profit calculator, and trends across the market');
+
+await check('the calculator works a landed cost out line by line, in order', () => {
+  const template = {
+    id: 't', name: 'Air', currency: 'USD', rate: 80, volumetricDivisor: 5000, targetMarginPercent: 25, isDefault: true,
+    createdAt: '', updatedAt: '',
+    lines: [
+      { id: 'freight', label: 'Freight', stage: 'international', kind: 'per_kg', amount: 10, currency: 'foreign', minKg: 1, stepKg: 0.5, enabled: true },
+      { id: 'duty', label: 'Duty', stage: 'customs', kind: 'percent', amount: 10, currency: 'INR', basis: 'cif', enabled: true },
+      { id: 'igst', label: 'IGST', stage: 'customs', kind: 'percent', amount: 18, currency: 'INR', basis: 'cif_duty', enabled: true },
+      { id: 'off', label: 'Not mine', stage: 'domestic', kind: 'per_item', amount: 9999, currency: 'INR', enabled: false },
+      { id: 'packing', label: 'Packing', stage: 'domestic', kind: 'per_item', amount: 50, currency: 'INR', enabled: true },
+      { id: 'gst', label: 'GST', stage: 'selling', kind: 'percent', amount: 18, currency: 'INR', basis: 'selling_inclusive', enabled: true },
+    ],
+  };
+  const result = calculateProfit(template, { itemPrice: 20, quantity: 2, weightKg: 0.3, sellingPrice: 3000 });
+  const line = (id) => result.lines.find((row) => row.id === id).perItem;
+  assert.equal(result.itemCost, 1600);
+  assert.equal(line('freight'), 400, '0.6 kg rounds to the 1 kg minimum, split over two');
+  assert.equal(line('duty'), 200, 'duty on item + freight');
+  assert.equal(line('igst'), 396, 'IGST on item + freight + duty');
+  assert.equal(line('off'), 0, 'a switched-off line costs nothing');
+  assert.ok(Math.abs(line('gst') - 3000 * 18 / 118) < 1e-6, 'GST taken out of the price, not added to it');
+  assert.ok(Math.abs(result.profit - (3000 - 2646 - 3000 * 18 / 118)) < 1e-6);
+  assert.ok(result.profit < 0);
+  const slope = 1 - 18 / 118;
+  assert.ok(Math.abs(result.breakEven - 2646 / slope) < 1e-6, 'break-even solves the price-linked lines');
+  assert.ok(Math.abs(result.suggested - 2646 / (slope - 0.25)) < 1e-6);
+  assert.ok(Math.abs(calculateProfit(template, { itemPrice: 20, quantity: 2, weightKg: 0.3, sellingPrice: result.suggested }).marginPercent - 25) < 1e-6,
+    'and the suggested price really makes the target margin');
+
+  const bulky = calculateProfit({ ...template, lines: [{ ...template.lines[0], volumetric: true, minKg: 0, stepKg: 0 }] },
+    { itemPrice: 0, quantity: 1, weightKg: 1, lengthCm: 50, widthCm: 40, heightCm: 30, sellingPrice: 0 });
+  assert.equal(bulky.volumetricKg, 12);
+  assert.equal(bulky.landed, 12 * 800, 'a light, large box is charged on its volume');
+});
+
+await check('a shop keeps its own calculators, and only its people read them', async () => {
+  const first = await listProfitTemplates(req({ headers: auth }), ctx);
+  assert.equal(first.status, 200);
+  assert.equal(first.jsonBody.starter.length, starterLines().length);
+  assert.ok(first.jsonBody.starter.some((line) => line.id === 'igst'), 'every provision is on the starter sheet');
+
+  const made = await saveProfitTemplate(req({ headers: auth, body: {
+    name: 'Japan by air', currency: 'jpy', rate: 0.56, targetMarginPercent: 30, lines: starterLines(),
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  assert.equal(made.jsonBody.template.currency, 'JPY');
+  assert.equal(made.jsonBody.template.isDefault, true, 'the first one is the default');
+  const second = await saveProfitTemplate(req({ headers: auth, body: {
+    name: 'China by sea', currency: 'CNY', rate: 11.6, isDefault: true, lines: starterLines().slice(0, 3),
+  } }), ctx);
+  assert.equal(second.status, 201);
+  assert.deepEqual(second.jsonBody.templates.filter((entry) => entry.isDefault).map((entry) => entry.name), ['China by sea'],
+    'one default at a time');
+
+  const backwards = await saveProfitTemplate(req({ headers: auth, body: {
+    name: 'Broken', rate: 1, lines: [{ id: 'a', label: 'Fuel', kind: 'percent', basis: 'line', basisLineId: 'b', stage: 'international', enabled: true },
+      { id: 'b', label: 'Freight', kind: 'per_kg', stage: 'international', enabled: true }],
+  } }), ctx);
+  assert.equal(backwards.status, 400, 'a percentage of a later line is refused');
+
+  const stranger = await newBuyer('Nosy Neighbour');
+  assert.equal((await listProfitTemplates(req({ headers: stranger.headers, query: { store: 'usr_demo' } }), ctx)).status, 403);
+
+  const gone = await deleteProfitTemplate(req({ headers: auth, params: { id: second.jsonBody.template.id } }), ctx);
+  assert.equal(gone.status, 200);
+  assert.deepEqual(gone.jsonBody.templates.map((entry) => [entry.name, entry.isDefault]), [['Japan by air', true]]);
+});
+
+await check('a shop keeps calculations to list later, and marks the one it listed', async () => {
+  const kept = await saveSavedCalc(req({ headers: auth, body: {
+    title: '  Nendoroid Miku  ', templateId: 'pt_x', templateName: 'Japan by air',
+    input: { itemPrice: 4200, quantity: 2, weightKg: 0.4, sellingPrice: 3499 },
+    steps: [{ id: 'item', label: 'Item price', stage: 'buying', amountMinor: 235200 }], sellingPriceMinor: 349900,
+  } }), ctx);
+  assert.equal(kept.status, 201, JSON.stringify(kept.jsonBody));
+  assert.equal(kept.jsonBody.calc.title, 'Nendoroid Miku');
+  assert.equal(kept.jsonBody.calc.listingId, null);
+  assert.equal((await saveSavedCalc(req({ headers: auth, body: { title: ' ' } }), ctx)).status, 400, 'it needs a name');
+
+  const listed = await saveSavedCalc(req({ headers: auth, body: { ...kept.jsonBody.calc, listingId: 'lst_1' } }), ctx);
+  assert.equal(listed.status, 200);
+  assert.equal(listed.jsonBody.calcs.length, 1, 'correcting one does not copy it');
+  assert.equal(listed.jsonBody.calc.listingId, 'lst_1');
+  assert.equal(listed.jsonBody.calc.createdAt, kept.jsonBody.calc.createdAt);
+
+  const stranger = await newBuyer('Calc Peeker');
+  assert.equal((await listSavedCalcs(req({ headers: stranger.headers, query: { store: 'usr_demo' } }), ctx)).status, 403);
+  assert.equal((await listSavedCalcs(req({ headers: auth }), ctx)).jsonBody.calcs.length, 1);
+  const gone = await deleteSavedCalc(req({ headers: auth, params: { id: kept.jsonBody.calc.id } }), ctx);
+  assert.equal(gone.status, 200);
+  assert.deepEqual(gone.jsonBody.calcs, []);
+  assert.equal((await deleteSavedCalc(req({ headers: auth, params: { id: kept.jsonBody.calc.id } }), ctx)).status, 404);
+});
+
+await check('insights compare this week with last, and rank what is trending', async () => {
+  const read = (await interest(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(read.daily.length, 14);
+  assert.ok(read.week.now.orders >= 1, 'orders placed in the tests above land in this week');
+  const hot = read.trending[0];
+  assert.equal(hot.rank, 1);
+  assert.equal(hot.spark.length, 14);
+  assert.ok(read.categories.length > 0);
+});
+
+await check('market trends show other shops’ items without the shops', async () => {
+  const mine = await createListing(req({ headers: auth, body: { title: 'My Resin Statue', priceMinor: 30_000, quantityAvailable: 3, category: 'Scale figures' } }), ctx);
+  assert.equal(mine.status, 201, JSON.stringify(mine.jsonBody));
+  const rival = await newBuyer('Rival Shop');
+  const opened = await saveStorefront(req({ headers: rival.headers, body: { storefrontName: 'Rival Figures Co' } }), ctx);
+  assert.equal(opened.status, 200, JSON.stringify(opened.jsonBody));
+  const theirs = await createListing(req({ headers: rival.headers, body: { title: 'Their Hot Statue', priceMinor: 25_000, quantityAvailable: 9, category: 'Scale figures' } }), ctx);
+  assert.equal(theirs.status, 201, JSON.stringify(theirs.jsonBody));
+  const listingId = theirs.jsonBody.listing.id;
+  for (const name of ['Fan One', 'Fan Two']) {
+    const fan = await newBuyer(name);
+    await toggleLike(req({ headers: fan.headers, params: { id: listingId } }), ctx);
+  }
+  const quiet = (await market(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(!quiet.items.some((row) => row.title === 'Their Hot Statue'), 'two people are not enough to show');
+
+  const third = await newBuyer('Fan Three');
+  await toggleLike(req({ headers: third.headers, params: { id: listingId } }), ctx);
+  const read = await market(req({ headers: auth }), ctx);
+  assert.equal(read.status, 200);
+  const item = read.jsonBody.items.find((row) => row.title === 'Their Hot Statue');
+  assert.ok(item, 'three interested people put it on the chart');
+  assert.deepEqual(Object.keys(item).sort(), ['category', 'currency', 'level', 'photo', 'priceMinor', 'title']);
+  const text = JSON.stringify(read.jsonBody);
+  assert.ok(!text.includes(listingId) && !text.includes('Rival Shop') && !text.includes('rival_shop') && !text.includes('Rival Figures'), 'nothing leads back to the shop');
+  assert.ok(read.jsonBody.categories.some((row) => row.category === 'Scale figures'));
+  assert.ok(!read.jsonBody.items.some((row) => row.title === 'My Resin Statue'), 'and never the shop’s own items');
+});
+
+console.log('\nreal profit, and what the shop does with it');
+
+const listItem = async (title, priceMinor, quantityAvailable = 5) =>
+  (await createListing(req({ headers: auth, body: { title, priceMinor, quantityAvailable } }), ctx)).jsonBody.listing.id;
+const bookFor = async (buyer, listingId) => {
+  const orderId = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  const booked = await bookOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(booked.status, 200, JSON.stringify(booked.jsonBody));
+  return orderId;
+};
+
+await check('an item keeps its own cost steps, and profit follows per item and customer', async () => {
+  const listingId = await listItem('Costed Figure', 12_000);
+  const buyer = await newBuyer('Costed Buyer');
+  await bookFor(buyer, listingId);
+
+  const steps = [
+    { id: 'item', label: 'Item price', stage: 'buying', amountMinor: 5_000 },
+    { id: 'freight', label: 'Freight', stage: 'international', amountMinor: 1_000 },
+  ];
+  const saved = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { templateId: null, templateName: 'Air', steps } } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.costMinor, 6_000);
+
+  const read = (await costsRead(req({ headers: auth }), ctx)).jsonBody;
+  const item = read.items.active.find((row) => row.key === listingId);
+  assert.ok(item, 'an item on sale is active');
+  assert.equal(item.revenueMinor, 12_000);
+  assert.equal(item.costMinor, 6_000);
+  assert.equal(item.profitMinor, 6_000);
+  assert.equal(item.marginPercent, 50);
+  assert.equal(item.stages.international, 1_000);
+  assert.deepEqual(item.steps.map((step) => step.label), ['Item price', 'Freight'], 'only the steps the seller kept');
+  const customer = [...read.customers.active, ...read.customers.closed].find((row) => row.name === 'Costed Buyer');
+  assert.ok(customer && customer.profitMinor >= 6_000, 'and the customer who bought it');
+  assert.ok(read.sheets.some((row) => row.listingId === listingId && row.sheet), 'listed among the items to cost');
+
+  const edited = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { steps: [{ ...steps[0], amountMinor: 7_000 }] } } }), ctx);
+  assert.equal(edited.jsonBody.costMinor, 7_000, 'a step can be changed, and a step dropped');
+  const stranger = await newBuyer('Cost Snoop');
+  const seen = (await listingDetail(req({ headers: stranger.headers, params: { id: listingId } }), ctx)).jsonBody.listing;
+  assert.equal(seen.costSheet, undefined, 'a buyer never sees what the item cost the shop');
+  assert.equal(seen.costSheetPrevious, undefined);
+  assert.equal((await listingDetail(req({ headers: auth, params: { id: listingId } }), ctx)).jsonBody.listing.costSheet.steps.length, 1);
+
+  const stepped = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { restore: true } }), ctx);
+  assert.equal(stepped.jsonBody.costMinor, sheetTotal({ steps }), 'removing steps back to the costs saved before');
+  const sheetRow = (await costsRead(req({ headers: auth }), ctx)).jsonBody.sheets.find((row) => row.listingId === listingId);
+  assert.equal(sheetRow.previousCostMinor, null, 'and there is nothing before those');
+  await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { steps: [{ ...steps[0], amountMinor: 7_000 }] } } }), ctx);
+  assert.equal((await saveCostSheet(req({ headers: stranger.headers, params: { id: listingId }, body: { sheet: null } }), ctx)).status, 404);
+  const cleared = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: null } }), ctx);
+  assert.equal(cleared.jsonBody.sheet, null);
+  const after = (await costsRead(req({ headers: auth }), ctx)).jsonBody.items.active.find((row) => row.key === listingId);
+  assert.equal(after.uncostedUnits, 1, 'without costs, no profit is claimed');
+  assert.equal(after.profitMinor, 0);
+});
+
+await check('a cheaper or restocked item finds the people who saved it, once a day', async () => {
+  const listingId = await listItem('Saved Then Gone', 20_000, 1);
+  const saver = await newBuyer('Patient Saver');
+  await toggleLike(req({ headers: saver.headers, params: { id: listingId } }), ctx);
+  await bookFor(await newBuyer('Quick Hands'), listingId);
+  const edited = await editListing(req({ headers: auth, params: { id: listingId }, body: { priceMinor: 15_000, quantityAvailable: 2 } }), ctx);
+  assert.equal(edited.status, 200);
+  assert.equal(edited.jsonBody.listing.priceHistory.length, 2, 'the old price is kept');
+  assert.ok(edited.jsonBody.listing.restockedAt, 'and when it came back');
+
+  const deep = (await deepRead(req({ headers: auth }), ctx)).jsonBody;
+  const row = deep.reminders.find((entry) => entry.listingId === listingId);
+  assert.ok(row, 'the saver is worth reminding');
+  assert.equal(row.reason, 'cheaper');
+  assert.equal(row.wasMinor, 20_000);
+  assert.ok(deep.pricing.some((entry) => entry.listingId === listingId && entry.periods.length === 2));
+
+  const body = { kind: 'saved', listingId, buyerId: row.buyerId };
+  assert.equal((await nudge(req({ headers: auth, body }), ctx)).status, 200);
+  assert.equal((await nudge(req({ headers: auth, body }), ctx)).status, 429, 'not twice in a day');
+  assert.ok((await noticesFor(row.buyerId)).some((n) => n.kind === 'seller_nudge' && n.link === `/listing/${listingId}`));
+  const stranger = await newBuyer('Not A Saver');
+  assert.equal((await nudge(req({ headers: auth, body: { ...body, buyerId: stranger.id } }), ctx)).status, 404);
+});
+
+await check('a stalled checkout and an unpaid order can be nudged', async () => {
+  const listingId = await listItem('Nudge Me', 5_000);
+  const buyer = await newBuyer('Hesitant');
+  const draft = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.equal((await nudge(req({ headers: auth, body: { kind: 'checkout', orderId: draft } }), ctx)).status, 200);
+  const placed = await bookFor(await newBuyer('Owes Money'), listingId);
+  assert.equal((await nudge(req({ headers: auth, body: { kind: 'payment', orderId: placed } }), ctx)).status, 200);
+  assert.equal((await nudge(req({ headers: auth, body: { kind: 'checkout', orderId: placed } }), ctx)).status, 409, 'already an order');
+});
+
+await check('items bought together, retention and the next-lot forecast', async () => {
+  const first = await listItem('Pair Left', 3_000);
+  const second = await listItem('Pair Right', 4_000);
+  for (const name of ['Pair Buyer One', 'Pair Buyer Two']) {
+    const buyer = await newBuyer(name);
+    await bookFor(buyer, first);
+    await bookFor(buyer, second);
+  }
+  const deep = (await deepRead(req({ headers: auth }), ctx)).jsonBody;
+  const pair = deep.bundles.find((entry) => entry.items.map((item) => item.listingId).sort().join() === [first, second].sort().join());
+  assert.equal(pair?.count, 2);
+  assert.ok(deep.cohorts.length > 0 && deep.cohorts[0].size > 0);
+  const labelled = Object.values(deep.value.counts).reduce((sum, count) => sum + count, 0);
+  assert.ok(labelled >= deep.value.rows.length);
+  assert.ok(deep.forecast.rows.some((row) => row.listingId === first && row.next >= 1));
+  assert.ok(deep.returns.overall.orders > 0);
+});
+
+await check('sales over a period, ageing, stock alerts and the spreadsheet rows', async () => {
+  const read = await salesReport(req({ headers: auth, query: { days: '30' } }), ctx);
+  assert.equal(read.status, 200);
+  const body = read.jsonBody;
+  assert.equal(body.bucket, 'day');
+  assert.ok(body.series.length >= 30);
+  assert.ok(body.totals.orders >= 1);
+  assert.equal(body.rows.length >= body.totals.orders, true, 'every order is a row, cancelled ones too');
+  assert.ok(body.best.units.length > 0);
+  assert.ok(body.sources.reduce((sum, row) => sum + row.orders, 0) === body.totals.orders, 'every order has one source');
+  assert.equal((await salesReport(req({ headers: auth, query: { days: '365' } }), ctx)).jsonBody.bucket, 'month');
+  const stranger = await newBuyer('Sales Snoop');
+  assert.equal((await salesReport(req({ headers: stranger.headers, query: { store: 'usr_demo' } }), ctx)).status, 403);
+});
+
+console.log('\ncosts while listing, and private deals');
+
+await check('costs go on while listing, and can be removed again', async () => {
+  const made = await createListing(req({ headers: auth, body: {
+    title: 'Listed With Costs', priceMinor: 10_000, quantityAvailable: 2,
+    costSheet: { templateId: null, templateName: 'Air', steps: [
+      { id: 'item', label: 'Item price', stage: 'buying', amountMinor: 4_000 },
+      { id: 'ship', label: 'Freight', stage: 'international', amountMinor: 1_000 },
+    ] },
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  assert.equal(made.jsonBody.listing.costSheet.steps.length, 2);
+  const id = made.jsonBody.listing.id;
+  const sheets = (await costsRead(req({ headers: auth }), ctx)).jsonBody.sheets;
+  assert.equal(sheets.find((row) => row.listingId === id).costMinor, 5_000);
+  const removed = await saveCostSheet(req({ headers: auth, params: { id }, body: { sheet: null } }), ctx);
+  assert.equal(removed.jsonBody.sheet, null, 'removed');
+  assert.equal((await createListing(req({ headers: auth, body: {
+    title: 'Plain', priceMinor: 1_000, costSheet: { steps: [] },
+  } }), ctx)).jsonBody.listing.costSheet, null, 'an empty sheet is no sheet');
+});
+
+await check('a private deal is for one buyer, and becomes an ordinary order', async () => {
+  const buyer = await newBuyer('Deal Buyer');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'deal_buyer' } }), ctx);
+  const made = await createListing(req({ headers: auth, body: {
+    title: 'Just For You', priceMinor: 7_500, quantityAvailable: 1, privateFor: buyer.id,
+    shareToChannel: true, shareToFeed: true,
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const listing = made.jsonBody.listing;
+  assert.equal(listing.unlisted, true, 'never in the catalog or the shop grid');
+  assert.equal(listing.privateFor, buyer.id);
+  const everyone = JSON.stringify((await feed(req({}), ctx)).jsonBody);
+  assert.ok(!everyone.includes(listing.id), 'not in the feed, and nothing was posted');
+
+  const stranger = await newBuyer('Deal Stranger');
+  assert.equal((await listingDetail(req({ headers: stranger.headers, params: { id: listing.id } }), ctx)).status, 404);
+  assert.equal((await openCheckout(req({ headers: stranger.headers, body: { listingId: listing.id } }), ctx)).status, 404);
+  assert.equal((await listingDetail(req({ headers: buyer.headers, params: { id: listing.id } }), ctx)).status, 200);
+  assert.equal((await listingDetail(req({ headers: auth, params: { id: listing.id } }), ctx)).status, 200, 'the shop sees it');
+
+  const offer = await sendMessage(req({ headers: auth, params: { handle: 'deal_buyer' },
+    body: { body: '', as: 'arjun_collects', deal: { kind: 'offer', listingId: listing.id } } }), ctx);
+  assert.equal(offer.status, 201, JSON.stringify(offer.jsonBody));
+  assert.equal(offer.jsonBody.message.deal.title, 'Just For You');
+  assert.equal((await sendMessage(req({ headers: auth, params: { handle: 'deal_buyer' },
+    body: { as: 'arjun', deal: { kind: 'offer', listingId: listing.id } } }), ctx)).status, 400, 'only the shop that made it can offer it');
+
+  const orderId = (await openCheckout(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order.id;
+  assert.equal((await bookOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).status, 200);
+  const row = (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((entry) => entry.id === orderId);
+  assert.ok(row, 'in the order book like any other');
+  assert.equal(row.privateDeal, true);
+});
+
+await check('a buyer can ask a shop for a private deal', async () => {
+  const buyer = await newBuyer('Deal Asker');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'deal_asker' } }), ctx);
+  const ask = await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun_collects' },
+    body: { deal: { kind: 'request', title: 'Two sealed boosters', priceMinor: 90_000, quantity: 2 } } }), ctx);
+  assert.equal(ask.status, 201, JSON.stringify(ask.jsonBody));
+  assert.deepEqual([ask.jsonBody.message.deal.kind, ask.jsonBody.message.deal.quantity], ['request', 2]);
+  assert.equal((await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun' },
+    body: { deal: { kind: 'request', title: 'x' } } }), ctx)).status, 400, 'deals are asked of shops');
 });
 
 console.log(`\n${passed} checks passed`);

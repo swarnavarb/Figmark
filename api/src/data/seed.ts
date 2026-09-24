@@ -18,6 +18,7 @@ import type {
   WantOffer,
 } from '../../../shared/models.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
+import { isCancelledLike } from '../../../shared/orders.js';
 import type { ReactionKind, StoredComment } from '../../../shared/social.js';
 import { hashPassword } from '../auth/passwords.js';
 
@@ -550,7 +551,7 @@ function seededCounts(listingId: string): { filledCount: number; pledgedCount: n
   const orders = [...seedOrders(), seedLiveSale(), ...seedLotOrders()];
   return {
     filledCount: orders
-      .filter((order) => order.listingId === listingId && order.status !== 'cancelled')
+      .filter((order) => order.listingId === listingId && !isCancelledLike(order.status))
       .reduce((total, order) => total + order.quantity, 0),
     pledgedCount: seedPledges()
       .filter((pledge) => pledge.listingId === listingId)

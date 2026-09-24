@@ -4,7 +4,7 @@ import {
   type DisputeOutcome,
   type DisputeReason,
 } from './enums.js';
-import type { Dispute, Order } from './models.js';
+import type { Dispute, DisputeTopic, Order } from './models.js';
 import { sideOf, type OrderSide } from './orders.js';
 
 /**
@@ -25,6 +25,20 @@ import { sideOf, type OrderSide } from './orders.js';
  * mediation; it never decides one. Auto-refunding on silence would be farmable
  * by anyone patient enough to say nothing.
  */
+
+/** Every topic, in the words both sides read. */
+export const DISPUTE_TOPIC_LABELS: Record<DisputeTopic, string> = {
+  escrow: 'Held payment',
+  payment_rejected: 'Payment not acknowledged',
+  refund_rejected: 'Refund not acknowledged',
+  reversal_rejected: 'Reversal not acknowledged',
+  general: 'Dispute',
+};
+
+/** Only an escrow dispute is about money the marketplace is holding, so only it can settle by moving money. */
+export function holdsMoney(dispute: Pick<Dispute, 'topic'>): boolean {
+  return (dispute.topic ?? 'escrow') === 'escrow';
+}
 
 /** Days the other side has to answer before either party may escalate. */
 export const RESPONSE_DAYS = 3;
@@ -50,7 +64,7 @@ export function responseOverdue(dispute: Pick<Dispute, 'respondByAt' | 'status'>
  * happens to know a dispute id.
  */
 export function disputeActionsFor(
-  dispute: Pick<Dispute, 'status' | 'raisedBy' | 'offer' | 'respondByAt'>,
+  dispute: Pick<Dispute, 'status' | 'raisedBy' | 'offer' | 'respondByAt' | 'topic'>,
   order: Pick<Order, 'buyerId' | 'sellerId'>,
   viewerId: string,
   now = new Date(),
@@ -63,12 +77,14 @@ export function disputeActionsFor(
 
   // An offer on the table is the other side's to accept, never your own — a
   // proposal you can accept yourself is just a decision.
-  if (dispute.offer && dispute.offer.fromUserId !== viewerId) actions.push('accept');
+  // Offers are a split of held money, so they exist only where money is held.
+  const money = holdsMoney(dispute);
+  if (money && dispute.offer && dispute.offer.fromUserId !== viewerId) actions.push('accept');
 
   // Under mediation the company holds the pen. The thread stays open, because
   // the mediator is reading it and both parties may still be asked things.
   if (dispute.status !== 'under_mediation') {
-    actions.push('offer');
+    if (money) actions.push('offer');
     if (dispute.raisedBy === viewerId) actions.push('withdraw');
     // Escalating is open once the other side has had their days, and to the
     // person waiting rather than the person stalling.

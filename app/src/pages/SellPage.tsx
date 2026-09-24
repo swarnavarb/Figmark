@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
 import type { Lot } from '@shared/models';
+import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
@@ -11,6 +12,10 @@ import { NewLotDialog } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
+import { TermsFields, termsBody, termsDraft } from '../components/Buy';
+import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
+import { CalcIcon } from '../components/CalcIcon';
+import { useGoBack } from '../components/ScrollManager';
 
 /**
  * The template this browser used last.
@@ -64,42 +69,122 @@ type Shape = 'single' | 'waiting' | 'lot';
  * pattern is that listing is a two-minute job, not a form to be endured. The
  * live preview on the right is the same card the feed renders.
  */
+const DRAFT_KEY = 'figmark:sell-draft';
+
+type SellDraft = {
+  title: string; description: string; category: string; condition: string; price: string;
+  costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>; bundle: boolean;
+  shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; cutoffDays: string;
+  tags: string; calc: SavedCalc | null; quickPost: boolean; templateId: string; photos: PhotoDraft[];
+  preLot: RouteStep[] | null; shape: Shape; lotId: string;
+};
+
+function readDraft(key: string): SellDraft | null {
+  try {
+    return JSON.parse(sessionStorage.getItem(key) ?? 'null') as SellDraft | null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(key: string, draft: SellDraft) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    /* A private window: the form just is not kept. */
+  }
+}
+
+function clearDraft(key: string) {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    /* Nothing kept, nothing to clear. */
+  }
+}
+
 export function SellPage() {
   const { user } = useSession();
   const navigate = useNavigate();
+  const goBack = useGoBack('/shop');
   // Which shop this goes into. The sell tab passes it when a store is open, so
   // a manager lists into the shop they were looking at rather than their own.
   const [params] = useSearchParams();
   const storeId = params.get('store') ?? undefined;
+  // Arriving from the profit calculator's "List a new item": its selling price
+  // and the costs it worked out come along.
+  // A saved calculation also brings its name, where it should be shared, and
+  // itself - marked with the item it became once this is published.
+  const prefill = useLocation().state as {
+    priceMinor?: number; costSheet?: CostSheetDraft; title?: string;
+    share?: { channel: boolean; feed: boolean }; calc?: SavedCalc;
+    quantity?: number; description?: string;
+    /** A private deal, made from a chat: who it is for, and the chat to go back to. */
+    privateDeal?: { userId: string; handle: string; displayName: string; as: string };
+  } | null;
+  const deal = prefill?.privateDeal ?? null;
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<string>(CATEGORIES[0]!);
-  const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
-  const [price, setPrice] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [bundle, setBundle] = useState(false);
-  const [shareToChannel, setShareToChannel] = useState(true);
-  const [shareToFeed, setShareToFeed] = useState(false);
-  const [preOrderMode, setPreOrderMode] = useState(false);
-  const [fillThreshold, setFillThreshold] = useState('20');
-  const [cutoffDays, setCutoffDays] = useState('14');
-  const [tags, setTags] = useState('');
+  // What was typed here, kept against this visit - so leaving for the
+  // calculator and coming back finds the form exactly as it was left.
+  const location = useLocation();
+  const draftKey = `${DRAFT_KEY}:${location.key}`;
+  const [restored] = useState(() => readDraft(draftKey));
+
+  const [title, setTitle] = useState(restored?.title ?? prefill?.title ?? '');
+  const [description, setDescription] = useState(restored?.description ?? prefill?.description ?? '');
+  const [category, setCategory] = useState<string>(restored?.category ?? CATEGORIES[0]!);
+  const [condition, setCondition] = useState<string>(restored?.condition ?? CONDITION_TAGS[0]);
+  const [price, setPrice] = useState(() => restored?.price ?? (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
+  const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(restored ? restored.costSheet : prefill?.costSheet ?? null);
+  const [terms, setTerms] = useState(() => restored?.terms
+    ?? termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
+  const [bundle, setBundle] = useState(restored?.bundle ?? false);
+  const [shareToChannel, setShareToChannel] = useState(restored?.shareToChannel ?? prefill?.share?.channel ?? true);
+  const [shareToFeed, setShareToFeed] = useState(restored?.shareToFeed ?? prefill?.share?.feed ?? false);
+  const [preOrderMode, setPreOrderMode] = useState(restored?.preOrderMode ?? false);
+  const [fillThreshold, setFillThreshold] = useState(restored?.fillThreshold ?? '20');
+  const [cutoffDays, setCutoffDays] = useState(restored?.cutoffDays ?? '14');
+  const [tags, setTags] = useState(restored?.tags ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The saved calculation this listing is made from, marked with the item once it is published. */
+  const [calc, setCalc] = useState<SavedCalc | null>(restored?.calc ?? prefill?.calc ?? null);
+  const [calcs, setCalcs] = useState<SavedCalc[]>([]);
 
   /* Quick Post is on by default and remembers the last template used, because
      a shop lists forty of the same kind of thing a month and typing the same
      category, tags and two lines each time is how a listing screen becomes a
      chore. Everything it fills in stays editable. */
-  const [quickPost, setQuickPost] = useState(true);
+  const [quickPost, setQuickPost] = useState(restored?.quickPost ?? true);
   const [templates, setTemplates] = useState<PostTemplate[]>([]);
-  const [templateId, setTemplateId] = useState<string>(() => lastTemplate() ?? '');
-  const [photos, setPhotos] = useState<PhotoDraft[]>([]);
-  const [preLot, setPreLot] = useState<RouteStep[] | null>(null);
-  const [shape, setShape] = useState<Shape>('single');
+  const [templateId, setTemplateId] = useState<string>(() => restored?.templateId ?? lastTemplate() ?? '');
+  const [photos, setPhotos] = useState<PhotoDraft[]>(restored?.photos ?? []);
+  const [preLot, setPreLot] = useState<RouteStep[] | null>(restored?.preLot ?? null);
+  const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
   const [lots, setLots] = useState<Lot[]>([]);
-  const [lotId, setLotId] = useState('');
+  const [lotId, setLotId] = useState(restored?.lotId ?? '');
+
+  useEffect(() => {
+    writeDraft(draftKey, {
+      title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
+      preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    });
+  }, [draftKey, title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
+    preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId]);
+
+  useEffect(() => {
+    void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
+  }, [storeId]);
+
+  /** Fill the form from a saved calculation: its name, price and costs. */
+  function fillFromSaved(id: string) {
+    const picked = calcs.find((entry) => entry.id === id);
+    if (!picked) return;
+    setCalc(picked);
+    setTitle(picked.title);
+    if (picked.sellingPriceMinor) setPrice(String(picked.sellingPriceMinor / 100));
+    setCostSheet(picked.steps.length ? { templateId: picked.templateId, templateName: picked.templateName, steps: picked.steps } : null);
+  }
   const [creatingLot, setCreatingLot] = useState(false);
 
   // The seller's open lots, so an item can be filed as it is listed rather
@@ -130,7 +215,8 @@ export function SellPage() {
         // The last one used, when it still exists; otherwise the first.
         const remembered = result.templates.find((row) => row.id === lastTemplate());
         const chosen = remembered ?? result.templates[0];
-        if (chosen) {
+        // Coming back to a form already filled in: leave it as it was.
+        if (chosen && !restored) {
           setTemplateId(chosen.id);
           applyTemplate(chosen);
         }
@@ -186,11 +272,14 @@ export function SellPage() {
         category,
         condition,
         priceMinor,
-        quantityAvailable: Math.max(1, Number(quantity) || 1),
+        ...termsBody(terms),
         bundle,
-        shareToChannel,
-        shareToFeed,
-        preOrder: preOrderMode
+        // A private deal is never announced: only its buyer ever sees it.
+        shareToChannel: deal ? false : shareToChannel,
+        shareToFeed: deal ? false : shareToFeed,
+        ...(deal ? { privateFor: deal.userId } : {}),
+        costSheet,
+        preOrder: preOrderMode && !deal
           ? {
               fillThreshold: Math.max(2, Number(fillThreshold) || 2),
               cutoffAt: new Date(Date.now() + (Number(cutoffDays) || 14) * 86_400_000).toISOString(),
@@ -212,6 +301,16 @@ export function SellPage() {
       });
       // Remembered for the next item, which is the point of a template.
       if (quickPost && templateId) rememberTemplate(templateId);
+      clearDraft(draftKey);
+      if (calc) {
+        await api.saveCalc({ ...calc, listingId: result.listing.id }, storeId).catch(() => undefined);
+      }
+      if (deal) {
+        // The item is made; the deal card in the chat is what the buyer opens it from.
+        await api.sendMessage(deal.handle, '', deal.as, { kind: 'offer', listingId: result.listing.id });
+        navigate(`/messages/${encodeURIComponent(deal.handle)}?as=${encodeURIComponent(deal.as)}`, { replace: true });
+        return;
+      }
       navigate(`/listing/${result.listing.id}`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not publish this listing.');
@@ -244,10 +343,15 @@ export function SellPage() {
 
   return (
     <main className="page">
+      <button type="button" className="backlink" onClick={goBack}>← Back</button>
       <div className="page__head">
         <div>
-          <h1>Sell something</h1>
-          <p className="muted">Takes about a minute. You can edit or remove it afterwards.</p>
+          <h1>{deal ? `🤝 Private deal for ${deal.displayName}` : 'Sell something'}</h1>
+          <p className="muted">
+            {deal
+              ? `Only ${deal.displayName} can see and buy this. It never appears in your shop, channel or the feed - once bought it is a normal order.`
+              : 'Takes about a minute. You can edit or remove it afterwards.'}
+          </p>
         </div>
       </div>
 
@@ -298,6 +402,20 @@ export function SellPage() {
               )
             )}
           </div>
+
+          {calcs.length > 0 && (
+            <label className="field">
+              <span><CalcIcon size={15} /> From your saved items</span>
+              <select value={calc?.id ?? ''} onChange={(e) => fillFromSaved(e.target.value)}>
+                <option value="">Pick a saved calculation to fill this in…</option>
+                {calcs.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.title} · {formatMoney(entry.sellingPriceMinor)}{entry.listingId ? ' (listed)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="field">
             <span>Title</span>
@@ -350,7 +468,7 @@ export function SellPage() {
           {/* Telling people is part of listing, not a second job to remember
               afterwards - which is how a shop ends up with a channel nobody
               reads because nothing is ever posted in it. */}
-          <div className="field">
+          {!deal && <div className="field">
             <span>Tell people</span>
             <label className="row" style={{ gap: 9, alignItems: 'flex-start' }}>
               <input type="checkbox" checked={shareToChannel} style={{ marginTop: 3 }}
@@ -372,7 +490,7 @@ export function SellPage() {
                 </span>
               </span>
             </label>
-          </div>
+          </div>}
 
           <div className="field-row">
             <label className="field">
@@ -380,10 +498,10 @@ export function SellPage() {
               <input type="number" min="1" step="1" value={price}
                 onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
             </label>
-            <label className="field">
-              <span>Quantity</span>
-              <input type="number" min="1" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            </label>
+          </div>
+
+          <div className="card card--pad">
+            <TermsFields value={terms} onChange={setTerms} />
           </div>
 
           <label className="field">
@@ -392,7 +510,7 @@ export function SellPage() {
             <span className="field__hint">Comma separated. Helps buyers find it in search.</span>
           </label>
 
-          <div className="card card--pad stack">
+          {!deal && <div className="card card--pad stack">
             <label className="row" style={{ cursor: 'pointer' }}>
               <input type="checkbox" checked={preOrderMode} onChange={(e) => setPreOrderMode(e.target.checked)}
                 style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
@@ -417,7 +535,7 @@ export function SellPage() {
                 </label>
               </div>
             )}
-          </div>
+          </div>}
 
           <div className="card card--pad stack">
             <div>
@@ -481,10 +599,12 @@ export function SellPage() {
             )}
           </div>
 
+          <CostSheetField value={costSheet} onChange={setCostSheet} sellingPriceMinor={priceMinor} shop={storeId} />
+
           {error && <ErrorNotice message={error} />}
 
           <button type="submit" className="btn btn--lg" disabled={busy || !canPublish}>
-            {busy ? 'Publishing…' : 'Publish listing'}
+            {busy ? (deal ? 'Sending…' : 'Publishing…') : deal ? '🤝 Send private deal' : 'Publish listing'}
           </button>
         </form>
 

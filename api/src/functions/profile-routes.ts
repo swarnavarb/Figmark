@@ -6,6 +6,7 @@ import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { confirmDetailsOn } from './order-routes.js';
 
 /**
  * A page about somebody, and what other people have said about them.
@@ -300,11 +301,78 @@ async function saveProfile(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/**
+ * POST /api/me/reversal-details - Buyer Settings' "Payment Reversal Details".
+ *
+ * Where a cancelled, paid order's money comes back to. Free text throughout,
+ * the same discipline as a seller's own payment details: this app is not
+ * validating a bank account, only carrying what the buyer typed accurately.
+ * No provider is hard-coded - UPI, bank transfer, whatever the buyer wants to
+ * name in `method`.
+ */
+async function saveReversalDetails(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const record = await repository.getUserById(user.id);
+  if (!record) return error(404, 'not_found', 'This account no longer exists.');
+
+  let body: { method?: string; identifier?: string; accountName?: string; notes?: string; qrCodeUrl?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const method = (body.method ?? '').trim();
+  const identifier = (body.identifier ?? '').trim();
+  const accountName = (body.accountName ?? '').trim();
+  if (!method || !identifier || !accountName) {
+    return error(400, 'invalid_details', 'Add how you are paid, the account/UPI/identifier, and the name on it.');
+  }
+
+  const now = new Date().toISOString();
+  record.reversalDetails = {
+    method: method.slice(0, 60),
+    identifier: identifier.slice(0, 120),
+    accountName: accountName.slice(0, 120),
+    notes: body.notes?.trim().slice(0, 300) || null,
+    qrCodeUrl: body.qrCodeUrl?.trim() || null,
+    updatedAt: now,
+  };
+  record.updatedAt = now;
+  const saved = await repository.updateUser(record);
+
+  // Saving them answers every seller who asked: the details are now current,
+  // which is all a confirmation says. Each is told they can refund.
+  let answered = 0;
+  for (const order of await repository.listOrdersForBuyer(user.id)) {
+    if (!order.detailsCheck?.requestedAt || order.detailsCheck.confirmedAt) continue;
+    await confirmDetailsOn(repository, order, saved, now);
+    answered += 1;
+  }
+  return json(200, { reversalDetails: saved.reversalDetails ?? null, answeredRequests: answered });
+}
+
+/** GET /api/me/reversal-details - read back what is on file. */
+async function reversalDetails(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const record = await repository.getUserById(user.id);
+  if (!record) return error(404, 'not_found', 'This account no longer exists.');
+  return json(200, { reversalDetails: record.reversalDetails ?? null });
+}
+
 export const creditRoute = handler(credit);
 export const saveProfileRoute = handler(saveProfile);
 export const pageReviewsRoute = handler(pageReviews);
 export const writePageReviewRoute = handler(writePageReview);
 export const tradeReviewsRoute = handler(tradeReviews);
+export const saveReversalDetailsRoute = handler(saveReversalDetails);
+export const reversalDetailsRoute = handler(reversalDetails);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -313,3 +381,5 @@ app.http('page-reviews', { ...anon, methods: ['GET'], route: 'users/{id}/page-re
 app.http('page-review-write', { ...anon, methods: ['POST'], route: 'users/{id}/page-reviews/new', handler: writePageReviewRoute });
 app.http('user-reviews', { ...anon, methods: ['GET'], route: 'users/{id}/reviews', handler: tradeReviewsRoute });
 app.http('me-profile-save', { ...anon, methods: ['POST'], route: 'me/profile', handler: saveProfileRoute });
+app.http('me-reversal-details-get', { ...anon, methods: ['GET'], route: 'me/reversal-details', handler: reversalDetailsRoute });
+app.http('me-reversal-details-save', { ...anon, methods: ['POST'], route: 'me/reversal-details/save', handler: saveReversalDetailsRoute });

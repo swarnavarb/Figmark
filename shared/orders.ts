@@ -1,4 +1,6 @@
-import type { Order, Review } from './models.js';
+import type { OrderStatus } from './enums.js';
+import type { DisputeTopic, Order, Review } from './models.js';
+import { rupees } from './payments.js';
 
 /**
  * What may happen to an order, and who may do it.
@@ -37,7 +39,14 @@ export const REVIEW_REVEAL_DAYS = 14;
 /** Days a seller has to answer a dispute before it needs a human. */
 export const DISPUTE_RESPONSE_DAYS = 3;
 
-export type OrderAction = 'pay' | 'settle_claim' | 'confirm' | 'dispute' | 'review' | 'reject';
+export type OrderAction =
+  | 'pay' | 'settle_claim' | 'confirm' | 'dispute' | 'review' | 'reject' | 'pay_more' | 'refund_credit'
+  // Accepting a fresh order or booking, and calling one off once it is.
+  | 'accept' | 'cancel'
+  // The reversal of a paid, cancelled order, and the dispute at the end of it.
+  | 'request_reversal_details' | 'submit_reversal' | 'confirm_reversal_details' | 'ack_reversal' | 'raise_dispute'
+  // The buyer answering whether a returned extra payment reached them.
+  | 'ack_credit_refund';
 
 /** Protection is only offered where the company has granted the seller it. */
 export function protectionFeeMinor(totalMinor: number, feeBasisPoints: number): number {
@@ -51,6 +60,14 @@ export function sideOf(order: Pick<Order, 'buyerId' | 'sellerId'>, viewerId: str
   if (order.buyerId === viewerId) return 'buyer';
   if (order.sellerId === viewerId) return 'seller';
   return null;
+}
+
+/**
+ * Whether the buyer has gone past Buy - paid, paid an advance, or booked.
+ * Until then the order is the buyer's checkout and nobody else's business.
+ */
+export function isPlaced(order: Pick<Order, 'placedAt'>): boolean {
+  return order.placedAt !== null;
 }
 
 /**
@@ -78,17 +95,22 @@ export function actionsFor(
   order: Pick<
     Order,
     'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
-  >,
+  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck' | 'placedAt'>>,
   viewerId: string,
   reviewed = false,
 ): OrderAction[] {
   const side = sideOf(order, viewerId);
   if (!side) return [];
+  // A checkout the buyer has not gone ahead with is not the seller's yet.
+  if (side === 'seller' && order.placedAt === null) return [];
 
   const actions: OrderAction[] = [];
 
-  // Only the buyer pays, and only while nothing has been paid.
-  if (side === 'buyer' && order.paymentStatus === 'unpaid' && order.status === 'pending_payment') {
+  // Only the buyer pays, and only while nothing has been paid. A booking is
+  // a pledge, not a payment - it asks for money only once the seller has
+  // said yes, per the tagline on the Book option itself.
+  const mayPayNow = !order.bookingOnly || order.accepted === true;
+  if (side === 'buyer' && mayPayNow && order.paymentStatus === 'unpaid' && order.status === 'pending_payment') {
     actions.push('pay');
   }
 
@@ -98,14 +120,63 @@ export function actionsFor(
   // their own bank can tell them.
   if (side === 'seller' && order.paymentStatus === 'claimed') actions.push('settle_claim');
 
+  // An advance leaves a balance, and the buyer pays it down in as many goes as
+  // they like - always by the method they started with.
+  const live = order.status !== 'cancelled' && order.status !== 'refunded' && order.status !== 'rejected';
+  if (side === 'buyer' && live && order.paymentStatus === 'partially_paid') actions.push('pay_more');
+
+  // Money paid over the balance is the buyer's, and only the seller holds it.
+  if (side === 'seller' && order.credits?.some((credit) => credit.status === 'open' || credit.status === 'held')) {
+    actions.push('refund_credit');
+  }
+  if (side === 'buyer' && order.credits?.some((credit) => credit.status === 'refund_pending')) {
+    actions.push('ack_credit_refund');
+  }
+
+  // A brand new order or booking is waiting on the seller to say yes before
+  // anything else happens to it - nobody has paid, nobody has claimed to, and
+  // the seller has not yet said either way.
+  const fresh = order.status === 'pending_payment' && order.paymentStatus === 'unpaid'
+    && !order.accepted && !order.paymentClaim;
+  if (side === 'seller' && fresh) actions.push('accept');
+
   // The seller cannot serve it. Every order on this marketplace is a promise
   // made before anything moves - the stock may be gone, the supplier may have
   // pulled the line, the lot may not go - so the seller needs a way to say so
-  // that is not silence. Only before it ships, and never once money is held:
-  // after that it is a refund or a dispute, which are different conversations
-  // with different rules.
-  const unshipped = order.status === 'pending_payment' || order.status === 'confirmed';
-  if (side === 'seller' && unshipped && order.escrow.state !== 'held') actions.push('reject');
+  // that is not silence. Only before it is accepted, and never once money is
+  // held: after that it is `cancel`, a different button with a different
+  // ending, because the buyer was already told yes.
+  if (side === 'seller' && fresh && order.escrow.state !== 'held') actions.push('reject');
+
+  // Once accepted or placed, the same X button means something else: the
+  // order is being called off after the buyer was told it would happen.
+  const acceptedOrPlaced =
+    (order.status === 'pending_payment' && order.accepted === true)
+    || order.status === 'confirmed' || order.status === 'in_fulfilment' || order.status === 'shipped';
+  if (side === 'seller' && acceptedOrPlaced) actions.push('cancel');
+
+  // The reversal of a paid, cancelled order - one step at a time, and only
+  // for the two people it concerns.
+  if (order.status === 'payment_reversal_pending' && side === 'seller') actions.push('submit_reversal');
+
+  // Where the buyer's money goes back to. A seller about to refund anything -
+  // a reversal, an overpayment, a refund of their own - may ask the buyer to
+  // add or check those details, and the buyer answers by confirming or saving
+  // them.
+  const owesMoneyBack = order.status === 'payment_reversal_pending'
+    || (order.credits ?? []).some((credit) => credit.status === 'open' || credit.status === 'held')
+    || (order.payments ?? []).some((payment) => payment.kind !== 'refund');
+  if (side === 'seller' && owesMoneyBack) actions.push('request_reversal_details');
+  const asked = Boolean(order.detailsCheck?.requestedAt && !order.detailsCheck.confirmedAt);
+  if (side === 'buyer' && (order.status === 'payment_reversal_pending' || asked)) actions.push('confirm_reversal_details');
+  if (order.status === 'cancelled_reversed' && side === 'buyer' && order.reversal
+    && order.reversal.buyerResponse === null) {
+    actions.push('ack_reversal');
+  }
+  if (order.status === 'cancelled_reversed' && side === 'buyer' && order.reversal?.buyerResponse === 'not_received'
+    && !order.reversal.disputeRaisedAt) {
+    actions.push('raise_dispute');
+  }
 
   // Confirming delivery is the buyer's alone: it is the one fact in the whole
   // pipeline that only they can know. The seller ticking "dispatched" is not
@@ -156,4 +227,72 @@ export function scoreFrom(ratings: readonly number[]): number | null {
 /** ISO timestamp `days` from `from`. */
 export function daysFrom(days: number, from = new Date()): string {
   return new Date(from.getTime() + days * 86_400_000).toISOString();
+}
+
+/**
+ * An order that came to nothing before it shipped - called off, either way.
+ *
+ * `rejected` split off `cancelled` so the two could be told apart on screen,
+ * but everywhere that used to read "cancelled" to mean "does not count" -
+ * stock, revenue, active-order counts - both belong in that same bucket.
+ */
+export function isCancelledLike(status: OrderStatus): boolean {
+  return status === 'cancelled' || status === 'rejected';
+}
+
+/** One rejection the viewer could dispute, and what to call it. */
+export interface DisputeSubject {
+  subject: string;
+  kind: Exclude<DisputeTopic, 'escrow' | 'general'>;
+  amountMinor: number;
+  label: string;
+}
+
+/**
+ * Every "I paid, they say it never came" on this order that the viewer - the
+ * side that paid - could raise a dispute about, and has not yet.
+ *
+ * The buyer, when the seller denied a payment they claimed. The seller, when
+ * the buyer said a refund or a payment reversal they sent did not arrive.
+ * Keyed by what was rejected, so each rejection can be disputed once, and a
+ * fresh claim that is then denied again is a fresh thing to dispute.
+ */
+export function disputeSubjects(
+  order: Pick<Order, 'buyerId' | 'sellerId' | 'unitPriceMinor' | 'quantity'>
+    & Partial<Pick<Order, 'paymentClaim' | 'credits' | 'reversal' | 'disputeLinks'>>,
+  viewerId: string,
+): DisputeSubject[] {
+  const side = sideOf(order, viewerId);
+  if (!side) return [];
+  const out: DisputeSubject[] = [];
+
+  const claim = order.paymentClaim;
+  if (side === 'buyer' && claim?.decision === 'denied') {
+    const amount = claim.amountMinor ?? order.unitPriceMinor * order.quantity;
+    out.push({
+      subject: `claim:${claim.claimedAt}`, kind: 'payment_rejected', amountMinor: amount,
+      label: `The seller says your payment of ${rupees(amount)} did not arrive`,
+    });
+  }
+  if (side === 'seller') {
+    for (const credit of order.credits ?? []) {
+      for (const entry of credit.refundLog ?? []) {
+        if (entry.status !== 'not_received') continue;
+        out.push({
+          subject: `refund:${entry.id}`, kind: 'refund_rejected', amountMinor: entry.amountMinor,
+          label: `The buyer says the ${rupees(entry.amountMinor)} you refunded did not arrive`,
+        });
+      }
+    }
+    const reversal = order.reversal;
+    if (reversal?.buyerResponse === 'not_received' && reversal.reversedAt) {
+      out.push({
+        subject: `reversal:${reversal.reversedAt}`, kind: 'reversal_rejected', amountMinor: reversal.amountMinor,
+        label: `The buyer says the ${rupees(reversal.amountMinor)} reversal did not arrive`,
+      });
+    }
+  }
+
+  const raised = new Set((order.disputeLinks ?? []).map((dispute) => dispute.subject));
+  return out.filter((entry) => !raised.has(entry.subject));
 }

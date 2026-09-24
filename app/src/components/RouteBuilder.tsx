@@ -3,7 +3,7 @@ import { Icon, type IconName } from './Icon';
 import { Modal } from './ui';
 import { ORDER_CHECKPOINTS } from '@shared/enums';
 import {
-  STAGE_ICONS, STAGE_ICON_LABELS, TRIGGER_LABELS, groupStages, sideOf, stepId,
+  STAGE_ICONS, STAGE_ICON_LABELS, TRACKING_STATUS_OPTIONS, TRIGGER_LABELS, groupStages, sideOf, stepId,
   type RouteStep, type StageGroup, type StageIcon, type StepSide,
 } from '@shared/routes';
 
@@ -28,6 +28,7 @@ export function RouteBuilder({ steps, onChange, split = false }: {
   split?: boolean;
 }) {
   const [editingStage, setEditingStage] = useState<string | null>(null);
+  const [joinInfoOpen, setJoinInfoOpen] = useState(false);
 
   /** Positions renumbered, and - when split - the two halves kept in order. */
   const commit = (next: RouteStep[]) => {
@@ -80,6 +81,10 @@ export function RouteBuilder({ steps, onChange, split = false }: {
     const groups = groupStages(steps);
     const to = from + dir;
     if (to < 0 || to >= groups.length) return;
+    // Neither end of the swap may hold a locked step - "Order Placed" is
+    // always first, so nothing may trade places with its stage either.
+    if (groups[from]!.steps.some(({ step }) => step.locked)) return;
+    if (groups[to]!.steps.some(({ step }) => step.locked)) return;
     const next = [...groups];
     const [taken] = next.splice(from, 1);
     next.splice(to, 0, taken!);
@@ -96,7 +101,25 @@ export function RouteBuilder({ steps, onChange, split = false }: {
         <div key={stage.stageId} className="routebuilder__unit">
           {stageIndex > 0 && <Icon name="down" size={16} className="routearrow" />}
           {joinAt >= 0 && stage.steps[0]!.index === joinAt && (
-            <div className="joinline"><span>usually joins a lot here</span></div>
+            <div className="joinline">
+              <span className="joinline__label">
+                usually joins a lot here
+                {/* Tap, not hover: most of this is worked from a phone. */}
+                <button type="button" className="joinline__info" aria-expanded={joinInfoOpen}
+                  aria-label="Why this line is only usual, not required"
+                  onClick={() => setJoinInfoOpen((value) => !value)}>
+                  i
+                </button>
+              </span>
+            </div>
+          )}
+          {joinAt >= 0 && stage.steps[0]!.index === joinAt && joinInfoOpen && (
+            <p className="field__hint joinline__note">
+              An item can be added to a lot at any time — before this line or after it. It is
+              tracked automatically either way: the moment it joins, it is placed at the right
+              point on this ladder from what has already happened to it and how far the lot has
+              already moved.
+            </p>
           )}
           <StageBox
             stage={stage}
@@ -146,10 +169,12 @@ export function RouteBuilder({ steps, onChange, split = false }: {
           </label>
 
           <div className="row row--between">
-            <button type="button" className="btn btn--quiet btn--sm"
-              onClick={() => { removeStage(editing.stageId); setEditingStage(null); }}>
-              <Icon name="trash" size={13} /> Delete stage
-            </button>
+            {!editing.steps.some(({ step }) => step.locked) && (
+              <button type="button" className="btn btn--quiet btn--sm"
+                onClick={() => { removeStage(editing.stageId); setEditingStage(null); }}>
+                <Icon name="trash" size={13} /> Delete stage
+              </button>
+            )}
             <button type="button" className="btn btn--sm" onClick={() => setEditingStage(null)}>Done</button>
           </div>
         </Modal>
@@ -188,12 +213,14 @@ function StageBox({ stage, stageIndex, stageCount, onEdit, onMoveStage, onAddSte
           <span className="stagebox__name">{stage.stageName || 'Untitled stage'}</span>
           <Icon name="chevron" size={13} />
         </button>
-        <span className="stagebox__reorder">
-          <button type="button" className="iconbtn" aria-label="Move stage earlier"
-            disabled={stageIndex === 0} onClick={() => onMoveStage(-1)}><Icon name="up" size={12} /></button>
-          <button type="button" className="iconbtn" aria-label="Move stage later"
-            disabled={stageIndex === stageCount - 1} onClick={() => onMoveStage(1)}><Icon name="down" size={12} /></button>
-        </span>
+        {!stage.steps.some(({ step }) => step.locked) && (
+          <span className="stagebox__reorder">
+            <button type="button" className="iconbtn" aria-label="Move stage earlier"
+              disabled={stageIndex === 0} onClick={() => onMoveStage(-1)}><Icon name="up" size={12} /></button>
+            <button type="button" className="iconbtn" aria-label="Move stage later"
+              disabled={stageIndex === stageCount - 1} onClick={() => onMoveStage(1)}><Icon name="down" size={12} /></button>
+          </span>
+        )}
       </div>
 
       <div className="stagebox__steps">
@@ -221,18 +248,57 @@ function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
   onMove: (from: number, to: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const isPreset = (TRACKING_STATUS_OPTIONS as readonly string[]).includes(step.name);
+  /* Once the seller has typed their own words, stay in that mode even while
+     they are still typing and the name happens to be empty or mid-edit -
+     recomputing "is this a preset" from the value alone would snap them back
+     to the dropdown on every keystroke. Called unconditionally, before the
+     locked-step return below, so this component's hook order never depends
+     on that flag. */
+  const [customMode, setCustomMode] = useState(!isPreset && step.name.trim().length > 0);
+
+  if (step.locked) {
+    // Always present, never renamed, moved or removed - "Order Placed" reads
+    // as a fact about every route rather than a step a seller could break.
+    return (
+      <div className="stagestep stagestep--locked">
+        <div className="stagestep__main">
+          <span className="stagestep__dot" aria-hidden="true" />
+          <span className="stagestep__name stagestep__name--static">{step.name}</span>
+          <Icon name="lock" size={13} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="stagestep">
       <div className="stagestep__main">
         <span className="stagestep__dot" aria-hidden="true" />
-        <input className="stagestep__name" value={step.name} placeholder="What happens here"
-          aria-label={`Step ${row + 1} name`}
-          onChange={(event) => onChange(index, { name: event.target.value })} />
+        <select className="stagestep__name" aria-label={`Step ${row + 1} status`}
+          value={customMode ? 'Custom' : (isPreset ? step.name : '')}
+          onChange={(event) => {
+            if (event.target.value === 'Custom') { setCustomMode(true); return; }
+            setCustomMode(false);
+            onChange(index, { name: event.target.value });
+          }}>
+          <option value="" disabled>What happens here</option>
+          {TRACKING_STATUS_OPTIONS.map((label) => <option key={label} value={label}>{label}</option>)}
+          <option value="Custom">Custom</option>
+        </select>
         <button type="button" className="iconbtn" onClick={() => setOpen((value) => !value)}
           aria-label={open ? 'Collapse step details' : 'Edit step details'}>
           <Icon name="chevron" size={13} />
         </button>
       </div>
+
+      {customMode && (
+        <div className="stagestep__custom">
+          <input className="stagestep__desc" value={step.name} placeholder="Name this status"
+            aria-label={`Step ${row + 1} custom name`}
+            onChange={(event) => onChange(index, { name: event.target.value })} />
+        </div>
+      )}
 
       {open && (
         <div className="stagestep__more">
@@ -249,6 +315,16 @@ function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
                 <option key={checkpoint} value={checkpoint}>The "{TRIGGER_LABELS[checkpoint].button}" button</option>
               ))}
             </select>
+            {/* Data the trigger has always carried, said plainly: a step bound
+                to a checkpoint moves itself when that checkpoint is ticked,
+                today from this app's own buttons and later, potentially, from
+                a carrier API - the binding does not change, only what presses
+                it. */}
+            {step.trigger ? (
+              <span className="badge badge--accent" style={{ justifySelf: 'start' }}>⚡ Activity Triggered</span>
+            ) : (
+              <span className="badge badge--quiet" style={{ justifySelf: 'start' }}>✋ Manual</span>
+            )}
           </label>
 
           <div className="stagestep__acts">

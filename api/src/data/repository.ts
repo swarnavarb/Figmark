@@ -3,7 +3,7 @@ import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -152,7 +152,20 @@ export interface Repository {
    * listing are shown as a group.
    */
   listOrdersForListing(listingId: string): Promise<Order[]>;
+  /**
+   * Writes an order. One already placed moves stock and pre-order fill at
+   * once; a checkout (`placedAt: null`) moves nothing until `takeStock`.
+   *
+   * Every seller-facing list here - by seller, lot, listing, awaiting a lot,
+   * held by an escrow - leaves checkouts out: pressing Buy is not an order.
+   */
   createOrder(order: Order): Promise<Order>;
+  /** Moves stock and pre-order fill for a checkout the buyer has just placed. */
+  takeStock(order: Order): Promise<void>;
+  /** A seller's checkouts nobody went ahead with - for insights, never for the order book. */
+  listCheckoutDrafts(sellerId: string): Promise<Order[]>;
+  /** Every save of any of these items. */
+  listLikesForListings(listingIds: readonly string[]): Promise<Like[]>;
 
   /**
    * Reviews written about one person, newest first.

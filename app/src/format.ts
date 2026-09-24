@@ -15,6 +15,18 @@ export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** "12th Sept 26" - the tracking timeline's own date, everywhere it appears. */
+export function formatDateOrdinal(iso: string): string {
+  const date = new Date(iso);
+  const day = date.getDate();
+  const suffix = day % 10 === 1 && day !== 11 ? 'st'
+    : day % 10 === 2 && day !== 12 ? 'nd'
+    : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
+  const month = date.toLocaleDateString('en-IN', { month: 'short' });
+  const year = String(date.getFullYear()).slice(-2);
+  return `${day}${suffix} ${month} ${year}`;
+}
+
 /** Whole days until `iso`, floored at zero. */
 export function daysUntil(iso: string): number {
   return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { isLotEvent, labelFor } from '@shared/fulfilment';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { isDirect, isLotEvent, labelFor } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, WAITING_FOR_LOT } from '@shared/routes';
 import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
-import { reasonsFor } from '@shared/disputes';
+import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS } from '@shared/enums';
 import type { Order, SellerPaymentDetails } from '@shared/models';
 import {
@@ -11,8 +11,10 @@ import {
   type Checkout, type EscrowOption, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
 } from '../api';
 import { Ladder } from '../components/Ladder';
-import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
-import { formatDate, formatMoney, timeAgo } from '../format';
+import { PaymentHistory } from '../components/Buy';
+import { orderMoney } from '@shared/payments';
+import { ErrorNotice, Icon, Modal, PersonLink, StepMark } from '../components/ui';
+import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 
 /**
  * One order, as the buyer sees it.
@@ -22,13 +24,44 @@ import { formatDate, formatMoney, timeAgo } from '../format';
  * than rewinding, and the only facts inherited from the lot are the tracking
  * reference and the dispatch estimate.
  */
+/**
+ * Colour for the order's own status chip.
+ *
+ * Kept distinct on purpose - `rejected` and `cancelled` read the same colour
+ * only by accident, and section 21 is explicit that the two must never be
+ * confused. Colour is never the only signal: the word beside it is the same
+ * `order.status` text either way.
+ */
+function statusTone(status: Order['status']): string {
+  switch (status) {
+    case 'delivered': case 'cancelled_reversed': return 'ok';
+    case 'rejected': case 'dispute_raised': return 'danger';
+    case 'cancelled': return 'quiet';
+    case 'payment_reversal_pending': return 'accent';
+    default: return 'warn';
+  }
+}
+
 export function OrderPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const cameFrom = (useLocation().state as { from?: string } | null)?.from ?? null;
   const [data, setData] = useState<OrderTracking | null>(null);
   const [state, setState] = useState<OrderState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
+  const [tab, setTab] = useState<'tracking' | 'details'>('tracking');
+  const [checkpointBusy, setCheckpointBusy] = useState(false);
+
+  async function toggleWarehouse(order: Order) {
+    setCheckpointBusy(true);
+    try {
+      await api.setCheckpoint(order.id, 'china_received', !order.checkpoints?.china_received);
+      await load();
+    } finally {
+      setCheckpointBusy(false);
+    }
+  }
 
   // Two calls because they answer different questions - where the parcel is,
   // and what may be done about it - and the second settles the escrow clock on
@@ -54,16 +87,19 @@ export function OrderPage() {
   const currentIndex = stages.indexOf(currentStage);
   /** The lot it is in now, as opposed to the ones it has been in. */
   const latestLotAt = [...order.stageHistory].reverse().find(isLotEvent)?.enteredAt ?? null;
-  // Newest first: what just happened matters more than what happened first.
-  const history = [...order.stageHistory].reverse();
 
   return (
     <main className="page">
-      {/* Both sides read this screen, so it goes back to whichever list they
-          came from rather than always to the buyer's. */}
+      {/* Back to exactly where they came from - the list, its filters, and
+          this order within it - rather than to the top of some list. Opened
+          from anywhere that did not say (a notification, a shared link), a
+          seller lands on their orders with this one in view. */}
       <button className="btn btn--quiet" style={{ marginBottom: 16 }}
-        onClick={() => navigate(state.side === 'seller' ? '/me?tab=sales' : '/me?tab=purchases')}>
-        <Icon name="back" size={14} /> {state.side === 'seller' ? 'My sales' : 'My purchases'}
+        onClick={() => navigate(
+          cameFrom ?? (state.side === 'seller' ? '/shop?tab=payments' : '/purchases'),
+          { state: { focusOrder: order.id } },
+        )}>
+        <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : 'My Purchases'}
       </button>
 
       <div className="page__head">
@@ -74,7 +110,7 @@ export function OrderPage() {
             {timeAgo(order.createdAt)}
           </p>
         </div>
-        <span className={`badge badge--${order.status === 'delivered' ? 'ok' : 'warn'}`}>
+        <span className={`badge badge--${statusTone(order.status)} order-status`}>
           {order.status.replace(/_/g, ' ')}
         </span>
       </div>
@@ -83,10 +119,35 @@ export function OrderPage() {
           screen with a payment to make should not have to scroll past a
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
+      <DisputePanel state={state} onDone={load} />
 
-      <div className="detail">
+      <div className="tabs tabs--vivid">
+        <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
+          onClick={() => setTab('tracking')}>
+          Tracking
+        </button>
+        <button type="button" className={`tab${tab === 'details' ? ' is-on' : ''}`}
+          onClick={() => setTab('details')}>
+          Details
+        </button>
+      </div>
+
+      {tab === 'tracking' && (
         <div className="card card--pad stack">
-          <h2>Where it is</h2>
+          <div className="row row--between">
+            <h2 style={{ margin: 0 }}>Where it is</h2>
+            {/* The same tick the order row offers, so a seller working from
+                this screen never has to go back to the list for it. */}
+            {state.side === 'seller' && !isDirect(order) && (
+              <button type="button" className={`orow__toggle${order.checkpoints?.china_received ? ' is-on' : ''}`}
+                aria-pressed={Boolean(order.checkpoints?.china_received)}
+                onClick={() => void toggleWarehouse(order)}
+                disabled={checkpointBusy}>
+                <Icon name={order.checkpoints?.china_received ? 'check' : 'box'} size={13} />
+                <span>China WH</span>
+              </button>
+            )}
+          </div>
 
           {/* The lot's own ladder, in the seller's words, when there is a
               lot. An item waiting for one gets what has actually happened
@@ -111,10 +172,10 @@ export function OrderPage() {
                 <span className="field__hint">
                   Travelling in {data.route.lotName} · lot #{data.route.lotNumber}
                 </span>
-                {/* With what the seller actually said along the way. The
-                    ladder is unchanged - the notes and the hand-overs hang off
-                    the rungs they happened at, which is where they were meant
-                    to be read. */}
+                {/* With what the seller actually said along the way, hung
+                    off the rung it happened at and dated - so a payment made
+                    after the parcel reached the warehouse reads under the
+                    warehouse tick, not above it. */}
                 <Ladder steps={data.route.steps} current={data.route.currentStep}
                   history={data.order.stageHistory}
                   waitingFor={data.route.waitingForLot ? WAITING_FOR_LOT : null}
@@ -143,10 +204,9 @@ export function OrderPage() {
                 <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
                   history={data.order.stageHistory}
                   waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
-                <p className="notice notice--warn">
-                  <strong>Not in a shipment yet.</strong> The seller groups orders into one
-                  shipment before it leaves. The rest of the journey appears as soon as yours
-                  joins one.
+                <p className="notice notice--info">
+                  <strong>Not yet added to a shipment lot.</strong> The rest of the journey
+                  appears as soon as your order is added to a lot.
                 </p>
               </>
             )
@@ -155,30 +215,19 @@ export function OrderPage() {
               {stages.map((stage, index) => (
                 <li key={stage}
                   className={`track__step${index < currentIndex ? ' is-done' : ''}${index === currentIndex ? ' is-current' : ''}`}>
-                  <span className="track__dot" aria-hidden="true" />
+                  <span className="track__dot" aria-hidden="true">
+                    <StepMark state={index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'todo'} size={7} />
+                  </span>
                   <span>{labelFor(stage)}</span>
                 </li>
               ))}
             </ol>
           )}
-
-          <div className="detail__section" style={{ marginTop: 8 }}>
-            <h3>History</h3>
-            {history.map((event, index) => (
-              <div key={`${event.stage}-${event.enteredAt}-${index}`} className="comment">
-                <div className="comment__head">
-                  {/* The step as the seller wrote it, where there is one: their
-                      words are what the buyer has been reading all along. */}
-                  <span className="comment__who">{event.step ?? labelFor(event.stage)}</span>
-                  <span className="faint">{formatDate(event.enteredAt)}</span>
-                </div>
-                {event.note && <p className="muted">{event.note}</p>}
-              </div>
-            ))}
-          </div>
         </div>
+      )}
 
-        <aside className="stack">
+      {tab === 'details' && (
+        <div className="detail">
           <div className="card card--pad stack">
             <div className="row row--between">
               <span className="muted">Total</span>
@@ -207,24 +256,40 @@ export function OrderPage() {
             ) : (
               <p className="faint">No tracking reference yet. It appears once the seller dispatches.</p>
             )}
+
+            {data.listing && (
+              <Link to={`/listing/${data.listing.id}`} className="order-product">
+                {data.listing.photoUrl
+                  ? <img src={data.listing.photoUrl} alt="" className="order-product__thumb" />
+                  : <span className="order-product__thumb order-product__thumb--none" aria-hidden="true" />}
+                <span className="order-product__body">
+                  <span className="order-product__name">{data.listing.title}</span>
+                  <span className="faint">View item</span>
+                </span>
+              </Link>
+            )}
           </div>
 
-          {/* Only while it is actually held. On a finished order this was still
-              explaining a hold that had already been released. */}
-          {order.escrow.state === 'held' && (
-            <p className="notice notice--info">
-              {order.protection?.escrowName ?? 'An escrow'} is holding this, and passes it to the seller
-              when you confirm delivery — or on its own {AUTO_RELEASE_DAYS} days after dispatch if you
-              neither confirm nor dispute it.
-            </p>
-          )}
-          {order.escrow.state === 'released' && order.completedAt && (
-            <p className="notice notice--ok">
-              Payment released to the seller on {formatDate(order.completedAt)}.
-            </p>
-          )}
-        </aside>
-      </div>
+          <aside className="stack">
+            <PaymentHistory order={order} side={state.side} onChanged={load} />
+
+            {/* Only while it is actually held. On a finished order this was still
+                explaining a hold that had already been released. */}
+            {order.escrow.state === 'held' && (
+              <p className="notice notice--info">
+                {order.protection?.escrowName ?? 'An escrow'} is holding this, and passes it to the seller
+                when you confirm delivery — or on its own {AUTO_RELEASE_DAYS} days after dispatch if you
+                neither confirm nor dispute it.
+              </p>
+            )}
+            {order.escrow.state === 'released' && order.completedAt && (
+              <p className="notice notice--ok">
+                Payment released to the seller on {formatDate(order.completedAt)}.
+              </p>
+            )}
+          </aside>
+        </div>
+      )}
 
       {changing && data.route && (
         <ChangeLotDialog
@@ -336,9 +401,11 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [paying, setPaying] = useState(() => state.actions.includes('pay'));
   const [settling, setSettling] = useState(false);
   const [disputing, setDisputing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [reversing, setReversing] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   const { order, actions } = state;
-  const disputeId = order.escrow.disputeId;
 
   async function run(name: string, fn: () => Promise<unknown>) {
     setBusy(name);
@@ -349,6 +416,9 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       setPaying(false);
       setSettling(false);
       setDisputing(false);
+      setCancelling(false);
+      setReversing(false);
+      setRejecting(false);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
     } finally {
@@ -360,13 +430,15 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
    * Whether this card has anything in it.
    *
    * Derived from the buttons the card can actually draw rather than from a
-   * hand-kept list of actions to ignore, because the two drifted: `reject` is
-   * offered to a seller on an unshipped order, has no button here, and was not
-   * in the ignore list - so a seller looking at a paid direct sale got an
-   * empty rounded rectangle above the timeline. Adding an action without a
-   * button can no longer produce one.
+   * hand-kept list of actions to ignore, because the two can drift. Adding an
+   * action without a button can no longer produce an empty rounded rectangle.
    */
-  const DRAWN_HERE = ['pay', 'settle_claim', 'confirm', 'dispute'] as const;
+  const DRAWN_HERE = [
+    'pay', 'settle_claim', 'confirm', 'dispute', 'pay_more', 'accept', 'reject', 'cancel',
+    'submit_reversal', 'confirm_reversal_details', 'ack_reversal', 'raise_dispute', 'ack_credit_refund',
+  ] as const;
+  const returned = (order.credits ?? []).filter((credit) => credit.status === 'refund_pending' && credit.pendingRefund);
+  const returnedMinor = returned.reduce((sum, credit) => sum + (credit.pendingRefund?.amountMinor ?? 0), 0);
   const nothingToDo = !actions.some((action) =>
     (DRAWN_HERE as readonly string[]).includes(action));
 
@@ -385,7 +457,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       {/* A claimed payment is the one state where each side is waiting on a
           different thing, so each is told which. */}
       {order.paymentStatus === 'claimed' && (
-        <p className="notice notice--info">
+        <p className="notice notice--purple">
           {state.side === 'buyer'
             ? 'You have told the seller you paid. They confirm it landed in their account before this moves — nothing else is needed from you.'
             : 'The buyer says they have paid. Check your own account, then say whether it arrived.'}
@@ -416,12 +488,6 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
         )
       )}
 
-      {disputeId && (
-        <Link to={`/dispute/${disputeId}`} className="notice notice--warn"
-          style={{ display: 'block', textDecoration: 'none' }}>
-          There is an open dispute on this order — tap to read it.
-        </Link>
-      )}
 
       {!nothingToDo && (
         <div className="card card--pad stack">
@@ -430,6 +496,11 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
               <button className="btn btn--lg" onClick={() => setPaying(true)}>
                 Pay {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}
               </button>
+            )}
+            {actions.includes('pay_more') && (
+              <Link to="/purchases" className="btn btn--lg">
+                💳 Pay more · {formatMoney(orderMoney(order).outstandingMinor, order.currency)} left
+              </Link>
             )}
             {actions.includes('settle_claim') && !settling && (
               <button className="btn btn--lg" onClick={() => setSettling(true)}>
@@ -447,13 +518,109 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
                 Something is wrong
               </button>
             )}
+            {actions.includes('accept') && (
+              <button className="btn btn--ok" disabled={busy !== null}
+                onClick={() => void run('accept', () => api.acceptOrder(order.id))}>
+                {busy === 'accept' ? 'Accepting…' : `✅ Accept${order.bookingOnly ? ' booking' : ''}`}
+              </button>
+            )}
+            {actions.includes('reject') && !rejecting && (
+              <button type="button" className="btn btn--danger" disabled={busy !== null}
+                onClick={() => setRejecting(true)}>
+                ❌ Reject
+              </button>
+            )}
+            {actions.includes('cancel') && !cancelling && (
+              <button className="btn btn--quiet" onClick={() => setCancelling(true)}>
+                ❌ Cancel order
+              </button>
+            )}
+            {(actions.includes('submit_reversal') || actions.includes('request_reversal_details')) && !reversing && (
+              <button className="btn btn--lg" onClick={() => setReversing(true)}>
+                ↩️ Payment reversal
+              </button>
+            )}
+            {actions.includes('confirm_reversal_details') && (
+              <button className="btn btn--lg" disabled={busy !== null}
+                onClick={() => void run('confirm-details', () => api.confirmReversalDetails(order.id))}>
+                {busy === 'confirm-details' ? 'Sending…' : "I've Updated My Payment Details"}
+              </button>
+            )}
+            {actions.includes('ack_reversal') && (
+              <span className="row" style={{ flexWrap: 'wrap' }}>
+                <button className="btn btn--lg" disabled={busy !== null}
+                  onClick={() => void run('ack', () => api.ackReversal(order.id, true))}>
+                  {busy === 'ack' ? 'Sending…' : 'Payment Received'}
+                </button>
+                <button className="btn btn--quiet" disabled={busy !== null}
+                  onClick={() => void run('ack-no', () => api.ackReversal(order.id, false))}>
+                  Payment Not Received
+                </button>
+              </span>
+            )}
+            {actions.includes('ack_credit_refund') && (
+              <div className="claimcard__ask">
+                <p style={{ margin: 0 }}>
+                  ↩️ The seller says they refunded{' '}
+                  <b>{formatMoney(returnedMinor, order.currency)}</b>
+                  {returned[0]?.pendingRefund?.reference ? ` (reference ${returned[0].pendingRefund.reference})` : ''}.
+                  Did it reach you?
+                </p>
+                <span className="row" style={{ flexWrap: 'wrap' }}>
+                  <button className="btn btn--ok" disabled={busy !== null}
+                    onClick={() => void run('credit-yes', () => api.ackCreditRefund(order.id, true))}>
+                    {busy === 'credit-yes' ? 'Sending…' : '✅ Received'}
+                  </button>
+                  <button className="btn btn--danger" disabled={busy !== null}
+                    onClick={() => void run('credit-no', () => api.ackCreditRefund(order.id, false))}>
+                    {busy === 'credit-no' ? 'Sending…' : '❌ Not received'}
+                  </button>
+                </span>
+              </div>
+            )}
+            {actions.includes('raise_dispute') && (
+              <button className="btn btn--danger" disabled={busy !== null}
+                onClick={() => void run('dispute-reversal', () => api.raiseDispute(order.id))}>
+                {busy === 'dispute-reversal' ? 'Raising…' : 'Raise a Dispute'}
+              </button>
+            )}
           </div>
+
+          {rejecting && (
+            <RejectOrder
+              order={order}
+              busy={busy === 'reject'}
+              onReject={(reason) => run('reject', () => api.rejectOrder(order.id, reason))}
+              onClose={() => setRejecting(false)}
+            />
+          )}
+
+          {cancelling && (
+            <CancelOrder
+              order={order}
+              busy={busy}
+              onCancel={(body) => run('cancel', () => api.cancelOrder(order.id, body))}
+              onClose={() => setCancelling(false)}
+            />
+          )}
+
+          {reversing && (
+            <ReversalPanel
+              order={order}
+              buyerHasReversalDetails={state.buyerHasReversalDetails}
+              busy={busy}
+              onRequestDetails={(message) => run('request-details', () => api.requestReversalDetails(order.id, message))}
+              onSubmit={(body) => run('submit-reversal', () => api.submitReversal(order.id, body))}
+              onClose={() => setReversing(false)}
+            />
+          )}
 
           {paying && (
             <BuyPanel
               order={order}
               busy={busy}
               onPaid={(body) => run('claim', () => api.claimPayment(order.id, body))}
+              onBook={() => run('book', () => api.bookOrder(order.id))}
               onCancel={() => setPaying(false)}
             />
           )}
@@ -486,6 +653,99 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
 }
 
 /**
+ * Disputes on this order - the first, recording-only version.
+ *
+ * When the side that paid is told the money never came, they get a Dispute
+ * button right there. Either side can also raise a dispute about anything
+ * else, with a reason. Both only put it on record - on the timeline, in
+ * My disputes for both people, and in a notification to the other side.
+ */
+function DisputePanel({ state, onDone }: { state: OrderState; onDone: () => Promise<void> }) {
+  const [writing, setWriting] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { order } = state;
+  const navigate = useNavigate();
+  // Every dispute on the order, of any kind, each opening the one page it is
+  // worked on. An escrow dispute from before orders indexed them is found by
+  // the pointer it left.
+  const raised = [...(order.disputeLinks ?? [])];
+  if (order.escrow.disputeId && !raised.some((link) => link.id === order.escrow.disputeId)) {
+    raised.push({
+      id: order.escrow.disputeId, topic: 'escrow', subject: order.escrow.disputeId,
+      raisedBy: '', raisedSide: state.side ?? 'buyer', raisedAt: order.updatedAt,
+    });
+  }
+
+  async function raise(key: string, body: { subject?: string; reason?: string }) {
+    setBusy(key);
+    setError(null);
+    try {
+      const { dispute } = await api.flagDispute(order.id, body);
+      setWriting(false);
+      setReason('');
+      // Straight to where it is worked: the other side answers there.
+      navigate(`/dispute/${dispute.id}`);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not record that.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="stack" style={{ marginBottom: 20 }}>
+      {state.disputable.map((entry) => (
+        <div key={entry.subject} className="disputebar">
+          <span>⚠️ {entry.label}.</span>
+          <button type="button" className="btn btn--sm btn--danger" disabled={busy !== null}
+            onClick={() => void raise(entry.subject, { subject: entry.subject })}>
+            {busy === entry.subject ? 'Recording…' : '⚖️ Dispute'}
+          </button>
+        </div>
+      ))}
+
+      {raised.map((dispute) => (
+        <Link key={dispute.id} to={`/dispute/${dispute.id}`} className="disputebar disputebar--done">
+          <span>
+            ⚖️ {DISPUTE_TOPIC_LABELS[dispute.topic]} — raised by the {dispute.raisedSide} on{' '}
+            {formatDateOrdinal(dispute.raisedAt)}. Open the dispute
+          </span>
+          <Icon name="right" size={14} />
+        </Link>
+      ))}
+
+      {writing ? (
+        <div className="card card--pad stack">
+          <label className="field">
+            <span>What is the dispute about?</span>
+            <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
+              placeholder="The item arrived damaged and the seller is not answering…" />
+            <span className="field__hint">
+              It is recorded and the other side is told. It shows under My disputes for both of you.
+            </span>
+          </label>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--danger" disabled={busy !== null || reason.trim().length < 4}
+              onClick={() => void raise('general', { reason: reason.trim() })}>
+              {busy === 'general' ? 'Recording…' : 'Raise dispute'}
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={() => setWriting(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
+          onClick={() => setWriting(true)}>
+          ⚖️ Raise a dispute
+        </button>
+      )}
+      {error && <ErrorNotice message={error} />}
+    </div>
+  );
+}
+
+/**
  * How to pay for this, which is two genuinely different transactions.
  *
  * Buying direct means the money leaves the buyer's bank and arrives in the
@@ -496,12 +756,14 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
  * with what each one costs and gives up written on it, rather than a tick box
  * on a single Pay button.
  */
-function BuyPanel({ order, busy, onPaid, onCancel }: {
+function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   order: Order;
   busy: string | null;
-  onPaid: (body: { reference: string; screenshot: string | null }) => void | Promise<void>;
+  onPaid: (body: { reference: string; screenshot: string | null; plan?: 'full' | 'advance' }) => void | Promise<void>;
+  onBook: () => void | Promise<void>;
   onCancel: () => void;
 }) {
+  const [plan, setPlan] = useState<'full' | 'advance'>('full');
   const [quote, setQuote] = useState<Checkout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<'direct' | 'protected' | null>(null);
@@ -523,13 +785,15 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
   const canProtect = quote.escrows.length > 0;
   const canPayDirect = quote.sellerPayment !== null;
 
+  const dueNow = plan === 'advance' && quote.advanceMinor != null ? quote.advanceMinor : quote.itemMinor;
+
   if (route === 'direct' && quote.sellerPayment) {
     return (
       <DirectPay
-        quote={quote}
+        quote={{ ...quote, itemMinor: dueNow }}
         payment={quote.sellerPayment}
         busy={busy === 'claim'}
-        onPaid={onPaid}
+        onPaid={(body) => onPaid({ ...body, plan })}
         onBack={() => setRoute(null)}
       />
     );
@@ -537,7 +801,33 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
 
   return (
     <div className="stack">
+      {order.placedAt === null && (
+        <p className="notice notice--info">
+          🛒 Not placed yet — the seller gets your order once you pick one: pay in full, pay an advance, or book.
+        </p>
+      )}
       <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
+
+      {/* Full or advance, offered only where the seller takes an advance. The
+          method chosen below is then the one every later payment uses. */}
+      {quote.advanceMinor != null && (
+        <div className="seg" role="radiogroup" aria-label="How much to pay now">
+          <button type="button" role="radio" aria-checked={plan === 'full'}
+            className={plan === 'full' ? 'is-on' : ''} onClick={() => setPlan('full')}>
+            💯 Pay full · {formatMoney(quote.itemMinor, quote.currency)}
+          </button>
+          <button type="button" role="radio" aria-checked={plan === 'advance'}
+            className={plan === 'advance' ? 'is-on' : ''} onClick={() => setPlan('advance')}>
+            🌱 Pay advance · {formatMoney(quote.advanceMinor, quote.currency)}
+          </button>
+        </div>
+      )}
+      {plan === 'advance' && quote.advanceMinor != null && (
+        <p className="notice notice--info">
+          {quote.advancePercent}% now, {formatMoney(quote.itemMinor - quote.advanceMinor, quote.currency)} later
+          from My Purchases — using the same payment method you pick here.
+        </p>
+      )}
 
       <button type="button" className="buyway" disabled={!canPayDirect}
         onClick={() => setRoute('direct')}>
@@ -547,7 +837,7 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
             ? <>Pay <PersonLink party={quote.seller} /> yourself, then show them it went through. Nothing is held, so anything that goes wrong is between the two of you.</>
             : <><PersonLink party={quote.seller} /> has not added any payment details, so there is nowhere to send the money.</>}
         </span>
-        <span className="buyway__price">{formatMoney(quote.itemMinor, quote.currency)}</span>
+        <span className="buyway__price">{formatMoney(dueNow, quote.currency)}</span>
       </button>
 
       <button type="button" className={`buyway${route === 'protected' ? ' is-on' : ''}`}
@@ -557,9 +847,10 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
           if (!chosen) setPicking(true);
         }}>
         <span className="buyway__title">Add buyer protection</span>
+        <span className="badge badge--accent" style={{ justifySelf: 'start' }}>Escrow: Community Manager</span>
         <span className="buyway__note">
           {canProtect
-            ? 'An escrow holds the money until you confirm the item arrived, and settles it if the two of you disagree. Their fee is on top.'
+            ? 'The payment is considered held by Figmark until you confirm the item arrived, and settled if the two of you disagree. Their fee is on top.'
             : 'Nobody approved to hold payments can be neutral in this trade.'}
         </span>
         <span className="buyway__price">
@@ -568,6 +859,16 @@ function BuyPanel({ order, busy, onPaid, onCancel }: {
             : `${formatMoney(quote.itemMinor, quote.currency)} + fee`}
         </span>
       </button>
+
+      {!order.bookingOnly && (
+        <button type="button" className="buyway" onClick={() => void onBook()}>
+          <span className="buyway__title">📘 Book</span>
+          <span className="buyway__note">
+            Payment to be done immediately as the seller confirms the availability of the item. Booking
+            itself does not count as payment.
+          </span>
+        </button>
+      )}
 
       {route === 'protected' && chosen && (
         <div className="card card--pad stack">
@@ -871,14 +1172,25 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
   const [denying, setDenying] = useState(false);
   const [reason, setReason] = useState('');
   const claim = order.paymentClaim;
+  // What this claim is actually for - not the order's full price, which is
+  // what an advance or a further instalment is never asking to be confirmed
+  // against. Absent only on a claim recorded before this field existed.
+  const claimedMinor = claim?.amountMinor ?? order.unitPriceMinor * order.quantity;
+  const money = orderMoney(order);
+  const balanceAfter = Math.max(0, money.outstandingMinor - claimedMinor);
+  const claimLabel = claim?.plan === 'additional' ? 'Additional payment'
+    : claim?.plan === 'advance' ? 'Advance payment' : 'Full payment';
 
   return (
     <div className="stack">
-      <div className="card card--pad stack">
-        <div className="kv">
-          <dt>Amount</dt>
-          <dd>{formatMoney(order.unitPriceMinor * order.quantity, order.currency)}</dd>
+      <div className="card card--pad stack claimcard">
+        <div className="claimcard__hero">
+          <span className="claimcard__label">{claimLabel}</span>
+          <span className="claimcard__amount">{formatMoney(claimedMinor, order.currency)}</span>
         </div>
+        <div className="kv"><dt>Already paid before this</dt><dd>{formatMoney(money.paidMinor, order.currency)}</dd></div>
+        <div className="kv"><dt>Order total</dt><dd>{formatMoney(money.totalMinor, order.currency)}</dd></div>
+        <div className="kv"><dt>Balance left if accepted</dt><dd>{formatMoney(balanceAfter, order.currency)}</dd></div>
         {claim?.reference && (
           <div className="kv"><dt>Reference</dt><dd><code>{claim.reference}</code></dd></div>
         )}
@@ -893,7 +1205,7 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
       </div>
 
       <p className="faint" style={{ margin: 0 }}>
-        Check your own account before answering. Accepting is you saying the money is there.
+        Check your own account before answering. Accepting is you saying this {formatMoney(claimedMinor, order.currency)} is there.
       </p>
 
       {denying ? (
@@ -924,6 +1236,162 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
           <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Turning an order down before it is accepted - the same dialog the orders
+ * list offers, reachable from the order's own page too, so nothing here is a
+ * row-only action.
+ */
+function RejectOrder({ order, busy, onReject, onClose }: {
+  order: Order;
+  busy: boolean;
+  onReject: (reason: string) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState('');
+
+  return (
+    <Modal title="Turn this order down" onClose={onClose}>
+      <div className="form">
+        <p className="muted">
+          {order.itemName} — {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}.
+        </p>
+        <label className="field">
+          <span>Why</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3}
+            placeholder="Sold the last one this morning — sorry. Happy to put you first on the next run." />
+          <span className="field__hint">
+            They see this word for word. If they have already sent money, say what happens to it.
+          </span>
+        </label>
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          The stock goes back on sale and, if they paid, the payment is marked for refund. This
+          cannot be undone — a new order would have to be placed.
+        </p>
+        <button type="button" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}
+          onClick={() => void onReject(reason.trim())}>
+          {busy ? 'Sending…' : 'Turn it down'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Calling off an order already accepted or placed.
+ *
+ * Distinct from the pre-acceptance Reject dialog on the orders list: the
+ * buyer was already told yes, so the reason and the message to them matter
+ * more, not less. If anything was paid, cancelling here starts the reversal
+ * instead of finishing straight away — the money needs somewhere to go
+ * first.
+ */
+function CancelOrder({ order, busy, onCancel, onClose }: {
+  order: Order;
+  busy: string | null;
+  onCancel: (body: { reason: string; message?: string }) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [message, setMessage] = useState('');
+  const paid = orderMoney(order).paidMinor > 0;
+
+  return (
+    <div className="stack">
+      <label className="field">
+        <span>Why is this being cancelled</span>
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+          placeholder="Out of stock, buyer requested it, could not fulfil…" />
+      </label>
+      <label className="field">
+        <span>Message to the buyer</span>
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={2}
+          placeholder={`Your order for ${order.itemName} has been cancelled${reason ? `: ${reason}` : '.'}`} />
+        <span className="field__hint">Sent to them as a message. Edit it, or leave it blank for the default.</span>
+      </label>
+      {paid && (
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          Money has already been paid on this order. Cancelling starts a payment reversal — the order
+          moves to <strong>Payment Reversal Pending</strong> until it is recorded.
+        </p>
+      )}
+      <div className="row">
+        <button type="button" className="btn btn--danger" disabled={busy !== null || reason.trim().length < 4}
+          onClick={() => void onCancel({ reason: reason.trim(), message: message.trim() || undefined })}>
+          {busy === 'cancel' ? 'Cancelling…' : 'Cancel order'}
+        </button>
+        <button type="button" className="btn btn--quiet" onClick={onClose}>Back</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The reversal of a paid, cancelled order - one step at a time.
+ *
+ * Refuses to let the seller submit proof until the buyer has somewhere for
+ * the money to go, and offers the nudge-the-buyer message instead.
+ */
+function ReversalPanel({ order, buyerHasReversalDetails, busy, onRequestDetails, onSubmit, onClose }: {
+  order: Order;
+  buyerHasReversalDetails: boolean | null;
+  busy: string | null;
+  onRequestDetails: (message?: string) => void | Promise<void>;
+  onSubmit: (body: { reference?: string; screenshot?: string }) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [reference, setReference] = useState('');
+  const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const reversal = order.reversal;
+
+  if (buyerHasReversalDetails === false) {
+    return (
+      <div className="stack">
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          The buyer has not added their Payment Reversal Details yet, so there is nowhere to send
+          {' '}{formatMoney(reversal?.amountMinor ?? 0, order.currency)} back to.
+        </p>
+        <label className="field">
+          <span>Message to the buyer</span>
+          <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
+            placeholder={`Your order for ${order.itemName} is being cancelled and your payment will be reversed. `
+              + 'Please update your Payment Reversal Details so we can send it back.'} />
+        </label>
+        <div className="row">
+          <button type="button" className="btn" disabled={busy !== null}
+            onClick={() => void onRequestDetails(message.trim() || undefined)}>
+            {busy === 'request-details' ? 'Sending…' : 'Send reminder'}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stack">
+      <div className="kv"><dt>Reversal amount</dt><dd>{formatMoney(reversal?.amountMinor ?? 0, order.currency)}</dd></div>
+      <label className="field">
+        <span>Transaction reference</span>
+        <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UTR / reference" />
+      </label>
+      <label className="field">
+        <span>Screenshot of the reversal (optional if you have a reference)</span>
+        <input type="file" accept="image/*"
+          onChange={(e) => { const file = e.target.files?.[0]; if (file) void downscale(file).then(setScreenshot); }} />
+      </label>
+      {screenshot && <img src={screenshot} alt="Reversal proof" className="proof" />}
+      <div className="row">
+        <button type="button" className="btn" disabled={busy !== null || (!reference.trim() && !screenshot)}
+          onClick={() => void onSubmit({ reference: reference.trim() || undefined, screenshot: screenshot ?? undefined })}>
+          {busy === 'submit-reversal' ? 'Recording…' : 'Payment Reversed'}
+        </button>
+        <button type="button" className="btn btn--quiet" onClick={onClose}>Close</button>
+      </div>
     </div>
   );
 }

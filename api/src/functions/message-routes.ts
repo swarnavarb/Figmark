@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
-import type { Message, MessageParty, User } from '../../../shared/models.js';
+import type { Message, MessageDeal, MessageParty, User } from '../../../shared/models.js';
 import { accessFor } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -190,15 +190,15 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   const other = request.params.handle;
   if (!other) return error(400, 'invalid_handle', 'Name who this is for.');
 
-  let body: { body?: string; as?: string };
+  let body: { body?: string; as?: string; deal?: Partial<MessageDeal> | null };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const text = body.body?.trim();
-  if (!text) return error(400, 'invalid_message', 'Write something first.');
+  let text = body.body?.trim() ?? '';
+  if (!text && !body.deal) return error(400, 'invalid_message', 'Write something first.');
   if (text.length > 4000) return error(400, 'invalid_message', 'Keep a message under 4000 characters.');
 
   const mine = await handlesFor(user.id, repository);
@@ -213,6 +213,36 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
   if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
 
+  // A private deal, either way round. An offer is the shop's: an item made
+  // for this buyer alone, bought like any other. A request is the buyer's:
+  // what they want and roughly for how much, for the shop to answer with one.
+  let deal: MessageDeal | null = null;
+  if (body.deal?.kind === 'offer') {
+    const listing = body.deal.listingId ? await repository.getListing(body.deal.listingId) : null;
+    if (!us.isStore || !listing || listing.privateFor !== them.userId || listing.sellerId !== us.userId) {
+      return error(400, 'invalid_deal', 'Make the private deal for this buyer first.');
+    }
+    const photo = listing.photos.find((row) => row.isPrimary) ?? listing.photos[0];
+    deal = {
+      kind: 'offer', listingId: listing.id, title: listing.title, priceMinor: listing.priceMinor,
+      quantity: listing.quantityAvailable, photo: photo?.url || null,
+    };
+    text ||= `Private deal for you: ${listing.title}`;
+  } else if (body.deal?.kind === 'request') {
+    if (!them.isStore) return error(400, 'invalid_deal', 'Ask a shop for a private deal.');
+    const title = body.deal.title?.toString().trim().slice(0, 120);
+    if (!title) return error(400, 'invalid_deal', 'Say what you are looking for.');
+    deal = {
+      kind: 'request', listingId: null, title,
+      priceMinor: Math.max(0, Math.round(Number(body.deal.priceMinor) || 0)),
+      quantity: Math.min(999, Math.max(1, Math.round(Number(body.deal.quantity) || 1))),
+      photo: null,
+    };
+    text ||= `Asking for a private deal: ${title}`;
+  } else if (body.deal) {
+    return error(400, 'invalid_deal', 'A deal is an offer or a request.');
+  }
+
   const now = new Date().toISOString();
   const message: Message = {
     id: `msg_${randomUUID().slice(0, 12)}`,
@@ -221,6 +251,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     to: them,
     body: text,
     readAt: null,
+    ...(deal ? { deal } : {}),
     createdAt: now,
     updatedAt: now,
   };

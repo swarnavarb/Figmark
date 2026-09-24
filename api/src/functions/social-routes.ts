@@ -241,6 +241,16 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
   return json(200, { posts: await decorate(broadcast, repository, user.id) });
 }
 
+/** GET /api/me/posts - everything this account wrote, newest first, for its own profile. */
+async function myPosts(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const posts = (await repository.listPostsByAuthor(user.id))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return json(200, { posts: await decorate(posts, repository, user.id) });
+}
+
 /**
  * GET /api/social/channels - one row per seller you follow, newest post first.
  *
@@ -929,6 +939,7 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
 }
 
 export const socialFeedRoute = handler(socialFeed);
+export const myPostsRoute = handler(myPosts);
 export const channelsRoute = handler(channels);
 export const channelThreadRoute = handler(channelThread);
 export const createPostRoute = handler(createPost);
@@ -946,6 +957,7 @@ export const removePostRoute = handler(removePost);
 
 const anon = { authLevel: 'anonymous' } as const;
 
+app.http('me-posts', { ...anon, methods: ['GET'], route: 'me/posts', handler: myPostsRoute });
 app.http('social-feed', { ...anon, methods: ['GET'], route: 'social/feed', handler: socialFeedRoute });
 app.http('social-channels', { ...anon, methods: ['GET'], route: 'social/channels', handler: channelsRoute });
 app.http('social-channel', { ...anon, methods: ['GET'], route: 'social/channels/{id}', handler: channelThreadRoute });

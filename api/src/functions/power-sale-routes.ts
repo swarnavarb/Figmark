@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
+import { cleanCostSheet } from '../../../shared/profit.js';
 import { CATEGORIES } from '../../../shared/catalog.js';
 import type { PowerSale, PowerSaleItem } from '../../../shared/models.js';
 import { can } from '../../../shared/stores.js';
@@ -174,6 +175,13 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
       windowEndsAt: null,
       liftedAt: null,
       listingId: null,
+      costSheet: (() => {
+        try {
+          return cleanCostSheet(entry.costSheet, new Date().toISOString());
+        } catch {
+          return null;
+        }
+      })(),
     },
   };
 }

@@ -1,19 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type ActivityResponse, type ItemGroup } from '../api';
+import { ApiRequestError, api, type ActivityResponse, type PostCard } from '../api';
+import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
-import { Ladder } from '../components/Ladder';
 
-type Tab = 'listings' | 'purchases' | 'sales' | 'following' | 'settings';
+type Tab = 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
 
 const TAB_LABELS: Record<Tab, string> = {
+  posts: '📝 Posts',
+  photos: '📸 Photos',
   listings: 'My listings',
-  purchases: 'My purchases',
   sales: 'My sales',
   following: 'Following',
   settings: 'Settings',
@@ -36,99 +37,6 @@ function waitingOn(data: ActivityResponse, userId: string) {
 }
 
 /**
- * Everything the buyer is waiting on, grouped by the lot it travels in.
- *
- * Three items in one consignment are one journey, so they are one timeline and
- * one card. Drawing the same nine steps three times was the old behaviour, and
- * it made a buyer with a good month look like a buyer with a problem.
- *
- * The lot is the unit of grouping because it is the unit of truth: the seller
- * moves the lot and every item in it moves, so a per-item timeline could only
- * ever repeat what the lot already said.
- */
-function MyItems() {
-  const [groups, setGroups] = useState<ItemGroup[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-
-  useEffect(() => {
-    void api
-      .myItems()
-      .then((result) => setGroups(result.groups))
-      .catch((err: unknown) =>
-        setError(err instanceof ApiRequestError ? err.message : 'Could not load your items.'),
-      );
-  }, []);
-
-  if (error) return <ErrorNotice message={error} />;
-  if (groups === null) return <p className="muted">Loading…</p>;
-  if (groups.length === 0) {
-    return (
-      <EmptyState icon="◫" title="No purchases yet">
-        Anything you buy shows up here with its tracking.
-      </EmptyState>
-    );
-  }
-
-  return (
-    <div className="stack">
-      {groups.map((group) => {
-        const showing = open === group.key;
-        const step = group.lot ? group.lot.steps[group.lot.currentStep] : null;
-        return (
-          <article key={group.key} className="itemgroup">
-            <div className="itemgroup__top">
-              <span className="itemgroup__name">
-                {group.lot ? `Lot #${group.lot.number}` : group.kind === 'awaiting' ? 'Waiting for a lot' : 'Shipped direct'}
-              </span>
-              <span className="badge">
-                {group.items.length} item{group.items.length === 1 ? '' : 's'}
-              </span>
-            </div>
-            <span className="faint">
-              {group.lot ? `${group.lot.name} · ` : ''}{group.sellerName}
-            </span>
-
-            <ul className="itemgroup__items">
-              {group.items.map((item) => (
-                <li key={item.id}>
-                  <Link to={`/order/${item.id}`}>{item.itemName}</Link>
-                  {item.quantity > 1 && <span className="faint"> ×{item.quantity}</span>}
-                </li>
-              ))}
-            </ul>
-
-            {group.lot ? (
-              <>
-                <div className="itemgroup__status">
-                  <span className="faint">Status</span>
-                  <strong>{step?.name ?? 'Not started'}</strong>
-                </div>
-                <button type="button" className="btn btn--quiet btn--sm"
-                  onClick={() => setOpen(showing ? null : group.key)}>
-                  {showing ? 'Hide' : 'Track'}
-                </button>
-                {showing && <Ladder steps={group.lot.steps} current={group.lot.currentStep} />}
-                {showing && group.lot.trackingReference && (
-                  <span className="faint">Tracking: {group.lot.trackingReference}</span>
-                )}
-              </>
-            ) : group.kind === 'awaiting' ? (
-              <p className="notice notice--warn">
-                Not in a lot yet. The seller adds it to one when the next run is packed, and the
-                tracking appears here the moment they do.
-              </p>
-            ) : (
-              <span className="faint">Sent to you directly — no consignment to track.</span>
-            )}
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
  * One profile, both sides of the account.
  *
  * "My Listings" and "My Purchases" sit side by side as tabs rather than behind
@@ -141,7 +49,9 @@ export function ProfilePage() {
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const tab = (params.get('tab') as Tab) || 'listings';
+  const asked = params.get('tab');
+  const tab = (asked && asked in TAB_LABELS ? asked : 'posts') as Tab;
+  const [posts, setPosts] = useState<PostCard[] | null>(null);
   const setTab = (next: Tab) => setParams({ tab: next }, { replace: true });
 
   useEffect(() => {
@@ -155,6 +65,15 @@ export function ProfilePage() {
     };
   }, []);
 
+  // Posts are read when first wanted: most visits to this page are not for them.
+  useEffect(() => {
+    if ((tab === 'posts' || tab === 'photos') && posts === null) {
+      void api.myPosts().then((result) => setPosts(result.posts)).catch(() => setPosts([]));
+    }
+  }, [tab, posts]);
+
+  // Purchases have their own page now; old links to the tab still land there.
+  if (asked === 'purchases') return <Navigate to="/purchases" replace />;
   if (!user) return <main className="page"><p className="muted">Signed out.</p></main>;
 
   const verified = user.verification.governmentId === 'verified';
@@ -165,7 +84,13 @@ export function ProfilePage() {
         <div className="row" style={{ flexWrap: 'wrap', gap: 16 }}>
           <Avatar name={user.displayName} size={58} />
           <div style={{ flex: 1, minWidth: 200 }}>
-            <h1>{user.displayName}</h1>
+            <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
+              <h1>{user.displayName}</h1>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setTab('settings')}>
+                ✏️ Edit
+              </button>
+            </div>
+            {user.bio && <p>{user.bio}</p>}
             {/* Two addresses, said plainly, because they are two parties: the
                 person, and the shop they run. */}
             <p className="muted">
@@ -243,13 +168,12 @@ export function ProfilePage() {
       )}
 
       <div className="tabs">
-        {(['listings', 'purchases', 'sales', 'following', 'settings'] as Tab[]).map((entry) => (
+        {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
-            {data && entry !== 'settings' && (
+            {data && entry !== 'settings' && entry !== 'posts' && entry !== 'photos' && (
               <span className="faint" style={{ marginLeft: 6 }}>
                 {entry === 'listings' ? data.listings.length
-                  : entry === 'purchases' ? data.orders.length
                   : entry === 'sales' ? data.sales.length
                   : data.following.length}
               </span>
@@ -264,6 +188,22 @@ export function ProfilePage() {
           <UsernameSettings />
           <MyPageSettings />
         </>
+      ) : tab === 'posts' ? (
+        posts === null ? <p className="muted">Loading…</p>
+          : posts.length === 0 ? (
+            <EmptyState icon="📝" title="No posts yet">
+              Say hi to your followers — <Link to="/social">write your first post</Link>.
+            </EmptyState>
+          ) : (
+            <div className="stack">
+              {posts.map((card) => (
+                <SocialPostCard key={card.post.id} card={card}
+                  onRemoved={(id) => setPosts((list) => list?.filter((entry) => entry.post.id !== id) ?? list)} />
+              ))}
+            </div>
+          )
+      ) : tab === 'photos' ? (
+        <PhotoGrid posts={posts} listings={data?.listings ?? null} />
       ) : !data ? (
         <p className="muted">Loading…</p>
       ) : tab === 'listings' ? (
@@ -290,8 +230,6 @@ export function ProfilePage() {
             ))}
           </div>
         )
-      ) : tab === 'purchases' ? (
-        <MyItems />
       ) : tab === 'sales' ? (
         (tab === 'sales' ? data.sales : data.orders).length === 0 ? (
           <EmptyState icon="◫" title={tab === 'sales' ? 'No sales yet' : 'No purchases yet'}>
@@ -520,6 +458,29 @@ function UsernameSettings() {
           shop does not land in the same thread as a message to you.
         </p>
       </div>
+    </div>
+  );
+}
+
+/** Everything this account has posted a picture of, as a tight square grid. */
+function PhotoGrid({ posts, listings }: { posts: PostCard[] | null; listings: ActivityResponse['listings'] | null }) {
+  if (posts === null || listings === null) return <p className="muted">Loading…</p>;
+  const photos = [
+    ...posts.filter((card) => card.post.photoUrl)
+      .map((card) => ({ key: card.post.id, url: card.post.photoUrl!, to: card.listing ? `/listing/${card.listing.id}` : null })),
+    ...listings.flatMap((listing) => listing.photos.filter((photo) => photo.url)
+      .map((photo, index) => ({ key: `${listing.id}-${index}`, url: photo.url, to: `/listing/${listing.id}` }))),
+  ];
+  if (photos.length === 0) {
+    return <EmptyState icon="📸" title="No photos yet">Photos from your posts and listings land here.</EmptyState>;
+  }
+  return (
+    <div className="photogrid">
+      {photos.map((photo) => photo.to ? (
+        <Link key={photo.key} to={photo.to} className="photogrid__cell"><img src={photo.url} alt="" loading="lazy" /></Link>
+      ) : (
+        <span key={photo.key} className="photogrid__cell"><img src={photo.url} alt="" loading="lazy" /></span>
+      ))}
     </div>
   );
 }

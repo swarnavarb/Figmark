@@ -1,5 +1,6 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
-import type { TrackingRoute } from '../../../shared/routes.js';
+import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
+import { ROUTE_TEMPLATES, normaliseSteps, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
@@ -77,7 +78,9 @@ export class MemoryRepository implements Repository {
 
   async init(): Promise<void> {
     for (const user of [...seedUsers(), ...seedLotBuyers()]) this.indexUser(user);
-    for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()]) this.lots.set(lot.id, lot);
+    for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()].map((one) => this.withSampleRoute(one))) {
+      this.lots.set(lot.id, lot);
+    }
     for (const listing of seedListings()) this.listings.set(listing.id, listing);
     for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders()]) this.orders.set(order.id, order);
     for (const comment of seedComments()) this.comments.set(comment.id, comment);
@@ -103,6 +106,43 @@ export class MemoryRepository implements Repository {
     if (user.sellerProfile?.username) {
       this.handles.set(handleKey(user.sellerProfile.username), { userId: user.id, isStore: true });
     }
+  }
+
+  /**
+   * One saved route per seller, standing in for the fixtures until each shop
+   * writes its own. Cached per seller so every one of their lots snapshots the
+   * same route rather than each getting its own copy of an identical ladder,
+   * and saved into `this.routes` so `GET /api/routes` shows it as a real
+   * template, not just something baked into a lot.
+   */
+  private sampleRoutes = new Map<string, TrackingRoute>();
+  private sampleRouteFor(sellerId: string): TrackingRoute {
+    const existing = this.sampleRoutes.get(sellerId);
+    if (existing) return existing;
+    const template = ROUTE_TEMPLATES.find((entry) => entry.id === 'supplier_accumulates') ?? ROUTE_TEMPLATES[0]!;
+    const now = new Date().toISOString();
+    const route: TrackingRoute = {
+      id: `rt_${sellerId}_sample`,
+      sellerId,
+      name: `${template.name} (sample)`,
+      steps: normaliseSteps(template.steps),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.sampleRoutes.set(sellerId, route);
+    this.routes.set(route.id, route);
+    return route;
+  }
+
+  /**
+   * Every seeded lot travels the one sample route, so the fixtures show a
+   * real route's ladder working uniformly across lots rather than each
+   * falling back to the built-in seven stages by default.
+   */
+  private withSampleRoute(lot: Lot): Lot {
+    const sample = this.sampleRouteFor(lot.sellerId);
+    const route = { routeId: sample.id, name: sample.name, steps: sample.steps };
+    return { ...lot, route, currentStep: stepForStage(route, lot.stage) };
   }
 
   status(): BackendStatus {
@@ -194,8 +234,9 @@ export class MemoryRepository implements Repository {
     return [...this.orders.values()]
       .filter((order) =>
         order.sellerId === sellerId
+        && isPlaced(order)
         && order.lotId === AWAITING_LOT_ID
-        && order.status !== 'cancelled')
+        && !isCancelledLike(order.status))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
@@ -328,12 +369,12 @@ export class MemoryRepository implements Repository {
   }
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
-    return [...this.orders.values()].filter((o) => o.lotId === lotId);
+    return [...this.orders.values()].filter((o) => o.lotId === lotId && isPlaced(o));
   }
 
   async listOrdersHeldBy(escrowAgentId: string): Promise<Order[]> {
     return [...this.orders.values()]
-      .filter((order) => order.protection?.escrowAgentId === escrowAgentId)
+      .filter((order) => order.protection?.escrowAgentId === escrowAgentId && isPlaced(order))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
@@ -345,21 +386,39 @@ export class MemoryRepository implements Repository {
 
   async listOrdersForListing(listingId: string): Promise<Order[]> {
     return [...this.orders.values()]
-      .filter((order) => order.listingId === listingId)
+      .filter((order) => order.listingId === listingId && isPlaced(order))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   async createOrder(order: Order): Promise<Order> {
     this.orders.set(order.id, order);
+    if (isPlaced(order)) await this.takeStock(order);
+    return order;
+  }
+
+  async listCheckoutDrafts(sellerId: string): Promise<Order[]> {
+    return [...this.orders.values()]
+      .filter((order) => order.sellerId === sellerId && !isPlaced(order))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async listLikesForListings(listingIds: readonly string[]): Promise<Like[]> {
+    const wanted = new Set(listingIds);
+    return [...this.likes.values()].filter((like) => wanted.has(like.listingId));
+  }
+
+  async takeStock(order: Order): Promise<void> {
     const listing = this.listings.get(order.listingId);
-    if (listing) {
+    // A "multiple" item has no count to run down, so it never sells out.
+    if (listing && listing.quantityMode !== 'multiple') {
       listing.quantityAvailable = Math.max(0, listing.quantityAvailable - order.quantity);
       if (listing.quantityAvailable === 0) listing.status = 'sold_out';
+    }
+    if (listing) {
       // Pre-order fill is denormalised onto the listing, so it moves with the
       // order rather than being counted at read time.
       if (listing.preOrder) listing.preOrder.filledCount += order.quantity;
     }
-    return order;
   }
 
   async getOrder(id: string): Promise<Order | null> {
@@ -726,7 +785,7 @@ export class MemoryRepository implements Repository {
   }
 
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
-    return [...this.orders.values()].filter((order) => order.sellerId === sellerId);
+    return [...this.orders.values()].filter((order) => order.sellerId === sellerId && isPlaced(order));
   }
 
   async listPosts(channelId: string, limit = 50): Promise<Post[]> {

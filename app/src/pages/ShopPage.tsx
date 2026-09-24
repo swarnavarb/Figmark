@@ -1,24 +1,28 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  CHECKPOINT_COUNT_LABELS, LOT_CARD_LABELS, LOT_STAGES, LOT_STAGE_LABELS,
+  LOT_CARD_LABELS, LOT_STAGES,
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
 } from '@shared/enums';
 import { countOf, type LotTally } from '@shared/board';
 import { CATEGORIES } from '@shared/catalog';
+import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
-import { RouteEditor } from './RoutesPage';
+import { RouteEditor, RoutesList } from './RoutesPage';
+import { phaseOfCounts } from '@shared/insights';
 import {
-  PHASE_LABELS, SEGMENTS, SEGMENT_LABELS, phaseOfCounts,
-} from '@shared/insights';
-import { BUILT_IN_ROUTE, currentStepName, preSteps as preStepsOf, routeOf, suggestLotName } from '@shared/routes';
+  BUILT_IN_ROUTE, preSteps as preStepsOf, suggestLotName,
+} from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import type { SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import type { BuyerReversalDetails, Listing, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
+import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
+import { ProofPicker } from '../components/ProofPicker';
 import type { StoreAccess } from '@shared/stores';
-import { supplierIdOf } from '@shared/services';
+import type { SavedCalc } from '@shared/profit';
 import {
   ApiRequestError,
   api,
@@ -27,22 +31,26 @@ import {
   type PartyRef,
   type StorefrontDraft,
   type ActivityResponse,
-  type LotBoard,
   type LotSummary,
   type LotsResponse,
   type SaleRow,
   type SalesResponse,
-  type ProviderCard,
+  type ShopCredit,
+  type RefundableOrder,
   type RoutesResponse,
 } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, Modal, Thumb, Tile, leadPhoto } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
+import { InsightsPanel } from './InsightsPanel';
+import { ProfitCalculator } from './ProfitCalculator';
+import { SalesPanel } from './SalesPanel';
 import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
-import { formatDate, formatMoney, timeAgo } from '../format';
+import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { CalcIcon } from '../components/CalcIcon';
 
-type Section = 'items' | 'payments' | 'lots' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -51,12 +59,40 @@ const SECTIONS: { id: Section; label: string }[] = [
   // to live. The id stays `payments` - it is the identity, and renaming it
   // would only be a way to break the rights that reference it.
   { id: 'payments', label: 'Orders' },
+  // Who saved what, who stopped at Buy, and how items convert - the Pro tab.
+  { id: 'insights', label: '✨ Insights' },
+  // Landed cost and margin on the seller's own rates - Pro, beside Insights.
+  { id: 'calculator', label: 'Calculator' },
+  // Every amount owed back to a buyer - overpaid, cancelled, or a refund the
+  // seller starts - in one place, set apart on the right of the same row.
+  { id: 'refunds', label: '↩️ Refunds' },
   { id: 'lots', label: 'Track' },
+  { id: 'routes', label: 'Routes' },
   { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
 ];
+
+/** Sections that are Pro: they wear the gold chip and the PRO badge. */
+const PRO_SECTIONS: readonly Section[] = ['insights', 'calculator'];
+
+/**
+ * Which sections belong to the same Sell-home card, so the chip bar under a
+ * card only ever shows the handful of screens that card promised - not all
+ * eight at once.
+ */
+const SECTION_GROUPS: Record<string, Section[]> = {
+  items: ['items', 'payments', 'insights', 'calculator', 'refunds'],
+  manage: ['storefront', 'people', 'packing'],
+  lots: ['lots'],
+  routes: ['routes'],
+  analytics: ['analytics'],
+};
+
+function groupOf(section: Section): string {
+  return Object.entries(SECTION_GROUPS).find(([, ids]) => ids.includes(section))?.[0] ?? 'items';
+}
 
 /**
  * The sell tab, which is two different screens depending on where you are.
@@ -216,7 +252,9 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
  */
 function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: () => void | Promise<void> }) {
   const { user } = useSession();
-  const [storeId, setStoreId] = useState(stores[0]!.ownerId);
+  const cameFor = (useLocation().state as { store?: string } | null)?.store;
+  const [storeId, setStoreId] = useState(
+    stores.some((entry) => entry.ownerId === cameFor) ? cameFor! : stores[0]!.ownerId);
   /*
    * The open section lives in the URL, not in this component.
    *
@@ -225,11 +263,13 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
    * reads as the app having forgotten what you were doing.
    */
   const [params, setParams] = useSearchParams();
-  const section = (params.get('tab') ?? 'items') as Section;
+  const requested = params.get('tab');
   const setSection = (next: Section) =>
     setParams((current) => {
       const copy = new URLSearchParams(current);
       copy.set('tab', next);
+      // A sub-view belongs to the tab it was opened in.
+      copy.delete('view');
       return copy;
     }, { replace: true });
 
@@ -238,36 +278,32 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
   // worse than a tab that is not there.
   const visible = SECTIONS.filter((entry) => {
     if (entry.id === 'items') return store.permissions.includes('listings');
-    // Answering for money is an owner's call, so it rides on the same right
-    // the API checks rather than on a wider one.
-    if (entry.id === 'payments') return store.permissions.includes('admin');
-    if (entry.id === 'analytics') return store.permissions.includes('analytics');
-    if (entry.id === 'lots') return store.permissions.includes('lots');
+    if (entry.id === 'analytics' || entry.id === 'insights' || entry.id === 'calculator') return store.permissions.includes('analytics');
+    if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'packing') return store.permissions.includes('export');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     return true;
   });
-  const active = visible.some((entry) => entry.id === section) ? section : visible[0]!.id;
+  // No tab, or a tab this store cannot open: nothing renders below the
+  // workflow buttons.
+  const active = visible.find((entry) => entry.id === requested)?.id ?? null;
+  const chips = active ? visible.filter((entry) => SECTION_GROUPS[groupOf(active)]!.includes(entry.id)) : [];
 
   return (
     <main className="page tab-view">
-      <div className="page__head">
-        <div>
-          <h1>{store.name}</h1>
-          <p className="muted">
-            {store.isOwner ? 'Your shop.' : 'You help run this shop.'}{' '}
-            {store.permissions.length} of {STORE_PERMISSIONS.length} rights.
-          </p>
-        </div>
-        {/* No "list an item" here: the Items tab opens with that door, and the
-            same button twice on one screen is one too many. */}
-        {user?.escrowRights && (
-          <Link to="/escrow" className="btn btn--ghost btn--sm">{<Icon name="lock" size={13} />} Escrow</Link>
-        )}
-      </div>
+      {/* No "list an item" here: the Items section opens with that door, and
+          no shop-name header here either - the workflow below already says
+          where you are. */}
+      {user?.escrowRights && (
+        <Link to="/escrow" className="btn btn--ghost btn--sm" style={{ justifySelf: 'end', marginBottom: 10 }}>
+          {<Icon name="lock" size={13} />} Escrow
+        </Link>
+      )}
+
+      <SellHome active={active} onGo={setSection} />
 
       {stores.length > 1 && (
-        <label className="field" style={{ marginBottom: 14 }}>
+        <label className="field" style={{ marginBlock: 14 }}>
           <span>Store</span>
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
             {stores.map((entry) => (
@@ -279,33 +315,101 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </label>
       )}
 
-      <div className="sections" role="tablist" aria-label="Shop sections">
-        {visible.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            aria-selected={active === entry.id}
-            className={`chip${active === entry.id ? ' is-on' : ''}`}
-            onClick={() => setSection(entry.id)}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
+      {active && chips.length > 1 && (
+        <div className="sections" role="tablist" aria-label="Shop sections" style={{ marginTop: 18 }}>
+          {chips.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              aria-selected={active === entry.id}
+              className={`chip${entry.id === 'refunds' ? ' chip--refunds' : ''}${PRO_SECTIONS.includes(entry.id) ? ' chip--pro' : ''}${active === entry.id ? ' is-on' : ''}`}
+              onClick={() => setSection(entry.id)}
+            >
+              {entry.id === 'calculator' && <CalcIcon size={16} />}
+              {entry.label}
+              {PRO_SECTIONS.includes(entry.id) && <span className="probadge">PRO</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Keyed so switching sections replays the entrance rather than swapping
-          content underneath a static frame. */}
-      <div className="tab-view" key={`${store.ownerId}:${active}`}>
-        {active === 'items' && <MyItems store={store} />}
-        {active === 'payments' && <Orders store={store} />}
-        {active === 'lots' && <Lots store={store} />}
-        {active === 'packing' && <PackingList storeId={store.ownerId} />}
-        {active === 'analytics' && <Analytics store={store} />}
-        {active === 'storefront' && <StorefrontEditor />}
-        {active === 'people' && <People store={store} onChanged={onChanged} />}
-      </div>
+          content underneath a static frame. The Sell page itself never
+          changes - the workflow above stays put and only this area swaps. */}
+      {active && (
+        <div className="tab-view" style={{ marginTop: chips.length > 1 ? 14 : 20 }} key={`${store.ownerId}:${active}`}>
+          {active === 'items' && <MyItems store={store} />}
+          {active === 'payments' && <Orders store={store} />}
+          {active === 'insights' && <InsightsPanel store={store} />}
+          {active === 'calculator' && <ProfitCalculator store={store} />}
+          {active === 'refunds' && <Refunds store={store} />}
+          {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
+          {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}
+          {active === 'packing' && <PackingList storeId={store.ownerId} />}
+          {active === 'analytics' && <Analytics store={store} />}
+          {active === 'storefront' && <StorefrontEditor />}
+          {active === 'people' && <People store={store} onChanged={onChanged} />}
+        </div>
+      )}
     </main>
+  );
+}
+
+/**
+ * The Sell tab's front door: five cards, always on screen.
+ *
+ * Two primary actions up top - the business, not the stock - then the
+ * workflow every import actually follows, drawn as the three things it is:
+ * items become part of a lot, and a lot follows a route. All five stay in
+ * place; picking one only changes what appears in the area below them, so
+ * the Sell page itself is never left.
+ */
+function SellHome({ active, onGo }: { active: Section | null; onGo: (section: Section) => void }) {
+  const on = (section: Section) => (active ? groupOf(active) === groupOf(section) : false);
+  return (
+    <div className="stack">
+      <div className="doors doors--two">
+        <button type="button" className={`door door--card door--analytics${on('analytics') ? ' is-on' : ''}`}
+          onClick={() => onGo('analytics')}>
+          <span className="door__glyph" aria-hidden="true"><Icon name="spark" size={22} /></span>
+          <span className="door__title">Analytics</span>
+          <span className="door__note">Sales, views and trends for your shop.</span>
+        </button>
+        <button type="button" className={`door door--card door--manage${on('storefront') ? ' is-on' : ''}`}
+          onClick={() => onGo('storefront')}>
+          <span className="door__glyph" aria-hidden="true"><Icon name="bank" size={22} /></span>
+          <span className="door__title">Manage Store</span>
+          <span className="door__note">Your storefront, your team, and packing.</span>
+        </button>
+      </div>
+
+      <div className="workflow">
+        <span className="workflow__label">Workflow</span>
+        <div className="workflow__row">
+          <button type="button" className={`workflow__step workflow__step--items${on('items') ? ' is-on' : ''}`}
+            onClick={() => onGo('items')}>
+            <span className="workflow__glyph" aria-hidden="true"><Icon name="tag" size={20} /></span>
+            <span className="workflow__title">Items</span>
+          </button>
+          <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
+          <button type="button" className={`workflow__step workflow__step--lots${on('lots') ? ' is-on' : ''}`}
+            onClick={() => onGo('lots')}>
+            <span className="workflow__glyph" aria-hidden="true"><Icon name="box" size={20} /></span>
+            <span className="workflow__title">Lots</span>
+          </button>
+          <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
+          <button type="button" className={`workflow__step workflow__step--routes${on('routes') ? ' is-on' : ''}`}
+            onClick={() => onGo('routes')}>
+            <span className="workflow__glyph" aria-hidden="true"><Icon name="truck" size={20} /></span>
+            <span className="workflow__title">Routes</span>
+          </button>
+        </div>
+        <p className="faint workflow__hint">
+          Items are added → items become part of a lot → lots follow a route.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -546,9 +650,13 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
 function MyItems({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'stock' | 'power' | 'templates'>('stock');
+  // "Add to a power sale" from a saved calculation lands here, with it.
+  const saleCalcs = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;
+  const [mode, setMode] = useState<'stock' | 'power' | 'templates'>(saleCalcs?.length ? 'power' : 'stock');
+  const [shelf, setShelf] = useState<'available' | 'expired' | 'sold_out'>('available');
+  const [editing, setEditing] = useState<Listing | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     void api
       .activity()
       .then(setData)
@@ -556,10 +664,17 @@ function MyItems({ store }: { store: StoreAccess }) {
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your listings.'),
       );
   }, []);
+  useEffect(load, [load]);
 
   if (error) return <ErrorNotice message={error} />;
 
-  const mine = data?.listings.filter((listing) => listing.sellerId === store.ownerId) ?? [];
+  const all = data?.listings.filter((listing) => listing.sellerId === store.ownerId) ?? [];
+  // Expired is read off the clock; sold out only ever applies to a counted item.
+  const shelfOf = (listing: Listing) =>
+    isExpired(listing) ? 'expired' : listing.status === 'sold_out' ? 'sold_out' : 'available';
+  const counts = { available: 0, expired: 0, sold_out: 0 };
+  for (const listing of all) counts[shelfOf(listing)] += 1;
+  const mine = all.filter((listing) => shelfOf(listing) === shelf);
 
   return (
     <div className="stack">
@@ -574,7 +689,7 @@ function MyItems({ store }: { store: StoreAccess }) {
         </Link>
 
         <button type="button" className="door door--pro" onClick={() => setMode('power')}>
-          <span className="door__flag">Pro</span>
+          <span className="probadge door__flag">PRO</span>
           <span className="door__glyph" aria-hidden="true">{<Icon name="bolt" size={19} />}</span>
           <span className="door__title">Start power selling</span>
           <span className="door__note">A whole sale, on a timer, in your channel.</span>
@@ -599,26 +714,43 @@ function MyItems({ store }: { store: StoreAccess }) {
       {mode === 'templates' ? (
         <TemplatesPanel store={store} />
       ) : mode === 'power' ? (
-        <PowerSalePanel storeId={store.ownerId} />
+        <PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} />
       ) : !data ? (
         <p className="muted">Loading…</p>
-      ) : mine.length === 0 ? (
-        <EmptyState title="Nothing listed yet">
-          Everything you list goes out under {store.name}. It takes about a minute.
-        </EmptyState>
       ) : (
         <>
+          <div className="seg" role="tablist" aria-label="Shelf">
+            {(['available', 'expired', 'sold_out'] as const).map((entry) => (
+              <button key={entry} type="button" role="tab" aria-selected={shelf === entry}
+                className={shelf === entry ? 'is-on' : ''} onClick={() => setShelf(entry)}>
+                {entry === 'available' ? '🟢 Available' : entry === 'expired' ? '⛔ Expired' : '📭 Sold out'} · {counts[entry]}
+              </button>
+            ))}
+          </div>
+          {mine.length === 0 && (
+            <EmptyState title={shelf === 'expired' ? 'Nothing expired 🎉' : shelf === 'sold_out' ? 'Nothing sold out' : 'Nothing listed yet'}>
+              {shelf === 'available'
+                ? `Everything you list goes out under ${store.name}. It takes about a minute.`
+                : 'Items land here on their own and can be brought back from here.'}
+            </EmptyState>
+          )}
           <div className="grid">
             {mine.map((listing) => (
               <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
                 <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                   <div className="thumb__badges">
                     <span className="badge badge--solid">{listing.condition}</span>
+                    <ExpiryChip listing={listing} />
                   </div>
                 </Thumb>
                 <div className="listing__body">
                   <span className="listing__title">{listing.title}</span>
                   <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                  <StockChip listing={listing} />
+                  <button type="button" className="btn btn--ghost btn--sm"
+                    onClick={(event) => { event.preventDefault(); setEditing(listing); }}>
+                    {isExpired(listing) ? '✨ Make available again' : '✏️ Edit'}
+                  </button>
                   <div className="listing__meta">
                     {/* An item with no lot is not a problem to fix - most
                         never need one. It says which it is and stops there. */}
@@ -633,12 +765,22 @@ function MyItems({ store }: { store: StoreAccess }) {
           </div>
         </>
       )}
+      {editing && (
+        <EditListingDialog listing={editing} onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }} />
+      )}
     </div>
   );
 }
 
 /** What a seller can be looking for on this screen. */
 type OrderFilter = 'all' | 'answer' | 'nolot';
+
+/** Done, either because the buyer confirmed it or because the seller ticked
+ *  it delivered on the lot's own item list - either one is the same fact. */
+function isCompleted(row: SaleRow): boolean {
+  return row.status === 'delivered' || Boolean(row.deliveredAt);
+}
 
 /**
  * Every customer purchase, one card each.
@@ -657,9 +799,31 @@ function Orders({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<SalesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<SaleRow | null>(null);
+  const [cancelling, setCancelling] = useState<SaleRow | null>(null);
   const [filing, setFiling] = useState<SaleRow | null>(null);
+  const [denyingClaim, setDenyingClaim] = useState<SaleRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [filter, setFilter] = useState<OrderFilter>('all');
+  /*
+   * Both filters live in the URL, so opening an order and coming back lands
+   * on the same list it was opened from - not "All, Active" with the order
+   * somewhere below the fold.
+   */
+  const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const filter = (['all', 'answer', 'nolot'] as const).find((entry) => entry === params.get('show')) ?? 'all';
+  /** Delivered is done; everything else is still being worked. */
+  const statusFilter = params.get('state') === 'completed' ? 'completed' : 'active';
+  const setParam = (key: string, value: string) => setParams((current) => {
+    const copy = new URLSearchParams(current);
+    copy.set(key, value);
+    return copy;
+  }, { replace: true });
+  const setFilter = (next: OrderFilter) => setParam('show', next);
+  const setStatusFilter = (next: 'active' | 'completed') => setParam('state', next);
+  const here = `${location.pathname}${location.search}`;
+  const focusOrder = (location.state as { focusOrder?: string } | null)?.focusOrder ?? null;
+  const [glowing, setGlowing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -673,6 +837,20 @@ function Orders({ store }: { store: StoreAccess }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /* Coming back from an order: put it in the middle of the screen and let it
+     glow for a moment, then forget the request so a reload does not repeat it. */
+  useEffect(() => {
+    if (!data || !focusOrder) return;
+    const card = document.getElementById(`order-${focusOrder}`);
+    if (card) {
+      card.scrollIntoView({ block: 'center' });
+      setGlowing(focusOrder);
+    }
+    navigate(here, { replace: true, state: null });
+    const timer = window.setTimeout(() => setGlowing(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [data, focusOrder, here, navigate]);
 
   /** The one tick this screen makes. Everything else opens something. */
   async function markWarehouse(row: SaleRow, on: boolean) {
@@ -688,11 +866,45 @@ function Orders({ store }: { store: StoreAccess }) {
     }
   }
 
+  async function accept(row: SaleRow) {
+    setBusy(row.id);
+    setError(null);
+    try {
+      await api.acceptOrder(row.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not accept that.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /* Confirming that a claimed payment arrived is the same one-tap shape as
+     Accept: nothing left to say, so nothing here should make the seller open
+     the order to say it. Denying still needs a reason, so that opens its own
+     small dialog rather than firing straight away. */
+  async function settleReceived(row: SaleRow) {
+    setBusy(row.id);
+    setError(null);
+    try {
+      await api.settleClaim(row.id, { accept: true });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not confirm that.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (error && !data) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
 
   const needsAnswer = new Set([...data.waiting, ...data.placed].map((row) => row.id));
-  const shown = data.orders.filter((row) =>
+  const scoped = data.orders.filter((row) =>
+    statusFilter === 'completed' ? isCompleted(row) : !isCompleted(row));
+  /* The "All / To answer / No lot" split only means anything for active
+     orders - a completed one needs nothing answered and rides no lot search. */
+  const shown = statusFilter === 'completed' ? scoped : scoped.filter((row) =>
     filter === 'all'
       ? true
       : filter === 'answer'
@@ -712,35 +924,58 @@ function Orders({ store }: { store: StoreAccess }) {
     <div className="stack">
       {error && <ErrorNotice message={error} />}
 
-      <div className="seg" role="tablist" aria-label="Which orders">
-        {([
-          ['all', `All ${data.orders.length}`],
-          ['answer', `To answer ${needsAnswer.size}`],
-          ['nolot', `No lot ${data.orders.filter((row) => row.awaitingLot).length}`],
-        ] as [OrderFilter, string][]).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={filter === id}
-            className={filter === id ? 'is-on' : ''} onClick={() => setFilter(id)}>
-            {label}
+      <div className="seg" role="tablist" aria-label="Order status">
+        {(['active', 'completed'] as const).map((entry) => (
+          <button key={entry} type="button" role="tab" aria-selected={statusFilter === entry}
+            className={statusFilter === entry ? 'is-on' : ''}
+            onClick={() => setStatusFilter(entry)}>
+            {entry === 'active'
+              ? `Active orders ${data.orders.filter((row) => !isCompleted(row)).length}`
+              : `Completed orders ${data.orders.filter(isCompleted).length}`}
           </button>
         ))}
       </div>
 
+      {statusFilter === 'active' && (
+        <div className="seg" role="tablist" aria-label="Which orders">
+          {([
+            ['all', `All ${scoped.length}`],
+            ['answer', `To answer ${needsAnswer.size}`],
+            ['nolot', `No lot ${scoped.filter((row) => row.awaitingLot).length}`],
+          ] as [OrderFilter, string][]).map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={filter === id}
+              className={filter === id ? 'is-on' : ''} onClick={() => setFilter(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {shown.length === 0 ? (
         <p className="muted">
-          {filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a lot.'}
+          {statusFilter === 'completed'
+            ? 'Nothing delivered yet.'
+            : filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a lot.'}
         </p>
       ) : (
         <div className="orows">
-          {shown.map((row) => (
+          {shown.map((row, index) => (
           <OrderRow
             key={row.id}
+            index={index}
             row={row}
             store={store}
+            from={here}
+            glowing={glowing === row.id}
             busy={busy === row.id}
             needsAnswer={needsAnswer.has(row.id)}
             onWarehouse={(on) => void markWarehouse(row, on)}
             onFile={() => setFiling(row)}
             onReject={() => setRejecting(row)}
+            onAccept={() => void accept(row)}
+            onCancel={() => setCancelling(row)}
+            onSettleReceived={() => void settleReceived(row)}
+            onSettleDenied={() => setDenyingClaim(row)}
           />
           ))}
         </div>
@@ -751,6 +986,22 @@ function Orders({ store }: { store: StoreAccess }) {
           row={rejecting}
           onClose={() => setRejecting(null)}
           onDone={() => { setRejecting(null); void load(); }}
+        />
+      )}
+
+      {denyingClaim && (
+        <DenyClaimRow
+          row={denyingClaim}
+          onClose={() => setDenyingClaim(null)}
+          onDone={() => { setDenyingClaim(null); void load(); }}
+        />
+      )}
+
+      {cancelling && (
+        <CancelOrderRow
+          row={cancelling}
+          onClose={() => setCancelling(null)}
+          onDone={() => { setCancelling(null); void load(); }}
         />
       )}
 
@@ -1087,81 +1338,154 @@ const ESCROW_WORDS: Record<string, string> = {
  * that has landed, then everything quietly in progress.
  */
 function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: string } {
+  if (row.status === 'dispute_raised') return { tone: 'danger', label: 'Dispute Raised' };
+  if (row.status === 'payment_reversal_pending') return { tone: 'accent', label: 'Payment Reversal Pending' };
+  if (row.status === 'cancelled_reversed') return { tone: 'ok', label: 'Cancelled + Reversed' };
+  if (row.status === 'rejected') return { tone: 'danger', label: 'Rejected' };
+  if (row.status === 'cancelled') return { tone: 'quiet', label: 'Cancelled' };
   if (row.escrowState === 'disputed') return { tone: 'danger', label: 'In dispute' };
+  if (row.bookingOnly && !row.accepted) return { tone: 'warn', label: '📘 Book — awaiting acceptance' };
   if (needsAnswer) return { tone: 'warn', label: PAYMENT_WORDS[row.paymentStatus] ?? 'To answer' };
   if (row.paymentStatus === 'paid') return { tone: 'ok', label: 'Paid' };
+  if (row.paymentStatus === 'partially_paid') return { tone: 'purple', label: 'Partially paid' };
   if (row.paymentStatus === 'refunded') return { tone: 'quiet', label: 'Refunded' };
   return { tone: 'quiet', label: PAYMENT_WORDS[row.paymentStatus] ?? row.paymentStatus };
 }
 
 /**
- * One purchase, as a row rather than a card.
+ * One purchase, as a card that reads top to bottom: what it is and who
+ * bought it, where the money has got to, and then - on a line of its own -
+ * whatever it needs from the seller right now.
  *
- * This was a 219px card 1140px wide, which put four orders on a desktop screen
- * and made reviewing thirty-eight of them ten screens of scrolling. A shop
- * works this list in a sitting, so it is a table now: the facts on one line,
- * the state in the edge, and the two controls that are actually used from here
- * kept on the row rather than promoted to full-width buttons.
- *
- * The actions stay in the markup at every width instead of appearing on hover,
- * because hover does not exist on the device most of this app is read on.
- * They are quiet until the row is under the pointer, which is a different
- * thing from being absent.
+ * A card needing an answer wears a slowly turning aura in its own colour, so
+ * a seller scrolling a long list sees what is waiting on them before reading
+ * a word. The decisions themselves are always labelled and coloured - green
+ * for yes, red for no - because touch has no hover and a bare glyph is a
+ * guess.
  */
-function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject }: {
+function OrderRow({
+  index, row, store, from, glowing, busy, needsAnswer, onWarehouse, onFile, onReject, onAccept, onCancel,
+  onSettleReceived, onSettleDenied,
+}: {
+  index: number;
   row: SaleRow;
   store: StoreAccess;
+  /** Where this list is, so the order page can come back to exactly here. */
+  from: string;
+  glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
   onWarehouse: (on: boolean) => void;
   onFile: () => void;
   onReject: () => void;
+  onAccept: () => void;
+  onCancel: () => void;
+  onSettleReceived: () => void;
+  onSettleDenied: () => void;
 }) {
+  const awaitingClaim = Boolean(row.claim && row.claim.decision === null);
   const received = Boolean(row.chinaReceivedAt);
   const lotHref = row.lotId
     ? `/lot/${row.lotId}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`
     : null;
   const { tone, label } = orderTone(row, needsAnswer);
+  const paidShare = row.totalMinor > 0 ? Math.min(100, Math.round((row.paidMinor / row.totalMinor) * 100)) : 0;
+  const orderLink = { pathname: `/order/${row.id}` };
+  const linkState = { from };
 
   return (
-    <article className={`orow orow--${tone}${busy ? ' is-busy' : ''}`}>
-      <span className="orow__stripe" aria-hidden="true" />
-
-      <div className="orow__main">
-        <Link to={`/order/${row.id}`} className="orow__name">{row.itemName}</Link>
-        <div className="orow__meta">
-          <span>{row.buyer.handle
-            ? <Link to={`/${row.buyer.handle}`} className="orow__buyer">{row.buyer.name}</Link>
-            : row.buyer.name}
-          </span>
-          <span>{timeAgo(row.createdAt)}</span>
-          {row.quantity > 1 && <span>{row.quantity} units</span>}
-          {!row.inHand && (
-            lotHref
-              /* The lot by the name the seller gave it, which is what the
-                 lot page is headed with. Showing the generated number here
-                 and the name over there gave one lot two labels and made
-                 the link look like it went somewhere else. */
-              ? <Link to={lotHref} className="orow__lot">{row.lotName ?? `LOT ${row.lotNumber}`}</Link>
-              : <span className="orow__lot orow__lot--none">no lot</span>
-          )}
-          {row.lotStep && <span className="orow__step">{row.lotStep}</span>}
+    <article id={`order-${row.id}`}
+      className={`ocard ocard--${tone}${needsAnswer ? ' is-urgent' : ''}${glowing ? ' is-glowing' : ''}${busy ? ' is-busy' : ''}`}
+      style={{ '--i': Math.min(index, 12) } as CSSProperties}>
+      <div className="ocard__head">
+        <Link to={orderLink} state={linkState} className="ocard__thumb" tabIndex={-1} aria-hidden="true">
+          <Thumb seed={row.id} label={row.itemName} photo={row.photoUrl ? { url: row.photoUrl } : null}
+            className="thumb ocard__img" />
+        </Link>
+        <div className="ocard__title">
+          <Link to={orderLink} state={linkState} className="ocard__name">{row.itemName}</Link>
+          {row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
+          <div className="ocard__meta">
+            {row.buyer.handle
+              ? <Link to={`/${row.buyer.handle}`} className="ocard__buyer">{row.buyer.name}</Link>
+              : <span className="ocard__buyer">{row.buyer.name}</span>}
+            <span aria-hidden="true">·</span>
+            <span>{timeAgo(row.createdAt)}</span>
+            {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
+          </div>
+        </div>
+        <div className="ocard__price">
+          <b>{formatMoney(row.totalMinor, row.currency)}</b>
+          <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>
         </div>
       </div>
 
-      <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>
-      <span className="orow__price">{formatMoney(row.totalMinor, row.currency)}</span>
+      {/* The money, as a bar rather than a sentence: how much of this has
+          actually landed is the first thing a seller wants to know. */}
+      <div className="ocard__money">
+        <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${paidShare}%` }} /></div>
+        <div className="ocard__moneytext">
+          <span><b>{formatMoney(row.paidMinor, row.currency)}</b> paid</span>
+          {row.outstandingMinor > 0
+            ? <span><b>{formatMoney(row.outstandingMinor, row.currency)}</b> left</span>
+            : row.paidMinor > 0 && <span className="ocard__done">✨ Fully paid</span>}
+          {row.creditMinor > 0 && <span className="ocard__extra">💰 {formatMoney(row.creditMinor, row.currency)} extra</span>}
+        </div>
+      </div>
 
-      <div className="orow__acts">
-        {/* A domestic sale has neither of these: it never goes near a
-            warehouse and never joins a lot. */}
+      {!row.inHand && (
+        <div className="ocard__chips">
+          {lotHref
+            /* The lot by the name the seller gave it, which is what the lot
+               page is headed with. */
+            ? <Link to={lotHref} className="ocard__chip ocard__chip--lot">📦 {row.lotName ?? `LOT ${row.lotNumber}`}</Link>
+            : <span className="ocard__chip ocard__chip--none">No lot yet</span>}
+          {row.lotStep && <span className="ocard__chip ocard__chip--step">🚚 {row.lotStep}</span>}
+          {received && <span className="ocard__chip ocard__chip--ok">✓ At warehouse</span>}
+        </div>
+      )}
+
+      {awaitingClaim && row.claim && (
+        <div className="ocard__claim">
+          💸 Buyer says they paid <b>{formatMoney(row.claim.amountMinor ?? row.totalMinor, row.currency)}</b>
+          {row.claim.reference && <span className="ocard__ref"> · ref {row.claim.reference}</span>}
+        </div>
+      )}
+
+      {/* The decision, when there is one, gets a row of its own: two equal
+          buttons, yes on the left in green and no on the right in red. */}
+      {(row.canAccept || awaitingClaim) && (
+        <div className="ocard__decide">
+          {row.canAccept ? (
+            <>
+              <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
+                aria-label="Accept this order" onClick={onAccept}>
+                <Icon name="check" size={15} /> Accept
+              </button>
+              <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
+                aria-label="Reject this order" onClick={onReject}>
+                <Icon name="close" size={15} /> Reject
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
+                aria-label="Confirm the payment arrived" onClick={onSettleReceived}>
+                <Icon name="check" size={15} /> Received
+              </button>
+              <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
+                aria-label="Say the payment has not arrived" onClick={onSettleDenied}>
+                <Icon name="close" size={15} /> Not received
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="ocard__acts">
+        {/* A domestic sale never goes near a warehouse and never joins a lot. */}
         {!row.inHand && (
           <>
-            {/* Labelled, not a bare tick. This was a full-width button reading
-                "China WH received" before the row rewrite, and shrinking it to
-                an icon with a `title` left it undiscoverable on the device most
-                of this is used on: touch has no hover, so the tooltip never
-                appears and the control becomes a mystery glyph. */}
             <button type="button" disabled={busy} aria-pressed={received}
               className={`orow__toggle${received ? ' is-on' : ''}`}
               aria-label={received
@@ -1172,25 +1496,542 @@ function OrderRow({ row, store, busy, needsAnswer, onWarehouse, onFile, onReject
               <span>China WH</span>
             </button>
             {!lotHref && (
-              <button type="button" className="orow__toggle" aria-label="Add this order to a lot"
-                onClick={onFile}>
+              <button type="button" className="orow__toggle" aria-label="Add this order to a lot" onClick={onFile}>
                 <Icon name="plus" size={13} />
                 <span>Lot</span>
               </button>
             )}
           </>
         )}
-        {needsAnswer && (
-          <button type="button" className="orow__act orow__act--danger"
-            aria-label="Can't serve this order" onClick={onReject}>
-            <Icon name="close" size={15} />
+        <span className="ocard__spacer" />
+        {row.canCancel && !awaitingClaim && (
+          <button type="button" className="ocard__x" aria-label="Cancel this order" onClick={onCancel}>
+            <Icon name="close" size={14} />
           </button>
         )}
-        <Link to={`/order/${row.id}`} className="orow__act" aria-label="Open this order">
-          <Icon name="right" size={15} />
+        <Link to={orderLink} state={linkState} className="ocard__open" aria-label="Open this order">
+          Open <Icon name="right" size={13} />
         </Link>
       </div>
     </article>
+  );
+}
+
+/**
+ * Everything the shop owes back, and everything it has sent back.
+ *
+ * Three ways money ends up owed to a buyer - they paid more than the item
+ * cost, the seller cancelled after they had paid, or the seller decided to
+ * refund some of it themselves (a dispute settled between them, a damaged
+ * box) - and one place to deal with all three. Each can be returned whole or
+ * in parts, moved onto another of that buyer's orders, or kept for their
+ * next one; every return waits on the buyer to say it arrived, and every
+ * one is kept in the history: to whom, for what, how much and when.
+ */
+function Refunds({ store }: { store: StoreAccess }) {
+  const [data, setData] = useState<SalesResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'owed' | 'history'>('owed');
+  const [starting, setStarting] = useState(false);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setData(await api.sales(store.ownerId));
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load refunds.');
+    }
+  }, [store.ownerId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (error && !data) return <ErrorNotice message={error} />;
+  if (!data) return <p className="muted">Loading…</p>;
+
+  const deciding = data.credits.filter((credit) => credit.status !== 'refund_pending');
+  const waiting = data.credits.filter((credit) => credit.status === 'refund_pending');
+  const owedMinor = data.credits.reduce((sum, credit) => sum + credit.leftMinor, 0);
+  const sentMinor = data.refundHistory
+    .filter((entry) => entry.kind === 'refund' && entry.status === 'received')
+    .reduce((sum, entry) => sum + entry.amountMinor, 0);
+  const currency = data.credits[0]?.currency ?? data.refundHistory[0]?.currency ?? 'INR';
+
+  return (
+    <div className="stack">
+      {error && <ErrorNotice message={error} />}
+
+      <section className="rfhero">
+        <div className="rfhero__main">
+          <small>Still to refund</small>
+          <b>{formatMoney(owedMinor, currency)}</b>
+          <span>
+            {deciding.length} to decide · {waiting.length} waiting on the buyer · {formatMoney(sentMinor, currency)} refunded so far
+          </span>
+        </div>
+        <button type="button" className="rfhero__new" onClick={() => setStarting((open) => !open)}>
+          {starting ? 'Close' : '＋ New refund'}
+        </button>
+      </section>
+
+      {starting && (
+        <NewRefund refundable={data.refundable} onClose={() => setStarting(false)} onChanged={load}
+          onDone={async () => { setStarting(false); setView('history'); await load(); }} />
+      )}
+
+      <div className="seg" role="tablist" aria-label="Refunds">
+        <button type="button" role="tab" aria-selected={view === 'owed'} className={view === 'owed' ? 'is-on' : ''}
+          onClick={() => setView('owed')}>
+          To refund {data.credits.length}
+        </button>
+        <button type="button" role="tab" aria-selected={view === 'history'} className={view === 'history' ? 'is-on' : ''}
+          onClick={() => setView('history')}>
+          History {data.refundHistory.length}
+        </button>
+      </div>
+
+      {view === 'owed' && (data.credits.length === 0 ? (
+        <EmptyState title="Nothing to refund">
+          When a buyer pays more than they owe, or you cancel an order they have paid for, the money
+          they are owed lands here. You can also start a refund yourself with New refund.
+        </EmptyState>
+      ) : data.credits.map((credit) => <RefundCard key={credit.creditId} credit={credit} onChanged={load} />))}
+
+      {view === 'history' && (data.refundHistory.length === 0 ? (
+        <p className="muted">No refunds sent yet.</p>
+      ) : (
+        <ul className="rfhist">
+          {data.refundHistory.map((entry) => (
+            <li key={entry.id} className={`rfhist__row rfhist__row--${entry.kind === 'moved' ? 'moved' : entry.status}`}>
+              <span className="rfhist__icon" aria-hidden="true">{entry.kind === 'moved' ? '➡️' : '↩️'}</span>
+              <span className="rfhist__body">
+                <b>{entry.buyer.name}</b>
+                <small>
+                  {entry.kind === 'moved' ? `Moved to ${entry.movedTo} · from ${entry.itemName}` : entry.itemName}
+                  {' · '}{REFUND_ORIGIN_LABELS[entry.origin]}{entry.reason ? ` — ${entry.reason}` : ''}
+                </small>
+                <small>
+                  {formatDateOrdinal(entry.at)}{entry.reference ? ` · ref ${entry.reference}` : ''}
+                  {entry.screenshotUrl && (
+                    <> · <a href={entry.screenshotUrl} target="_blank" rel="noopener noreferrer">📎 screenshot</a></>
+                  )}
+                </small>
+              </span>
+              <span className="rfhist__side">
+                <b>{formatMoney(entry.amountMinor, entry.currency)}</b>
+                <span className={`badge ${entry.kind === 'moved' ? 'badge--aqua'
+                  : entry.status === 'received' ? 'badge--ok' : entry.status === 'awaiting' ? 'badge--warn' : 'badge--danger'}`}>
+                  {entry.kind === 'moved' ? 'Moved' : entry.status === 'received' ? 'Received'
+                    : entry.status === 'awaiting' ? 'Awaiting buyer' : 'Not received'}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ))}
+    </div>
+  );
+}
+
+/** One amount owed back, and the three things a seller can do with it. */
+function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () => Promise<void> }) {
+  const [mode, setMode] = useState<'refund' | 'apply' | null>(null);
+  const [amount, setAmount] = useState('');
+  const [reference, setReference] = useState('');
+  const [shot, setShot] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const [target, setTarget] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const pending = credit.status === 'refund_pending';
+  const chosen = credit.targets.find((entry) => entry.orderId === target);
+  const typedMinor = Math.round(Number(amount) * 100) || 0;
+  const cap = mode === 'apply' && chosen ? Math.min(credit.leftMinor, chosen.outstandingMinor) : credit.leftMinor;
+
+  function open(next: 'refund' | 'apply') {
+    setMode(next);
+    setError(null);
+    setReference('');
+    setShot(null);
+    // Filled with what is owed, and editable: refund less and the rest stays here.
+    if (next === 'refund') {
+      setAmount(String(credit.leftMinor / 100));
+      setMessage('');
+    } else {
+      const first = credit.targets[0];
+      setTarget(first?.orderId ?? '');
+      setAmount(first ? String(Math.min(credit.leftMinor, first.outstandingMinor) / 100) : '');
+    }
+  }
+
+  async function run(key: string, fn: () => Promise<unknown>) {
+    setBusy(key);
+    setError(null);
+    try {
+      await fn();
+      setMode(null);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className={`xcredit xcredit--${credit.status} xcredit--from-${credit.origin}`}>
+      <div className="xcredit__head">
+        <span className="xcredit__amt">{formatMoney(credit.leftMinor, credit.currency)}</span>
+        <span className="xcredit__who">
+          <b>{credit.buyer.name}</b>
+          <small>
+            <Link to={`/order/${credit.orderId}`}>{credit.itemName}</Link> · {timeAgo(credit.createdAt)}
+          </small>
+        </span>
+        <span className="xcredit__tags">
+          <span className="badge badge--accent">{REFUND_ORIGIN_LABELS[credit.origin]}</span>
+          <span className={`badge ${pending ? 'badge--warn' : credit.status === 'held' ? 'badge--purple' : 'badge--pink'}`}>
+            {pending ? 'Awaiting buyer' : credit.status === 'held' ? 'Kept for future' : 'To decide'}
+          </span>
+        </span>
+      </div>
+
+      {credit.reason && <p className="faint xcredit__note">“{credit.reason}”</p>}
+      {credit.detailsCheck?.requestedAt && !credit.detailsCheck.confirmedAt && (
+        <p className="faint xcredit__note">
+          ⏳ Waiting for {credit.buyer.name} to {credit.buyerDetails ? 'confirm' : 'add'} their payment reversal details.
+        </p>
+      )}
+      {(credit.refundedMinor > 0 || credit.applications.length > 0) && (
+        <p className="faint xcredit__note">
+          Of {formatMoney(credit.amountMinor, credit.currency)}:
+          {credit.refundedMinor > 0 && ` ${formatMoney(credit.refundedMinor, credit.currency)} refunded`}
+          {credit.applications.map((moved) => ` · ${formatMoney(moved.amountMinor, credit.currency)} → ${moved.itemName}`)}
+        </p>
+      )}
+      {credit.disputable.map((entry) => (
+        <div key={entry.subject} className="disputebar">
+          <span>⚠️ {entry.label}. Check, and send it again - or dispute it.</span>
+          <button type="button" className="btn btn--sm btn--danger" disabled={busy !== null}
+            onClick={() => void run(`dispute-${entry.subject}`, () => api.flagDispute(credit.orderId, { subject: entry.subject }))}>
+            {busy === `dispute-${entry.subject}` ? 'Recording…' : '⚖️ Dispute'}
+          </button>
+        </div>
+      ))}
+      {credit.refundDenials > 0 && !pending && credit.disputable.length === 0 && (
+        <p className="notice notice--warn xcredit__note">
+          The buyer said an earlier refund of this did not arrive - it is on record under My disputes.
+        </p>
+      )}
+      {pending && credit.pendingRefund && (
+        <p className="faint xcredit__note">
+          ↩️ You refunded {formatMoney(credit.pendingRefund.amountMinor, credit.currency)}
+          {credit.pendingRefund.reference ? ` (ref ${credit.pendingRefund.reference})` : ''} {timeAgo(credit.pendingRefund.sentAt)} —
+          waiting for {credit.buyer.name} to confirm it arrived.
+        </p>
+      )}
+
+      {!pending && !mode && (
+        <div className="xcredit__acts">
+          <button type="button" className="btn btn--sm btn--ok" onClick={() => open('refund')}>↩️ Refund</button>
+          <button type="button" className="btn btn--sm btn--ghost" disabled={credit.targets.length === 0}
+            title={credit.targets.length === 0 ? 'This buyer has no other order that still owes anything' : undefined}
+            onClick={() => open('apply')}>
+            ➡️ Use for an order
+          </button>
+          {credit.status === 'open' && (
+            <button type="button" className="btn btn--sm btn--quiet" disabled={busy !== null}
+              onClick={() => void run('hold', () => api.holdCredit(credit.orderId, credit.creditId))}>
+              {busy === 'hold' ? 'Saving…' : '🕒 Keep for future orders'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {mode && (
+        <div className="xcredit__form">
+          {mode === 'refund' && (
+            <PayoutDetails orderId={credit.orderId} buyerName={credit.buyer.name}
+              details={credit.buyerDetails} check={credit.detailsCheck} onChanged={onChanged} />
+          )}
+          {mode === 'apply' && (
+            <label className="field">
+              <span>Put it towards</span>
+              <select value={target} onChange={(e) => {
+                setTarget(e.target.value);
+                const next = credit.targets.find((entry) => entry.orderId === e.target.value);
+                if (next) setAmount(String(Math.min(credit.leftMinor, next.outstandingMinor) / 100));
+              }}>
+                {credit.targets.map((entry) => (
+                  <option key={entry.orderId} value={entry.orderId}>
+                    {entry.itemName} — {formatMoney(entry.outstandingMinor, credit.currency)} owed
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            <span>Amount (₹)</span>
+            <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <span className="field__hint">
+              {typedMinor > cap
+                ? `At most ${formatMoney(cap, credit.currency)}.`
+                : typedMinor > 0 && typedMinor < credit.leftMinor
+                  ? `${formatMoney(credit.leftMinor - typedMinor, credit.currency)} stays here to refund later.`
+                  : `The full ${formatMoney(credit.leftMinor, credit.currency)}.`}
+            </span>
+          </label>
+          {mode === 'refund' && (
+            <>
+              <label className="field">
+                <span>Transaction id (UTR)</span>
+                <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. 412345678901" />
+              </label>
+              <div className="field">
+                <span>Screenshot of the transfer</span>
+                <ProofPicker value={shot} onChange={setShot} />
+                <span className="field__hint">The transaction id or a screenshot - at least one of the two.</span>
+              </div>
+              <label className="field">
+                <span>Message to {credit.buyer.name}</span>
+                <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Optional — a standard note is sent if you leave this empty." />
+                <span className="field__hint">They are notified and asked to confirm it arrived.</span>
+              </label>
+            </>
+          )}
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--ok"
+              disabled={busy !== null || typedMinor <= 0 || typedMinor > cap || (mode === 'apply' && !target)
+                || (mode === 'refund' && ((!reference.trim() && !shot) || !payoutReady(credit.buyerDetails, credit.detailsCheck)))}
+              onClick={() => void run(mode, () => (mode === 'refund'
+                ? api.refundCredit(credit.orderId, {
+                    creditId: credit.creditId, amountMinor: typedMinor, screenshotUrl: shot ?? undefined,
+                    reference: reference.trim() || undefined, message: message.trim() || undefined,
+                  })
+                : api.applyCredit(credit.orderId, { creditId: credit.creditId, targetOrderId: target, amountMinor: typedMinor })))}>
+              {busy ? 'Saving…' : mode === 'refund'
+                ? `I've refunded ${formatMoney(typedMinor, credit.currency)}`
+                : 'Apply to this order'}
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={() => setMode(null)}>Back</button>
+          </div>
+        </div>
+      )}
+      {error && <ErrorNotice message={error} />}
+    </section>
+  );
+}
+
+/**
+ * Where the buyer's money goes back to, shown in the refund window itself.
+ *
+ * The seller should not have to leave the refund to find out, or trust a
+ * UPI id from a months-old chat. If the details are missing - or the seller
+ * just wants to be sure they are still right - they ask from here: the buyer
+ * gets a message and a notification, and the refund waits until the buyer
+ * confirms them or saves new ones.
+ */
+function PayoutDetails({ orderId, buyerName, details, check, onChanged }: {
+  orderId: string;
+  buyerName: string;
+  details: BuyerReversalDetails | null;
+  check: ShopCredit['detailsCheck'];
+  onChanged: () => Promise<void>;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pending = Boolean(check?.requestedAt && !check.confirmedAt);
+
+  function open() {
+    setMessage(details
+      ? 'Before I refund you, please check your payment reversal details are up to date (My refunds → Payment reversal details) and confirm them, or update them if anything has changed.'
+      : 'I need to refund you. Please add your payment reversal details (My refunds → Payment reversal details) so I know where to send it.');
+    setAsking(true);
+    setError(null);
+  }
+
+  async function send() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.requestReversalDetails(orderId, message.trim() || undefined);
+      setAsking(false);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={`payout${details ? '' : ' payout--missing'}${pending ? ' payout--pending' : ''}`}>
+      <div className="payout__head">
+        <b>💳 Send it to</b>
+        {details && (
+          <small>
+            Updated {formatDateOrdinal(details.updatedAt)}
+            {check?.confirmedAt ? ` · confirmed ${formatDateOrdinal(check.confirmedAt)}` : ''}
+          </small>
+        )}
+      </div>
+      {details ? (
+        <div className="payout__body">
+          <dl className="payout__grid">
+            <dt>Method</dt><dd>{details.method}</dd>
+            <dt>Account / UPI</dt><dd className="mono">{details.identifier}</dd>
+            <dt>Name</dt><dd>{details.accountName}</dd>
+            {details.notes && <><dt>Notes</dt><dd>{details.notes}</dd></>}
+          </dl>
+          {details.qrCodeUrl && (
+            <a href={details.qrCodeUrl} target="_blank" rel="noopener noreferrer" className="payout__qr">
+              <img src={details.qrCodeUrl} alt={`${buyerName}'s payment QR code`} />
+            </a>
+          )}
+        </div>
+      ) : (
+        <p className="payout__none">{buyerName} has not added payment reversal details yet.</p>
+      )}
+      {pending && check && (
+        <p className="payout__wait">
+          ⏳ You asked {buyerName} to {details ? 'check' : 'add'} these {timeAgo(check.requestedAt)}. You can
+          refund once they confirm or update them.
+        </p>
+      )}
+      {asking ? (
+        <div className="payout__ask">
+          <label className="field">
+            <span>Message to {buyerName}</span>
+            <textarea rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
+            <span className="field__hint">They get it in their messages and as a notification.</span>
+          </label>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void send()}>
+              {busy ? 'Sending…' : '💬 Send'}
+            </button>
+            <button type="button" className="btn btn--sm btn--quiet" onClick={() => setAsking(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="btn btn--sm btn--ghost payout__askbtn" onClick={open}>
+          💬 {pending ? `Remind ${buyerName}` : details ? `Ask ${buyerName} to confirm these` : `Ask ${buyerName} to add them`}
+        </button>
+      )}
+      {error && <ErrorNotice message={error} />}
+    </div>
+  );
+}
+
+/** A refund needs somewhere to go, and the seller's own doubt about it answered. */
+function payoutReady(details: BuyerReversalDetails | null, check: ShopCredit['detailsCheck']): boolean {
+  return Boolean(details) && !(check?.requestedAt && !check.confirmedAt);
+}
+
+/**
+ * A refund the seller starts themselves - after a dispute, a damaged box, a
+ * goodwill gesture. Nothing is owed until they say so, so nothing is filled
+ * in for them: they choose the order, type the amount, and say why.
+ */
+function NewRefund({ refundable, onClose, onDone, onChanged }: {
+  refundable: RefundableOrder[];
+  onClose: () => void;
+  onDone: () => Promise<void>;
+  onChanged: () => Promise<void>;
+}) {
+  const [orderId, setOrderId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [reference, setReference] = useState('');
+  const [shot, setShot] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const chosen = refundable.find((entry) => entry.orderId === orderId);
+  const typedMinor = Math.round(Number(amount) * 100) || 0;
+
+  async function submit() {
+    if (!chosen) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.startRefund(chosen.orderId, {
+        amountMinor: typedMinor, reason: reason.trim(), screenshotUrl: shot ?? undefined,
+        reference: reference.trim() || undefined, message: message.trim() || undefined,
+      });
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not start that refund.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rfnew">
+      <h3>＋ New refund</h3>
+      {refundable.length === 0 ? (
+        <p className="muted">No order has a payment on it that has not already been refunded.</p>
+      ) : (
+        <>
+          <label className="field">
+            <span>Order</span>
+            <select value={orderId} onChange={(e) => setOrderId(e.target.value)}>
+              <option value="">Choose an order…</option>
+              {refundable.map((entry) => (
+                <option key={entry.orderId} value={entry.orderId}>
+                  {entry.buyer.name} — {entry.itemName} (up to {formatMoney(entry.refundableMinor, entry.currency)})
+                </option>
+              ))}
+            </select>
+          </label>
+          {chosen && (
+            <PayoutDetails orderId={chosen.orderId} buyerName={chosen.buyer.name}
+              details={chosen.buyerDetails} check={chosen.detailsCheck} onChanged={onChanged} />
+          )}
+          <label className="field">
+            <span>Amount (₹)</span>
+            <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+            {chosen && typedMinor > chosen.refundableMinor && (
+              <span className="field__hint">At most {formatMoney(chosen.refundableMinor, chosen.currency)} on this order.</span>
+            )}
+          </label>
+          <label className="field">
+            <span>What is it for?</span>
+            <input value={reason} onChange={(e) => setReason(e.target.value)}
+              placeholder="Box arrived dented — settled after the dispute" />
+          </label>
+          <label className="field">
+            <span>Transaction id (UTR)</span>
+            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. 412345678901" />
+          </label>
+          <div className="field">
+            <span>Screenshot of the transfer</span>
+            <ProofPicker value={shot} onChange={setShot} />
+            <span className="field__hint">The transaction id or a screenshot - at least one of the two.</span>
+          </div>
+          <label className="field">
+            <span>Message to the buyer</span>
+            <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)}
+              placeholder="Optional — a standard note is sent if you leave this empty." />
+          </label>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn--ok"
+              disabled={busy || !chosen || typedMinor <= 0 || typedMinor > (chosen?.refundableMinor ?? 0)
+                || reason.trim().length < 3 || (!reference.trim() && !shot)
+                || !payoutReady(chosen?.buyerDetails ?? null, chosen?.detailsCheck ?? null)}
+              onClick={() => void submit()}>
+              {busy ? 'Sending…' : typedMinor > 0 && chosen ? `Refund ${formatMoney(typedMinor, chosen.currency)}` : 'Refund'}
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={onClose}>Cancel</button>
+          </div>
+        </>
+      )}
+      {error && <ErrorNotice message={error} />}
+    </section>
   );
 }
 
@@ -1209,22 +2050,9 @@ function FileIntoLot({ row, store, onClose, onDone }: {
   onClose: () => void;
   onDone: () => void;
 }) {
+  const navigate = useNavigate();
   const [lots, setLots] = useState<LotSummary[] | null>(null);
-  const [routes, setRoutes] = useState<RoutesResponse | null>(null);
-  const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [lotId, setLotId] = useState('');
-  /* Prefilled, not defaulted. A name that appears in the field is one the
-     seller reads and corrects; one applied silently when the field is left
-     blank is how a shop ends up with a lot called "Lot for <the first thing
-     that went in it>" holding thirty other people's parcels. */
-  const [name, setName] = useState(() => suggestLotName());
-  const [origin, setOrigin] = useState('');
-  const [supplier, setSupplier] = useState('');
-  const [handlerId, setHandlerId] = useState('');
-  const [handlers, setHandlers] = useState<ProviderCard[]>([]);
-  // The template's answer, pre-selected: picking the template once should be
-  // the last time anybody thinks about this item's tracking.
-  const [routeId, setRouteId] = useState(row.lotRouteId ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1233,30 +2061,20 @@ function FileIntoLot({ row, store, onClose, onDone }: {
       .then((result) => {
         setLots(result.lots);
         setLotId(result.lots[0]?.lot.id ?? '');
-        // No lots yet means there is nothing to pick, so the form opens on
-        // the door that works.
-        if (result.lots.length === 0) setMode('new');
       })
       .catch(() => setLots([]));
-    void api.routes().then(setRoutes).catch(() => setRoutes(null));
-    void api.serviceDirectory('handler').then((r) => setHandlers(r.providers)).catch(() => setHandlers([]));
   }, [store.ownerId, store.isOwner]);
+
+  function goCreateLot() {
+    onClose();
+    navigate('/shop?tab=lots&spotlight=new');
+  }
 
   async function submit() {
     setBusy(true);
     setError(null);
     try {
-      await api.assignOrderToLot(row.id, mode === 'existing'
-        ? { lotId }
-        : {
-            newLot: {
-              name: name.trim(),
-              origin: origin.trim(),
-              supplierHandle: supplier.trim() || undefined,
-              handlerUserId: handlerId || undefined,
-              routeId: routeId || undefined,
-            },
-          });
+      await api.assignOrderToLot(row.id, { lotId });
       onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
@@ -1268,86 +2086,47 @@ function FileIntoLot({ row, store, onClose, onDone }: {
   return (
     <Modal title={`Add ${row.itemName} to a lot`} onClose={onClose}>
       <div className="stack">
-        <div className="seg" role="radiogroup" aria-label="Which lot">
-          <button type="button" role="radio" aria-checked={mode === 'existing'}
-            disabled={(lots?.length ?? 0) === 0}
-            className={mode === 'existing' ? 'is-on' : ''} onClick={() => setMode('existing')}>
-            Existing lot
-          </button>
-          <button type="button" role="radio" aria-checked={mode === 'new'}
-            className={mode === 'new' ? 'is-on' : ''} onClick={() => setMode('new')}>
-            New lot
-          </button>
-        </div>
+        <fieldset className="pickset">
+          <legend>Choose a lot</legend>
+          <span className="field__hint">
+            Select one of your open lots, or create a new one.
+          </span>
 
-        {mode === 'existing' ? (
-          lots === null ? (
+          {lots === null ? (
             <p className="muted">Loading…</p>
           ) : lots.length === 0 ? (
-            <p className="muted">No lots open yet. Make one.</p>
+            <p className="muted" style={{ margin: 0 }}>No lots open yet. Create one below.</p>
           ) : (
-            <label className="field">
-              <span>Lot</span>
-              <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
-                {lots.map(({ lot }) => (
-                  <option key={lot.id} value={lot.id}>
+            lots.map(({ lot, tally }) => (
+              <label key={lot.id} className={`pick${lotId === lot.id ? ' is-on' : ''}`}>
+                <input type="radio" name="lot" checked={lotId === lot.id}
+                  onChange={() => setLotId(lot.id)} />
+                <span className="pick__body">
+                  <span className="pick__name">
                     {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )
-        ) : (
-          <>
-            <label className="field">
-              <span>Lot name *</span>
-              <input value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="September import" required autoFocus />
-              <span className="field__hint">
-                Yours to recognise, and every later item goes in under it. Buyers never see it.
-              </span>
-            </label>
-            <label className="field">
-              <span>Origin</span>
-              <input value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="China" />
-            </label>
-            <label className="field">
-              <span>Supplier (optional)</span>
-              <input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="@their_handle" />
-            </label>
-            <label className="field">
-              <span>Domestic handler (optional)</span>
-              <select value={handlerId} onChange={(e) => setHandlerId(e.target.value)}>
-                <option value="">Nobody — you dispatch it yourself</option>
-                {handlers.map((entry) => (
-                  <option key={entry.userId} value={entry.userId}>{entry.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Tracking template</span>
-              <select value={routeId} onChange={(e) => setRouteId(e.target.value)}>
-                <option value="">
-                  {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
-                </option>
-                {(routes?.routes ?? []).map((route) => (
-                  <option key={route.id} value={route.id}>
-                    {route.name} — {route.steps.length} steps
-                  </option>
-                ))}
-              </select>
-              <span className="field__hint">
-                Every item in this lot travels these steps, and the buyer reads them.
-              </span>
-            </label>
-          </>
-        )}
+                  </span>
+                  <span className="faint" style={{ display: 'grid', gap: 4, marginTop: 6, fontSize: 'var(--t-xs)' }}>
+                    <span>{countryFlag(lot.originCountry)} → {countryFlag(lot.destinationCountry)}</span>
+                    {lot.supplier?.name && <span>Supplier: {lot.supplier.name}</span>}
+                    {lot.forwarder?.name && <span>Forwarder: {lot.forwarder.name}</span>}
+                    {lot.handler?.name && <span>Handler: {lot.handler.name}</span>}
+                  </span>
+                </span>
+              </label>
+            ))
+          )}
+        </fieldset>
+
+        <button type="button" className="silkcta" onClick={goCreateLot}>
+          <span className="silkcta__label">✨ Create a new lot</span>
+          <span className="silkcta__note">Opens the lots tab, ready to fill in</span>
+        </button>
 
         {error && <ErrorNotice message={error} />}
         <button type="button" className="btn btn--block"
-          disabled={busy || (mode === 'existing' ? !lotId : !name.trim())}
+          disabled={busy || !lotId}
           onClick={() => void submit()}>
-          {busy ? 'Filing…' : mode === 'existing' ? 'Add to lot' : 'Create lot & add order'}
+          {busy ? 'Filing…' : 'Add to lot'}
         </button>
       </div>
     </Modal>
@@ -1414,6 +2193,125 @@ function RejectOrder({ row, onClose, onDone }: {
 }
 
 /**
+ * Saying a claimed payment has not landed, from the row rather than the
+ * order screen - the same "did it arrive" question, just answered "no"
+ * here, which is the one answer that needs a reason attached for the buyer.
+ */
+function DenyClaimRow({ row, onClose, onDone }: {
+  row: SaleRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.settleClaim(row.id, { accept: false, reason: reason.trim() });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Say this payment has not arrived" onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        <p className="muted">
+          {row.itemName} — {row.buyer.name}, {formatMoney(row.claim?.amountMinor ?? row.totalMinor, row.currency)}.
+        </p>
+        <label className="field">
+          <span>What is wrong</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={2}
+            placeholder="Nothing has arrived, the amount is short, the reference does not match…" />
+          <span className="field__hint">The buyer reads this and acts on it.</span>
+        </label>
+        {error && <p className="notice notice--error">{error}</p>}
+        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
+          {busy ? 'Sending…' : 'It has not arrived'}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Calling off an order already accepted or placed.
+ *
+ * The X button's other meaning: once the buyer has been told yes, turning the
+ * order down is `Cancel`, never `Reject` again — the two statuses must stay
+ * apart, and this dialog is the one that produces `Cancelled` (or, once
+ * anything was paid, starts the payment reversal that ends in
+ * `Cancelled + Reversed`).
+ */
+function CancelOrderRow({ row, onClose, onDone }: {
+  row: SaleRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const paid = row.paymentStatus === 'paid' || row.paymentStatus === 'partially_paid';
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.cancelOrder(row.id, { reason: reason.trim(), message: message.trim() || undefined });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not cancel that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Cancel this order" onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        <p className="muted">
+          {row.itemName} — {row.buyer.name}, {formatMoney(row.totalMinor, row.currency)}.
+        </p>
+        <label className="field">
+          <span>Why</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3}
+            placeholder="Out of stock, buyer requested it…" />
+        </label>
+        <label className="field">
+          <span>Message to the buyer</span>
+          <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2}
+            placeholder={`Your order for ${row.itemName} has been cancelled.`} />
+          <span className="field__hint">Edit it, or leave it blank for the default.</span>
+        </label>
+        {error && <p className="notice notice--error">{error}</p>}
+        {paid ? (
+          <p className="notice notice--warn" style={{ margin: 0 }}>
+            Money has already been paid. This moves the order to <strong>Payment Reversal Pending</strong>
+            {' '}until the reversal is recorded on the order page.
+          </p>
+        ) : (
+          <p className="notice notice--warn" style={{ margin: 0 }}>
+            The order becomes <strong>Cancelled</strong>. This cannot be undone.
+          </p>
+        )}
+        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
+          {busy ? 'Cancelling…' : 'Cancel order'}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+/**
  * Consignments: opening them, filling them, and watching them move.
  *
  * These were two screens - "Manage lots" out on its own page, and a tracking
@@ -1422,7 +2320,7 @@ function RejectOrder({ row, onClose, onDone }: {
  * splitting "administer it" from "watch it" put a trip out of the tab between a
  * seller and the thing they were already looking at.
  */
-function Lots({ store }: { store: StoreAccess }) {
+function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNew?: boolean }) {
   const [data, setData] = useState<LotsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1441,6 +2339,9 @@ function Lots({ store }: { store: StoreAccess }) {
       else copy.delete('lot');
       return copy;
     }, { replace: true });
+
+  /** Delivered is done; everything else is still being worked. */
+  const [statusFilter, setStatusFilter] = useState<'active' | 'completed'>('active');
 
   const load = useCallback(async () => {
     setError(null);
@@ -1462,6 +2363,9 @@ function Lots({ store }: { store: StoreAccess }) {
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
 
+  const filtered = data.lots.filter((entry) =>
+    statusFilter === 'completed' ? entry.lot.stage === 'delivered' : entry.lot.stage !== 'delivered');
+
   return (
     <div className="stack">
       {creating ? (
@@ -1471,17 +2375,17 @@ function Lots({ store }: { store: StoreAccess }) {
           onCancel={() => setCreating(false)}
         />
       ) : (
-        /* Two decisions, and the second is the rarer one: a lot is opened
-           weekly, a route is written once and then reused by every lot after
-           it. So routes sit beside the button rather than inside it. */
-        <div className="row row--tight" style={{ justifySelf: 'start' }}>
+        // Routes now live on their own Sell-home card, not beside this button.
+        <span className="spotlight-row" style={{ justifySelf: 'start' }}>
           <button type="button" className="btn" onClick={() => setCreating(true)}>
             <Icon name="plus" size={15} /> New lot
           </button>
-          <Link to="/routes" className="btn btn--quiet">
-            <Icon name="truck" size={15} /> Routes
-          </Link>
-        </div>
+          {spotlightNew && (
+            <span className="spotlight-badge" aria-hidden="true">
+              <Icon name="left" size={18} />
+            </span>
+          )}
+        </span>
       )}
 
       {/* Items with nowhere to travel. Not an error - most items never need a
@@ -1505,22 +2409,76 @@ function Lots({ store }: { store: StoreAccess }) {
           it — buyers never see the lot, only the tracking it produces.
         </EmptyState>
       ) : (
-        data.lots.map((summary) => (
-          <LotCard key={summary.lot.id} summary={summary} store={store} onOpen={() => setOpenId(summary.lot.id)} />
-        ))
+        <>
+          <div className="seg" role="tablist" aria-label="Lot status">
+            {(['active', 'completed'] as const).map((entry) => (
+              <button key={entry} type="button" role="tab" aria-selected={statusFilter === entry}
+                className={statusFilter === entry ? 'is-on' : ''}
+                onClick={() => setStatusFilter(entry)}>
+                {entry === 'active' ? 'Active lots' : 'Completed lots'}
+              </button>
+            ))}
+          </div>
+
+          {filtered.length === 0 ? (
+            <p className="muted">No {statusFilter} lots.</p>
+          ) : (
+            <div className="lot-grid">
+              {filtered.map((summary) => (
+                <LotCard key={summary.lot.id} summary={summary} store={store}
+                  onOpen={() => setOpenId(summary.lot.id)} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-/** The numbers on a lot card that open the people behind them. */
-type Drill = 'customers' | 'packed' | 'dispatched';
+/**
+ * A lid colour per lot, stable across reloads and filtering.
+ *
+ * Hashed off the id rather than the list position, so a lot does not change
+ * colour when another one above it leaves the filtered view.
+ */
+const CARTON_HUES = ['violet', 'coral', 'aqua', 'blue', 'pink', 'lime'] as const;
+function hueOf(id: string): (typeof CARTON_HUES)[number] {
+  let sum = 0;
+  for (let i = 0; i < id.length; i++) sum += id.charCodeAt(i);
+  return CARTON_HUES[sum % CARTON_HUES.length]!;
+}
 
-const DRILL_HINTS: Record<Drill, string> = {
-  customers: 'Everyone with something in this lot, most items first.',
-  packed: 'How far each person is, least packed first — that is the work left.',
-  dispatched: 'Who has gone and who is still here.',
+/** The one status pill on a carton, from the same phase the bars beneath it chart. */
+const PHASE_PILL: Record<ReturnType<typeof phaseOfCounts>, { label: string; icon: IconName; tone: 'ok' | 'info' | 'warn' | 'accent' }> = {
+  empty: { label: 'Not started', icon: 'box', tone: 'warn' },
+  filling: { label: 'Filling', icon: 'box', tone: 'warn' },
+  prepping: { label: 'At Origin', icon: 'tag', tone: 'info' },
+  china_done: { label: 'Dispatched', icon: 'truck', tone: 'info' },
+  india: { label: 'In Transit', icon: 'truck', tone: 'ok' },
+  domestic: { label: 'Out for Delivery', icon: 'truck', tone: 'ok' },
+  completed: { label: 'Delivered', icon: 'check', tone: 'accent' },
 };
+
+/** What each icon-only flip tile means, for the tap-to-reveal label. */
+const TILE_HINTS = {
+  customers: 'Customers', orders: 'Orders', ready: 'Ready to dispatch',
+  packed: 'Packed', dispatched: 'Dispatched',
+} as const;
+type TileKey = keyof typeof TILE_HINTS;
+
+/** A number with just an icon - five of them have to fit where three used to. */
+function MiniTile({ icon, value, tone, onClick, open }: {
+  icon: IconName; value: string; tone?: 'blue' | 'green'; onClick?: () => void; open?: boolean;
+}) {
+  const className = `tile${tone ? ` tile--${tone}` : ''}${onClick ? ' tile--tap' : ''}${open ? ' is-open' : ''}`;
+  const body = <><Icon name={icon} size={15} /><span className="tile__value">{value}</span></>;
+  return onClick ? (
+    <button type="button" className={className} onClick={onClick} aria-expanded={open ?? false}>{body}</button>
+  ) : (
+    <div className={className}>{body}</div>
+  );
+}
 
 /**
  * One consignment: what is in it, where it is, and the two things to do with it.
@@ -1535,7 +2493,6 @@ function LotCard({ summary, store, onOpen }: {
   onOpen: () => void;
 }) {
   const { lot, tally } = summary;
-  const board = `/lot/${lot.id}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`;
   // Read off the same tally the bars below chart, rather than from the stage
   // the seller last ticked: thirty-three of thirty-four in the warehouse is
   // "prepping" whatever the lot record says, and a line derived from the same
@@ -1551,204 +2508,119 @@ function LotCard({ summary, store, onOpen }: {
    * it you are looking at is your choice.
    */
   const [open, setOpen] = useState(false);
-  const [drill, setDrill] = useState<Drill | null>(null);
-  const [people, setPeople] = useState<LotBoard | null>(null);
-  const [peopleError, setPeopleError] = useState<string | null>(null);
+  const [hint, setHint] = useState<{ id: number; text: string } | null>(null);
 
-  /**
-   * Open the rows behind a number.
-   *
-   * The manifest is fetched the first time one is tapped rather than with the
-   * card: a seller with nine lots would otherwise pay for nine manifests to
-   * see a list of names nobody asked for.
-   */
-  const drillInto = (chip: Drill) => {
-    setDrill((current) => (current === chip ? null : chip));
-    if (people || peopleError) return;
-    void api
-      .lotBoard(lot.id, store.isOwner ? undefined : store.ownerId)
-      .then(setPeople)
-      .catch((err: unknown) =>
-        setPeopleError(
-          err instanceof ApiRequestError ? err.message : 'Could not load who is in this lot.',
-        ),
-      );
+  /** A little label that names an icon-only tile, then vanishes on its own. */
+  const showHint = (key: TileKey) => {
+    const id = Date.now();
+    setHint({ id, text: TILE_HINTS[key] });
+    setTimeout(() => setHint((current) => (current?.id === id ? null : current)), 1400);
+  };
+
+  const hue = hueOf(lot.id);
+  const pill = PHASE_PILL[phase];
+  const originFlag = countryFlag(lot.originCountry);
+  const destFlag = countryFlag(lot.destinationCountry);
+  /** The three progress checkpoints, said as a flag rather than a country name. */
+  const BAR_LABEL: Record<string, string> = {
+    china_received: `${originFlag} WH`,
+    china_packed: `${originFlag} Packed`,
+    india_received: `${destFlag} Rcvd`,
   };
 
   return (
-    <article className={`lot${lot.stage === 'ordering' ? '' : ' lot--moving'}`}>
-      <div className="lot__head">
-        <span className="lot__title">
-          <span className="lot__name">
-            {lot.lotNumber && <span className="lot__no">LOT {lot.lotNumber}</span>}
-            {lot.name}
+    <article className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}${open ? ' lot--flipped' : ''}`}>
+      {/* The lid stays put - only the body below it flips. */}
+      <div className="lot__head" role="button" tabIndex={0} onClick={onOpen}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
+        }}>
+        <div className="lot__headtop">
+          <span className="lot__title">
+            <span className="lot__name">{lot.name}</span>
+            {lot.lotNumber && <span className="lot__no">#LOT{lot.lotNumber}</span>}
           </span>
-          <span className="faint">
-            {[
-              lot.origin || null,
-              summary.orderCount > 0 ? `${summary.orderCount} items` : null,
-              routeOf(lot).name,
-              lot.forwarder?.trackingReference ?? null,
-            ].filter(Boolean).join(' · ')}
+          {/* The current status, said once, at the top - not repeated below. */}
+          <span className={`lotpill lotpill--sm lotpill--${pill.tone}`}>
+            <Icon name={pill.icon} size={11} /> {pill.label}
           </span>
-        </span>
-        <span className={`badge badge--${lot.stage === 'delivered' ? 'ok' : 'warn'}`}>
-          {LOT_STAGE_LABELS[lot.stage]}
-        </span>
-        {/* The way in. A card is a summary you read; this is the lot you work. */}
-        <button type="button" className="lot__enter" onClick={onOpen}
-          aria-label={`Open ${lot.name}`}>
-          <Icon name="right" size={18} />
-        </button>
-      </div>
-
-      <div className="lot__bar" aria-hidden="true">
-        <span style={{ width: `${((LOT_STAGES.indexOf(lot.stage) + 1) / LOT_STAGES.length) * 100}%` }} />
-      </div>
-
-      {/* Where the lot is on its own route, in the seller's words, and then
-          what the parcels inside it are doing - which is not the same question
-          and does not always have the same answer. */}
-      <div className="lot__status">
-        <span className={`lot__pip lot__pip--${phase}`} aria-hidden="true" />
-        <strong>{currentStepName(lot)}</strong>
-        <span className="faint">· {PHASE_LABELS[phase]}</span>
-      </div>
-      {(supplierIdOf(lot) || lot.handler?.name) && (
-        <div className="lot__crew">
-          {supplierIdOf(lot) && <span className="chipfact">Supplier tagged</span>}
-          {lot.handler?.name && <span className="chipfact">Handler: {lot.handler.name}</span>}
         </div>
-      )}
+        <span className="lot__lane">
+          <span className="lot__flag" aria-hidden="true">{originFlag}</span>
+          <Icon name="right" size={11} />
+          <span className="lot__flag" aria-hidden="true">{destFlag}</span>
+        </span>
+        {/* The fold where an open flap meets the box - drawn, not photographed. */}
+        <svg className="lot__crease" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 0 L38 0 L50 9 L62 0 L100 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+      </div>
 
-      {/* Everything a lot card can say, once it is asked. Shut by default
-          because a seller with nine lots is looking for one of them. */}
-      <button type="button" className="lot__more" aria-expanded={open}
-        onClick={() => setOpen(!open)}>
-        <Icon name={open ? 'down' : 'right'} size={13} />
-        {open ? 'Less' : `${tally.customers} ${tally.customers === 1 ? 'customer' : 'customers'} · ${countOf(tally, 'packed').done} packed · ${tally.customersDispatched} sent`}
-      </button>
-
-      {open && summary.orderCount === 0 && (
-        <p className="lot__empty">Nothing in this lot yet.</p>
-      )}
-
-      {open && summary.orderCount > 0 && (
-        <div className="lot__body">
-          <div className="tiles">
-            <Tile
-              value={String(tally.customers)}
-              label="Customers"
-              onClick={() => drillInto('customers')}
-              open={drill === 'customers'}
-            />
-            <Tile
-              value={String(countOf(tally, 'packed').done)}
-              label="Packed"
-              tone="blue"
-              onClick={() => drillInto('packed')}
-              open={drill === 'packed'}
-            />
-            <Tile
-              value={`${tally.customersDispatched}/${tally.customers}`}
-              label="Dispatched"
-              tone="green"
-              onClick={() => drillInto('dispatched')}
-              open={drill === 'dispatched'}
-            />
+      <div className="lot__flip">
+        {/* Front: what the box holds and who's working it. */}
+        <div className="lot__face lot__face--front">
+          <div className="lot__box">
+            <dl className="factlist lot__facts">
+              <div><dt>Supplier</dt><dd className={lot.supplier?.name ? '' : 'is-unset'}>{lot.supplier?.name || 'Not assigned'}</dd></div>
+              <div><dt>Freight Forwarder</dt><dd className={lot.forwarder?.name ? '' : 'is-unset'}>{lot.forwarder?.name || 'Not assigned'}</dd></div>
+              <div><dt>Domestic Handler</dt><dd className={lot.handler?.name ? '' : 'is-unset'}>{lot.handler?.name || 'Not assigned'}</dd></div>
+            </dl>
           </div>
 
-          {drill && (
-            <div className="drill">
-              {peopleError ? (
-                <p className="faint">{peopleError}</p>
-              ) : people ? (
-                <DrillRows board={people} chip={drill} to={board} />
-              ) : (
-                <p className="faint">Loading…</p>
-              )}
+          {/* Flips the body over to show what's inside. */}
+          <button type="button" className="lot__more" aria-expanded={open} onClick={() => setOpen(true)}>
+            <span className="lot__count"><Icon name="users" size={12} />{tally.customers}</span>
+            <span className="lot__count"><Icon name="box" size={12} />{summary.orderCount}</span>
+            <Icon name="right" size={13} />
+          </button>
+
+          <button type="button" className="lot__open" onClick={onOpen}>
+            Open <Icon name="right" size={13} />
+          </button>
+        </div>
+
+        {/* Back: the numbers, once asked. */}
+        <div className="lot__face lot__face--back" aria-hidden={!open}>
+          {summary.orderCount === 0 ? (
+            <p className="lot__empty">Nothing in this lot yet.</p>
+          ) : (
+            <div className="lot__body">
+              <div className="lot__tiles lot__tiles--2">
+                <MiniTile icon="users" value={String(tally.customers)} onClick={() => showHint('customers')} />
+                <MiniTile icon="box" value={String(summary.orderCount)} onClick={() => showHint('orders')} />
+              </div>
+              <div className="lot__tiles lot__tiles--3">
+                <MiniTile icon="tag" value={String(countOf(tally, 'ready_to_dispatch').done)}
+                  onClick={() => showHint('ready')} />
+                <MiniTile icon="check" value={String(countOf(tally, 'packed').done)} tone="blue"
+                  onClick={() => showHint('packed')} />
+                <MiniTile icon="truck" value={`${tally.customersDispatched}/${tally.customers}`} tone="green"
+                  onClick={() => showHint('dispatched')} />
+              </div>
+
+              {hint && <div key={hint.id} className="lot__hint">{hint.text}</div>}
+
+              <div className="bars">
+                {tally.progress.map((row) => (
+                  <div key={row.checkpoint} className="bar">
+                    <span className="bar__label">{BAR_LABEL[row.checkpoint]}</span>
+                    <span className="bar__track">
+                      <span className="bar__fill"
+                        style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }} />
+                    </span>
+                    <span className="bar__count">{row.done}/{row.total}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          <div className="bars">
-            {tally.progress.map((row) => (
-              <div key={row.checkpoint} className="bar">
-                <span className="bar__label">{CHECKPOINT_COUNT_LABELS[row.checkpoint]}</span>
-                <span className="bar__track">
-                  <span className="bar__fill"
-                    style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }} />
-                </span>
-                <span className="bar__count">{row.done}/{row.total}</span>
-              </div>
-            ))}
-          </div>
+          <button type="button" className="lot__more" onClick={() => setOpen(false)}>
+            <Icon name="left" size={13} /> Back
+          </button>
         </div>
-      )}
-
-      <div className="lot__foot">
-        <button type="button" className="btn btn--quiet btn--sm" onClick={onOpen}>Edit lot</button>
-        <Link to={board} className="btn btn--ghost btn--sm">Packing board →</Link>
       </div>
     </article>
-  );
-}
-
-/**
- * The people behind one of a lot card's numbers.
- *
- * Per person rather than per item, because a parcel goes to a person: "four
- * packed" is a fact about cardboard, and "Priya 1 of 3" is the thing to do
- * something about. The per-person counts add back up to the number that was
- * tapped, so the list can never contradict the tile above it.
- */
-function DrillRows({ board, chip, to }: { board: LotBoard; chip: Drill; to: string }) {
-  const rows = board.customers.map((customer) => {
-    const ticked = (checkpoint: 'packed' | 'dispatched') =>
-      customer.orders.filter((order) => Boolean(order.checkpoints?.[checkpoint])).length;
-    return {
-      customer,
-      total: Math.max(1, customer.orders.length),
-      packed: ticked('packed'),
-      dispatched: ticked('dispatched'),
-    };
-  });
-
-  // Whichever number was tapped, the rows that still need work come first.
-  if (chip === 'packed') rows.sort((a, b) => a.packed / a.total - b.packed / b.total);
-  else if (chip === 'dispatched') rows.sort((a, b) => a.dispatched / a.total - b.dispatched / b.total);
-  else rows.sort((a, b) => b.total - a.total);
-
-  if (rows.length === 0) return <p className="faint">Nobody has ordered into this lot yet.</p>;
-
-  // Eight, then the board. A lot of forty is a working session, not a
-  // glance, and the screen built for it is one tap away.
-  const shown = rows.slice(0, 8);
-
-  return (
-    <>
-      <span className="faint">{DRILL_HINTS[chip]}</span>
-      {shown.map(({ customer, total, packed, dispatched }) => {
-        const done = chip === 'dispatched' ? dispatched : packed;
-        const tone = done === total ? ' badge--ok' : done === 0 ? '' : ' badge--warn';
-        return (
-          <div key={customer.buyerId} className="drill__row">
-            <span className="drill__name">{customer.name}</span>
-            {chip === 'customers' ? (
-              <span className="badge">{total} item{total === 1 ? '' : 's'}</span>
-            ) : (
-              <span className={`badge${tone}`}>
-                {done}/{total} {chip === 'dispatched' ? 'gone' : 'packed'}
-              </span>
-            )}
-          </div>
-        );
-      })}
-      {rows.length > shown.length && (
-        <Link to={to} className="drill__more">
-          {rows.length - shown.length} more on the packing board →
-        </Link>
-      )}
-    </>
   );
 }
 
@@ -1781,7 +2653,7 @@ function Analytics({ store }: { store: StoreAccess }) {
       .then(setPro)
       .catch((err: unknown) =>
         setProError(
-          err instanceof ApiRequestError ? err.message : 'Could not load your consignment figures.',
+          err instanceof ApiRequestError ? err.message : 'Could not load what is in flight.',
         ),
       );
   }, [store.ownerId, store.isOwner]);
@@ -1844,25 +2716,13 @@ function Analytics({ store }: { store: StoreAccess }) {
       </div>
 
       {proError && <p className="faint">{proError}</p>}
-      {pro && <ProInsights data={pro} />}
+      {pro && <RunningShop data={pro} />}
+      <SalesPanel shop={store.isOwner ? undefined : store.ownerId} />
     </div>
   );
 }
 
-/* ── Pro analytics ──────────────────────────────────────────────────────── */
-
-/**
- * A stretch of time in the unit that suits it.
- *
- * "0.0d" beside a bar is a number that has been rounded until it says nothing.
- * A leg measured in hours is reported in hours, and one too short to have hours
- * says so in words.
- */
-function days(value: number): string {
-  if (value >= 1) return `${value.toFixed(1)}d`;
-  const hours = value * 24;
-  return hours >= 1 ? `${Math.round(hours)}h` : 'same day';
-}
+/* ── Running the shop ───────────────────────────────────────────────────── */
 
 /** A customer's name, linking to their page when they have one. */
 function Person({ who }: { who: PartyRef }) {
@@ -1874,324 +2734,71 @@ function Person({ who }: { who: PartyRef }) {
 }
 
 /**
- * What the consignments have been doing.
- *
- * Every figure below is the packing board read a different way - the same
- * checkpoints the seller ticks on a lot, counted and timed. Nothing here asks
- * anyone to fill in a second set of numbers, which is why it can be trusted:
- * a stat nobody maintains is a stat nobody believes.
- *
- * Added beneath the shop figures rather than replacing them. Revenue and views
- * answer "is the shop working"; these answer "where is everything, and who is
- * waiting", which is the question somebody running an import actually has.
+ * What is moving and who owes what - the day-to-day figures every shop needs,
+ * so they stay free. The why and the who-to-chase live in Insights (Pro).
  */
-function ProInsights({ data }: { data: InsightsResponse }) {
-  const { headline, boxes, timings, perLot, pending, cohorts, top, dormant, bulk, preOrders } = data;
-  const sales = data.powerSales;
-  const quiet =
-    perLot.length === 0 && preOrders.length === 0 && sales.runs === 0 && headline.ordersInFlight === 0;
-
-  // Segment bars are drawn against the slowest leg rather than against a fixed
-  // scale, so the one to fix is the one that fills the row.
-  const measured = SEGMENTS.filter((segment) => timings[segment] !== null);
-  const slowest = Math.max(0.1, ...measured.map((segment) => timings[segment]!));
-
+function RunningShop({ data }: { data: InsightsResponse }) {
+  const { headline, pending, toCollect } = data;
+  const owed = toCollect.reduce((sum, row) => sum + row.outstandingMinor, 0);
   return (
     <>
-      <div className="ins__head">
-        <span className="tag-pro">Pro</span>
-        <div style={{ minWidth: 0 }}>
-          <h2>Consignment analytics</h2>
-          <span className="field__hint">
-            Your packing board, read a different way. Nothing extra to fill in.
-          </span>
-        </div>
+      <div className="stats">
+        <Stat
+          label="In flight"
+          value={String(headline.ordersInFlight)}
+          note={`${headline.customers} customer${headline.customers === 1 ? '' : 's'} in all`}
+        />
+        <Stat
+          label="Awaiting payment"
+          value={formatMoney(headline.unpaidMinor)}
+          note={
+            headline.oldestWaitingDays > 0
+              ? `oldest landed ${headline.oldestWaitingDays} days ago`
+              : 'nothing landed and unpaid'
+          }
+        />
+        <Stat label="To collect" value={formatMoney(owed)} note="on orders you accepted" />
       </div>
 
-      {quiet ? (
-        <EmptyState icon="◷" title="Nothing has moved yet">
-          Open a lot and file some orders into it. These figures are counted off the checkpoints
-          you tick, so they fill themselves in as the consignment travels.
-        </EmptyState>
-      ) : (
-        <>
-          <div className="stats">
-            <Stat
-              label="In flight"
-              value={String(headline.ordersInFlight)}
-              note={`${headline.customers} customer${headline.customers === 1 ? '' : 's'} in all`}
-            />
-            <Stat
-              label="Value moving"
-              value={formatMoney(headline.valueInFlightMinor)}
-              note={`${headline.openLots} lot${headline.openLots === 1 ? '' : 'es'} open`}
-            />
-            <Stat
-              label="Awaiting payment"
-              value={formatMoney(headline.unpaidMinor)}
-              note={
-                headline.oldestWaitingDays > 0
-                  ? `oldest landed ${headline.oldestWaitingDays} days ago`
-                  : 'nothing landed and unpaid'
-              }
-            />
-            <Stat
-              label="Repeat customers"
-              value={String(data.repeat)}
-              note="bought across two lots or more"
-            />
+      {toCollect.length > 0 && (
+        <div className="card card--pad stack">
+          <div>
+            <h2>To collect</h2>
+            <span className="field__hint">Balances on orders you have accepted, by buyer. Largest first.</span>
           </div>
+          {toCollect.map((row) => (
+            <div key={row.who.handle ?? row.who.name} className="ins__row">
+              <span style={{ minWidth: 0 }}>
+                <Person who={row.who} />
+                <span className="faint"> · {row.orders} order{row.orders === 1 ? '' : 's'}</span>
+              </span>
+              <span className="badge badge--warn">{formatMoney(row.outstandingMinor, row.currency)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-          {boxes.byLot.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Boxes still to pack</h2>
-                <span className="field__hint">
-                  One parcel per customer per lot, sized off what is in it. A customer drops out
-                  once theirs is packed.
+      {pending.length > 0 && (
+        <div className="card card--pad stack">
+          <div>
+            <h2>Landed and not paid for</h2>
+            <span className="field__hint">In India, waiting on money. Most owed first.</span>
+          </div>
+          {pending.map((row) => (
+            <div key={row.buyerId} className="ins__row">
+              <span style={{ minWidth: 0 }}>
+                <Person who={row.who} />
+                <span className="faint">
+                  {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} ·{' '}
+                  {row.waitingDays === 0
+                    ? 'landed today'
+                    : `waiting ${row.waitingDays} day${row.waitingDays === 1 ? '' : 's'}`}
                 </span>
-              </div>
-              <div className="tiles">
-                <Tile value={String(boxes.small)} label="Small" />
-                <Tile value={String(boxes.medium)} label="Medium" tone="blue" />
-                <Tile value={String(boxes.large)} label="Large" tone="green" />
-              </div>
-              {boxes.byLot.map((row) => (
-                <div key={row.lotId} className="ins__row">
-                  <span className="ins__name">{row.lotName}</span>
-                  <span className="faint">
-                    {[
-                      row.small > 0 && `${row.small} small`,
-                      row.medium > 0 && `${row.medium} medium`,
-                      row.large > 0 && `${row.large} large`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </span>
-                </div>
-              ))}
+              </span>
+              <span className="badge badge--warn">{formatMoney(row.totalMinor)}</span>
             </div>
-          )}
-
-          {measured.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Time in each stage</h2>
-                <span className="field__hint">
-                  Average days, across every order you have moved. The long one is where to push.
-                </span>
-              </div>
-              <div className="legs">
-                {measured.map((segment) => (
-                  <div key={segment} className="leg">
-                    <span className="leg__label">{SEGMENT_LABELS[segment]}</span>
-                    <span className="leg__days">{days(timings[segment]!)}</span>
-                    <span className="leg__track">
-                      <span
-                        className="leg__fill"
-                        style={{ width: `${Math.max(3, (timings[segment]! / slowest) * 100)}%` }}
-                      />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {perLot.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Lot by lot</h2>
-                <span className="field__hint">
-                  Where each consignment actually is, and what is riding on it.
-                </span>
-              </div>
-              {perLot.map((row) => (
-                <div key={row.lotId} className="ins__lot">
-                  <div className="ins__row">
-                    <span className="ins__name">{row.lotName}</span>
-                    <span className="badge">{row.progress}%</span>
-                  </div>
-                  <span className="faint">{PHASE_LABELS[row.phase]}</span>
-                  <span className="ins__track">
-                    <span className="ins__fill" style={{ width: `${row.progress}%` }} />
-                  </span>
-                  <div className="ins__meta">
-                    <span>{formatMoney(row.valueMinor)}</span>
-                    <span className="faint">
-                      {row.customers} customer{row.customers === 1 ? '' : 's'} · {row.orders} order
-                      {row.orders === 1 ? '' : 's'}
-                    </span>
-                    {row.unpaidMinor > 0 && (
-                      <span className="ins__owed">{formatMoney(row.unpaidMinor)} unpaid</span>
-                    )}
-                    {row.doorToDoor !== null && (
-                      <span className="faint">{days(row.doorToDoor)} door to door</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {pending.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Landed and not paid for</h2>
-                <span className="field__hint">
-                  In India, waiting on money. Most owed first.
-                </span>
-              </div>
-              {pending.map((row) => (
-                <div key={row.buyerId} className="ins__row">
-                  <span style={{ minWidth: 0 }}>
-                    <Person who={row.who} />
-                    <span className="faint">
-                      {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} ·{' '}
-                      {row.waitingDays === 0
-                        ? 'landed today'
-                        : `waiting ${row.waitingDays} day${row.waitingDays === 1 ? '' : 's'}`}
-                    </span>
-                  </span>
-                  <span className="badge badge--warn">{formatMoney(row.totalMinor)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {top.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Best customers</h2>
-                <span className="field__hint">By what they have actually spent with you.</span>
-              </div>
-              {top.map((row) => (
-                <div key={row.buyerId} className="ins__row">
-                  <span style={{ minWidth: 0 }}>
-                    <Person who={row.who} />
-                    <span className="faint">
-                      {' '}· {row.orders} order{row.orders === 1 ? '' : 's'} across {row.lots} lot
-                      {row.lots === 1 ? '' : 'es'}
-                    </span>
-                  </span>
-                  <span className="ins__money">{formatMoney(row.totalMinor)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {cohorts.length > 0 && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>New against returning</h2>
-                <span className="field__hint">
-                  Customers in each lot, and whether you had seen them before.
-                </span>
-              </div>
-              <div className="legs">
-                {cohorts.map((row, index) => (
-                  <div key={`${row.lotName}:${index}`} className="coh">
-                    <span className="coh__name">{row.lotName}</span>
-                    <span className="coh__count">
-                      {row.newCount} new · {row.returningCount} back
-                    </span>
-                    <span className="coh__track">
-                      <span className="coh__new" style={{ flexGrow: row.newCount }} />
-                      <span className="coh__old" style={{ flexGrow: row.returningCount }} />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(bulk.length > 0 || dormant.length > 0) && (
-            <div className="card card--pad stack">
-              {bulk.length > 0 && (
-                <>
-                  <div>
-                    <h2>Worth packing together</h2>
-                    <span className="field__hint">
-                      Several items in one lot, going to one person — one parcel, not three.
-                    </span>
-                  </div>
-                  {bulk.map((row) => (
-                    <div key={`${row.buyerId}:${row.lotName}`} className="ins__row">
-                      <span style={{ minWidth: 0 }}>
-                        <Person who={row.who} />
-                        <span className="faint"> · {row.lotName}</span>
-                      </span>
-                      <span className="badge">{row.count} items</span>
-                    </div>
-                  ))}
-                </>
-              )}
-
-              {dormant.length > 0 && (
-                <>
-                  <div style={{ marginTop: bulk.length > 0 ? 6 : 0 }}>
-                    <h2>Not seen lately</h2>
-                    <span className="field__hint">
-                      Bought before, nothing in your last three lots.
-                    </span>
-                  </div>
-                  {dormant.map((row) => (
-                    <div key={row.buyerId} className="ins__row">
-                      <span style={{ minWidth: 0 }}>
-                        <Person who={row.who} />
-                        <span className="faint"> · last in {row.lastLotName}</span>
-                      </span>
-                      <span className="badge">{row.lotsAgo} lots ago</span>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
-
-          {(sales.runs > 0 || preOrders.length > 0) && (
-            <div className="card card--pad stack">
-              <div>
-                <h2>Sales and pre-orders</h2>
-                <span className="field__hint">
-                  What the channel did, and which pre-orders got there.
-                </span>
-              </div>
-
-              {sales.runs > 0 && (
-                <div className="tiles">
-                  <Tile value={String(sales.posted)} label="Items dropped" />
-                  <Tile value={String(sales.inWindow)} label="In the window" tone="blue" />
-                  <Tile value={String(sales.handedOver)} label="Moved to the shop" tone="green" />
-                </div>
-              )}
-
-              {preOrders.map((row) => {
-                const percent = Math.min(
-                  100,
-                  Math.round(((row.booked + row.pledged) / Math.max(1, row.threshold)) * 100),
-                );
-                return (
-                  <div key={row.listingId} className="ins__lot">
-                    <div className="ins__row">
-                      <Link to={`/listing/${row.listingId}`} className="ins__name">{row.title}</Link>
-                      <span className={`badge${row.filled ? ' badge--ok' : row.closedShort ? ' badge--warn' : ''}`}>
-                        {row.filled ? 'Filled' : row.closedShort ? 'Closed short' : `${percent}%`}
-                      </span>
-                    </div>
-                    <span className="ins__track">
-                      <span className="ins__fill" style={{ width: `${percent}%` }} />
-                    </span>
-                    <span className="faint">
-                      {row.booked} paid{row.pledged > 0 && ` · ${row.pledged} pledged`} of{' '}
-                      {row.threshold} needed
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
     </>
   );

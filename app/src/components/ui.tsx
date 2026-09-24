@@ -1,6 +1,7 @@
 import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
+import type { StepState } from '@shared/routes';
 import { brandHueFor, gradientFor, initialsOf } from '../format';
 
 /*
@@ -102,6 +103,35 @@ export function EmptyState({ icon, title, children }: {
 
 export function ErrorNotice({ message }: { message: string }) {
   return <p className="notice notice--error">{message}</p>;
+}
+
+export type { StepState };
+
+/**
+ * How one step of a journey reads, drawn the same way everywhere a journey is
+ * shown - a route's own ladder, the plain line a direct-ship order gets,
+ * anywhere else one is added later. A tick once it is behind you, a small
+ * spinner while it is the one under way, nothing yet for what has not been
+ * reached: one vocabulary, whatever shape the route behind it actually has.
+ */
+export function StepMark({ state, size = 11 }: { state: StepState; size?: number }) {
+  if (state === 'done') return <Icon name="check" size={size} className="stepmark stepmark--done" />;
+  if (state === 'current') return <span className="stepmark stepmark--current" aria-hidden="true" />;
+  return null;
+}
+
+/**
+ * The gap between two steps, while whatever is in it is actually moving: a
+ * small wave rather than a spinner, so "in transit" reads differently from
+ * "working on it" does elsewhere in the app - this one specifically means
+ * something is travelling, not that a request is pending.
+ */
+export function WaveLoader() {
+  return (
+    <span className="waveloader" aria-hidden="true">
+      <span /><span /><span />
+    </span>
+  );
 }
 
 /**
