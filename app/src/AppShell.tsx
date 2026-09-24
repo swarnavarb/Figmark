@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { FloatingCalc } from './components/FloatingCalc';
 import { Notifications } from './components/Notifications';
 import { ScrollManager } from './components/ScrollManager';
 import { TabBar } from './components/TabBar';
@@ -93,6 +94,8 @@ export function AppShell() {
       )}
 
       <Outlet />
+
+      {user && <FloatingCalc />}
 
       <TabBar />
     </div>

@@ -5480,6 +5480,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 /* Figures: compact, bright. */
 .prozone .inskpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+@media (min-width: 900px) { .prozone .inskpis { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 .prozone .inskpi { padding: 8px 9px; border-radius: 12px; }
 .prozone .inskpi > b { font-size: var(--t-md); }
 .prozone .tile { padding: 10px 8px; position: relative; overflow: hidden; }
@@ -5546,3 +5547,84 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .dealcard__title { font-size: var(--t-base); overflow-wrap: anywhere; }
 .dealcard__meta { font-size: var(--t-sm); color: var(--text-dim); }
 .dealcard .btn { margin-top: 4px; }
+
+/* ── Floating calculator (Pro) ─────────────────────────────────────────────
+   A button that floats above the tab bar on every screen, and the calculator
+   it opens: the sheet grows out of the button and folds back into it. */
+.fcalc__fab {
+  position: fixed; z-index: 60;
+  right: 16px; bottom: calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom, 0px));
+  width: 54px; height: 54px; border-radius: 18px; border: 0; cursor: pointer;
+  display: grid; place-items: center; font-size: 24px; color: #fff;
+  background: linear-gradient(135deg, #F59E0B, #EC4899 60%, #8B5CF6);
+  box-shadow: 0 10px 26px rgba(236, 72, 153, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease, border-radius 260ms ease;
+  animation: fcalc-arrive 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.fcalc__fab:hover { transform: translateY(-2px) scale(1.05); box-shadow: 0 14px 32px rgba(236, 72, 153, 0.5); }
+.fcalc__fab:active { transform: scale(0.94); }
+.fcalc__fab.is-open { transform: rotate(90deg); border-radius: 50%; }
+.fcalc__fab span { line-height: 1; }
+@keyframes fcalc-arrive { from { opacity: 0; transform: translateY(24px) scale(0.6); } to { opacity: 1; transform: none; } }
+
+.fcalc { position: fixed; inset: 0; z-index: 59; }
+.fcalc__scrim {
+  position: absolute; inset: 0; border: 0; padding: 0; cursor: default;
+  background: rgba(10, 6, 24, 0.46); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  animation: fcalc-fade 260ms ease both;
+}
+.fcalc__sheet {
+  position: absolute; right: 12px; left: 12px;
+  bottom: calc(var(--tabbar-h) + 80px + env(safe-area-inset-bottom, 0px));
+  max-height: calc(100dvh - var(--tabbar-h) - 150px); overflow-y: auto; overscroll-behavior: contain;
+  margin-left: auto; max-width: 440px;
+  display: grid; gap: 10px; padding: 14px;
+  background: var(--surface); color: var(--text);
+  border-radius: 22px; border: 1px solid color-mix(in srgb, #F59E0B 40%, var(--border));
+  box-shadow: 0 24px 60px rgba(20, 8, 40, 0.38), 0 0 0 1px rgba(236, 72, 153, 0.12);
+  transform-origin: calc(100% - 27px) calc(100% + 53px);
+  animation: fcalc-open 420ms cubic-bezier(0.22, 1.25, 0.36, 1) both;
+}
+.fcalc.is-closing .fcalc__sheet { animation: fcalc-shut 220ms cubic-bezier(0.4, 0, 1, 1) both; }
+.fcalc.is-closing .fcalc__scrim { animation: fcalc-fade 220ms ease reverse both; }
+@keyframes fcalc-open {
+  from { opacity: 0; transform: scale(0.12); border-radius: 40px; filter: blur(6px); }
+  60% { opacity: 1; filter: blur(0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fcalc-shut { to { opacity: 0; transform: scale(0.12); filter: blur(4px); } }
+@keyframes fcalc-fade { from { opacity: 0; } to { opacity: 1; } }
+.fcalc__sheet > * { animation: fcalc-rise 380ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes fcalc-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.fcalc__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.fcalc__body { gap: 10px; }
+.fcalc__result {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  padding: 10px; border-radius: 14px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(236, 72, 153, 0.12));
+}
+.fcalc__result span { display: grid; gap: 2px; text-align: center; min-width: 0; }
+.fcalc__result small { font-size: var(--t-xs); color: var(--text-dim); }
+.fcalc__result b { font-size: var(--t-md); overflow-wrap: anywhere; }
+.fcalc__result.is-loss b { color: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .fcalc__fab, .fcalc__sheet, .fcalc__scrim, .fcalc__sheet > *, .fcalc.is-closing .fcalc__sheet { animation: none; transition: none; }
+}
+
+.calclines { display: grid; gap: 6px; }
+.savedcalc {
+  display: grid; gap: 6px; padding: 10px 12px; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--surface-2, var(--surface));
+}
+.savedcalc__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.savedcalc__head b { min-width: 0; overflow-wrap: anywhere; }
+.savedcalc__acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.pc__float {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; cursor: pointer;
+  border-radius: 14px; border: 1px dashed color-mix(in srgb, #F59E0B 55%, var(--border));
+}
+.pc__float input { margin-top: 3px; }
+.pc__float span { display: grid; gap: 2px; }
+.pc__float small { color: var(--text-dim); font-size: var(--t-xs); }
+.pc__keep { display: flex; gap: 8px; }
+.pc__keep input { flex: 1; min-width: 0; }

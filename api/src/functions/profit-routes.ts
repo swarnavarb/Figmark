@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import {
-  BASIS_LABELS, COST_STAGES, KIND_LABELS, starterLines,
+  BASIS_LABELS, COST_STAGES, KIND_LABELS, MAX_SAVED_CALCS, cleanSavedCalc, starterLines,
   type CostBasis, type CostKind, type CostLine, type CostStage, type ProfitTemplate,
 } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
@@ -128,6 +128,60 @@ async function deleteProfitTemplate(request: HttpRequest, _context: InvocationCo
   await repository.updateUser({ ...shop, profitTemplates: templates, updatedAt: new Date().toISOString() });
   return json(200, { templates });
 }
+
+/** GET /api/me/calcs - calculations kept to list later, newest first. */
+async function listSavedCalcs(request: HttpRequest, _context: InvocationContext) {
+  const { shop } = await load(request);
+  if (!shop) return error(403, 'forbidden', 'You cannot read the costs for that shop.');
+  return json(200, { calcs: shop.savedCalcs ?? [] });
+}
+
+/** POST /api/me/calcs/save - keep one, or correct one (with its `id`). */
+async function saveSavedCalc(request: HttpRequest, _context: InvocationContext) {
+  const { repository, shop } = await load(request);
+  if (!shop) return error(403, 'forbidden', 'You cannot change the costs for that shop.');
+  let body: { id?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const calcs = [...(shop.savedCalcs ?? [])];
+  const index = body.id ? calcs.findIndex((entry) => entry.id === body.id) : -1;
+  if (body.id && index < 0) return error(404, 'not_found', 'No such saved calculation.');
+  if (index < 0 && calcs.length >= MAX_SAVED_CALCS) {
+    return error(400, 'too_many', `Keep up to ${MAX_SAVED_CALCS} saved calculations - list or delete some first.`);
+  }
+  const now = new Date().toISOString();
+  let calc;
+  try {
+    calc = cleanSavedCalc(body, calcs[index]?.id ?? `sc_${randomUUID().slice(0, 10)}`, now, calcs[index]);
+  } catch (err) {
+    return error(400, 'invalid_calc', (err as Error).message);
+  }
+  if (index >= 0) calcs.splice(index, 1);
+  calcs.unshift(calc);
+  await repository.updateUser({ ...shop, savedCalcs: calcs, updatedAt: now });
+  return json(index >= 0 ? 200 : 201, { calc, calcs });
+}
+
+/** POST /api/me/calcs/{id}/delete - drop one. */
+async function deleteSavedCalc(request: HttpRequest, _context: InvocationContext) {
+  const { repository, shop } = await load(request);
+  if (!shop) return error(403, 'forbidden', 'You cannot change the costs for that shop.');
+  const calcs = (shop.savedCalcs ?? []).filter((entry) => entry.id !== request.params.id);
+  if (calcs.length === (shop.savedCalcs ?? []).length) return error(404, 'not_found', 'No such saved calculation.');
+  await repository.updateUser({ ...shop, savedCalcs: calcs, updatedAt: new Date().toISOString() });
+  return json(200, { calcs });
+}
+
+export const listSavedCalcsRoute = handler(listSavedCalcs);
+export const saveSavedCalcRoute = handler(saveSavedCalc);
+export const deleteSavedCalcRoute = handler(deleteSavedCalc);
+
+app.http('me-calcs', { authLevel: 'anonymous', methods: ['GET'], route: 'me/calcs', handler: listSavedCalcsRoute });
+app.http('me-calcs-save', { authLevel: 'anonymous', methods: ['POST'], route: 'me/calcs/save', handler: saveSavedCalcRoute });
+app.http('me-calcs-delete', { authLevel: 'anonymous', methods: ['POST'], route: 'me/calcs/{id}/delete', handler: deleteSavedCalcRoute });
 
 export const listProfitTemplatesRoute = handler(listProfitTemplates);
 export const saveProfitTemplateRoute = handler(saveProfitTemplate);

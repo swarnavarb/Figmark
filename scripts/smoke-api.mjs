@@ -110,6 +110,7 @@ const { insightsRoute: insights, interestRoute: interest, marketRoute: market } 
 const {
   listProfitTemplatesRoute: listProfitTemplates, saveProfitTemplateRoute: saveProfitTemplate,
   deleteProfitTemplateRoute: deleteProfitTemplate,
+  listSavedCalcsRoute: listSavedCalcs, saveSavedCalcRoute: saveSavedCalc, deleteSavedCalcRoute: deleteSavedCalc,
 } = await import(new URL('profit-routes.js', fns));
 const { calculateProfit, starterLines } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
 const {
@@ -6638,6 +6639,32 @@ await check('a shop keeps its own calculators, and only its people read them', a
   const gone = await deleteProfitTemplate(req({ headers: auth, params: { id: second.jsonBody.template.id } }), ctx);
   assert.equal(gone.status, 200);
   assert.deepEqual(gone.jsonBody.templates.map((entry) => [entry.name, entry.isDefault]), [['Japan by air', true]]);
+});
+
+await check('a shop keeps calculations to list later, and marks the one it listed', async () => {
+  const kept = await saveSavedCalc(req({ headers: auth, body: {
+    title: '  Nendoroid Miku  ', templateId: 'pt_x', templateName: 'Japan by air',
+    input: { itemPrice: 4200, quantity: 2, weightKg: 0.4, sellingPrice: 3499 },
+    steps: [{ id: 'item', label: 'Item price', stage: 'buying', amountMinor: 235200 }], sellingPriceMinor: 349900,
+  } }), ctx);
+  assert.equal(kept.status, 201, JSON.stringify(kept.jsonBody));
+  assert.equal(kept.jsonBody.calc.title, 'Nendoroid Miku');
+  assert.equal(kept.jsonBody.calc.listingId, null);
+  assert.equal((await saveSavedCalc(req({ headers: auth, body: { title: ' ' } }), ctx)).status, 400, 'it needs a name');
+
+  const listed = await saveSavedCalc(req({ headers: auth, body: { ...kept.jsonBody.calc, listingId: 'lst_1' } }), ctx);
+  assert.equal(listed.status, 200);
+  assert.equal(listed.jsonBody.calcs.length, 1, 'correcting one does not copy it');
+  assert.equal(listed.jsonBody.calc.listingId, 'lst_1');
+  assert.equal(listed.jsonBody.calc.createdAt, kept.jsonBody.calc.createdAt);
+
+  const stranger = await newBuyer('Calc Peeker');
+  assert.equal((await listSavedCalcs(req({ headers: stranger.headers, query: { store: 'usr_demo' } }), ctx)).status, 403);
+  assert.equal((await listSavedCalcs(req({ headers: auth }), ctx)).jsonBody.calcs.length, 1);
+  const gone = await deleteSavedCalc(req({ headers: auth, params: { id: kept.jsonBody.calc.id } }), ctx);
+  assert.equal(gone.status, 200);
+  assert.deepEqual(gone.jsonBody.calcs, []);
+  assert.equal((await deleteSavedCalc(req({ headers: auth, params: { id: kept.jsonBody.calc.id } }), ctx)).status, 404);
 });
 
 await check('insights compare this week with last, and rank what is trending', async () => {

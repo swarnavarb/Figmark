@@ -190,12 +190,23 @@ function ItemCosts({ sheets, onEdit, shop, onChanged }: {
 }) {
   const [filter, setFilter] = useState<'all' | 'missing'>('missing');
   const [busy, setBusy] = useState<string | null>(null);
+  // Asked on the button itself: a browser confirm box is silently blocked in
+  // installed apps and some in-app browsers, which made Remove do nothing.
+  const [asking, setAsking] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   async function remove(row: SheetItem) {
-    if (!window.confirm(`Remove the costs from ${row.title}? Its profit stops being counted.`)) return;
+    if (asking !== row.listingId) {
+      setAsking(row.listingId);
+      return;
+    }
     setBusy(row.listingId);
+    setFailed(null);
     try {
       await api.saveCostSheet(row.listingId, null, shop);
+      setAsking(null);
       onChanged();
+    } catch (err) {
+      setFailed(err instanceof ApiRequestError ? err.message : 'Could not remove those costs.');
     } finally {
       setBusy(null);
     }
@@ -213,6 +224,7 @@ function ItemCosts({ sheets, onEdit, shop, onChanged }: {
         <button type="button" role="tab" aria-selected={filter === 'all'} className={`inscat${filter === 'all' ? ' is-on' : ''}`}
           onClick={() => setFilter('all')}>All items <span className="inscat__n">{sheets.length}</span></button>
       </div>
+      {failed && <ErrorNotice message={failed} />}
       {shown.length === 0 ? <p className="muted">Every item has its costs saved.</p> : (
         <ul className="insleads">
           {shown.map((row) => {
@@ -235,8 +247,11 @@ function ItemCosts({ sheets, onEdit, shop, onChanged }: {
                 <span className="insleads__tags">
                   <button type="button" className="btn btn--sm" onClick={() => onEdit(row)}>{row.sheet ? 'Edit' : 'Add costs'}</button>
                   {row.sheet && (
-                    <button type="button" className="btn btn--ghost btn--sm" disabled={busy === row.listingId}
-                      onClick={() => void remove(row)}>Remove</button>
+                    <button type="button" className={`btn btn--sm ${asking === row.listingId ? 'btn--danger' : 'btn--ghost'}`}
+                      disabled={busy === row.listingId} onBlur={() => setAsking((now) => (now === row.listingId ? null : now))}
+                      onClick={() => void remove(row)}>
+                      {busy === row.listingId ? 'Removing…' : asking === row.listingId ? 'Tap to confirm' : 'Remove'}
+                    </button>
                   )}
                 </span>
               </li>
@@ -254,6 +269,7 @@ function SheetEditor({ item, shop, onDone }: { item: SheetItem; shop?: string; o
     ? { templateId: item.sheet.templateId, templateName: item.sheet.templateName, steps: item.sheet.steps }
     : null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save(sheet: CostSheetDraft | null) {
@@ -277,10 +293,18 @@ function SheetEditor({ item, shop, onDone }: { item: SheetItem; shop?: string; o
         <CostSheetField value={draft} onChange={setDraft} sellingPriceMinor={item.priceMinor} shop={shop} collapsible={false} />
         {error && <ErrorNotice message={error} />}
         <div className="pc__actions">
-          <button type="button" className="btn" disabled={busy || !draft} onClick={() => void save(draft)}>Save costs</button>
-          {item.sheet && (
-            <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
-              onClick={() => { if (window.confirm(`Remove the costs from ${item.title}?`)) void save(null); }}>Remove costs</button>
+          {draft ? (
+            <button type="button" className="btn" disabled={busy} onClick={() => void save(draft)}>Save costs</button>
+          ) : item.sheet ? (
+            // Every step taken out: saving now clears the item's costs.
+            <button type="button" className="btn btn--danger" disabled={busy} onClick={() => void save(null)}>Save - no costs</button>
+          ) : null}
+          {item.sheet && draft && (
+            <button type="button" className={`btn btn--sm ${asking ? 'btn--danger' : 'btn--ghost'}`} disabled={busy}
+              onBlur={() => setAsking(false)}
+              onClick={() => { if (asking) void save(null); else setAsking(true); }}>
+              {asking ? 'Tap to confirm' : 'Remove costs'}
+            </button>
           )}
         </div>
       </section>

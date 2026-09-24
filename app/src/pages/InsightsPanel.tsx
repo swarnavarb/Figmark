@@ -167,6 +167,8 @@ function Dashboard({ data, lots, deep, costs, open }: {
 }) {
   const { summary, customers, week, daily } = data;
   const series = (key: 'saves' | 'buys' | 'orders') => daily.map((day) => day[key]);
+  const averageOrder = (figures: { orders: number; revenueMinor: number }) =>
+    (figures.orders ? Math.round(figures.revenueMinor / figures.orders) : 0);
   const wentAhead = (figures: { buys: number; orders: number }) =>
     figures.buys ? Math.round((figures.orders / figures.buys) * 100) : 0;
 
@@ -255,6 +257,8 @@ function Dashboard({ data, lots, deep, costs, open }: {
             delta={<Delta now={week.now.revenueMinor} before={week.before.revenueMinor} />} />
           <Kpi label="Went ahead" value={`${wentAhead(week.now)}%`}
             delta={<Delta now={wentAhead(week.now)} before={wentAhead(week.before)} />} />
+          <Kpi label="Avg order" value={formatMoney(averageOrder(week.now), 'INR')}
+            delta={<Delta now={averageOrder(week.now)} before={averageOrder(week.before)} />} />
         </div>
         <small className="inshero__foot">Last 7 days against the 7 before.</small>
       </section>

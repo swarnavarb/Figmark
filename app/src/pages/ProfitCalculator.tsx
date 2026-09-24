@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import {
   BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, STAGE_LABELS, calculateProfit, stepsFromResult,
-  type CostBasis, type ProfitResult, type CostKind, type CostLine, type CostStage, type ProfitInput, type ProfitTemplate,
+  type CostBasis, type ProfitResult, type SavedCalc, type CostKind, type CostLine, type CostStage, type ProfitInput, type ProfitTemplate,
 } from '@shared/profit';
 import { ApiRequestError, api, type SheetItem } from '../api';
 import { formatMoney } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
+import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
 
 /**
  * The profit calculator (Pro).
@@ -61,6 +62,9 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   const [flash, setFlash] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [sizeOpen, setSizeOpen] = useState(false);
+  const [floating, setFloating] = useFloatingCalc();
+  const [calcs, setCalcs] = useState<SavedCalc[]>([]);
+  const [keepTitle, setKeepTitle] = useState('');
 
   useEffect(() => {
     void api.profitTemplates(shop)
@@ -73,7 +77,8 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
         else setDraft(freshTemplate(result.starter, 'My calculator'));
       })
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your calculators.'));
-  }, [shop]);
+    void api.savedCalcs(store.ownerId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
+  }, [shop, store.ownerId]);
 
   useEffect(() => {
     try {
@@ -103,6 +108,25 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
       setFlash(`Saved "${template.name}".`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that calculator.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function keep() {
+    if (!active?.id || !result) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.saveCalc({
+        title: keepTitle.trim(), templateId: active.id, templateName: active.name, input,
+        steps: stepsFromResult(result), sellingPriceMinor: Math.round(input.sellingPrice * 100),
+      }, store.ownerId);
+      setCalcs(saved.calcs);
+      setKeepTitle('');
+      setFlash(`Saved “${saved.calc.title}” to your list.`);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
     } finally {
       setBusy(false);
     }
@@ -151,6 +175,14 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
           </button>
         </div>
       </section>
+
+      <label className="pc__float">
+        <input type="checkbox" checked={floating} onChange={(e) => setFloating(e.target.checked)} />
+        <span>
+          <b>Floating calculator button</b>
+          <small>A 🧮 button on every screen, bottom right. Opens this calculator over whatever you are doing.</small>
+        </span>
+      </label>
 
       {flash && <p className="notice notice--ok">{flash}</p>}
       {error && <ErrorNotice message={error} />}
@@ -261,6 +293,21 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
             <SaveToItem template={active} result={result} shop={shop} sellingPrice={input.sellingPrice}
               onPrice={(price) => set({ sellingPrice: price })} />
           )}
+
+          <section className="card card--pad stack">
+            <div>
+              <h2>Saved to list later <span className="inscat__n">{calcs.length}</span></h2>
+              <span className="field__hint">Keep a worked-out item, then list it, add it to a power sale, or send it to the channel or the feed.</span>
+            </div>
+            {result && !draft && active.id && (
+              <div className="pc__keep">
+                <input aria-label="Item name" placeholder="Name this item to save it" value={keepTitle} maxLength={120}
+                  onChange={(e) => setKeepTitle(e.target.value)} />
+                <button type="button" className="btn btn--sm" disabled={busy || !keepTitle.trim()} onClick={() => void keep()}>💾 Save</button>
+              </div>
+            )}
+            <SavedCalcList calcs={calcs} store={store} onChanged={setCalcs} />
+          </section>
 
           {templates.length > 1 && !draft && (
             <Compare templates={templates} input={input} activeId={activeId} onPick={setActiveId} />

@@ -1,4 +1,4 @@
-import type { ItemCostSheet, ProfitTemplate } from './profit.js';
+import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { LotRoute } from './routes.js';
 import type {
   ConditionTag,
@@ -137,6 +137,8 @@ export interface User extends BaseDocument {
    * calculator's own route.
    */
   profitTemplates?: ProfitTemplate[];
+  /** Calculations kept to list later (Pro). Kept beside the calculators, for the same reason. */
+  savedCalcs?: SavedCalc[];
   /**
    * Freight forwarders share the same account base rather than living in a
    * separate system; this extension is what puts one in the directory.

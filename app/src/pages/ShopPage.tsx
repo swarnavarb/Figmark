@@ -22,6 +22,7 @@ import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
 import type { StoreAccess } from '@shared/stores';
+import type { SavedCalc } from '@shared/profit';
 import {
   ApiRequestError,
   api,
@@ -250,7 +251,9 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
  */
 function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: () => void | Promise<void> }) {
   const { user } = useSession();
-  const [storeId, setStoreId] = useState(stores[0]!.ownerId);
+  const cameFor = (useLocation().state as { store?: string } | null)?.store;
+  const [storeId, setStoreId] = useState(
+    stores.some((entry) => entry.ownerId === cameFor) ? cameFor! : stores[0]!.ownerId);
   /*
    * The open section lives in the URL, not in this component.
    *
@@ -645,7 +648,9 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
 function MyItems({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'stock' | 'power' | 'templates'>('stock');
+  // "Add to a power sale" from a saved calculation lands here, with it.
+  const saleCalcs = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;
+  const [mode, setMode] = useState<'stock' | 'power' | 'templates'>(saleCalcs?.length ? 'power' : 'stock');
   const [shelf, setShelf] = useState<'available' | 'expired' | 'sold_out'>('available');
   const [editing, setEditing] = useState<Listing | null>(null);
 
@@ -707,7 +712,7 @@ function MyItems({ store }: { store: StoreAccess }) {
       {mode === 'templates' ? (
         <TemplatesPanel store={store} />
       ) : mode === 'power' ? (
-        <PowerSalePanel storeId={store.ownerId} />
+        <PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} />
       ) : !data ? (
         <p className="muted">Loading…</p>
       ) : (

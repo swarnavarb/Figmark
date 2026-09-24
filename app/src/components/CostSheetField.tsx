@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   COST_STAGES, STAGE_LABELS, calculateProfit, stepsFromResult,
-  type CostStage, type CostStep, type ProfitTemplate,
+  type CostStage, type CostStep, type ProfitInput, type ProfitResult, type ProfitTemplate,
 } from '@shared/profit';
 import { api } from '../api';
 import { formatMoney } from '../format';
@@ -38,8 +38,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
   const [open, setOpen] = useState(!collapsible || Boolean(value));
   const [templates, setTemplates] = useState<ProfitTemplate[] | null>(null);
   const [pick, setPick] = useState('');
-  const [abroad, setAbroad] = useState(0);
-  const [weight, setWeight] = useState(0);
+  const [input, setInput] = useState<ProfitInput>({ itemPrice: 0, quantity: 1, weightKg: 0, sellingPrice: 0 });
 
   useEffect(() => {
     if (!open || templates) return;
@@ -55,6 +54,8 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
   const template = templates?.find((entry) => entry.id === pick);
   const total = steps.reduce((sum, step) => sum + step.amountMinor, 0);
   const profit = sellingPriceMinor - total;
+  const worked = template ? { ...input, sellingPrice: sellingPriceMinor / 100 } : null;
+  const preview = template && worked ? calculateProfit(template, worked) : null;
 
   const setSteps = (next: CostStep[]) =>
     onChange(next.length ? { templateId: value?.templateId ?? null, templateName: value?.templateName ?? null, steps: next } : null);
@@ -62,9 +63,8 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
     setSteps(steps.map((step, index) => (index === at ? { ...step, ...patch } : step)));
 
   function fill() {
-    if (!template) return;
-    const result = calculateProfit(template, { itemPrice: abroad, quantity: 1, weightKg: weight, sellingPrice: sellingPriceMinor / 100 });
-    const next = stepsFromResult(result);
+    if (!template || !preview) return;
+    const next = stepsFromResult(preview);
     onChange(next.length ? { templateId: template.id, templateName: template.name, steps: next } : null);
   }
 
@@ -87,26 +87,22 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
       </div>
 
       {templates === null ? <p className="faint">Loading your calculators…</p> : templates.length > 0 ? (
-        <div className="costfield__fill">
+        <div className="stack" style={{ gap: 10 }}>
           <label className="field">
             <span>Calculator</span>
             <select value={pick} onChange={(e) => setPick(e.target.value)}>
               {templates.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
             </select>
           </label>
-          <label className="field">
-            <span>Price abroad ({template?.currency ?? ''})</span>
-            <input type="number" inputMode="decimal" min={0} value={abroad || ''} placeholder="0"
-              onChange={(e) => setAbroad(Number(e.target.value) || 0)} />
-          </label>
-          <label className="field">
-            <span>Weight (kg)</span>
-            <input type="number" inputMode="decimal" min={0} step={0.01} value={weight || ''} placeholder="0"
-              onChange={(e) => setWeight(Number(e.target.value) || 0)} />
-          </label>
-          <button type="button" className="btn btn--sm" disabled={!template} onClick={fill}>
-            {steps.length ? 'Refill' : 'Fill the steps'}
-          </button>
+          {template && (
+            <>
+              <CalcInputs template={template} input={input} onChange={setInput} />
+              {preview && <CalcLines template={template} input={input} result={preview} />}
+              <button type="button" className="btn btn--sm" style={{ justifySelf: 'start' }} onClick={fill}>
+                {steps.length ? 'Refill the steps' : 'Use these as the steps'}
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <p className="faint">No calculators yet. <Link to="/shop?tab=calculator">Set one up</Link>, or add the steps yourself.</p>
@@ -150,6 +146,81 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Every figure a calculator is worked from, as the calculator page asks for
+ * them - price abroad, how many, weight, and the packed size when any of its
+ * lines charges by volumetric weight. The selling price is left to the form
+ * that holds this, when it has its own.
+ */
+export function CalcInputs({ template, input, onChange, withSelling = false }: {
+  template: ProfitTemplate;
+  input: ProfitInput;
+  onChange: (next: ProfitInput) => void;
+  withSelling?: boolean;
+}) {
+  const set = (patch: Partial<ProfitInput>) => onChange({ ...input, ...patch });
+  const sized = template.lines.some((line) => line.enabled && line.kind === 'per_kg' && line.volumetric);
+  const num = (label: string, value: number | undefined, patch: (value: number) => Partial<ProfitInput>, step = 0.01) => (
+    <label className="field">
+      <span>{label}</span>
+      <input type="number" inputMode="decimal" min={0} step={step} value={value ? value : ''} placeholder="0"
+        onChange={(e) => set(patch(e.target.value === '' ? 0 : Number(e.target.value)))} />
+    </label>
+  );
+  return (
+    <>
+      <div className="costfield__fill">
+        {num(`Price abroad (${template.currency})`, input.itemPrice, (itemPrice) => ({ itemPrice }))}
+        {num('Quantity', input.quantity, (quantity) => ({ quantity: Math.max(1, Math.round(quantity)) }), 1)}
+        {num('Weight per item (kg)', input.weightKg, (weightKg) => ({ weightKg }), 0.05)}
+        {withSelling && num('Selling price (₹ each)', input.sellingPrice, (sellingPrice) => ({ sellingPrice }))}
+      </div>
+      {sized && (
+        <div className="costfield__fill">
+          {num('Length (cm)', input.lengthCm, (lengthCm) => ({ lengthCm }))}
+          {num('Width (cm)', input.widthCm, (widthCm) => ({ widthCm }))}
+          {num('Height (cm)', input.heightCm, (heightCm) => ({ heightCm }))}
+        </div>
+      )}
+      <small className="faint">1 {template.currency} = ₹{template.rate || 0} on “{template.name}”.</small>
+    </>
+  );
+}
+
+const rupees = (value: number) =>
+  `${value < 0 ? '−' : ''}₹${Math.abs(value).toLocaleString('en-IN', { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 })}`;
+
+/** Each line the seller switched on in that calculator, and what it comes to per item. */
+export function CalcLines({ template, input, result }: { template: ProfitTemplate; input: ProfitInput; result: ProfitResult }) {
+  return (
+    <div className="calclines">
+      {COST_STAGES.map((stage) => {
+        const rows = result.lines.filter((line) => line.stage === stage && line.enabled);
+        if (stage !== 'buying' && rows.length === 0) return null;
+        return (
+          <div key={stage} className="pc__stage">
+            <div className="pc__stagehead">
+              <span className={`pc__dot pc__dot--${STAGE_TONES[stage]}`} />
+              <b>{STAGE_LABELS[stage]}</b>
+              <span>{rupees(result.stages[stage])}</span>
+            </div>
+            {stage === 'buying' && (
+              <div className="pc__line">
+                <span>Item ({input.itemPrice || 0} {template.currency} × ₹{template.rate || 0})</span>
+                <span>{rupees(result.itemCost)}</span>
+              </div>
+            )}
+            {rows.map((line) => (
+              <div key={line.id} className="pc__line"><span>{line.label}</span><span>{rupees(line.perItem)}</span></div>
+            ))}
+          </div>
+        );
+      })}
+      <div className="pc__line pc__line--total"><span>Landed cost per item</span><span>{rupees(result.landed)}</span></div>
     </div>
   );
 }

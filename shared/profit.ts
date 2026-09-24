@@ -367,3 +367,58 @@ export function cleanCostSheet(raw: unknown, now: string): ItemCostSheet | null 
     savedAt: now,
   };
 }
+
+/**
+ * A calculation kept for later (Pro): an item worked out in the calculator
+ * but not listed yet. Listed from here, sent to a channel or the feed, or
+ * added to a power sale - each through the usual listing route - and marked
+ * with the item it became once it has one.
+ */
+export interface SavedCalc {
+  id: string;
+  title: string;
+  templateId: string | null;
+  templateName: string | null;
+  input: ProfitInput;
+  /** The costs as they came out, fixed then - what the item is saved with. */
+  steps: CostStep[];
+  sellingPriceMinor: number;
+  listingId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const MAX_SAVED_CALCS = 60;
+
+const calcNumber = (value: unknown, max: number) =>
+  (typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(0, value)) : 0);
+
+/** A saved calculation as a client sent it, made safe to keep. Throws a readable message. */
+export function cleanSavedCalc(raw: unknown, id: string, now: string, existing?: SavedCalc): SavedCalc {
+  if (!raw || typeof raw !== 'object') throw new Error('Send the calculation to save.');
+  const body = raw as Partial<SavedCalc>;
+  const title = (typeof body.title === 'string' ? body.title.trim() : '').slice(0, 120);
+  if (!title) throw new Error('Say what the item is.');
+  const sheet = cleanCostSheet({ ...body, steps: body.steps ?? [] }, now);
+  const input = (body.input ?? {}) as Partial<ProfitInput>;
+  return {
+    id,
+    title,
+    templateId: sheet?.templateId ?? (typeof body.templateId === 'string' ? body.templateId.slice(0, 40) : null),
+    templateName: sheet?.templateName ?? (typeof body.templateName === 'string' ? body.templateName.slice(0, 60) : null),
+    input: {
+      itemPrice: calcNumber(input.itemPrice, 1e9),
+      quantity: Math.max(1, Math.round(calcNumber(input.quantity, 100_000))),
+      weightKg: calcNumber(input.weightKg, 10_000),
+      lengthCm: calcNumber(input.lengthCm, 10_000),
+      widthCm: calcNumber(input.widthCm, 10_000),
+      heightCm: calcNumber(input.heightCm, 10_000),
+      sellingPrice: calcNumber(input.sellingPrice, 1e9),
+    },
+    steps: sheet?.steps ?? [],
+    sellingPriceMinor: Math.round(calcNumber(body.sellingPriceMinor, 1e11)),
+    listingId: typeof body.listingId === 'string' ? body.listingId.slice(0, 80) : existing?.listingId ?? null,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+}

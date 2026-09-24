@@ -11,7 +11,7 @@ import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
-import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate } from '@shared/profit';
+import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
@@ -1633,6 +1633,12 @@ export const api = {
       `/me/profit-templates/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
   costs: (storeId?: string) =>
     request<CostsResponse>(`/me/costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  savedCalcs: (storeId?: string) =>
+    request<{ calcs: SavedCalc[] }>(`/me/calcs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  saveCalc: (calc: Partial<SavedCalc>, storeId?: string) =>
+    post<{ calc: SavedCalc; calcs: SavedCalc[] }>(`/me/calcs/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, calc),
+  deleteCalc: (id: string, storeId?: string) =>
+    post<{ calcs: SavedCalc[] }>(`/me/calcs/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
   saveCostSheet: (listingId: string, sheet: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null, storeId?: string) =>
     post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
       `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { sheet }),

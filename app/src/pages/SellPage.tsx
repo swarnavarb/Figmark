@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
 import type { Lot } from '@shared/models';
+import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
@@ -75,9 +76,14 @@ export function SellPage() {
   const storeId = params.get('store') ?? undefined;
   // Arriving from the profit calculator's "List a new item": its selling price
   // and the costs it worked out come along.
-  const prefill = useLocation().state as { priceMinor?: number; costSheet?: CostSheetDraft } | null;
+  // A saved calculation also brings its name, where it should be shared, and
+  // itself - marked with the item it became once this is published.
+  const prefill = useLocation().state as {
+    priceMinor?: number; costSheet?: CostSheetDraft; title?: string;
+    share?: { channel: boolean; feed: boolean }; calc?: SavedCalc;
+  } | null;
 
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(prefill?.title ?? '');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<string>(CATEGORIES[0]!);
   const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
@@ -85,8 +91,8 @@ export function SellPage() {
   const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(prefill?.costSheet ?? null);
   const [terms, setTerms] = useState(() => termsDraft());
   const [bundle, setBundle] = useState(false);
-  const [shareToChannel, setShareToChannel] = useState(true);
-  const [shareToFeed, setShareToFeed] = useState(false);
+  const [shareToChannel, setShareToChannel] = useState(prefill?.share?.channel ?? true);
+  const [shareToFeed, setShareToFeed] = useState(prefill?.share?.feed ?? false);
   const [preOrderMode, setPreOrderMode] = useState(false);
   const [fillThreshold, setFillThreshold] = useState('20');
   const [cutoffDays, setCutoffDays] = useState('14');
@@ -219,6 +225,9 @@ export function SellPage() {
       });
       // Remembered for the next item, which is the point of a template.
       if (quickPost && templateId) rememberTemplate(templateId);
+      if (prefill?.calc) {
+        await api.saveCalc({ ...prefill.calc, listingId: result.listing.id }, storeId).catch(() => undefined);
+      }
       navigate(`/listing/${result.listing.id}`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not publish this listing.');

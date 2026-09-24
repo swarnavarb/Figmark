@@ -56,7 +56,10 @@ const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
 } = await import(new URL('power-sale-routes.js', apiRoot));
 const { insightsRoute, interestRoute, marketRoute } = await import(new URL('insight-routes.js', apiRoot));
-const { listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute } = await import(new URL('profit-routes.js', apiRoot));
+const {
+  listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute,
+  listSavedCalcsRoute, saveSavedCalcRoute, deleteSavedCalcRoute,
+} = await import(new URL('profit-routes.js', apiRoot));
 const { costsRoute, saveCostSheetRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
 const {
   listRoutesRoute, saveRouteRoute, deleteRouteRoute,
@@ -192,6 +195,9 @@ const routes = [
   ['GET', '/api/me/profit-templates', listProfitTemplatesRoute],
   ['POST', '/api/me/profit-templates/save', saveProfitTemplateRoute],
   ['POST', '/api/me/profit-templates/:id/delete', deleteProfitTemplateRoute],
+  ['GET', '/api/me/calcs', listSavedCalcsRoute],
+  ['POST', '/api/me/calcs/save', saveSavedCalcRoute],
+  ['POST', '/api/me/calcs/:id/delete', deleteSavedCalcRoute],
   ['GET', '/api/me/costs', costsRoute],
   ['POST', '/api/me/listings/:id/cost-sheet', saveCostSheetRoute],
   ['GET', '/api/me/deep', deepRoute],
