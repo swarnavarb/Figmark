@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import {
   BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, STAGE_LABELS, calculateProfit, stepsFromResult,
@@ -9,6 +9,7 @@ import { ApiRequestError, api, type SheetItem } from '../api';
 import { formatMoney } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
+import { scrollToTopOf } from '../components/ScrollManager';
 import { CalcIcon } from '../components/CalcIcon';
 
 /**
@@ -64,6 +65,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   const [busy, setBusy] = useState(false);
   const [sizeOpen, setSizeOpen] = useState(false);
   const [floating, setFloating] = useFloatingCalc();
+  const [params] = useSearchParams();
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
   const [keepTitle, setKeepTitle] = useState('');
 
@@ -72,7 +74,13 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
       .then((result) => {
         setTemplates(result.templates);
         setStarter(result.starter);
-        const first = result.templates.find((entry) => entry.isDefault) ?? result.templates[0];
+        // "Edit calculator" from a listing form: open that one, ready to edit.
+        const editing = result.templates.find((entry) => entry.id === params.get('edit'));
+        const first = editing ?? result.templates.find((entry) => entry.isDefault) ?? result.templates[0];
+        if (editing) {
+          setDraft(structuredClone(editing));
+          window.setTimeout(() => scrollToTopOf(document.querySelector('.pc__editor')), 120);
+        }
         if (first) setActiveId(first.id);
         // Nothing saved yet: open a full sheet to fill in rather than an empty page.
         else setDraft(freshTemplate(result.starter, 'My calculator'));

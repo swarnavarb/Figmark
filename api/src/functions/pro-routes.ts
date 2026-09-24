@@ -12,6 +12,9 @@ import { error, handler, json } from './http.js';
 import { names, shopFor } from './insight-routes.js';
 import { notify } from './notify.js';
 
+
+/** How many earlier versions of an item's costs are kept to step back to. */
+const MAX_COST_HISTORY = 10;
 /**
  * The numbers underneath the shop.
  *
@@ -201,6 +204,8 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
         sold: (kept.filter((order) => order.listingId === listing.id)).reduce((sum, order) => sum + order.quantity, 0),
         sheet: listing.costSheet ?? null,
         costMinor: sheetTotal(listing.costSheet),
+        /** What Remove steps back to: the costs saved before these, if any. */
+        previousCostMinor: listing.costSheetPrevious?.length ? sheetTotal(listing.costSheetPrevious.at(-1)) : null,
       })),
   });
 }
@@ -212,7 +217,7 @@ async function saveCostSheet(request: HttpRequest, _context: InvocationContext) 
   const listing = await repository.getListing(request.params.id ?? '');
   if (!listing || listing.sellerId !== shopId) return error(404, 'not_found', 'No such item in this shop.');
 
-  let body: { sheet?: Partial<ItemCostSheet> | null };
+  let body: { sheet?: Partial<ItemCostSheet> | null; restore?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -220,8 +225,12 @@ async function saveCostSheet(request: HttpRequest, _context: InvocationContext) 
   }
   const now = new Date().toISOString();
 
+  const history = [...(listing.costSheetPrevious ?? [])];
   let sheet: ItemCostSheet | null = null;
-  if (body.sheet) {
+  if (body.restore) {
+    // Removing steps back to the costs saved before these, when there were any.
+    sheet = history.pop() ?? null;
+  } else if (body.sheet) {
     try {
       sheet = cleanCostSheet(body.sheet, now);
     } catch (err) {
@@ -230,8 +239,15 @@ async function saveCostSheet(request: HttpRequest, _context: InvocationContext) 
     if (!sheet) return error(400, 'invalid_sheet', 'Keep at least one cost step, or remove the costs.');
   }
 
-  const saved = await repository.updateListing({ ...listing, costSheet: sheet, updatedAt: now });
-  return json(200, { listingId: saved.id, sheet: saved.costSheet ?? null, costMinor: sheetTotal(saved.costSheet) });
+  // Anything replaced is kept, so it can be stepped back to.
+  if (!body.restore && listing.costSheet) history.push(listing.costSheet);
+  const saved = await repository.updateListing({
+    ...listing, costSheet: sheet, costSheetPrevious: history.slice(-MAX_COST_HISTORY), updatedAt: now,
+  });
+  return json(200, {
+    listingId: saved.id, sheet: saved.costSheet ?? null, costMinor: sheetTotal(saved.costSheet),
+    previous: saved.costSheetPrevious?.at(-1) ?? null,
+  });
 }
 
 /* ── Deeper Pro figures ──────────────────────────────────────────────────── */

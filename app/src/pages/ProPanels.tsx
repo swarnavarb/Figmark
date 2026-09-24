@@ -202,7 +202,8 @@ function ItemCosts({ sheets, onEdit, shop, onChanged }: {
     setBusy(row.listingId);
     setFailed(null);
     try {
-      await api.saveCostSheet(row.listingId, null, shop);
+      // Steps back to the costs saved before these; clears them only when there were none.
+      await api.restoreCostSheet(row.listingId, shop);
       setAsking(null);
       onChanged();
     } catch (err) {
@@ -216,7 +217,7 @@ function ItemCosts({ sheets, onEdit, shop, onChanged }: {
     <div className="stack">
       <p className="faint">
         What one unit of each item really cost, step by step. Fill it from a calculator, then change any step.
-        Only the steps you keep are counted.
+        Only the steps you keep are counted. Remove steps back to the costs saved before - nothing is lost.
       </p>
       <div className="inssegs" role="tablist" aria-label="Which items">
         <button type="button" role="tab" aria-selected={filter === 'missing'} className={`inscat${filter === 'missing' ? ' is-on' : ''}`}
@@ -250,7 +251,8 @@ function ItemCosts({ sheets, onEdit, shop, onChanged }: {
                     <button type="button" className={`btn btn--sm ${asking === row.listingId ? 'btn--danger' : 'btn--ghost'}`}
                       disabled={busy === row.listingId} onBlur={() => setAsking((now) => (now === row.listingId ? null : now))}
                       onClick={() => void remove(row)}>
-                      {busy === row.listingId ? 'Removing…' : asking === row.listingId ? 'Tap to confirm' : 'Remove'}
+                      {busy === row.listingId ? 'Removing…' : asking !== row.listingId ? 'Remove'
+                        : row.previousCostMinor !== null ? `Back to ${money(row.previousCostMinor)}` : 'Tap to clear'}
                     </button>
                   )}
                 </span>
@@ -271,6 +273,18 @@ function SheetEditor({ item, shop, onDone }: { item: SheetItem; shop?: string; o
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function restore() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.restoreCostSheet(item.listingId, shop);
+      onDone(true);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not remove those costs.');
+      setBusy(false);
+    }
+  }
 
   async function save(sheet: CostSheetDraft | null) {
     setBusy(true);
@@ -302,8 +316,8 @@ function SheetEditor({ item, shop, onDone }: { item: SheetItem; shop?: string; o
           {item.sheet && draft && (
             <button type="button" className={`btn btn--sm ${asking ? 'btn--danger' : 'btn--ghost'}`} disabled={busy}
               onBlur={() => setAsking(false)}
-              onClick={() => { if (asking) void save(null); else setAsking(true); }}>
-              {asking ? 'Tap to confirm' : 'Remove costs'}
+              onClick={() => { if (asking) void restore(); else setAsking(true); }}>
+              {!asking ? 'Remove costs' : item.previousCostMinor !== null ? `Back to ${formatMoney(item.previousCostMinor)}` : 'Tap to clear'}
             </button>
           )}
         </div>

@@ -5529,7 +5529,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 .costfield__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #FDE68A; }
 .costfield__fill { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; align-items: end; }
-.costfield__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.costfield__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 
 /* ── Private deals in a chat ─────────────────────────────────────────── */
 .composer--deal { grid-template-columns: auto minmax(0, 1fr) auto; }

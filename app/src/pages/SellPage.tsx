@@ -81,15 +81,19 @@ export function SellPage() {
   const prefill = useLocation().state as {
     priceMinor?: number; costSheet?: CostSheetDraft; title?: string;
     share?: { channel: boolean; feed: boolean }; calc?: SavedCalc;
+    quantity?: number; description?: string;
+    /** A private deal, made from a chat: who it is for, and the chat to go back to. */
+    privateDeal?: { userId: string; handle: string; displayName: string; as: string };
   } | null;
+  const deal = prefill?.privateDeal ?? null;
 
   const [title, setTitle] = useState(prefill?.title ?? '');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(prefill?.description ?? '');
   const [category, setCategory] = useState<string>(CATEGORIES[0]!);
   const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
   const [price, setPrice] = useState(() => (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
   const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(prefill?.costSheet ?? null);
-  const [terms, setTerms] = useState(() => termsDraft());
+  const [terms, setTerms] = useState(() => termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
   const [bundle, setBundle] = useState(false);
   const [shareToChannel, setShareToChannel] = useState(prefill?.share?.channel ?? true);
   const [shareToFeed, setShareToFeed] = useState(prefill?.share?.feed ?? false);
@@ -200,10 +204,12 @@ export function SellPage() {
         priceMinor,
         ...termsBody(terms),
         bundle,
-        shareToChannel,
-        shareToFeed,
+        // A private deal is never announced: only its buyer ever sees it.
+        shareToChannel: deal ? false : shareToChannel,
+        shareToFeed: deal ? false : shareToFeed,
+        ...(deal ? { privateFor: deal.userId } : {}),
         costSheet,
-        preOrder: preOrderMode
+        preOrder: preOrderMode && !deal
           ? {
               fillThreshold: Math.max(2, Number(fillThreshold) || 2),
               cutoffAt: new Date(Date.now() + (Number(cutoffDays) || 14) * 86_400_000).toISOString(),
@@ -227,6 +233,12 @@ export function SellPage() {
       if (quickPost && templateId) rememberTemplate(templateId);
       if (prefill?.calc) {
         await api.saveCalc({ ...prefill.calc, listingId: result.listing.id }, storeId).catch(() => undefined);
+      }
+      if (deal) {
+        // The item is made; the deal card in the chat is what the buyer opens it from.
+        await api.sendMessage(deal.handle, '', deal.as, { kind: 'offer', listingId: result.listing.id });
+        navigate(`/messages/${encodeURIComponent(deal.handle)}?as=${encodeURIComponent(deal.as)}`, { replace: true });
+        return;
       }
       navigate(`/listing/${result.listing.id}`);
     } catch (err) {
@@ -262,8 +274,12 @@ export function SellPage() {
     <main className="page">
       <div className="page__head">
         <div>
-          <h1>Sell something</h1>
-          <p className="muted">Takes about a minute. You can edit or remove it afterwards.</p>
+          <h1>{deal ? `🤝 Private deal for ${deal.displayName}` : 'Sell something'}</h1>
+          <p className="muted">
+            {deal
+              ? `Only ${deal.displayName} can see and buy this. It never appears in your shop, channel or the feed - once bought it is a normal order.`
+              : 'Takes about a minute. You can edit or remove it afterwards.'}
+          </p>
         </div>
       </div>
 
@@ -366,7 +382,7 @@ export function SellPage() {
           {/* Telling people is part of listing, not a second job to remember
               afterwards - which is how a shop ends up with a channel nobody
               reads because nothing is ever posted in it. */}
-          <div className="field">
+          {!deal && <div className="field">
             <span>Tell people</span>
             <label className="row" style={{ gap: 9, alignItems: 'flex-start' }}>
               <input type="checkbox" checked={shareToChannel} style={{ marginTop: 3 }}
@@ -388,7 +404,7 @@ export function SellPage() {
                 </span>
               </span>
             </label>
-          </div>
+          </div>}
 
           <div className="field-row">
             <label className="field">
@@ -408,7 +424,7 @@ export function SellPage() {
             <span className="field__hint">Comma separated. Helps buyers find it in search.</span>
           </label>
 
-          <div className="card card--pad stack">
+          {!deal && <div className="card card--pad stack">
             <label className="row" style={{ cursor: 'pointer' }}>
               <input type="checkbox" checked={preOrderMode} onChange={(e) => setPreOrderMode(e.target.checked)}
                 style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
@@ -433,7 +449,7 @@ export function SellPage() {
                 </label>
               </div>
             )}
-          </div>
+          </div>}
 
           <div className="card card--pad stack">
             <div>
@@ -502,7 +518,7 @@ export function SellPage() {
           {error && <ErrorNotice message={error} />}
 
           <button type="submit" className="btn btn--lg" disabled={busy || !canPublish}>
-            {busy ? 'Publishing…' : 'Publish listing'}
+            {busy ? (deal ? 'Sending…' : 'Publishing…') : deal ? '🤝 Send private deal' : 'Publish listing'}
           </button>
         </form>
 

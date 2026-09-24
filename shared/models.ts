@@ -487,6 +487,12 @@ export interface Listing extends BaseDocument {
    */
   costSheet?: ItemCostSheet | null;
   /**
+   * Earlier versions of `costSheet`, oldest first. Removing an item's costs
+   * steps back to the last of these rather than wiping them, so a change the
+   * seller did not mean is one tap from undone.
+   */
+  costSheetPrevious?: ItemCostSheet[];
+  /**
    * Every price this item has been on sale at, oldest first, appended when the
    * seller edits the price. Absent for items never repriced.
    */

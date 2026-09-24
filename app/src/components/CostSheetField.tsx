@@ -97,7 +97,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
           </label>
           {template && (
             <>
-              <CalcInputs template={template} input={input} onChange={setInput} />
+              <CalcInputs template={template} input={input} onChange={setInput} shop={shop} />
               {preview && <CalcLines template={template} input={input} result={preview} />}
               <button type="button" className="btn btn--sm" style={{ justifySelf: 'start' }} onClick={fill}>
                 {steps.length ? 'Refill the steps' : 'Use these as the steps'}
@@ -106,7 +106,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
           )}
         </div>
       ) : (
-        <p className="faint">No calculators yet. <Link to="/shop?tab=calculator">Set one up</Link>, or add the steps yourself.</p>
+        <p className="faint">No calculators yet. <Link to="/shop?tab=calculator" state={shop ? { store: shop } : undefined}>Set one up</Link>, or add the steps yourself.</p>
       )}
 
       {value?.templateName && <span className="field__hint">From “{value.templateName}”. Every step below is this item's own.</span>}
@@ -157,11 +157,15 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
  * lines charges by volumetric weight. The selling price is left to the form
  * that holds this, when it has its own.
  */
-export function CalcInputs({ template, input, onChange, withSelling = false }: {
+export function CalcInputs({ template, input, onChange, withSelling = false, shop, onLeave }: {
   template: ProfitTemplate;
   input: ProfitInput;
   onChange: (next: ProfitInput) => void;
   withSelling?: boolean;
+  /** Whose calculator it is, for the "Edit calculator" link. */
+  shop?: string;
+  /** Called before the link leaves - so a popup can close itself. */
+  onLeave?: () => void;
 }) {
   const set = (patch: Partial<ProfitInput>) => onChange({ ...input, ...patch });
   const sized = template.lines.some((line) => line.enabled && line.kind === 'per_kg' && line.volumetric);
@@ -187,7 +191,10 @@ export function CalcInputs({ template, input, onChange, withSelling = false }: {
           {num('Height (cm)', input.heightCm, (heightCm) => ({ heightCm }))}
         </div>
       )}
-      <small className="faint">1 {template.currency} = ₹{template.rate || 0} on “{template.name}”.</small>
+      <div className="costfield__row">
+        <small className="faint">1 {template.currency} = ₹{template.rate || 0} on “{template.name}”.</small>
+        <EditCalcLink templateId={template.id} shop={shop} onLeave={onLeave} />
+      </div>
     </>
   );
 }
@@ -223,5 +230,18 @@ export function CalcLines({ template, input, result }: { template: ProfitTemplat
       })}
       <div className="pc__line pc__line--total"><span>Landed cost per item</span><span>{rupees(result.landed)}</span></div>
     </div>
+  );
+}
+
+/**
+ * Opens the calculator page on this calculator, with its rates and lines
+ * ready to edit - for when a rate is out of date mid-listing.
+ */
+export function EditCalcLink({ templateId, shop, onLeave }: { templateId: string; shop?: string; onLeave?: () => void }) {
+  return (
+    <Link to={`/shop?tab=calculator&edit=${encodeURIComponent(templateId)}`} state={shop ? { store: shop } : undefined}
+      className="btn btn--quiet btn--sm" onClick={onLeave}>
+      ✏️ Edit calculator
+    </Link>
   );
 }

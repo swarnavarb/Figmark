@@ -809,6 +809,8 @@ export interface SheetItem {
   sold: number;
   sheet: ItemCostSheet | null;
   costMinor: number;
+  /** What Remove steps back to; null when removing clears the costs. */
+  previousCostMinor: number | null;
 }
 
 /** `GET /api/me/costs` - real profit per lot, item and customer. */
@@ -1639,6 +1641,9 @@ export const api = {
     post<{ calc: SavedCalc; calcs: SavedCalc[] }>(`/me/calcs/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, calc),
   deleteCalc: (id: string, storeId?: string) =>
     post<{ calcs: SavedCalc[] }>(`/me/calcs/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
+  restoreCostSheet: (listingId: string, storeId?: string) =>
+    post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
+      `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { restore: true }),
   saveCostSheet: (listingId: string, sheet: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null, storeId?: string) =>
     post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
       `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { sheet }),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { calculateProfit, stepsFromResult, type ProfitInput, type ProfitTemplate, type SavedCalc } from '@shared/profit';
 import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api } from '../api';
@@ -315,7 +315,10 @@ function QuickCalc({ onLeave }: { onLeave: () => void }) {
         {tab === 'saved' ? (
           <SavedCalcList calcs={calcs} store={store} onChanged={setCalcs} onAct={onLeave} />
         ) : templates === null ? <p className="muted">Loading your calculators…</p> : !template ? (
-          <p className="muted">No calculator saved yet. Set one up under Sell → Calculator first.</p>
+          <p className="muted">
+            No calculator saved yet.{' '}
+            <Link to="/shop?tab=calculator" state={{ store: storeId }} onClick={onLeave}>Set one up</Link> first.
+          </p>
         ) : (
           <>
             <div className="costfield__fill">
@@ -330,7 +333,7 @@ function QuickCalc({ onLeave }: { onLeave: () => void }) {
                 </select>
               </label>
             </div>
-            <CalcInputs template={template} input={input} onChange={setInput} withSelling />
+            <CalcInputs template={template} input={input} onChange={setInput} withSelling shop={storeId} onLeave={onLeave} />
             {result && (
               <>
                 <div className={`fcalc__result${input.sellingPrice > 0 && result.profit < 0 ? ' is-loss' : ''}`}>

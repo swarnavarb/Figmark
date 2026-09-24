@@ -112,7 +112,7 @@ const {
   deleteProfitTemplateRoute: deleteProfitTemplate,
   listSavedCalcsRoute: listSavedCalcs, saveSavedCalcRoute: saveSavedCalc, deleteSavedCalcRoute: deleteSavedCalc,
 } = await import(new URL('profit-routes.js', fns));
-const { calculateProfit, starterLines } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
+const { calculateProfit, starterLines, sheetTotal } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
 const {
   costsRoute: costsRead, saveCostSheetRoute: saveCostSheet, deepRoute: deepRead, salesReportRoute: salesReport, nudgeRoute: nudge,
 } = await import(new URL('pro-routes.js', fns));
@@ -6749,6 +6749,16 @@ await check('an item keeps its own cost steps, and profit follows per item and c
   const edited = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { steps: [{ ...steps[0], amountMinor: 7_000 }] } } }), ctx);
   assert.equal(edited.jsonBody.costMinor, 7_000, 'a step can be changed, and a step dropped');
   const stranger = await newBuyer('Cost Snoop');
+  const seen = (await listingDetail(req({ headers: stranger.headers, params: { id: listingId } }), ctx)).jsonBody.listing;
+  assert.equal(seen.costSheet, undefined, 'a buyer never sees what the item cost the shop');
+  assert.equal(seen.costSheetPrevious, undefined);
+  assert.equal((await listingDetail(req({ headers: auth, params: { id: listingId } }), ctx)).jsonBody.listing.costSheet.steps.length, 1);
+
+  const stepped = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { restore: true } }), ctx);
+  assert.equal(stepped.jsonBody.costMinor, sheetTotal({ steps }), 'removing steps back to the costs saved before');
+  const sheetRow = (await costsRead(req({ headers: auth }), ctx)).jsonBody.sheets.find((row) => row.listingId === listingId);
+  assert.equal(sheetRow.previousCostMinor, null, 'and there is nothing before those');
+  await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { steps: [{ ...steps[0], amountMinor: 7_000 }] } } }), ctx);
   assert.equal((await saveCostSheet(req({ headers: stranger.headers, params: { id: listingId }, body: { sheet: null } }), ctx)).status, 404);
   const cleared = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: null } }), ctx);
   assert.equal(cleared.jsonBody.sheet, null);

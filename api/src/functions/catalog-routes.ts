@@ -72,7 +72,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     listings: listings.map((listing) => ({
-      ...listing,
+      ...withoutCosts(listing),
       liked: likedIds.has(listing.id),
       seller: sellerById.get(listing.sellerId) ?? null,
       estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
@@ -87,6 +87,12 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** GET /api/listings/{id} - detail, with seller, lot, comments and like state. */
+/** A listing as anyone outside the shop may see it: without what it cost the shop. */
+function withoutCosts(listing: Listing): Listing {
+  const { costSheet: _cost, costSheetPrevious: _history, ...rest } = listing;
+  return rest;
+}
+
 async function listingDetail(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A listing id is required.');
@@ -136,7 +142,8 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     : null;
 
   return json(200, {
-    listing: settled.listing,
+    // What the item cost the shop is the shop's own business.
+    listing: (await mayManage(repository, listing, viewer?.id)) ? settled.listing : withoutCosts(settled.listing),
     /** The group behind the meter: counts, roster, and the reader's own place. */
     preOrder,
     seller: sellers[0] ? toSellerCard(sellers[0]) : null,
