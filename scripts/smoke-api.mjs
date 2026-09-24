@@ -6059,7 +6059,10 @@ await check('Scenario A: cancelling an accepted order with no payment goes strai
   const repo = await getRepository();
   const buyerRecord = await repo.getUserById(buyer.id);
   const messages = await repo.listMessagesForHandles([buyerRecord.username ?? buyer.id]);
-  assert.ok(messages.some((m) => /cancelled/i.test(m.body)));
+  const note = messages.find((m) => /cancelled/i.test(m.body));
+  assert.ok(note);
+  assert.equal(note.from.isStore, true, 'the shop speaks as its storefront, not as the person behind it');
+  assert.equal(note.from.handle, 'arjun_collects');
 });
 
 // Scenario B - cancel after payment, with reversal details on file.

@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { Message, MessageDeal, MessageParty } from '@shared/models';
+import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
 import { CostSheetField, type CostSheetDraft } from './CostSheetField';
@@ -18,20 +19,41 @@ import { ErrorNotice, Modal } from './ui';
  * pay. The shop answers by making the deal, prefilled from the ask.
  */
 
-export function DealForm({ us, them, from, onClose, onSent }: {
+const sheetOf = (calc: SavedCalc): CostSheetDraft | null =>
+  (calc.steps.length ? { templateId: calc.templateId, templateName: calc.templateName, steps: calc.steps } : null);
+
+export function DealForm({ us, them, from, calc, onClose, onSent }: {
   us: MessageParty;
   them: MessageParty;
   /** The buyer's ask this answers, when it answers one. */
   from?: MessageDeal | null;
+  /** A saved calculation to make the deal from. */
+  calc?: SavedCalc | null;
   onClose: () => void;
   onSent: () => void;
 }) {
   const shopMaking = us.isStore && !them.isStore;
-  const [title, setTitle] = useState(from?.title ?? '');
+  const [title, setTitle] = useState(calc?.title ?? from?.title ?? '');
   const [description, setDescription] = useState('');
-  const [price, setPrice] = useState(from?.priceMinor ? String(from.priceMinor / 100) : '');
+  const [price, setPrice] = useState(() => {
+    const minor = calc?.sellingPriceMinor || from?.priceMinor;
+    return minor ? String(minor / 100) : '';
+  });
   const [quantity, setQuantity] = useState(String(from?.quantity ?? 1));
-  const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(null);
+  const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(calc ? sheetOf(calc) : null);
+  // The floating calculator's saved list, to fill the deal from.
+  const [calcs, setCalcs] = useState<SavedCalc[]>([]);
+  useEffect(() => {
+    if (!shopMaking) return;
+    void api.savedCalcs(us.userId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
+  }, [shopMaking, us.userId]);
+  function fillFromCalc(id: string) {
+    const picked = calcs.find((entry) => entry.id === id);
+    if (!picked) return;
+    setTitle(picked.title);
+    if (picked.sellingPriceMinor) setPrice(String(picked.sellingPriceMinor / 100));
+    setCostSheet(sheetOf(picked));
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const priceMinor = Math.round(Number(price || 0) * 100);
@@ -81,6 +103,17 @@ export function DealForm({ us, them, from, onClose, onSent }: {
             ? `Only ${them.displayName} can see and buy this. It never appears in your shop, channel or the feed, but once bought it is a normal order - in your orders, lots and tracking.`
             : 'Say what you are after. The shop can answer with an item made just for you.'}
         </p>
+        {shopMaking && calcs.length > 0 && (
+          <label className="field">
+            <span>🧮 From your saved calculations</span>
+            <select value="" onChange={(e) => fillFromCalc(e.target.value)}>
+              <option value="">Pick one to fill this in…</option>
+              {calcs.map((entry) => (
+                <option key={entry.id} value={entry.id}>{entry.title} · {formatMoney(entry.sellingPriceMinor)}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field">
           <span>{shopMaking ? 'Item' : 'What you are looking for'}</span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={120} />
@@ -105,7 +138,7 @@ export function DealForm({ us, them, from, onClose, onSent }: {
         )}
         {error && <ErrorNotice message={error} />}
         <button type="submit" className="btn" disabled={busy || !title.trim() || (shopMaking && priceMinor <= 0)}>
-          {busy ? 'Sending…' : shopMaking ? '🔒 Send private deal' : '🤝 Ask for a deal'}
+          {busy ? 'Sending…' : shopMaking ? '🤝 Send private deal' : '🤝 Ask for a deal'}
         </button>
       </form>
     </Modal>
@@ -123,7 +156,7 @@ export function DealCard({ message, mine, us, onAnswer }: {
   const offer = deal.kind === 'offer';
   return (
     <div className={`dealcard${offer ? ' dealcard--offer' : ''}`}>
-      <span className="dealcard__tag">{offer ? '🔒 Private deal' : '🤝 Private deal request'}</span>
+      <span className="dealcard__tag">{offer ? '🤝 Private deal' : '🤝 Private deal request'}</span>
       <b className="dealcard__title">{deal.title}</b>
       <span className="dealcard__meta">
         {deal.priceMinor > 0 ? formatMoney(deal.priceMinor) : 'Open to offers'} · {deal.quantity} {deal.quantity === 1 ? 'unit' : 'units'}

@@ -1070,7 +1070,7 @@ async function tellBuyerRefunded(
   const [seller, buyer] = await Promise.all([repository.getUserById(order.sellerId), repository.getUserById(order.buyerId)]);
   if (seller && buyer) {
     await systemMessage(repository, seller, buyer, message?.trim()
-      || `I have refunded ${rupees(amountMinor)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm under My refunds once it reaches you.`);
+      || `I have refunded ${rupees(amountMinor)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm under My refunds once it reaches you.`, order.sellerId);
   }
 }
 
@@ -1277,7 +1277,7 @@ async function ackCreditRefund(request: HttpRequest, _context: InvocationContext
     const [buyer, seller] = await Promise.all([repository.getUserById(order.buyerId), repository.getUserById(order.sellerId)]);
     if (buyer && seller) {
       await systemMessage(repository, buyer, seller,
-        `The ${rupees(total)} you said you returned for "${order.itemName}" has not reached me yet. Could you check and send it again?`);
+        `The ${rupees(total)} you said you returned for "${order.itemName}" has not reached me yet. Could you check and send it again?`, order.sellerId);
     }
   }
 
@@ -1637,13 +1637,15 @@ export const checkoutRoute = handler(checkout);
  * claimed a username yet, so a system message never fails to send for want
  * of one.
  */
-async function systemMessage(repository: Repo, from: User, to: User, body: string): Promise<void> {
-  const fromParty: MessageParty = {
-    handle: from.username ?? from.id, userId: from.id, isStore: false, displayName: from.displayName,
-  };
-  const toParty: MessageParty = {
-    handle: to.username ?? to.id, userId: to.id, isStore: false, displayName: to.displayName,
-  };
+async function systemMessage(repository: Repo, from: User, to: User, body: string, sellerId: string): Promise<void> {
+  // The order's seller speaks as their storefront, not as the person behind it:
+  // the buyer bought from the shop, and the shop's inbox is where the seller
+  // (and anyone helping run it) will look for the reply.
+  const party = (user: User): MessageParty => (user.id === sellerId && user.sellerProfile?.username
+    ? { handle: user.sellerProfile.username, userId: user.id, isStore: true, displayName: user.sellerProfile.storefrontName }
+    : { handle: user.username ?? user.id, userId: user.id, isStore: false, displayName: user.displayName });
+  const fromParty = party(from);
+  const toParty = party(to);
   const now = new Date().toISOString();
   const message: Message = {
     id: `msg_${randomUUID().slice(0, 12)}`,
@@ -1758,7 +1760,7 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
     if (buyer && seller) {
       const text = (body.message ?? '').trim()
         || `Your order for ${order.itemName} has been cancelled: ${reason}`;
-      await systemMessage(repository, seller, buyer, text);
+      await systemMessage(repository, seller, buyer, text, order.sellerId);
     }
     return json(200, { order });
   }
@@ -1806,7 +1808,7 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
       const text = (body.message ?? '').trim()
         || `Your order for ${order.itemName} is being cancelled and your payment of ${rupees(money.paidMinor)} `
           + `will be reversed. Please update your Payment Reversal Details so we can send it back.`;
-      await systemMessage(repository, seller, buyer, text);
+      await systemMessage(repository, seller, buyer, text, order.sellerId);
     }
   }
 
@@ -1847,7 +1849,7 @@ async function requestReversalDetails(request: HttpRequest, _context: Invocation
         + '(My refunds → Payment reversal details) and confirm them, or update them if anything has changed.'
       : `I need to refund you for "${order.itemName}". Please add your Payment Reversal Details `
         + '(My refunds → Payment reversal details) so I know where to send it.');
-  await systemMessage(repository, seller, buyer, text);
+  await systemMessage(repository, seller, buyer, text, order.sellerId);
 
   const now = new Date().toISOString();
   order.detailsCheck = { requestedAt: now, requestedBy: user.id, confirmedAt: null };
@@ -1916,7 +1918,7 @@ export async function confirmDetailsOn(repository: Repo, order: Order, buyer: Us
   const seller = await repository.getUserById(order.sellerId);
   if (seller) {
     await systemMessage(repository, buyer, seller,
-      `My payment reversal details are up to date for "${order.itemName}" — you can send the refund now.`);
+      `My payment reversal details are up to date for "${order.itemName}" — you can send the refund now.`, order.sellerId);
   }
   return saved;
 }
@@ -2018,7 +2020,7 @@ async function submitReversal(request: HttpRequest, _context: InvocationContext)
   const seller = await repository.getUserById(order.sellerId);
   if (seller && buyer) {
     await systemMessage(repository, seller, buyer,
-      'Your payment has been reversed. Please confirm whether you have received the payment.');
+      'Your payment has been reversed. Please confirm whether you have received the payment.', order.sellerId);
   }
 
   return json(200, { order });

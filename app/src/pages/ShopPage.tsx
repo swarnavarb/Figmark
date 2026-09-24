@@ -1402,7 +1402,7 @@ function OrderRow({
         </Link>
         <div className="ocard__title">
           <Link to={orderLink} state={linkState} className="ocard__name">{row.itemName}</Link>
-          {row.privateDeal && <span className="badge badge--pink">🔒 Private deal</span>}
+          {row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
           <div className="ocard__meta">
             {row.buyer.handle
               ? <Link to={`/${row.buyer.handle}`} className="ocard__buyer">{row.buyer.name}</Link>

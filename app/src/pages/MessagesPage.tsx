@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { MessageDeal, MessageParty } from '@shared/models';
+import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
@@ -175,7 +176,15 @@ export function ThreadPage() {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   // The private deal form: open, and the buyer's ask it answers, if any.
-  const [dealing, setDealing] = useState<{ from: MessageDeal | null } | null>(null);
+  // Arriving from a saved calculation's "Private deal": the form opens with it.
+  // Watched by the navigation's key, because "Private deal" pressed while this
+  // very chat is open lands on the same page rather than a fresh one.
+  const location = useLocation();
+  const [dealing, setDealing] = useState<{ from: MessageDeal | null; calc?: SavedCalc | null } | null>(null);
+  useEffect(() => {
+    const dealCalc = (location.state as { dealCalc?: SavedCalc } | null)?.dealCalc;
+    if (dealCalc) setDealing({ from: null, calc: dealCalc });
+  }, [location.key, location.state]);
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -362,7 +371,7 @@ export function ThreadPage() {
       {error && <div className="chat__error"><ErrorNotice message={error} /></div>}
 
       {dealing && (
-        <DealForm us={data.us} them={data.them} from={dealing.from} onClose={() => setDealing(null)}
+        <DealForm us={data.us} them={data.them} from={dealing.from} calc={dealing.calc} onClose={() => setDealing(null)}
           onSent={() => { setDealing(null); void load(); }} />
       )}
 
@@ -371,7 +380,7 @@ export function ThreadPage() {
           <button type="button" className="composer__deal" onClick={() => setDealing({ from: null })}
             aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}
             title={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}>
-            {data.us.isStore ? '🔒' : '🤝'}
+            🤝
           </button>
         )}
         <textarea

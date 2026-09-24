@@ -5553,18 +5553,19 @@ a.ocard__buyer:hover { color: var(--accent-text); }
    it opens: the sheet grows out of the button and folds back into it. */
 .fcalc__fab {
   position: fixed; z-index: 60;
-  right: 16px; bottom: calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom, 0px));
-  width: 54px; height: 54px; border-radius: 18px; border: 0; cursor: pointer;
-  display: grid; place-items: center; font-size: 24px; color: #fff;
-  background: linear-gradient(135deg, #F59E0B, #EC4899 60%, #8B5CF6);
-  box-shadow: 0 10px 26px rgba(236, 72, 153, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
-  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease, border-radius 260ms ease;
-  animation: fcalc-arrive 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  right: 16px; bottom: calc(var(--tabbar-h) + 64px + env(safe-area-inset-bottom, 0px));
+  width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center; color: var(--text);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in srgb, #F59E0B 45%, var(--border));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), color 160ms ease, border-color 160ms ease;
+  animation: fcalc-arrive 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
-.fcalc__fab:hover { transform: translateY(-2px) scale(1.05); box-shadow: 0 14px 32px rgba(236, 72, 153, 0.5); }
-.fcalc__fab:active { transform: scale(0.94); }
-.fcalc__fab.is-open { transform: rotate(90deg); border-radius: 50%; }
-.fcalc__fab span { line-height: 1; }
+.fcalc__fab:hover { color: #F59E0B; transform: translateY(-1px); }
+.fcalc__fab:active { transform: scale(0.92); }
+.fcalc__fab.is-open { color: #F59E0B; transform: rotate(90deg); }
 @keyframes fcalc-arrive { from { opacity: 0; transform: translateY(24px) scale(0.6); } to { opacity: 1; transform: none; } }
 
 .fcalc { position: fixed; inset: 0; z-index: 59; }
@@ -5575,14 +5576,14 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 .fcalc__sheet {
   position: absolute; right: 12px; left: 12px;
-  bottom: calc(var(--tabbar-h) + 80px + env(safe-area-inset-bottom, 0px));
-  max-height: calc(100dvh - var(--tabbar-h) - 150px); overflow-y: auto; overscroll-behavior: contain;
+  bottom: calc(var(--tabbar-h) + 120px + env(safe-area-inset-bottom, 0px));
+  max-height: calc(100dvh - var(--tabbar-h) - 190px); overflow-y: auto; overscroll-behavior: contain;
   margin-left: auto; max-width: 440px;
   display: grid; gap: 10px; padding: 14px;
   background: var(--surface); color: var(--text);
   border-radius: 22px; border: 1px solid color-mix(in srgb, #F59E0B 40%, var(--border));
   box-shadow: 0 24px 60px rgba(20, 8, 40, 0.38), 0 0 0 1px rgba(236, 72, 153, 0.12);
-  transform-origin: calc(100% - 27px) calc(100% + 53px);
+  transform-origin: calc(100% - 22px) calc(100% + 78px);
   animation: fcalc-open 420ms cubic-bezier(0.22, 1.25, 0.36, 1) both;
 }
 .fcalc.is-closing .fcalc__sheet { animation: fcalc-shut 220ms cubic-bezier(0.4, 0, 1, 1) both; }

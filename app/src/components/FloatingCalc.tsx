@@ -52,22 +52,32 @@ export function useFloatingCalc(): [boolean, (on: boolean) => void] {
   return [on, set];
 }
 
-export type CalcAction = 'list' | 'channel' | 'feed' | 'sale';
+/**
+ * List now opens the listing form, whose own ticks send it to the channel and
+ * the feed; a power sale takes it as an item; a private deal opens a chat
+ * with the buyer, as the shop, with the deal form filled in.
+ */
+export type CalcAction = 'list' | 'sale' | 'deal';
 
 const ACTIONS: { id: CalcAction; icon: string; label: string }[] = [
   { id: 'list', icon: '🏷️', label: 'List now' },
   { id: 'sale', icon: '⚡', label: 'Power sale' },
-  { id: 'channel', icon: '📣', label: 'Channel' },
-  { id: 'feed', icon: '📰', label: 'Feed' },
+  { id: 'deal', icon: '🤝', label: 'Private deal' },
 ];
 
-/** Where each action goes: the listing form, prefilled, or a power sale with it as an item. */
 export function useCalcAction(store: StoreAccess | null) {
   const navigate = useNavigate();
-  return (calc: SavedCalc, action: CalcAction) => {
+  return (calc: SavedCalc, action: CalcAction, buyer?: string) => {
     if (!store) return;
     if (action === 'sale') {
       navigate('/shop?tab=items', { state: { saleCalcs: [calc], store: store.ownerId } });
+      return;
+    }
+    if (action === 'deal') {
+      const who = (buyer ?? '').trim().replace(/^@/, '').toLowerCase();
+      if (!who) return;
+      navigate(`/messages/${encodeURIComponent(who)}${store.handle ? `?as=${encodeURIComponent(store.handle)}` : ''}`,
+        { state: { dealCalc: calc } });
       return;
     }
     navigate(store.isOwner ? '/sell' : `/sell?store=${encodeURIComponent(store.ownerId)}`, {
@@ -75,11 +85,23 @@ export function useCalcAction(store: StoreAccess | null) {
         title: calc.title,
         priceMinor: calc.sellingPriceMinor,
         costSheet: calc.steps.length ? { templateId: calc.templateId, templateName: calc.templateName, steps: calc.steps } : null,
-        share: { channel: action === 'channel', feed: action === 'feed' },
         calc,
       },
     });
   };
+}
+
+/** Who a private deal is for: asked in place, since a deal is always for one person. */
+function BuyerPrompt({ onGo, onCancel }: { onGo: (handle: string) => void; onCancel: () => void }) {
+  const [handle, setHandle] = useState('');
+  return (
+    <form className="pc__keep" onSubmit={(event) => { event.preventDefault(); if (handle.trim()) onGo(handle); }}>
+      <input autoFocus aria-label="Buyer's username" placeholder="Buyer's @username" value={handle}
+        onChange={(e) => setHandle(e.target.value)} />
+      <button type="submit" className="btn btn--sm" disabled={!handle.trim()}>Open chat</button>
+      <button type="button" className="btn btn--quiet btn--sm" onClick={onCancel}>✕</button>
+    </form>
+  );
 }
 
 /** Saved calculations, each one tap from being listed. */
@@ -92,6 +114,7 @@ export function SavedCalcList({ calcs, store, onChanged, onAct }: {
 }) {
   const act = useCalcAction(store);
   const [asking, setAsking] = useState<string | null>(null);
+  const [dealFor, setDealFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function remove(calc: SavedCalc) {
@@ -131,8 +154,11 @@ export function SavedCalcList({ calcs, store, onChanged, onAct }: {
             </small>
             <div className="savedcalc__acts">
               {ACTIONS.map((action) => (
-                <button key={action.id} type="button" className="btn btn--ghost btn--sm"
-                  onClick={() => { onAct?.(); act(calc, action.id); }}>
+                <button key={action.id} type="button" className={`btn btn--ghost btn--sm${dealFor === calc.id && action.id === 'deal' ? ' is-on' : ''}`}
+                  onClick={() => {
+                    if (action.id === 'deal') { setDealFor(dealFor === calc.id ? null : calc.id); return; }
+                    onAct?.(); act(calc, action.id);
+                  }}>
                   <span aria-hidden="true">{action.icon}</span> {action.label}
                 </button>
               ))}
@@ -141,6 +167,9 @@ export function SavedCalcList({ calcs, store, onChanged, onAct }: {
                 {asking === calc.id ? 'Tap to delete' : 'Delete'}
               </button>
             </div>
+            {dealFor === calc.id && (
+              <BuyerPrompt onCancel={() => setDealFor(null)} onGo={(buyer) => { onAct?.(); act(calc, 'deal', buyer); }} />
+            )}
           </article>
         );
       })}
@@ -174,7 +203,7 @@ export function FloatingCalc() {
     <>
       <button type="button" className={`fcalc__fab${open ? ' is-open' : ''}`} aria-label={open ? 'Close the calculator' : 'Open the calculator'}
         aria-expanded={open} onClick={() => (open ? close() : setOpen(true))}>
-        <span aria-hidden="true">{open ? '✕' : '🧮'}</span>
+        <CalcGlyph open={open} />
       </button>
       {open && (
         <div className={`fcalc${closing ? ' is-closing' : ''}`}>
@@ -224,7 +253,9 @@ function QuickCalc({ onLeave }: { onLeave: () => void }) {
   const result = useMemo(() => (template ? calculateProfit(template, input) : null), [template, input]);
   const act = useCalcAction(store);
 
-  async function keep(then?: 'list' | 'channel' | 'feed' | 'sale') {
+  const [dealing, setDealing] = useState(false);
+
+  async function keep(then?: CalcAction, buyer?: string) {
     if (!template || !result) return;
     setBusy(true);
     setError(null);
@@ -240,7 +271,7 @@ function QuickCalc({ onLeave }: { onLeave: () => void }) {
       setCalcs(saved.calcs);
       if (then) {
         onLeave();
-        act(saved.calc, then);
+        act(saved.calc, then, buyer);
         return;
       }
       setFlash(`Saved “${saved.calc.title}” to your list.`);
@@ -317,15 +348,35 @@ function QuickCalc({ onLeave }: { onLeave: () => void }) {
             <div className="savedcalc__acts">
               {ACTIONS.map((action) => (
                 <button key={action.id} type="button" className="btn btn--ghost btn--sm"
-                  disabled={busy || !title.trim() || input.sellingPrice <= 0} onClick={() => void keep(action.id)}>
+                  disabled={busy || !title.trim() || input.sellingPrice <= 0}
+                  onClick={() => (action.id === 'deal' ? setDealing((was) => !was) : void keep(action.id))}>
                   <span aria-hidden="true">{action.icon}</span> {action.label}
                 </button>
               ))}
             </div>
+            {dealing && <BuyerPrompt onCancel={() => setDealing(false)} onGo={(buyer) => void keep('deal', buyer)} />}
             {!title.trim() && <small className="faint">Name the item to save it or send it on.</small>}
           </>
         )}
       </div>
     </>
+  );
+}
+
+/** A plain line-drawn calculator that turns into a cross while open. */
+function CalcGlyph({ open }: { open: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {open ? (
+        <path d="M6 6l12 12M18 6L6 18" />
+      ) : (
+        <>
+          <rect x="5" y="3" width="14" height="18" rx="3" />
+          <path d="M8.5 7.5h7" />
+          <path d="M9 12h.01M12 12h.01M15 12h.01M9 15.5h.01M12 15.5h.01M15 15.5h.01" strokeWidth="2.4" />
+        </>
+      )}
+    </svg>
   );
 }
