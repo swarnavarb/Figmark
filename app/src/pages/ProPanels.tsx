@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   COST_STAGES, STAGE_LABELS, calculateProfit, stepsFromResult,
@@ -42,7 +42,20 @@ const PROFIT_TABS: { id: ProfitView; label: string; hint: Record<Status, string>
 export function RealProfit({ shop, data, reload }: { shop?: string; data: CostsResponse | null; reload: () => void }) {
   const [view, setView] = useState<ProfitView>('lots');
   const [status, setStatus] = useState<Status>('active');
-  const [editing, setEditing] = useState<SheetItem | null>(null);
+  const [editing, setEditingState] = useState<SheetItem | null>(null);
+  // The editor opens at its top, and closing it lands back on the row it was opened from.
+  const listScroll = useRef<number | null>(null);
+  const setEditing = (item: SheetItem | null) => {
+    if (item) listScroll.current = window.scrollY;
+    setEditingState(item);
+  };
+  useLayoutEffect(() => {
+    if (editing) window.scrollTo(0, 0);
+    else if (listScroll.current !== null) {
+      window.scrollTo(0, listScroll.current);
+      listScroll.current = null;
+    }
+  }, [editing]);
 
   if (!data) return <p className="muted">Loading…</p>;
   if (editing) {

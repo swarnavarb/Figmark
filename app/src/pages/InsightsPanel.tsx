@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import { PHASE_LABELS, SEGMENTS, SEGMENT_LABELS } from '@shared/insights';
 import {
@@ -9,6 +9,7 @@ import {
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
 import { NudgeButton } from '../components/NudgeButton';
+import { useBack } from '../components/ScrollManager';
 import { Bundles, Digest, Forecast, Loyalty, Pricing, RealProfit, Reminders, Returns } from './ProPanels';
 
 /**
@@ -56,6 +57,7 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
   const [costs, setCosts] = useState<CostsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
+  const { pathname } = useLocation();
   const shop = store.isOwner ? undefined : store.ownerId;
 
   // The open category lives in the address, so the phone's back button
@@ -69,8 +71,13 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
       else copy.delete('view');
       return copy;
     });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // A category opens at its top; coming back is the history's job, so the
+    // dashboard reappears exactly where it was left.
+    window.scrollTo(0, 0);
   };
+  const dashboard = new URLSearchParams(params);
+  dashboard.delete('view');
+  const back = useBack(`${pathname}${dashboard.toString() ? `?${dashboard}` : ''}`);
 
   useEffect(() => {
     void api.interest(shop)
@@ -91,7 +98,7 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
     return (
       <div className="stack ins">
         <div className="insview__bar">
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => open(null)}>← Insights</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={back}>← Insights</button>
           <h2 className="insview__title"><span aria-hidden="true">{entry.icon}</span> {entry.label} <span className="probadge">PRO</span></h2>
         </div>
         {view === 'saved' && <Saved data={data} />}
