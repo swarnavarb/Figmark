@@ -440,6 +440,10 @@ interface ListingSeed {
   likeCount: number;
   viewCount: number;
   ageDays: number;
+  /** A timed drop: stops being buyable this many hours after the seed loads. */
+  expiresInHours?: number;
+  /** What it used to cost, so the card has a real price drop to show. */
+  wasPriceMinor?: number;
 }
 
 const LISTINGS: ListingSeed[] = [
@@ -463,7 +467,7 @@ const LISTINGS: ListingSeed[] = [
     description: 'Sealed Japanese print run, not the English release. One box per buyer while stock lasts.',
     category: 'Trading cards', condition: 'MISB', priceMinor: 78_000,
     quantity: 4, tags: ['tcg', 'cards', 'sealed', 'japanese'],
-    likeCount: 51, viewCount: 623, ageDays: -3,
+    likeCount: 51, viewCount: 623, ageDays: -3, expiresInHours: 20,
   },
   {
     id: 'lst_anime_figure', sellerId: 'usr_tokyoline', title: 'Prize figure set — 3 piece',
@@ -509,7 +513,7 @@ const LISTINGS: ListingSeed[] = [
     description: 'Bought in Seoul, sealed. Expiry printed on each box, all 2027 or later.',
     category: 'Beauty', condition: 'MISB', priceMinor: 32_000,
     quantity: 6, tags: ['skincare', 'korea', 'sealed'],
-    likeCount: 12, viewCount: 148, ageDays: -3,
+    likeCount: 12, viewCount: 148, ageDays: -3, expiresInHours: 52, wasPriceMinor: 38_000,
   },
   {
     id: 'lst_canvas_tote', sellerId: 'usr_tokyoline', title: 'Japanese canvas tote — Kyoto maker, unused',
@@ -592,6 +596,13 @@ export function seedListings(): Listing[] {
     tags: entry.tags,
     likeCount: entry.likeCount,
     viewCount: entry.viewCount,
+    // Units sold, from the seeded orders it is a cache of - the same reason
+    // the pre-order counters are summed rather than typed.
+    soldCount: seededCounts(entry.id).filledCount,
+    ...(entry.expiresInHours ? { expiresAt: new Date(Date.now() + entry.expiresInHours * 3_600_000).toISOString() } : {}),
+    ...(entry.wasPriceMinor
+      ? { priceHistory: [{ priceMinor: entry.wasPriceMinor, at: iso(entry.ageDays) }, { priceMinor: entry.priceMinor, at: iso(-1) }] }
+      : {}),
     bumpedAt: null,
     createdAt: iso(entry.ageDays),
     updatedAt: iso(entry.ageDays),

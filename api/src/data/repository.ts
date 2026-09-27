@@ -284,6 +284,8 @@ export interface Repository {
   /** Toggles a bookmark. Returns the resulting state. */
   toggleLike(userId: string, listingId: string): Promise<boolean>;
   listLikedListingIds(userId: string): Promise<string[]>;
+  /** Every save one person has made, with when - one partition. */
+  listLikesBy(userId: string): Promise<Like[]>;
 
   /** Toggles a follow. Returns the resulting state. */
   toggleFollow(followerId: string, sellerId: string): Promise<boolean>;

@@ -33,7 +33,7 @@ const {
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
-  socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute,
+  socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
   removePostRoute, trendingRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
@@ -89,6 +89,10 @@ const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
   adminDeleteResourceRoute, adminEscrowRoute, adminDisputesRoute, adminResolveRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
+const {
+  questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questOpenRoute,
+  questLeaderboardRoute, collectorRoute,
+} = await import(new URL('quest-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -131,6 +135,7 @@ const routes = [
   ['POST', '/api/me/storefront/managers', updateManagersRoute],
   ['GET', '/api/social/feed', socialFeedRoute],
   ['GET', '/api/me/posts', myPostsRoute],
+  ['GET', '/api/users/:id/posts', personPostsRoute],
   ['GET', '/api/social/channels', channelsRoute],
   ['GET', '/api/social/channels/:id', channelThreadRoute],
   ['POST', '/api/social/posts', createPostRoute],
@@ -192,6 +197,13 @@ const routes = [
   ['POST', '/api/disputes/:id/escalate', escalateDisputeRoute],
   ['POST', '/api/disputes/:id/settle', settleAsEscrowRoute],
   ['GET', '/api/escrow/holdings', escrowHoldingsRoute],
+  ['GET', '/api/quest/me', questMeRoute],
+  ['POST', '/api/quest/checkin', questCheckInRoute],
+  ['POST', '/api/quest/claim', questClaimRoute],
+  ['POST', '/api/quest/reveal', questRevealRoute],
+  ['POST', '/api/quest/open', questOpenRoute],
+  ['GET', '/api/quest/leaderboard', questLeaderboardRoute],
+  ['GET', '/api/users/:id/collector', collectorRoute],
   ['GET', '/api/ops/users', adminUsersRoute],
   ['GET', '/api/ops/users/:id', adminUserDetailRoute],
   ['POST', '/api/ops/users/:id/suspend', adminSuspendRoute],

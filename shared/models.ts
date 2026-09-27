@@ -172,6 +172,35 @@ export interface User extends BaseDocument {
   lastSeenAt?: string | null;
   /** Where to send this buyer's money back when an order they paid is cancelled. */
   reversalDetails?: BuyerReversalDetails | null;
+  /**
+   * The collector game: check-ins, claimed tasks and the cards pulled from
+   * packs. Kept on the account for the same reason as the cost sheets - one
+   * person reads their own all at once, and the database is at its container
+   * ceiling. Everything else the game shows (XP from orders, reviews, saves)
+   * is counted from the rows at read time, never stored here.
+   */
+  quest?: QuestState;
+}
+
+/** What the collector game has to remember, because no other row records it. */
+export interface QuestState {
+  /** Day keys (YYYY-MM-DD, India time) the person checked in on, oldest first. */
+  checkIns: string[];
+  /** `taskId:period` -> when it was claimed. */
+  claimed: Record<string, string>;
+  /** Every card pulled, one per opened pack. */
+  cards: OwnedCard[];
+  /** The last XP and level worked out, so a leaderboard is a scan, not a recount. */
+  xpCache?: number;
+  levelCache?: number;
+  computedAt?: string | null;
+}
+
+export interface OwnedCard {
+  cardId: string;
+  /** The pack it came out of - one card per pack, so this is also the pack's "opened" mark. */
+  packId: string;
+  at: string;
 }
 
 export interface SellerProfile {
@@ -476,6 +505,12 @@ export interface Listing extends BaseDocument {
   tags: string[];
   /** Bookmark count. Cheap signal, feeds the relevance ranking later. */
   likeCount: number;
+  /**
+   * Units sold, moved with stock when an order is placed. Optional because
+   * listings written before it existed never counted; they read as zero.
+   * Feeds the rarity label a card wears.
+   */
+  soldCount?: number;
   viewCount: number;
   /**
    * Last time the seller pushed this back up the feed. Rate-limited server-side

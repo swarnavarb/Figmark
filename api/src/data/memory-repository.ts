@@ -418,6 +418,7 @@ export class MemoryRepository implements Repository {
       // Pre-order fill is denormalised onto the listing, so it moves with the
       // order rather than being counted at read time.
       if (listing.preOrder) listing.preOrder.filledCount += order.quantity;
+      listing.soldCount = (listing.soldCount ?? 0) + order.quantity;
     }
   }
 
@@ -488,6 +489,10 @@ export class MemoryRepository implements Repository {
 
   async listLikedListingIds(userId: string): Promise<string[]> {
     return [...this.likes.values()].filter((l) => l.userId === userId).map((l) => l.listingId);
+  }
+
+  async listLikesBy(userId: string): Promise<Like[]> {
+    return [...this.likes.values()].filter((like) => like.userId === userId);
   }
 
   async toggleFollow(followerId: string, sellerId: string): Promise<boolean> {

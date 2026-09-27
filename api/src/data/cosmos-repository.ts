@@ -1662,6 +1662,7 @@ export class CosmosRepository implements Repository {
             preOrder: listing.preOrder
               ? { ...listing.preOrder, filledCount: listing.preOrder.filledCount + order.quantity }
               : null,
+            soldCount: (listing.soldCount ?? 0) + order.quantity,
             updatedAt: new Date().toISOString(),
           });
       }
@@ -1706,6 +1707,13 @@ export class CosmosRepository implements Repository {
       .items.query<Like>({ query: 'SELECT * FROM c' }, { partitionKey: userId })
       .fetchAll();
     return resources.map((like) => like.listingId);
+  }
+
+  async listLikesBy(userId: string): Promise<Like[]> {
+    const { resources } = await this.container('likes')
+      .items.query<Like>({ query: 'SELECT * FROM c' }, { partitionKey: userId })
+      .fetchAll();
+    return resources;
   }
 
   async toggleFollow(followerId: string, sellerId: string): Promise<boolean> {

@@ -25,3 +25,4 @@ import './functions/service-routes.js';
 import './functions/tracking-routes.js';
 import './functions/template-routes.js';
 import './functions/admin-routes.js';
+import './functions/quest-routes.js';

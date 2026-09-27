@@ -464,6 +464,27 @@ async function myPosts(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
+ * GET /api/users/{id}/posts - what one person has said in the open, newest first.
+ *
+ * For their collector page. Only forum posts, in their own voice: a shop's
+ * channel is for its followers, so a person's messages there are not this
+ * page's to repeat, and a post in a shop's name belongs on the shop's page.
+ */
+async function personPosts(request: HttpRequest, _context: InvocationContext) {
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A user id is required.');
+  const repository = await getRepository();
+  const auth = await getAuthService();
+  const viewer = await auth.getCurrentUser(request);
+  const open = (await repository.listPostsByAuthor(id))
+    .filter((post) => post.channel === 'forum' || Boolean(post.wallOf))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 30);
+  const actor: Actor = viewer ? personActor(viewer) : { userId: '', storeId: null, key: '', name: '' };
+  return json(200, { posts: await decorate(await withoutShops(open, repository), repository, actor) });
+}
+
+/**
  * GET /api/social/channels - one row per seller you follow, newest post first.
  *
  * The message-list shape: who, what they last said, and when. Ordered by that
@@ -1460,6 +1481,7 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
 
 export const socialFeedRoute = handler(socialFeed);
 export const myPostsRoute = handler(myPosts);
+export const personPostsRoute = handler(personPosts);
 export const channelsRoute = handler(channels);
 export const channelThreadRoute = handler(channelThread);
 export const createPostRoute = handler(createPost);
@@ -1483,6 +1505,7 @@ export const socialSearchRoute = handler(search);
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('me-posts', { ...anon, methods: ['GET'], route: 'me/posts', handler: myPostsRoute });
+app.http('person-posts', { ...anon, methods: ['GET'], route: 'users/{id}/posts', handler: personPostsRoute });
 app.http('social-feed', { ...anon, methods: ['GET'], route: 'social/feed', handler: socialFeedRoute });
 app.http('social-channels', { ...anon, methods: ['GET'], route: 'social/channels', handler: channelsRoute });
 app.http('social-channel', { ...anon, methods: ['GET'], route: 'social/channels/{id}', handler: channelThreadRoute });

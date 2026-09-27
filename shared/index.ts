@@ -12,3 +12,4 @@ export * from './fulfilment.js';
 export * from './contracts.js';
 export * from './social.js';
 export * from './payments.js';
+export * from './quest.js';

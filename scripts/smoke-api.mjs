@@ -7404,4 +7404,163 @@ await check('a message can answer another, and take a reaction', async () => {
   assert.deepEqual(again.jsonBody.reactions, [], 'the same reaction again takes it back');
 });
 
+
+/* ── the collector game ───────────────────────────────────────────────── */
+console.log('collector game');
+
+const {
+  questMeRoute: questMe, questCheckInRoute: questCheckIn, questClaimRoute: questClaim,
+  questRevealRoute: questReveal, questOpenRoute: questOpen, questLeaderboardRoute: questLeaderboard,
+  collectorRoute: collectorOf,
+} = await import(new URL('quest-routes.js', fns));
+const { personPostsRoute: personPosts } = await import(new URL('social-routes.js', fns));
+const quest = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
+
+await check('rarity reads sales and saves, and a timer turns the heat up', () => {
+  const now = Date.parse('2026-09-27T12:00:00Z');
+  const base = {
+    createdAt: '2026-08-01T00:00:00Z', likeCount: 0, viewCount: 0, quantityAvailable: 10,
+    preOrder: null, priceMinor: 10_000,
+  };
+  assert.equal(quest.listingRarity(base, now).tier, null, 'old and quiet is plain');
+  assert.equal(quest.listingRarity({ ...base, createdAt: '2026-09-26T12:00:00Z' }, now).tier, 'new');
+  assert.equal(quest.listingRarity({ ...base, soldCount: 16 }, now).tier, 'legendary', 'sixteen sold is legendary');
+  assert.equal(quest.listingRarity({ ...base, likeCount: 35 }, now).tier, 'epic');
+  const timed = { ...base, likeCount: 12, expiresAt: '2026-09-28T02:00:00Z' };
+  assert.equal(quest.listingRarity({ ...base, likeCount: 12 }, now).tier, null, 'twelve saves alone is not enough');
+  assert.equal(quest.listingRarity(timed, now).tier, 'epic', 'the same interest with a day left is');
+  assert.equal(quest.listingRarity({ ...timed, expiresAt: '2026-09-27T15:00:00Z' }, now).tier, 'legendary', 'last call');
+  const nearlyFull = { ...base, preOrder: { fillThreshold: 10, filledCount: 7, pledgedCount: 2, cutoffAt: '2026-10-10T00:00:00Z' } };
+  assert.equal(quest.listingRarity(nearlyFull, now).tier, 'legendary', 'a group buy at 90% is legendary');
+  const dropped = quest.listingRarity({ ...base, priceHistory: [{ priceMinor: 12_500, at: base.createdAt }] }, now);
+  assert.equal(dropped.priceDropPercent, 20);
+});
+
+await check('levels climb on a widening curve and every level has a title', () => {
+  assert.equal(quest.levelFor(0), 1);
+  assert.equal(quest.levelFor(99), 1);
+  assert.equal(quest.levelFor(100), 2);
+  assert.equal(quest.levelFor(300), 3);
+  assert.equal(quest.titleFor(1), 'Rookie');
+  assert.equal(quest.titleFor(40), 'Legend');
+});
+
+await check('a pack always holds the same card, never below its floor', () => {
+  const first = quest.drawCard('usr_x', 'level-2', 'rare');
+  assert.deepEqual(quest.drawCard('usr_x', 'level-2', 'rare'), first);
+  for (let index = 0; index < 50; index += 1) {
+    assert.notEqual(quest.drawCard(`usr_${index}`, 'task-first-order', 'rare').rarity, 'common');
+  }
+});
+
+await check('the game needs a session, and a new account starts at level one', async () => {
+  assert.equal((await questMe(req(), ctx)).status, 401);
+  const player = await newBuyer('Quest Starter');
+  const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  assert.equal(view.level, 1);
+  assert.equal(view.xp, 0);
+  assert.equal(view.title, 'Rookie');
+  assert.equal(view.dailyRevealed, false);
+  assert.ok(view.tasks.some((task) => task.kind === 'daily'));
+  assert.ok(view.stickers.every((sticker) => !sticker.earned));
+});
+
+await check('checking in pays once a day and starts a streak', async () => {
+  const player = await newBuyer('Quest Checker');
+  const first = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
+  assert.equal(first.gained, 10);
+  assert.equal(first.view.streak.current, 1);
+  assert.ok(first.view.tasks.find((task) => task.id === 'checkin').claimed);
+  const again = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
+  assert.equal(again.gained, 0);
+  assert.equal(again.already, true);
+});
+
+await check('the daily reveal gives one card, the same one however often it is asked', async () => {
+  const player = await newBuyer('Quest Revealer');
+  const first = (await questReveal(req({ headers: player.headers }), ctx)).jsonBody;
+  assert.ok(first.card.id);
+  assert.equal(first.view.dailyRevealed, true);
+  assert.equal(first.view.cards.length, 1);
+  assert.equal(first.gained, 15 + quest.CARD_XP[first.card.rarity]);
+  const again = (await questReveal(req({ headers: player.headers }), ctx)).jsonBody;
+  assert.equal(again.card.id, first.card.id);
+  assert.equal(again.gained, 0);
+  assert.equal(again.view.cards.length, 1);
+});
+
+await check('a task pays only once it is done, and only once', async () => {
+  const player = await newBuyer('Quest Saver');
+  const early = await questClaim(req({ headers: player.headers, body: { taskId: 'save' } }), ctx);
+  assert.equal(early.status, 409);
+  assert.equal(early.jsonBody.error, 'not_done');
+  assert.equal((await questClaim(req({ headers: player.headers, body: { taskId: 'nope' } }), ctx)).status, 404);
+
+  await toggleLike(req({ headers: player.headers, params: { id: 'lst_mecha_kit' } }), ctx);
+  const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  assert.equal(before.tasks.find((task) => task.id === 'save').claimable, true);
+  const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'save' } }), ctx)).jsonBody;
+  assert.equal(claimed.gained, 15);
+  const twice = await questClaim(req({ headers: player.headers, body: { taskId: 'save' } }), ctx);
+  assert.equal(twice.jsonBody.error, 'already_claimed');
+});
+
+await check('an order earns XP, a milestone, and a pack that opens exactly once', async () => {
+  const player = await newBuyer('Quest Buyer');
+  await createOrder(req({ headers: player.headers, body: { listingId: 'lst_kbeauty', quantity: 1 } }), ctx);
+  const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  assert.equal(view.xp, 40, 'an order placed is forty');
+  assert.ok(view.stickers.find((sticker) => sticker.id === 'first-haul').earned);
+  assert.equal(view.tasks.find((task) => task.id === 'first-order').claimable, true);
+
+  const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'first-order' } }), ctx)).jsonBody;
+  assert.equal(claimed.levelAfter, 2, '40 + 100 crosses into level two');
+  const packIds = claimed.view.packs.map((pack) => pack.id).sort();
+  assert.deepEqual(packIds, ['level-2', 'task-first-order']);
+
+  const opened = await questOpen(req({ headers: player.headers, body: { packId: 'task-first-order' } }), ctx);
+  assert.equal(opened.status, 200);
+  assert.notEqual(opened.jsonBody.card.rarity, 'common');
+  assert.equal(opened.jsonBody.view.packs.length, 1);
+  assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'task-first-order' } }), ctx)).status, 404);
+  assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'level-9' } }), ctx)).status, 404,
+    'a pack for a level not reached is not there to open');
+});
+
+await check('a sale moves the sold count a rarity label reads', async () => {
+  const repository = await getRepository();
+  const before = (await repository.getListing('lst_mecha_kit')).soldCount ?? 0;
+  const player = await newBuyer('Quest Counter');
+  await createOrder(req({ headers: player.headers, body: { listingId: 'lst_mecha_kit', quantity: 2 } }), ctx);
+  assert.equal((await repository.getListing('lst_mecha_kit')).soldCount, before + 2);
+});
+
+await check('the collector page is public and shows the record, not the private parts', async () => {
+  const player = await newBuyer('Quest Public');
+  await questCheckIn(req({ headers: player.headers }), ctx);
+  const page = await collectorOf(req({ params: { id: player.id } }), ctx);
+  assert.equal(page.status, 200);
+  const body = page.jsonBody;
+  assert.equal(body.level, 1);
+  assert.equal(body.streak.current, 1);
+  for (const key of ['orders', 'completed', 'disputesWon', 'disputesLost', 'rating', 'memberSince']) {
+    assert.ok(key in body.stats, `stats carries ${key}`);
+  }
+  assert.equal(body.tasks, undefined, 'tasks are the player\'s own business');
+  assert.equal(body.packs, undefined);
+  assert.equal((await collectorOf(req({ params: { id: 'usr_nobody' } }), ctx)).status, 404);
+  const posts = await personPosts(req({ params: { id: player.id } }), ctx);
+  assert.equal(posts.status, 200);
+  assert.deepEqual(posts.jsonBody.posts, []);
+});
+
+await check('the leaderboard ranks collectors by XP', async () => {
+  const board = (await questLeaderboard(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(board.top.length > 0);
+  for (let index = 1; index < board.top.length; index += 1) {
+    assert.ok(board.top[index - 1].xp >= board.top[index].xp, 'highest first');
+  }
+  assert.equal(board.top[0].rank, 1);
+});
+
 console.log(`\n${passed} checks passed`);
