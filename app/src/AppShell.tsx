@@ -24,6 +24,13 @@ export function AppShell() {
   // A room you write in: the tab bar steps aside for the bar you write from.
   const room = pathname.startsWith('/social/c/') || pathname.startsWith('/messages/');
 
+  // The phone's own status bar takes the social tab's colour, so the header
+  // reads as running to the very top of the screen.
+  useEffect(() => {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (meta) meta.content = social ? '#FF3A5C' : '#080B12';
+  }, [social]);
+
   function submitSearch(event: FormEvent) {
     event.preventDefault();
     navigate(term.trim() ? `/?q=${encodeURIComponent(term.trim())}` : '/');

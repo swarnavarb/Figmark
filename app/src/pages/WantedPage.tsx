@@ -82,18 +82,17 @@ export function WantedPage() {
       {/* The ask is the headline: a board nobody posts to is a board nobody
           reads, so posting is the biggest thing on it. */}
       <section className="wanthero">
-        <span className="wanthero__stripes" aria-hidden="true" />
-        <span className="wanthero__kicker"><Icon name="target" size={13} /> ISO · In Search Of</span>
-        <h2 className="wanthero__title">What are you in search of?</h2>
-        <p className="wanthero__sub">Post it with a photo. Collectors and shops answer with what they have - or what they can get.</p>
+        <span className="wanthero__kicker"><Icon name="target" size={13} /> ISO · In search of</span>
+        <h2 className="wanthero__title">What are you looking for?</h2>
         <div className="wanthero__row">
           {user && (
             <button type="button" className="wanthero__ask" onClick={() => setAsking(true)}>
               <Icon name="plus" size={15} /> Post an ISO
             </button>
           )}
-          <span className="wanthero__stat"><strong>{others.length}</strong> open</span>
-          {openMine.length > 0 && <span className="wanthero__stat"><strong>{openMine.length}</strong> yours</span>}
+          <span className="wanthero__stat">
+            {others.length} open{openMine.length > 0 && ` · ${openMine.length} yours`}
+          </span>
         </div>
       </section>
 

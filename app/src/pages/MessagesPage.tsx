@@ -8,6 +8,7 @@ import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
 import { DealCard, DealForm, useMakeDeal } from '../components/PrivateDeal';
 import { timeAgo } from '../format';
+import { VoicePicker, VoiceScope } from '../components/SocialVoice';
 import { RoomBar, useLongPress } from '../components/SocialChrome';
 import { useGoBack } from '../components/ScrollManager';
 
@@ -357,21 +358,21 @@ export function ThreadPage() {
           <div className="cbar__row">
             {/* Whose voice you are writing in, switched from where you write.
                 Each voice is its own conversation, so switching opens that one. */}
-            {data.handles.length > 1 && (() => {
-              const at = data.handles.findIndex((party) => party.handle === data.us.handle);
-              const next = data.handles[(at + 1) % data.handles.length]!;
-              return (
-                <button type="button" className={`cbar__as${data.us.isStore ? ' is-shop' : ''}`}
-                  aria-label={`Writing as @${data.us.handle}. Switch to @${next.handle}`}
-                  title={`Writing as @${data.us.handle} · tap for @${next.handle}`}
-                  onClick={() => navigate(
-                    `/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(next.handle)}`, { replace: true },
-                  )}>
-                  <Avatar name={data.us.displayName} size={36} />
-                  <span className="cbar__asswap" aria-hidden="true"><Icon name="repost" size={10} /></span>
-                </button>
-              );
-            })()}
+            {data.handles.length > 1 && (
+              <VoiceScope
+                voice={{ storeId: data.us.isStore ? data.us.handle : null, name: data.us.displayName, handle: data.us.handle }}
+                voices={data.handles.map((party) => ({
+                  storeId: party.isStore ? party.handle : null, name: party.displayName, handle: party.handle,
+                }))}
+                choose={(storeId) => {
+                  const party = data.handles.find((entry) => (storeId ? entry.handle === storeId : !entry.isStore));
+                  if (party && party.handle !== data.us.handle) {
+                    navigate(`/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(party.handle)}`, { replace: true });
+                  }
+                }}>
+                <VoicePicker size={36} title="Write as" />
+              </VoiceScope>
+            )}
             {dealable && (
               <button type="button" className="cbar__attach" onClick={() => (data.us.isStore ? makeDeal(data.us, data.them) : setAsking(true))}
                 aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}

@@ -127,7 +127,6 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
   return (
     <>
       <header className="soctop">
-        <span className="soctop__stripes" aria-hidden="true" />
         <div className="soctop__in">
           <div className="soctop__bar">
             <Link to="/" className="soctop__mark" aria-label="Figmark home" />
@@ -138,7 +137,7 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
                 onClick={() => setSearching(true)}>
                 <Icon name="search" size={18} />
               </button>
-              {user && <span className="soctop__voice"><VoicePicker size={34} /></span>}
+              {user && <span className="soctop__voice"><VoicePicker size={36} switchOnly /></span>}
               {user && <Notifications />}
               {user && <ProfileMenu name={user.displayName} onSignOut={() => void signOut()} />}
             </div>
@@ -155,6 +154,7 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
           <button type="button" className="soccompact__mark" aria-label="Back to the top"
             tabIndex={compact ? 0 : -1} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
           <nav className="soccompact__tabs" aria-label="Social sections" ref={slim}>{compact && tabRow(true)}</nav>
+          <span className="soctop__voice"><VoicePicker size={34} switchOnly /></span>
           <button type="button" className="soccompact__search" aria-label="Search people, shops and forums"
             tabIndex={compact ? 0 : -1} onClick={() => setSearching(true)}>
             <Icon name="search" size={17} />

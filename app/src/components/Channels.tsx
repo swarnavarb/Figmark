@@ -10,7 +10,7 @@ import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
 import { Lightbox, copyLink, withReaction } from './SocialPost';
 import { PersonVoice, useVoice } from './SocialVoice';
-import { RoomBar, useLongPress } from './SocialChrome';
+import { RoomBar, useLongPress, useScrolledPast } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
 
 /**
@@ -103,7 +103,6 @@ export function ChannelList() {
 
       {mine.map((row) => (
         <Link key={row.sellerId} to={`/social/c/${row.sellerId}`} className="chmine">
-          <span className="chmine__stripes" aria-hidden="true" />
           <Avatar name={row.name} size={52} />
           <span className="chmine__body">
             <span className="chmine__kicker">Your channel</span>
@@ -270,6 +269,9 @@ function Room() {
   const known = useRef<Set<string>>(new Set());
   const firstLoad = useRef(true);
   const back = useGoBack('/social?view=channels');
+  // At the top the views keep their names and the pin its own line; once the
+  // hero has gone they fold into one row under the bar.
+  const folded = useScrolledPast(150);
 
   const nearBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 220;
   // The very bottom of the page, not the last message: the bar you write from
@@ -420,7 +422,6 @@ function Room() {
         )} />
     <main className="page social chroom">
       <header className="chhero">
-        <span className="chhero__stripes" aria-hidden="true" />
         <button type="button" className="chhero__back" aria-label="Back" onClick={back}>
           <Icon name="back" size={18} />
         </button>
@@ -428,6 +429,7 @@ function Room() {
           {channel.photoUrl ? <img className="chhero__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={64} />}
           <div className="chhero__text">
             <h1 className="chhero__name">{channel.name}</h1>
+            {channel.tier === 'pro' && <span className="chhero__tier">PRO</span>}
             <p className="chhero__meta">
               {channel.postCount ?? 0} messages · {channel.followerCount ?? 0} followers
               {channel.handle && <> · @{channel.handle}</>}
@@ -465,7 +467,7 @@ function Room() {
       <>
       {/* One locked row: the pinned message gets the room, the three views
           shrink to icons beside it. Without a pin they keep their names. */}
-      <div className={`chstrip${current ? ' chstrip--pin' : ''}`}>
+      <div className={`chstrip${current && folded ? ' chstrip--pin' : ''}${folded ? '' : ' chstrip--open'}`}>
         <div className="chtabs" role="tablist">
           {([
             ...(isForum ? [] : [['announcements', 'Announcements', 'megaphone'] as const]),
@@ -474,7 +476,7 @@ function Room() {
           ]).map(([key, label, icon]) => (
             <button key={key} type="button" role="tab" aria-selected={show === key} aria-label={label} title={label}
               className={`chtabs__tab${show === key ? ' is-on' : ''}`} onClick={() => setShow(key)}>
-              <Icon name={icon} size={15} />{!current && <span>{label}</span>}
+              <Icon name={icon} size={15} />{!(current && folded) && <span>{label}</span>}
             </button>
           ))}
         </div>

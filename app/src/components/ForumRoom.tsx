@@ -94,7 +94,6 @@ function Forum() {
 
         {channel && (
           <header className="forumhero">
-            <span className="forumhero__stripes" aria-hidden="true" />
             <button type="button" className="chhero__back" aria-label="Back" onClick={back}>
               <Icon name="back" size={18} />
             </button>

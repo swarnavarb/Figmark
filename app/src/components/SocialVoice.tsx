@@ -91,6 +91,12 @@ export function PersonVoice({ children }: { children: ReactNode }) {
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
 }
 
+/** A set of voices from somewhere else - the handles of a conversation - for the same picker. */
+export function VoiceScope({ voice, voices, choose, children }: VoiceValue & { children: ReactNode }) {
+  const value = useMemo(() => ({ voice, voices, choose }), [voice, voices, choose]);
+  return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
+}
+
 export function useVoice(): VoiceValue {
   return useContext(VoiceContext);
 }
@@ -113,7 +119,12 @@ export function VoiceAvatar({ voice, size = 40 }: { voice: SocialIdentity; size?
  * Only a button when there is a choice to make: somebody with no shop sees a
  * plain avatar, not a menu with one entry in it.
  */
-export function VoicePicker({ size = 44 }: { size?: number }) {
+export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, react and comment as' }: {
+  size?: number;
+  /** Just the small switch, for a bar that already shows your photo elsewhere. */
+  switchOnly?: boolean;
+  title?: string;
+}) {
   const { voice, voices, choose } = useVoice();
   const [open, setOpen] = useState(false);
   // Which way the menu opens: towards whichever side of the screen has room.
@@ -147,19 +158,25 @@ export function VoicePicker({ size = 44 }: { size?: number }) {
     };
   }, [open]);
 
-  if (voices.length < 2) return <VoiceAvatar voice={voice} size={size} />;
+  if (voices.length < 2) return switchOnly ? null : <VoiceAvatar voice={voice} size={size} />;
 
   return (
     <div className="voicepick" ref={box}>
       <button type="button" className="voicepick__button" aria-haspopup="menu" aria-expanded={open}
         aria-label={`Posting as ${voice.name}. Switch profile`} onClick={toggle}>
-        <VoiceAvatar voice={voice} size={size} />
-        <span className="voicepick__swap" aria-hidden="true"><Icon name="sort" size={11} /></span>
+        {switchOnly ? (
+          <span className="voicepick__switch" aria-hidden="true"><Icon name="sort" size={Math.round(size * 0.45)} /></span>
+        ) : (
+          <>
+            <VoiceAvatar voice={voice} size={size} />
+            <span className="voicepick__swap" aria-hidden="true"><Icon name="sort" size={11} /></span>
+          </>
+        )}
       </button>
       {open && (
         <div className={`voicepick__menu${place.up ? ' voicepick__menu--up' : ''}${place.right ? ' voicepick__menu--right' : ''}`}
-          role="menu" aria-label="Post, react and comment as">
-          <p className="voicepick__title">Post, react and comment as</p>
+          role="menu" aria-label={title}>
+          <p className="voicepick__title">{title}</p>
           {voices.map((entry) => {
             const on = entry.storeId === voice.storeId;
             return (
