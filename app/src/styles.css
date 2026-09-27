@@ -8077,7 +8077,7 @@ body.is-locked { overflow: hidden; }
 
 .qgrade {
   position: absolute; left: 8px; bottom: 8px; z-index: 2;
-  width: 42px; height: 42px; border-radius: 50%; display: grid; place-content: center; text-align: center;
+  min-width: 42px; height: 42px; padding: 0 4px; border-radius: 50%; display: grid; place-content: center; text-align: center;
   background: rgba(11, 15, 24, 0.85); border: 2px dashed var(--qr-text);
   font-family: var(--mono); font-size: 9px; font-weight: var(--w-bold); line-height: 1.05; letter-spacing: 0.02em;
   color: var(--text); text-shadow: none; transform: rotate(-12deg);
@@ -8317,6 +8317,7 @@ body.is-locked { overflow: hidden; }
 .qtone--hot { color: var(--coral); }
 
 .qshowcase {
+  appearance: none;
   padding: 14px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); margin-bottom: 6px;
 }
 .qshowcase__cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
@@ -8332,4 +8333,165 @@ body.is-locked { overflow: hidden; }
   .qflip__inner, .qloot, .qxp > span { transition: none; }
   .qloot:hover { transform: none; }
   .qchest.is-on svg, .qfloat { animation: none; }
+}
+
+/* ── Collector game, part two: sheets, tiers, ratings, collection ──────── */
+
+/* Anything tappable in the game resets the button look it is built on. */
+.qcardface--tap, .qsticker--tap, .qshowcase, .qitem__open {
+  font: inherit; color: inherit; cursor: pointer; margin: 0;
+}
+.qcardface--tap { transition: transform var(--dur-1) var(--ease); }
+.qcardface--tap:hover { transform: translateY(-2px); }
+.qsticker--tap { border: 0; background: none; padding: 0; }
+.qsticker--tap:hover .qsticker__hex { transform: scale(1.06); }
+.qsticker__hex { transition: transform var(--dur-1) var(--ease); }
+.qcardface__copies {
+  position: absolute; top: 4px; right: 4px; padding: 0 5px; border-radius: 6px;
+  font-family: var(--mono); font-size: 9px; font-weight: var(--w-bold); background: rgba(0, 0, 0, 0.55); color: var(--text);
+}
+
+/* Tiers: the rim of the hexagon, and the word under it. */
+/* The rim: the hexagon itself takes the tier colour and an inner hexagon,
+   inset by three pixels, carries the sticker's own colour. (An outline would
+   be clipped away by the hexagon's own shape.) */
+.qsticker__hex.qtier--1, .qsticker__hex.qtier--2, .qsticker__hex.qtier--3 {
+  position: relative; background: var(--qtier);
+}
+.qsticker__hex.qtier--1::before, .qsticker__hex.qtier--2::before, .qsticker__hex.qtier--3::before {
+  content: ''; position: absolute; inset: 3px;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  background: linear-gradient(160deg, var(--qh, var(--violet)), color-mix(in srgb, var(--qh, var(--violet)) 45%, #000));
+}
+.qsticker__hex svg { position: relative; }
+.qtier--1 { --qtier: #D08A4E; }
+.qtier--2 { --qtier: #C9D3E3; }
+.qtier--3 { --qtier: var(--q-gold); }
+.qtiertext--1 { color: #D08A4E; }
+.qtiertext--2 { color: #C9D3E3; }
+.qtiertext--3 { color: var(--q-gold); }
+.qsticker__tier { font-family: var(--mono); font-size: 9px; font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; }
+.qsticker__hex--big { width: 84px; height: 94px; }
+
+/* A detail sheet: a sticker or a card, what it is and what it means. */
+.qsheet { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.qsheet__state { margin: 0; font-size: var(--t-sm); display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.qsheet__lore { margin: 0; font-style: italic; color: var(--text-dim); max-width: 34ch; }
+.qsheet__block { display: grid; gap: 2px; text-align: left; width: 100%; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.qsheet__block h4 { font-size: var(--t-xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.qsheet__block p { margin: 0; font-size: var(--t-sm); }
+.qsheet__progress { margin: 0; font-size: var(--t-xs); }
+.qsheet__note { margin: 0; font-size: var(--t-2xs); }
+.qsheet .qxp { width: 100%; }
+.qsheet__scroll { max-height: 62vh; overflow-y: auto; padding-right: 2px; }
+.qtiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; }
+.qtiers__step {
+  display: grid; gap: 1px; padding: 8px 4px; border-radius: 10px; border: 1px solid var(--border);
+  font-size: var(--t-xs); opacity: 0.55;
+}
+.qtiers__step.is-done { opacity: 1; background: var(--surface-2); }
+.qtiers__step small { font-family: var(--mono); color: var(--text-faint); }
+
+/* Profile additions. */
+.qprofile__penalty { margin: -6px 0 10px; font-size: var(--t-xs); color: var(--coral); }
+.qme__facts { display: grid; gap: 8px; margin: 14px 0; }
+
+.qratings { display: grid; gap: 8px; margin-bottom: 12px; }
+.qrating { padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); display: grid; gap: 10px; }
+.qrating--lead { border-color: var(--q-gold-line); }
+.qrating__head { display: flex; align-items: center; gap: 10px; }
+.qrating__score { font-family: var(--mono); font-size: var(--t-xl); font-weight: var(--w-bold); color: var(--q-gold); min-width: 2.2ch; }
+.qrating__stars { display: inline-flex; gap: 1px; color: var(--surface-hover); font-size: 15px; }
+.qrating__stars .is-on { color: var(--q-gold); }
+.qrating__title { display: grid; min-width: 0; line-height: 1.25; }
+.qrating__title b { font-size: var(--t-sm); }
+.qrating__title small { font-size: var(--t-2xs); }
+.qrating__bars { display: grid; gap: 4px; }
+.qrating__bar { display: grid; grid-template-columns: 26px 1fr 22px; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+.qrating__track { display: block; height: 6px; border-radius: var(--r-pill); background: var(--q-track); overflow: hidden; }
+.qrating__track > span { display: block; height: 100%; border-radius: inherit; background: var(--q-gold); }
+.qrating__track > span.is-low { background: var(--coral); }
+
+.qshowcase { display: grid; gap: 0; width: 100%; text-align: left; }
+.qshowcase:hover { border-color: var(--border-strong); }
+.qshowcase__title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.qshowcase__title svg { color: var(--q-gold); }
+.qshowcase__empty { display: block; margin-top: 8px; font-size: var(--t-xs); }
+
+/* The collection of delivered purchases. */
+.qcollection { margin-top: 4px; }
+.qready { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-lg); border: 1px solid var(--q-gold-line); background: linear-gradient(160deg, rgba(245, 197, 66, 0.07), var(--surface)); }
+.qready__row { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; }
+.qready__row::-webkit-scrollbar { display: none; }
+.qready__item { flex: none; width: 120px; display: grid; gap: 4px; justify-items: start; font-size: var(--t-xs); }
+.thumb.qready__thumb { width: 120px; aspect-ratio: 1; border-radius: 12px; overflow: hidden; font-size: 18px; }
+.qready__name { width: 100%; font-weight: var(--w-semi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qshelves { margin-top: 2px; }
+.qshelves__manage { border-style: dashed; }
+.qitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.qitem { position: relative; display: grid; gap: 6px; min-width: 0; }
+.qitem__open { display: block; padding: 0; border: 0; background: none; border-radius: 14px; overflow: hidden; }
+.thumb.qitem__thumb { aspect-ratio: 3 / 4; border-radius: 14px; overflow: hidden; border: 1.5px solid var(--border-strong); font-size: 20px; }
+.qitem__open:hover .qitem__thumb { border-color: var(--q-gold-line); }
+.qitem__count {
+  position: absolute; right: 6px; bottom: 6px; padding: 1px 6px; border-radius: 6px;
+  font-family: var(--mono); font-size: 10px; background: rgba(0, 0, 0, 0.6); color: #fff; text-shadow: none;
+}
+/* The name never makes the card grow: one line, a fixed height, and an
+   ellipsis for whatever does not fit. */
+.qitem__name, .qitem__label {
+  display: block; width: 100%; height: 30px; box-sizing: border-box; padding: 0 30px 0 8px;
+  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 30px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.qitem__label { padding-right: 8px; }
+.qitem__name:focus { outline: none; border-color: var(--violet); }
+.qitem__tools { position: absolute; right: 2px; bottom: 2px; }
+.qitem__more {
+  width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--text-dim);
+  font-size: 16px; line-height: 1; cursor: pointer;
+}
+.qitem__more:hover { background: var(--surface-hover); color: var(--text); }
+.qitem__menu {
+  position: absolute; right: 0; bottom: 30px; z-index: 5; min-width: 190px; display: grid; gap: 2px; padding: 6px;
+  border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+}
+.qitem__menurow {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border-radius: 8px;
+  font: inherit; font-size: var(--t-xs); color: var(--text); background: none; border: 0; text-align: left; cursor: pointer;
+}
+.qitem__menurow select { max-width: 110px; font: inherit; }
+.qitem__remove { color: var(--coral); }
+.qitem__menurow:hover { background: var(--surface-hover); }
+.thumb.qitem__big { width: min(280px, 70vw); aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden; }
+.qshelf__row input, .qshelf__new input { flex: 1; min-width: 0; }
+
+/* Quests page additions. */
+.qweek__day.is-future { opacity: 0.45; }
+.qtask__step {
+  margin-left: 6px; padding: 0 6px; border-radius: 6px; font-family: var(--mono); font-size: 9.5px; font-weight: var(--w-medium);
+  color: var(--text-faint); background: var(--surface-hover); vertical-align: middle;
+}
+.qbreak__row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.qbreak__row dt { display: grid; font-size: var(--t-sm); }
+.qbreak__row dt small { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.qbreak__row dd { margin: 0; font-family: var(--mono); font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--ok); white-space: nowrap; }
+.qbreak__row.is-loss dt { color: var(--coral); }
+.qbreak__row.is-loss dd { color: var(--coral); }
+.qbreak__total { border-bottom: 0; }
+.qbreak__total dt { font-weight: var(--w-bold); }
+.qbreak__total dd { color: var(--text); font-size: var(--t-md); }
+
+/* The photo viewer's heading, for a collection card. */
+.lightbox__head {
+  position: absolute; top: max(14px, env(safe-area-inset-top)); left: 16px; right: 64px; z-index: 2;
+  display: grid; gap: 2px; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+.lightbox__title { font-size: var(--t-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lightbox__caption { font-size: var(--t-xs); opacity: 0.8; }
+
+@media (prefers-reduced-motion: reduce) {
+  .qcardface--tap, .qsticker__hex { transition: none; }
+  .qcardface--tap:hover, .qsticker--tap:hover .qsticker__hex { transform: none; }
 }

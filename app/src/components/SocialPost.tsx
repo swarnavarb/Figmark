@@ -463,7 +463,15 @@ function Carousel({ photos, alt, burst, onOpen, onDoubleTap }: {
 }
 
 /** A photo filling the screen, with the rest a swipe or an arrow key away. */
-export function Lightbox({ photos, start, onClose }: { photos: string[]; start: number; onClose: () => void }) {
+export function Lightbox({ photos, start, onClose, title, caption }: {
+  photos: string[];
+  start: number;
+  onClose: () => void;
+  /** A heading over the photo - a collection card's name. */
+  title?: string;
+  /** One line under the heading - when it joined the collection. */
+  caption?: string;
+}) {
   const [index, setIndex] = useState(start);
   const touch = useRef<number | null>(null);
 
@@ -496,6 +504,12 @@ export function Lightbox({ photos, start, onClose }: { photos: string[]; start: 
       <button type="button" className="lightbox__close" aria-label="Close" onClick={onClose}>
         <Icon name="close" size={20} />
       </button>
+      {(title || caption) && (
+        <div className="lightbox__head">
+          {title && <b className="lightbox__title">{title}</b>}
+          {caption && <span className="lightbox__caption">{caption}</span>}
+        </div>
+      )}
       <img key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
       {photos.length > 1 && (
         <>

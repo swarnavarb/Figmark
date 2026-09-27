@@ -22,6 +22,7 @@ import type {
 import type { DisputeAction } from '@shared/disputes';
 import type { Allocation, OrderMoney } from '@shared/payments';
 import type { CardDef, QuestView, StickerView } from '@shared/quest';
+import type { CollectionGroup, CollectionItem } from '@shared/models';
 
 /** Somebody named on a screen, and the page their name opens. */
 export interface PartyRef {
@@ -153,6 +154,27 @@ export interface LeaderRow {
   cards: number;
 }
 
+/** An average out of 100 (null when unrated), how many, and a count per star from five down to one. */
+export interface RatingSummary {
+  average: number | null;
+  count: number;
+  stars: number[];
+}
+
+/** A delivered purchase waiting to be added to the collection. */
+export interface CollectionCandidate {
+  orderId: string;
+  listingId: string;
+  itemName: string;
+  photo: string | null;
+  deliveredAt: string;
+}
+
+export interface CollectionShelf {
+  groups: CollectionGroup[];
+  items: CollectionItem[];
+}
+
 /** Somebody's public collector page: the game's showable parts and their trade record. */
 export interface CollectorPage {
   userId: string;
@@ -164,16 +186,20 @@ export interface CollectorPage {
   progress: number;
   streak: { current: number; best: number };
   stickers: StickerView[];
-  cards: QuestView['cards'];
+  /** One of each card owned, with how many copies. */
+  cards: (QuestView['cards'][number] & { copies: number })[];
   cardCount: number;
   sets: QuestView['sets'];
+  /** XP lost to low ratings and lost disputes, as a positive number. */
+  penalty: number;
+  ratings: { buyer: RatingSummary; seller: RatingSummary; page: RatingSummary };
   stats: {
     rating: number | null;
     ratingCount: number;
     orders: number;
     completed: number;
     reviewsWritten: number;
-    groupBuys: number;
+    preOrders: number;
     following: number;
     disputesWon: number;
     disputesLost: number;
@@ -1529,6 +1555,15 @@ export const api = {
   questOpen: (packId: string) => post<QuestResult>('/quest/open', { packId }),
   leaderboard: () => request<{ top: LeaderRow[]; me: LeaderRow | null; total: number }>('/quest/leaderboard'),
   collector: (userId: string) => request<CollectorPage>(`/users/${encodeURIComponent(userId)}/collector`),
+  collection: (userId: string) => request<CollectionShelf>(`/users/${encodeURIComponent(userId)}/collection`),
+  myCollection: () => request<CollectionShelf & { candidates: CollectionCandidate[] }>('/me/collection'),
+  collectionAdd: (orderId: string, name?: string, groupId?: string | null) =>
+    post<CollectionShelf & { item: CollectionItem }>('/me/collection/add', { orderId, name, groupId }),
+  collectionEdit: (orderId: string, changes: { name?: string; groupId?: string | null }) =>
+    post<CollectionShelf & { item: CollectionItem }>('/me/collection/edit', { orderId, ...changes }),
+  collectionRemove: (orderId: string) => post<CollectionShelf>('/me/collection/remove', { orderId }),
+  collectionGroups: (action: 'create' | 'rename' | 'delete', body: { id?: string; name?: string }) =>
+    post<CollectionShelf>('/me/collection/groups', { action, ...body }),
   bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
     post<{ comment: ListingComment & { author: PartyRef } }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),

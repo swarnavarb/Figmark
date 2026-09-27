@@ -11,7 +11,6 @@ import { useSession } from '../session';
 import { MessageButton } from './MessagesPage';
 import { Stars } from './OrderPage';
 import { CollectorProfile } from './CollectorProfile';
-import { DesignSwitch, useDesign } from '../components/Quest';
 
 /**
  * Whatever lives at `/<username>`.
@@ -41,7 +40,6 @@ export function ProfileByHandlePage() {
   const [shelf, setShelf] = useState<'all' | 'onSale' | 'sold'>('all');
   const [creditOpen, setCreditOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [design] = useDesign();
 
   const loadReviews = useCallback(async (id: string) => {
     const [trade, page] = await Promise.all([
@@ -100,9 +98,9 @@ export function ProfileByHandlePage() {
   // A person has no items tab, so asking for one lands on the only tab there is.
   const shownTab: Tab = data.isStore ? tab : 'reviews';
 
-  // A person's page has a collector design as well as this one. A shop's page
-  // is about its shelf, so it keeps the one it has.
-  if (!data.isStore && design === 'quest') {
+  // Every person's page is a collector page. A shop's page is about its
+  // shelf, so it keeps the storefront layout below.
+  if (!data.isStore) {
     return (
       <CollectorProfile
         profile={data}
@@ -159,8 +157,6 @@ export function ProfileByHandlePage() {
             )}
           </div>
         </header>
-
-        {!data.isStore && <div className="qswitchrow"><DesignSwitch /></div>}
 
         {data.tags.length > 0 && (
           <div className="chips chips--tight">

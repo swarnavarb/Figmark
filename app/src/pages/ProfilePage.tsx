@@ -3,15 +3,17 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type ActivityResponse, type PostCard } from '../api';
+import { ApiRequestError, api, type ActivityResponse, type PostCard, type PublicProfile } from '../api';
+import { CollectorHeader, PurchasedCollection } from './CollectorProfile';
 import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 
-type Tab = 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
+type Tab = 'collection' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
 
 const TAB_LABELS: Record<Tab, string> = {
+  collection: '🗂️ Collection',
   posts: '📝 Posts',
   photos: '📸 Photos',
   listings: 'My listings',
@@ -50,8 +52,13 @@ export function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   const asked = params.get('tab');
-  const tab = (asked && asked in TAB_LABELS ? asked : 'posts') as Tab;
+  const tab = (asked && asked in TAB_LABELS ? asked : 'collection') as Tab;
   const [posts, setPosts] = useState<PostCard[] | null>(null);
+  const [publicPage, setPublicPage] = useState<PublicProfile | null>(null);
+  useEffect(() => {
+    if (!user?.username) return;
+    void api.profile(user.username).then(setPublicPage).catch(() => setPublicPage(null));
+  }, [user?.username]);
   const setTab = (next: Tab) => setParams({ tab: next }, { replace: true });
 
   useEffect(() => {
@@ -79,69 +86,51 @@ export function ProfilePage() {
   const verified = user.verification.governmentId === 'verified';
 
   return (
-    <main className="page">
-      <div className="card card--pad" style={{ marginBottom: 24 }}>
-        <div className="row" style={{ flexWrap: 'wrap', gap: 16 }}>
-          <Avatar name={user.displayName} size={58} />
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
-              <h1>{user.displayName}</h1>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setTab('settings')}>
-                ✏️ Edit
-              </button>
-            </div>
-            {user.bio && <p>{user.bio}</p>}
-            {/* Two addresses, said plainly, because they are two parties: the
-                person, and the shop they run. */}
-            <p className="muted">
-              {user.username ? (
-                <Link to={`/${user.username}`} style={{ color: 'inherit' }}>@{user.username}</Link>
-              ) : (
-                <button type="button" className="linklike" onClick={() => setTab('settings')}>
-                  Pick a username
-                </button>
-              )}
-              {user.sellerProfile?.username && (
-                <>
-                  {' · shop '}
-                  <Link to={`/${user.sellerProfile.username}`} style={{ color: 'inherit' }}>
-                    @{user.sellerProfile.username}
-                  </Link>
-                </>
-              )}
-            </p>
-            <p className="muted">
-              {user.sellerProfile?.storefrontName ?? 'No storefront yet'}
-              {user.sellerProfile && ` · ${user.sellerProfile.dispatchRegion}`}
-            </p>
-            <div className="badges" style={{ marginTop: 8 }}>
-              {user.capabilities.canBuy && <span className="badge badge--ok">Can buy</span>}
-              {user.capabilities.canSell && <span className="badge badge--ok">Can sell</span>}
-              {user.capabilities.canForward && <span className="badge badge--accent">Forwarder</span>}
-              {user.capabilities.isAdmin && <span className="badge badge--accent">Admin</span>}
-              {!verified && <span className="badge badge--warn">ID not verified</span>}
-            </div>
-          </div>
-          <div className="stack" style={{ gap: 6, minWidth: 150 }}>
-            <div className="row row--between">
-              <span className="muted">As buyer</span>
-              <TrustBadge score={user.buyerTrust.score} />
-            </div>
-            <div className="row row--between">
-              <span className="muted">As seller</span>
-              <TrustBadge score={user.sellerTrust.score} />
-            </div>
-            {user.sellerProfile && (
-              <div className="row row--between">
-                <span className="muted">Followers</span>
-                <span style={{ fontWeight: 600 }}>{user.sellerProfile.followerCount}</span>
-              </div>
-            )}
-          </div>
-        </div>
+    <main className="storefront qprofile">
+      {/* The same header everybody else sees on your page - level, record,
+          ratings, showcase - so what you see here is what they see. */}
+      <CollectorHeader
+        person={{
+          userId: user.id,
+          displayName: user.displayName,
+          handle: user.username,
+          photoUrl: publicPage?.photoUrl ?? null,
+          coverUrl: publicPage?.coverUrl ?? null,
+          bio: publicPage?.bio ?? user.bio ?? '',
+          tags: publicPage?.tags ?? [],
+          memberSince: publicPage?.memberSince,
+          lastSeenAt: null,
+        }}
+        action={
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setTab('settings')}>✏️ Edit</button>
+        } />
 
+      <div className="storefront__body">
+      <div className="qme__facts">
+        <span className="faint">
+          {user.username ? (
+            <Link to={`/${user.username}`} style={{ color: 'inherit' }}>View your public page</Link>
+          ) : (
+            <button type="button" className="linklike" onClick={() => setTab('settings')}>Pick a username</button>
+          )}
+          {user.sellerProfile?.username && (
+            <>
+              {' · shop '}
+              <Link to={`/${user.sellerProfile.username}`} style={{ color: 'inherit' }}>@{user.sellerProfile.username}</Link>
+            </>
+          )}
+        </span>
+        <div className="badges">
+          {user.capabilities.canBuy && <span className="badge badge--ok">Can buy</span>}
+          {user.capabilities.canSell && <span className="badge badge--ok">Can sell</span>}
+          {user.capabilities.canForward && <span className="badge badge--accent">Forwarder</span>}
+          {user.capabilities.isAdmin && <span className="badge badge--accent">Admin</span>}
+          {!verified && <span className="badge badge--warn">ID not verified</span>}
+          <span className="badge">Buyer trust {user.buyerTrust.score}</span>
+          {user.sellerProfile && <span className="badge">Seller trust {user.sellerTrust.score}</span>}
+        </div>
         {!verified && (
-          <p className="notice notice--info" style={{ marginTop: 16 }}>
+          <p className="notice notice--info" style={{ margin: 0 }}>
             Verify your government ID and payout account to raise your seller tier, lift lot caps and enable
             high-value listings. You can keep buying and selling meanwhile.
           </p>
@@ -171,7 +160,7 @@ export function ProfilePage() {
         {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
-            {data && entry !== 'settings' && entry !== 'posts' && entry !== 'photos' && (
+            {data && entry !== 'settings' && entry !== 'posts' && entry !== 'photos' && entry !== 'collection' && (
               <span className="faint" style={{ marginLeft: 6 }}>
                 {entry === 'listings' ? data.listings.length
                   : entry === 'sales' ? data.sales.length
@@ -183,7 +172,9 @@ export function ProfilePage() {
       </div>
 
       {error && <ErrorNotice message={error} />}
-      {tab === 'settings' ? (
+      {tab === 'collection' ? (
+        <PurchasedCollection userId={user.id} isMe />
+      ) : tab === 'settings' ? (
         <>
           <UsernameSettings />
           <MyPageSettings />
@@ -285,6 +276,7 @@ export function ProfilePage() {
           ))}
         </div>
       )}
+      </div>
     </main>
   );
 }

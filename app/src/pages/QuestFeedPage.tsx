@@ -22,7 +22,7 @@ import { PRICE_BANDS, Picker, useCatalog } from './FeedPage';
  *
  * The same catalogue, filters and URL as the classic page - only the reading
  * of it changes. Every listing wears a rarity worked out from how it is
- * actually selling (sales, saves, views, how full its group buy is, and how
+ * actually selling (sales, saves, views, how full its pre-order is, and how
  * close its timer is), so "Legendary" is a fact about demand rather than a
  * sticker a seller chose. Around the grid sit the things that bring somebody
  * back tomorrow: the daily drop, a streak, today's quests, what is filling and
@@ -141,7 +141,7 @@ export function QuestFeedPage() {
         <section className="qrow">
           <div className="qrow__head">
             <h2><Glyph name="flame" size={15} /> Filling now</h2>
-            <button type="button" className="qrow__more" onClick={() => chooseKind('pre_order')}>All group buys</button>
+            <button type="button" className="qrow__more" onClick={() => chooseKind('pre_order')}>All pre-orders</button>
           </div>
           <div className="qrow__scroll">
             {filling.map(({ listing, view }, index) => (
@@ -331,7 +331,7 @@ function TodayQuests() {
 
 /**
  * A listing as a collectible: a frame in its rarity, the condition stamped on
- * like a grade, the save button as a chest, and a group buy's fill as a level.
+ * like a stamp, the save button as a chest, and a pre-order's fill as a level.
  */
 function LootCard({ listing }: { listing: Rated }) {
   const { refresh } = useQuest();
@@ -365,14 +365,14 @@ function LootCard({ listing }: { listing: Rated }) {
     <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
         {tier && <RarityRibbon tier={tier} />}
-        <span className="qgrade" title="Condition">{listing.condition}<small>grade</small></span>
+        <span className="qgrade" title="Condition">{listing.condition}</span>
         <button type="button" className={`qchest${liked ? ' is-on' : ''}`} onClick={(event) => void toggleSave(event)}
           aria-label={liked ? 'Remove from your vault' : 'Save to your vault'} aria-pressed={liked}>
           <Glyph name="chest" size={16} />
           {pop > 0 && <span key={pop} className="qfloat">+3 XP</span>}
         </button>
         {rarity.priceDropPercent && <span className="qsticker-tag qsticker-tag--drop">−{rarity.priceDropPercent}%</span>}
-        {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Group buy</span>}
+        {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
       </Thumb>
 
       <div className="qloot__body">

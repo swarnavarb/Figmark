@@ -3,7 +3,8 @@ import {
 } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  CARD_SETS, RARITY_LABELS, type CardDef, type CardRarity, type QuestView, type RarityTier, type StickerView,
+  CARDS, CARD_ODDS, CARD_SETS, CARD_XP, RARITY_LABELS, SET_BONUS_XP, STICKER_TIER_NAMES,
+  type CardDef, type CardRarity, type QuestView, type RarityTier, type StickerView,
 } from '@shared/quest';
 import { ApiRequestError, api, type QuestResult } from '../api';
 import { useSession } from '../session';
@@ -350,16 +351,30 @@ export function Glyph({ name, size = 18 }: { name: GlyphName; size?: number }) {
 
 /* ── Cards and stickers ────────────────────────────────────────────────── */
 
-/** One collectible card, face up. */
-export function CardFace({ card, size = 'md' }: { card: CardDef; size?: 'sm' | 'md' }) {
+/** One collectible card, face up. Tapping it opens what it is. */
+export function CardFace({ card, size = 'md', copies, onOpen }: {
+  card: CardDef;
+  size?: 'sm' | 'md';
+  copies?: number;
+  onOpen?: () => void;
+}) {
   const set = CARD_SETS.find((entry) => entry.id === card.set);
-  return (
-    <div className={`qcardface qcardface--${card.rarity} qcardface--${size} qhue--${set?.hue ?? 'violet'}`}>
+  const face = (
+    <>
       <span className="qcardface__rarity">{card.rarity}</span>
       <span className="qcardface__art"><Glyph name={card.glyph} size={size === 'sm' ? 30 : 56} /></span>
       <span className="qcardface__name">{card.name}</span>
       <span className="qcardface__set">{set?.name ?? card.set}</span>
-    </div>
+      {copies && copies > 1 ? <span className="qcardface__copies">×{copies}</span> : null}
+    </>
+  );
+  const className = `qcardface qcardface--${card.rarity} qcardface--${size} qhue--${set?.hue ?? 'violet'}`;
+  return onOpen ? (
+    <button type="button" className={`${className} qcardface--tap`} onClick={onOpen} aria-label={`${card.name}, ${card.rarity}`}>
+      {face}
+    </button>
+  ) : (
+    <div className={className}>{face}</div>
   );
 }
 
@@ -368,12 +383,176 @@ export function CardSlot() {
   return <div className="qcardslot" aria-label="Not collected yet">?</div>;
 }
 
-export function Sticker({ sticker }: { sticker: StickerView }) {
-  return (
-    <div className={`qsticker${sticker.earned ? '' : ' is-locked'}`} title={sticker.blurb}>
-      <span className={`qsticker__hex qhue--${sticker.hue}`}><Glyph name={sticker.glyph} size={22} /></span>
+/** A sticker as a hexagon with its tier as the rim colour. Tapping it explains it. */
+export function Sticker({ sticker, onOpen }: { sticker: StickerView; onOpen?: () => void }) {
+  const body = (
+    <>
+      <span className={`qsticker__hex qhue--${sticker.hue} qtier--${sticker.tier}`}><Glyph name={sticker.glyph} size={22} /></span>
       <span className="qsticker__name">{sticker.name}</span>
-    </div>
+      {sticker.tier > 0 && sticker.tiers.length > 1 && (
+        <span className={`qsticker__tier qtiertext--${sticker.tier}`}>{STICKER_TIER_NAMES[sticker.tier]}</span>
+      )}
+    </>
+  );
+  const className = `qsticker${sticker.earned ? '' : ' is-locked'}`;
+  return onOpen ? (
+    <button type="button" className={`${className} qsticker--tap`} onClick={onOpen} aria-label={`${sticker.name}: ${STICKER_TIER_NAMES[sticker.tier]}`}>
+      {body}
+    </button>
+  ) : (
+    <div className={className} title={sticker.meaning}>{body}</div>
+  );
+}
+
+/** What a sticker means, how to earn it, and how far along its tiers somebody is. */
+export function StickerSheet({ sticker, whose, onClose }: { sticker: StickerView; whose: 'mine' | 'theirs'; onClose: () => void }) {
+  return (
+    <Modal title={sticker.name} onClose={onClose}>
+      <div className="qsheet">
+        <span className={`qsticker__hex qsticker__hex--big qhue--${sticker.hue} qtier--${sticker.tier}`}>
+          <Glyph name={sticker.glyph} size={40} />
+        </span>
+        <p className="qsheet__state">
+          {sticker.earned
+            ? <><b className={`qtiertext--${sticker.tier}`}>{sticker.tiers.length > 1 ? STICKER_TIER_NAMES[sticker.tier] : 'Earned'}</b>{whose === 'mine' ? ' · yours' : ''}</>
+            : <b className="faint">Not earned yet</b>}
+        </p>
+        <section className="qsheet__block">
+          <h4>What it means</h4>
+          <p>{sticker.meaning}</p>
+        </section>
+        <section className="qsheet__block">
+          <h4>How to earn it</h4>
+          <p>{sticker.how}</p>
+        </section>
+        {sticker.tiers.length > 1 && (
+          <div className="qtiers">
+            {sticker.tiers.map((threshold, index) => (
+              <span key={threshold} className={`qtiers__step${sticker.have >= threshold ? ' is-done' : ''}`}>
+                <b className={`qtiertext--${index + 1}`}>{STICKER_TIER_NAMES[index + 1]}</b>
+                <small>{threshold}</small>
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="faint qsheet__progress">
+          {sticker.next === null
+            ? 'Top tier reached.'
+            : `${Math.min(sticker.have, sticker.next)} of ${sticker.next} towards ${sticker.tiers.length > 1 ? STICKER_TIER_NAMES[Math.min(3, sticker.tier + 1)] : 'this sticker'}.`}
+        </p>
+        <XpBar progress={sticker.next === null ? 1 : sticker.have / sticker.next} tone="gold" />
+        <p className="faint qsheet__note">Stickers show on the profile, so anybody deciding whether to deal with this person can see them.</p>
+      </div>
+    </Modal>
+  );
+}
+
+/** What a card is, how rare, and what collecting its set is worth. */
+export function CardSheet({ card, copies, setOwned, onClose }: {
+  card: CardDef;
+  copies: number;
+  /** How many of the six in its set are owned. */
+  setOwned: number;
+  onClose: () => void;
+}) {
+  const total = Object.values(CARD_ODDS).reduce((sum, weight) => sum + weight, 0);
+  return (
+    <Modal title={card.name} onClose={onClose}>
+      <div className="qsheet">
+        <CardFace card={card} />
+        <p className="qsheet__lore">&ldquo;{card.lore}&rdquo;</p>
+        <p className="qsheet__state">
+          <span className={`qrarity qrarity--${card.rarity}`}>{card.rarity}</span>{' '}
+          {setName(card.set)} · {copies > 0 ? `you have ${copies}` : 'not collected'}
+        </p>
+        <section className="qsheet__block">
+          <h4>How rare</h4>
+          <p>A {card.rarity} card comes out of {Math.round((CARD_ODDS[card.rarity] / total) * 100)}% of ordinary packs, and is worth {CARD_XP[card.rarity]} XP when pulled.</p>
+        </section>
+        <section className="qsheet__block">
+          <h4>Its set</h4>
+          <p>{setOwned}/6 of {setName(card.set)} collected. Finish the set for {SET_BONUS_XP} XP and the {setName(card.set)} Master sticker.</p>
+        </section>
+        <section className="qsheet__block">
+          <h4>Where cards come from</h4>
+          <p>The daily Reveal, a pack for every level you reach (epic or better every fifth level), and a pack for every milestone you collect.</p>
+        </section>
+      </div>
+    </Modal>
+  );
+}
+
+type Opened = { kind: 'card'; card: CardDef & { copies?: number } } | { kind: 'sticker'; sticker: StickerView } | null;
+
+/**
+ * Every card and every sticker, in one sheet.
+ *
+ * Opened from a profile's showcase. Cards are laid out set by set with gaps
+ * for the ones still missing, so it reads as a binder being filled.
+ */
+export function ShowcaseModal({ cards, stickers, whose, onClose, start = 'cards' }: {
+  cards: (CardDef & { copies?: number })[];
+  stickers: StickerView[];
+  whose: 'mine' | 'theirs';
+  onClose: () => void;
+  start?: 'cards' | 'stickers';
+}) {
+  const [tab, setTab] = useState<'cards' | 'stickers'>(start);
+  const [opened, setOpened] = useState<Opened>(null);
+  const copiesOf = (id: string) => cards.filter((card) => card.id === id).reduce((sum, card) => sum + (card.copies ?? 1), 0);
+  const ownedIn = (setId: string) => new Set(cards.filter((card) => card.set === setId).map((card) => card.id)).size;
+
+  if (opened?.kind === 'card') {
+    return <CardSheet card={opened.card} copies={copiesOf(opened.card.id)} setOwned={ownedIn(opened.card.set)} onClose={() => setOpened(null)} />;
+  }
+  if (opened?.kind === 'sticker') {
+    return <StickerSheet sticker={opened.sticker} whose={whose} onClose={() => setOpened(null)} />;
+  }
+
+  return (
+    <Modal title="Showcase" onClose={onClose}>
+      <div className="tabs qtabs">
+        <button type="button" className={`tab${tab === 'cards' ? ' is-on' : ''}`} onClick={() => setTab('cards')}>
+          Cards {new Set(cards.map((card) => card.id)).size}/{CARDS.length}
+        </button>
+        <button type="button" className={`tab${tab === 'stickers' ? ' is-on' : ''}`} onClick={() => setTab('stickers')}>
+          Stickers {stickers.filter((sticker) => sticker.earned).length}/{stickers.length}
+        </button>
+      </div>
+      {tab === 'cards' ? (
+        <div className="stack qsheet__scroll">
+          <p className="faint" style={{ margin: 0 }}>
+            Cards come from the daily Reveal, level-ups and milestones. Finish a set for {SET_BONUS_XP} XP and its Master sticker. Tap a card to read it.
+          </p>
+          {CARD_SETS.map((set) => (
+            <div key={set.id} className="qset">
+              <div className="qset__head">
+                <b>{set.name}</b>
+                <span className={ownedIn(set.id) === 6 ? 'qok' : 'faint'}>{ownedIn(set.id)}/6{ownedIn(set.id) === 6 ? ' · complete' : ''}</span>
+              </div>
+              <div className="qset__cards">
+                {CARDS.filter((card) => card.set === set.id).map((card) => (
+                  copiesOf(card.id) > 0
+                    ? <CardFace key={card.id} card={card} size="sm" copies={copiesOf(card.id)} onOpen={() => setOpened({ kind: 'card', card })} />
+                    : <CardSlot key={card.id} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="stack qsheet__scroll">
+          <p className="faint" style={{ margin: 0 }}>
+            Stickers are earned by what somebody actually does - buying, reviewing, backing pre-orders, trading cleanly. Bronze, silver and gold show how far. Tap one to see what it means.
+          </p>
+          <div className="qstickers">
+            {[...stickers].sort((a, b) => b.tier - a.tier).map((sticker) => (
+              <Sticker key={sticker.id} sticker={sticker} onOpen={() => setOpened({ kind: 'sticker', sticker })} />
+            ))}
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 
