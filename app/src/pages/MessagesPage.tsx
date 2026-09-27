@@ -24,6 +24,7 @@ export function MessagesView() {
   const [data, setData] = useState<Inbox | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [to, setTo] = useState('');
+  const [composing, setComposing] = useState(false);
   /** Which inbox is showing: a handle, or '' for everything. */
   const [box, setBox] = useState('');
   const [query, setQuery] = useState('');
@@ -62,35 +63,45 @@ export function MessagesView() {
 
   return (
     <div className="chlist inbox">
-      {/* Writing to somebody new is the first thing here, as a field rather
-          than a button that opens a form: a handle is all it needs. */}
-      <form className="inbox__new" onSubmit={start}>
-        <span className="inbox__newicon" aria-hidden="true"><Icon name="send" size={16} /></span>
-        <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="New message to @username"
-          aria-label="Message someone by username" disabled={data.handles.length === 0} />
-        <button type="submit" className="inbox__go" disabled={!to.trim()}>Open</button>
-      </form>
+      {/* The inboxes, and writing to somebody new as a pen at the end of the
+          row - a handle is all it needs, so it opens as one field. */}
+      <div className="inbox__boxes" role="tablist" aria-label="Inbox">
+        {data.handles.length > 1 && (
+          <>
+            <button type="button" role="tab" aria-selected={box === ''} className={`chip${box === '' ? ' is-on' : ''}`}
+              onClick={() => setBox('')}>
+              All{totalUnread > 0 && <span className="chip__count">{totalUnread}</span>}
+            </button>
+            {data.handles.map((party) => {
+              const unread = unreadIn(party.handle);
+              return (
+                <button key={party.handle} type="button" role="tab" aria-selected={box === party.handle}
+                  className={`chip${box === party.handle ? ' is-on' : ''}`} onClick={() => setBox(party.handle)}>
+                  {party.isStore ? party.displayName : 'You'}
+                  {unread > 0 && <span className="chip__count">{unread}</span>}
+                </button>
+              );
+            })}
+          </>
+        )}
+        <button type="button" className={`inbox__compose${composing ? ' is-on' : ''}`} aria-label="New message"
+          aria-expanded={composing} title="New message" disabled={data.handles.length === 0}
+          onClick={() => setComposing((now) => !now)}>
+          <Icon name="compose" size={17} />
+        </button>
+      </div>
+      {composing && (
+        <form className="inbox__new" onSubmit={start}>
+          <span className="inbox__newicon" aria-hidden="true">@</span>
+          <input autoFocus value={to} onChange={(e) => setTo(e.target.value)} placeholder="username"
+            aria-label="Message someone by username" />
+          <button type="submit" className="inbox__go" disabled={!to.trim()} aria-label="Open conversation">
+            <Icon name="send" size={15} />
+          </button>
+        </form>
+      )}
       {data.handles.length === 0 && (
         <p className="faint">Pick a username in <Link to="/me?tab=settings">your settings</Link> before messaging anyone.</p>
-      )}
-
-      {data.handles.length > 1 && (
-        <div className="inbox__boxes" role="tablist" aria-label="Inbox">
-          <button type="button" role="tab" aria-selected={box === ''} className={`chip${box === '' ? ' is-on' : ''}`}
-            onClick={() => setBox('')}>
-            All{totalUnread > 0 && <span className="chip__count">{totalUnread}</span>}
-          </button>
-          {data.handles.map((party) => {
-            const unread = unreadIn(party.handle);
-            return (
-              <button key={party.handle} type="button" role="tab" aria-selected={box === party.handle}
-                className={`chip${box === party.handle ? ' is-on' : ''}`} onClick={() => setBox(party.handle)}>
-                {party.isStore ? `🏪 ${party.displayName}` : '🙂 You'}
-                {unread > 0 && <span className="chip__count">{unread}</span>}
-              </button>
-            );
-          })}
-        </div>
       )}
 
       {data.threads.length > 3 && (
@@ -104,7 +115,7 @@ export function MessagesView() {
       {threads.length === 0 ? (
         <EmptyState icon={<Icon name="mail" size={26} />}
           title={needle ? 'No conversation matches' : voice ? `Nothing for ${voice.isStore ? voice.displayName : 'you'} yet` : 'No messages yet'}>
-          {needle ? 'Try another name.' : 'Type a username above, or message a shop from its page.'}
+          {needle ? 'Try another name.' : 'Tap the pen to write to someone, or message a shop from its page.'}
         </EmptyState>
       ) : (
         <div className="chrows">
@@ -315,23 +326,6 @@ export function ThreadPage() {
         </Link>} />
 
       <main className="page social chroom dmroom">
-        {/* Whose voice you are using, when there is a choice: part of which
-            conversation this is, so switching opens that one. */}
-        {data.handles.length > 1 && (
-          <div className="dmas" role="radiogroup" aria-label="Writing as">
-            <span className="faint">Writing as</span>
-            {data.handles.map((party) => (
-              <button key={party.handle} type="button" role="radio" aria-checked={party.handle === data.us.handle}
-                className={`chip${party.handle === data.us.handle ? ' is-on' : ''}`}
-                onClick={() => navigate(
-                  `/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(party.handle)}`, { replace: true },
-                )}>
-                {party.isStore ? '🏪 ' : ''}@{party.handle}
-              </button>
-            ))}
-          </div>
-        )}
-
         <div className="chthread">
           {data.messages.length === 0 ? (
             <EmptyState icon={<Icon name="message" size={26} />} title="Say hello">
@@ -361,6 +355,23 @@ export function ThreadPage() {
             </div>
           )}
           <div className="cbar__row">
+            {/* Whose voice you are writing in, switched from where you write.
+                Each voice is its own conversation, so switching opens that one. */}
+            {data.handles.length > 1 && (() => {
+              const at = data.handles.findIndex((party) => party.handle === data.us.handle);
+              const next = data.handles[(at + 1) % data.handles.length]!;
+              return (
+                <button type="button" className={`cbar__as${data.us.isStore ? ' is-shop' : ''}`}
+                  aria-label={`Writing as @${data.us.handle}. Switch to @${next.handle}`}
+                  title={`Writing as @${data.us.handle} · tap for @${next.handle}`}
+                  onClick={() => navigate(
+                    `/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(next.handle)}`, { replace: true },
+                  )}>
+                  <Avatar name={data.us.displayName} size={36} />
+                  <span className="cbar__asswap" aria-hidden="true"><Icon name="repost" size={10} /></span>
+                </button>
+              );
+            })()}
             {dealable && (
               <button type="button" className="cbar__attach" onClick={() => (data.us.isStore ? makeDeal(data.us, data.them) : setAsking(true))}
                 aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}

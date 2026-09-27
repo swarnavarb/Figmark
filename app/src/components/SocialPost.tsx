@@ -162,6 +162,11 @@ export function SocialPostCard({
                 <Link to={`/social/f/${encodeURIComponent(card.forum.id)}`} className="spost__forum">
                   <Icon name="forum" size={12} /> {card.forum.name}
                 </Link>
+                {card.alsoIn?.map((other) => (
+                  <Link key={other.id} to={`/social/f/${encodeURIComponent(other.id)}`} className="spost__forum">
+                    {other.name}
+                  </Link>
+                ))}
               </>
             )}
           </span>

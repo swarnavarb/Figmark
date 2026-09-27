@@ -657,6 +657,8 @@ export interface PostCard {
   original?: PostCard | null;
   /** The forum it was said in, when read anywhere but that forum. */
   forum?: { id: string; name: string } | null;
+  /** Other forums the same post went to. */
+  alsoIn?: { id: string; name: string }[];
   /** Said by a shop in its own name, so it has a channel to open. */
   shop?: boolean;
 }
@@ -744,6 +746,8 @@ export interface WantCard {
   category: string;
   budgetMinor: number | null;
   currency: string;
+  /** What they are in search of, if they had a photo. */
+  photoUrls: string[];
   condition: string | null;
   status: 'open' | 'closed';
   offerCount: number;
@@ -759,6 +763,8 @@ export interface WantCard {
 export interface WantOfferRow {
   id: string;
   seller: PartyRef;
+  /** A collector answering, or a shop. */
+  voice: 'person' | 'shop';
   message: string;
   priceMinor: number | null;
   createdAt: string;
@@ -784,6 +790,8 @@ export interface WantDetail {
   seekerCount: number;
   /** Your own answer, if you have already made one. */
   yours: { id: string; message: string; priceMinor: number | null; listingId: string | null } | null;
+  /** Your answers by the voice you gave them in. */
+  yoursBy: Partial<Record<'person' | 'shop', { id: string; message: string; priceMinor: number | null; listingId: string | null }>>;
   offers: WantOfferRow[];
 }
 
@@ -1749,7 +1757,7 @@ export const api = {
     body: string; forumId?: string; listingId?: string; storeId?: string;
     channelId?: string; announcement?: boolean;
     photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
-    replyToId?: string; toWall?: boolean;
+    replyToId?: string; toWall?: boolean; alsoForumIds?: string[];
   }) =>
     post<{ post: Post }>('/social/posts', body),
   socialPost: (channelId: string, id: string, as?: string | null) =>
@@ -1787,13 +1795,13 @@ export const api = {
   },
   postWant: (body: {
     title: string; details: string; category: string;
-    budgetMinor: number | null; condition: string | null;
+    budgetMinor: number | null; condition: string | null; photoUrls?: string[];
   }) => post<{ want: WantCard }>('/wants/new', body),
   // The buyer is on the path because a want is stored under whoever posted it.
   want: (id: string, buyerId: string) =>
     request<WantDetail>(`/wants/${encodeURIComponent(id)}?buyer=${encodeURIComponent(buyerId)}`),
   offerOnWant: (id: string, buyerId: string, body: {
-    message: string; listingId?: string | null; priceMinor?: number | null;
+    message: string; listingId?: string | null; priceMinor?: number | null; storeId?: string | null;
   }) => post<{ offerCount: number }>(
     `/wants/${encodeURIComponent(id)}/offers?buyer=${encodeURIComponent(buyerId)}`, body,
   ),

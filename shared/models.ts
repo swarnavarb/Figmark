@@ -1438,6 +1438,11 @@ export interface Post extends BaseDocument {
   wallOf?: { forumId: string; forumName: string; postId: string } | null;
   /** Set on a forum post that was also put on its author's wall: that entry's id. */
   wallPostId?: string | null;
+  /**
+   * The same post, shared into other forums at the same time - up to two more.
+   * Each is a post of its own there; this is so a card can say where else.
+   */
+  alsoIn?: { forumId: string; forumName: string; postId: string }[] | null;
 }
 
 /**
@@ -1468,6 +1473,8 @@ export interface Want extends BaseDocument {
    */
   budgetMinor: number | null;
   currency: string;
+  /** Up to four photos of what they are in search of. */
+  photoUrls?: string[];
   /** Null means any condition will do. */
   condition: ConditionTag | null;
   status: WantStatus;
@@ -1527,6 +1534,12 @@ export interface WantOffer extends BaseDocument {
   /** What they would charge. Null when they have only offered to look. */
   priceMinor: number | null;
   message: string;
+  /**
+   * Who answered: the person, or the shop they run. A shop and its owner are
+   * the same account, so this is what tells the two answers apart. Absent on
+   * older answers, which were all the shop.
+   */
+  voice?: 'person' | 'shop';
 }
 
 /**

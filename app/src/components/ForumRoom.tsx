@@ -8,6 +8,7 @@ import { Composer } from './SocialComposer';
 import { PersonVoice } from './SocialVoice';
 import { RoomBar } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
+import { markSeen } from './Channels';
 
 /**
  * A forum, read as a feed with a subject.
@@ -43,6 +44,7 @@ function Forum() {
     if (!id) return;
     try {
       setData(await api.channelThread(id));
+      markSeen(id);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not open this forum.');
     }
@@ -76,7 +78,7 @@ function Forum() {
 
   return (
     <div className="social">
-      <RoomBar tone="forum" onBack={back}
+      <RoomBar tone="forum" onBack={back} reveal
         avatar={<span className="forumav" aria-hidden="true"><Icon name="forum" size={18} /></span>}
         title={channel?.name ?? <span className="skel" style={{ width: 120, height: 12 }} />}
         sub={channel && <>{channel.memberCount ?? 0} members · {channel.postCount ?? posts.length} posts</>}
@@ -93,17 +95,18 @@ function Forum() {
         {channel && (
           <header className="forumhero">
             <span className="forumhero__stripes" aria-hidden="true" />
+            <button type="button" className="chhero__back" aria-label="Back" onClick={back}>
+              <Icon name="back" size={18} />
+            </button>
             <span className="forumhero__kicker"><Icon name="forum" size={13} /> Forum</span>
             <h1 className="forumhero__name">{channel.name}</h1>
             {channel.description && <p className="forumhero__desc">{channel.description}</p>}
             <p className="forumhero__stats">
               <strong>{channel.memberCount ?? 0}</strong> members · <strong>{channel.postCount ?? posts.length}</strong> posts
             </p>
-            {!member && (
-              <button type="button" className="forumhero__join" disabled={joining} onClick={() => void join()}>
-                <Icon name="plus" size={15} /> Join to post
-              </button>
-            )}
+            <button type="button" className={`forumhero__join${member ? ' is-on' : ''}`} disabled={joining} onClick={() => void join()}>
+              {member ? <><Icon name="check" size={15} /> Joined</> : <><Icon name="plus" size={15} /> Join to post</>}
+            </button>
           </header>
         )}
 

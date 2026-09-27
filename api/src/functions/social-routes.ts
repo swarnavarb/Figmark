@@ -54,6 +54,8 @@ interface PostCard {
    * on somebody's wall, or in the feed - so it reads "Sana ▸ Deal spotting".
    */
   forum?: { id: string; name: string } | null;
+  /** Other forums the same post went to. */
+  alsoIn?: { id: string; name: string }[];
   /** Said by a shop, in its own name - which is what has a channel to open. */
   shop?: boolean;
 }
@@ -296,6 +298,7 @@ async function decorate(
     if (post.repostOf) card.original = originalCards.get(post.id) ?? null;
     if (post.channel === 'forum') {
       card.forum = { id: post.channelId, name: forumNames.get(post.channelId) ?? 'Forum' };
+      if (post.alsoIn?.length) card.alsoIn = post.alsoIn.map((entry) => ({ id: entry.forumId, name: entry.forumName }));
       // A forum is not somebody to follow; its posts are read by joining.
       card.following = true;
     }
@@ -354,7 +357,13 @@ async function withoutShops(posts: Post[], repository: Repo): Promise<Post[]> {
 }
 
 /** Said when a shop tries to take part in a forum. */
+const MAX_ALSO_FORUMS = 2;
 const shopsStayOut = () => error(403, 'people_only', 'Forums are for people. Switch to your profile to take part.');
+/** A shop has one room - its own. In anybody else's channel you are a customer. */
+const shopsStayHome = () => error(403, 'people_only', 'Only people read and write in other shops\' channels. Switch to your profile.');
+/** A channel message, touched by a shop that does not own the channel. */
+const shopInSomebodyElsesRoom = (post: Post, actor: Actor) =>
+  post.channel === 'seller' && post.reach === 'channel' && Boolean(actor.storeId) && actor.storeId !== post.channelId;
 
 /** GET /api/social/feed - posts from everyone you follow, newest first. */
 async function socialFeed(request: HttpRequest, _context: InvocationContext) {
@@ -542,6 +551,7 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
   if (!forum && !seller?.sellerProfile) {
     return error(404, 'not_found', 'Only a shop has a channel.');
   }
+  if (!forum && actor.storeId && actor.storeId !== channelId) return shopsStayHome();
 
   // Whoever may speak for the shop. A manager posting for it is the shop
   // speaking, which is why this is a rights check rather than an id comparison.
@@ -621,8 +631,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     vibe?: unknown;
     /** The message in the same room this one answers. */
     replyToId?: unknown;
-    /** A forum post that goes on the author's wall too. */
+    /** A forum post that goes on the author's feed too. */
     toWall?: boolean;
+    /** Up to two more forums to share the same post into. */
+    alsoForumIds?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -711,16 +723,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
       authorName = owner.sellerProfile.storefrontName;
       voice = 'store';
     } else {
-      // A customer who runs a shop of their own may speak as it in somebody
-      // else's room - still a visitor there, just a named one.
+      // A customer is a person. A shop does not speak in another shop's room.
       authorName = user.displayName;
-      if (body.storeId) {
-        const theirs = await repository.getUserById(body.storeId);
-        if (!theirs?.sellerProfile || !can(theirs, user.id, 'posts')) {
-          return error(403, 'forbidden', 'You cannot post as that store.');
-        }
-        authorName = theirs.sellerProfile.storefrontName;
-      }
+      if (body.storeId) return shopsStayHome();
       voice = 'visitor';
     }
     // A channel message stays in the channel. That is the whole point of
@@ -733,6 +738,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   }
 
   let forumName: string | null = null;
+  const alsoForums: Forum[] = [];
   if (body.forumId) {
     const forum = await repository.getForum(body.forumId);
     if (!forum) return error(404, 'not_found', 'No such forum.');
@@ -744,6 +750,18 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     forumName = forum.name;
     authorName = user.displayName;
     channelId = forum.id;
+    const extra = Array.isArray(body.alsoForumIds) ? [...new Set(body.alsoForumIds)] : [];
+    if (extra.length > MAX_ALSO_FORUMS || extra.some((id) => typeof id !== 'string' || id === forum.id)) {
+      return error(400, 'invalid_post', `Share into ${MAX_ALSO_FORUMS + 1} forums at most.`);
+    }
+    for (const id of extra as string[]) {
+      const other = await repository.getForum(id);
+      if (!other) return error(404, 'not_found', 'No such forum.');
+      if (!(other.memberIds ?? []).includes(user.id)) {
+        return error(403, 'not_a_member', `Join ${other.name} to post in it.`);
+      }
+      alsoForums.push(other);
+    }
     channel = 'forum';
     kind = 'thread';
     voice = 'visitor';
@@ -808,6 +826,24 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   // back at the forum post, so there is one conversation, not two.
   if (forumName && body.toWall) {
     post.wallPostId = `pst_${randomUUID().slice(0, 12)}`;
+  }
+  // The same post into the other forums picked: a post of its own in each,
+  // each knowing where else it went.
+  if (alsoForums.length > 0) {
+    const everywhere = [
+      { forumId: channelId, forumName: forumName!, postId: post.id },
+      ...alsoForums.map((forum) => ({ forumId: forum.id, forumName: forum.name, postId: `pst_${randomUUID().slice(0, 12)}` })),
+    ];
+    post.alsoIn = everywhere.slice(1);
+    for (const copy of everywhere.slice(1)) {
+      await repository.createPost({
+        ...post,
+        id: copy.postId,
+        channelId: copy.forumId,
+        wallPostId: null,
+        alsoIn: everywhere.filter((entry) => entry.forumId !== copy.forumId),
+      });
+    }
   }
   const saved = await repository.createPost(post);
   if (forumName && post.wallPostId) {
@@ -916,6 +952,7 @@ async function react(request: HttpRequest, _context: InvocationContext) {
   if (!actor) return notYours();
   if (!post) return noPost();
   if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
+  if (shopInSomebodyElsesRoom(post, actor)) return shopsStayHome();
   const body = await readJson<{ kind?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
   if (body.kind !== null && !isReaction(body.kind)) {
@@ -982,6 +1019,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   if (!actor) return notYours();
   if (!post) return noPost();
   if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
+  if (shopInSomebodyElsesRoom(post, actor)) return shopsStayHome();
   const body = await readJson<{ body?: unknown; parentId?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
 
@@ -1058,6 +1096,7 @@ async function likeComment(request: HttpRequest, _context: InvocationContext) {
   if (!actor) return notYours();
   if (!post) return noPost();
   if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
+  if (shopInSomebodyElsesRoom(post, actor)) return shopsStayHome();
   const commentId = request.params.comment;
   if (!post.comments?.some((comment) => comment.id === commentId)) {
     return error(404, 'not_found', 'That comment is not there any more.');

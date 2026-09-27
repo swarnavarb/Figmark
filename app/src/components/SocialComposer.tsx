@@ -20,6 +20,9 @@ const POLL_LENGTHS: { hours: number; label: string }[] = [
   { hours: 0, label: 'No end' },
 ];
 
+/** A post from the feed goes into three forums at most. */
+const MAX_FORUMS = 3;
+
 interface DraftPhoto {
   key: string;
   preview: string;
@@ -37,7 +40,7 @@ interface DraftPhoto {
  */
 export function Composer({ onPosted, forum = null }: {
   onPosted: () => void | Promise<void>;
-  /** Writing inside a forum: always as yourself, and optionally onto your wall too. */
+  /** Writing inside a forum: always as yourself, and optionally onto your feed too. */
   forum?: { id: string; name: string } | null;
 }) {
   const { user } = useSession();
@@ -45,9 +48,10 @@ export function Composer({ onPosted, forum = null }: {
   // A forum is people only, so inside one you write as yourself whatever
   // voice the tab is in.
   const voice = forum ? { storeId: null, name: user?.displayName ?? 'Me', handle: user?.username ?? null } : chosen;
-  // From the feed, a person can send a post to a forum they are in; it goes
-  // on their wall as well, since that is where they were writing.
-  const [target, setTarget] = useState<ForumRow | null>(null);
+  // From the feed, a person can send a post to up to three forums they are
+  // in; it goes on their feed as well, since that is where they were writing.
+  const [targets, setTargets] = useState<ForumRow[]>([]);
+  const target = targets[0] ?? null;
   const [joined, setJoined] = useState<ForumRow[] | null>(null);
   const [choosingForum, setChoosingForum] = useState(false);
   const [toWall, setToWall] = useState(false);
@@ -70,7 +74,7 @@ export function Composer({ onPosted, forum = null }: {
   // A different voice has different stock, and a person has none to attach.
   // Nor does a shop have forums to post into.
   useEffect(() => {
-    setTarget(null);
+    setTargets([]);
     setChoosingForum(false);
     setItem(null);
     setStock(null);
@@ -149,7 +153,7 @@ export function Composer({ onPosted, forum = null }: {
     setVibe(null);
     setItem(null);
     setPicking(false);
-    setTarget(null);
+    setTargets([]);
     setChoosingForum(false);
     setToWall(false);
     setOpen(false);
@@ -165,7 +169,9 @@ export function Composer({ onPosted, forum = null }: {
         body: body.trim() || (item ? `Now available: ${item.title}` : ''),
         ...(voice.storeId ? { storeId: voice.storeId } : {}),
         ...(forum ? { forumId: forum.id, toWall } : {}),
-        ...(!forum && target ? { forumId: target.id, toWall: true } : {}),
+        ...(!forum && target
+          ? { forumId: target.id, toWall: true, alsoForumIds: targets.slice(1).map((row) => row.id) }
+          : {}),
         ...(item ? { listingId: item.id } : {}),
         photoUrls: photos.map((photo) => photo.url).filter((url): url is string => Boolean(url)),
         ...(poll ? { poll: { options: poll.map((option) => option.trim()).filter(Boolean), closesInHours: pollHours } } : {}),
@@ -257,13 +263,15 @@ export function Composer({ onPosted, forum = null }: {
         <div className="writer__as">
           <strong>
             {voice.name}
-            {(forum ?? target) && <span className="writer__in"> <Icon name="right" size={11} /> {(forum ?? target)!.name}</span>}
+            {(forum ?? target) && (
+              <span className="writer__in"> <Icon name="right" size={11} /> {forum ? forum.name : targets.map((row) => row.name).join(', ')}</span>
+            )}
           </strong>
           <span className="faint">
             {forum
-              ? (toWall ? 'In the forum, and on your wall' : 'To everyone in this forum')
+              ? (toWall ? 'In the forum, and on your feed' : 'To everyone in this forum')
               : target
-                ? 'In the forum, and on your wall'
+                ? `In ${targets.length === 1 ? 'the forum' : `${targets.length} forums`}, and on your feed`
                 : voice.storeId ? 'Posting as your storefront · tap the photo to switch' : 'To everyone following you'}
           </span>
         </div>
@@ -368,34 +376,43 @@ export function Composer({ onPosted, forum = null }: {
         </div>
       )}
 
-      {choosingForum && !target && (
-        <div className="forumpick" role="listbox" aria-label="Post in a forum">
-          {!joined ? (
-            <p className="faint">Loading your forums…</p>
-          ) : joined.length === 0 ? (
-            <p className="faint">You have not joined a forum yet. Join one from Forums and post into it from here.</p>
-          ) : (
-            joined.map((row) => (
-              <button key={row.id} type="button" role="option" aria-selected={false} className="forumpick__item"
-                onClick={() => {
-                  setTarget(row);
-                  setChoosingForum(false);
-                }}>
-                <span className="forumav forumav--sm" aria-hidden="true"><Icon name="forum" size={15} /></span>
-                <span className="forumpick__name">{row.name}</span>
-                <span className="faint">{row.memberCount} members</span>
-              </button>
-            ))
-          )}
+      {choosingForum && (
+        <div className="forumpick" role="listbox" aria-multiselectable="true" aria-label="Share into forums">
+          <p className="forumpick__head">
+            <span>Share into forums</span>
+            <span className="faint">{targets.length}/{MAX_FORUMS} · also on your feed</span>
+          </p>
+          <div className="forumpick__list">
+            {!joined ? (
+              <p className="faint">Loading your forums…</p>
+            ) : joined.length === 0 ? (
+              <p className="faint">You have not joined a forum yet. Join one from Forums and post into it from here.</p>
+            ) : (
+              joined.map((row) => {
+                const on = targets.some((entry) => entry.id === row.id);
+                const full = !on && targets.length >= MAX_FORUMS;
+                return (
+                  <button key={row.id} type="button" role="option" aria-selected={on} disabled={full}
+                    className={`forumpick__item${on ? ' is-on' : ''}`}
+                    onClick={() => setTargets((all) => (on ? all.filter((entry) => entry.id !== row.id) : [...all, row]))}>
+                    <span className="forumav forumav--sm" aria-hidden="true"><Icon name="forum" size={15} /></span>
+                    <span className="forumpick__name">{row.name}</span>
+                    <span className="forumpick__tick" aria-hidden="true">{on && <Icon name="check" size={12} />}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+          <button type="button" className="btn btn--quiet btn--sm forumpick__done" onClick={() => setChoosingForum(false)}>Done</button>
         </div>
       )}
 
-      {target && (
+      {target && !choosingForum && (
         <div className="writer__target">
           <Icon name="forum" size={15} />
-          <span>Posting in <strong>{target.name}</strong> · also on your wall</span>
-          <button type="button" className="iconbtn iconbtn--sm" aria-label="Post to your wall only"
-            onClick={() => setTarget(null)}>
+          <span>In <strong>{targets.map((row) => row.name).join(', ')}</strong> · also on your feed</span>
+          <button type="button" className="iconbtn iconbtn--sm" aria-label="Post to your feed only"
+            onClick={() => setTargets([])}>
             <Icon name="close" size={12} />
           </button>
         </div>
@@ -405,7 +422,7 @@ export function Composer({ onPosted, forum = null }: {
         <label className="writer__wall">
           <input type="checkbox" checked={toWall} onChange={(event) => setToWall(event.target.checked)} />
           <span className="writer__switch" aria-hidden="true" />
-          <span>Also share on my wall <span className="faint">· shows as {voice.name} <Icon name="right" size={10} /> {forum.name}</span></span>
+          <span>Also share on my feed <span className="faint">· shows as {voice.name} <Icon name="right" size={10} /> {forum.name}</span></span>
         </label>
       )}
 

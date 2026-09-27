@@ -21,6 +21,8 @@ export function AppShell() {
   const [term, setTerm] = useState(params.get('q') ?? '');
   const { pathname } = useLocation();
   const social = pathname.startsWith('/social') || pathname.startsWith('/messages/');
+  // A room you write in: the tab bar steps aside for the bar you write from.
+  const room = pathname.startsWith('/social/c/') || pathname.startsWith('/messages/');
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -30,7 +32,7 @@ export function AppShell() {
   return (
     // The social screens bring their own header - one gradient block with the
     // brand, the bell and you on it - so the marketplace one steps aside there.
-    <div className={`shell shell--tabbed${social ? ' shell--social' : ''}`}>
+    <div className={`shell shell--tabbed${social ? ' shell--social' : ''}${room ? ' shell--room' : ''}`}>
       <ScrollManager />
       <ScrollBars />
       <header className="nav">

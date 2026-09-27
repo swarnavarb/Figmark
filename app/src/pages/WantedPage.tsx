@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
@@ -6,6 +6,9 @@ import { ApiRequestError, api, type WantCard, type WantDetail } from '../api';
 import { EmptyState, ErrorNotice, Modal, PersonLink } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { Icon } from '../components/Icon';
+import { shrink } from '../components/PhotoManager';
+import { VoicePicker, useVoice } from '../components/SocialVoice';
 
 /**
  * What people are looking for.
@@ -80,23 +83,23 @@ export function WantedPage() {
           reads, so posting is the biggest thing on it. */}
       <section className="wanthero">
         <span className="wanthero__stripes" aria-hidden="true" />
-        <span className="wanthero__kicker">🎯 The hunt board</span>
-        <h2 className="wanthero__title">What are you hunting for?</h2>
-        <p className="wanthero__sub">Sellers answer with what they have - or what they can get in the next consignment.</p>
+        <span className="wanthero__kicker"><Icon name="target" size={13} /> ISO · In Search Of</span>
+        <h2 className="wanthero__title">What are you in search of?</h2>
+        <p className="wanthero__sub">Post it with a photo. Collectors and shops answer with what they have - or what they can get.</p>
         <div className="wanthero__row">
           {user && (
             <button type="button" className="wanthero__ask" onClick={() => setAsking(true)}>
-              <span aria-hidden="true">+</span> Post a want
+              <Icon name="plus" size={15} /> Post an ISO
             </button>
           )}
-          <span className="wanthero__stat"><strong>{others.length}</strong> open hunts</span>
+          <span className="wanthero__stat"><strong>{others.length}</strong> open</span>
           {openMine.length > 0 && <span className="wanthero__stat"><strong>{openMine.length}</strong> yours</span>}
         </div>
       </section>
 
       {openMine.length > 0 && (
         <section className="wanted__section">
-          <h3 className="wanted__title">Your hunts</h3>
+          <h3 className="wanted__title">Your ISOs</h3>
           <div className="wanted__list">
             {openMine.map((want) => (
               <WantRow key={want.id} want={want} mine onOpen={() => setOpenWant(want)}
@@ -120,7 +123,7 @@ export function WantedPage() {
       </div>
 
       {others.length === 0 ? (
-        <EmptyState title="Nobody else is hunting for anything here">
+        <EmptyState title="No open ISOs yet">
           {category
             ? 'Nothing under that category yet. Try Everything.'
             : 'Be the first — what are you looking for that nobody has listed?'}
@@ -227,6 +230,7 @@ function WantRow({ want, mine, onOpen, onChanged }: {
 function WantBody({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
   return (
     <button type="button" className="want" onClick={onOpen}>
+      {want.photoUrls?.[0] && <img className="want__photo" src={want.photoUrls[0]} alt="" loading="lazy" />}
       <div className="want__main">
         <span className="want__title">{want.title}</span>
         <span className="faint">
@@ -261,8 +265,27 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
   const [category, setCategory] = useState<string>(CATEGORIES[0]!);
   const [budget, setBudget] = useState('');
   const [condition, setCondition] = useState<string>('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const files = useRef<HTMLInputElement | null>(null);
+
+  async function addPhotos(list: FileList | null) {
+    const picked = Array.from(list ?? []).slice(0, 4 - photos.length);
+    if (picked.length === 0) return;
+    setUploading(true);
+    try {
+      for (const file of picked) {
+        const stored = await api.uploadPhoto(await shrink(file));
+        setPhotos((all) => [...all, stored.url]);
+      }
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not upload that photo.');
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function submit() {
     setBusy(true);
@@ -274,6 +297,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
         category,
         budgetMinor: budget.trim() ? Math.round(Number(budget) * 100) : null,
         condition: condition || null,
+        photoUrls: photos,
       });
       await onPosted();
     } catch (err) {
@@ -284,12 +308,30 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
   }
 
   return (
-    <Modal title="What are you looking for?" onClose={onClose}>
+    <Modal title="ISO - in search of" onClose={onClose}>
       <label className="field">
         <span>The item</span>
         <input value={title} onChange={(e) => setTitle(e.target.value)}
           placeholder="1/7 scale Rem, Furyu — any colourway" />
       </label>
+
+      <div className="isophotos">
+        {photos.map((url) => (
+          <span key={url} className="isophotos__tile">
+            <img src={url} alt="" />
+            <button type="button" aria-label="Remove photo" onClick={() => setPhotos((all) => all.filter((entry) => entry !== url))}>
+              <Icon name="close" size={12} />
+            </button>
+          </span>
+        ))}
+        {photos.length < 4 && (
+          <button type="button" className="isophotos__add" disabled={uploading} onClick={() => files.current?.click()}>
+            <Icon name="image" size={18} /> {uploading ? 'Adding…' : 'Add photos'}
+          </button>
+        )}
+        <input ref={files} type="file" accept="image/*" multiple hidden
+          onChange={(e) => { void addPhotos(e.target.files); e.target.value = ''; }} />
+      </div>
 
       <div className="field-row">
         <label className="field">
@@ -326,7 +368,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
 
       <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
         <button type="button" className="btn btn--quiet" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn" disabled={busy || title.trim().length < 3}
+        <button type="button" className="btn" disabled={busy || uploading || title.trim().length < 3}
           onClick={() => void submit()}>
           {busy ? 'Posting…' : 'Post it'}
         </button>
@@ -342,6 +384,10 @@ function WantDialog({ card, onClose, onChanged }: {
   onChanged: () => Promise<void>;
 }) {
   const { user } = useSession();
+  // A collector who knows where one is and a shop that stocks it can both
+  // answer - so the answer goes out in whichever voice is picked.
+  const { voice } = useVoice();
+  const as = voice.storeId ? 'shop' : 'person';
   const [data, setData] = useState<WantDetail | null>(null);
   const [message, setMessage] = useState('');
   const [price, setPrice] = useState('');
@@ -351,13 +397,14 @@ function WantDialog({ card, onClose, onChanged }: {
   const load = useCallback(async () => {
     try {
       const detail = await api.want(card.id, card.buyerId);
+      const yours = detail.yoursBy?.[as] ?? null;
       setData(detail);
-      setMessage(detail.yours?.message ?? '');
-      setPrice(detail.yours?.priceMinor ? String(detail.yours.priceMinor / 100) : '');
+      setMessage(yours?.message ?? '');
+      setPrice(yours?.priceMinor ? String(yours.priceMinor / 100) : '');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not open that.');
     }
-  }, [card.id, card.buyerId]);
+  }, [card.id, card.buyerId, as]);
 
   useEffect(() => {
     void load();
@@ -370,6 +417,7 @@ function WantDialog({ card, onClose, onChanged }: {
       await api.offerOnWant(card.id, card.buyerId, {
         message: message.trim(),
         priceMinor: price.trim() ? Math.round(Number(price) * 100) : null,
+        storeId: voice.storeId,
       });
       await load();
       await onChanged();
@@ -418,6 +466,13 @@ function WantDialog({ card, onClose, onChanged }: {
         <dd>{card.budgetMinor === null ? 'Open to offers' : formatMoney(card.budgetMinor, card.currency)}</dd>
       </div>
       {card.details && <p className="muted">{card.details}</p>}
+      {card.photoUrls?.length > 0 && (
+        <div className="isophotos isophotos--view">
+          {card.photoUrls.map((url) => (
+            <a key={url} className="isophotos__tile" href={url} target="_blank" rel="noreferrer"><img src={url} alt="" /></a>
+          ))}
+        </div>
+      )}
 
       {/* Under the post, and the count beside it: how many people want the same
           thing is the number a seller is actually deciding on. */}
@@ -452,7 +507,10 @@ function WantDialog({ card, onClose, onChanged }: {
                 {data.offers.map((offer) => (
                   <article key={offer.id} className="card card--pad stack">
                     <div className="row row--between">
-                      <PersonLink party={offer.seller} />
+                      <span className="isoanswer__who">
+                        <PersonLink party={offer.seller} />
+                        <span className={`isoanswer__tag isoanswer__tag--${offer.voice}`}>{offer.voice === 'shop' ? 'Shop' : 'Collector'}</span>
+                      </span>
                       <span className="faint">{timeAgo(offer.createdAt)}</span>
                     </div>
                     <p className="muted" style={{ margin: 0 }}>{offer.message}</p>
@@ -485,7 +543,13 @@ function WantDialog({ card, onClose, onChanged }: {
             )
           ) : user ? (
             <section className="detail__section">
-              <h3>{data.yours ? 'Your answer' : 'Answer this'}</h3>
+              <div className="isoanswer__as">
+                <VoicePicker size={34} />
+                <span>
+                  <strong>{data.yoursBy?.[as] ? 'Your answer' : 'Answer'} as {voice.name}</strong>
+                  <span className="faint">Tap the photo to answer as {voice.storeId ? 'yourself' : 'your shop'}.</span>
+                </span>
+              </div>
               <label className="field">
                 <span>What you have, or what you can get</span>
                 <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
@@ -499,7 +563,7 @@ function WantDialog({ card, onClose, onChanged }: {
               {error && <ErrorNotice message={error} />}
               <button className="btn" style={{ justifySelf: 'start' }}
                 disabled={busy || message.trim().length < 4} onClick={() => void answer()}>
-                {busy ? 'Sending…' : data.yours ? 'Update your answer' : 'Send it'}
+                {busy ? 'Sending…' : data.yoursBy?.[as] ? 'Update your answer' : 'Send it'}
               </button>
             </section>
           ) : (

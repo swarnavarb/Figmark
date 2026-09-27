@@ -1318,17 +1318,19 @@ await check('a reply in a room quotes what it answers, and only from the same ro
   assert.equal(broadcast.status, 404, 'a feed post answers nothing');
 });
 
-await check('a customer who runs a shop can speak as it in somebody else\'s room', async () => {
-  const shop = (await storefront(req({ headers: auth }), ctx)).jsonBody.storefront;
+await check('a shop cannot read or speak in somebody else\'s channel', async () => {
   const said = await createPost(req({
     headers: auth, body: { body: 'Happy to split shipping on this.', channelId: 'usr_kaiju', storeId: 'usr_demo' },
   }), ctx);
-  assert.equal(said.status, 201);
-  assert.equal(said.jsonBody.post.voice, 'visitor', 'still a visitor in Kaiju\'s room');
-  assert.equal(said.jsonBody.post.authorName, shop.storefrontName);
-  assert.equal((await createPost(req({
-    headers: auth, body: { body: 'Not mine', channelId: 'usr_kaiju', storeId: 'usr_tokyoline' },
-  }), ctx)).status, 403);
+  assert.equal(said.status, 403);
+  assert.equal(said.jsonBody.error, 'people_only');
+  const looked = await channelThread(req({ headers: auth, params: { id: 'usr_kaiju' }, query: { as: 'usr_demo' } }), ctx);
+  assert.equal(looked.status, 403, 'a shop does not browse another shop\'s room');
+  const own = await channelThread(req({ headers: auth, params: { id: 'usr_demo' }, query: { as: 'usr_demo' } }), ctx);
+  assert.equal(own.status, 200, 'its own room is fine');
+  const person = await createPost(req({ headers: auth, body: { body: 'As me.', channelId: 'usr_kaiju' } }), ctx);
+  assert.equal(person.status, 201);
+  assert.equal(person.jsonBody.post.voice, 'visitor');
 });
 
 await check('only the shop pins in its room, three at most', async () => {
@@ -3010,6 +3012,34 @@ await check('answering again replaces it rather than stacking another on', async
   }), ctx)).jsonBody;
   assert.equal(detail.offers.length, 1);
   assert.equal(detail.offers[0].priceMinor, 42_000);
+});
+
+await check('an ISO takes photos, and a person and their shop answer separately', async () => {
+  const posted = await postWant(req({ headers: auth, body: {
+    title: 'ISO Gundam Wing Zero Ver.Ka', category: 'Model kits', photoUrls: ['https://example.com/wz.jpg'],
+  } }), ctx);
+  assert.equal(posted.status, 201);
+  assert.deepEqual(posted.jsonBody.want.photoUrls, ['https://example.com/wz.jpg']);
+  const bad = await postWant(req({ headers: auth, body: {
+    title: 'ISO with a script', category: 'Model kits', photoUrls: ['javascript:alert(1)'],
+  } }), ctx);
+  assert.equal(bad.status, 400);
+
+  const asShop = await offerOnWant(req({
+    headers: auth, params: { id: 'wnt_2' }, query: { buyer: 'usr_gadgetgrid' },
+    body: { message: 'The shop has one.', storeId: 'usr_demo' },
+  }), ctx);
+  assert.ok([200, 201].includes(asShop.status));
+  const notMine = await offerOnWant(req({
+    headers: auth, params: { id: 'wnt_2' }, query: { buyer: 'usr_gadgetgrid' },
+    body: { message: 'Speaking for Kaiju.', storeId: 'usr_kaiju' },
+  }), ctx);
+  assert.equal(notMine.status, 403);
+  const detail = (await readWant(req({
+    headers: auth, params: { id: 'wnt_2' }, query: { buyer: 'usr_gadgetgrid' },
+  }), ctx)).jsonBody;
+  assert.deepEqual(detail.offers.map((offer) => offer.voice).sort(), ['person', 'shop']);
+  assert.ok(detail.yoursBy.person && detail.yoursBy.shop, 'one answer per voice');
 });
 
 await check('nobody answers their own hunt', async () => {
@@ -7271,6 +7301,24 @@ await check('a shop cannot post, react or comment in a forum', async () => {
   const commented = await commentOn(req({ headers: auth, query: { as: 'usr_demo' },
     params: { channel: 'frm_imports', id: 'pst_frm_imports_1' }, body: { body: 'hi' } }), ctx);
   assert.equal(commented.status, 403);
+});
+
+await check('one post shares into up to three forums at once', async () => {
+  const posted = await createPost(req({ headers: auth, body: {
+    body: 'Cross-posting this one.', forumId: 'frm_imports', alsoForumIds: ['frm_authenticity'], toWall: true,
+  } }), ctx);
+  assert.equal(posted.status, 201);
+  assert.deepEqual(posted.jsonBody.post.alsoIn.map((entry) => entry.forumId), ['frm_authenticity']);
+  const there = (await channelThread(req({ headers: auth, params: { id: 'frm_authenticity' } }), ctx)).jsonBody.posts
+    .find((card) => card.post.body === 'Cross-posting this one.');
+  assert.ok(there, 'the copy is in the second forum');
+  assert.deepEqual(there.alsoIn, [{ id: 'frm_imports', name: 'Import questions' }]);
+  const tooMany = await createPost(req({ headers: auth, body: {
+    body: 'x', forumId: 'frm_imports', alsoForumIds: ['frm_authenticity', 'frm_deals', 'frm_x'],
+  } }), ctx);
+  assert.equal(tooMany.status, 400);
+  const notMine = await createPost(req({ headers: auth, body: { body: 'x', forumId: 'frm_imports', alsoForumIds: ['frm_deals'] } }), ctx);
+  assert.equal(notMine.status, 403, 'only forums you joined');
 });
 
 await check('a forum post can go on your wall too, as one conversation', async () => {

@@ -9,7 +9,7 @@ import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb } from './ui';
 import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
 import { Lightbox, copyLink, withReaction } from './SocialPost';
-import { VoicePicker, VoiceProvider, useVoice } from './SocialVoice';
+import { PersonVoice, useVoice } from './SocialVoice';
 import { RoomBar, useLongPress } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
 
@@ -43,7 +43,7 @@ export function seenMap(): Record<string, string> {
   }
 }
 
-function markSeen(channelId: string) {
+export function markSeen(channelId: string) {
   try {
     const map = seenMap();
     map[channelId] = new Date().toISOString();
@@ -230,10 +230,13 @@ export function ChannelRoom() {
   const { id } = useParams<{ id: string }>();
   // Forums moved to a room of their own; old links still land there.
   if (id?.startsWith('frm_')) return <Navigate to={`/social/f/${id}`} replace />;
+  // Always as yourself. A shop has one room, its own, and runs it from there
+  // whichever voice you picked; in anybody else's it would be a customer, and
+  // shops are not customers here. The server refuses it as well.
   return (
-    <VoiceProvider>
+    <PersonVoice>
       <Room />
-    </VoiceProvider>
+    </PersonVoice>
   );
 }
 
@@ -408,7 +411,7 @@ function Room() {
 
   return (
     <div className="social">
-      <RoomBar onBack={back}
+      <RoomBar onBack={back} reveal
         avatar={channel.photoUrl ? <img className="roombar__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={34} />}
         title={<>{channel.name}{channel.tier === 'pro' && <span className="roombar__tier">PRO</span>}</>}
         sub={<>{channel.followerCount ?? 0} followers{channel.handle && <> · @{channel.handle}</>}</>}
@@ -418,12 +421,16 @@ function Room() {
     <main className="page social chroom">
       <header className="chhero">
         <span className="chhero__stripes" aria-hidden="true" />
+        <button type="button" className="chhero__back" aria-label="Back" onClick={back}>
+          <Icon name="back" size={18} />
+        </button>
         <div className="chhero__row">
           {channel.photoUrl ? <img className="chhero__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={64} />}
           <div className="chhero__text">
             <h1 className="chhero__name">{channel.name}</h1>
             <p className="chhero__meta">
               {channel.postCount ?? 0} messages · {channel.followerCount ?? 0} followers
+              {channel.handle && <> · @{channel.handle}</>}
             </p>
           </div>
         </div>
@@ -431,12 +438,13 @@ function Room() {
         <div className="chhero__actions">
           {channel.mine ? (
             <span className="chhero__you"><Icon name="megaphone" size={14} /> You run this channel</span>
-          ) : voice.storeId ? (
-            <span className="chhero__you"><Icon name="users" size={14} /> Shops do not follow - switch to you to follow</span>
           ) : (
             <button type="button" className={`chhero__follow${following ? ' is-on' : ''}`} onClick={() => void follow()}>
               {following ? <><Icon name="check" size={14} /> Following</> : <><Icon name="plus" size={14} /> Follow</>}
             </button>
+          )}
+          {channel.handle && (
+            <Link to={`/${channel.handle}`} className="chhero__shop"><Icon name="tag" size={14} /> Shop</Link>
           )}
         </div>
       </header>
@@ -449,42 +457,44 @@ function Room() {
             {channel.name}'s channel is for its followers - {channel.postCount ?? 0} messages, announcements and
             drops are waiting. Following the shop opens it.
           </span>
-          {!voice.storeId && (
-            <button type="button" className="chhero__follow" onClick={() => void follow()}>
-              <Icon name="plus" size={14} /> Follow {channel.name}
-            </button>
-          )}
+          <button type="button" className="chhero__follow" onClick={() => void follow()}>
+            <Icon name="plus" size={14} /> Follow {channel.name}
+          </button>
         </div>
       ) : (
       <>
-      {current && show !== 'media' && (
-        <button type="button" className="chpin" onClick={() => {
-          jump(current.post.id);
-          setPinAt((at) => at + 1);
-        }}>
-          <span className="chpin__bar" aria-hidden="true">
-            {pinned.map((card, at) => (
-              <span key={card.post.id} className={at === pinAt % pinned.length ? 'is-on' : ''} />
-            ))}
-          </span>
-          <span className="chpin__body">
-            <span className="chpin__label"><Icon name="star" size={11} /> Pinned{pinned.length > 1 && ` · ${(pinAt % pinned.length) + 1} of ${pinned.length}`}</span>
-            <span className="chpin__text">{current.post.body || 'Photo'}</span>
-          </span>
-        </button>
-      )}
-
-      <div className="chtabs" role="tablist">
-        {([
-          ...(isForum ? [] : [['announcements', 'Announcements', 'megaphone'] as const]),
-          ['everything', 'Everything', 'message'] as const,
-          ['media', `Media${photoCount ? ` · ${photoCount}` : ''}`, 'image'] as const,
-        ]).map(([key, label, icon]) => (
-          <button key={key} type="button" role="tab" aria-selected={show === key}
-            className={`chtabs__tab${show === key ? ' is-on' : ''}`} onClick={() => setShow(key)}>
-            <Icon name={icon} size={14} /> {label}
+      {/* One locked row: the pinned message gets the room, the three views
+          shrink to icons beside it. Without a pin they keep their names. */}
+      <div className={`chstrip${current ? ' chstrip--pin' : ''}`}>
+        <div className="chtabs" role="tablist">
+          {([
+            ...(isForum ? [] : [['announcements', 'Announcements', 'megaphone'] as const]),
+            ['everything', 'Everything', 'message'] as const,
+            ['media', `Media${photoCount ? ` · ${photoCount}` : ''}`, 'image'] as const,
+          ]).map(([key, label, icon]) => (
+            <button key={key} type="button" role="tab" aria-selected={show === key} aria-label={label} title={label}
+              className={`chtabs__tab${show === key ? ' is-on' : ''}`} onClick={() => setShow(key)}>
+              <Icon name={icon} size={15} />{!current && <span>{label}</span>}
+            </button>
+          ))}
+        </div>
+        {current && (
+          <button type="button" className="chpin" onClick={() => {
+            if (show === 'media') setShow('everything');
+            window.setTimeout(() => jump(current.post.id), 0);
+            setPinAt((at) => at + 1);
+          }}>
+            <span className="chpin__bar" aria-hidden="true">
+              {pinned.map((card, at) => (
+                <span key={card.post.id} className={at === pinAt % pinned.length ? 'is-on' : ''} />
+              ))}
+            </span>
+            <span className="chpin__body">
+              <span className="chpin__label"><Icon name="star" size={11} /> Pinned{pinned.length > 1 && ` · ${(pinAt % pinned.length) + 1}/${pinned.length}`}</span>
+              <span className="chpin__text">{current.post.body || 'Photo'}</span>
+            </span>
           </button>
-        ))}
+        )}
       </div>
 
       {show === 'media' ? (
@@ -889,7 +899,6 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
       )}
 
       <div className="cbar__row">
-        <VoicePicker size={36} />
         <button type="button" className="cbar__attach" aria-label="Add photos" onClick={() => files.current?.click()}>
           <Icon name="image" size={18} />
         </button>

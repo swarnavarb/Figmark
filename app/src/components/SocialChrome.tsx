@@ -27,7 +27,7 @@ export type SocialView = 'feed' | 'channels' | 'wanted' | 'forums' | 'messages';
 export const SOCIAL_VIEWS: { id: SocialView; label: string; icon: IconName }[] = [
   { id: 'feed', label: 'Feed', icon: 'spark' },
   { id: 'channels', label: 'Channels', icon: 'megaphone' },
-  { id: 'wanted', label: 'Wanted', icon: 'search' },
+  { id: 'wanted', label: 'ISO', icon: 'target' },
   { id: 'forums', label: 'Forums', icon: 'forum' },
   { id: 'messages', label: 'Messages', icon: 'mail' },
 ];
@@ -51,7 +51,10 @@ function usePulse(): Pulse {
         channels: channels.status === 'fulfilled'
           ? channels.value.channels.filter((row) => !row.mine).reduce((sum, row) => sum + unreadOf(row, seen), 0)
           : 0,
-        forums: forums.status === 'fulfilled' ? forums.value.forums.filter((row) => row.member).length : 0,
+        // Joined forums with a post since you last looked in.
+        forums: forums.status === 'fulfilled'
+          ? forums.value.forums.filter((row) => row.member && row.lastPostAt && (!seen[row.id] || row.lastPostAt > seen[row.id]!)).length
+          : 0,
       });
     });
     return () => {
@@ -75,7 +78,6 @@ function count(value: number): string {
  */
 export function SocialTop({ view, onView }: { view: SocialView; onView: (view: SocialView) => void }) {
   const { user, signOut } = useSession();
-  const { voice } = useVoice();
   const pulse = usePulse();
   const [compact, setCompact] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -102,7 +104,7 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
   }, [view, compact]);
 
   const badge = (id: SocialView) =>
-    id === 'messages' ? pulse.messages : id === 'channels' ? pulse.channels : 0;
+    id === 'messages' ? pulse.messages : id === 'channels' ? pulse.channels : id === 'forums' ? pulse.forums : 0;
 
   const pick = (id: SocialView) => {
     onView(id);
@@ -122,13 +124,10 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
     );
   });
 
-  const first = voice.storeId ? voice.name : (user?.displayName.split(' ')[0] ?? '');
-
   return (
     <>
       <header className="soctop">
         <span className="soctop__stripes" aria-hidden="true" />
-        <span className="soctop__flare" aria-hidden="true" />
         <div className="soctop__in">
           <div className="soctop__bar">
             <Link to="/" className="soctop__mark" aria-label="Figmark home" />
@@ -139,33 +138,10 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
                 onClick={() => setSearching(true)}>
                 <Icon name="search" size={18} />
               </button>
+              {user && <span className="soctop__voice"><VoicePicker size={34} /></span>}
               {user && <Notifications />}
               {user && <ProfileMenu name={user.displayName} onSignOut={() => void signOut()} />}
             </div>
-          </div>
-
-          {/* Who you are here, and what is waiting - the banner's job now,
-              rather than a slogan. The avatar switches your voice for the
-              whole tab. */}
-          <div className="soctop__pulse">
-            <VoicePicker size={38} />
-            <button type="button" className="soctop__find" onClick={() => setSearching(true)}>
-              <span className="soctop__hi">Hey {first} 👋</span>
-              <span className="soctop__hint">
-                <Icon name="search" size={13} /> Find people, shops and forums
-              </span>
-            </button>
-          </div>
-          <div className="soctop__chips">
-            <button type="button" className="soctop__chip" onClick={() => onView('messages')}>
-              <Icon name="mail" size={13} /> <strong>{count(pulse.messages)}</strong> unread
-            </button>
-            <button type="button" className="soctop__chip" onClick={() => onView('channels')}>
-              <Icon name="megaphone" size={13} /> <strong>{count(pulse.channels)}</strong> new in channels
-            </button>
-            <button type="button" className="soctop__chip" onClick={() => onView('forums')}>
-              <Icon name="forum" size={13} /> <strong>{pulse.forums}</strong> forums
-            </button>
           </div>
 
           <nav className="soctop__tabs" aria-label="Social sections" ref={tabs}>
@@ -363,16 +339,25 @@ export function SocialSearch({ onClose }: { onClose: () => void }) {
  * came in from - and only falls back to `fallback` when there is nowhere to
  * go back to.
  */
-export function RoomBar({ onBack, avatar, title, sub, action, tone = 'shop' }: {
+export function RoomBar({ onBack, avatar, title, sub, action, tone = 'shop', reveal = false }: {
   onBack: () => void;
   avatar: ReactNode;
   title: ReactNode;
   sub?: ReactNode;
   action?: ReactNode;
   tone?: 'shop' | 'forum' | 'chat';
+  /**
+   * Stay out of sight until the room's own header has scrolled away. A room
+   * with a hero already says all of this at the top; the bar is for when the
+   * hero is gone.
+   */
+  reveal?: boolean;
 }) {
+  const past = useScrolledPast(reveal ? REVEAL_AFTER_PX : 0);
+  const shown = !reveal || past;
   return (
-    <div className={`roombar roombar--${tone}`}>
+    <div className={`roombar roombar--${tone}${reveal ? ' roombar--reveal' : ''}${shown ? ' is-on' : ''}`}
+      aria-hidden={!shown}>
       <div className="roombar__in">
         <button type="button" className="roombar__back" aria-label="Back" onClick={onBack}>
           <Icon name="back" size={19} />
@@ -386,6 +371,21 @@ export function RoomBar({ onBack, avatar, title, sub, action, tone = 'shop' }: {
       </div>
     </div>
   );
+}
+
+const REVEAL_AFTER_PX = 150;
+
+/** Whether the page has scrolled further down than `px`. */
+export function useScrolledPast(px: number): boolean {
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    if (px <= 0) return;
+    const check = () => setPast(window.scrollY > px);
+    check();
+    window.addEventListener('scroll', check, { passive: true });
+    return () => window.removeEventListener('scroll', check);
+  }, [px]);
+  return past;
 }
 
 /* ── Long press ────────────────────────────────────────────────────────── */
