@@ -2,7 +2,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { Dispute, QuestState, User } from '../../../shared/models.js';
 import { isCancelledLike, isPlaced, reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import {
-  CARD_XP, TASK_BY_ID, claimKey, dayKey, drawCard, emptyQuestState, packFor, questView, tidyQuestState,
+  CARD_XP, claimKey, dayKey, drawCard, emptyQuestState, packFor, questView, tidyQuestState,
   type QuestFacts, type QuestView,
 } from '../../../shared/quest.js';
 import { getAuthService } from '../auth/index.js';
@@ -24,23 +24,24 @@ type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** Everything the rules count, read from the rows rather than from a tally. */
 async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
-  const [allOrders, likes, follows, posts, wants, pledged, reviewsAbout] = await Promise.all([
+  const [allOrders, likes, follows, posts, wants, pledged, reviewsAbout, pageReviews] = await Promise.all([
     repository.listOrdersForBuyer(user.id),
     repository.listLikesBy(user.id),
-    repository.listFollowedSellerIds(user.id),
+    repository.listFollowsBy(user.id),
     repository.listPostsByAuthor(user.id),
     repository.listWantsBy(user.id),
     repository.listPledgedListingIds(user.id),
     repository.listReviewsAbout(user.id),
+    repository.listStoreReviews(user.id),
   ]);
 
   // Pressing Buy is not an order, and an order called off is not one either.
   const orders = allOrders.filter((order) => isPlaced(order) && !isCancelledLike(order.status));
 
-  // A group buy is a fact about the item, so it is read off the listing.
+  // A pre-order is a fact about the item, so it is read off the listing.
   const listingIds = [...new Set(orders.map((order) => order.listingId))];
   const listings = await Promise.all(listingIds.map((id) => repository.getListing(id)));
-  const groupBuy = new Set(listings.filter((listing) => listing?.preOrder).map((listing) => listing!.id));
+  const preOrder = new Set(listings.filter((listing) => listing?.preOrder).map((listing) => listing!.id));
 
   // Reviews this person wrote live under whoever they wrote about, so they are
   // found through the person's own orders - one small partition read each.
@@ -53,18 +54,20 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
       createdAt: order.placedAt ?? order.createdAt,
       status: order.status,
       totalMinor: order.unitPriceMinor * order.quantity,
-      groupBuy: groupBuy.has(order.listingId),
+      preOrder: preOrder.has(order.listingId),
     })),
     reviewsWritten: written.map((review) => ({ createdAt: review.createdAt })),
-    fiveStarsReceived: reviewsAbout.filter(
-      (review) => review.direction === 'seller_to_buyer' && review.rating === 5 && reviewRevealed(review, false),
-    ).length,
+    ratingsReceived: reviewsAbout
+      .filter((review) => review.direction === 'seller_to_buyer' && reviewRevealed(review, false))
+      .map((review) => review.rating),
+    pageRatings: pageReviews.map((review) => review.rating),
     likes: likes.map((like) => ({ createdAt: like.createdAt })),
-    follows: follows.length,
+    follows: follows.map((follow) => ({ createdAt: follow.createdAt })),
     posts: posts.map((post) => ({ createdAt: post.createdAt })),
-    wants: wants.length,
+    wants: wants.map((want) => ({ createdAt: want.createdAt })),
     pledges: pledged.length,
     disputesLost: user.buyerTrust?.disputesLost ?? 0,
+    collection: (user.collection ?? []).map((item) => ({ addedAt: item.addedAt })),
     hasBio: Boolean(user.bio?.trim()),
     hasTags: (user.tags ?? []).length > 0,
   };
@@ -143,12 +146,13 @@ async function claim(request: HttpRequest, _context: InvocationContext) {
   }
   const taskId = String(body.taskId ?? '');
   const key = claimKey(taskId);
-  if (!key || !TASK_BY_ID.has(taskId)) return error(404, 'not_found', 'No such task.');
+  if (!key) return error(404, 'not_found', 'No such task.');
 
   const state = user.quest ?? emptyQuestState();
   const before = await viewFor(repository, user, state);
   const task = before.tasks.find((entry) => entry.id === taskId);
-  if (!task?.done) return error(409, 'not_done', 'Finish the task first.');
+  if (!task) return error(409, 'not_active', 'That task is not on your list right now.');
+  if (!task.done) return error(409, 'not_done', 'Finish the task first.');
   if (task.claimed) return error(409, 'already_claimed', 'You already collected this one.');
 
   return commit(repository, user, before, {
@@ -249,6 +253,15 @@ function outcomeFor(dispute: Dispute, userId: string): 'won' | 'lost' | 'even' |
   return 'even';
 }
 
+/** An average out of 100, a count, and how many of each star - five first. */
+function ratingSummary(ratings: readonly number[]) {
+  return {
+    average: scoreFrom(ratings),
+    count: ratings.length,
+    stars: [5, 4, 3, 2, 1].map((value) => ratings.filter((rating) => rating === value).length),
+  };
+}
+
 /**
  * GET /api/users/{id}/collector - somebody's collector page, from the record.
  *
@@ -271,9 +284,9 @@ async function collector(request: HttpRequest, _context: InvocationContext) {
   ]);
   const view = questView(user.id, facts, user.quest);
 
-  const asBuyer = reviews
-    .filter((review) => review.direction === 'seller_to_buyer' && reviewRevealed(review, false))
-    .map((review) => review.rating);
+  const visible = reviews.filter((review) => reviewRevealed(review, false));
+  const asBuyer = visible.filter((review) => review.direction === 'seller_to_buyer').map((review) => review.rating);
+  const asSeller = visible.filter((review) => review.direction === 'buyer_to_seller').map((review) => review.rating);
   const theirs = disputes.filter((dispute) => dispute.raisedBy === id || dispute.againstUserId === id);
   const tally = { won: 0, lost: 0, even: 0, open: 0 };
   for (const dispute of theirs) tally[outcomeFor(dispute, id)] += 1;
@@ -288,17 +301,28 @@ async function collector(request: HttpRequest, _context: InvocationContext) {
     progress: view.progress,
     streak: { current: view.streak.current, best: view.streak.best },
     stickers: view.stickers,
-    // One of each card, rarest first: a shelf rather than every duplicate.
-    cards: view.cards.filter((card, index, all) => all.findIndex((other) => other.id === card.id) === index),
+    // One of each card, rarest first, with how many copies: a shelf rather
+    // than every duplicate.
+    cards: view.cards
+      .filter((card, index, all) => all.findIndex((other) => other.id === card.id) === index)
+      .map((card) => ({ ...card, copies: view.cards.filter((other) => other.id === card.id).length })),
     cardCount: view.cards.length,
     sets: view.sets,
+    penalty: view.penalty,
+    // Three kinds of rating, never added together: from sellers (as a buyer),
+    // from buyers (as a seller), and notes anybody left on the page.
+    ratings: {
+      buyer: ratingSummary(asBuyer),
+      seller: ratingSummary(asSeller),
+      page: ratingSummary(facts.pageRatings),
+    },
     stats: {
       rating: scoreFrom(asBuyer),
       ratingCount: asBuyer.length,
       orders: facts.orders.length,
       completed: facts.orders.filter((order) => order.status === 'delivered').length,
       reviewsWritten: facts.reviewsWritten.length,
-      groupBuys: facts.orders.filter((order) => order.groupBuy).length,
+      preOrders: facts.orders.filter((order) => order.preOrder).length,
       following: following.length,
       disputesWon: tally.won,
       disputesLost: tally.lost,

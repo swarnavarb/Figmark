@@ -180,6 +180,41 @@ export interface User extends BaseDocument {
    * is counted from the rows at read time, never stored here.
    */
   quest?: QuestState;
+  /**
+   * Delivered purchases the person chose to show off, as cards on their page.
+   * On the account for the same reason as `quest`: it is read whole, by the
+   * person or by whoever opens their page, and there is no container to spare.
+   */
+  collection?: CollectionItem[];
+  /** The shelves a collection is grouped into, in the order the owner likes. */
+  collectionGroups?: CollectionGroup[];
+}
+
+/**
+ * One delivered purchase, kept as a card.
+ *
+ * The photos and the item's name are copied at the moment it is added, so the
+ * card stays what was bought even if the seller later edits or expires the
+ * listing. The name is the owner's to change; the photos are not.
+ */
+export interface CollectionItem {
+  /** The order it came from - one card per order. */
+  orderId: string;
+  listingId: string;
+  /** What the owner calls it, shown under the picture. */
+  name: string;
+  /** The item's name as it was sold, kept so a rename can always be undone. */
+  itemName: string;
+  photos: string[];
+  groupId: string | null;
+  /** When it was delivered: the day it could first be added. */
+  deliveredAt: string;
+  addedAt: string;
+}
+
+export interface CollectionGroup {
+  id: string;
+  name: string;
 }
 
 /** What the collector game has to remember, because no other row records it. */

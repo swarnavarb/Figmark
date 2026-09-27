@@ -3428,8 +3428,15 @@ await check('suspending is reversible, and does not touch what they made', async
 });
 
 await check('one resource can be removed without touching the account', async () => {
+  // Something nobody has bought: a bought item can only be expired (below).
+  const repository = await getRepository();
+  const template = await repository.getListing('lst_mecha_kit');
+  await repository.createListing({
+    ...template, id: 'lst_admin_victim', title: 'Never bought', soldCount: 0,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
   const before = (await adminUser(req({ headers: auth, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
-  const victim = before.listings[0];
+  const victim = before.listings.find((listing) => listing.id === 'lst_admin_victim');
 
   const gone = await adminDeleteResource(req({
     headers: auth, body: { kind: 'listing', id: victim.id, ownerId: 'usr_kaiju' },
@@ -3439,6 +3446,15 @@ await check('one resource can be removed without touching the account', async ()
   const after = (await adminUser(req({ headers: auth, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
   assert.equal(after.listings.length, before.listings.length - 1);
   assert.equal(after.user.id, 'usr_kaiju', 'the account is untouched');
+});
+
+await check('a bought item cannot be deleted, only expired', async () => {
+  const refused = await adminDeleteResource(req({
+    headers: auth, body: { kind: 'listing', id: 'lst_dragon_knight', ownerId: 'usr_kaiju' },
+  }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'listing_purchased');
+  assert.ok(await (await getRepository()).getListing('lst_dragon_knight'), 'and it is still there');
 });
 
 await check('deleting an account takes what it made and frees its identifiers', async () => {
@@ -7470,7 +7486,7 @@ await check('checking in pays once a day and starts a streak', async () => {
   const first = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
   assert.equal(first.gained, 10);
   assert.equal(first.view.streak.current, 1);
-  assert.ok(first.view.tasks.find((task) => task.id === 'checkin').claimed);
+  assert.ok(first.view.tasks.find((task) => task.id === 'daily-checkin').claimed);
   const again = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
   assert.equal(again.gained, 0);
   assert.equal(again.already, true);
@@ -7491,18 +7507,49 @@ await check('the daily reveal gives one card, the same one however often it is a
 
 await check('a task pays only once it is done, and only once', async () => {
   const player = await newBuyer('Quest Saver');
-  const early = await questClaim(req({ headers: player.headers, body: { taskId: 'save' } }), ctx);
+  const early = await questClaim(req({ headers: player.headers, body: { taskId: 'ms-saves-10' } }), ctx);
   assert.equal(early.status, 409);
   assert.equal(early.jsonBody.error, 'not_done');
   assert.equal((await questClaim(req({ headers: player.headers, body: { taskId: 'nope' } }), ctx)).status, 404);
+  assert.equal((await questClaim(req({ headers: player.headers, body: { taskId: 'ms-saves-25' } }), ctx)).jsonBody.error,
+    'not_active', 'a later step is not on the list until the one before it is collected');
 
-  await toggleLike(req({ headers: player.headers, params: { id: 'lst_mecha_kit' } }), ctx);
+  const repository = await getRepository();
+  const ids = (await repository.listListings({ limit: 20 })).map((listing) => listing.id).slice(0, 10);
+  for (const id of ids) await toggleLike(req({ headers: player.headers, params: { id } }), ctx);
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(before.tasks.find((task) => task.id === 'save').claimable, true);
-  const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'save' } }), ctx)).jsonBody;
-  assert.equal(claimed.gained, 15);
-  const twice = await questClaim(req({ headers: player.headers, body: { taskId: 'save' } }), ctx);
-  assert.equal(twice.jsonBody.error, 'already_claimed');
+  assert.equal(before.tasks.find((task) => task.id === 'ms-saves-10').claimable, true);
+  const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'ms-saves-10' } }), ctx)).jsonBody;
+  assert.equal(claimed.gained, 50);
+  const twice = await questClaim(req({ headers: player.headers, body: { taskId: 'ms-saves-10' } }), ctx);
+  assert.equal(twice.status, 409);
+  const next = claimed.view.tasks.find((task) => task.id.startsWith('ms-saves-'));
+  assert.equal(next.id, 'ms-saves-25', 'the ladder moves on to a bigger number');
+  assert.deepEqual(next.step, { index: 2, of: 4 });
+});
+
+await check('there are daily, weekly, monthly and milestone quests, and the week runs Monday to Sunday', async () => {
+  const player = await newBuyer('Quest Calendar');
+  const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  const kinds = (kind) => view.tasks.filter((task) => task.kind === kind).length;
+  assert.equal(kinds('daily'), 4, 'check in, reveal and two from the pool');
+  assert.equal(kinds('weekly'), 4);
+  assert.equal(kinds('monthly'), 3);
+  assert.ok(kinds('milestone') >= 8);
+  assert.equal(view.streak.week.length, 7);
+  const monday = new Date(`${view.streak.week[0].day}T12:00:00Z`).getUTCDay();
+  assert.equal(monday, 1, 'the strip starts on a Monday');
+  assert.equal(view.streak.week.filter((day) => day.today).length, 1);
+});
+
+await check('stickers have tiers and say what they mean', async () => {
+  const player = await newBuyer('Quest Stickers');
+  const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  for (const sticker of view.stickers) {
+    assert.ok(sticker.meaning.length > 10 && sticker.how.length > 10, `${sticker.id} explains itself`);
+    assert.equal(sticker.tier, 0);
+  }
+  assert.deepEqual(view.stickers.find((sticker) => sticker.id === 'haul').tiers, [1, 10, 50]);
 });
 
 await check('an order earns XP, a milestone, and a pack that opens exactly once', async () => {
@@ -7510,19 +7557,22 @@ await check('an order earns XP, a milestone, and a pack that opens exactly once'
   await createOrder(req({ headers: player.headers, body: { listingId: 'lst_kbeauty', quantity: 1 } }), ctx);
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(view.xp, 40, 'an order placed is forty');
-  assert.ok(view.stickers.find((sticker) => sticker.id === 'first-haul').earned);
-  assert.equal(view.tasks.find((task) => task.id === 'first-order').claimable, true);
+  const haul = view.stickers.find((sticker) => sticker.id === 'haul');
+  assert.equal(haul.tier, 1, 'bronze after one order');
+  assert.equal(haul.next, 10);
+  assert.equal(view.tasks.find((task) => task.id === 'ms-orders-1').claimable, true);
 
-  const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'first-order' } }), ctx)).jsonBody;
+  const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx)).jsonBody;
   assert.equal(claimed.levelAfter, 2, '40 + 100 crosses into level two');
   const packIds = claimed.view.packs.map((pack) => pack.id).sort();
-  assert.deepEqual(packIds, ['level-2', 'task-first-order']);
+  assert.deepEqual(packIds, ['level-2', 'task-ms-orders-1']);
 
-  const opened = await questOpen(req({ headers: player.headers, body: { packId: 'task-first-order' } }), ctx);
+  const opened = await questOpen(req({ headers: player.headers, body: { packId: 'task-ms-orders-1' } }), ctx);
   assert.equal(opened.status, 200);
   assert.notEqual(opened.jsonBody.card.rarity, 'common');
+  assert.ok(opened.jsonBody.card.lore, 'every card has a line of its own');
   assert.equal(opened.jsonBody.view.packs.length, 1);
-  assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'task-first-order' } }), ctx)).status, 404);
+  assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'task-ms-orders-1' } }), ctx)).status, 404);
   assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'level-9' } }), ctx)).status, 404,
     'a pack for a level not reached is not there to open');
 });
@@ -7543,7 +7593,9 @@ await check('the collector page is public and shows the record, not the private 
   const body = page.jsonBody;
   assert.equal(body.level, 1);
   assert.equal(body.streak.current, 1);
-  for (const key of ['orders', 'completed', 'disputesWon', 'disputesLost', 'rating', 'memberSince']) {
+  assert.deepEqual(body.ratings.buyer, { average: null, count: 0, stars: [0, 0, 0, 0, 0] });
+  assert.ok('seller' in body.ratings && 'page' in body.ratings);
+  for (const key of ['orders', 'completed', 'preOrders', 'disputesWon', 'disputesLost', 'rating', 'memberSince']) {
     assert.ok(key in body.stats, `stats carries ${key}`);
   }
   assert.equal(body.tasks, undefined, 'tasks are the player\'s own business');
@@ -7552,6 +7604,94 @@ await check('the collector page is public and shows the record, not the private 
   const posts = await personPosts(req({ params: { id: player.id } }), ctx);
   assert.equal(posts.status, 200);
   assert.deepEqual(posts.jsonBody.posts, []);
+});
+
+const deliveredOrderFor = async (player, listingId) => {
+  const placed = (await createOrder(req({ headers: player.headers, body: { listingId, quantity: 1 } }), ctx)).jsonBody.order;
+  const repository = await getRepository();
+  const now = new Date().toISOString();
+  return repository.updateOrder({ ...placed, status: 'delivered', completedAt: now, updatedAt: now });
+};
+
+await check('bad ratings and lost disputes take XP away, and can take a level with them', async () => {
+  const player = await newBuyer('Quest Rated');
+  const order = await deliveredOrderFor(player, 'lst_kbeauty');
+  await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx);
+  const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  assert.equal(before.xp, 180, '40 placed + 40 received + 100 milestone');
+  assert.equal(before.level, 2);
+
+  const repository = await getRepository();
+  const now = new Date().toISOString();
+  await repository.createReview({
+    id: 'rev_quest_bad', subjectId: player.id, authorId: 'usr_gadgetgrid', orderId: order.id,
+    direction: 'seller_to_buyer', rating: 1, body: 'Never paid the balance.', revealed: true, revealAt: now,
+    createdAt: now, updatedAt: now,
+  });
+  const after = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  assert.equal(after.xp, 120, 'a one-star rating costs 60');
+  assert.equal(after.penalty, 60);
+  const line = after.breakdown.find((entry) => entry.label === 'Low ratings from sellers');
+  assert.equal(line.xp, -60, 'and the breakdown says so');
+
+  const user = await repository.getUserById(player.id);
+  await repository.updateUser({ ...user, buyerTrust: { ...user.buyerTrust, disputesLost: 1 } });
+  const lower = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  assert.equal(lower.xp, 40);
+  assert.equal(lower.level, 1, 'ranked back down');
+  assert.equal(lower.packs.some((pack) => pack.id === 'level-2'), false, 'and the unopened level pack goes with it');
+  assert.equal(lower.stickers.find((sticker) => sticker.id === 'clean-record').tier, 0);
+
+  const page = (await collectorOf(req({ params: { id: player.id } }), ctx)).jsonBody;
+  assert.deepEqual(page.ratings.buyer.stars, [0, 0, 0, 0, 1]);
+  assert.equal(page.ratings.buyer.average, 20);
+});
+
+await check('a delivered purchase can go in the collection, once, and be renamed, shelved and removed', async () => {
+  const {
+    myCollectionRoute: myCollection, collectionAddRoute: addToCollection, collectionEditRoute: editCollection,
+    collectionRemoveRoute: removeFromCollection, collectionGroupsRoute: collectionGroups,
+    publicCollectionRoute: publicCollection,
+  } = await import(new URL('collection-routes.js', fns));
+  const player = await newBuyer('Quest Curator');
+  const pending = (await createOrder(req({ headers: player.headers, body: { listingId: 'lst_handheld', quantity: 1 } }), ctx)).jsonBody.order;
+  const refused = await addToCollection(req({ headers: player.headers, body: { orderId: pending.id } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'not_delivered');
+
+  const order = await deliveredOrderFor(player, 'lst_kbeauty');
+  const mine = (await myCollection(req({ headers: player.headers }), ctx)).jsonBody;
+  assert.deepEqual(mine.candidates.map((entry) => entry.orderId), [order.id], 'only the delivered one is offered');
+
+  const added = await addToCollection(req({ headers: player.headers, body: { orderId: order.id } }), ctx);
+  assert.equal(added.status, 201);
+  assert.equal(added.jsonBody.item.name, order.itemName, 'named after the item until renamed');
+  assert.equal(added.jsonBody.item.deliveredAt, order.completedAt);
+  assert.equal((await addToCollection(req({ headers: player.headers, body: { orderId: order.id } }), ctx)).status, 409);
+  const other = await newBuyer('Quest Thief');
+  assert.equal((await addToCollection(req({ headers: other.headers, body: { orderId: order.id } }), ctx)).status, 404,
+    'nobody can add somebody else\'s purchase');
+
+  const shelf = (await collectionGroups(req({ headers: player.headers, body: { action: 'create', name: 'Skincare' } }), ctx)).jsonBody.group;
+  const moved = (await editCollection(req({ headers: player.headers,
+    body: { orderId: order.id, name: '  My Seoul haul  ', groupId: shelf.id } }), ctx)).jsonBody.item;
+  assert.equal(moved.name, 'My Seoul haul');
+  assert.equal(moved.groupId, shelf.id);
+
+  const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  assert.equal(view.stickers.find((sticker) => sticker.id === 'curator').tier, 1);
+  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === 10));
+
+  const seen = (await publicCollection(req({ params: { id: player.id } }), ctx)).jsonBody;
+  assert.equal(seen.items.length, 1);
+  assert.equal(seen.groups[0].name, 'Skincare');
+
+  await collectionGroups(req({ headers: player.headers, body: { action: 'delete', id: shelf.id } }), ctx);
+  const unshelved = (await publicCollection(req({ params: { id: player.id } }), ctx)).jsonBody;
+  assert.equal(unshelved.items[0].groupId, null, 'deleting a shelf keeps what was on it');
+
+  const removed = await removeFromCollection(req({ headers: player.headers, body: { orderId: order.id } }), ctx);
+  assert.equal(removed.jsonBody.items.length, 0);
 });
 
 await check('the leaderboard ranks collectors by XP', async () => {

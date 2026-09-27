@@ -93,6 +93,10 @@ const {
   questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questOpenRoute,
   questLeaderboardRoute, collectorRoute,
 } = await import(new URL('quest-routes.js', apiRoot));
+const {
+  publicCollectionRoute, myCollectionRoute, collectionAddRoute, collectionEditRoute,
+  collectionRemoveRoute, collectionGroupsRoute,
+} = await import(new URL('collection-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -204,6 +208,12 @@ const routes = [
   ['POST', '/api/quest/open', questOpenRoute],
   ['GET', '/api/quest/leaderboard', questLeaderboardRoute],
   ['GET', '/api/users/:id/collector', collectorRoute],
+  ['GET', '/api/users/:id/collection', publicCollectionRoute],
+  ['GET', '/api/me/collection', myCollectionRoute],
+  ['POST', '/api/me/collection/add', collectionAddRoute],
+  ['POST', '/api/me/collection/edit', collectionEditRoute],
+  ['POST', '/api/me/collection/remove', collectionRemoveRoute],
+  ['POST', '/api/me/collection/groups', collectionGroupsRoute],
   ['GET', '/api/ops/users', adminUsersRoute],
   ['GET', '/api/ops/users/:id', adminUserDetailRoute],
   ['POST', '/api/ops/users/:id/suspend', adminSuspendRoute],

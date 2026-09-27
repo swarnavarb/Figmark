@@ -1736,6 +1736,13 @@ export class CosmosRepository implements Repository {
     return resources.map((follow) => follow.sellerId);
   }
 
+  async listFollowsBy(followerId: string): Promise<Follow[]> {
+    const { resources } = await this.container('follows')
+      .items.query<Follow>({ query: 'SELECT * FROM c' }, { partitionKey: followerId })
+      .fetchAll();
+    return resources;
+  }
+
   async listFollowerIds(sellerId: string): Promise<string[]> {
     const { resources } = await this.container('follows')
       .items.query<string>({

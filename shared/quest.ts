@@ -212,34 +212,36 @@ export interface CardDef {
   rarity: CardRarity;
   /** Which drawn glyph the app puts on the face. */
   glyph: 'mech' | 'beast' | 'card' | 'shoe' | 'box' | 'star';
+  /** One line of flavour, shown when the card is opened. */
+  lore: string;
 }
 
 /** Six per set: two common, two rare, one epic, one legendary. */
 export const CARDS: readonly CardDef[] = [
-  { id: 'mecha-1', name: 'Scout Frame', set: 'mecha', rarity: 'common', glyph: 'mech' },
-  { id: 'mecha-2', name: 'Hangar Drone', set: 'mecha', rarity: 'common', glyph: 'box' },
-  { id: 'mecha-3', name: 'Wing Lancer', set: 'mecha', rarity: 'rare', glyph: 'mech' },
-  { id: 'mecha-4', name: 'Beam Rifle', set: 'mecha', rarity: 'rare', glyph: 'star' },
-  { id: 'mecha-5', name: 'Zero Custom', set: 'mecha', rarity: 'epic', glyph: 'mech' },
-  { id: 'mecha-6', name: 'Perfect Grade', set: 'mecha', rarity: 'legendary', glyph: 'mech' },
-  { id: 'kaiju-1', name: 'Tide Pup', set: 'kaiju', rarity: 'common', glyph: 'beast' },
-  { id: 'kaiju-2', name: 'Reef Crawler', set: 'kaiju', rarity: 'common', glyph: 'beast' },
-  { id: 'kaiju-3', name: 'Storm Wing', set: 'kaiju', rarity: 'rare', glyph: 'beast' },
-  { id: 'kaiju-4', name: 'Magma Horn', set: 'kaiju', rarity: 'rare', glyph: 'beast' },
-  { id: 'kaiju-5', name: 'Deep King', set: 'kaiju', rarity: 'epic', glyph: 'beast' },
-  { id: 'kaiju-6', name: 'Dragon Knight', set: 'kaiju', rarity: 'legendary', glyph: 'beast' },
-  { id: 'arcana-1', name: 'The Novice', set: 'arcana', rarity: 'common', glyph: 'card' },
-  { id: 'arcana-2', name: 'The Trader', set: 'arcana', rarity: 'common', glyph: 'card' },
-  { id: 'arcana-3', name: 'The Seer', set: 'arcana', rarity: 'rare', glyph: 'star' },
-  { id: 'arcana-4', name: 'The Vault', set: 'arcana', rarity: 'rare', glyph: 'box' },
-  { id: 'arcana-5', name: 'The Crown', set: 'arcana', rarity: 'epic', glyph: 'card' },
-  { id: 'arcana-6', name: 'Foil Ace', set: 'arcana', rarity: 'legendary', glyph: 'card' },
-  { id: 'street-1', name: 'Daily Runner', set: 'street', rarity: 'common', glyph: 'shoe' },
-  { id: 'street-2', name: 'Canvas Low', set: 'street', rarity: 'common', glyph: 'shoe' },
-  { id: 'street-3', name: 'Retro High', set: 'street', rarity: 'rare', glyph: 'shoe' },
-  { id: 'street-4', name: 'Deadstock Box', set: 'street', rarity: 'rare', glyph: 'box' },
-  { id: 'street-5', name: 'Collab Pair', set: 'street', rarity: 'epic', glyph: 'shoe' },
-  { id: 'street-6', name: 'Grail', set: 'street', rarity: 'legendary', glyph: 'shoe' },
+  { id: 'mecha-1', name: 'Scout Frame', set: 'mecha', rarity: 'common', glyph: 'mech', lore: 'Every hangar starts with one frame and a lot of plans.' },
+  { id: 'mecha-2', name: 'Hangar Drone', set: 'mecha', rarity: 'common', glyph: 'box', lore: 'Keeps the runners sorted so you never lose a part.' },
+  { id: 'mecha-3', name: 'Wing Lancer', set: 'mecha', rarity: 'rare', glyph: 'mech', lore: 'Built for speed; the first kit most collectors finish.' },
+  { id: 'mecha-4', name: 'Beam Rifle', set: 'mecha', rarity: 'rare', glyph: 'star', lore: 'The accessory every display shelf ends up needing.' },
+  { id: 'mecha-5', name: 'Zero Custom', set: 'mecha', rarity: 'epic', glyph: 'mech', lore: 'A custom build that only shows up in limited runs.' },
+  { id: 'mecha-6', name: 'Perfect Grade', set: 'mecha', rarity: 'legendary', glyph: 'mech', lore: 'The grail of the hangar: the kit people wait years for.' },
+  { id: 'kaiju-1', name: 'Tide Pup', set: 'kaiju', rarity: 'common', glyph: 'beast', lore: 'Small, loud, and always first off the boat.' },
+  { id: 'kaiju-2', name: 'Reef Crawler', set: 'kaiju', rarity: 'common', glyph: 'beast', lore: 'Found in every mixed lot, loved by every collector.' },
+  { id: 'kaiju-3', name: 'Storm Wing', set: 'kaiju', rarity: 'rare', glyph: 'beast', lore: 'Rides the monsoon winds into the import season.' },
+  { id: 'kaiju-4', name: 'Magma Horn', set: 'kaiju', rarity: 'rare', glyph: 'beast', lore: 'Glows when a pre-order is about to fill.' },
+  { id: 'kaiju-5', name: 'Deep King', set: 'kaiju', rarity: 'epic', glyph: 'beast', lore: 'Rules the deep end of the catalogue.' },
+  { id: 'kaiju-6', name: 'Dragon Knight', set: 'kaiju', rarity: 'legendary', glyph: 'beast', lore: 'The resin legend that sells out before it lands.' },
+  { id: 'arcana-1', name: 'The Novice', set: 'arcana', rarity: 'common', glyph: 'card', lore: 'The first card of every journey through the market.' },
+  { id: 'arcana-2', name: 'The Trader', set: 'arcana', rarity: 'common', glyph: 'card', lore: 'Knows a fair price when they see one.' },
+  { id: 'arcana-3', name: 'The Seer', set: 'arcana', rarity: 'rare', glyph: 'star', lore: 'Sees which drops will be legendary before they are.' },
+  { id: 'arcana-4', name: 'The Vault', set: 'arcana', rarity: 'rare', glyph: 'box', lore: 'Guards everything you have ever saved.' },
+  { id: 'arcana-5', name: 'The Crown', set: 'arcana', rarity: 'epic', glyph: 'card', lore: 'Worn by those who complete what they start.' },
+  { id: 'arcana-6', name: 'Foil Ace', set: 'arcana', rarity: 'legendary', glyph: 'card', lore: 'The foil every binder is built around.' },
+  { id: 'street-1', name: 'Daily Runner', set: 'street', rarity: 'common', glyph: 'shoe', lore: 'Worn every day, collected by everybody.' },
+  { id: 'street-2', name: 'Canvas Low', set: 'street', rarity: 'common', glyph: 'shoe', lore: 'A classic that never really goes out.' },
+  { id: 'street-3', name: 'Retro High', set: 'street', rarity: 'rare', glyph: 'shoe', lore: 'The pair that started the hunt.' },
+  { id: 'street-4', name: 'Deadstock Box', set: 'street', rarity: 'rare', glyph: 'box', lore: 'Never worn, never opened, never selling cheap.' },
+  { id: 'street-5', name: 'Collab Pair', set: 'street', rarity: 'epic', glyph: 'shoe', lore: 'Two names on one tongue label; gone in minutes.' },
+  { id: 'street-6', name: 'Grail', set: 'street', rarity: 'legendary', glyph: 'shoe', lore: 'The pair you only talk about in whispers.' },
 ];
 
 export const CARD_BY_ID = new Map(CARDS.map((card) => [card.id, card]));
@@ -295,33 +297,58 @@ export function drawCard(userId: string, packId: string, min: CardRarity = 'comm
  */
 export interface QuestFacts {
   /** Orders the person actually placed - checkouts nobody went ahead with are not orders. */
-  orders: { createdAt: string; status: string; totalMinor: number; groupBuy: boolean }[];
+  orders: { createdAt: string; status: string; totalMinor: number; preOrder: boolean }[];
   reviewsWritten: { createdAt: string }[];
-  fiveStarsReceived: number;
+  /** Stars sellers gave this person after completed orders (revealed ones only), 1-5. */
+  ratingsReceived: number[];
+  /** Stars left on their page by anybody, 1-5. Counted apart, and weighed lighter. */
+  pageRatings: number[];
   likes: { createdAt: string }[];
-  follows: number;
+  follows: { createdAt: string }[];
   posts: { createdAt: string }[];
-  wants: number;
+  wants: { createdAt: string }[];
   pledges: number;
   disputesLost: number;
+  /** Delivered purchases the person has put in their collection. */
+  collection: { addedAt: string }[];
   hasBio: boolean;
   hasTags: boolean;
 }
 
+/** XP for finishing a card set - the reward that gives a set its point. */
+export const SET_BONUS_XP = 200;
+
 export function emptyQuestState(): QuestState {
   return { checkIns: [], claimed: {}, cards: [] };
+}
+
+/** YYYY-MM of the India month an instant falls in. */
+export function monthKey(at: Date | string | number): string {
+  return dayKey(at).slice(0, 7);
 }
 
 /* -------------------------------------------------------------------------- */
 /* Streak                                                                     */
 /* -------------------------------------------------------------------------- */
 
+export interface StreakDay {
+  day: string;
+  done: boolean;
+  today: boolean;
+  /** Later this week, not reached yet. */
+  future: boolean;
+}
+
 export interface Streak {
   current: number;
   best: number;
   checkedInToday: boolean;
-  /** The last seven India days, oldest first, and whether each was checked in. */
-  week: { day: string; done: boolean }[];
+  /** This week, Monday to Sunday (India time). */
+  week: StreakDay[];
+}
+
+function nextDay(key: string): string {
+  return new Date(Date.parse(`${key}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
 }
 
 export function streakOf(checkIns: readonly string[], now: number = Date.now()): Streak {
@@ -347,11 +374,13 @@ export function streakOf(checkIns: readonly string[], now: number = Date.now()):
     last = day;
   }
 
-  const week: Streak['week'] = [];
-  let day = today;
+  // The week strip runs Monday to Sunday, like a calendar, rather than
+  // "the last seven days" - so it fills left to right as the week goes on.
+  const week: StreakDay[] = [];
+  let day = weekKey(now);
   for (let index = 0; index < 7; index += 1) {
-    week.unshift({ day, done: days.has(day) });
-    day = previousDay(day);
+    week.push({ day, done: days.has(day), today: day === today, future: day > today });
+    day = nextDay(day);
   }
 
   return { current, best: Math.max(best, current), checkedInToday, week };
@@ -366,7 +395,7 @@ export function checkInXp(streakDay: number): number {
 /* Tasks                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export type TaskKind = 'daily' | 'weekly' | 'milestone';
+export type TaskKind = 'daily' | 'weekly' | 'monthly' | 'milestone';
 
 export interface TaskView {
   id: string;
@@ -384,149 +413,282 @@ export interface TaskView {
   href: string | null;
   /** Milestones hand out a card pack as well as XP. */
   pack: boolean;
+  /** For a milestone ladder: which step this is, of how many. */
+  step?: { index: number; of: number };
 }
 
-interface TaskDef {
-  id: string;
-  kind: TaskKind;
-  title: string;
-  blurb: string;
-  xp: number;
-  goal: number;
-  href: string | null;
-  /** Claimed automatically by the action itself (checking in, revealing). */
-  auto?: boolean;
-  measure: (context: MeasureContext) => number;
-}
+type Metric = 'order' | 'preorder' | 'review' | 'save' | 'follow' | 'post' | 'want' | 'collect' | 'checkin';
 
 interface MeasureContext {
   facts: QuestFacts;
   state: QuestState;
-  today: string;
-  week: string;
   streak: Streak;
+  now: number;
 }
 
-const inDay = (at: string, today: string) => dayKey(at) === today;
-const inWeek = (at: string, week: string) => weekKey(at) === week;
+/** When each fact happened, so a count can be limited to today, this week or this month. */
+function stampsFor(metric: Metric, { facts, state }: MeasureContext): string[] {
+  switch (metric) {
+    case 'order': return facts.orders.map((order) => order.createdAt);
+    case 'preorder': return facts.orders.filter((order) => order.preOrder).map((order) => order.createdAt);
+    case 'review': return facts.reviewsWritten.map((review) => review.createdAt);
+    case 'save': return facts.likes.map((like) => like.createdAt);
+    case 'follow': return facts.follows.map((follow) => follow.createdAt);
+    case 'post': return facts.posts.map((post) => post.createdAt);
+    case 'want': return facts.wants.map((want) => want.createdAt);
+    case 'collect': return facts.collection.map((item) => item.addedAt);
+    case 'checkin': return state.checkIns.map((day) => `${day}T12:00:00+05:30`);
+  }
+}
 
-const TASKS: readonly TaskDef[] = [
-  {
-    id: 'checkin', kind: 'daily', title: 'Check in', blurb: 'Open the vault and keep your streak alive.',
-    xp: 10, goal: 1, href: null, auto: true,
-    measure: ({ streak }) => (streak.checkedInToday ? 1 : 0),
-  },
-  {
-    id: 'reveal', kind: 'daily', title: 'Reveal today\'s loot', blurb: 'Flip the daily drop for a free card.',
-    xp: 15, goal: 1, href: null, auto: true,
-    measure: ({ state, today }) => (state.cards.some((card) => card.packId === `daily-${today}`) ? 1 : 0),
-  },
-  {
-    id: 'save', kind: 'daily', title: 'Save something you like', blurb: 'Tap the chest on any listing.',
-    xp: 15, goal: 1, href: '/',
-    measure: ({ facts, today }) => facts.likes.filter((like) => inDay(like.createdAt, today)).length,
-  },
-  {
-    id: 'order', kind: 'weekly', title: 'Place an order', blurb: 'Buy anything from the catalogue this week.',
-    xp: 60, goal: 1, href: '/',
-    measure: ({ facts, week }) => facts.orders.filter((order) => inWeek(order.createdAt, week)).length,
-  },
-  {
-    id: 'group', kind: 'weekly', title: 'Join a group buy', blurb: 'Get into a pre-order before it fills.',
-    xp: 40, goal: 1, href: '/?kind=pre_order',
-    measure: ({ facts, week }) =>
-      facts.orders.filter((order) => order.groupBuy && inWeek(order.createdAt, week)).length,
-  },
-  {
-    id: 'social', kind: 'weekly', title: 'Post in Social', blurb: 'Share a haul, ask a question, start a thread.',
-    xp: 25, goal: 1, href: '/social',
-    measure: ({ facts, week }) => facts.posts.filter((post) => inWeek(post.createdAt, week)).length,
-  },
-  {
-    id: 'streak5', kind: 'weekly', title: 'Check in five days', blurb: 'Five check-ins in one week.',
-    xp: 50, goal: 5, href: null,
-    measure: ({ state, week }) => state.checkIns.filter((day) => weekKey(`${day}T12:00:00+05:30`) === week).length,
-  },
-  {
-    id: 'first-order', kind: 'milestone', title: 'First haul', blurb: 'Place your first order.',
-    xp: 100, goal: 1, href: '/', measure: ({ facts }) => facts.orders.length,
-  },
-  {
-    id: 'five-orders', kind: 'milestone', title: 'Regular', blurb: 'Place five orders.',
-    xp: 250, goal: 5, href: '/', measure: ({ facts }) => facts.orders.length,
-  },
-  {
-    id: 'first-review', kind: 'milestone', title: 'Critic', blurb: 'Review a seller after an order arrives.',
-    xp: 80, goal: 1, href: '/purchases', measure: ({ facts }) => facts.reviewsWritten.length,
-  },
-  {
-    id: 'five-reviews', kind: 'milestone', title: 'Trusted voice', blurb: 'Write five reviews.',
-    xp: 200, goal: 5, href: '/purchases', measure: ({ facts }) => facts.reviewsWritten.length,
-  },
-  {
-    id: 'ten-saves', kind: 'milestone', title: 'Wishlist', blurb: 'Save ten items.',
-    xp: 60, goal: 10, href: '/', measure: ({ facts }) => facts.likes.length,
-  },
-  {
-    id: 'three-follows', kind: 'milestone', title: 'Fan club', blurb: 'Follow three shops.',
-    xp: 60, goal: 3, href: '/', measure: ({ facts }) => facts.follows,
-  },
-  {
-    id: 'profile', kind: 'milestone', title: 'Show yourself', blurb: 'Add a bio and a tag to your page.',
-    xp: 50, goal: 2, href: '/me', measure: ({ facts }) => Number(facts.hasBio) + Number(facts.hasTags),
-  },
-  {
-    id: 'want', kind: 'milestone', title: 'Bounty hunter', blurb: 'Post something you are hunting for.',
-    xp: 40, goal: 1, href: '/wanted', measure: ({ facts }) => facts.wants,
-  },
-  {
-    id: 'streak7', kind: 'milestone', title: 'On fire', blurb: 'Check in seven days in a row.',
-    xp: 150, goal: 7, href: null, measure: ({ streak }) => streak.best,
-  },
+function periodOf(kind: TaskKind, now: number): string {
+  if (kind === 'daily') return dayKey(now);
+  if (kind === 'weekly') return weekKey(now);
+  if (kind === 'monthly') return monthKey(now);
+  return 'once';
+}
+
+function countIn(metric: Metric, kind: TaskKind, context: MeasureContext): number {
+  const stamps = stampsFor(metric, context);
+  if (kind === 'milestone') return stamps.length;
+  const period = periodOf(kind, context.now);
+  const keyOf = kind === 'daily' ? dayKey : kind === 'weekly' ? weekKey : monthKey;
+  return stamps.filter((at) => keyOf(at) === period).length;
+}
+
+interface Template {
+  key: string;
+  title: string;
+  blurb: string;
+  metric: Metric;
+  goal: number;
+  xp: number;
+  href: string | null;
+}
+
+/* Daily: checking in and the reveal every day, plus two from this pool. */
+const DAILY_POOL: readonly Template[] = [
+  { key: 'save1', title: 'Save something you like', blurb: 'Tap the chest on any listing.', metric: 'save', goal: 1, xp: 15, href: '/' },
+  { key: 'save3', title: 'Save three finds', blurb: 'Build a wishlist: save three listings today.', metric: 'save', goal: 3, xp: 30, href: '/' },
+  { key: 'follow1', title: 'Follow a new shop', blurb: 'Follow a shop to see its drops first.', metric: 'follow', goal: 1, xp: 20, href: '/' },
+  { key: 'post1', title: 'Say something in Social', blurb: 'Post a haul, a question or a tip.', metric: 'post', goal: 1, xp: 25, href: '/social' },
+  { key: 'order1', title: 'Buy something today', blurb: 'Any order from the catalogue counts.', metric: 'order', goal: 1, xp: 40, href: '/' },
+  { key: 'review1', title: 'Rate a seller', blurb: 'Review an order that has arrived.', metric: 'review', goal: 1, xp: 30, href: '/purchases' },
+  { key: 'collect1', title: 'Add to your collection', blurb: 'Put a delivered item in your collection.', metric: 'collect', goal: 1, xp: 25, href: '/me?tab=collection' },
 ];
 
-export const TASK_BY_ID = new Map(TASKS.map((task) => [task.id, task]));
+/* Weekly: five check-ins every week, plus three from this pool. */
+const WEEKLY_POOL: readonly Template[] = [
+  { key: 'order1', title: 'Place an order', blurb: 'Buy anything from the catalogue this week.', metric: 'order', goal: 1, xp: 60, href: '/' },
+  { key: 'order3', title: 'Three orders', blurb: 'Place three orders this week.', metric: 'order', goal: 3, xp: 150, href: '/' },
+  { key: 'preorder1', title: 'Join a pre-order', blurb: 'Get into a pre-order before it fills.', metric: 'preorder', goal: 1, xp: 50, href: '/?kind=pre_order' },
+  { key: 'review2', title: 'Review two sellers', blurb: 'Rate two orders that arrived.', metric: 'review', goal: 2, xp: 60, href: '/purchases' },
+  { key: 'save10', title: 'Save ten finds', blurb: 'Save ten listings this week.', metric: 'save', goal: 10, xp: 40, href: '/' },
+  { key: 'follow3', title: 'Follow three shops', blurb: 'Find three new shops to follow.', metric: 'follow', goal: 3, xp: 40, href: '/' },
+  { key: 'post3', title: 'Three posts', blurb: 'Post three times in Social.', metric: 'post', goal: 3, xp: 50, href: '/social' },
+  { key: 'collect2', title: 'Grow your collection', blurb: 'Add two delivered items to your collection.', metric: 'collect', goal: 2, xp: 50, href: '/me?tab=collection' },
+];
+
+/* Monthly: three of these, bigger goals and bigger rewards. */
+const MONTHLY_POOL: readonly Template[] = [
+  { key: 'order5', title: 'Five orders this month', blurb: 'Place five orders before the month ends.', metric: 'order', goal: 5, xp: 300, href: '/' },
+  { key: 'checkin20', title: 'Twenty check-ins', blurb: 'Check in on twenty days this month.', metric: 'checkin', goal: 20, xp: 250, href: null },
+  { key: 'review3', title: 'Three reviews', blurb: 'Review three orders this month.', metric: 'review', goal: 3, xp: 150, href: '/purchases' },
+  { key: 'preorder2', title: 'Back two pre-orders', blurb: 'Join two pre-orders this month.', metric: 'preorder', goal: 2, xp: 200, href: '/?kind=pre_order' },
+  { key: 'collect5', title: 'Curate five', blurb: 'Add five delivered items to your collection.', metric: 'collect', goal: 5, xp: 200, href: '/me?tab=collection' },
+];
+
+const CHECKIN5: Template = {
+  key: 'checkin5', title: 'Check in five days', blurb: 'Five check-ins this week, any five days.',
+  metric: 'checkin', goal: 5, xp: 50, href: null,
+};
+
+interface Ladder {
+  key: string;
+  name: string;
+  metric: Metric | 'streak' | 'profile';
+  steps: number[];
+  xp: number[];
+  blurb: (goal: number) => string;
+  href: string | null;
+}
+
+/* Milestones repeat with bigger numbers: finish one step and the next appears. */
+const LADDERS: readonly Ladder[] = [
+  { key: 'orders', name: 'Haul Hunter', metric: 'order', steps: [1, 5, 10, 25, 50, 100], xp: [100, 250, 400, 700, 1000, 1500],
+    blurb: (n) => (n === 1 ? 'Place your first order.' : `Place ${n} orders in total.`), href: '/' },
+  { key: 'preorders', name: 'Backer', metric: 'preorder', steps: [1, 5, 10, 25], xp: [80, 250, 400, 700],
+    blurb: (n) => (n === 1 ? 'Join your first pre-order.' : `Join ${n} pre-orders in total.`), href: '/?kind=pre_order' },
+  { key: 'reviews', name: 'Critic', metric: 'review', steps: [1, 5, 10, 25, 50], xp: [80, 200, 350, 600, 900],
+    blurb: (n) => (n === 1 ? 'Review a seller after an order arrives.' : `Write ${n} reviews in total.`), href: '/purchases' },
+  { key: 'collection', name: 'Curator', metric: 'collect', steps: [1, 10, 25, 50], xp: [50, 150, 300, 500],
+    blurb: (n) => (n === 1 ? 'Add your first delivered item to your collection.' : `Have ${n} items in your collection.`), href: '/me?tab=collection' },
+  { key: 'saves', name: 'Wishlist', metric: 'save', steps: [10, 25, 50, 100], xp: [50, 100, 150, 250],
+    blurb: (n) => `Save ${n} items in total.`, href: '/' },
+  { key: 'follows', name: 'Fan Club', metric: 'follow', steps: [3, 10, 25], xp: [60, 120, 200],
+    blurb: (n) => `Follow ${n} shops.`, href: '/' },
+  { key: 'posts', name: 'Town Crier', metric: 'post', steps: [1, 10, 50], xp: [40, 150, 400],
+    blurb: (n) => (n === 1 ? 'Make your first post in Social.' : `Make ${n} posts in Social.`), href: '/social' },
+  { key: 'wants', name: 'Bounty Hunter', metric: 'want', steps: [1, 5], xp: [40, 120],
+    blurb: (n) => (n === 1 ? 'Post something you are hunting for.' : `Post ${n} Wanted requests.`), href: '/wanted' },
+  { key: 'streak', name: 'On Fire', metric: 'streak', steps: [7, 30, 100], xp: [150, 500, 1500],
+    blurb: (n) => `Check in ${n} days in a row.`, href: null },
+  { key: 'profile', name: 'Show Yourself', metric: 'profile', steps: [2], xp: [50],
+    blurb: () => 'Add a bio and a tag to your page.', href: '/me?tab=settings' },
+];
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+/**
+ * Every task id that has ever been claimable, with its kind and reward - so a
+ * claim made on another day, or from a task since rotated out, still counts.
+ */
+interface KnownTask { kind: TaskKind; xp: number; title: string; pack: boolean }
+const KNOWN = new Map<string, KnownTask>();
+for (const [kind, pool] of [['daily', DAILY_POOL], ['weekly', [...WEEKLY_POOL, CHECKIN5]], ['monthly', MONTHLY_POOL]] as const) {
+  for (const template of pool) KNOWN.set(`${kind}-${template.key}`, { kind, xp: template.xp, title: template.title, pack: false });
+}
+for (const ladder of LADDERS) {
+  ladder.steps.forEach((goal, index) => {
+    KNOWN.set(`ms-${ladder.key}-${goal}`, {
+      kind: 'milestone', xp: ladder.xp[index] ?? 0, title: `${ladder.name} ${ROMAN[index] ?? index + 1}`, pack: true,
+    });
+  });
+}
+
+/**
+ * Tasks from the first version of the game, which people may already have
+ * collected. Kept so nobody loses XP or an unopened pack to a redesign.
+ */
+const LEGACY: Record<string, KnownTask> = {
+  save: { kind: 'daily', xp: 15, title: 'Save something', pack: false },
+  order: { kind: 'weekly', xp: 60, title: 'Place an order', pack: false },
+  group: { kind: 'weekly', xp: 40, title: 'Join a pre-order', pack: false },
+  social: { kind: 'weekly', xp: 25, title: 'Post in Social', pack: false },
+  streak5: { kind: 'weekly', xp: 50, title: 'Check in five days', pack: false },
+  'first-order': { kind: 'milestone', xp: 100, title: 'First haul', pack: true },
+  'five-orders': { kind: 'milestone', xp: 250, title: 'Regular', pack: true },
+  'first-review': { kind: 'milestone', xp: 80, title: 'Critic', pack: true },
+  'five-reviews': { kind: 'milestone', xp: 200, title: 'Trusted voice', pack: true },
+  'ten-saves': { kind: 'milestone', xp: 60, title: 'Wishlist', pack: true },
+  'three-follows': { kind: 'milestone', xp: 60, title: 'Fan club', pack: true },
+  profile: { kind: 'milestone', xp: 50, title: 'Show yourself', pack: true },
+  want: { kind: 'milestone', xp: 40, title: 'Bounty hunter', pack: true },
+  streak7: { kind: 'milestone', xp: 150, title: 'On fire', pack: true },
+};
+
+function known(taskId: string): KnownTask | null {
+  return KNOWN.get(taskId) ?? LEGACY[taskId] ?? null;
+}
 
 /** The key a claim is stored under: one claim per task per period. */
 export function claimKey(taskId: string, now: number = Date.now()): string | null {
-  const task = TASK_BY_ID.get(taskId);
+  const task = KNOWN.get(taskId);
   if (!task) return null;
-  const period = task.kind === 'daily' ? dayKey(now) : task.kind === 'weekly' ? weekKey(now) : 'once';
-  return `${taskId}:${period}`;
+  return `${taskId}:${periodOf(task.kind, now)}`;
 }
 
-function tasksFor(context: MeasureContext, now: number): TaskView[] {
-  return TASKS.map((task) => {
-    const progress = Math.min(task.goal, task.measure(context));
-    const done = progress >= task.goal;
-    const claimed = task.auto ? done : Boolean(context.state.claimed[claimKey(task.id, now)!]);
-    return {
-      id: task.id,
-      kind: task.kind,
-      title: task.title,
-      blurb: task.blurb,
-      xp: task.xp,
-      progress,
-      goal: task.goal,
-      done,
-      claimed,
-      claimable: done && !claimed,
-      href: task.href,
-      pack: task.kind === 'milestone',
-    };
+/** A few from a pool, the same few for everybody all period, different next period. */
+function pick<T>(pool: readonly T[], count: number, seed: string): T[] {
+  return [...pool]
+    .map((entry, index) => ({ entry, order: hash(`${seed}|${index}`) }))
+    .sort((a, b) => a.order - b.order)
+    .slice(0, count)
+    .map(({ entry }) => entry);
+}
+
+function view(
+  context: MeasureContext,
+  kind: TaskKind,
+  template: Template,
+  auto = false,
+): TaskView {
+  const id = `${kind}-${template.key}`;
+  const progress = Math.min(template.goal, countIn(template.metric, kind, context));
+  const done = progress >= template.goal;
+  const claimed = auto ? done : Boolean(context.state.claimed[`${id}:${periodOf(kind, context.now)}`]);
+  return {
+    id, kind, title: template.title, blurb: template.blurb, xp: template.xp, progress, goal: template.goal,
+    done, claimed, claimable: done && !claimed, href: template.href, pack: false,
+  };
+}
+
+function ladderProgress(ladder: Ladder, context: MeasureContext): number {
+  if (ladder.metric === 'streak') return context.streak.best;
+  if (ladder.metric === 'profile') return Number(context.facts.hasBio) + Number(context.facts.hasTags);
+  return countIn(ladder.metric, 'milestone', context);
+}
+
+function tasksFor(context: MeasureContext): TaskView[] {
+  const { now, state } = context;
+  const tasks: TaskView[] = [];
+
+  // Daily: the two that are always there, then today's two.
+  tasks.push({
+    ...view(context, 'daily', { key: 'checkin', title: 'Check in', blurb: 'Open the vault and keep your streak alive.', metric: 'checkin', goal: 1, xp: 10, href: null }, true),
+    id: 'daily-checkin',
   });
+  const revealed = state.cards.some((card) => card.packId === `daily-${dayKey(now)}`);
+  tasks.push({
+    id: 'daily-reveal', kind: 'daily', title: 'Reveal today\'s loot', blurb: 'Flip the daily drop for a free card.',
+    xp: 15, progress: revealed ? 1 : 0, goal: 1, done: revealed, claimed: revealed, claimable: false, href: null, pack: false,
+  });
+  for (const template of pick(DAILY_POOL, 2, `daily|${dayKey(now)}`)) tasks.push(view(context, 'daily', template));
+
+  tasks.push(view(context, 'weekly', CHECKIN5));
+  for (const template of pick(WEEKLY_POOL, 3, `weekly|${weekKey(now)}`)) tasks.push(view(context, 'weekly', template));
+
+  for (const template of pick(MONTHLY_POOL, 3, `monthly|${monthKey(now)}`)) tasks.push(view(context, 'monthly', template));
+
+  // Milestones: the lowest step on each ladder not yet collected.
+  for (const ladder of LADDERS) {
+    const progress = ladderProgress(ladder, context);
+    let index = ladder.steps.findIndex((goal) => !state.claimed[`ms-${ladder.key}-${goal}:once`]);
+    const finished = index === -1;
+    if (finished) index = ladder.steps.length - 1;
+    const goal = ladder.steps[index] ?? 1;
+    const done = progress >= goal;
+    tasks.push({
+      id: `ms-${ladder.key}-${goal}`,
+      kind: 'milestone',
+      title: `${ladder.name} ${ladder.steps.length > 1 ? ROMAN[index] ?? '' : ''}`.trim(),
+      blurb: ladder.blurb(goal),
+      xp: ladder.xp[index] ?? 0,
+      progress: Math.min(goal, progress),
+      goal,
+      done,
+      claimed: finished,
+      claimable: done && !finished,
+      href: ladder.href,
+      pack: true,
+      step: { index: index + 1, of: ladder.steps.length },
+    });
+  }
+  return tasks;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Stickers                                                                   */
 /* -------------------------------------------------------------------------- */
 
+export type StickerTier = 0 | 1 | 2 | 3;
+export const STICKER_TIER_NAMES = ['Locked', 'Bronze', 'Silver', 'Gold'] as const;
+
 export interface StickerView {
   id: string;
   name: string;
-  blurb: string;
+  /** What it tells somebody looking at the profile. */
+  meaning: string;
+  /** How to earn it, and what each tier needs. */
+  how: string;
   hue: 'gold' | 'violet' | 'aqua' | 'coral' | 'lime' | 'pink' | 'blue';
   glyph: 'bolt' | 'chest' | 'crest' | 'flame' | 'star' | 'heart' | 'chat' | 'bag' | 'shield' | 'card';
+  /** Thresholds for bronze, silver and gold - or one number for a single-step sticker. */
+  tiers: number[];
+  tier: StickerTier;
+  have: number;
+  /** What the next tier needs, or null at the top. */
+  next: number | null;
   earned: boolean;
 }
 
@@ -534,39 +696,79 @@ interface StickerContext extends MeasureContext {
   owned: CardDef[];
 }
 
-const STICKERS: readonly (Omit<StickerView, 'earned'> & { test: (context: StickerContext) => boolean })[] = [
-  { id: 'first-haul', name: 'First Haul', blurb: 'Placed a first order', hue: 'gold', glyph: 'bag',
-    test: ({ facts }) => facts.orders.length >= 1 },
-  { id: 'regular', name: 'Regular', blurb: 'Five orders placed', hue: 'aqua', glyph: 'chest',
-    test: ({ facts }) => facts.orders.length >= 5 },
-  { id: 'high-roller', name: 'High Roller', blurb: 'Spent ₹10,000 or more', hue: 'gold', glyph: 'crest',
-    test: ({ facts }) => facts.orders.reduce((sum, order) => sum + order.totalMinor, 0) >= 1_000_000 },
-  { id: 'squad-up', name: 'Squad Up', blurb: 'Joined a group buy', hue: 'violet', glyph: 'bolt',
-    test: ({ facts }) => facts.pledges > 0 || facts.orders.some((order) => order.groupBuy) },
-  { id: 'critic', name: 'Critic', blurb: 'Wrote a review', hue: 'blue', glyph: 'star',
-    test: ({ facts }) => facts.reviewsWritten.length >= 1 },
-  { id: 'five-star', name: 'Five-Star Buyer', blurb: 'Rated five stars by a seller', hue: 'gold', glyph: 'star',
-    test: ({ facts }) => facts.fiveStarsReceived >= 1 },
-  { id: 'curator', name: 'Curator', blurb: 'Saved ten items', hue: 'pink', glyph: 'heart',
-    test: ({ facts }) => facts.likes.length >= 10 },
-  { id: 'on-fire', name: 'On Fire', blurb: 'Seven-day check-in streak', hue: 'coral', glyph: 'flame',
-    test: ({ streak }) => streak.best >= 7 },
-  { id: 'town-crier', name: 'Town Crier', blurb: 'Posted in Social', hue: 'lime', glyph: 'chat',
-    test: ({ facts }) => facts.posts.length >= 1 },
-  { id: 'clean-record', name: 'Clean Record', blurb: 'Three orders completed, no disputes lost', hue: 'aqua', glyph: 'shield',
-    test: ({ facts }) => facts.orders.filter((order) => order.status === 'delivered').length >= 3 && facts.disputesLost === 0 },
-  { id: 'lucky-pull', name: 'Lucky Pull', blurb: 'Pulled a legendary card', hue: 'gold', glyph: 'card',
-    test: ({ owned }) => owned.some((card) => card.rarity === 'legendary') },
-  ...CARD_SETS.map((set) => ({
+interface StickerDef {
+  id: string;
+  name: string;
+  meaning: string;
+  how: string;
+  hue: StickerView['hue'];
+  glyph: StickerView['glyph'];
+  tiers: number[];
+  have: (context: StickerContext) => number;
+}
+
+const STICKERS: readonly StickerDef[] = [
+  { id: 'haul', name: 'Haul Hunter', hue: 'gold', glyph: 'bag', tiers: [1, 10, 50],
+    meaning: 'A real, active buyer. Sellers can see this person actually buys, not just browses.',
+    how: 'Place orders: bronze at 1, silver at 10, gold at 50.',
+    have: ({ facts }) => facts.orders.length },
+  { id: 'backer', name: 'Backer', hue: 'violet', glyph: 'bolt', tiers: [1, 5, 25],
+    meaning: 'Helps pre-orders reach their goal, so shops can import things the community wants.',
+    how: 'Join pre-orders: bronze at 1, silver at 5, gold at 25.',
+    have: ({ facts }) => facts.orders.filter((order) => order.preOrder).length + facts.pledges },
+  { id: 'critic', name: 'Critic', hue: 'blue', glyph: 'star', tiers: [1, 10, 50],
+    meaning: 'Leaves honest reviews after orders arrive, which helps every other buyer choose.',
+    how: 'Review sellers: bronze at 1, silver at 10, gold at 50.',
+    have: ({ facts }) => facts.reviewsWritten.length },
+  { id: 'five-star', name: 'Five-Star Buyer', hue: 'gold', glyph: 'crest', tiers: [1, 5, 25],
+    meaning: 'Sellers rated this buyer five stars: pays on time and is easy to deal with.',
+    how: 'Get five-star ratings from sellers: bronze at 1, silver at 5, gold at 25.',
+    have: ({ facts }) => facts.ratingsReceived.filter((stars) => stars === 5).length },
+  { id: 'clean-record', name: 'Clean Record', hue: 'aqua', glyph: 'shield', tiers: [3, 15, 50],
+    meaning: 'Completes orders without ever losing a dispute - one of the strongest trust signals here.',
+    how: 'Complete orders with no disputes lost: bronze at 3, silver at 15, gold at 50. Losing a dispute resets it.',
+    have: ({ facts }) => (facts.disputesLost > 0 ? 0 : facts.orders.filter((order) => order.status === 'delivered').length) },
+  { id: 'curator', name: 'Curator', hue: 'pink', glyph: 'heart', tiers: [1, 10, 50],
+    meaning: 'Shows off a real collection built from purchases delivered through Figmark.',
+    how: 'Add delivered items to your collection: bronze at 1, silver at 10, gold at 50.',
+    have: ({ facts }) => facts.collection.length },
+  { id: 'on-fire', name: 'On Fire', hue: 'coral', glyph: 'flame', tiers: [7, 30, 100],
+    meaning: 'Shows up day after day. A dedicated member of the community.',
+    how: 'Check in days in a row: bronze at 7, silver at 30, gold at 100 (best streak counts).',
+    have: ({ streak }) => streak.best },
+  { id: 'town-crier', name: 'Town Crier', hue: 'lime', glyph: 'chat', tiers: [1, 10, 50],
+    meaning: 'An active voice in the forums: shares hauls, answers questions, helps others.',
+    how: 'Post in Social: bronze at 1, silver at 10, gold at 50.',
+    have: ({ facts }) => facts.posts.length },
+  { id: 'card-collector', name: 'Card Collector', hue: 'violet', glyph: 'card', tiers: [6, 12, 24],
+    meaning: 'Plays the collector game: checks in, completes quests and opens packs.',
+    how: 'Collect different cards: bronze at 6, silver at 12, gold for all 24.',
+    have: ({ owned }) => new Set(owned.map((card) => card.id)).size },
+  { id: 'lucky-pull', name: 'Lucky Pull', hue: 'gold', glyph: 'star', tiers: [1, 3, 6],
+    meaning: 'Pulled legendary cards - only a 4% chance from any pack.',
+    how: 'Pull legendary cards: bronze at 1, silver at 3, gold at 6.',
+    have: ({ owned }) => owned.filter((card) => card.rarity === 'legendary').length },
+  ...CARD_SETS.map((set): StickerDef => ({
     id: `set-${set.id}`,
     name: `${set.name} Master`,
-    blurb: `Completed the ${set.name} set`,
-    hue: (set.hue === 'aqua' ? 'aqua' : set.hue === 'coral' ? 'coral' : set.hue === 'violet' ? 'violet' : 'lime') as StickerView['hue'],
-    glyph: 'card' as const,
-    test: ({ owned }: StickerContext) =>
-      CARDS.filter((card) => card.set === set.id).every((card) => owned.some((mine) => mine.id === card.id)),
+    meaning: `Completed all six ${set.name} cards.`,
+    how: `Collect every card in the ${set.name} set. Completing it also gives ${SET_BONUS_XP} XP.`,
+    hue: set.hue,
+    glyph: 'card',
+    tiers: [6],
+    have: ({ owned }) => new Set(owned.filter((card) => card.set === set.id).map((card) => card.id)).size,
   })),
 ];
+
+function stickerView(def: StickerDef, context: StickerContext): StickerView {
+  const have = def.have(context);
+  const reached = def.tiers.filter((threshold) => have >= threshold).length;
+  // A single-step sticker is simply earned; show it as gold.
+  const tier = (def.tiers.length === 1 ? (reached ? 3 : 0) : reached) as StickerTier;
+  const next = def.tiers.find((threshold) => have < threshold) ?? null;
+  const { have: _count, ...rest } = def;
+  return { ...rest, tier, have, next, earned: tier > 0 };
+}
 
 /* -------------------------------------------------------------------------- */
 /* Packs                                                                      */
@@ -584,7 +786,8 @@ export interface PackView {
  * Earned packs are recomputed rather than stored - one per level reached and
  * one per milestone claimed - and "opened" is simply a card carrying that pack
  * id. So a pack can be opened exactly once, and one earned while offline is
- * still waiting next time.
+ * still waiting next time. A level lost to bad ratings takes its unopened pack
+ * with it.
  */
 function pendingPacks(state: QuestState, level: number): PackView[] {
   const opened = new Set(state.cards.map((card) => card.packId));
@@ -593,9 +796,9 @@ function pendingPacks(state: QuestState, level: number): PackView[] {
     packs.push({ id: `level-${reached}`, label: `Level ${reached} pack`, min: reached % 5 === 0 ? 'epic' : 'rare' });
   }
   for (const key of Object.keys(state.claimed)) {
-    const [taskId, period] = key.split(':');
-    const task = TASK_BY_ID.get(taskId ?? '');
-    if (task?.kind === 'milestone' && period === 'once') {
+    const [taskId = '', period] = key.split(':');
+    const task = known(taskId);
+    if (task?.pack && period === 'once') {
       packs.push({ id: `task-${taskId}`, label: `${task.title} pack`, min: 'rare' });
     }
   }
@@ -614,6 +817,8 @@ export function packFor(state: QuestState, level: number, packId: string): PackV
 export interface XpLine {
   label: string;
   xp: number;
+  /** One line of how it was worked out, e.g. "3 × 40". */
+  detail?: string;
 }
 
 export interface QuestView {
@@ -629,33 +834,45 @@ export interface QuestView {
   tasks: TaskView[];
   stickers: StickerView[];
   cards: (OwnedCard & CardDef)[];
-  sets: { id: string; name: string; hue: CardSet['hue']; owned: number; total: number }[];
+  sets: { id: string; name: string; hue: CardSet['hue']; owned: number; total: number; complete: boolean }[];
   packs: PackView[];
   dailyRevealed: boolean;
-  /** Where the XP came from, so the number can be checked. */
+  /** Where the XP came from, gains and losses both, so the number can be checked. */
   breakdown: XpLine[];
+  /** The losses on their own, as a positive number (0 when there are none). */
+  penalty: number;
 }
 
 /**
- * XP from the record itself: what a person did, not what they claimed.
+ * XP from the record itself: what a person did, and how others found them.
  *
  * Saves, follows and posts are capped so that XP tracks being a good member of
- * the market rather than tapping one button a thousand times.
+ * the market rather than tapping one button a thousand times. Bad ratings and
+ * lost disputes take XP away - a level says something about how a person
+ * trades, not only how much.
  */
-function activityXp(facts: QuestFacts): XpLine[] {
+function recordXp(facts: QuestFacts): XpLine[] {
   const placed = facts.orders.length;
   const delivered = facts.orders.filter((order) => order.status === 'delivered').length;
-  const group = facts.orders.filter((order) => order.groupBuy).length;
+  const preOrders = facts.orders.filter((order) => order.preOrder).length;
+  const stars = (value: number) => facts.ratingsReceived.filter((rating) => rating === value).length;
+  const pageStars = (value: number) => facts.pageRatings.filter((rating) => rating === value).length;
+  const pagePenalty = Math.max(-100, pageStars(1) * -20 + pageStars(2) * -10);
+
   return [
-    { label: 'Orders placed', xp: placed * 40 },
-    { label: 'Orders received', xp: delivered * 40 },
-    { label: 'Group buys joined', xp: group * 20 + Math.min(facts.pledges, 20) * 10 },
-    { label: 'Reviews written', xp: facts.reviewsWritten.length * 25 },
-    { label: 'Five-star ratings', xp: facts.fiveStarsReceived * 20 },
-    { label: 'Items saved', xp: Math.min(facts.likes.length, 100) * 3 },
-    { label: 'Shops followed', xp: Math.min(facts.follows, 10) * 5 },
-    { label: 'Social posts', xp: Math.min(facts.posts.length, 50) * 10 },
-    { label: 'Wanted posts', xp: Math.min(facts.wants, 10) * 10 },
+    { label: 'Orders placed', xp: placed * 40, detail: `${placed} × 40` },
+    { label: 'Orders received', xp: delivered * 40, detail: `${delivered} × 40` },
+    { label: 'Pre-orders joined', xp: preOrders * 20 + Math.min(facts.pledges, 20) * 10, detail: `${preOrders} × 20 + ${Math.min(facts.pledges, 20)} pledges × 10` },
+    { label: 'Reviews written', xp: facts.reviewsWritten.length * 25, detail: `${facts.reviewsWritten.length} × 25` },
+    { label: 'Good ratings from sellers', xp: stars(5) * 20 + stars(4) * 10, detail: `${stars(5)} five-star × 20 + ${stars(4)} four-star × 10` },
+    { label: 'Collection items', xp: Math.min(facts.collection.length, 100) * 10, detail: `${facts.collection.length} × 10` },
+    { label: 'Items saved', xp: Math.min(facts.likes.length, 100) * 3, detail: `${facts.likes.length} × 3, up to 100` },
+    { label: 'Shops followed', xp: Math.min(facts.follows.length, 10) * 5, detail: `${facts.follows.length} × 5, up to 10` },
+    { label: 'Social posts', xp: Math.min(facts.posts.length, 50) * 10, detail: `${facts.posts.length} × 10, up to 50` },
+    { label: 'Wanted posts', xp: Math.min(facts.wants.length, 10) * 10, detail: `${facts.wants.length} × 10, up to 10` },
+    { label: 'Low ratings from sellers', xp: stars(2) * -30 + stars(1) * -60, detail: `${stars(2)} two-star × −30, ${stars(1)} one-star × −60` },
+    { label: 'Low page reviews', xp: pagePenalty, detail: `${pageStars(2)} two-star × −10, ${pageStars(1)} one-star × −20, at most −100` },
+    { label: 'Disputes lost', xp: facts.disputesLost * -80, detail: `${facts.disputesLost} × −80` },
   ];
 }
 
@@ -665,29 +882,26 @@ export function questView(
   stored: QuestState | undefined,
   now: number = Date.now(),
 ): QuestView {
+  void userId;
   const state = stored ?? emptyQuestState();
-  const today = dayKey(now);
-  const week = weekKey(now);
   const streak = streakOf(state.checkIns, now);
-  const context: MeasureContext = { facts, state, today, week, streak };
+  const context: MeasureContext = { facts, state, streak, now };
 
   // Check-in XP is counted per day with the streak it was part of, so a long
   // streak keeps paying even after it breaks.
   let checkIn = 0;
   let run = 0;
   let last: string | null = null;
-  for (const day of [...new Set(state.checkIns)].sort()) {
+  const checkInDays = [...new Set(state.checkIns)].sort();
+  for (const day of checkInDays) {
     run = last && previousDay(day) === last ? run + 1 : 1;
     checkIn += checkInXp(run);
     last = day;
   }
 
   let claimedXp = 0;
-  for (const key of Object.keys(state.claimed)) {
-    const task = TASK_BY_ID.get(key.split(':')[0] ?? '');
-    if (task && !task.auto) claimedXp += task.xp;
-  }
-  const revealXp = state.cards.filter((card) => card.packId.startsWith('daily-')).length * 15;
+  for (const key of Object.keys(state.claimed)) claimedXp += known(key.split(':')[0] ?? '')?.xp ?? 0;
+  const reveals = state.cards.filter((card) => card.packId.startsWith('daily-')).length;
 
   const owned = state.cards
     .map((card) => {
@@ -697,13 +911,24 @@ export function questView(
     .filter((card): card is OwnedCard & CardDef => card !== null);
   const cardXp = owned.reduce((sum, card) => sum + CARD_XP[card.rarity], 0);
 
+  const sets = CARD_SETS.map((set) => {
+    const inSet = CARDS.filter((card) => card.set === set.id);
+    const count = inSet.filter((card) => owned.some((mine) => mine.id === card.id)).length;
+    return { id: set.id, name: set.name, hue: set.hue, owned: count, total: inSet.length, complete: count === inSet.length };
+  });
+  const setsDone = sets.filter((set) => set.complete).length;
+
   const breakdown = [
-    ...activityXp(facts),
-    { label: 'Check-ins', xp: checkIn },
-    { label: 'Tasks completed', xp: claimedXp + revealXp },
-    { label: 'Cards collected', xp: cardXp },
-  ].filter((line) => line.xp > 0);
-  const xp = breakdown.reduce((sum, line) => sum + line.xp, 0);
+    ...recordXp(facts),
+    { label: 'Check-ins', xp: checkIn, detail: `${checkInDays.length} days, more for streaks` },
+    { label: 'Quests completed', xp: claimedXp + reveals * 15, detail: `${Object.keys(state.claimed).length} claimed + ${reveals} reveals × 15` },
+    { label: 'Cards collected', xp: cardXp, detail: `${owned.length} cards by rarity` },
+    { label: 'Card sets completed', xp: setsDone * SET_BONUS_XP, detail: `${setsDone} × ${SET_BONUS_XP}` },
+  ].filter((line) => line.xp !== 0);
+
+  const penalty = -breakdown.filter((line) => line.xp < 0).reduce((sum, line) => sum + line.xp, 0);
+  // Losses can take a person down levels, but never below zero.
+  const xp = Math.max(0, breakdown.reduce((sum, line) => sum + line.xp, 0));
 
   const level = levelFor(xp);
   const levelFloor = xpForLevel(level);
@@ -711,18 +936,6 @@ export function questView(
   const progress = level >= MAX_LEVEL ? 1 : (xp - levelFloor) / (nextLevelXp - levelFloor);
 
   const stickerContext: StickerContext = { ...context, owned };
-  const stickers = STICKERS.map(({ test, ...sticker }) => ({ ...sticker, earned: test(stickerContext) }));
-
-  const sets = CARD_SETS.map((set) => {
-    const inSet = CARDS.filter((card) => card.set === set.id);
-    return {
-      id: set.id,
-      name: set.name,
-      hue: set.hue,
-      owned: inSet.filter((card) => owned.some((mine) => mine.id === card.id)).length,
-      total: inSet.length,
-    };
-  });
 
   return {
     xp,
@@ -732,15 +945,19 @@ export function questView(
     nextLevelXp,
     progress,
     streak,
-    tasks: tasksFor(context, now),
-    stickers,
+    tasks: tasksFor(context),
+    stickers: STICKERS.map((def) => stickerView(def, stickerContext)),
     cards: owned.sort((a, b) => CARD_RARITIES.indexOf(b.rarity) - CARD_RARITIES.indexOf(a.rarity) || b.at.localeCompare(a.at)),
     sets,
     packs: pendingPacks(state, level),
-    dailyRevealed: state.cards.some((card) => card.packId === `daily-${today}`),
+    dailyRevealed: state.cards.some((card) => card.packId === `daily-${dayKey(now)}`),
     breakdown,
+    penalty,
   };
 }
+
+/** Chances of each rarity from an ordinary pack, for the card explainer. */
+export const CARD_ODDS: Record<CardRarity, number> = { ...CARD_WEIGHTS };
 
 /**
  * Tidies the stored state before it is written back.

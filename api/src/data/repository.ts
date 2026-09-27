@@ -3,7 +3,7 @@ import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -290,6 +290,8 @@ export interface Repository {
   /** Toggles a follow. Returns the resulting state. */
   toggleFollow(followerId: string, sellerId: string): Promise<boolean>;
   listFollowedSellerIds(followerId: string): Promise<string[]>;
+  /** Every follow one person has made, with when - one partition. */
+  listFollowsBy(followerId: string): Promise<Follow[]>;
   /**
    * Who follows one shop.
    *
