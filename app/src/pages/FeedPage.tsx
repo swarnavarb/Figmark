@@ -13,21 +13,29 @@ import { FillGap, FillKey, FillMeter } from '../components/FillMeter';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { ExpiryChip, StockChip } from '../components/Buy';
+import { DesignSwitch, useDesign } from '../components/Quest';
+import { QuestFeedPage } from './QuestFeedPage';
 
-const PRICE_BANDS = [
+export const PRICE_BANDS = [
   { label: 'Under ₹500', value: '50000' },
   { label: 'Under ₹2,000', value: '200000' },
   { label: 'Under ₹10,000', value: '1000000' },
 ];
 
 /**
+ * The catalogue as the URL describes it, and the ways to change it.
+ *
+ * Shared by both Buy designs so the new one and the classic one are always
+ * looking at the same listings with the same filters - switching between them
+ * must never lose a search.
+ *
  * The unified catalog and the app's landing page.
  *
  * Filters live in the URL, so a filtered view is shareable and the back button
  * behaves. When signed in the ordering is personalised: sellers the account
  * follows surface first.
  */
-export function FeedPage() {
+export function useCatalog() {
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState<FeedResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,9 +124,35 @@ export function FeedPage() {
   );
 
   const activeFilters = [group, category, condition, kind, maxPrice].filter(Boolean).length;
+  return {
+    params, setParams, data, error, loading, setData,
+    search, group, category, condition, kind, sort, maxPrice,
+    toggle, chooseGroup, chooseKind, set, activeFilters,
+  };
+}
+
+/**
+ * The Buy tab: the collector design or the classic one, whichever is chosen.
+ *
+ * Both are kept side by side until one is picked; the classic page below is
+ * exactly what it was.
+ */
+export function FeedPage() {
+  const [design] = useDesign();
+  return design === 'classic' ? <ClassicFeedPage /> : <QuestFeedPage />;
+}
+
+function ClassicFeedPage() {
+  const {
+    setParams, data, error, loading,
+    search, group, category, condition, kind, sort, maxPrice,
+    chooseGroup, chooseKind, set, activeFilters,
+  } = useCatalog();
 
   return (
     <main className="page">
+      {/* The way over to the collector design, while both are on offer. */}
+      <div className="qswitchrow"><DesignSwitch /></div>
       {/* The two seconds before anyone reads anything.
        *
        * A full-bleed colour block at the top of the catalogue, and then the
@@ -235,7 +269,7 @@ export function FeedPage() {
  * reachable by keyboard and screen reader without a line of code. The chevron
  * and the pill are ours; the list is the operating system's.
  */
-function Picker({ label, value, onChange, options, empty }: {
+export function Picker({ label, value, onChange, options, empty }: {
   label: string;
   value: string;
   onChange: (value: string) => void;

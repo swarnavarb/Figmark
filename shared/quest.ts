@@ -70,8 +70,8 @@ type RarityInput = Pick<
 
 /** How recent counts as new: long enough to be seen, short enough to mean it. */
 export const NEW_WINDOW_HOURS = 72;
-export const LEGENDARY_HEAT = 120;
-export const EPIC_HEAT = 50;
+export const LEGENDARY_HEAT = 150;
+export const EPIC_HEAT = 60;
 
 /**
  * The label a listing wears, from how it is selling and how people react to it.
@@ -110,7 +110,9 @@ export function listingRarity(listing: RarityInput, now: number = Date.now()): L
 
   const left = listing.quantityMode === 'multiple' ? null : listing.quantityAvailable;
   const scarce = left !== null && left > 0 && left <= 2;
-  if (scarce && (sold >= 1 || likes >= 5)) heat += 40;
+  // Scarcity only counts when people are actually buying: one left of
+  // something nobody wants is not rare, just unsold.
+  if (scarce && sold >= 2) heat += 20;
   heat = Math.round(heat);
 
   if (sold >= 5) reasons.push('Selling fast');
@@ -143,7 +145,7 @@ export function listingRarity(listing: RarityInput, now: number = Date.now()): L
 
 function formatHours(hours: number): string {
   if (hours < 24) return `${Math.ceil(hours)}h`;
-  return `${Math.floor(hours / 24)}d ${Math.round(hours % 24)}h`;
+  return `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h`;
 }
 
 /** Percent below the highest price it has been on sale at, when it has come down. */
@@ -431,7 +433,7 @@ const TASKS: readonly TaskDef[] = [
   },
   {
     id: 'group', kind: 'weekly', title: 'Join a group buy', blurb: 'Get into a pre-order before it fills.',
-    xp: 40, goal: 1, href: '/?kind=preorder',
+    xp: 40, goal: 1, href: '/?kind=pre_order',
     measure: ({ facts, week }) =>
       facts.orders.filter((order) => order.groupBuy && inWeek(order.createdAt, week)).length,
   },

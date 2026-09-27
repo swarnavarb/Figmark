@@ -21,6 +21,7 @@ import type {
 } from '@shared/social';
 import type { DisputeAction } from '@shared/disputes';
 import type { Allocation, OrderMoney } from '@shared/payments';
+import type { CardDef, QuestView, StickerView } from '@shared/quest';
 
 /** Somebody named on a screen, and the page their name opens. */
 export interface PartyRef {
@@ -128,6 +129,59 @@ export interface FeedResponse {
 }
 
 export type { PreOrderView };
+
+/* ── The collector game ────────────────────────────────────────────────── */
+
+/** What any game write answers with: the new state and what it did to the numbers. */
+export interface QuestResult {
+  view: QuestView;
+  gained: number;
+  levelBefore: number;
+  levelAfter: number;
+  already?: boolean;
+  card?: CardDef;
+  cardXp?: number;
+}
+
+export interface LeaderRow {
+  rank: number;
+  userId: string;
+  name: string;
+  handle: string | null;
+  xp: number;
+  level: number;
+  cards: number;
+}
+
+/** Somebody's public collector page: the game's showable parts and their trade record. */
+export interface CollectorPage {
+  userId: string;
+  level: number;
+  title: string;
+  xp: number;
+  levelFloor: number;
+  nextLevelXp: number;
+  progress: number;
+  streak: { current: number; best: number };
+  stickers: StickerView[];
+  cards: QuestView['cards'];
+  cardCount: number;
+  sets: QuestView['sets'];
+  stats: {
+    rating: number | null;
+    ratingCount: number;
+    orders: number;
+    completed: number;
+    reviewsWritten: number;
+    groupBuys: number;
+    following: number;
+    disputesWon: number;
+    disputesLost: number;
+    disputesSettled: number;
+    disputesOpen: number;
+    memberSince: string;
+  };
+}
 
 export interface PreOrderMember {
   ref: PartyRef;
@@ -1467,6 +1521,14 @@ export const api = {
   holdCredit: (id: string, creditId?: string) =>
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
   myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),
+  personPosts: (userId: string) => request<{ posts: PostCard[] }>(`/users/${encodeURIComponent(userId)}/posts`),
+  quest: () => request<{ view: QuestView }>('/quest/me'),
+  questCheckIn: () => post<QuestResult>('/quest/checkin'),
+  questClaim: (taskId: string) => post<QuestResult>('/quest/claim', { taskId }),
+  questReveal: () => post<QuestResult>('/quest/reveal'),
+  questOpen: (packId: string) => post<QuestResult>('/quest/open', { packId }),
+  leaderboard: () => request<{ top: LeaderRow[]; me: LeaderRow | null; total: number }>('/quest/leaderboard'),
+  collector: (userId: string) => request<CollectorPage>(`/users/${encodeURIComponent(userId)}/collector`),
   bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
     post<{ comment: ListingComment & { author: PartyRef } }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),

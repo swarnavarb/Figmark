@@ -28,6 +28,8 @@ import { MyRefundsPage } from './pages/MyRefundsPage';
 import { MyDisputesPage } from './pages/MyDisputesPage';
 import { SessionProvider, useSession } from './session';
 import { ToastHost } from './components/Feedback';
+import { QuestProvider } from './components/Quest';
+import { QuestsPage } from './pages/QuestsPage';
 import './styles.css';
 
 /**
@@ -51,6 +53,7 @@ function App() {
   if (!user) return <AuthPage />;
 
   return (
+    <QuestProvider>
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<FeedPage />} />
@@ -93,12 +96,14 @@ function App() {
         <Route path="/buyer-settings" element={<Navigate to="/refunds?tab=details" replace />} />
         <Route path="/refunds" element={<MyRefundsPage />} />
         <Route path="/disputes" element={<MyDisputesPage />} />
+        <Route path="/quests" element={<QuestsPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
         <Route path="/:username" element={<ProfileByHandlePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    </QuestProvider>
   );
 }
 

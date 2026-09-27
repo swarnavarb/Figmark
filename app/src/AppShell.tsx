@@ -151,6 +151,7 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
         <div className="pmenu__panel" role="menu">
           <span className="pmenu__who">{name}</span>
           <Link role="menuitem" to="/me" className="pmenu__item">🙂 My Profile</Link>
+          <Link role="menuitem" to="/quests" className="pmenu__item">🏆 Quests &amp; rewards</Link>
           <Link role="menuitem" to="/shop" className="pmenu__item">🏪 My Storefront</Link>
           <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>
           <Link role="menuitem" to="/refunds" className="pmenu__item">↩️ My refunds</Link>

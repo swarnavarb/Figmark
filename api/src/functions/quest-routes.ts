@@ -288,7 +288,8 @@ async function collector(request: HttpRequest, _context: InvocationContext) {
     progress: view.progress,
     streak: { current: view.streak.current, best: view.streak.best },
     stickers: view.stickers,
-    cards: view.cards.slice(0, 12),
+    // One of each card, rarest first: a shelf rather than every duplicate.
+    cards: view.cards.filter((card, index, all) => all.findIndex((other) => other.id === card.id) === index),
     cardCount: view.cards.length,
     sets: view.sets,
     stats: {

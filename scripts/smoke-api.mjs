@@ -7424,8 +7424,8 @@ await check('rarity reads sales and saves, and a timer turns the heat up', () =>
   };
   assert.equal(quest.listingRarity(base, now).tier, null, 'old and quiet is plain');
   assert.equal(quest.listingRarity({ ...base, createdAt: '2026-09-26T12:00:00Z' }, now).tier, 'new');
-  assert.equal(quest.listingRarity({ ...base, soldCount: 16 }, now).tier, 'legendary', 'sixteen sold is legendary');
-  assert.equal(quest.listingRarity({ ...base, likeCount: 35 }, now).tier, 'epic');
+  assert.equal(quest.listingRarity({ ...base, soldCount: 20 }, now).tier, 'legendary', 'twenty sold is legendary');
+  assert.equal(quest.listingRarity({ ...base, likeCount: 45 }, now).tier, 'epic');
   const timed = { ...base, likeCount: 12, expiresAt: '2026-09-28T02:00:00Z' };
   assert.equal(quest.listingRarity({ ...base, likeCount: 12 }, now).tier, null, 'twelve saves alone is not enough');
   assert.equal(quest.listingRarity(timed, now).tier, 'epic', 'the same interest with a day left is');
