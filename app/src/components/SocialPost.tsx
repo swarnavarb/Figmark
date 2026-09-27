@@ -64,8 +64,12 @@ function reduceMotion(): boolean {
 
 /* ── The post ──────────────────────────────────────────────────────────── */
 
-export function SocialPostCard({ card: initial, openComments = false, onRemoved, onReposted, nested = false, rank }: {
+export function SocialPostCard({
+  card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false,
+}: {
   card: PostCard;
+  /** Read inside its own forum, where naming the forum again is noise. */
+  inForum?: boolean;
   /** Its place on the trending board, when it is on one. */
   rank?: number;
   /** Open with the conversation showing, as a post read on its own page does. */
@@ -135,7 +139,6 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
       {post.kind === 'sale' && !listing && (
         <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>
       )}
-      {post.kind === 'thread' && <span className="spost__kind"><Icon name="forum" size={11} /> Forum</span>}
       {social.poll && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
       {hot && <span className="spost__kind spost__kind--hot">🔥 Hot</span>}
       {post.channel === 'seller' && post.reach === 'channel' && isAnnouncement(post) && (
@@ -151,10 +154,20 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
-          <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
+          <span className="spost__byline">
+            <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
+            {card.forum && !inForum && (
+              <>
+                <Icon name="right" size={12} className="spost__in" />
+                <Link to={`/social/f/${encodeURIComponent(card.forum.id)}`} className="spost__forum">
+                  <Icon name="forum" size={12} /> {card.forum.name}
+                </Link>
+              </>
+            )}
+          </span>
           <span className="spost__meta">
             <Link to={postHref(post)} className="spost__time">{timeAgo(post.createdAt)}</Link>
-            {post.channel === 'seller' && !nested && (
+            {card.shop && !nested && (
               <>
                 <span aria-hidden="true">·</span>
                 <Link to={`/social/c/${post.channelId}`} className="spost__time">channel</Link>
@@ -163,7 +176,8 @@ export function SocialPostCard({ card: initial, openComments = false, onRemoved,
             {kindLine}
           </span>
         </div>
-        {!nested && !social.mine && !following && post.channel === 'seller' && (
+        {/* People follow; a shop does not, so the button is not offered to one. */}
+        {!nested && !social.mine && !following && post.channel === 'seller' && !voice.storeId && (
           <button type="button" className="followbtn" disabled={followBusy}
             onClick={async () => {
               setFollowBusy(true);

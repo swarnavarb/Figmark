@@ -19,6 +19,8 @@ export function AppShell() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [term, setTerm] = useState(params.get('q') ?? '');
+  const { pathname } = useLocation();
+  const social = pathname.startsWith('/social') || pathname.startsWith('/messages/');
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -26,7 +28,9 @@ export function AppShell() {
   }
 
   return (
-    <div className="shell shell--tabbed">
+    // The social screens bring their own header - one gradient block with the
+    // brand, the bell and you on it - so the marketplace one steps aside there.
+    <div className={`shell shell--tabbed${social ? ' shell--social' : ''}`}>
       <ScrollManager />
       <ScrollBars />
       <header className="nav">
@@ -108,7 +112,7 @@ export function AppShell() {
  * The avatar opens who you are: your page, your shop, what you bought, and the
  * way out. "My Purchases" rather than "My Orders" - it is the buyer's word.
  */
-function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () => void }) {
+export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const { pathname } = useLocation();

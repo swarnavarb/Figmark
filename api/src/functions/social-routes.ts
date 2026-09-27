@@ -49,6 +49,13 @@ interface PostCard {
   following: boolean;
   /** The post this one passes on, when it is a repost. Null when that post has gone. */
   original?: PostCard | null;
+  /**
+   * The forum it was said in, for a forum post read anywhere but its forum -
+   * on somebody's wall, or in the feed - so it reads "Sana ▸ Deal spotting".
+   */
+  forum?: { id: string; name: string } | null;
+  /** Said by a shop, in its own name - which is what has a channel to open. */
+  shop?: boolean;
 }
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -184,6 +191,28 @@ async function decorate(
   viewer: Actor,
   options: { nested?: boolean; followed?: ReadonlySet<string> } = {},
 ): Promise<PostCard[]> {
+  // A wall entry is its forum post, read where the author put it. The forum
+  // post is fetched and decorated in its place, so reacting on the wall and
+  // reacting in the forum are one reaction on one post.
+  if (!options.nested && posts.some((post) => post.wallOf)) {
+    const forumPosts = new Map<string, Post>();
+    await Promise.all(posts.filter((post) => post.wallOf).map(async (post) => {
+      const found = await repository.getPost(post.wallOf!.forumId, post.wallOf!.postId);
+      if (found) forumPosts.set(post.id, found);
+    }));
+    // The same forum post can be here twice - its wall entry and itself - and
+    // should be read once.
+    const seen = new Set<string>();
+    const resolved: Post[] = [];
+    for (const post of posts) {
+      const actual = post.wallOf ? forumPosts.get(post.id) : post;
+      if (!actual || seen.has(actual.id)) continue;
+      seen.add(actual.id);
+      resolved.push(actual);
+    }
+    return decorate(resolved, repository, viewer, options);
+  }
+
   // A sale post is worth nothing without the item on it, and fetching them one
   // at a time would be a request per post.
   const ids = [...new Set(posts.map((p) => p.listingId).filter((id): id is string => id !== null))];
@@ -224,6 +253,11 @@ async function decorate(
     entries.forEach(([repostId], index) => originalCards.set(repostId, cards[index]!));
   }
 
+  const forumNames = new Map<string, string>();
+  if (posts.some((post) => post.channel === 'forum')) {
+    for (const forum of await repository.listForums()) forumNames.set(forum.id, forum.name);
+  }
+
   return posts.map((post) => {
     const listing = post.listingId ? listings.get(post.listingId) : undefined;
     const author = people.get(post.authorId);
@@ -257,8 +291,14 @@ async function decorate(
         mine: post.authorId === viewer.userId,
       },
       following: followedIds.has(post.channelId) || post.channelId === viewer.userId,
+      shop: spokenAsShop,
     };
     if (post.repostOf) card.original = originalCards.get(post.id) ?? null;
+    if (post.channel === 'forum') {
+      card.forum = { id: post.channelId, name: forumNames.get(post.channelId) ?? 'Forum' };
+      // A forum is not somebody to follow; its posts are read by joining.
+      card.following = true;
+    }
     return card;
   });
 }
@@ -296,6 +336,25 @@ function cleanPhotos(value: unknown): string[] | null {
 function personActor(user: Viewer): Actor {
   return { userId: user.id, storeId: null, key: user.id, name: user.displayName };
 }
+
+/**
+ * A forum's posts without any said in a shop's name.
+ *
+ * A shop's voice is recognised the way the rest of this file does it: the
+ * post carries the storefront's name rather than the person's.
+ */
+async function withoutShops(posts: Post[], repository: Repo): Promise<Post[]> {
+  const authors = new Map((await repository.listUsersByIds([...new Set(posts.map((post) => post.authorId))]))
+    .map((user) => [user.id, user]));
+  return posts.filter((post) => {
+    const author = authors.get(post.authorId);
+    return !author?.sellerProfile || author.sellerProfile.storefrontName !== post.authorName
+      || author.displayName === post.authorName;
+  });
+}
+
+/** Said when a shop tries to take part in a forum. */
+const shopsStayOut = () => error(403, 'people_only', 'Forums are for people. Switch to your profile to take part.');
 
 /** GET /api/social/feed - posts from everyone you follow, newest first. */
 async function socialFeed(request: HttpRequest, _context: InvocationContext) {
@@ -487,6 +546,14 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
   // Whoever may speak for the shop. A manager posting for it is the shop
   // speaking, which is why this is a rights check rather than an id comparison.
   const mine = Boolean(seller && can(seller, viewer.id, 'posts'));
+  const following = followed.includes(channelId);
+
+  // A channel is for the people who follow the shop. Everybody else sees the
+  // door - who it is, how many are inside - and a button to come in.
+  const locked = !forum && !mine && !following;
+  // A forum is people talking as themselves. Anything said there in a shop's
+  // name predates that rule and is not shown.
+  const shown = locked ? [] : forum ? await withoutShops(posts, repository) : posts;
 
   // What the shop could put in front of its followers without leaving the
   // channel to go and find it. Only for whoever runs it - nobody else has a
@@ -503,8 +570,14 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
     : [];
 
   return json(200, {
+    locked,
     channel: forum
-      ? { id: forum.id, kind: 'forum' as const, name: forum.name, description: forum.description, mine: false }
+      ? {
+          id: forum.id, kind: 'forum' as const, name: forum.name, description: forum.description, mine: false,
+          memberCount: forum.memberIds?.length ?? 0,
+          member: (forum.memberIds ?? []).includes(viewer.id),
+          postCount: shown.length,
+        }
       : {
           id: channelId,
           kind: 'seller' as const,
@@ -514,11 +587,12 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
           photoUrl: seller!.sellerProfile!.photoUrl ?? null,
           tier: seller!.sellerProfile!.tier ?? null,
           followerCount: seller!.sellerProfile!.followerCount ?? 0,
-          following: followed.includes(channelId),
+          following,
           mine,
+          postCount: posts.length,
         },
     shareable,
-    posts: await decorate(posts, repository, actor, { followed: new Set(followed) }),
+    posts: await decorate(shown, repository, actor, { followed: new Set(followed) }),
   });
 }
 
@@ -547,6 +621,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     vibe?: unknown;
     /** The message in the same room this one answers. */
     replyToId?: unknown;
+    /** A forum post that goes on the author's wall too. */
+    toWall?: boolean;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -656,9 +732,17 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     announcement = voice === 'store' && body.announcement === true;
   }
 
+  let forumName: string | null = null;
   if (body.forumId) {
     const forum = await repository.getForum(body.forumId);
     if (!forum) return error(404, 'not_found', 'No such forum.');
+    // People only, and only the ones who joined.
+    if (body.storeId) return shopsStayOut();
+    if (!(forum.memberIds ?? []).includes(user.id)) {
+      return error(403, 'not_a_member', `Join ${forum.name} to post in it.`);
+    }
+    forumName = forum.name;
+    authorName = user.displayName;
     channelId = forum.id;
     channel = 'forum';
     kind = 'thread';
@@ -720,7 +804,32 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   };
 
+  // On the author's wall too, when they asked: an entry there that points
+  // back at the forum post, so there is one conversation, not two.
+  if (forumName && body.toWall) {
+    post.wallPostId = `pst_${randomUUID().slice(0, 12)}`;
+  }
   const saved = await repository.createPost(post);
+  if (forumName && post.wallPostId) {
+    await repository.createPost({
+      ...post,
+      id: post.wallPostId,
+      channelId: user.id,
+      channel: 'seller',
+      kind: 'update',
+      body: '',
+      listingId: null,
+      photoUrl: null,
+      photoUrls: [],
+      poll: null,
+      voice: 'store',
+      reach: 'feed',
+      announcement: false,
+      replyTo: null,
+      wallPostId: null,
+      wallOf: { forumId: channelId, forumName, postId: post.id },
+    });
+  }
   if (answeredAuthor) {
     await notify(repository, [answeredAuthor], {
       kind: 'comment_replied',
@@ -768,11 +877,28 @@ async function commentsFor(post: Post, repository: Repo, viewer: Actor): Promise
 
 const noPost = () => error(404, 'not_found', 'That post is not there any more.');
 
+/**
+ * Whether this person may read a post.
+ *
+ * Broadcasts are public - they are what trending is made of. What was said
+ * inside a shop's channel is for the people who follow the shop, and for
+ * whoever runs it.
+ */
+async function mayRead(post: Post, userId: string, repository: Repo): Promise<boolean> {
+  if (post.channel !== 'seller' || (post.reach ?? 'feed') === 'feed') return true;
+  const owner = await repository.getUserById(post.channelId);
+  if (!owner?.sellerProfile || can(owner, userId, 'posts')) return true;
+  return (await repository.listFollowedSellerIds(userId)).includes(post.channelId);
+}
+
 /** GET /api/social/posts/{channel}/{id} - one post and everything said under it. */
 async function readPost(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (!(await mayRead(post, user.id, repository))) {
+    return error(403, 'follow_required', 'Follow the shop to read its channel.');
+  }
   return json(200, {
     card: await cardFor(post, repository, actor),
     comments: await commentsFor(post, repository, actor),
@@ -789,6 +915,7 @@ async function react(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
   const body = await readJson<{ kind?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
   if (body.kind !== null && !isReaction(body.kind)) {
@@ -854,6 +981,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
   const body = await readJson<{ body?: unknown; parentId?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
 
@@ -929,6 +1057,7 @@ async function likeComment(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
   const commentId = request.params.comment;
   if (!post.comments?.some((comment) => comment.id === commentId)) {
     return error(404, 'not_found', 'That comment is not there any more.');
@@ -1127,16 +1256,117 @@ async function removePost(request: HttpRequest, _context: InvocationContext) {
   if (!post) return noPost();
   if (post.authorId !== user.id) return error(403, 'forbidden', 'Only whoever posted it can take it down.');
   await repository.deletePost(post.channelId, post.id);
+  // A forum post and its wall entry go together, whichever end is deleted.
+  if (post.wallPostId) await repository.deletePost(post.authorId, post.wallPostId);
+  if (post.wallOf) await repository.deletePost(post.wallOf.forumId, post.wallOf.postId);
   return json(200, { deleted: post.id });
 }
 
-/** GET /api/social/forums - the rooms, and how much room is left. */
+/** A forum as a list shows it: who is in it is a count, and whether you are. */
+function forumRow(forum: Forum, viewerId: string, latest: Post | null = null) {
+  const { memberIds, ...rest } = forum;
+  return {
+    ...rest,
+    memberCount: memberIds?.length ?? 0,
+    member: (memberIds ?? []).includes(viewerId),
+    lastPost: latest ? gist(latest.body || 'Photo') : null,
+    lastPostAt: latest?.createdAt ?? null,
+    lastPostBy: latest?.authorName ?? null,
+  };
+}
+
+/** GET /api/social/forums - the rooms, yours first, and how much room is left. */
 async function listForums(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  await auth.requireAuth(request);
+  const user = await auth.requireAuth(request);
   const repository = await getRepository();
   const forums = await repository.listForums();
-  return json(200, { forums, cap: FORUM_CAP, remaining: Math.max(0, FORUM_CAP - forums.length) });
+  const rows = await Promise.all(forums.map(async (forum) => {
+    const [latest] = await withoutShops(await repository.listPosts(forum.id, 5), repository);
+    return forumRow(forum, user.id, latest ?? null);
+  }));
+  rows.sort((a, b) => Number(b.member) - Number(a.member) || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''));
+  return json(200, { forums: rows, cap: FORUM_CAP, remaining: Math.max(0, FORUM_CAP - forums.length) });
+}
+
+/**
+ * POST /api/social/forums/{id}/join - join, or leave when already in.
+ *
+ * As yourself only: a shop has a channel of its own and no seat in a forum.
+ */
+async function joinForum(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  if (request.query?.get('as')) return shopsStayOut();
+  const repository = await getRepository();
+  const forum = request.params.id ? await repository.getForum(request.params.id) : null;
+  if (!forum) return error(404, 'not_found', 'No such forum.');
+  const members = new Set(forum.memberIds ?? []);
+  if (members.has(user.id)) members.delete(user.id);
+  else members.add(user.id);
+  forum.memberIds = [...members];
+  forum.updatedAt = new Date().toISOString();
+  const saved = await repository.saveForum(forum);
+  return json(200, { forum: forumRow(saved, user.id) });
+}
+
+/**
+ * GET /api/social/search?q= - people, shops and forums by name or handle.
+ *
+ * The social tab's search is for finding somebody, not something: items have
+ * the marketplace search. Everybody is read and filtered here, which is fine
+ * at this size and is the one place to swap for an index later.
+ */
+async function search(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const needle = (request.query?.get('q') ?? '').trim().toLowerCase().replace(/^@/, '');
+  if (needle.length < 1) return json(200, { people: [], shops: [], forums: [] });
+  const repository = await getRepository();
+  const [everyone, followed, forums] = await Promise.all([
+    repository.listAllUsers(),
+    repository.listFollowedSellerIds(user.id),
+    repository.listForums(),
+  ]);
+  const following = new Set(followed);
+  const hit = (...fields: (string | null | undefined)[]) =>
+    fields.some((field) => field?.toLowerCase().includes(needle));
+  // Starts-with beats contains, so typing a name finds that name first.
+  const rank = (name: string, handle: string | null) =>
+    Number(!(name.toLowerCase().startsWith(needle) || (handle ?? '').startsWith(needle)));
+
+  const people = everyone
+    .filter((person) => person.id !== user.id && person.username && hit(person.displayName, person.username))
+    .map((person) => ({
+      id: person.id,
+      name: person.displayName,
+      handle: person.username ?? null,
+      bio: person.bio ?? '',
+      following: following.has(person.id),
+    }))
+    .sort((a, b) => rank(a.name, a.handle) - rank(b.name, b.handle) || a.name.localeCompare(b.name))
+    .slice(0, 12);
+  const shops = everyone
+    .filter((owner) => owner.sellerProfile
+      && hit(owner.sellerProfile.storefrontName, owner.sellerProfile.username, owner.sellerProfile.bio))
+    .map((owner) => ({
+      id: owner.id,
+      name: owner.sellerProfile!.storefrontName,
+      handle: owner.sellerProfile!.username ?? null,
+      bio: owner.sellerProfile!.bio ?? '',
+      photoUrl: owner.sellerProfile!.photoUrl ?? null,
+      followerCount: owner.sellerProfile!.followerCount ?? 0,
+      tier: owner.sellerProfile!.tier ?? null,
+      following: following.has(owner.id),
+      mine: can(owner, user.id, 'posts'),
+    }))
+    .sort((a, b) => rank(a.name, a.handle) - rank(b.name, b.handle) || b.followerCount - a.followerCount)
+    .slice(0, 12);
+  const rooms = forums
+    .filter((forum) => hit(forum.name, forum.description))
+    .map((forum) => forumRow(forum, user.id))
+    .slice(0, 6);
+  return json(200, { people, shops, forums: rooms });
 }
 
 /**
@@ -1158,6 +1388,7 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
 
   const name = body.name?.trim();
   if (!name) return error(400, 'invalid_forum', 'Give the forum a name.');
+  if (request.query?.get('as')) return shopsStayOut();
 
   const repository = await getRepository();
   const existing = await repository.listForums();
@@ -1179,11 +1410,13 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
     description: body.description?.trim() ?? '',
     createdBy: user.id,
     postCount: 0,
+    // Whoever opens a room is in it.
+    memberIds: [user.id],
     createdAt: now,
     updatedAt: now,
   };
 
-  return json(201, { forum: await repository.createForum(forum) });
+  return json(201, { forum: forumRow(await repository.createForum(forum), user.id) });
 }
 
 export const socialFeedRoute = handler(socialFeed);
@@ -1205,6 +1438,8 @@ export const sharePostRoute = handler(sharePost);
 export const voteRoute = handler(vote);
 export const removePostRoute = handler(removePost);
 export const pinPostRoute = handler(pinPost);
+export const joinForumRoute = handler(joinForum);
+export const socialSearchRoute = handler(search);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -1228,3 +1463,5 @@ app.http('social-post-delete', { ...anon, methods: ['POST'], route: 'social/post
 app.http('social-trending', { ...anon, methods: ['GET'], route: 'social/trending', handler: trendingRoute });
 app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });
 app.http('social-post-pin', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/pin', handler: pinPostRoute });
+app.http('social-forum-join', { ...anon, methods: ['POST'], route: 'social/forums/{id}/join', handler: joinForumRoute });
+app.http('social-search', { ...anon, methods: ['GET'], route: 'social/search', handler: socialSearchRoute });

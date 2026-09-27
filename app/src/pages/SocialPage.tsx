@@ -1,95 +1,53 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import {
-  ApiRequestError,
-  api,
-  type ChannelRow,
-  type ChannelThread,
-  type ForumsResponse,
-  type PostCard,
-  type ShareableListing,
-} from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
-import { Confetti, SocialPostCard, postHref } from '../components/SocialPost';
-import { VoicePicker, VoiceProvider, useVoice } from '../components/SocialVoice';
+import { ApiRequestError, api, type ForumRow, type ForumsResponse, type PostCard } from '../api';
+import { EmptyState, ErrorNotice, Icon } from '../components/ui';
+import { SocialPostCard, postHref } from '../components/SocialPost';
+import { PersonVoice, VoicePicker, VoiceProvider, useVoice } from '../components/SocialVoice';
 import { ChannelList, ChannelRoom } from '../components/Channels';
-import { shrink } from '../components/PhotoManager';
-import {
-  POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_PHOTOS, VIBES, VIBE_MAX_CHARS,
-  type Vibe,
-} from '@shared/social';
-import type { IconName } from '../components/Icon';
-import { isAnnouncement } from '@shared/posts';
-import { formatMoney, timeAgo } from '../format';
+import { Composer } from '../components/SocialComposer';
+import { RoomBar, SOCIAL_VIEWS, SocialTop, type SocialView } from '../components/SocialChrome';
+import { useGoBack } from '../components/ScrollManager';
+import { timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { WantedPage } from './WantedPage';
-import { useSession } from '../session';
-
-type View = 'feed' | 'channels' | 'wanted' | 'forums' | 'messages';
-
-const VIEWS: { id: View; label: string; icon: IconName; hint: string }[] = [
-  { id: 'feed', label: 'Feed', icon: 'spark', hint: 'Everything from the people and shops you follow' },
-  { id: 'channels', label: 'Channels', icon: 'message', hint: 'One thread per seller' },
-  { id: 'wanted', label: 'Wanted', icon: 'search', hint: 'What people are hunting for' },
-  { id: 'forums', label: 'Forums', icon: 'forum', hint: 'Shared rooms' },
-  { id: 'messages', label: 'Messages', icon: 'mail', hint: 'Talk to anyone with a username' },
-];
 
 /**
  * The social side.
  *
- * Three ways into the same posts, because they answer different questions:
- * "what is happening", "what has this one seller been saying", and "what is
- * everyone talking about". The first is a feed, the second a message list, the
- * third a set of rooms. Messages sit alongside them rather than in their own
- * tab: reading what someone posted and asking them about it are the same
- * errand.
+ * Five ways into the people on Figmark, because they answer different
+ * questions: what is happening (the feed), what one shop is saying (its
+ * channel), who is hunting for what (wanted), what everybody is talking about
+ * (forums), and a word in private (messages).
+ *
+ * Which one is open lives in the address, so coming back from a post or a
+ * room lands on the section you left rather than on the feed.
  */
 export function SocialPage() {
-  // A notification points at a view, and sometimes at one thing inside it.
-  // Reading it from the URL is what makes tapping one land where it promised
-  // rather than on the tab it happens to be filed under.
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const wanted = params.get('view');
-  const [view, setView] = useState<View>(
-    VIEWS.some((entry) => entry.id === wanted) ? (wanted as View) : 'feed',
-  );
+  const view: SocialView = SOCIAL_VIEWS.some((entry) => entry.id === wanted) ? (wanted as SocialView) : 'feed';
+  const setView = (next: SocialView) => {
+    const copy = new URLSearchParams(params);
+    if (next === 'feed') copy.delete('view');
+    else copy.set('view', next);
+    setParams(copy, { replace: true });
+  };
 
   return (
     <VoiceProvider>
-      <main className="page tab-view social">
-        <header className="sochero">
-          <span className="sochero__streak" aria-hidden="true" />
-          <div className="sochero__text">
-            <p className="sochero__kicker">Figmark · live</p>
-            <h1 className="sochero__title">Social</h1>
-            <p className="sochero__hint">{VIEWS.find((entry) => entry.id === view)?.hint}</p>
+      <div className="social socialtab">
+        <SocialTop view={view} onView={setView} />
+        <main className="page tab-view social">
+          <div className="tab-view" key={view}>
+            {view === 'feed' && <FollowingFeed />}
+            {view === 'wanted' && <WantedPage />}
+            {view === 'channels' && <ChannelList />}
+            {view === 'forums' && <Forums />}
+            {view === 'messages' && <MessagesView />}
           </div>
-        </header>
-
-        <nav className="socnav" aria-label="Social sections">
-          {VIEWS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={`socnav__item${view === entry.id ? ' is-on' : ''}`}
-              aria-pressed={view === entry.id}
-              onClick={() => setView(entry.id)}
-            >
-              <Icon name={entry.icon} size={17} />
-              <span>{entry.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="tab-view" key={view}>
-          {view === 'feed' && <FollowingFeed />}
-          {view === 'wanted' && <WantedPage />}
-          {view === 'channels' && <ChannelList />}
-          {view === 'forums' && <Forums />}
-          {view === 'messages' && <MessagesView />}
-        </div>
-      </main>
+        </main>
+      </div>
     </VoiceProvider>
   );
 }
@@ -295,6 +253,7 @@ function PostPageBody() {
   const [card, setCard] = useState<PostCard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
+  const back = useGoBack('/social');
 
   useEffect(() => {
     if (!channel || !id) return;
@@ -307,36 +266,49 @@ function PostPageBody() {
     };
   }, [channel, id, voice.storeId]);
 
+  const who = card?.post.authorName;
   return (
-    <main className="page feedpage social">
-      <div className="feedpage__bar">
-        <Link to="/social" className="btn btn--quiet">
-          <Icon name="back" size={14} /> Social
-        </Link>
-        <VoicePicker size={34} />
-      </div>
-      {error && <ErrorNotice message={error} />}
-      {gone && <EmptyState title="Post deleted">It is gone, along with its reactions and comments.</EmptyState>}
-      {!card && !error && <FeedSkeleton />}
-      {card && !gone && (
-        <SocialPostCard key={voice.storeId ?? 'me'} card={card} openComments onRemoved={() => setGone(true)} />
-      )}
-    </main>
+    <div className="social">
+      <RoomBar onBack={back}
+        avatar={<span className="forumav" aria-hidden="true"><Icon name="spark" size={18} /></span>}
+        title="Post"
+        sub={who ? `by ${who}${card?.forum ? ` in ${card.forum.name}` : ''}` : undefined}
+        action={card?.forum ? undefined : <VoicePicker size={34} />} />
+      <main className="page feedpage social">
+        {error && <ErrorNotice message={error} />}
+        {gone && <EmptyState title="Post deleted">It is gone, along with its reactions and comments.</EmptyState>}
+        {!card && !error && <FeedSkeleton />}
+        {/* A forum post is answered as yourself, whichever voice the tab is in. */}
+        {card && !gone && (card.forum ? (
+          <PersonVoice>
+            <SocialPostCard card={card} openComments onRemoved={() => setGone(true)} />
+          </PersonVoice>
+        ) : (
+          <SocialPostCard key={voice.storeId ?? 'me'} card={card} openComments onRemoved={() => setGone(true)} />
+        ))}
+      </main>
+    </div>
   );
 }
 
-/* ── Channels ───────────────────────────────────────────────────────────── */
+/* ── Channels and forums ─────────────────────────────────────────────── */
 
 /**
- * A channel or forum, read as a room. Its own route rather than a mode of the
- * tab, so a room can be linked to and the back button does what it should.
+ * A shop's channel. Its own route rather than a mode of the tab, so a room can
+ * be linked to and the back button does what it should.
  */
 export const ChannelPage = ChannelRoom;
 
 /* ── Forums ─────────────────────────────────────────────────────────────── */
 
-/** A few shared rooms. Capped for now, and it says so rather than failing later. */
+/**
+ * The forums: yours first, then the rest to join.
+ *
+ * A forum is a feed with a subject - people post, everybody engages - so the
+ * list sells what is inside: how many are in it, and the latest thing said.
+ */
 function Forums() {
+  const { voice, choose } = useVoice();
   const [data, setData] = useState<ForumsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -373,417 +345,127 @@ function Forums() {
     }
   }
 
-  if (!data && !error) return <p className="muted">Loading…</p>;
+  const replace = (row: ForumRow) =>
+    setData((current) => current && {
+      ...current,
+      forums: current.forums.map((entry) => (entry.id === row.id ? { ...entry, ...row } : entry)),
+    });
+
+  if (!data && !error) return <ForumSkeleton />;
+
+  const mine = data?.forums.filter((row) => row.member) ?? [];
+  const others = data?.forums.filter((row) => !row.member) ?? [];
 
   return (
-    <div className="stack">
+    <div className="forums">
       {error && <ErrorNotice message={error} />}
 
-      <p className="notice notice--info">
-        Forums are deliberately few while this is being built out
-        {data && <> — {data.remaining} of {data.cap} slots left</>}. Threads, replies and moderation come later.
-      </p>
-
-      {data && data.remaining > 0 && !creating && (
-        <button type="button" className="btn btn--ghost" style={{ justifySelf: 'start' }}
-          onClick={() => setCreating(true)}>
-          <Icon name="plus" size={14} /> New forum
-        </button>
+      {voice.storeId && (
+        <div className="peopleonly">
+          <Icon name="users" size={16} />
+          <span>Forums are for people. You are acting as <strong>{voice.name}</strong>.</span>
+          <button type="button" className="followbtn" onClick={() => choose(null)}>Switch to me</button>
+        </div>
       )}
 
+      <div className="forums__head">
+        <div>
+          <h2 className="forums__title">Your forums</h2>
+          <p className="faint">{mine.length === 0 ? 'Join one below to post in it.' : `${mine.length} joined`}</p>
+        </div>
+        {data && data.remaining > 0 && !voice.storeId && (
+          <button type="button" className="followbtn" onClick={() => setCreating(!creating)}>
+            <Icon name={creating ? 'close' : 'plus'} size={12} /> {creating ? 'Cancel' : 'New forum'}
+          </button>
+        )}
+      </div>
+
       {creating && (
-        <form className="card card--pad form" onSubmit={create}>
-          <label className="field">
-            <span>Name</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Customs and duty" required autoFocus />
-          </label>
-          <label className="field">
-            <span>What it is for</span>
-            <input value={description} onChange={(e) => setDescription(e.target.value)}
-              placeholder="One line, so people know whether to post here." />
-          </label>
-          <div className="row">
-            <button type="submit" className="btn" disabled={busy || !name.trim()}>
-              {busy ? 'Creating…' : 'Create forum'}
-            </button>
-            <button type="button" className="btn btn--quiet" onClick={() => setCreating(false)}>Cancel</button>
-          </div>
+        <form className="forumnew" onSubmit={create}>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name it - Customs and duty" required autoFocus
+            aria-label="Forum name" />
+          <input value={description} onChange={(e) => setDescription(e.target.value)}
+            placeholder="One line on what it is for" aria-label="What it is for" />
+          <button type="submit" className="btn" disabled={busy || !name.trim()}>
+            {busy ? 'Creating…' : 'Create forum'}
+          </button>
+          <p className="faint">{data?.remaining} of {data?.cap} slots left while forums are being built out.</p>
         </form>
       )}
 
-      {data && (
-        <div className="card">
-          {data.forums.map((forum) => (
-            <Link key={forum.id} to={`/social/c/${forum.id}`} className="channel">
-              <div className="channel__body">
-                <div className="channel__top">
-                  <span className="channel__name">{forum.name}</span>
-                  <span className="badge">{forum.postCount}</span>
-                </div>
-                <span className="channel__last">{forum.description || 'No description'}</span>
-              </div>
-            </Link>
-          ))}
+      {mine.length > 0 && (
+        <div className="forumgrid">
+          {mine.map((row, index) => <ForumCard key={row.id} row={row} tone={index} onChange={replace} />)}
         </div>
+      )}
+
+      {others.length > 0 && (
+        <>
+          <h2 className="forums__title forums__title--sub"><Icon name="bolt" size={14} /> Discover</h2>
+          <div className="forumgrid">
+            {others.map((row, index) => <ForumCard key={row.id} row={row} tone={index + mine.length} onChange={replace} />)}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-/* ── Shared pieces ──────────────────────────────────────────────────────── */
+const FORUM_TONES = ['blaze', 'violet', 'volt', 'sea'] as const;
 
-/** How long a poll runs, as offered. */
-const POLL_LENGTHS: { hours: number; label: string }[] = [
-  { hours: 24, label: '1 day' },
-  { hours: 72, label: '3 days' },
-  { hours: 168, label: '1 week' },
-  { hours: 0, label: 'No end' },
-];
-
-interface DraftPhoto {
-  key: string;
-  preview: string;
-  url: string | null;
-  failed: boolean;
-}
-
-/**
- * Write an update: words, photos, a poll, or a line on a colour.
- *
- * Closed it is one tap-target with the three things you might add, so the
- * feed starts with an invitation rather than a form. Open, it grows only the
- * parts you asked for. The post goes to your own profile, or a shop you run -
- * the choice only appears when there is one to make.
- */
-function Composer({ onPosted }: { onPosted: () => void | Promise<void> }) {
-  const { user } = useSession();
+function ForumCard({ row, tone, onChange }: { row: ForumRow; tone: number; onChange: (row: ForumRow) => void }) {
   const { voice } = useVoice();
-  const [open, setOpen] = useState(false);
-  const [body, setBody] = useState('');
-  const [photos, setPhotos] = useState<DraftPhoto[]>([]);
-  const [poll, setPoll] = useState<string[] | null>(null);
-  const [pollHours, setPollHours] = useState(24);
-  const [vibe, setVibe] = useState<Vibe | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [party, setParty] = useState(0);
-  // An item from the shop's own stock, with the post's words on top of it.
-  const [item, setItem] = useState<ShareableListing | null>(null);
-  const [stock, setStock] = useState<ShareableListing[] | null>(null);
-  const [picking, setPicking] = useState(false);
-  const picker = useRef<HTMLInputElement | null>(null);
-  const text = useRef<HTMLTextAreaElement | null>(null);
-
-  // A different voice has different stock, and a person has none to attach.
-  useEffect(() => {
-    setItem(null);
-    setStock(null);
-    setPicking(false);
-  }, [voice.storeId]);
-
-  async function openStock() {
-    setPicking(true);
-    if (stock || !voice.storeId) return;
-    try {
-      setStock((await api.shareable(voice.storeId)).listings);
-    } catch (err) {
-      setStock([]);
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your items.');
-    }
-  }
-
-  // A shop is addressed by its name; a person by their first one.
-  const first = voice.storeId ? voice.name : (user?.displayName.split(' ')[0] ?? 'there');
-  const uploading = photos.some((photo) => !photo.url && !photo.failed);
-  const pollReady = !poll || poll.filter((option) => option.trim()).length >= POLL_MIN_OPTIONS;
-  const canPost = !busy && !uploading && pollReady
-    && (body.trim().length >= 2 || photos.some((photo) => photo.url) || Boolean(item))
-    && (!vibe || body.trim().length <= VIBE_MAX_CHARS)
-    && (!poll || body.trim().length >= 2);
-
-  function expand(then?: () => void) {
-    setOpen(true);
-    window.setTimeout(() => {
-      text.current?.focus();
-      then?.();
-    }, 0);
-  }
-
-  async function addFiles(files: FileList | null) {
-    if (!files) return;
-    setVibe(null);
-    const room = POST_MAX_PHOTOS - photos.length;
-    const chosen = [...files].filter((file) => file.type.startsWith('image/')).slice(0, room);
-    if (files.length > room) setError(`Up to ${POST_MAX_PHOTOS} photos on one post.`);
-    const drafts = chosen.map((file) => ({
-      key: `${file.name}-${file.size}-${Math.random().toString(36).slice(2, 7)}`,
-      preview: URL.createObjectURL(file),
-      url: null,
-      failed: false,
-    }));
-    setPhotos((list) => [...list, ...drafts]);
-    await Promise.all(chosen.map(async (file, index) => {
-      const key = drafts[index]!.key;
-      try {
-        const stored = await api.uploadPhoto(await shrink(file));
-        setPhotos((list) => list.map((photo) => (photo.key === key ? { ...photo, url: stored.url } : photo)));
-      } catch (err) {
-        setPhotos((list) => list.map((photo) => (photo.key === key ? { ...photo, failed: true } : photo)));
-        setError(err instanceof ApiRequestError ? err.message : 'A photo would not upload.');
-      }
-    }));
-  }
-
-  function reset() {
-    photos.forEach((photo) => URL.revokeObjectURL(photo.preview));
-    setBody('');
-    setPhotos([]);
-    setPoll(null);
-    setVibe(null);
-    setItem(null);
-    setPicking(false);
-    setOpen(false);
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!canPost) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.createPost({
-        body: body.trim() || (item ? `Now available: ${item.title}` : ''),
-        ...(voice.storeId ? { storeId: voice.storeId } : {}),
-        ...(item ? { listingId: item.id } : {}),
-        photoUrls: photos.map((photo) => photo.url).filter((url): url is string => Boolean(url)),
-        ...(poll ? { poll: { options: poll.map((option) => option.trim()).filter(Boolean), closesInHours: pollHours } } : {}),
-        ...(vibe ? { vibe } : {}),
-      });
-      reset();
-      setParty((count) => count + 1);
-      await onPosted();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not post that.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const tools = (
-    <div className="writer__tools">
-      <button type="button" className="writer__tool writer__tool--photo"
-        disabled={photos.length >= POST_MAX_PHOTOS}
-        onClick={() => (open ? picker.current?.click() : expand(() => picker.current?.click()))}>
-        <Icon name="image" size={18} /> <span>Photo</span>
-      </button>
-      <button type="button" className={`writer__tool writer__tool--poll${poll ? ' is-on' : ''}`}
-        onClick={() => {
-          if (!open) expand();
-          setVibe(null);
-          setPoll(poll ? null : ['', '']);
-        }}>
-        <Icon name="poll" size={18} /> <span>Poll</span>
-      </button>
-      <button type="button" className={`writer__tool writer__tool--vibe${vibe ? ' is-on' : ''}`}
-        onClick={() => {
-          if (!open) expand();
-          if (vibe) {
-            setVibe(null);
-          } else {
-            setPoll(null);
-            setPhotos([]);
-            setVibe('hero');
-          }
-        }}>
-        <Icon name="spark" size={18} /> <span>Colour</span>
-      </button>
-      {voice.storeId && (
-        <button type="button" className={`writer__tool writer__tool--item${item || picking ? ' is-on' : ''}`}
-          onClick={() => {
-            if (!open) expand();
-            setVibe(null);
-            if (picking) setPicking(false);
-            else void openStock();
+  return (
+    <div className={`forumcard forumcard--${FORUM_TONES[tone % FORUM_TONES.length]}`}>
+      <Link to={`/social/f/${encodeURIComponent(row.id)}`} className="forumcard__open">
+        <span className="forumcard__top">
+          <span className="forumav" aria-hidden="true"><Icon name="forum" size={20} /></span>
+          <span className="forumcard__stats">
+            <strong>{row.memberCount}</strong> members · <strong>{row.postCount}</strong> posts
+          </span>
+        </span>
+        <strong className="forumcard__name">{row.name}</strong>
+        <span className="forumcard__desc">{row.description || 'A room to talk in.'}</span>
+        {row.lastPost && (
+          <span className="forumcard__last">
+            <strong>{row.lastPostBy?.split(' ')[0]}:</strong> {row.lastPost}
+            {row.lastPostAt && <span className="faint"> · {timeAgo(row.lastPostAt)}</span>}
+          </span>
+        )}
+      </Link>
+      {!voice.storeId && (
+        <button type="button" className={`forumcard__join${row.member ? ' is-on' : ''}`} disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              onChange((await api.joinForum(row.id)).forum);
+            } catch (err) {
+              setError(err instanceof ApiRequestError ? err.message : 'Could not join.');
+            } finally {
+              setBusy(false);
+            }
           }}>
-          <Icon name="tag" size={18} /> <span>Item</span>
+          {row.member ? <><Icon name="check" size={13} /> Joined</> : <><Icon name="plus" size={13} /> Join</>}
         </button>
       )}
+      {error && <p className="spost__error">{error}</p>}
     </div>
   );
+}
 
-  if (!open) {
-    return (
-      <div className="writer writer--closed">
-        <Confetti run={party} />
-        <div className="writer__prompt">
-          <VoicePicker size={44} />
-          <button type="button" className="writer__fake" onClick={() => expand()}>
-            What's new, {first}?
-          </button>
-        </div>
-        {tools}
-      </div>
-    );
-  }
-
-  const left = VIBE_MAX_CHARS - body.trim().length;
-
+function ForumSkeleton() {
   return (
-    <form className="writer" onSubmit={submit}>
-      <div className="writer__prompt">
-        <VoicePicker size={44} />
-        <div className="writer__as">
-          <strong>{voice.name}</strong>
-          <span className="faint">
-            {voice.storeId ? 'Posting as your storefront · tap the photo to switch' : 'To everyone following you'}
-          </span>
+    <div className="forumgrid" aria-hidden="true">
+      {[0, 1, 2].map((key) => (
+        <div key={key} className="forumcard">
+          <span className="skel" style={{ width: 44, height: 44, borderRadius: 14 }} />
+          <span className="skel" style={{ width: '60%', height: 14 }} />
+          <span className="skel" style={{ width: '85%', height: 11 }} />
         </div>
-        <button type="button" className="iconbtn" aria-label="Close" onClick={reset}>
-          <Icon name="close" size={16} />
-        </button>
-      </div>
-
-      <div className={vibe ? `vibe vibe--${vibe} vibe--edit` : 'writer__textwrap'}>
-        <textarea ref={text} className="writer__text" value={body} rows={vibe ? 3 : 3}
-          maxLength={vibe ? VIBE_MAX_CHARS : 2000}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder={poll
-            ? 'Ask a question…'
-            : vibe
-              ? 'Say it big…'
-              : item
-                ? `Say something about ${item.title}…`
-                : `What's new, ${first}?`} />
-      </div>
-
-      {vibe && (
-        <div className="writer__vibes" role="radiogroup" aria-label="Colour">
-          {VIBES.map((entry) => (
-            <button key={entry} type="button" role="radio" aria-checked={vibe === entry}
-              aria-label={entry} className={`writer__swatch vibe--${entry}${vibe === entry ? ' is-on' : ''}`}
-              onClick={() => setVibe(entry)} />
-          ))}
-          <span className={`faint writer__left${left < 20 ? ' is-low' : ''}`}>{left}</span>
-        </div>
-      )}
-
-      {photos.length > 0 && (
-        <div className="writer__photos">
-          {photos.map((photo, index) => (
-            <div key={photo.key} className={`writer__photo${photo.failed ? ' is-failed' : ''}`}>
-              <img src={photo.preview} alt={`Attached photo ${index + 1}`} />
-              {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
-              {photo.failed && <span className="writer__failed">Failed</span>}
-              <button type="button" className="writer__unphoto" aria-label="Remove photo"
-                onClick={() => {
-                  URL.revokeObjectURL(photo.preview);
-                  setPhotos((list) => list.filter((entry) => entry.key !== photo.key));
-                }}>
-                <Icon name="close" size={12} />
-              </button>
-            </div>
-          ))}
-          {photos.length < POST_MAX_PHOTOS && (
-            <button type="button" className="writer__addphoto" onClick={() => picker.current?.click()}
-              aria-label="Add more photos">
-              <Icon name="plus" size={20} />
-            </button>
-          )}
-        </div>
-      )}
-
-      {picking && !item && (
-        <div className="stockpick" role="listbox" aria-label="Pick an item to post">
-          {!stock ? (
-            <p className="faint">Loading your items…</p>
-          ) : stock.length === 0 ? (
-            <p className="faint">Nothing listed yet. List something from Sell and post it here.</p>
-          ) : (
-            stock.map((entry) => (
-              <button key={entry.id} type="button" role="option" aria-selected={false} className="stockpick__item"
-                onClick={() => {
-                  setItem(entry);
-                  setPicking(false);
-                  setPoll(null);
-                }}>
-                {entry.photoUrl ? (
-                  <img src={entry.photoUrl} alt="" className="stockpick__img" />
-                ) : (
-                  <Thumb seed={entry.id} label={entry.title} className="stockpick__img" />
-                )}
-                <span className="stockpick__name">{entry.title}</span>
-                <span className="stockpick__price">{formatMoney(entry.priceMinor, entry.currency)}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-
-      {item && (
-        <div className="writer__item">
-          {item.photoUrl ? (
-            <img src={item.photoUrl} alt="" className="writer__itemimg" />
-          ) : (
-            <Thumb seed={item.id} label={item.title} className="writer__itemimg" />
-          )}
-          <span className="writer__itembody">
-            <span className="spost__itemtag">For sale</span>
-            <strong>{item.title}</strong>
-            <span className="spost__price">{formatMoney(item.priceMinor, item.currency)}</span>
-          </span>
-          <button type="button" className="iconbtn" aria-label="Remove item" onClick={() => setItem(null)}>
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-      )}
-
-      {poll && (
-        <div className="writer__poll">
-          {poll.map((option, index) => (
-            <div key={index} className="writer__pollrow">
-              <input value={option} maxLength={POLL_OPTION_MAX_CHARS}
-                placeholder={`Option ${index + 1}`}
-                onChange={(e) => setPoll(poll.map((entry, at) => (at === index ? e.target.value : entry)))} />
-              {poll.length > POLL_MIN_OPTIONS && (
-                <button type="button" className="iconbtn iconbtn--sm" aria-label={`Remove option ${index + 1}`}
-                  onClick={() => setPoll(poll.filter((_, at) => at !== index))}>
-                  <Icon name="close" size={12} />
-                </button>
-              )}
-            </div>
-          ))}
-          <div className="writer__pollfoot">
-            {poll.length < POLL_MAX_OPTIONS && (
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setPoll([...poll, ''])}>
-                <Icon name="plus" size={12} /> Add option
-              </button>
-            )}
-            <label className="writer__pollfor">
-              <span className="faint">Runs for</span>
-              <select value={pollHours} onChange={(e) => setPollHours(Number(e.target.value))}>
-                {POLL_LENGTHS.map((entry) => (
-                  <option key={entry.hours} value={entry.hours}>{entry.label}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
-      )}
-
-      <input ref={picker} type="file" accept="image/*" multiple hidden
-        onChange={(e) => {
-          void addFiles(e.target.files);
-          e.target.value = '';
-        }} />
-
-      {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
-
-      <div className="writer__foot">
-        {tools}
-        <button type="submit" className="btn writer__post" disabled={!canPost}>
-          {busy ? 'Posting…' : uploading ? 'Uploading…' : 'Post'} <Icon name="send" size={14} />
-        </button>
-      </div>
-    </form>
+      ))}
+    </div>
   );
 }

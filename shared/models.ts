@@ -1,6 +1,6 @@
 import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { LotRoute } from './routes.js';
-import type { RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
+import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
   ConditionTag,
   FulfilmentStage,
@@ -1430,6 +1430,14 @@ export interface Post extends BaseDocument {
    * fetching every message it quotes.
    */
   replyTo?: { postId: string; authorName: string; body: string } | null;
+  /**
+   * Set on a wall entry: this post is somebody's forum post, put on their own
+   * wall too. The forum post is the one people react to and comment on, so
+   * the conversation is one conversation wherever it is read.
+   */
+  wallOf?: { forumId: string; forumName: string; postId: string } | null;
+  /** Set on a forum post that was also put on its author's wall: that entry's id. */
+  wallPostId?: string | null;
 }
 
 /**
@@ -1673,6 +1681,12 @@ export interface Forum extends BaseDocument {
   description: string;
   createdBy: string;
   postCount: number;
+  /**
+   * Who has joined. People only: a shop is a storefront, and a forum is
+   * somewhere people talk as themselves. Absent on forums made before
+   * membership existed, which read as empty.
+   */
+  memberIds?: string[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1713,6 +1727,10 @@ export interface Message extends BaseDocument {
   readAt: string | null;
   /** A private deal card, when the message carries one. */
   deal?: MessageDeal | null;
+  /** The message this one answers, as a snapshot so the quote survives. */
+  replyTo?: { id: string; name: string; body: string } | null;
+  /** One reaction per handle; reacting again changes it. */
+  reactions?: { handle: string; kind: ReactionKind }[];
 }
 
 /**

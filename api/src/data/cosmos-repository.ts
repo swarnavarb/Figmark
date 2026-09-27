@@ -25,6 +25,7 @@ import {
   seedComments,
   seedFollows,
   seedForums,
+  RETIRED_FIXTURE_POSTS,
   seedLikes,
   seedListings,
   seedLotBuyers,
@@ -453,9 +454,11 @@ export class CosmosRepository implements Repository {
 
     let added = 0;
     const newUsers: User[] = [];
+    let postIds = new Set<string>();
 
     for (const [name, items] of fixtures) {
       const present = await this.existingIds(name);
+      if (name === 'posts') postIds = present;
       const missing = items.filter((item) => !present.has(item.id));
       if (missing.length === 0) continue;
 
@@ -465,6 +468,12 @@ export class CosmosRepository implements Repository {
       added += missing.length;
       if (name === 'users') newUsers.push(...(missing as readonly User[]));
     }
+
+    // Shops do not belong in forums - a forum is people talking as themselves.
+    // The first fixture rooms were seeded with shops speaking in them; take
+    // those out wherever they are still standing.
+    const retired = RETIRED_FIXTURE_POSTS.filter(([, id]) => postIds.has(id));
+    await Promise.all(retired.map(([channelId, id]) => this.deletePost(channelId, id)));
 
     // A new fixture account needs the reservations sign-in and `/<username>`
     // resolve through, or it exists and cannot be reached.
@@ -848,6 +857,11 @@ export class CosmosRepository implements Repository {
   async sendMessage(message: Message): Promise<Message> {
     const { resource } = await this.container('messages').items.create(message);
     return resource ?? message;
+  }
+
+  async updateMessage(message: Message): Promise<Message> {
+    const { resource } = await this.container('messages').items.upsert(message);
+    return (resource as Message | undefined) ?? message;
   }
 
   /**
@@ -1339,6 +1353,11 @@ export class CosmosRepository implements Repository {
   async createForum(forum: Forum): Promise<Forum> {
     const { resource } = await this.container('forums').items.create(forum);
     return resource ?? forum;
+  }
+
+  async saveForum(forum: Forum): Promise<Forum> {
+    const { resource } = await this.container('forums').items.upsert(forum);
+    return (resource as Forum | undefined) ?? forum;
   }
 
   listDemoAccounts(): DemoAccount[] {

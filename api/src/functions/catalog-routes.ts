@@ -436,6 +436,10 @@ async function toggleFollow(request: HttpRequest, _context: InvocationContext) {
   const sellerId = request.params.id;
   if (!sellerId) return error(400, 'invalid_request', 'A seller id is required.');
   if (sellerId === user.id) return error(400, 'invalid_request', 'You cannot follow yourself.');
+  // People follow; shops do not. A shop has customers, not a reading list.
+  if (request.query?.get('as')) {
+    return error(403, 'people_only', 'Shops cannot follow. Switch to your profile to follow.');
+  }
 
   const repository = await getRepository();
   return json(200, { following: await repository.toggleFollow(user.id, sellerId) });

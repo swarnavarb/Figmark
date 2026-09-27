@@ -19,6 +19,7 @@ import {
 } from './pages/ServicesPage';
 import { ChannelPage, PostPage, SocialPage } from './pages/SocialPage';
 import { ThreadPage } from './pages/MessagesPage';
+import { ForumRoom } from './components/ForumRoom';
 import { DisputePage } from './pages/DisputePage';
 import { EscrowPage } from './pages/EscrowPage';
 import { SupplierPage, PackingLotPage } from './pages/SupplierPage';
@@ -77,6 +78,7 @@ function App() {
         <Route path="/services/:kind" element={<ServiceDirectoryPage />} />
         <Route path="/social" element={<SocialPage />} />
         <Route path="/social/c/:id" element={<ChannelPage />} />
+        <Route path="/social/f/:id" element={<ForumRoom />} />
         <Route path="/social/p/:channel/:id" element={<PostPage />} />
         <Route path="/messages/:handle" element={<ThreadPage />} />
         <Route path="/packing" element={<SupplierPage />} />

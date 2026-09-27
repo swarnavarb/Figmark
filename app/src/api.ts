@@ -655,6 +655,10 @@ export interface PostCard {
   following: boolean;
   /** What a repost passes on. Null when the original has been taken down. */
   original?: PostCard | null;
+  /** The forum it was said in, when read anywhere but that forum. */
+  forum?: { id: string; name: string } | null;
+  /** Said by a shop in its own name, so it has a channel to open. */
+  shop?: boolean;
 }
 
 /** One post read in full, with everything said under it. */
@@ -685,6 +689,8 @@ export interface ChannelRow {
 }
 
 export interface ChannelThread {
+  /** A shop's channel you do not follow: only the door is shown. */
+  locked?: boolean;
   channel: {
     id: string;
     kind: 'seller' | 'forum';
@@ -697,6 +703,10 @@ export interface ChannelThread {
     following?: boolean;
     /** Whether you may post as this shop rather than as a customer. */
     mine: boolean;
+    postCount?: number;
+    /** Forums: how many are in it, and whether you are. */
+    memberCount?: number;
+    member?: boolean;
   };
   /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
   shareable: { id: string; title: string; priceMinor: number; currency: string; condition?: string; photoUrl?: string | null }[];
@@ -777,10 +787,29 @@ export interface WantDetail {
   offers: WantOfferRow[];
 }
 
+/** A forum as a list shows it. */
+export interface ForumRow extends Omit<Forum, 'memberIds'> {
+  memberCount: number;
+  member: boolean;
+  lastPost: string | null;
+  lastPostAt: string | null;
+  lastPostBy: string | null;
+}
+
 export interface ForumsResponse {
-  forums: Forum[];
+  forums: ForumRow[];
   cap: number;
   remaining: number;
+}
+
+/** What the social search finds. */
+export interface SocialSearchResult {
+  people: { id: string; name: string; handle: string | null; bio: string; following: boolean }[];
+  shops: {
+    id: string; name: string; handle: string | null; bio: string; photoUrl: string | null;
+    followerCount: number; tier: string | null; following: boolean; mine: boolean;
+  }[];
+  forums: ForumRow[];
 }
 
 /* ── Seller dashboards ─────────────────────────────────────────────────── */
@@ -1644,8 +1673,14 @@ export const api = {
   inbox: () => request<Inbox>('/messages'),
   thread: (handle: string, as?: string) =>
     request<Thread>(`/messages/${encodeURIComponent(handle)}${as ? `?as=${encodeURIComponent(as)}` : ''}`),
-  sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>) =>
-    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as, ...(deal ? { deal } : {}) }),
+  sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>, replyToId?: string) =>
+    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, {
+      body, as, ...(deal ? { deal } : {}), ...(replyToId ? { replyToId } : {}),
+    }),
+  reactToMessage: (handle: string, messageId: string, kind: ReactionKind | null, as?: string) =>
+    post<{ reactions: { handle: string; kind: ReactionKind }[] }>(
+      `/messages/${encodeURIComponent(handle)}/react`, { messageId, kind, as },
+    ),
   profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
   credit: (userId: string) => request<Credit>(`/users/${encodeURIComponent(userId)}/credit`),
   pageReviews: (userId: string) => request<PageReviews>(`/users/${encodeURIComponent(userId)}/page-reviews`),
@@ -1714,7 +1749,7 @@ export const api = {
     body: string; forumId?: string; listingId?: string; storeId?: string;
     channelId?: string; announcement?: boolean;
     photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
-    replyToId?: string;
+    replyToId?: string; toWall?: boolean;
   }) =>
     post<{ post: Post }>('/social/posts', body),
   socialPost: (channelId: string, id: string, as?: string | null) =>
@@ -1740,6 +1775,8 @@ export const api = {
   deletePost: (channelId: string, id: string) =>
     post<{ deleted: string }>(`${postPath(channelId, id)}/delete`),
   forums: () => request<ForumsResponse>('/social/forums'),
+  joinForum: (id: string) => post<{ forum: ForumRow }>(`/social/forums/${encodeURIComponent(id)}/join`),
+  socialSearch: (q: string) => request<SocialSearchResult>(`/social/search?q=${encodeURIComponent(q)}`),
 
   wants: (options: { category?: string; q?: string } = {}) => {
     const query = new URLSearchParams();
@@ -1771,7 +1808,7 @@ export const api = {
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   createForum: (body: { name: string; description?: string }) =>
-    post<{ forum: Forum }>('/social/forums/new', body),
+    post<{ forum: ForumRow }>('/social/forums/new', body),
   forwarders: (route?: string) =>
     request<{ forwarders: DirectoryForwarder[] }>(`/forwarders${route ? `?route=${encodeURIComponent(route)}` : ''}`),
 };

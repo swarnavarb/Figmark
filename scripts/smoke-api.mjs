@@ -66,6 +66,7 @@ const {
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
   removePostRoute: removePost, trendingRoute: trending, shareableRoute: shareable, pinPostRoute: pinPost,
+  joinForumRoute: joinForum, socialSearchRoute: socialSearch,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -77,7 +78,7 @@ const {
 } = await import(new URL('fulfilment-routes.js', fns));
 const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
-  publicProfileRoute: publicProfile, setUsernameRoute: setUsername,
+  publicProfileRoute: publicProfile, setUsernameRoute: setUsername, reactToMessageRoute: reactToMessage,
 } = await import(new URL('message-routes.js', fns));
 const {
   payRoute: payOrder, confirmRoute: confirmOrder, reviewRoute: reviewOrder,
@@ -926,7 +927,9 @@ await check('the feed never carries someone you do not follow', async () => {
   const body = (await socialFeed(req({ headers: auth }), ctx)).jsonBody;
   const followed = new Set([...(await feed(req({ headers: auth }), ctx)).jsonBody.followedSellerIds, 'usr_demo']);
   for (const card of body.posts) {
-    assert.ok(followed.has(card.post.channelId), `${card.post.channelId} is not followed`);
+    // A forum post arrives by its author's wall, so it is the author who is followed.
+    const via = card.forum ? card.post.authorId : card.post.channelId;
+    assert.ok(followed.has(via), `${via} is not followed`);
   }
 });
 
@@ -7224,6 +7227,133 @@ await check('a buyer can ask a shop for a private deal', async () => {
   assert.deepEqual([ask.jsonBody.message.deal.kind, ask.jsonBody.message.deal.quantity], ['request', 2]);
   assert.equal((await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun' },
     body: { deal: { kind: 'request', title: 'x' } } }), ctx)).status, 400, 'deals are asked of shops');
+});
+
+console.log('\nforums, walls and who may follow');
+
+await check('forums are people only: no shop speaks in a seeded one', async () => {
+  const body = (await listForums(req({ headers: auth }), ctx)).jsonBody;
+  const shopNames = ['Kaiju Imports', 'Tokyo Line', 'Sneaker Vault', 'Gadget Grid'];
+  for (const forum of body.forums) {
+    assert.ok(!shopNames.includes(forum.lastPostBy), `${forum.name} still has a shop in it`);
+    assert.equal(forum.memberIds, undefined, 'who is in a forum is a count, not a list');
+    assert.equal(typeof forum.memberCount, 'number');
+  }
+  const thread = (await channelThread(req({ headers: auth, params: { id: 'frm_imports' } }), ctx)).jsonBody;
+  assert.ok(thread.posts.every((card) => card.post.authorId.startsWith('usr_b_') || card.post.authorId === 'usr_demo'));
+});
+
+await check('joining a forum is for people, and posting needs it', async () => {
+  const person = await newBuyer('Forum Joiner');
+  const refused = await createPost(req({ headers: person.headers, body: { body: 'Hello room', forumId: 'frm_deals' } }), ctx);
+  assert.equal(refused.status, 403, 'not a member yet');
+  assert.equal(refused.jsonBody.error, 'not_a_member');
+
+  const asShop = await joinForum(req({ headers: auth, query: { as: 'usr_demo' }, params: { id: 'frm_deals' } }), ctx);
+  assert.equal(asShop.status, 403, 'a shop cannot join');
+
+  const joined = await joinForum(req({ headers: person.headers, params: { id: 'frm_deals' } }), ctx);
+  assert.equal(joined.jsonBody.forum.member, true);
+  const posted = await createPost(req({ headers: person.headers, body: { body: 'Hello room', forumId: 'frm_deals' } }), ctx);
+  assert.equal(posted.status, 201);
+  assert.equal(posted.jsonBody.post.authorName, 'Forum Joiner');
+
+  const left = await joinForum(req({ headers: person.headers, params: { id: 'frm_deals' } }), ctx);
+  assert.equal(left.jsonBody.forum.member, false, 'joining again leaves');
+});
+
+await check('a shop cannot post, react or comment in a forum', async () => {
+  const asStore = await createPost(req({ headers: auth, body: { body: 'Shop here', forumId: 'frm_imports', storeId: 'usr_demo' } }), ctx);
+  assert.equal(asStore.status, 403);
+  const reacted = await reactTo(req({ headers: auth, query: { as: 'usr_demo' },
+    params: { channel: 'frm_imports', id: 'pst_frm_imports_1' }, body: { kind: 'fire' } }), ctx);
+  assert.equal(reacted.status, 403);
+  const commented = await commentOn(req({ headers: auth, query: { as: 'usr_demo' },
+    params: { channel: 'frm_imports', id: 'pst_frm_imports_1' }, body: { body: 'hi' } }), ctx);
+  assert.equal(commented.status, 403);
+});
+
+await check('a forum post can go on your wall too, as one conversation', async () => {
+  const posted = await createPost(req({ headers: auth, body: {
+    body: 'Anyone else waiting on the September customs batch?', forumId: 'frm_imports', toWall: true,
+  } }), ctx);
+  assert.equal(posted.status, 201);
+  const forumPost = posted.jsonBody.post;
+  assert.ok(forumPost.wallPostId, 'the forum post knows its wall entry');
+
+  const mine = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts;
+  const onWall = mine.filter((card) => card.post.id === forumPost.id);
+  assert.equal(onWall.length, 1, 'read once, as the forum post');
+  assert.deepEqual(onWall[0].forum, { id: 'frm_imports', name: 'Import questions' });
+
+  // Reacting on the wall reacts on the forum post.
+  await reactTo(req({ headers: auth, params: { channel: 'frm_imports', id: forumPost.id }, body: { kind: 'love' } }), ctx);
+  const inForum = (await channelThread(req({ headers: auth, params: { id: 'frm_imports' } }), ctx)).jsonBody.posts
+    .find((card) => card.post.id === forumPost.id);
+  assert.equal(inForum.social.reactions.total, 1);
+
+  // Deleting it takes the wall entry with it.
+  await removePost(req({ headers: auth, params: { channel: 'frm_imports', id: forumPost.id } }), ctx);
+  const after = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts;
+  assert.ok(!after.some((card) => card.post.id === forumPost.id));
+});
+
+await check('a followed person\'s forum post reaches the feed with the forum named', async () => {
+  const feedPosts = (await socialFeed(req({ headers: auth }), ctx)).jsonBody.posts;
+  const sana = feedPosts.find((card) => card.post.id === 'pst_frm_deals_1');
+  assert.ok(sana, 'Sana put it on her wall and is followed');
+  assert.equal(sana.forum.name, 'Deal spotting');
+});
+
+await check('a channel is for its followers', async () => {
+  const person = await newBuyer('Channel Stranger');
+  const door = (await channelThread(req({ headers: person.headers, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  assert.equal(door.locked, true);
+  assert.equal(door.posts.length, 0, 'nothing inside until you follow');
+  assert.ok(door.channel.postCount > 0, 'but it says there is something to see');
+
+  const inside = await readPost(req({ headers: person.headers, params: { channel: 'usr_kaiju', id: 'pst_kaiju_q1' } }), ctx);
+  assert.equal(inside.status, 403, 'a channel message is not read from outside');
+  assert.equal(inside.jsonBody.error, 'follow_required');
+
+  await toggleFollow(req({ headers: person.headers, params: { id: 'usr_kaiju' } }), ctx);
+  const open = (await channelThread(req({ headers: person.headers, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
+  assert.equal(open.locked, false);
+  assert.ok(open.posts.length > 0);
+  assert.equal((await readPost(req({ headers: person.headers, params: { channel: 'usr_kaiju', id: 'pst_kaiju_q1' } }), ctx)).status, 200);
+});
+
+await check('shops do not follow', async () => {
+  const refused = await toggleFollow(req({ headers: auth, query: { as: 'usr_demo' }, params: { id: 'usr_kaiju' } }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+await check('social search finds people, shops and forums by name or handle', async () => {
+  const shops = (await socialSearch(req({ headers: auth, query: { q: 'kaiju' } }), ctx)).jsonBody;
+  assert.equal(shops.shops[0].name, 'Kaiju Imports');
+  const people = (await socialSearch(req({ headers: auth, query: { q: 'sana' } }), ctx)).jsonBody;
+  assert.ok(people.people.some((person) => person.name === 'Sana Qureshi'));
+  const rooms = (await socialSearch(req({ headers: auth, query: { q: 'deal' } }), ctx)).jsonBody;
+  assert.ok(rooms.forums.some((forum) => forum.name === 'Deal spotting'));
+  assert.deepEqual((await socialSearch(req({ headers: auth, query: { q: '' } }), ctx)).jsonBody.people, []);
+});
+
+await check('a message can answer another, and take a reaction', async () => {
+  const buyer = await newBuyer('Reply Buyer');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'reply_buyer' } }), ctx);
+  const first = (await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun' }, body: { body: 'Is the statue still there?' } }), ctx)).jsonBody.message;
+  const answer = await sendMessage(req({ headers: auth, params: { handle: 'reply_buyer' },
+    body: { body: 'Yes, until Friday.', as: 'arjun', replyToId: first.id } }), ctx);
+  assert.equal(answer.status, 201);
+  assert.equal(answer.jsonBody.message.replyTo.id, first.id);
+  assert.equal(answer.jsonBody.message.replyTo.name, 'Reply Buyer');
+
+  const reacted = await reactToMessage(req({ headers: auth, params: { handle: 'reply_buyer' },
+    body: { messageId: first.id, kind: 'love', as: 'arjun' } }), ctx);
+  assert.deepEqual(reacted.jsonBody.reactions, [{ handle: 'arjun', kind: 'love' }]);
+  const again = await reactToMessage(req({ headers: auth, params: { handle: 'reply_buyer' },
+    body: { messageId: first.id, kind: 'love', as: 'arjun' } }), ctx);
+  assert.deepEqual(again.jsonBody.reactions, [], 'the same reaction again takes it back');
 });
 
 console.log(`\n${passed} checks passed`);

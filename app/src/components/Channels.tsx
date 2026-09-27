@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { ApiRequestError, api, type ChannelRow, type ChannelThread, type PostCard } from '../api';
 import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
@@ -10,6 +10,8 @@ import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
 import { Lightbox, copyLink, withReaction } from './SocialPost';
 import { VoicePicker, VoiceProvider, useVoice } from './SocialVoice';
+import { RoomBar, useLongPress } from './SocialChrome';
+import { useGoBack } from './ScrollManager';
 
 /**
  * Channels: one room per shop, where the shop announces and its customers
@@ -33,7 +35,7 @@ const SEEN_KEY = 'figmark.channels.seen';
  * and a read receipt per person per room would be a write on every visit for
  * something a phone can remember perfectly well.
  */
-function seenMap(): Record<string, string> {
+export function seenMap(): Record<string, string> {
   try {
     return JSON.parse(window.localStorage.getItem(SEEN_KEY) ?? '{}') as Record<string, string>;
   } catch {
@@ -52,7 +54,7 @@ function markSeen(channelId: string) {
 }
 
 /** How many messages arrived since you last opened it. Never opened: all of the recent ones. */
-function unreadOf(row: ChannelRow, seen: Record<string, string>): number {
+export function unreadOf(row: ChannelRow, seen: Record<string, string>): number {
   const since = seen[row.sellerId];
   return (row.recent ?? []).filter((at) => !since || at > since).length;
 }
@@ -172,6 +174,7 @@ function ChannelRowView({ row, unread }: { row: ChannelRow; unread: number }) {
 }
 
 function DiscoverCard({ row, onFollowed }: { row: ChannelRow; onFollowed: () => void }) {
+  const { voice } = useVoice();
   const [busy, setBusy] = useState(false);
   return (
     <div className="chcard">
@@ -181,7 +184,8 @@ function DiscoverCard({ row, onFollowed }: { row: ChannelRow; onFollowed: () => 
         <span className="chcard__bio">{row.bio || row.lastPost || 'A shop on Figmark'}</span>
         <span className="chcard__stats">{row.followerCount ?? 0} followers</span>
       </Link>
-      <button type="button" className="followbtn chcard__follow" disabled={busy}
+      {/* People follow; a shop does not. */}
+      {!voice.storeId && <button type="button" className="followbtn chcard__follow" disabled={busy}
         onClick={async () => {
           setBusy(true);
           try {
@@ -192,7 +196,7 @@ function DiscoverCard({ row, onFollowed }: { row: ChannelRow; onFollowed: () => 
           }
         }}>
         <Icon name="plus" size={12} /> Follow
-      </button>
+      </button>}
     </div>
   );
 }
@@ -223,6 +227,9 @@ const REFRESH_MS = 12_000;
 const RUN_GAP_MS = 5 * 60_000;
 
 export function ChannelRoom() {
+  const { id } = useParams<{ id: string }>();
+  // Forums moved to a room of their own; old links still land there.
+  if (id?.startsWith('frm_')) return <Navigate to={`/social/f/${id}`} replace />;
   return (
     <VoiceProvider>
       <Room />
@@ -259,6 +266,7 @@ function Room() {
   const [notice, setNotice] = useState<string | null>(null);
   const known = useRef<Set<string>>(new Set());
   const firstLoad = useRef(true);
+  const back = useGoBack('/social?view=channels');
 
   const nearBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 220;
   // The very bottom of the page, not the last message: the bar you write from
@@ -327,16 +335,32 @@ function Room() {
       ? ordered.filter((card) => isAnnouncement(card.post))
       : ordered;
 
-  if (error) return <main className="page social"><ErrorNotice message={error} /></main>;
+  if (error) {
+    return (
+      <div className="social">
+        <RoomBar onBack={back} avatar={<Avatar name="?" size={34} />} title="Channel" />
+        <main className="page social"><ErrorNotice message={error} /></main>
+      </div>
+    );
+  }
   if (!data) {
     return (
-      <main className="page social chroom">
-        <div className="chhero chhero--loading" aria-hidden="true" />
-      </main>
+      <div className="social">
+        <RoomBar onBack={back} avatar={<span className="skel" style={{ width: 34, height: 34, borderRadius: '50%' }} />}
+          title={<span className="skel" style={{ width: 120, height: 12 }} />} />
+        <main className="page social chroom">
+          <div className="chhero chhero--loading" aria-hidden="true" />
+        </main>
+      </div>
     );
   }
 
   const { channel } = data;
+  const follow = async () => {
+    const { following: now } = await api.follow(channel.id);
+    setFollowing(now);
+    if (now !== following) void load();
+  };
   const canPin = channel.mine && !isForum;
 
   const patch = (postId: string, change: (card: PostCard) => PostCard | null) =>
@@ -383,55 +407,56 @@ function Room() {
   const current = pinned[pinAt % Math.max(1, pinned.length)];
 
   return (
+    <div className="social">
+      <RoomBar onBack={back}
+        avatar={channel.photoUrl ? <img className="roombar__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={34} />}
+        title={<>{channel.name}{channel.tier === 'pro' && <span className="roombar__tier">PRO</span>}</>}
+        sub={<>{channel.followerCount ?? 0} followers{channel.handle && <> · @{channel.handle}</>}</>}
+        action={channel.handle && (
+          <Link to={`/${channel.handle}`} className="roombar__btn"><Icon name="tag" size={13} /> Shop</Link>
+        )} />
     <main className="page social chroom">
-      <div className="feedpage__bar">
-        <Link to="/social?view=channels" className="btn btn--quiet"><Icon name="back" size={14} /> Channels</Link>
-        <button type="button" className="btn btn--quiet" onClick={async () => {
-          const url = `${window.location.origin}/social/c/${encodeURIComponent(channel.id)}`;
-          try {
-            await navigator.clipboard.writeText(url);
-            setNotice('Link copied');
-          } catch {
-            window.prompt('Copy this link', url);
-          }
-        }}>
-          <Icon name="link" size={14} /> Share
-        </button>
-      </div>
-
-      <header className={`chhero${isForum ? ' chhero--forum' : ''}`}>
+      <header className="chhero">
         <span className="chhero__stripes" aria-hidden="true" />
         <div className="chhero__row">
-          <Avatar name={channel.name} size={64} />
+          {channel.photoUrl ? <img className="chhero__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={64} />}
           <div className="chhero__text">
             <h1 className="chhero__name">{channel.name}</h1>
             <p className="chhero__meta">
-              {isForum ? 'Forum' : (
-                <>
-                  {channel.handle && <>@{channel.handle} · </>}
-                  {channel.followerCount ?? 0} followers
-                  {channel.tier === 'pro' && <span className="chhero__tier">PRO</span>}
-                </>
-              )}
+              {channel.postCount ?? 0} messages · {channel.followerCount ?? 0} followers
             </p>
           </div>
         </div>
         {channel.description && <p className="chhero__bio">{channel.description}</p>}
-        {!isForum && (
-          <div className="chhero__actions">
-            {channel.mine ? (
-              <span className="chhero__you"><Icon name="megaphone" size={14} /> You run this channel</span>
-            ) : (
-              <button type="button" className={`chhero__follow${following ? ' is-on' : ''}`}
-                onClick={async () => setFollowing((await api.follow(channel.id)).following)}>
-                {following ? <><Icon name="check" size={14} /> Following</> : <><Icon name="plus" size={14} /> Follow</>}
-              </button>
-            )}
-            {channel.handle && <Link to={`/${channel.handle}`} className="chhero__shop"><Icon name="tag" size={14} /> Shop</Link>}
-          </div>
-        )}
+        <div className="chhero__actions">
+          {channel.mine ? (
+            <span className="chhero__you"><Icon name="megaphone" size={14} /> You run this channel</span>
+          ) : voice.storeId ? (
+            <span className="chhero__you"><Icon name="users" size={14} /> Shops do not follow - switch to you to follow</span>
+          ) : (
+            <button type="button" className={`chhero__follow${following ? ' is-on' : ''}`} onClick={() => void follow()}>
+              {following ? <><Icon name="check" size={14} /> Following</> : <><Icon name="plus" size={14} /> Follow</>}
+            </button>
+          )}
+        </div>
       </header>
 
+      {data.locked ? (
+        <div className="chgate">
+          <span className="chgate__lock" aria-hidden="true"><Icon name="lock" size={22} /></span>
+          <strong>Follow to step inside</strong>
+          <span className="faint">
+            {channel.name}'s channel is for its followers - {channel.postCount ?? 0} messages, announcements and
+            drops are waiting. Following the shop opens it.
+          </span>
+          {!voice.storeId && (
+            <button type="button" className="chhero__follow" onClick={() => void follow()}>
+              <Icon name="plus" size={14} /> Follow {channel.name}
+            </button>
+          )}
+        </div>
+      ) : (
+      <>
       {current && show !== 'media' && (
         <button type="button" className="chpin" onClick={() => {
           jump(current.post.id);
@@ -508,8 +533,12 @@ function Room() {
           window.setTimeout(() => toBottom(), 60);
         }} />
 
+      </>
+      )}
+
       {lightbox && <Lightbox photos={lightbox.photos} start={lightbox.start} onClose={() => setLightbox(null)} />}
     </main>
+    </div>
   );
 }
 
@@ -530,7 +559,22 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
   const { voice } = useVoice();
   const [open, setOpen] = useState(false);
   const [picking, setPicking] = useState(false);
+  const box = useRef<HTMLDivElement | null>(null);
+  const press = useLongPress(() => {
+    setOpen(true);
+    setPicking(false);
+  });
   const { post, listing, author, social } = card;
+
+  // Anywhere else closes it, as a menu does.
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (box.current && !box.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
   const fromShop = !isForum && (post.voice ?? 'store') === 'store';
   const announced = !isForum && isAnnouncement(post) && fromShop;
   const photos = photosOf(card);
@@ -574,7 +618,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
   const side = mine ? 'mine' : fromShop ? 'shop' : 'visitor';
 
   return (
-    <div id={`msg-${post.id}`}
+    <div id={`msg-${post.id}`} ref={box}
       className={`cmsg cmsg--${side}${startsRun ? ' is-first' : ''}${announced ? ' cmsg--announce' : ''}${open ? ' is-open' : ''}`}>
       {!mine && (
         <span className="cmsg__avatar">{startsRun ? <Avatar name={post.authorName} size={32} /> : null}</span>
@@ -586,14 +630,12 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
             {fromShop && <span className="cmsg__role">Shop</span>}
           </span>
         )}
+        {/* Hold for reply, react and the rest - the same gesture as in a
+            conversation - and double-tap to love. */}
         <div className="cmsg__bubble" role="button" tabIndex={0} aria-expanded={open}
-          onClick={(event) => {
-            if ((event.target as HTMLElement).closest('a, button')) return;
-            setOpen(!open);
-            setPicking(false);
-          }}
+          aria-label="Message. Press and hold for actions" {...press}
           onDoubleClick={() => void react('love')}
-          onKeyDown={(event) => event.key === 'Enter' && setOpen(!open)}>
+          onKeyDown={(event) => (event.key === 'Enter' || event.key === 'ContextMenu') && setOpen(!open)}>
           {announced && (
             <span className="cmsg__announce"><Icon name="megaphone" size={12} /> Announcement</span>
           )}

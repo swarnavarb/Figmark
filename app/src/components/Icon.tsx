@@ -22,7 +22,7 @@ export type IconName =
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image'
   | 'trash' | 'sort' | 'filter' | 'external' | 'home'
-  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link';
+  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy';
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>),
@@ -68,6 +68,7 @@ const PATHS: Record<IconName, ReactNode> = {
   poll: (<><path d="M4.4 19.6h15.2" /><path d="M7 16.4V10M12 16.4V5.4M17 16.4v-3.6" /></>),
   smile: (<><circle cx="12" cy="12" r="8.4" /><path d="M8.6 14.2a4 4 0 0 0 6.8 0" /><path d="M9.2 9.6h.01M14.8 9.6h.01" /></>),
   link: (<><path d="M10.4 13.6a3.6 3.6 0 0 0 5.1 0l3-3a3.6 3.6 0 0 0-5.1-5.1l-1.2 1.2" /><path d="M13.6 10.4a3.6 3.6 0 0 0-5.1 0l-3 3a3.6 3.6 0 0 0 5.1 5.1l1.2-1.2" /></>),
+  copy: (<><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15" /></>),
 };
 
 /** Glyphs that read better filled than stroked. */

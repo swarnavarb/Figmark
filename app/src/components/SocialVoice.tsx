@@ -76,6 +76,21 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
 }
 
+/**
+ * Yourself, and nobody else, for everything inside.
+ *
+ * A forum is people talking as themselves, so inside one the shop voice is
+ * not on offer: reactions, comments and votes there are always yours.
+ */
+export function PersonVoice({ children }: { children: ReactNode }) {
+  const { user } = useSession();
+  const value = useMemo<VoiceValue>(() => {
+    const me: SocialIdentity = { storeId: null, name: user?.displayName ?? 'Me', handle: user?.username ?? null };
+    return { voice: me, voices: [me], choose: () => undefined };
+  }, [user?.displayName, user?.username]);
+  return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
+}
+
 export function useVoice(): VoiceValue {
   return useContext(VoiceContext);
 }
@@ -101,7 +116,22 @@ export function VoiceAvatar({ voice, size = 40 }: { voice: SocialIdentity; size?
 export function VoicePicker({ size = 44 }: { size?: number }) {
   const { voice, voices, choose } = useVoice();
   const [open, setOpen] = useState(false);
+  // Which way the menu opens: towards whichever side of the screen has room.
+  // A switcher in a bar pinned to the bottom opening downwards opened off the
+  // screen, where nobody could pick anything from it.
+  const [place, setPlace] = useState({ up: false, right: false });
   const box = useRef<HTMLDivElement | null>(null);
+
+  function toggle() {
+    const rect = box.current?.getBoundingClientRect();
+    if (!open && rect) {
+      setPlace({
+        up: rect.top > window.innerHeight * 0.55,
+        right: rect.left > window.innerWidth * 0.5,
+      });
+    }
+    setOpen(!open);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -122,12 +152,13 @@ export function VoicePicker({ size = 44 }: { size?: number }) {
   return (
     <div className="voicepick" ref={box}>
       <button type="button" className="voicepick__button" aria-haspopup="menu" aria-expanded={open}
-        aria-label={`Posting as ${voice.name}. Switch profile`} onClick={() => setOpen(!open)}>
+        aria-label={`Posting as ${voice.name}. Switch profile`} onClick={toggle}>
         <VoiceAvatar voice={voice} size={size} />
         <span className="voicepick__swap" aria-hidden="true"><Icon name="sort" size={11} /></span>
       </button>
       {open && (
-        <div className="voicepick__menu" role="menu" aria-label="Post, react and comment as">
+        <div className={`voicepick__menu${place.up ? ' voicepick__menu--up' : ''}${place.right ? ' voicepick__menu--right' : ''}`}
+          role="menu" aria-label="Post, react and comment as">
           <p className="voicepick__title">Post, react and comment as</p>
           {voices.map((entry) => {
             const on = entry.storeId === voice.storeId;

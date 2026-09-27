@@ -317,6 +317,8 @@ export interface Repository {
   /** Every message touching any of these handles, for the inbox. */
   listMessagesForHandles(handles: readonly string[], limit?: number): Promise<Message[]>;
   sendMessage(message: Message): Promise<Message>;
+  /** Writes a message back, for reactions. */
+  updateMessage(message: Message): Promise<Message>;
   /** Marks everything addressed to `handle` in this thread as read. */
   markThreadRead(threadId: string, handle: string): Promise<number>;
 
@@ -354,6 +356,8 @@ export interface Repository {
   listForums(): Promise<Forum[]>;
   getForum(id: string): Promise<Forum | null>;
   createForum(forum: Forum): Promise<Forum>;
+  /** Writes a forum back, for joining and leaving. */
+  saveForum(forum: Forum): Promise<Forum>;
 }
 
 /** How long a seller must wait between bumps on the same listing. */

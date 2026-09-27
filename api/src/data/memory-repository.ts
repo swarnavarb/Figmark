@@ -558,6 +558,11 @@ export class MemoryRepository implements Repository {
     return message;
   }
 
+  async updateMessage(message: Message): Promise<Message> {
+    this.messages.set(message.id, message);
+    return message;
+  }
+
   async listReviewsAbout(subjectId: string): Promise<Review[]> {
     return [...this.reviews.values()]
       .filter((review) => review.subjectId === subjectId)
@@ -837,6 +842,11 @@ export class MemoryRepository implements Repository {
   }
 
   async createForum(forum: Forum): Promise<Forum> {
+    this.forums.set(forum.id, forum);
+    return forum;
+  }
+
+  async saveForum(forum: Forum): Promise<Forum> {
     this.forums.set(forum.id, forum);
     return forum;
   }

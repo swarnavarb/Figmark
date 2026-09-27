@@ -1023,6 +1023,8 @@ export function seedFollows(): Follow[] {
     { id: 'flw_2', followerId: 'usr_demo', sellerId: 'usr_tokyoline', createdAt: iso(-14), updatedAt: iso(-14) },
     { id: 'flw_3', followerId: 'usr_demo', sellerId: 'usr_gadgetgrid', createdAt: iso(-9), updatedAt: iso(-9) },
     { id: 'flw_4', followerId: 'usr_demo', sellerId: 'usr_sneakervault', createdAt: iso(-5), updatedAt: iso(-5) },
+    // A person, too: the feed is people as well as shops.
+    { id: 'flw_5', followerId: 'usr_demo', sellerId: 'usr_b_sana', createdAt: iso(-4), updatedAt: iso(-4) },
   ];
 }
 
@@ -1045,27 +1047,46 @@ export function seedLikes(): Like[] {
  * that people might actually post in.
  */
 export function seedForums(): Forum[] {
+  // People only, as members and as founders: a forum is somewhere people talk
+  // as themselves, and a shop has its own channel for talking as a shop.
   return [
     {
       id: 'frm_imports', name: 'Import questions',
       description: 'Customs, duty, forwarders, and what actually clears.',
-      createdBy: 'usr_kaiju', postCount: 2,
+      createdBy: 'usr_b_rohit', postCount: 2,
+      memberIds: ['usr_demo', 'usr_b_rohit', 'usr_b_sana', 'usr_b_nikhil', 'usr_b_karan'],
       createdAt: iso(-30), updatedAt: iso(-2),
     },
     {
       id: 'frm_authenticity', name: 'Real or fake',
       description: 'Post photos, get a second opinion before you pay.',
-      createdBy: 'usr_sneakervault', postCount: 1,
+      createdBy: 'usr_b_nikhil', postCount: 1,
+      memberIds: ['usr_demo', 'usr_b_nikhil', 'usr_b_vikram', 'usr_b_farah'],
       createdAt: iso(-26), updatedAt: iso(-3),
     },
     {
       id: 'frm_deals', name: 'Deal spotting',
       description: 'Price drops and group-buys worth joining.',
-      createdBy: 'usr_tokyoline', postCount: 1,
+      createdBy: 'usr_b_sana', postCount: 1,
+      memberIds: ['usr_b_sana', 'usr_b_karan', 'usr_b_aisha'],
       createdAt: iso(-18), updatedAt: iso(-1),
     },
   ];
 }
+
+/**
+ * Fixture posts that were seeded and then withdrawn, as [channel, id].
+ *
+ * The first forum posts were written as shops, which forums no longer allow.
+ * A database seeded before then still has them, so they are named here for
+ * the store to take out.
+ */
+export const RETIRED_FIXTURE_POSTS: readonly (readonly [string, string])[] = [
+  ['frm_imports', 'pst_frm_1'],
+  ['frm_imports', 'pst_frm_2'],
+  ['frm_authenticity', 'pst_frm_3'],
+  ['frm_deals', 'pst_frm_4'],
+];
 
 interface PostSeed {
   id: string;
@@ -1085,6 +1106,8 @@ interface PostSeed {
   /** A conversation under it, as [author id, author name, text, replies]. */
   talk?: [string, string, string, [string, string, string][]?][];
   poll?: string[];
+  /** A forum post its author also put on their own wall. */
+  wall?: true;
   vibe?: Post['vibe'];
   /** Room messages: said in the channel, not broadcast. */
   voice?: Post['voice'];
@@ -1263,30 +1286,40 @@ const POSTS: PostSeed[] = [
     poll: ['Retro runners', 'Court shoes', 'Trail shoes'],
   },
 
-  /* Forums. */
+  /* Forums: people only. */
   {
-    id: 'pst_frm_1', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
-    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    id: 'pst_frm_imports_1', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
+    authorId: 'usr_b_rohit', authorName: 'Rohit Deshmukh',
     body: 'Duty on resin figures has been assessed at 28% twice running at BLR. Anyone seeing different at MAA?',
-    likeCount: 14, replyCount: 7, ageDays: -2,
+    likeCount: 14, replyCount: 0, ageDays: -2,
+    talk: [
+      ['usr_b_sana', 'Sana Qureshi', 'MAA did 18% on mine last month, declared as models.', [
+        ['usr_b_rohit', 'Rohit Deshmukh', 'Interesting - same HS code?'],
+      ]],
+      ['usr_b_karan', 'Karan Malhotra', 'Keep the invoice in the box, it helped me.'],
+    ],
   },
   {
-    id: 'pst_frm_2', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
-    authorId: 'usr_gadgetgrid', authorName: 'Gadget Grid',
-    body: 'Sea freight to Chennai is running about three weeks door to door right now. Air is a week but roughly triples the per-kg.',
-    likeCount: 9, replyCount: 3, ageDays: -6,
+    id: 'pst_frm_imports_2', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
+    authorId: 'usr_b_nikhil', authorName: 'Nikhil Raghavan',
+    body: 'Which forwarder should I split next with the group?',
+    likeCount: 9, replyCount: 0, ageDays: -1,
+    poll: ['Sea, slow and cheap', 'Air, fast and pricey', 'Whatever clears'],
   },
   {
-    id: 'pst_frm_3', channelId: 'frm_authenticity', channel: 'forum', kind: 'thread',
-    authorId: 'usr_sneakervault', authorName: 'Sneaker Vault',
+    id: 'pst_frm_real_1', channelId: 'frm_authenticity', channel: 'forum', kind: 'thread',
+    authorId: 'usr_b_vikram', authorName: 'Vikram Chauhan',
     body: 'Quick checklist for retro high-tops: stitching count on the toe box, insole print depth, and the size tag font. Photos of all three or it is a guess.',
-    likeCount: 22, replyCount: 5, ageDays: -3,
+    likeCount: 22, replyCount: 0, ageDays: -3, wall: true,
+    art: [['Toe box', '#FF5B1F', '#FF2E7E'], ['Insole', '#7C3AED', '#FF2E7E'], ['Size tag', '#0EA5E9', '#7C3AED']],
+    talk: [['usr_b_farah', 'Farah Sheikh', 'Saving this. The size tag font gets everyone.']],
   },
   {
-    id: 'pst_frm_4', channelId: 'frm_deals', channel: 'forum', kind: 'thread',
-    authorId: 'usr_tokyoline', authorName: 'Tokyo Line',
+    id: 'pst_frm_deals_1', channelId: 'frm_deals', channel: 'forum', kind: 'thread',
+    authorId: 'usr_b_sana', authorName: 'Sana Qureshi',
     body: 'Booster boxes are the cheapest they have been in months if you are splitting a case. Worth pooling.',
-    likeCount: 5, replyCount: 2, ageDays: -1,
+    likeCount: 7, replyCount: 0, ageDays: -1, wall: true,
+    talk: [['usr_b_aisha', 'Aisha Fernandes', 'In for two if anyone is organising 🙋‍♀️']],
   },
 ];
 
@@ -1323,7 +1356,8 @@ const SEED_KINDS: ReactionKind[] = ['love', 'fire', 'love', 'clap', 'haha', 'wow
 
 export function seedPosts(): Post[] {
   const everyone = reactorIds();
-  return POSTS.map((entry, postIndex) => {
+  const forumName = new Map(seedForums().map((forum) => [forum.id, forum.name]));
+  const posts: Post[] = POSTS.map((entry, postIndex) => {
     const at = iso(entry.ageDays, entry.ageHours ?? 0);
     // Reactions from real seed accounts, so "who reacted" has names to show.
     // Never more than there are people, and never the demo account, whose own
@@ -1377,6 +1411,8 @@ export function seedPosts(): Post[] {
       ...(entry.reach ? { reach: entry.reach } : {}),
       ...(entry.announcement !== undefined ? { announcement: entry.announcement } : {}),
       ...(entry.pinned ? { pinned: true } : {}),
+      ...(entry.channel === 'forum' ? { voice: 'visitor' as const, reach: 'channel' as const, announcement: false } : {}),
+      ...(entry.wall ? { wallPostId: `${entry.id}_wall` } : {}),
       replyTo: entry.replyToId
         ? (() => {
             const original = POSTS.find((other) => other.id === entry.replyToId);
@@ -1387,6 +1423,35 @@ export function seedPosts(): Post[] {
       updatedAt: at,
     };
   });
+
+  // A forum post put on its author's wall: an entry there that points back,
+  // so the conversation stays in one place.
+  const walls: Post[] = posts.filter((post) => post.wallPostId).map((post) => ({
+    id: post.wallPostId!,
+    channelId: post.authorId,
+    channel: 'seller',
+    kind: 'update',
+    authorId: post.authorId,
+    authorName: post.authorName,
+    body: '',
+    listingId: null,
+    photoUrl: null,
+    likeCount: 0,
+    replyCount: 0,
+    voice: 'store',
+    reach: 'feed',
+    announcement: false,
+    photoUrls: [],
+    reactions: [],
+    comments: [],
+    shareCount: 0,
+    poll: null,
+    vibe: null,
+    wallOf: { forumId: post.channelId, forumName: forumName.get(post.channelId) ?? 'a forum', postId: post.id },
+    createdAt: post.createdAt,
+    updatedAt: post.createdAt,
+  }));
+  return [...posts, ...walls];
 }
 
 /* -------------------------------------------------------------------------- */

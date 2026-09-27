@@ -57,7 +57,13 @@ export function WantedPage() {
   }, [askedFor, askedBuyer, openWant?.id]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) {
+    return (
+      <div className="wanted" aria-hidden="true">
+        <div className="wanthero wanthero--loading" />
+      </div>
+    );
+  }
 
   // Yours, under the same filter as everything else — filtering to Trading
   // cards and still being shown your own hunt for a figure reads as the filter
@@ -69,22 +75,29 @@ export function WantedPage() {
   const others = data.wants.filter((want) => want.buyerId !== user?.id);
 
   return (
-    <div className="stack">
-      <div className="row row--between" style={{ alignItems: 'center' }}>
-        <p className="muted" style={{ margin: 0 }}>
-          Say what you are hunting for. Sellers answer with what they have, or what they can get.
-        </p>
-        {user && (
-          <button className="btn" style={{ flex: 'none' }} onClick={() => setAsking(true)}>
-            Post a want
-          </button>
-        )}
-      </div>
+    <div className="wanted">
+      {/* The ask is the headline: a board nobody posts to is a board nobody
+          reads, so posting is the biggest thing on it. */}
+      <section className="wanthero">
+        <span className="wanthero__stripes" aria-hidden="true" />
+        <span className="wanthero__kicker">🎯 The hunt board</span>
+        <h2 className="wanthero__title">What are you hunting for?</h2>
+        <p className="wanthero__sub">Sellers answer with what they have - or what they can get in the next consignment.</p>
+        <div className="wanthero__row">
+          {user && (
+            <button type="button" className="wanthero__ask" onClick={() => setAsking(true)}>
+              <span aria-hidden="true">+</span> Post a want
+            </button>
+          )}
+          <span className="wanthero__stat"><strong>{others.length}</strong> open hunts</span>
+          {openMine.length > 0 && <span className="wanthero__stat"><strong>{openMine.length}</strong> yours</span>}
+        </div>
+      </section>
 
       {openMine.length > 0 && (
-        <section className="detail__section">
-          <h3>Yours</h3>
-          <div className="stack">
+        <section className="wanted__section">
+          <h3 className="wanted__title">Your hunts</h3>
+          <div className="wanted__list">
             {openMine.map((want) => (
               <WantRow key={want.id} want={want} mine onOpen={() => setOpenWant(want)}
                 onChanged={load} />
@@ -93,7 +106,7 @@ export function WantedPage() {
         </section>
       )}
 
-      <div className="chips chips--tight">
+      <div className="chips chips--tight wanted__cats">
         <button type="button" className={`chip${category === '' ? ' is-on' : ''}`}
           onClick={() => setCategory('')}>
           Everything
@@ -113,7 +126,7 @@ export function WantedPage() {
             : 'Be the first — what are you looking for that nobody has listed?'}
         </EmptyState>
       ) : (
-        <div className="stack">
+        <div className="wanted__list">
           {others.map((want) => (
             <WantRow key={want.id} want={want} mine={false} onOpen={() => setOpenWant(want)}
               onChanged={load} />
