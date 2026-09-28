@@ -9,7 +9,9 @@ import { actionsFor, isCancelledLike, isStopped, travellingStatus } from '../../
 import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { afterDelivered, deliver, dropFromCollection, settleAll, syncLotDelivery, undeliver } from '../delivery.js';
+import {
+  afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, settleAll, syncLotDelivery, undeliver,
+} from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
@@ -697,8 +699,8 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   if (moving && isStopped(order.status)) {
     return error(409, 'order_stopped', 'That order was called off or refunded, so it no longer moves along the route.');
   }
-  if (moving && !last && order.status === 'delivered' && order.escrow.state === 'released') {
-    return error(409, 'already_released', 'The payment for this item has already been released, so delivery cannot be undone.');
+  if (moving && !last && order.status === 'delivered' && isDeliveryLocked(order)) {
+    return error(409, 'delivery_final', lockedReason(order));
   }
 
   const next: Order = { ...order, stageHistory: [...order.stageHistory, event], updatedAt: now };
@@ -840,6 +842,10 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         inCollection: collected.has(order.id),
         /** Payment is still held under protection; the buyer can confirm or dispute. */
         paymentHeld: order.escrow.state === 'held',
+        /** The buyer already confirmed it reached them. */
+        receivedAt: order.receivedAt ?? null,
+        /** Whether this buyer can tap "I received it" / "It arrived" now. */
+        canConfirm: actionsFor(order, user.id).includes('confirm'),
       })),
     };
   });

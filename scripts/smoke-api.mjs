@@ -8023,4 +8023,74 @@ await check('a validated comment carries the mark', async () => {
   assert.equal(twice.status, 409);
 });
 
+
+await check('direct and protected buyers in one lot go through the same unpack-and-deliver steps', async () => {
+  const buy = async (name, protection) => {
+    const listing = await createListing(req({
+      headers: auth, body: { title: name, priceMinor: 6_000, sourcing: 'import' },
+    }), ctx);
+    const buyer = await newBuyer(`${name} buyer`);
+    const opened = await openCheckout(req({ headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id } }), ctx);
+    const paid = await payOrder(req({
+      headers: buyer.headers, params: { id: opened.jsonBody.order.id },
+      body: protection ? { protection: true, escrowAgentId: 'usr_escrow_meera' } : {},
+    }), ctx);
+    assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+    return { buyer, order: paid.jsonBody.order };
+  };
+  const direct = await buy('Paid direct', false);
+  const guarded = await buy('Paid protected', true);
+  assert.equal(direct.order.escrow.state, 'none');
+  assert.equal(guarded.order.escrow.state, 'held');
+
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Mixed payments' } }), ctx)).jsonBody.lot;
+  for (const { order } of [direct, guarded]) {
+    await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.id } }), ctx);
+  }
+
+  // The crate travels until it is unpacked, whoever paid how.
+  let moved;
+  do { moved = await stepLot(req({ headers: auth, params: { id: lot.id } }), ctx); } while (moved.status === 200);
+  assert.equal(moved.jsonBody.error, 'deliver_individually');
+
+  // Then each item goes out and arrives on its own, with the same buttons.
+  for (const { order } of [direct, guarded]) {
+    assert.equal((await tick(order.id, 'dispatched')).status, 200);
+    assert.equal((await tick(order.id, 'delivered')).status, 200);
+  }
+  const closed = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.equal(closed.lot.status, 'closed', 'the lot closes when the last item arrives, however it was paid');
+
+  const view = async ({ buyer, order }) =>
+    (await orderState(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  const [d, g] = [await view(direct), await view(guarded)];
+  for (const state of [d, g]) {
+    assert.equal(state.order.status, 'delivered');
+    assert.ok(state.actions.includes('confirm'), 'both buyers get the same "it arrived" step');
+  }
+  // Only the protected one has a clock and a way to hold the money back.
+  assert.equal(d.order.escrow.autoReleaseAt ?? null, null);
+  assert.equal(d.actions.includes('dispute'), false);
+  assert.ok(g.order.escrow.autoReleaseAt);
+  assert.ok(g.actions.includes('dispute'));
+
+  // The same confirmation closes both; only the protected one moves money.
+  const dc = await confirmOrder(req({ headers: direct.buyer.headers, params: { id: direct.order.id } }), ctx);
+  assert.equal(dc.status, 200, JSON.stringify(dc.jsonBody));
+  assert.ok(dc.jsonBody.order.receivedAt);
+  assert.equal(dc.jsonBody.order.escrow.state, 'none', 'nothing to release on a direct payment');
+  assert.ok((await noticesFor('usr_demo')).some((row) => row.kind === 'order_received'));
+  const gc = await confirmOrder(req({ headers: guarded.buyer.headers, params: { id: guarded.order.id } }), ctx);
+  assert.ok(gc.jsonBody.order.receivedAt);
+  assert.equal(gc.jsonBody.order.escrow.state, 'released');
+
+  // Confirmed is final for both: no confirming twice, no seller undo.
+  for (const { buyer, order } of [direct, guarded]) {
+    assert.equal((await confirmOrder(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).status, 409);
+    const undo = await tick(order.id, 'delivered', false);
+    assert.equal(undo.status, 409);
+    assert.equal(undo.jsonBody.error, 'delivery_final');
+  }
+});
+
 console.log(`\n${passed} checks passed`);

@@ -25,7 +25,7 @@ import {
 import { DISPUTE_TOPIC_LABELS } from '../../../shared/disputes.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { releaseHeld, settleDue } from '../delivery.js';
+import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
@@ -390,7 +390,7 @@ async function confirm(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'not_confirmable', 'This order is not waiting on delivery.');
   }
 
-  return json(200, { order: await releaseHeld(order, 'Delivery confirmed by the buyer.', user.id, repository) });
+  return json(200, { order: await confirmReceived(order, user.id, repository) });
 }
 
 /**

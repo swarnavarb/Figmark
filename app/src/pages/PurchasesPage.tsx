@@ -112,9 +112,14 @@ export function PurchasesPage() {
                               const badge = deliveryBadge(item);
                               return badge && <span className={`badge badge--${badge.tone}`}>{badge.text}</span>;
                             })()}
-                            {item.status === 'delivered' && item.paymentHeld && (
-                              <span className="faint">Tap to confirm it arrived, or report a problem.</span>
+                            {item.canConfirm && (
+                              <span className="faint">
+                                {item.paymentHeld
+                                  ? 'Tap to confirm it arrived (releases the payment), or report a problem.'
+                                  : 'Tap to confirm you received it.'}
+                              </span>
                             )}
+                            {item.receivedAt && <span className="faint">📬 You confirmed receipt</span>}
                             {item.status === 'delivered' && !item.inCollection && (
                               <span className="purch__collect">🎁 Ready to add to your collection</span>
                             )}

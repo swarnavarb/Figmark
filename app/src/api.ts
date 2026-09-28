@@ -1365,6 +1365,10 @@ export interface ItemGroup {
     inCollection: boolean;
     /** Payment still held under buyer protection. */
     paymentHeld: boolean;
+    /** When the buyer confirmed it reached them, or null. */
+    receivedAt: string | null;
+    /** The buyer can tap "I received it" (or "Yes, it arrived") now. */
+    canConfirm: boolean;
   })[];
 }
 

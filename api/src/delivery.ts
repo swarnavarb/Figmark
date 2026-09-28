@@ -72,15 +72,60 @@ export function deliver(order: Order, options: DeliverOptions): boolean {
  * is finished, and walking it back would leave the seller paid for a parcel
  * the timeline says never arrived.
  */
-export function undeliver(order: Order, options: { now?: string }): 'ok' | 'released' | 'not_delivered' {
+export function undeliver(order: Order, options: { now?: string }): 'ok' | 'locked' | 'not_delivered' {
   if (order.status !== 'delivered') return 'not_delivered';
-  if (order.escrow.state === 'released') return 'released';
+  if (isDeliveryLocked(order)) return 'locked';
   const now = options.now ?? new Date().toISOString();
   order.status = order.checkpoints?.dispatched ? 'shipped' : inLot(order) ? 'in_fulfilment' : 'confirmed';
   order.completedAt = null;
   order.checkpoints = { ...(order.checkpoints ?? {}), delivered: null };
   order.updatedAt = now;
   return 'ok';
+}
+
+/**
+ * Whether a delivery is final: the buyer has confirmed it arrived, or the
+ * money held for it has been released. The same lock for direct and protected
+ * orders - after either, the seller cannot take the delivery back.
+ */
+export function isDeliveryLocked(order: Pick<Order, 'receivedAt' | 'escrow'>): boolean {
+  return Boolean(order.receivedAt) || order.escrow.state === 'released';
+}
+
+/** Why a locked delivery cannot be undone, in words for the seller. */
+export function lockedReason(order: Pick<Order, 'receivedAt'>): string {
+  return order.receivedAt
+    ? 'The buyer has confirmed they received this item, so delivery cannot be undone.'
+    : 'The payment for this item has already been released, so delivery cannot be undone.';
+}
+
+/**
+ * The buyer says the item is in their hands - the last step of every
+ * delivery, direct or protected.
+ *
+ * Under protection this is also what releases the held payment. Paid
+ * directly, the money already went to the seller, so it only closes the
+ * delivery and tells the seller. Either way an item not yet marked delivered
+ * becomes delivered: the buyer holding it is the stronger fact.
+ */
+export async function confirmReceived(order: Order, by: string, repository: Repo): Promise<Order> {
+  order.receivedAt = new Date().toISOString();
+  if (order.escrow.state === 'held') {
+    return releaseHeld(order, 'Delivery confirmed by the buyer.', by, repository);
+  }
+  const saved = await releaseHeld(order, 'The buyer confirmed they received it.', by, repository);
+  await notify(
+    repository,
+    [order.sellerId],
+    {
+      kind: 'order_received',
+      title: `Received: ${order.itemName}`,
+      body: 'The buyer confirmed it reached them.',
+      link: `/order/${encodeURIComponent(order.id)}`,
+    },
+    { except: by },
+  );
+  return saved;
 }
 
 function appendEvent(order: Order, event: { note: string; by: string; now: string; step?: string }): void {
@@ -135,8 +180,8 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
       kind: 'order_delivered',
       title: `Delivered: ${order.itemName}`,
       body: held
-        ? 'Tap "It arrived" once it is in your hands, or open a dispute if something is wrong. You can add it to your collection now.'
-        : 'It reached you. Add it to your collection and leave a review.',
+        ? 'Tap "Yes, it arrived" on the order once it is in your hands - that releases the payment - or open a dispute if something is wrong. You can add it to your collection now.'
+        : 'Tap "I received it" on the order once it is in your hands. You can add it to your collection and leave a review now.',
       link: `/order/${encodeURIComponent(order.id)}`,
     },
     { except: by },

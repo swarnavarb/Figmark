@@ -516,9 +516,10 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
             {actions.includes('confirm') && (
               <button className="btn btn--lg" disabled={busy !== null}
                 onClick={() => void run('confirm', () => api.confirmOrder(order.id))}>
-                {busy === 'confirm' ? 'Releasing…'
-                  : order.status === 'delivered' ? 'Yes, it arrived — release the payment'
-                  : 'It arrived — complete the order'}
+                {/* One step for every order; only a protected one also moves money. */}
+                {busy === 'confirm' ? 'Confirming…'
+                  : order.escrow.state === 'held' ? 'Yes, it arrived — release the payment'
+                  : '📬 I received it'}
               </button>
             )}
             {actions.includes('dispute') && !disputing && (
@@ -680,6 +681,7 @@ function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => 
   const delivered = order.status === 'delivered';
   const released = order.escrow.state === 'released';
   const held = order.escrow.state === 'held';
+  const received = Boolean(order.receivedAt);
 
   async function tick(checkpoint: 'dispatched' | 'delivered', on: boolean) {
     setBusy(checkpoint);
@@ -696,9 +698,13 @@ function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => 
   }
 
   const hint = delivered
-    ? held
-      ? `Delivered. The payment is released when the buyer confirms${order.escrow.autoReleaseAt ? `, or on ${formatDate(order.escrow.autoReleaseAt)}` : ''} if they raise no dispute.`
-      : 'Delivered.'
+    ? received
+      ? `The buyer confirmed they received it on ${formatDate(order.receivedAt!)}.`
+      : held
+        ? `Delivered. Waiting for the buyer to confirm - that releases the payment${order.escrow.autoReleaseAt ? `, or it releases on ${formatDate(order.escrow.autoReleaseAt)}` : ''} if they raise no dispute.`
+        : released
+          ? 'Delivered, and the payment has been released.'
+          : 'Delivered. Waiting for the buyer to confirm they received it.'
     : dispatched
       ? 'On its way. Mark it delivered once it reaches the buyer.'
       : `Mark it dispatched when it leaves you${held ? ` - that starts the ${state.autoReleaseDays}-day protection window` : ''}.`;
@@ -717,13 +723,15 @@ function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => 
           <button type="button" className="btn" disabled={busy !== null} onClick={() => setAsking(true)}>
             ✅ Mark delivered
           </button>
-        ) : !released ? (
+        ) : !received && !released ? (
           <button type="button" className="btn btn--quiet" disabled={busy !== null}
             onClick={() => void tick('delivered', false)}>
             {busy === 'delivered' ? 'Saving…' : '↩︎ Undo delivered'}
           </button>
         ) : (
-          <span className="badge badge--ok">Delivered and paid out</span>
+          <span className="badge badge--ok">
+            {received ? '📬 Buyer confirmed receipt' : 'Delivered'}{released ? ' · paid out' : ''}
+          </span>
         )}
       </div>
       <span className="field__hint">{hint}</span>
@@ -752,6 +760,20 @@ function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => 
 /** Delivered to the buyer: the nudge to put it on a collection shelf. */
 function CollectionPrompt({ state }: { state: OrderState }) {
   if (state.side !== 'buyer' || state.order.status !== 'delivered') return null;
+  const received = state.order.receivedAt;
+  return (
+    <>
+      {received && (
+        <p className="notice notice--ok" style={{ marginBottom: 12 }}>
+          📬 You confirmed you received this on {formatDate(received)}.
+        </p>
+      )}
+      <CollectionCard state={state} />
+    </>
+  );
+}
+
+function CollectionCard({ state }: { state: OrderState }) {
   return state.inCollection ? (
     <p className="notice notice--ok" style={{ marginBottom: 20 }}>
       🎁 This is in your <Link to="/me?tab=collection">collection</Link>.

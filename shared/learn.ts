@@ -220,7 +220,7 @@ const BUY: LearnTab = {
         step('Open My Purchases', 'Profile icon → **My Purchases**. Orders are grouped by shop, with what you owe and what to do next.', '/learn/buy-purchases.jpg', 'My Purchases, grouped by shop.'),
         step('Follow the timeline', 'Open an order to see each stage as it happens, the tracking number once it ships, and any notes from the seller. An imported item travels in a lot; once the lot lands it is unpacked and your item is sent to you on its own, with its own dispatch and delivery.', '/learn/buy-tracking.jpg', 'An order\'s tracking timeline.'),
         step('Pay the balance', 'If you paid an advance, pay the rest from the order or from My Purchases when the seller asks for it.'),
-        step('Confirm it arrived', 'When the parcel is in your hands, tap **It arrived - complete the order** (or **Yes, it arrived** once the seller has marked it delivered). With buyer protection this releases the held payment to the seller. If you do nothing and raise no dispute, it releases on its own 10 days after your item is dispatched - the order page shows the exact date.'),
+        step('Confirm it arrived', 'When the parcel is in your hands, confirm it on the order - the same step however you paid. Paid directly, tap **I received it**: the money is already with the seller, so this just closes the delivery. With buyer protection the button reads **Yes, it arrived - release the payment**, because confirming is what releases the held money; if you do nothing and raise no dispute, it releases on its own 10 days after your item is dispatched (the order page shows the date).'),
       ],
     },
     {

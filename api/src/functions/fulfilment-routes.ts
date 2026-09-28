@@ -20,7 +20,9 @@ import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { afterDelivered, deliver, dropFromCollection, syncLotDelivery, undeliver } from '../delivery.js';
+import {
+  afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, syncLotDelivery, undeliver,
+} from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
@@ -1053,8 +1055,8 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     if (on && isStopped(order.status)) {
       return error(409, 'order_stopped', 'That order was called off or refunded, so it cannot be marked delivered.');
     }
-    if (!on && order.status === 'delivered' && order.escrow.state === 'released') {
-      return error(409, 'already_released', 'The payment for this item has already been released, so delivery cannot be undone.');
+    if (!on && order.status === 'delivered' && isDeliveryLocked(order)) {
+      return error(409, 'delivery_final', lockedReason(order));
     }
   }
 

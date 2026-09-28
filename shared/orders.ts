@@ -104,7 +104,7 @@ export function actionsFor(
   order: Pick<
     Order,
     'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
-  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck' | 'placedAt'>>,
+  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck' | 'placedAt' | 'receivedAt'>>,
   viewerId: string,
   reviewed = false,
 ): OrderAction[] {
@@ -192,14 +192,17 @@ export function actionsFor(
   // the same claim, which is why it does not release the money. Unprotected
   // orders confirm too — there is simply no money to let go of.
   //
-  // Two moments call for it: the item is on its way (shipped), or the seller
-  // has marked it delivered and the payment is still held. The second is the
-  // buyer saying "yes, it is here" early, which lets the money go before the
-  // auto-release clock runs out.
-  const awaitingDelivery =
-    (order.status === 'shipped' && (order.escrow.state === 'held' || order.escrow.state === 'none'))
-    || (order.status === 'delivered' && order.escrow.state === 'held');
-  if (side === 'buyer' && awaitingDelivery && order.paymentStatus === 'paid') actions.push('confirm');
+  //
+  // The same step for every order once it is on its way or marked delivered,
+  // however it was paid - the delivery flow does not change with the payment.
+  // What changes is what the confirmation also does: under protection it
+  // releases the held money (so the order has to be paid in full, which is
+  // what is held); paid directly the money is already with the seller, so it
+  // only closes the delivery, and a balance still owed does not block it.
+  const onItsWayOrDelivered = order.status === 'shipped' || order.status === 'delivered';
+  const confirmable = onItsWayOrDelivered && !order.receivedAt
+    && (order.escrow.state === 'held' ? order.paymentStatus === 'paid' : order.escrow.state === 'none');
+  if (side === 'buyer' && confirmable) actions.push('confirm');
 
   // Disputing needs something to dispute over. Without protection the money
   // went straight to the seller and there is nothing for the company to hold,

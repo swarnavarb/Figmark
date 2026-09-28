@@ -986,6 +986,15 @@ export interface Order extends BaseDocument {
    */
   trustCountedAt?: string | null;
   /**
+   * When the buyer confirmed the item is in their hands.
+   *
+   * The same last step for every order, however it was paid: the seller says
+   * it was delivered, the buyer says it arrived. Under buyer protection that
+   * same confirmation also releases the held payment; paid directly there is
+   * no money to release, and it simply closes the delivery.
+   */
+  receivedAt?: string | null;
+  /**
    * When each physical checkpoint was ticked for this one item.
    *
    * A timestamp rather than a boolean, so "is it in the China warehouse" and
@@ -1673,6 +1682,8 @@ export type NotificationKind =
   | 'order_delivered'
   /** A held payment went to the seller: confirmed by the buyer, or on its own. */
   | 'payment_released'
+  /** The buyer confirmed an item reached them (paid directly, so no money moves). */
+  | 'order_received'
   /** Somebody disputed a review or comment, or asked for one to be validated, and it was decided. */
   | 'content_report_settled'
   | 'preorder_nearly'
