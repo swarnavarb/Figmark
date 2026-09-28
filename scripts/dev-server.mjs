@@ -98,6 +98,10 @@ const {
   collectionRemoveRoute, collectionGroupsRoute,
 } = await import(new URL('collection-routes.js', apiRoot));
 const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
+const { settingsRoute, opsSettingsRoute, opsSettingsSaveRoute } = await import(new URL('settings-routes.js', apiRoot));
+const {
+  reportCreateRoute, reportMineRoute, opsReportsRoute, opsReportResolveRoute,
+} = await import(new URL('report-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -214,6 +218,13 @@ const routes = [
   ['GET', '/api/ops/learn', opsLearnRoute],
   ['POST', '/api/ops/learn/save', opsLearnSaveRoute],
   ['POST', '/api/ops/learn/reset', opsLearnResetRoute],
+  ['GET', '/api/settings', settingsRoute],
+  ['GET', '/api/ops/settings', opsSettingsRoute],
+  ['POST', '/api/ops/settings/save', opsSettingsSaveRoute],
+  ['POST', '/api/reports', reportCreateRoute],
+  ['GET', '/api/reports/mine', reportMineRoute],
+  ['GET', '/api/ops/reports', opsReportsRoute],
+  ['POST', '/api/ops/reports/:id/resolve', opsReportResolveRoute],
   ['GET', '/api/me/collection', myCollectionRoute],
   ['POST', '/api/me/collection/add', collectionAddRoute],
   ['POST', '/api/me/collection/edit', collectionEditRoute],

@@ -1,3 +1,4 @@
+import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type {
   ApiError,
   AuthUser,
@@ -234,7 +235,7 @@ export interface ListingDetail {
   listing: Listing;
   seller: SellerCard | null;
   estimatedDispatchAt: string | null;
-  comments: (ListingComment & { author: PartyRef })[];
+  comments: (ListingComment & { author: PartyRef; moderation?: ModerationMark })[];
   liked: boolean;
   following: boolean;
   isOwn: boolean;
@@ -327,6 +328,9 @@ export interface PublicReview {
   item: {
     orderId: string; listingId: string; name: string; totalMinor: number; currency: string;
   } | null;
+  /** This viewer wrote it. */
+  mine?: boolean;
+  moderation?: ModerationMark;
 }
 
 /** An opinion left on somebody's page, which nothing had to be bought to write. */
@@ -338,6 +342,7 @@ export interface PageReview {
   authorHandle: string | null;
   createdAt: string;
   mine: boolean;
+  moderation?: ModerationMark;
 }
 
 export interface PageReviews {
@@ -652,6 +657,10 @@ export interface OrderState {
   dispute: Dispute | null;
   /** Seller-side only: whether the buyer has somewhere for a reversal to go. */
   buyerHasReversalDetails: boolean | null;
+  /** The protection window operators have set today, in days. */
+  autoReleaseDays: number;
+  /** Buyer-side: already on one of their collection shelves. */
+  inCollection: boolean;
 }
 
 /** Out of 100, or null when nobody has rated that side of them yet. */
@@ -1350,6 +1359,12 @@ export interface ItemGroup {
     /** False while the buyer has pressed Buy but not yet paid or booked. */
     placed: boolean;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+    /** When it reached the buyer, or null while it is still on its way. */
+    deliveredAt: string | null;
+    /** Delivered and already on a collection shelf. */
+    inCollection: boolean;
+    /** Payment still held under buyer protection. */
+    paymentHeld: boolean;
   })[];
 }
 
@@ -1791,6 +1806,11 @@ export const api = {
   profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
   credit: (userId: string) => request<Credit>(`/users/${encodeURIComponent(userId)}/credit`),
   pageReviews: (userId: string) => request<PageReviews>(`/users/${encodeURIComponent(userId)}/page-reviews`),
+  /** Dispute somebody else's review or comment, or ask Figmark to validate your own. */
+  report: (body: { targetType: ReportTarget; targetId: string; parentId: string; reason: string }) =>
+    post<{ report: ContentReport }>('/reports', body),
+  /** The shop-wide rules, such as how long protected payments are held. */
+  settings: () => request<{ autoReleaseDays: number }>('/settings'),
   writePageReview: (userId: string, body: { rating: number; body: string }) =>
     post<{ review: PageReview }>(`/users/${encodeURIComponent(userId)}/page-reviews/new`, body),
   saveProfile: (body: { bio?: string; coverUrl?: string; tags?: string[] }) =>

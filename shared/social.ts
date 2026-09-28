@@ -1,3 +1,4 @@
+import type { ModerationMark } from './moderation.js';
 /**
  * Reactions, comments, shares and polls on a post: the wire shapes and rules.
  *
@@ -164,6 +165,10 @@ export interface CommentView {
   /** Whether this viewer may delete it: the one who wrote it, or the post's author. */
   canDelete: boolean;
   createdAt: string;
+  /** Whether this viewer wrote it: their report button asks for validation, not a dispute. */
+  mine?: boolean;
+  /** Disputed, validated, or waiting on an operator (shared/moderation.ts). */
+  moderation?: ModerationMark;
 }
 
 /** A top-level comment and its replies, oldest reply first. */

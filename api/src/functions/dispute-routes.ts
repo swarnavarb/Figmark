@@ -21,6 +21,7 @@ import { actionsFor, daysFrom, sideOf } from '../../../shared/orders.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { countCompleted, dropFromCollection } from '../delivery.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
@@ -216,6 +217,11 @@ export async function settleDispute(
       await repository.updateUser(person);
     }
   }
+
+  // A refunded purchase is not something the buyer has; a card for it comes
+  // off their collection. A seller-kept or split outcome is a finished trade.
+  if (order.status === 'refunded') await dropFromCollection(repository, order.buyerId, order.id);
+  else await countCompleted(order, repository);
 
   const settled = await repository.updateDispute(dispute);
   const saved = await repository.updateOrder(order);

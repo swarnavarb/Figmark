@@ -8,11 +8,11 @@ import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.j
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
-  itemStepOn, joinIndexOf, lotOffset, routeOf, stepForStage,
+  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeOf, stepForStage,
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger,
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
-import { AUTO_RELEASE_DAYS, daysFrom } from '../../../shared/orders.js';
+import { daysFrom, isStopped, travellingStatus } from '../../../shared/orders.js';
 import {
   awaitingLot, furthestStage, inLot, stagesFor,
 } from '../../../shared/fulfilment.js';
@@ -20,6 +20,8 @@ import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { afterDelivered, deliver, dropFromCollection, syncLotDelivery, undeliver } from '../delivery.js';
+import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
@@ -542,6 +544,16 @@ async function advanceStage(request: HttpRequest, _context: InvocationContext) {
   if (LOT_STAGES.indexOf(target) <= LOT_STAGES.indexOf(lot.stage)) {
     return error(409, 'stage_not_forward', 'A lot can only move forward through its stages.');
   }
+  // A landed lot is unpacked and its items go out one by one, so the crate is
+  // never "delivered" as a whole: each item is, and the lot closes itself once
+  // the last of them has.
+  if (target === 'delivered' || stepForStage(routeOf(lot), target) > lotEndIndex(routeOf(lot))) {
+    return error(
+      409,
+      'deliver_individually',
+      'After a lot is unpacked each item is dispatched and delivered on its own. Mark the items delivered one by one.',
+    );
+  }
 
   // One lot, one position. This route names a stage and the route screen names
   // a step, and they are two doors onto the same thing: a lot advanced through
@@ -564,20 +576,21 @@ async function advanceStage(request: HttpRequest, _context: InvocationContext) {
     stage: target,
     currentStep: step,
     stageHistory: [...lot.stageHistory, event],
-    status: target === 'delivered' ? 'closed' : lot.status,
     updatedAt: now,
   });
 
-  // Fan the event out to every order riding in this lot.
-  const orders = await repository.listOrdersForLot(lot.id);
+  // Fan the event out to every order still riding in this lot. Called-off
+  // orders stay as they are, and an item already delivered on its own has
+  // left the crate - the crate's later news is not about it.
+  const orders = (await repository.listOrdersForLot(lot.id))
+    .filter((order) => !isStopped(order.status) && order.status !== 'delivered');
   await Promise.all(
     orders.map((order) =>
       repository.updateOrder({
         ...order,
         stage: target,
         stageHistory: [...order.stageHistory, event],
-        status: target === 'delivered' ? 'delivered' : 'in_fulfilment',
-        completedAt: target === 'delivered' ? now : order.completedAt,
+        status: travellingStatus(order.status),
         updatedAt: now,
       }),
     ),
@@ -1031,6 +1044,20 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
 
   const on = body.on !== false;
   const now = new Date().toISOString();
+
+  // Delivered is the one tick with consequences beyond the board: it is what
+  // puts the purchase in the buyer's collection and unlocks their review. An
+  // order that has left the road cannot be delivered, and one whose money has
+  // already been released cannot be taken back.
+  if (checkpoint === 'delivered') {
+    if (on && isStopped(order.status)) {
+      return error(409, 'order_stopped', 'That order was called off or refunded, so it cannot be marked delivered.');
+    }
+    if (!on && order.status === 'delivered' && order.escrow.state === 'released') {
+      return error(409, 'already_released', 'The payment for this item has already been released, so delivery cannot be undone.');
+    }
+  }
+
   order.checkpoints = { ...(order.checkpoints ?? {}), [checkpoint]: on ? now : null };
   order.updatedAt = now;
 
@@ -1053,43 +1080,52 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   ];
 
   // Dispatching is already recorded here, so the order takes its shipped state
-  // from this tick rather than from a second screen saying the same thing. It
-  // is also what starts the auto-release clock: the window has to open when the
-  // box leaves, not when the buyer paid - an import can sit in a lot for weeks,
-  // and a clock started at checkout would pay the seller for a box still with
-  // their supplier.
-  if (checkpoint === 'dispatched' && order.escrow.state === 'held') {
-    order.status = on ? 'shipped' : 'confirmed';
-    order.escrow = { ...order.escrow, autoReleaseAt: on ? daysFrom(AUTO_RELEASE_DAYS) : null };
-  }
-
-  const saved = await repository.updateOrder(order);
-  const siblings = await repository.listOrdersForLot(order.lotId);
-
-  /*
-   * `delivered` is deliberately not wired to `order.status`/escrow above -
-   * that state machine belongs to the buyer's own confirmation and to
-   * disputes, and a seller's tick must never be able to short-circuit it.
-   * What it does own is the lot: once every item in it has been ticked
-   * delivered, there is nothing left to pack, ship or watch, and the lot
-   * itself moves to the stage that already means "done" everywhere else
-   * that reads it.
-   */
-  if (checkpoint === 'delivered' && on && siblings.length > 0 && siblings.every((sibling) => Boolean(sibling.checkpoints?.delivered))) {
-    const lot = await repository.getLot(order.sellerId, order.lotId);
-    if (lot && lot.stage !== 'delivered') {
-      const route = routeOf(lot);
-      await repository.updateLot({
-        ...lot,
-        stage: 'delivered',
-        status: 'closed',
-        currentStep: route.steps.length - 1,
-        updatedAt: now,
-      });
+  // from this tick rather than from a second screen saying the same thing.
+  // Once a lot is unpacked every item goes out on its own, so this is also the
+  // moment the item's own auto-release clock starts for a protected payment.
+  // Unprotected orders ship too - with no money held there is simply no clock -
+  // so their buyer can say it arrived.
+  const releaseDays = checkpoint === 'dispatched' || checkpoint === 'delivered'
+    ? await autoReleaseDays(repository)
+    : 0;
+  if (checkpoint === 'dispatched' && !isStopped(order.status) && order.status !== 'delivered') {
+    if (on) {
+      order.status = 'shipped';
+    } else if (order.status === 'shipped') {
+      order.status = inLot(order) ? 'in_fulfilment' : 'confirmed';
+    }
+    if (order.escrow.state === 'held') {
+      order.escrow = { ...order.escrow, autoReleaseAt: on ? daysFrom(releaseDays) : null };
     }
   }
 
-  return json(200, { order: { id: saved.id, checkpoints: saved.checkpoints ?? {} }, tally: tally(siblings) });
+  let delivered = false;
+  if (checkpoint === 'delivered') {
+    if (on) {
+      // Ticking an item that is already delivered changes nothing and tells nobody twice.
+      delivered = order.status !== 'delivered' && deliver(order, { by: user.id, now, releaseDays });
+    } else if (undeliver(order, { now }) === 'ok') {
+      await dropFromCollection(repository, order.buyerId, order.id);
+    }
+  }
+
+  let saved = await repository.updateOrder(order);
+  if (delivered) saved = await afterDelivered(saved, repository, user.id);
+
+  // A lot is done once every live item in it has reached its buyer; a direct
+  // sale has no lot, and its board is this shop's own direct orders only.
+  // Only a delivery change can finish or reopen a lot; any other tick just
+  // needs the board's counts.
+  const siblings = !inLot(order)
+    ? (await repository.listOrdersForSeller(order.sellerId)).filter((row) => row.lotId === order.lotId)
+    : checkpoint === 'delivered'
+      ? await syncLotDelivery(saved, repository)
+      : await repository.listOrdersForLot(order.lotId);
+
+  return json(200, {
+    order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, status: saved.status },
+    tally: tally(siblings),
+  });
 }
 
 /**

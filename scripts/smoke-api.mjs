@@ -3243,7 +3243,11 @@ await check('a lot moving tells everybody who bought into it', async () => {
   // and cannot know it cleared customs unless somebody tells them.
   // Read who is actually in the lot rather than naming fixture ids, which is
   // how the last version of this failed for a reason unrelated to notifying.
-  const inLot = await (await getRepository()).listOrdersForLot('lot_my_batch');
+  // Only items still in the crate: one already delivered on its own has left
+  // the lot, and one called off or refunded is not travelling at all.
+  const inLot = (await (await getRepository()).listOrdersForLot('lot_my_batch'))
+    .filter((order) => order.status !== 'delivered' && !['cancelled', 'rejected', 'refunded',
+      'payment_reversal_pending', 'cancelled_reversed', 'dispute_raised'].includes(order.status));
   const buyerIds = [...new Set(inLot.map((order) => order.buyerId))];
   assert.ok(buyerIds.length > 0, 'somebody bought into this lot');
 
@@ -5075,9 +5079,11 @@ await check('one item can travel differently from the rest of its lot', async ()
 
   // Moving the lot brings the stray item back in line, rather than leaving it
   // stuck at a position nobody remembers setting.
-  await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 4 } }), ctx);
+  // (The last step, Delivered, is not the lot's to take: after unpacking each
+  // item is delivered on its own, so the furthest the crate goes is step 3.)
+  await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 3 } }), ctx);
   const synced = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(synced.items.find((item) => item.id === earlyOrder.id).currentStep, 4);
+  assert.equal(synced.items.find((item) => item.id === earlyOrder.id).currentStep, 3);
   assert.equal(synced.items.find((item) => item.id === earlyOrder.id).ownStep, false);
 
   await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: 2 } }), ctx);
@@ -5120,20 +5126,38 @@ await check('a lot walks its own half of the route, and neither end past it', as
     headers: auth, params: { id: routedLot.id }, body: { to: 0 } }), ctx);
   assert.equal(tooFar.status, 409, 'a lot cannot be stepped into an item step');
 
-  // Walk it to the end, then try to walk off it.
-  const steps = board.route.steps.length - offset;
+  // Walk it as far as a crate goes: one short of Delivered, where it is
+  // unpacked and each item goes to its own buyer.
+  const steps = board.route.steps.length - offset - 1;
   for (let i = 0; i < steps; i += 1) {
     const step = await stepLot(req({ headers: auth, params: { id: routedLot.id } }), ctx);
     assert.equal(step.status, 200, `step ${i} should move`);
   }
   const end = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(end.route.currentStep, end.route.steps.length - 1);
-  assert.equal(end.lot.status, 'closed', 'the last step closes it');
+  assert.equal(end.route.currentStep, end.route.steps.length - 2);
+  assert.notEqual(end.lot.status, 'closed', 'an unpacked lot is not finished until its items are');
 
+  // The crate itself cannot be "delivered".
   const past = await stepLot(req({ headers: auth, params: { id: routedLot.id } }), ctx);
   assert.equal(past.status, 409);
+  assert.equal(past.jsonBody.error, 'deliver_individually');
+  const stillOnTheWay = (await orderTracking(req({
+    headers: earlyBuyer.headers, params: { id: earlyOrder.id },
+  }), ctx)).jsonBody;
+  assert.notEqual(stillOnTheWay.order.status, 'delivered', 'moving the lot never delivers anybody');
 
-  // The items finished with it.
+  // Each item is delivered on its own, and the lot closes with the last one.
+  const items = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody.items;
+  for (const item of items) {
+    const ticked = await setCheckpoint(req({
+      headers: auth, params: { id: item.id }, body: { checkpoint: 'delivered', on: true },
+    }), ctx);
+    assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+  }
+  const closed = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(closed.lot.status, 'closed', 'the last item delivered closes the lot');
+  assert.equal(closed.route.currentStep, closed.route.steps.length - 1);
+
   const tracking = (await orderTracking(req({
     headers: earlyBuyer.headers, params: { id: earlyOrder.id },
   }), ctx)).jsonBody;
@@ -5258,11 +5282,19 @@ await check('a lot closes itself once every piece in it is marked delivered', as
   const partway = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
   assert.notEqual(partway.lot.stage, 'delivered', 'one of two is not the whole lot');
 
-  // Delivered is deliberately not wired to `order.status` - the buyer's own
-  // confirmation and escrow release own that state, and a seller's tick must
-  // never be able to short-circuit it.
-  const stillEarning = (await orderTracking(req({ headers: buyerA.headers, params: { id: orderA.id } }), ctx)).jsonBody;
-  assert.notEqual(stillEarning.order.status, 'delivered', 'the checkpoint is not the order status');
+  // After unpacking, each item reaches its buyer on its own: the tick
+  // delivers that one order (so it can go in their collection and be
+  // reviewed). It never releases held money - that stays with the buyer's
+  // confirmation, a dispute, or the auto-release window.
+  const delivered = (await orderState(req({ headers: buyerA.headers, params: { id: orderA.id } }), ctx)).jsonBody;
+  assert.equal(delivered.order.status, 'delivered', 'the delivered tick delivers the item');
+  assert.ok(delivered.order.completedAt);
+  assert.notEqual(delivered.order.escrow.state, 'released', 'a seller tick never releases money');
+  const told = await noticesFor(buyerA.id);
+  assert.ok(told.some((row) => row.kind === 'order_delivered'), 'the buyer hears it arrived');
+  const { myCollectionRoute } = await import(new URL('collection-routes.js', fns));
+  const shelf = (await myCollectionRoute(req({ headers: buyerA.headers }), ctx)).jsonBody;
+  assert.ok(shelf.candidates.some((row) => row.orderId === orderA.id), 'and it is ready to add to their collection');
 
   // Two of two: the lot closes on its own, nothing else asked of the seller.
   const second = await setCheckpoint(req({
@@ -5956,8 +5988,17 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   }), ctx);
   assert.equal(await where(), 'Received at international warehouse');
 
-  // And the lot moving still carries everyone, buttons or no buttons.
-  await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 4 } }), ctx);
+  // And the lot moving still carries everyone, buttons or no buttons - as far
+  // as the crate goes. It lands and is unpacked...
+  await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 3 } }), ctx);
+  assert.equal(await where(), 'Landed in India');
+  const tooFar = await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 4 } }), ctx);
+  assert.equal(tooFar.status, 409, 'the last leg is one item at a time');
+
+  // ...and each item goes out on its own, on its own button.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'dispatched', on: true },
+  }), ctx);
   assert.equal(await where(), 'Out for delivery');
 });
 
@@ -7762,6 +7803,224 @@ await check('a guide that could not be drawn is refused with the reason', async 
   ] }] } }), ctx);
   assert.equal(badPicture.status, 400);
   assert.match(badPicture.jsonBody.message, /picture/);
+});
+
+
+/* ── delivery, the protection window, and disputed reviews ─────────────── */
+console.log('\ndelivery, protection window and disputed reviews');
+
+const {
+  settingsRoute: readSettings, opsSettingsRoute: opsSettings, opsSettingsSaveRoute: saveSettings,
+} = await import(new URL('settings-routes.js', fns));
+const {
+  reportCreateRoute: createReport, opsReportsRoute: opsReports, opsReportResolveRoute: resolveReport,
+} = await import(new URL('report-routes.js', fns));
+const { myCollectionRoute: collectionOf, collectionAddRoute: addCard } =
+  await import(new URL('collection-routes.js', fns));
+
+/** A fresh listing by the demo shop, bought by a fresh buyer, paid as asked. */
+const sale = async (name, { protection = false } = {}) => {
+  const listing = await createListing(req({
+    headers: auth, body: { title: name, priceMinor: 4_000, sourcing: 'domestic' },
+  }), ctx);
+  const buyer = await newBuyer(`${name} buyer`);
+  const opened = await openCheckout(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx);
+  assert.ok(opened.jsonBody.order, JSON.stringify(opened.jsonBody));
+  const paid = await payOrder(req({
+    headers: buyer.headers, params: { id: opened.jsonBody.order.id },
+    body: protection ? { protection: true, escrowAgentId: 'usr_escrow_meera' } : {},
+  }), ctx);
+  assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+  return { buyer, order: paid.jsonBody.order };
+};
+const tick = (id, checkpoint, on = true) =>
+  setCheckpoint(req({ headers: auth, params: { id }, body: { checkpoint, on } }), ctx);
+
+await check('the protection window is 10 days unless an operator changes it', async () => {
+  assert.equal((await readSettings(req(), ctx)).jsonBody.autoReleaseDays, 10);
+  const buyer = await newBuyer('Not An Operator');
+  assert.equal((await opsSettings(req({ headers: buyer.headers }), ctx)).status, 403);
+  assert.equal((await saveSettings(req({ headers: buyer.headers, body: { autoReleaseDays: 3 } }), ctx)).status, 403);
+  for (const bad of [0, 61, 2.5, 'soon']) {
+    const refused = await saveSettings(req({ headers: auth, body: { autoReleaseDays: bad } }), ctx);
+    assert.equal(refused.status, 400, `${bad} should be refused`);
+  }
+  const saved = await saveSettings(req({ headers: auth, body: { autoReleaseDays: 7 } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.autoReleaseDays, 7);
+  assert.ok(saved.jsonBody.updatedBy);
+
+  // A clock started now uses the new number.
+  const { order } = await sale('Seven day window', { protection: true });
+  await tick(order.id, 'dispatched');
+  const state = (await orderState(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody;
+  const days = (new Date(state.order.escrow.autoReleaseAt).getTime() - Date.now()) / 86_400_000;
+  assert.ok(days > 6.9 && days <= 7, `window should be 7 days, was ${days}`);
+  assert.equal(state.autoReleaseDays, 7);
+
+  await saveSettings(req({ headers: auth, body: { autoReleaseDays: 10 } }), ctx);
+});
+
+await check('a seller marking delivered delivers the item but never releases the held money', async () => {
+  const { buyer, order } = await sale('Held until confirmed', { protection: true });
+  const ticked = await tick(order.id, 'delivered');
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+  const state = (await orderState(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(state.order.status, 'delivered');
+  assert.equal(state.order.escrow.state, 'held', 'the money waits for the buyer or the window');
+  assert.ok(state.order.escrow.autoReleaseAt, 'and the window opened, since nobody ticked dispatched');
+  assert.ok(state.actions.includes('confirm'), 'the buyer can still say it arrived');
+  assert.ok(state.actions.includes('dispute'), 'or dispute it');
+
+  const confirmed = await confirmOrder(req({ headers: buyer.headers, params: { id: order.id } }), ctx);
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.jsonBody));
+  assert.equal(confirmed.jsonBody.order.escrow.state, 'released');
+  assert.ok(confirmed.jsonBody.order.trustCountedAt);
+  // Once paid out, delivery cannot be walked back.
+  assert.equal((await tick(order.id, 'delivered', false)).status, 409);
+});
+
+await check('an unprotected order ships on the dispatched tick, so its buyer can confirm it', async () => {
+  const { buyer, order } = await sale('No protection');
+  await tick(order.id, 'dispatched');
+  const shipped = (await orderState(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(shipped.order.status, 'shipped');
+  assert.ok(shipped.actions.includes('confirm'));
+
+  const before = (await (await getRepository()).getUserById(buyer.id)).buyerTrust.completedTransactions;
+  const done = await confirmOrder(req({ headers: buyer.headers, params: { id: order.id } }), ctx);
+  assert.equal(done.status, 200, JSON.stringify(done.jsonBody));
+  assert.equal(done.jsonBody.order.status, 'delivered');
+  const after = (await (await getRepository()).getUserById(buyer.id)).buyerTrust.completedTransactions;
+  assert.equal(after, before + 1, 'counted once');
+});
+
+await check('a called-off order can never become delivered', async () => {
+  const { order } = await sale('Called off');
+  const repository = await getRepository();
+  await repository.updateOrder({ ...(await repository.getOrder(order.id)), status: 'cancelled' });
+  const refused = await tick(order.id, 'delivered');
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'order_stopped');
+  assert.equal((await repository.getOrder(order.id)).status, 'cancelled');
+});
+
+await check('taking a delivery back takes the card off the collection', async () => {
+  const { buyer, order } = await sale('Taken back');
+  await tick(order.id, 'delivered');
+  const added = await addCard(req({ headers: buyer.headers, body: { orderId: order.id } }), ctx);
+  assert.equal(added.status, 201, JSON.stringify(added.jsonBody));
+
+  const undone = await tick(order.id, 'delivered', false);
+  assert.equal(undone.status, 200, JSON.stringify(undone.jsonBody));
+  assert.notEqual(undone.jsonBody.order.status, 'delivered');
+  const shelf = (await collectionOf(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.equal(shelf.items.some((item) => item.orderId === order.id), false);
+});
+
+await check('a window that ran out releases the money, and the item shows up ready to collect', async () => {
+  const { buyer, order } = await sale('Window ran out', { protection: true });
+  await tick(order.id, 'dispatched');
+  const repository = await getRepository();
+  const stored = await repository.getOrder(order.id);
+  await repository.updateOrder({ ...stored, escrow: { ...stored.escrow, autoReleaseAt: new Date(Date.now() - 1000).toISOString() } });
+
+  const shelf = (await collectionOf(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.ok(shelf.candidates.some((row) => row.orderId === order.id), 'delivered by the clock, ready to add');
+  const settled = await repository.getOrder(order.id);
+  assert.equal(settled.status, 'delivered');
+  assert.equal(settled.escrow.state, 'released');
+  const told = await noticesFor('usr_demo');
+  assert.ok(told.some((row) => row.kind === 'payment_released'), 'the seller is told the money arrived');
+});
+
+await check('anybody can dispute a comment; its author can only ask for it to be validated', async () => {
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Talked about', priceMinor: 4_000, sourcing: 'domestic' },
+  }), ctx);
+  const listingId = listing.jsonBody.listing.id;
+  const writer = await newBuyer('Comment Writer');
+  const critic = await newBuyer('Comment Critic');
+  const said = await addComment(req({
+    headers: writer.headers, params: { id: listingId }, body: { body: 'This seller never ships anything.' },
+  }), ctx);
+  assert.ok(said.status < 300, JSON.stringify(said.jsonBody));
+  const commentId = said.jsonBody.comment.id;
+  const target = { targetType: 'comment', targetId: commentId, parentId: listingId };
+
+  assert.equal((await createReport(req({ body: { ...target, reason: 'Not signed in at all.' } }), ctx)).status, 401);
+  assert.equal((await createReport(req({ headers: critic.headers, body: { ...target, reason: 'short' } }), ctx)).status, 400);
+
+  const disputed = await createReport(req({
+    headers: critic.headers, body: { ...target, reason: 'They shipped to me last week. This is false.' },
+  }), ctx);
+  assert.equal(disputed.status, 201, JSON.stringify(disputed.jsonBody));
+  assert.equal(disputed.jsonBody.report.kind, 'dispute');
+  const again = await createReport(req({
+    headers: critic.headers, body: { ...target, reason: 'Saying it a second time here.' },
+  }), ctx);
+  assert.equal(again.status, 409);
+
+  const own = await createReport(req({
+    headers: writer.headers, body: { ...target, reason: 'I stand by it - please check my order.' },
+  }), ctx);
+  assert.equal(own.status, 201);
+  assert.equal(own.jsonBody.report.kind, 'validate', 'the author asks for validation, never disputes');
+
+  // Readers see it is under review; the critic sees their own report.
+  const seen = (await listingDetail(req({ headers: critic.headers, params: { id: listingId } }), ctx)).jsonBody;
+  const mark = seen.comments.find((row) => row.id === commentId).moderation;
+  assert.equal(mark.underReview, true);
+  assert.equal(mark.reportedByMe, true);
+
+  // Only an operator decides, and removing it answers both reports.
+  assert.equal((await opsReports(req({ headers: critic.headers }), ctx)).status, 403);
+  const queue = (await opsReports(req({ headers: auth }), ctx)).jsonBody.reports;
+  const row = queue.find((entry) => entry.id === disputed.jsonBody.report.id);
+  assert.equal(row.status, 'open');
+  assert.equal(row.authorName, 'Comment Writer');
+  const wrong = await resolveReport(req({ headers: auth, params: { id: row.id }, body: { decision: 'validated' } }), ctx);
+  assert.equal(wrong.status, 400, 'a dispute is kept or removed');
+  const removed = await resolveReport(req({
+    headers: auth, params: { id: row.id }, body: { decision: 'removed', note: 'Untrue.' },
+  }), ctx);
+  assert.equal(removed.status, 200, JSON.stringify(removed.jsonBody));
+  const after = (await opsReports(req({ headers: auth }), ctx)).jsonBody.reports;
+  assert.equal(after.find((entry) => entry.id === own.jsonBody.report.id).status, 'removed');
+
+  const gone = (await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody;
+  assert.equal(gone.comments.some((entry) => entry.id === commentId), false, 'hidden from every reader');
+  assert.ok((await noticesFor(critic.id)).some((entry) => entry.kind === 'content_report_settled'));
+});
+
+await check('a validated comment carries the mark', async () => {
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Praised', priceMinor: 4_000, sourcing: 'domestic' },
+  }), ctx);
+  const listingId = listing.jsonBody.listing.id;
+  const writer = await newBuyer('Honest Writer');
+  const said = await addComment(req({
+    headers: writer.headers, params: { id: listingId }, body: { body: 'Arrived well packed, as described.' },
+  }), ctx);
+  const commentId = said.jsonBody.comment.id;
+  const asked = await createReport(req({
+    headers: writer.headers,
+    body: { targetType: 'comment', targetId: commentId, parentId: listingId, reason: 'Please validate - order is on my account.' },
+  }), ctx);
+  assert.equal(asked.status, 201);
+  const decided = await resolveReport(req({
+    headers: auth, params: { id: asked.jsonBody.report.id }, body: { decision: 'validated' },
+  }), ctx);
+  assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
+  const seen = (await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody;
+  assert.equal(seen.comments.find((row) => row.id === commentId).moderation.validated, true);
+  const twice = await createReport(req({
+    headers: writer.headers,
+    body: { targetType: 'comment', targetId: commentId, parentId: listingId, reason: 'Validate it once more please.' },
+  }), ctx);
+  assert.equal(twice.status, 409);
 });
 
 console.log(`\n${passed} checks passed`);

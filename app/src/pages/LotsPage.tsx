@@ -4,7 +4,7 @@ import {
   ORDER_CHECKPOINTS, type OrderCheckpoint,
 } from '@shared/enums';
 import {
-  TRIGGER_LABELS, WAITING_FOR_LOT, laneOf, suggestLotName, type RouteStep,
+  TRIGGER_LABELS, WAITING_FOR_LOT, laneOf, lotEndIndex, suggestLotName, type RouteStep,
 } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
@@ -859,7 +859,11 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
    */
   const lotSteps = route.steps.slice(route.offset);
   const lotStep = route.currentStep - route.offset;
-  const nextStep = lotSteps[lotStep + 1] ?? null;
+  // The crate stops where it is unpacked; after that each item goes out and is
+  // delivered on its own (the Items list below), and the lot closes itself.
+  const crateEnd = lotEndIndex(route);
+  const unpacked = route.currentStep >= crateEnd;
+  const nextStep = route.currentStep + 1 <= crateEnd ? lotSteps[lotStep + 1] ?? null : null;
   const status = lotStep < 0 ? 'Filling' : lotSteps[lotStep]?.name ?? 'Not started';
   const done = lotStep >= lotSteps.length - 1;
 
@@ -898,6 +902,13 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
     details: { trackingId?: string; shipper?: string } | undefined,
     label: string,
   ) {
+    if (targetAbsolute > crateEnd) {
+      setFlash({
+        text: 'This lot is unpacked. Mark each item dispatched and delivered on its own; the lot closes when the last one arrives.',
+        ok: false,
+      });
+      return;
+    }
     const gateAt = route.steps.findIndex((step) => step.trigger === 'china_received');
     const missing = gateAt >= 0 && targetAbsolute >= gateAt
       ? items.filter((item) => !item.checkpoints.china_received)
@@ -977,9 +988,11 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               <div className="stack">
                 <p>
                   This marks <strong>{confirmDeliver.itemName}</strong> for{' '}
-                  <strong>{confirmDeliver.buyerName}</strong> as delivered. It shows delivered on their
-                  order everywhere it's read, and moves the order from active to completed. Once every
-                  item in this lot is marked this way, the lot itself moves to completed too.
+                  <strong>{confirmDeliver.buyerName}</strong> as delivered. Their order shows delivered,
+                  they are told, and they can add it to their collection and review it. A payment held
+                  under buyer protection is not released by this: the buyer confirms it, or it releases on
+                  its own if they raise no dispute in time. Once every item in this lot is delivered, the
+                  lot closes itself.
                 </p>
                 <button type="button" className="btn btn--block" disabled={busy}
                   onClick={() => {
@@ -1092,6 +1105,13 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                 onClick={() => requestMove(route.currentStep + 1, undefined, `Now: ${nextStep.name}.`)}>
                 Move to {nextStep.name}
               </button>
+            ) : done ? (
+              <p className="notice notice--ok">{status}. Every item has reached its buyer.</p>
+            ) : unpacked ? (
+              <p className="notice notice--info">
+                📦 Unpacked. Each item now goes to its own buyer: tick <b>Dispatched</b> and then <b>Delivered</b> on
+                every item below. The lot closes itself once the last one arrives.
+              </p>
             ) : (
               <p className="notice notice--ok">{status}. Nothing further to do.</p>
             )}

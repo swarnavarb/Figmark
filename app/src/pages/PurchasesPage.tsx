@@ -5,7 +5,7 @@ import { ApiRequestError, api, type ItemGroup } from '../api';
 import { MoneyBar } from '../components/Buy';
 import { Modal } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Thumb } from '../components/ui';
-import { formatMoney } from '../format';
+import { formatDate, formatMoney } from '../format';
 
 type Item = ItemGroup['items'][number];
 
@@ -22,6 +22,19 @@ function byStore(groups: ItemGroup[]) {
 
 function sum(items: readonly Item[], key: 'totalMinor' | 'paidMinor' | 'outstandingMinor' | 'creditMinor') {
   return items.reduce((total, item) => total + item[key], 0);
+}
+
+/**
+ * Where one item is, in a word, for every kind of group - a lot's ladder only
+ * says where the crate is, and direct or waiting items had no word at all.
+ */
+function deliveryBadge(item: Item): { tone: string; text: string } | null {
+  if (!item.placed) return null;
+  if (item.status === 'delivered') return { tone: 'ok', text: item.deliveredAt ? `📬 Delivered ${formatDate(item.deliveredAt)}` : '📬 Delivered' };
+  if (item.status === 'shipped' || item.checkpoints.dispatched) return { tone: 'aqua', text: '🚚 On its way to you' };
+  if (item.status === 'refunded' || item.status === 'cancelled_reversed') return { tone: 'quiet', text: 'Refunded' };
+  if (item.status === 'pending_payment') return null;
+  return { tone: 'quiet', text: '📦 Being prepared' };
 }
 
 function lotTitle(group: ItemGroup): string {
@@ -95,6 +108,16 @@ export function PurchasesPage() {
                             ) : (
                               <span className="badge badge--warn">Awaiting payment</span>
                             )}
+                            {(() => {
+                              const badge = deliveryBadge(item);
+                              return badge && <span className={`badge badge--${badge.tone}`}>{badge.text}</span>;
+                            })()}
+                            {item.status === 'delivered' && item.paymentHeld && (
+                              <span className="faint">Tap to confirm it arrived, or report a problem.</span>
+                            )}
+                            {item.status === 'delivered' && !item.inCollection && (
+                              <span className="purch__collect">🎁 Ready to add to your collection</span>
+                            )}
                             {item.creditMinor > 0 && (
                               <span className="badge badge--pink">💰 Credit {formatMoney(item.creditMinor, item.currency)}</span>
                             )}
@@ -110,6 +133,9 @@ export function PurchasesPage() {
                       creditMinor={sum(group.items, 'creditMinor')}
                       currency={group.items[0]?.currency}
                     />
+                    {group.items.some((item) => item.status === 'delivered' && !item.inCollection) && (
+                      <Link to="/me?tab=collection" className="btn btn--quiet btn--block">🎁 Add delivered items to your collection</Link>
+                    )}
                     {owing && (
                       <button type="button" className="btn btn--lg btn--block purch__paymore" onClick={() => setPaying(group)}>
                         💳 Pay More

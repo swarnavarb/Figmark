@@ -3,12 +3,14 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
 } from '../../../shared/routes.js';
-import { actionsFor, isCancelledLike } from '../../../shared/orders.js';
+import { actionsFor, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { afterDelivered, deliver, dropFromCollection, settleAll, syncLotDelivery, undeliver } from '../delivery.js';
+import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
@@ -349,6 +351,16 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'no_such_step', 'That lot is at the end of its route.');
   }
   if (target === from) return json(200, { lot, ordersUpdated: 0 });
+  /* The crate stops where it is unpacked. From there each item goes to its own
+     buyer - dispatched and delivered one at a time - and the lot closes
+     itself once the last of them has arrived. */
+  if (target > lotEndIndex(route)) {
+    return error(
+      409,
+      'deliver_individually',
+      'This lot has been unpacked. Dispatch and mark each item delivered on its own; the lot closes when the last one arrives.',
+    );
+  }
 
   const step = route.steps[target]!;
   // A hand-over with nobody to ask about it is not a hand-over: the courier
@@ -371,19 +383,22 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     shipper: step.forward ? body.shipper?.trim() || undefined : undefined,
   };
 
-  const last = target === route.steps.length - 1;
   const repository = await getRepository();
   const updated = await repository.updateLot({
     ...lot,
     currentStep: target,
     stage,
     stageHistory: [...lot.stageHistory, event],
-    status: last ? 'closed' : lot.status === 'closed' ? 'open' : lot.status,
+    status: lot.status === 'closed' ? 'open' : lot.status,
     updatedAt: now,
   });
 
+  // Every item still in the crate moves with it. Called-off and refunded
+  // orders are left where they stopped, and an item already delivered on its
+  // own has left the crate. One already on its way keeps `shipped` (and its
+  // buyer keeps the "It arrived" button); one not yet paid for keeps its Pay.
   const orders = await repository.listOrdersForLot(lot.id);
-  const live = orders.filter((order) => !isCancelledLike(order.status));
+  const live = orders.filter((order) => !isStopped(order.status) && order.status !== 'delivered');
   await Promise.all(
     live.map((order) =>
       repository.updateOrder({
@@ -394,8 +409,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
         // rather than staying stuck at a position nobody remembers setting.
         currentStep: target,
         stageHistory: [...order.stageHistory, event],
-        status: last ? 'delivered' : 'in_fulfilment',
-        completedAt: last ? now : order.completedAt,
+        status: travellingStatus(order.status),
         updatedAt: now,
       }),
     ),
@@ -680,21 +694,38 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   };
 
   const last = Boolean(route) && target === route!.steps.length - 1;
-  const updated = await repository.updateOrder({
-    ...order,
-    ...(moving
-      ? {
-          currentStep: target,
-          stage,
-          status: last ? 'delivered' : isCancelledLike(order.status) ? order.status : 'in_fulfilment',
-          completedAt: last ? now : order.completedAt,
-        }
-      : {}),
-    stageHistory: [...order.stageHistory, event],
-    updatedAt: now,
-  });
+  if (moving && isStopped(order.status)) {
+    return error(409, 'order_stopped', 'That order was called off or refunded, so it no longer moves along the route.');
+  }
+  if (moving && !last && order.status === 'delivered' && order.escrow.state === 'released') {
+    return error(409, 'already_released', 'The payment for this item has already been released, so delivery cannot be undone.');
+  }
 
-  await notify(
+  const next: Order = { ...order, stageHistory: [...order.stageHistory, event], updatedAt: now };
+  let delivered = false;
+  if (moving) {
+    next.currentStep = target;
+    next.stage = stage;
+    if (last) {
+      // The last step is this item reaching its buyer: the same delivery a
+      // delivered tick makes, with the same consequences.
+      delivered = next.status !== 'delivered'
+        && deliver(next, { by: userId, now, releaseDays: await autoReleaseDays(repository) });
+    } else if (undeliver(next, { now }) === 'ok') {
+      next.stage = stage;
+      await dropFromCollection(repository, order.buyerId, order.id);
+    } else {
+      next.status = travellingStatus(next.status);
+    }
+  }
+  const wasDelivered = order.status === 'delivered';
+  let updated = await repository.updateOrder(next);
+  if (delivered) updated = await afterDelivered(updated, repository, userId);
+  // Only arriving, or being taken back, can finish or reopen the lot.
+  if (moving && (updated.status === 'delivered') !== wasDelivered) await syncLotDelivery(updated, repository);
+
+  // A delivery already sent its own notice, with what to do next.
+  if (!delivered) await notify(
     repository,
     [order.buyerId],
     {
@@ -717,8 +748,13 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const orders = (await repository.listOrdersForBuyer(user.id))
+  // Settled first, so an item whose protection window ran out reads as
+  // delivered here too, and not only on its own page.
+  const orders = (await settleAll(await repository.listOrdersForBuyer(user.id), repository))
     .filter((order) => !isCancelledLike(order.status));
+  const collected = new Set(
+    ((await repository.getUserById(user.id))?.collection ?? []).map((item) => item.orderId),
+  );
 
   // One read per lot rather than one per item: three items in one lot are
   // one journey, and asking three times would be three chances to disagree.
@@ -796,6 +832,14 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         ...orderMoney(order),
         /** Ticked once the seller has this one in hand and is finishing it. */
         checkpoints: order.checkpoints ?? {},
+        /** When it reached the buyer, or null while it is still on its way. */
+        deliveredAt: order.status === 'delivered'
+          ? order.checkpoints?.delivered ?? order.completedAt ?? order.updatedAt
+          : null,
+        /** Delivered and already on a collection shelf. */
+        inCollection: collected.has(order.id),
+        /** Payment is still held under protection; the buyer can confirm or dispute. */
+        paymentHeld: order.escrow.state === 'held',
       })),
     };
   });

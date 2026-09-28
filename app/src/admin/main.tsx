@@ -5,6 +5,8 @@ import { ApiRequestError, admin } from './api';
 import { UsersView } from './UsersView';
 import { DisputesView } from './DisputesView';
 import { LearnView } from './LearnView';
+import { ReportsView } from './ReportsView';
+import { SettingsView } from './SettingsView';
 import '../styles.css';
 
 /**
@@ -27,7 +29,15 @@ import '../styles.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'disputes' | 'learn';
+type Tab = 'users' | 'disputes' | 'reports' | 'settings' | 'learn';
+
+const TAB_LABELS: Record<Tab, string> = {
+  users: 'People and stores',
+  disputes: 'Disputes',
+  reports: 'Reviews & comments',
+  settings: 'Settings',
+  learn: 'Learn page',
+};
 
 function Console() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -89,14 +99,18 @@ function Console() {
 
       <main className="ops__body ops">
         <div className="tabs">
-          {(['users', 'disputes', 'learn'] as Tab[]).map((entry) => (
+          {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
             <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
-              {entry === 'users' ? 'People and stores' : entry === 'disputes' ? 'Disputes' : 'Learn page'}
+              {TAB_LABELS[entry]}
             </button>
           ))}
         </div>
 
-        {tab === 'users' ? <UsersView /> : tab === 'disputes' ? <DisputesView /> : <LearnView />}
+        {tab === 'users' ? <UsersView />
+          : tab === 'disputes' ? <DisputesView />
+          : tab === 'reports' ? <ReportsView />
+          : tab === 'settings' ? <SettingsView />
+          : <LearnView />}
 
         <BackendStatus />
       </main>

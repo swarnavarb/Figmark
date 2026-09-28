@@ -1,3 +1,4 @@
+import { ReportButton } from '../components/ReportButton';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
@@ -157,6 +158,8 @@ export function ListingPage() {
                       <span className="faint">{timeAgo(comment.createdAt)}</span>
                     </div>
                     <p style={{ fontSize: 'var(--t-sm)' }}>{comment.body}</p>
+                    <ReportButton targetType="comment" targetId={comment.id} parentId={listing.id}
+                      mine={comment.authorId === user?.id} moderation={comment.moderation} />
                   </div>
                   {comments.filter((reply) => reply.replyToId === comment.id).map((reply) => (
                     <div key={reply.id} className="comment comment--reply">
@@ -166,6 +169,8 @@ export function ListingPage() {
                         <span className="faint">{timeAgo(reply.createdAt)}</span>
                       </div>
                       <p style={{ fontSize: 'var(--t-sm)' }}>{reply.body}</p>
+                      <ReportButton targetType="comment" targetId={reply.id} parentId={listing.id}
+                        mine={reply.authorId === user?.id} moderation={reply.moderation} />
                     </div>
                   ))}
                 </div>

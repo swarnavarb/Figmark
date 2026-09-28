@@ -3,6 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { CollectionGroup, CollectionItem, Listing, Order, User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { settleAll } from '../delivery.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -31,7 +32,9 @@ function photosOf(listing: Listing | null): string[] {
 /** Delivered orders not yet in the collection: what the owner could add. */
 async function candidatesFor(repository: Repo, user: User) {
   const added = new Set((user.collection ?? []).map((item) => item.orderId));
-  const delivered = (await repository.listOrdersForBuyer(user.id))
+  // Settled first: an item whose protection window ran out while nobody had
+  // its page open is delivered, and belongs in this list today.
+  const delivered = (await settleAll(await repository.listOrdersForBuyer(user.id), repository))
     .filter((order) => order.status === 'delivered' && !added.has(order.id));
   const listings = new Map<string, Listing | null>();
   await Promise.all([...new Set(delivered.map((order) => order.listingId))].map(async (id) => {
@@ -48,8 +51,10 @@ async function candidatesFor(repository: Repo, user: User) {
     .sort((a, b) => b.deliveredAt.localeCompare(a.deliveredAt));
 }
 
+/** The day it reached the buyer: the delivered tick first, which never moves once set. */
 function deliveredAt(order: Order): string {
-  return order.completedAt
+  return order.checkpoints?.delivered
+    ?? order.completedAt
     ?? [...(order.stageHistory ?? [])].reverse().find((event) => event.stage === 'delivered')?.enteredAt
     ?? order.updatedAt;
 }

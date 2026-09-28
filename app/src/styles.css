@@ -8608,3 +8608,9 @@ body.is-locked { overflow: hidden; }
 @media (min-width: 900px) {
   .learned__grid { grid-template-columns: 240px minmax(0, 1fr); }
 }
+
+/* The dispute / validate control under a review or comment. */
+.reportbtn { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.reportbtn__go { padding: 2px 8px; font-size: 12px; }
+.reportbtn__sent { font-size: 12px; }
+.purch__collect { font-size: 12px; font-weight: 600; color: var(--ok); }

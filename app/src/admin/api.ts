@@ -1,6 +1,8 @@
 import type { HealthResponse } from '@shared/contracts';
 import type { Dispute, EscrowRights, SellerTrustSignals, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
+import type { ContentReport } from '@shared/moderation';
+import type { MarketSettings } from '@shared/settings';
 import { ApiRequestError, api as marketplace } from '../api';
 
 /**
@@ -136,6 +138,16 @@ export const admin = {
   resetLearn: () => post<LearnDoc & { customised: boolean }>('/ops/learn/reset'),
   /** Upload a picture for a guide step; the same store listing photos use. */
   uploadImage: (dataUrl: string) => marketplace.uploadPhoto(dataUrl),
+
+  /** Marketplace-wide rules: today, how long protected payments are held. */
+  settings: () => request<MarketSettings>('/ops/settings'),
+  saveSettings: (settings: Pick<MarketSettings, 'autoReleaseDays'>) =>
+    post<MarketSettings>('/ops/settings/save', settings),
+
+  /** Disputed reviews and comments, and authors asking for theirs to be validated. */
+  reports: () => request<{ reports: (ContentReport & { authorName: string })[] }>('/ops/reports'),
+  resolveReport: (id: string, body: { decision: string; note: string }) =>
+    post<{ report: ContentReport }>(`/ops/reports/${encodeURIComponent(id)}/resolve`, body),
 };
 
 export { ApiRequestError };

@@ -218,9 +218,9 @@ const BUY: LearnTab = {
       body: 'Every order has its own page with a timeline from the seller, through any warehouse and forwarder, to your door.',
       steps: [
         step('Open My Purchases', 'Profile icon → **My Purchases**. Orders are grouped by shop, with what you owe and what to do next.', '/learn/buy-purchases.jpg', 'My Purchases, grouped by shop.'),
-        step('Follow the timeline', 'Open an order to see each stage as it happens, the tracking number once it ships, and any notes from the seller.', '/learn/buy-tracking.jpg', 'An order\'s tracking timeline.'),
+        step('Follow the timeline', 'Open an order to see each stage as it happens, the tracking number once it ships, and any notes from the seller. An imported item travels in a lot; once the lot lands it is unpacked and your item is sent to you on its own, with its own dispatch and delivery.', '/learn/buy-tracking.jpg', 'An order\'s tracking timeline.'),
         step('Pay the balance', 'If you paid an advance, pay the rest from the order or from My Purchases when the seller asks for it.'),
-        step('Confirm it arrived', 'When the parcel is in your hands, tap **It arrived - complete the order**. With buyer protection this releases the held payment to the seller. If you do nothing, it releases on its own 14 days after dispatch.'),
+        step('Confirm it arrived', 'When the parcel is in your hands, tap **It arrived - complete the order** (or **Yes, it arrived** once the seller has marked it delivered). With buyer protection this releases the held payment to the seller. If you do nothing and raise no dispute, it releases on its own 10 days after your item is dispatched - the order page shows the exact date.'),
       ],
     },
     {
@@ -230,7 +230,8 @@ const BUY: LearnTab = {
       steps: [
         step('Review the seller', 'After the order completes, the order page asks for a rating and a few words. Mention how the item compared with the listing, the packing and the speed.'),
         step('Refunds', 'If an order is cancelled after you paid, the seller refunds you and asks for your refund details once. Keep them current in **My refunds** → details.'),
-        step('Open a dispute', 'If something is wrong - not as described, damaged, never arrived - open a dispute from the order. Explain what happened and attach photos.'),
+        step('Open a dispute', 'If something is wrong - not as described, damaged, never arrived - open a dispute from the order before the protection window closes. Explain what happened and attach photos.'),
+        step('Dispute a review or comment', 'Every review and comment has a **Dispute** button: tell Figmark if it is untrue, abusive or not about a real trade, and an operator decides whether it stays. On your own review or comment the same button reads **Ask to validate** - an operator checks it, and if it holds up it shows a ✓ Validated mark.'),
         step('Settle it', 'The seller can reply and either side can offer a refund amount the other accepts in one tap. If you cannot agree, escalate it and Figmark decides.'),
       ],
     },

@@ -1,3 +1,4 @@
+import { ReportButton } from './ReportButton';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
@@ -930,6 +931,11 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
           <button type="button" onClick={() => onReply(comment)}>Reply</button>
           {comment.canDelete && <button type="button" onClick={() => void remove()}>Delete</button>}
           {likes > 0 && <span className="cmt__likes">❤️ {likes}</span>}
+          {/* Only in the full thread, where the comment carries its moderation state. */}
+          {comment.moderation && (
+            <ReportButton targetType="post_comment" targetId={comment.id} parentId={`${channelId}:${id}`}
+              mine={Boolean(comment.mine)} moderation={comment.moderation} />
+          )}
         </div>
       </div>
     </div>

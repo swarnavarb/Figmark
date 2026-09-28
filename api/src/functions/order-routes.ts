@@ -11,11 +11,9 @@ import {
 } from '../../../shared/payments.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
-  AUTO_RELEASE_DAYS,
   DISPUTE_RESPONSE_DAYS,
   REVIEW_REVEAL_DAYS,
   actionsFor,
-  autoReleaseDue,
   protectionFeeMinor,
   daysFrom,
   disputeSubjects,
@@ -27,6 +25,8 @@ import {
 import { DISPUTE_TOPIC_LABELS } from '../../../shared/disputes.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { releaseHeld, settleDue } from '../delivery.js';
+import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
 import { placeOrder } from './placement.js';
@@ -115,47 +115,8 @@ function planAmount(order: Order, plan: unknown): { plan: 'full' | 'advance'; am
   return { plan: 'advance', amountMinor: advanceMinor(totalMinor, order.advancePercent) };
 }
 
-/**
- * Releases a held payment, and completes the order.
- *
- * One function for both ways it can happen — the buyer confirming, and the
- * deadline passing — because the resulting state has to be identical. Two code
- * paths writing the same five fields is how they drift.
- */
-async function release(order: Order, reason: string, by: string, repository: Repo): Promise<Order> {
-  const now = new Date().toISOString();
-  order.escrow = { ...order.escrow, state: 'released', releasedAt: now };
-  order.status = 'delivered';
-  order.stage = 'delivered';
-  order.completedAt = now;
-  order.updatedAt = now;
-  note(order, reason, by);
-
-  // A completed transaction is the only thing that counts toward trust, on both
-  // sides. Ratings adjust the score later; this is the count behind it.
-  for (const id of [order.buyerId, order.sellerId]) {
-    const person = await repository.getUserById(id);
-    if (!person) continue;
-    const signals = id === order.buyerId ? person.buyerTrust : person.sellerTrust;
-    signals.completedTransactions += 1;
-    person.updatedAt = now;
-    await repository.updateUser(person);
-  }
-
-  return repository.updateOrder(order);
-}
-
-/**
- * Settles anything the clock has decided since this order was last touched.
- *
- * Called on every read, because a deadline that only exists inside a scheduled
- * job stops working the moment the job does — and there is no job here. The
- * read is when the state matters, so the read is where it is settled.
- */
-async function settle(order: Order, repository: Repo): Promise<Order> {
-  if (!autoReleaseDue(order)) return order;
-  return release(order, `Payment released automatically after ${AUTO_RELEASE_DAYS} days.`, 'system', repository);
-}
+/** Settles an order whose protection window ran out, on the read that notices it. */
+const settle = (order: Order, repository: Repo): Promise<Order> => settleDue(order, repository);
 
 /**
  * POST /api/orders/{id}/pay - the buyer pays, with or without protection.
@@ -429,7 +390,7 @@ async function confirm(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'not_confirmable', 'This order is not waiting on delivery.');
   }
 
-  return json(200, { order: await release(order, 'Delivery confirmed by the buyer.', user.id, repository) });
+  return json(200, { order: await releaseHeld(order, 'Delivery confirmed by the buyer.', user.id, repository) });
 }
 
 /**
@@ -577,6 +538,12 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     dispute: order.escrow.disputeId
       ? await repository.getDispute(order.id, order.escrow.disputeId)
       : null,
+    /** The protection window as operators have it set today, for the words on screen. */
+    autoReleaseDays: await autoReleaseDays(repository),
+    /** Whether the buyer already has this one on a collection shelf. */
+    inCollection: side === 'buyer'
+      ? Boolean((await repository.getUserById(user.id))?.collection?.some((item) => item.orderId === order.id))
+      : false,
   });
 }
 

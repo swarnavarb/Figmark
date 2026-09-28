@@ -12,6 +12,7 @@ import { can } from '../../../shared/stores.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { notify } from './notify.js';
 
@@ -193,6 +194,11 @@ async function decorate(
   viewer: Actor,
   options: { nested?: boolean; followed?: ReadonlySet<string> } = {},
 ): Promise<PostCard[]> {
+  // A comment taken down after a dispute must not come back as a preview.
+  const moderated = await moderation(repository);
+  posts = posts.map((post) => (post.comments?.some((comment) => moderated.isRemoved('post_comment', comment.id))
+    ? { ...post, comments: post.comments.filter((comment) => !moderated.isRemoved('post_comment', comment.id)) }
+    : post));
   // A wall entry is its forum post, read where the author put it. The forum
   // post is fetched and decorated in its place, so reacting on the wall and
   // reacting in the forum are one reaction on one post.
@@ -929,7 +935,20 @@ async function cardFor(post: Post, repository: Repo, viewer: Actor): Promise<Pos
 async function commentsFor(post: Post, repository: Repo, viewer: Actor): Promise<CommentThread[]> {
   const ids = [...new Set((post.comments ?? []).map((comment) => comment.asStore ?? comment.authorId))];
   const people = new Map((await repository.listUsersByIds(ids)).map((user) => [user.id, user]));
-  return threadsOf(post, viewer, people);
+  // Comments an operator took down after a dispute are gone for everybody;
+  // the rest carry what the report button under them needs to say.
+  const moderated = await moderation(repository);
+  const mark = <T extends CommentView>(view: T): T => ({
+    ...view,
+    mine: (post.comments ?? []).find((comment) => comment.id === view.id)?.authorId === viewer.userId,
+    moderation: moderated.mark('post_comment', view.id, viewer.userId),
+  });
+  return threadsOf(post, viewer, people)
+    .filter((thread) => !moderated.isRemoved('post_comment', thread.id))
+    .map((thread) => ({
+      ...mark(thread),
+      replies: thread.replies.filter((reply) => !moderated.isRemoved('post_comment', reply.id)).map(mark),
+    }));
 }
 
 const noPost = () => error(404, 'not_found', 'That post is not there any more.');

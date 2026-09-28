@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent, labelFor } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, WAITING_FOR_LOT } from '@shared/routes';
-import { AUTO_RELEASE_DAYS, REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
+import { REVIEW_REVEAL_DAYS, isStopped, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS } from '@shared/enums';
 import type { Order, SellerPaymentDetails } from '@shared/models';
@@ -11,6 +11,7 @@ import {
   type Checkout, type EscrowOption, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
 } from '../api';
 import { Ladder } from '../components/Ladder';
+import { ReportButton } from '../components/ReportButton';
 import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink, StepMark } from '../components/ui';
@@ -119,6 +120,8 @@ export function OrderPage() {
           screen with a payment to make should not have to scroll past a
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
+      <DeliveryControls state={state} onDone={load} />
+      <CollectionPrompt state={state} />
       <DisputePanel state={state} onDone={load} />
 
       <div className="tabs tabs--vivid">
@@ -278,8 +281,11 @@ export function OrderPage() {
             {order.escrow.state === 'held' && (
               <p className="notice notice--info">
                 {order.protection?.escrowName ?? 'An escrow'} is holding this, and passes it to the seller
-                when you confirm delivery — or on its own {AUTO_RELEASE_DAYS} days after dispatch if you
-                neither confirm nor dispute it.
+                when you confirm delivery — or on its own{' '}
+                {order.escrow.autoReleaseAt
+                  ? <>on <strong>{formatDate(order.escrow.autoReleaseAt)}</strong></>
+                  : `${state.autoReleaseDays} days after it is dispatched to you`}{' '}
+                if you neither confirm nor dispute it.
               </p>
             )}
             {order.escrow.state === 'released' && order.completedAt && (
@@ -510,7 +516,9 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
             {actions.includes('confirm') && (
               <button className="btn btn--lg" disabled={busy !== null}
                 onClick={() => void run('confirm', () => api.confirmOrder(order.id))}>
-                {busy === 'confirm' ? 'Releasing…' : 'It arrived — complete the order'}
+                {busy === 'confirm' ? 'Releasing…'
+                  : order.status === 'delivered' ? 'Yes, it arrived — release the payment'
+                  : 'It arrived — complete the order'}
               </button>
             )}
             {actions.includes('dispute') && !disputing && (
@@ -648,6 +656,110 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       )}
 
       {order.completedAt && <ReviewPanel state={state} onDone={onDone} />}
+    </div>
+  );
+}
+
+/**
+ * The seller's own last-mile buttons for this one item.
+ *
+ * Once a lot is unpacked every item goes to its buyer on its own, so this is
+ * where a seller says it left (starting the buyer-protection clock) and that it
+ * arrived (which lets the buyer add it to their collection and review it).
+ * Marking delivered never releases held money - that stays with the buyer, a
+ * dispute, or the auto-release window.
+ */
+function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => void | Promise<void> }) {
+  const { order } = state;
+  const [busy, setBusy] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (state.side !== 'seller' || order.placedAt === null || isStopped(order.status)) return null;
+  const dispatched = Boolean(order.checkpoints?.dispatched);
+  const delivered = order.status === 'delivered';
+  const released = order.escrow.state === 'released';
+  const held = order.escrow.state === 'held';
+
+  async function tick(checkpoint: 'dispatched' | 'delivered', on: boolean) {
+    setBusy(checkpoint);
+    setError(null);
+    try {
+      await api.setCheckpoint(order.id, checkpoint, on);
+      setAsking(false);
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const hint = delivered
+    ? held
+      ? `Delivered. The payment is released when the buyer confirms${order.escrow.autoReleaseAt ? `, or on ${formatDate(order.escrow.autoReleaseAt)}` : ''} if they raise no dispute.`
+      : 'Delivered.'
+    : dispatched
+      ? 'On its way. Mark it delivered once it reaches the buyer.'
+      : `Mark it dispatched when it leaves you${held ? ` - that starts the ${state.autoReleaseDays}-day protection window` : ''}.`;
+
+  return (
+    <div className="card card--pad stack" style={{ marginBottom: 20 }}>
+      <h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>🚚 Getting it to {state.counterparty.name}</h2>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        {!delivered && (
+          <button type="button" className={`btn${dispatched ? ' btn--quiet' : ''}`} disabled={busy !== null}
+            onClick={() => void tick('dispatched', !dispatched)}>
+            {busy === 'dispatched' ? 'Saving…' : dispatched ? '↩︎ Not dispatched yet' : '📦 Mark dispatched'}
+          </button>
+        )}
+        {!delivered ? (
+          <button type="button" className="btn" disabled={busy !== null} onClick={() => setAsking(true)}>
+            ✅ Mark delivered
+          </button>
+        ) : !released ? (
+          <button type="button" className="btn btn--quiet" disabled={busy !== null}
+            onClick={() => void tick('delivered', false)}>
+            {busy === 'delivered' ? 'Saving…' : '↩︎ Undo delivered'}
+          </button>
+        ) : (
+          <span className="badge badge--ok">Delivered and paid out</span>
+        )}
+      </div>
+      <span className="field__hint">{hint}</span>
+      {error && <ErrorNotice message={error} />}
+
+      {asking && (
+        <Modal title="Mark delivered?" onClose={() => setAsking(false)}>
+          <div className="stack">
+            <p style={{ margin: 0 }}>
+              This tells <strong>{state.counterparty.name}</strong> that <strong>{order.itemName}</strong> has
+              reached them. They can then add it to their collection and review the order.
+              {held && ' It does not release the held payment - the buyer confirms that, or it releases on its own if they raise no dispute.'}
+            </p>
+            <button type="button" className="btn btn--block" disabled={busy !== null}
+              onClick={() => void tick('delivered', true)}>
+              {busy ? 'Marking…' : 'Mark delivered'}
+            </button>
+            <button type="button" className="btn btn--quiet btn--block" onClick={() => setAsking(false)}>Cancel</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/** Delivered to the buyer: the nudge to put it on a collection shelf. */
+function CollectionPrompt({ state }: { state: OrderState }) {
+  if (state.side !== 'buyer' || state.order.status !== 'delivered') return null;
+  return state.inCollection ? (
+    <p className="notice notice--ok" style={{ marginBottom: 20 }}>
+      🎁 This is in your <Link to="/me?tab=collection">collection</Link>.
+    </p>
+  ) : (
+    <div className="card card--pad row row--between" style={{ marginBottom: 20, flexWrap: 'wrap' }}>
+      <span>🎁 <b>It's yours!</b> Put it on your collection shelf for everyone to see.</span>
+      <Link to="/me?tab=collection" className="btn btn--sm">Add to collection</Link>
     </div>
   );
 }
@@ -1527,6 +1639,7 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
             <span className="faint">your rating of {other}</span>
           </div>
           {state.myReview.body && <p className="muted">{state.myReview.body}</p>}
+          <ReportButton targetType="review" targetId={state.myReview.id} parentId={state.myReview.subjectId} mine />
         </>
       ) : (
         <form className="form" onSubmit={submit}>
@@ -1570,6 +1683,8 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
           <>
             <Stars value={state.theirReview.rating} />
             {state.theirReview.body && <p className="muted">{state.theirReview.body}</p>}
+            <ReportButton targetType="review" targetId={state.theirReview.id}
+              parentId={state.theirReview.subjectId} mine={false} />
           </>
         ) : state.theirReviewPending ? (
           <p className="faint">

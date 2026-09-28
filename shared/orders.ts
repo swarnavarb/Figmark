@@ -17,14 +17,23 @@ import { rupees } from './payments.js';
  */
 
 /**
- * Days after dispatch before a held payment releases itself.
+ * Days after dispatch before a held payment releases itself, unless the buyer
+ * disputes it first.
  *
- * The clock starts at dispatch rather than at payment: an import can sit in a
- * lot for six weeks before it moves, and a window that opened at checkout would
- * pay the seller for a box still sitting with their supplier. Fourteen days is
- * the domestic leg plus room for a slow courier and a buyer who is away.
+ * The clock starts when the item leaves for the buyer rather than at payment:
+ * an import can sit in a lot for six weeks before it moves, and a window that
+ * opened at checkout would pay the seller for a box still sitting with their
+ * supplier. Once a lot is unpacked each item goes out on its own, so each item
+ * has its own clock.
+ *
+ * This is only the default. Operators set the live number in the console
+ * (`MarketSettings.autoReleaseDays`, shared/settings.ts); the order stores the
+ * deadline it was given, so changing the setting never moves a clock that is
+ * already running.
  */
-export const AUTO_RELEASE_DAYS = 14;
+export const DEFAULT_AUTO_RELEASE_DAYS = 10;
+/** @deprecated Read the live setting; kept so older imports still compile. */
+export const AUTO_RELEASE_DAYS = DEFAULT_AUTO_RELEASE_DAYS;
 
 /**
  * Days a blind review stays hidden when only one side has written.
@@ -182,8 +191,14 @@ export function actionsFor(
   // pipeline that only they can know. The seller ticking "dispatched" is not
   // the same claim, which is why it does not release the money. Unprotected
   // orders confirm too — there is simply no money to let go of.
+  //
+  // Two moments call for it: the item is on its way (shipped), or the seller
+  // has marked it delivered and the payment is still held. The second is the
+  // buyer saying "yes, it is here" early, which lets the money go before the
+  // auto-release clock runs out.
   const awaitingDelivery =
-    order.status === 'shipped' && (order.escrow.state === 'held' || order.escrow.state === 'none');
+    (order.status === 'shipped' && (order.escrow.state === 'held' || order.escrow.state === 'none'))
+    || (order.status === 'delivered' && order.escrow.state === 'held');
   if (side === 'buyer' && awaitingDelivery && order.paymentStatus === 'paid') actions.push('confirm');
 
   // Disputing needs something to dispute over. Without protection the money
@@ -191,7 +206,9 @@ export function actionsFor(
   // which is exactly what declining protection means — so this is the one place
   // the choice made at checkout actually bites.
   const protectedAndHeld = order.protection != null && order.escrow.state === 'held';
-  const disputable = side === 'buyer' ? protectedAndHeld : protectedAndHeld && order.status === 'shipped';
+  const disputable = side === 'buyer'
+    ? protectedAndHeld
+    : protectedAndHeld && (order.status === 'shipped' || order.status === 'delivered');
   if (disputable) actions.push('dispute');
 
   // A review is earned by a completed transaction, never by an opinion.
@@ -238,6 +255,34 @@ export function daysFrom(days: number, from = new Date()): string {
  */
 export function isCancelledLike(status: OrderStatus): boolean {
   return status === 'cancelled' || status === 'rejected';
+}
+
+/**
+ * An order that has left the road for good: called off, refunded, reversed or
+ * argued over. Nothing that moves items along a route - a lot step, an item
+ * step, a delivered tick - may touch one of these, and above all none of them
+ * may be turned into `delivered`, which is what puts a purchase in a buyer's
+ * collection and counts toward their record.
+ */
+export function isStopped(status: OrderStatus): boolean {
+  return isCancelledLike(status)
+    || status === 'refunded'
+    || status === 'payment_reversal_pending'
+    || status === 'cancelled_reversed'
+    || status === 'dispute_raised';
+}
+
+/**
+ * The status an order takes when its lot (or the seller) moves it along the
+ * route short of delivery.
+ *
+ * Only an order that is already being worked becomes `in_fulfilment`. One the
+ * buyer still has to pay for keeps `pending_payment` (so the Pay button does
+ * not vanish), and one already on its way keeps `shipped` (so "It arrived"
+ * does not vanish either).
+ */
+export function travellingStatus(status: OrderStatus): OrderStatus {
+  return status === 'confirmed' || status === 'in_fulfilment' ? 'in_fulfilment' : status;
 }
 
 /** One rejection the viewer could dispute, and what to call it. */

@@ -280,6 +280,25 @@ export function leaveIndexOf(route: HasSteps): number {
 }
 
 /**
+ * The furthest step a whole lot may be moved to.
+ *
+ * Once a lot has landed it is unpacked, and each item goes to its own buyer:
+ * dispatched on its own, delivered on its own. So the lot stops one short of
+ * where items leave it - the first `lastMile` step when the seller drew that
+ * line, and otherwise the final step, which is always "Delivered". Everything
+ * from there on is reached one item at a time (a delivered tick, or moving
+ * the item itself), never by moving the crate.
+ */
+export function lotEndIndex(route: HasSteps): number {
+  const last = route.steps.length - 1;
+  const leave = Math.min(leaveIndexOf(route), last);
+  const end = leave - 1;
+  // A route whose items leave the lot before it has taken a step of its own
+  // is a drawing mistake; fall back to the step before "Delivered".
+  return end >= lotOffset(route) ? end : Math.max(0, last - 1);
+}
+
+/**
  * Where a lot's own ladder starts inside the route.
  *
  * A lot never gets "received at the international warehouse" - its items do,

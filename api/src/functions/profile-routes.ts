@@ -5,6 +5,7 @@ import { reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { confirmDetailsOn } from './order-routes.js';
 
@@ -94,7 +95,11 @@ async function credit(request: HttpRequest, _context: InvocationContext) {
   const visible = reviews.filter((entry) => reviewRevealed(entry, false));
   const record = creditFrom({ asSeller, asBuyer }, visible, user.sellerTrust.disputesLost);
 
-  const opinions = storeReviews.map((entry) => entry.rating);
+  // A page review an operator took down after a dispute no longer counts.
+  const moderated = await moderation(repository);
+  const opinions = storeReviews
+    .filter((entry) => !moderated.isRemoved('store_review', entry.id))
+    .map((entry) => entry.rating);
 
   return json(200, {
     memberSince: user.createdAt,
@@ -124,7 +129,9 @@ async function pageReviews(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A user id is required.');
 
-  const reviews = await repository.listStoreReviews(id);
+  const moderated = await moderation(repository);
+  const reviews = (await repository.listStoreReviews(id))
+    .filter((entry) => !moderated.isRemoved('store_review', entry.id));
   const auth = await getAuthService();
   const viewer = await auth.getCurrentUser(request);
 
@@ -137,6 +144,8 @@ async function pageReviews(request: HttpRequest, _context: InvocationContext) {
       authorHandle: entry.authorHandle,
       createdAt: entry.createdAt,
       mine: viewer?.id === entry.authorId,
+      /** Disputed, validated, or waiting on an operator - for the button under it. */
+      moderation: moderated.mark('store_review', entry.id, viewer?.id),
     })),
     average: scoreFrom(reviews.map((entry) => entry.rating)),
     count: reviews.length,
@@ -214,6 +223,10 @@ async function tradeReviews(request: HttpRequest, _context: InvocationContext) {
 
   const all = await repository.listReviewsAbout(id);
   const visible = all.filter((entry) => reviewRevealed(entry, false));
+  const [moderated, viewer] = await Promise.all([
+    moderation(repository),
+    getAuthService().then((auth) => auth.getCurrentUser(request)),
+  ]);
 
   const [authors, orders] = await Promise.all([
     repository.listUsersByIds([...new Set(visible.map((entry) => entry.authorId))]),
@@ -236,6 +249,9 @@ async function tradeReviews(request: HttpRequest, _context: InvocationContext) {
         direction: entry.direction,
         author: personRef(authorOf.get(entry.authorId)),
         createdAt: entry.createdAt,
+        /** Whether this viewer wrote it: their button asks for validation, not a dispute. */
+        mine: viewer?.id === entry.authorId,
+        moderation: moderated.mark('review', entry.id, viewer?.id),
         // What it was about. Null only where the order has since been deleted.
         item: order
           ? {

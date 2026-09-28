@@ -28,3 +28,5 @@ import './functions/admin-routes.js';
 import './functions/quest-routes.js';
 import './functions/collection-routes.js';
 import './functions/learn-routes.js';
+import './functions/settings-routes.js';
+import './functions/report-routes.js';

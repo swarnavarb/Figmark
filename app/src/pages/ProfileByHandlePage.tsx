@@ -1,3 +1,4 @@
+import { ReportButton } from '../components/ReportButton';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
@@ -455,6 +456,8 @@ export function ReviewsTab({ profile, trade, listed, page, canWrite, onWritten }
                 </div>
                 <Stars value={review.rating} />
                 {review.body && <p className="muted">{review.body}</p>}
+                <ReportButton targetType="review" targetId={review.id} parentId={profile.sellerId}
+                  mine={Boolean(review.mine)} moderation={review.moderation} />
                 {review.item && (
                   <Link to={`/listing/${review.item.listingId}`} className="review__item">
                     <span>{review.item.name}</span>
@@ -503,6 +506,8 @@ export function ReviewsTab({ profile, trade, listed, page, canWrite, onWritten }
                 </div>
                 <Stars value={review.rating} />
                 <p className="muted">{review.body}</p>
+                <ReportButton targetType="store_review" targetId={review.id} parentId={profile.sellerId}
+                  mine={review.mine} moderation={review.moderation} />
               </article>
             ))}
           </div>

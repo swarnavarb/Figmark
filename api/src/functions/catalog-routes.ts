@@ -11,6 +11,7 @@ import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { placeOrder } from './placement.js';
 import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
@@ -121,10 +122,16 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     ...new Set(rawComments.map((comment) => comment.authorId)),
   ]);
   const commenterOf = new Map(commenters.map((person) => [person.id, person]));
-  const comments = rawComments.map((comment) => ({
-    ...comment,
-    author: personRef(commenterOf.get(comment.authorId), comment.authorName),
-  }));
+  // A comment an operator took down after a dispute is gone for every reader;
+  // the rest carry what the button under them needs to say.
+  const moderated = await moderation(repository);
+  const comments = rawComments
+    .filter((comment) => !moderated.isRemoved('comment', comment.id))
+    .map((comment) => ({
+      ...comment,
+      author: personRef(commenterOf.get(comment.authorId), comment.authorName),
+      moderation: moderated.mark('comment', comment.id, viewer?.id),
+    }));
 
   // Deliberately not returning the lot: which consignment an item rides in,
   // who else is in it and what stage it is at are the seller's business. The

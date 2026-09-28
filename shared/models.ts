@@ -977,6 +977,15 @@ export interface Order extends BaseDocument {
   /** Set once the order reaches `delivered`; unlocks reviews. */
   completedAt: string | null;
   /**
+   * When this order was counted toward both sides' completed trades.
+   *
+   * An order can reach `delivered` more than once (a tick undone and redone)
+   * and its money can be released after it was delivered, so the count needs
+   * its own marker to be added exactly once. Absent on older orders, which
+   * were counted when their payment released.
+   */
+  trustCountedAt?: string | null;
+  /**
    * When each physical checkpoint was ticked for this one item.
    *
    * A timestamp rather than a boolean, so "is it in the China warehouse" and
@@ -1660,6 +1669,12 @@ export type NotificationKind =
   | 'dispute_replied'
   | 'dispute_settled'
   | 'lot_moved'
+  /** One item reached its buyer - the step after a lot is unpacked. */
+  | 'order_delivered'
+  /** A held payment went to the seller: confirmed by the buyer, or on its own. */
+  | 'payment_released'
+  /** Somebody disputed a review or comment, or asked for one to be validated, and it was decided. */
+  | 'content_report_settled'
   | 'preorder_nearly'
   | 'preorder_filled'
   | 'preorder_due'

@@ -372,12 +372,12 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
 
       {viewing && (viewing.photos.length > 0 ? (
         <Lightbox photos={viewing.photos} start={0} onClose={() => setViewing(null)}
-          title={viewing.name} caption={`Added to collection · ${formatDate(viewing.deliveredAt)}`} />
+          title={viewing.name} caption={`Delivered ${formatDate(viewing.deliveredAt)} · added ${formatDate(viewing.addedAt)}`} />
       ) : (
         <Modal title={viewing.name} onClose={() => setViewing(null)}>
           <div className="qsheet">
             <Thumb seed={viewing.listingId} label={viewing.name} className="thumb qitem__big" />
-            <p className="faint">Added to collection · {formatDate(viewing.deliveredAt)}</p>
+            <p className="faint">Delivered {formatDate(viewing.deliveredAt)} · added to collection {formatDate(viewing.addedAt)}</p>
             <p className="faint" style={{ margin: 0 }}>This item had no photos when it was added.</p>
           </div>
         </Modal>
