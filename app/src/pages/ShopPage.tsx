@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
@@ -24,7 +24,7 @@ import {
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { BuyerReversalDetails, Listing, Lot, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
-import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
+import { AdvanceStrip, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
 import type { StoreAccess } from '@shared/stores';
 import type { SavedCalc } from '@shared/profit';
@@ -675,7 +675,10 @@ function MyItems({ store }: { store: StoreAccess }) {
   const [error, setError] = useState<string | null>(null);
   // "Add to a power sale" from a saved calculation lands here, with it.
   const saleCalcs = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;
-  const [mode, setMode] = useState<'stock' | 'power' | 'templates'>(saleCalcs?.length ? 'power' : 'stock');
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const [mode, setMode] = useState<'stock' | 'power' | 'templates'>(
+    saleCalcs?.length || params.get('view') === 'power' ? 'power' : 'stock');
   const [shelf, setShelf] = useState<'available' | 'expired' | 'sold_out'>('available');
   const [editing, setEditing] = useState<Listing | null>(null);
 
@@ -711,7 +714,8 @@ function MyItems({ store }: { store: StoreAccess }) {
           <span className="door__note">One thing, up for anyone browsing.</span>
         </Link>
 
-        <button type="button" className="door door--pro" onClick={() => setMode('power')}>
+        <button type="button" className="door door--pro"
+          onClick={() => navigate(`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
           <span className="probadge door__flag">PRO</span>
           <span className="door__glyph" aria-hidden="true">{<Icon name="bolt" size={19} />}</span>
           <span className="door__title">Start power selling</span>
@@ -719,19 +723,19 @@ function MyItems({ store }: { store: StoreAccess }) {
         </button>
       </div>
 
-      <div className="sections sections--sub" role="tablist" aria-label="Items view">
-        <button type="button" role="tab" aria-selected={mode === 'stock'}
-          className={`chip chip--count${mode === 'stock' ? ' is-on' : ''}`} onClick={() => setMode('stock')}>
-          Your stock{all.length > 0 && <span className="chip__count">{all.length}</span>}
-        </button>
-        <button type="button" role="tab" aria-selected={mode === 'power'}
-          className={`chip${mode === 'power' ? ' is-on' : ''}`} onClick={() => setMode('power')}>
-          Scheduled sales
-        </button>
-        <button type="button" role="tab" aria-selected={mode === 'templates'}
-          className={`chip${mode === 'templates' ? ' is-on' : ''}`} onClick={() => setMode('templates')}>
-          Templates
-        </button>
+      <div className="segwrap">
+        <SegTabs label="Items view" value={mode} onChange={setMode} tabs={[
+          { id: 'stock', label: 'Your stock', count: all.length },
+          { id: 'power', label: 'Scheduled sales' },
+          { id: 'templates', label: 'Templates' },
+        ]} />
+        {mode === 'stock' && data && (
+          <SegTabs ext label="Shelf" value={shelf} onChange={setShelf} tabs={[
+            { id: 'available', label: 'Available', count: counts.available },
+            { id: 'expired', label: 'Expired', count: counts.expired },
+            { id: 'sold_out', label: 'Sold out', count: counts.sold_out },
+          ]} />
+        )}
       </div>
 
       {mode === 'templates' ? (
@@ -742,15 +746,6 @@ function MyItems({ store }: { store: StoreAccess }) {
         <p className="muted">Loading…</p>
       ) : (
         <>
-          <div className="sections sections--sub" role="tablist" aria-label="Shelf">
-            {(['available', 'expired', 'sold_out'] as const).map((entry) => (
-              <button key={entry} type="button" role="tab" aria-selected={shelf === entry}
-                className={`chip chip--count${shelf === entry ? ' is-on' : ''}`} onClick={() => setShelf(entry)}>
-                {entry === 'available' ? 'Available' : entry === 'expired' ? 'Expired' : 'Sold out'}
-                <span className="chip__count">{counts[entry]}</span>
-              </button>
-            ))}
-          </div>
           {mine.length === 0 && (
             <EmptyState title={shelf === 'expired' ? 'Nothing expired 🎉' : shelf === 'sold_out' ? 'Nothing sold out' : 'Nothing listed yet'}>
               {shelf === 'available'
@@ -797,6 +792,7 @@ function ShelfCard({ listing, onEdit }: { listing: Listing; onEdit: () => void }
             ? <span className="qsticker-tag qsticker-tag--drop">Sold out</span>
             : listing.preOrder && <span className="qsticker-tag">Pre-order</span>}
       </Thumb>
+      <AdvanceStrip percent={listing.advancePercent} />
 
       <div className="qloot__body">
         <span className="qloot__title">{listing.title}</span>
@@ -1017,33 +1013,19 @@ function Orders({ store }: { store: StoreAccess }) {
       {/* Three big tiles for where orders are, each in its own colour, then
           chips for what an active order needs - the one that needs the
           seller lights up when anything is in it. */}
-      <div className="sections sections--sub" role="tablist" aria-label="Order status">
-        {(['active', 'completed', 'closed'] as const).map((entry) => (
-          <button key={entry} type="button" role="tab" aria-selected={statusFilter === entry}
-            className={`chip chip--count${statusFilter === entry ? ' is-on' : ''}`}
-            onClick={() => setStatusFilter(entry)}>
-            {ORDER_STATE_ICONS[entry]} {ORDER_STATE_LABELS[entry]}
-            <span className="chip__count">{countOfState(entry)}</span>
-          </button>
-        ))}
+      <div className="segwrap">
+        <SegTabs label="Order status" value={statusFilter} onChange={setStatusFilter}
+          tabs={(['active', 'completed', 'closed'] as const).map((entry) => ({
+            id: entry, label: <><span className="segtab__icon">{ORDER_STATE_ICONS[entry]}</span> {ORDER_STATE_LABELS[entry]}</>, count: countOfState(entry),
+          }))} />
+        {statusFilter === 'active' && (
+          <SegTabs ext label="Which orders" value={filter} onChange={setFilter} tabs={[
+            { id: 'all', label: 'All', count: scoped.length },
+            { id: 'answer', label: 'To answer', count: toAnswer.length, hot: toAnswer.length > 0 },
+            { id: 'nolot', label: 'No lot', count: withoutLot.length },
+          ]} />
+        )}
       </div>
-
-      {statusFilter === 'active' && (
-        <div className="sections sections--sub" role="tablist" aria-label="Which orders">
-          {([
-            ['all', 'All', scoped.length],
-            ['answer', 'To answer', toAnswer.length],
-            ['nolot', 'No lot', withoutLot.length],
-          ] as [OrderFilter, string, number][]).map(([id, label, count]) => (
-            <button key={id} type="button" role="tab" aria-selected={filter === id}
-              className={`chip chip--count${filter === id ? ' is-on' : ''}${id === 'answer' && count > 0 ? ' chip--hot' : ''}`}
-              onClick={() => setFilter(id)}>
-              {label}
-              <span className="chip__count">{count}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {shown.length === 0 ? (
         <div className="oempty">
@@ -1211,6 +1193,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
           <article key={template.id} className="tplcard">
             <div className="tplcard__top">
               <span className="tplcard__name">{template.name}</span>
+              {template.kind === 'power' && <span className="probadge">⚡ Power · PRO</span>}
               <span className="badge">{template.category || 'No category'}</span>
             </div>
             <span className="faint">
@@ -1226,9 +1209,13 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
             </span>
             {template.description && <p className="tplcard__body">{template.description}</p>}
             <div className="tplcard__foot">
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(template)}>
-                Edit
-              </button>
+              {template.kind === 'power' ? (
+                <Link to={`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`} className="btn btn--quiet btn--sm">Use in a power sale</Link>
+              ) : (
+                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(template)}>
+                  Edit
+                </button>
+              )}
               <button type="button" className="btn btn--ghost btn--sm" disabled={busy === template.id}
                 onClick={() => void remove(template)}>
                 Delete
@@ -3189,6 +3176,31 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
       <div className="stat__label">{label}</div>
       <div className="stat__value">{value}</div>
       {note && <div className="stat__note">{note}</div>}
+    </div>
+  );
+}
+
+/**
+ * A full-width row of tabs sharing one track. `ext` is the row under it -
+ * narrower, lighter and joined on, so it reads as the first row opened up.
+ */
+function SegTabs<T extends string>({ label, value, onChange, tabs, ext = false }: {
+  label: string;
+  value: T;
+  onChange: (next: T) => void;
+  tabs: { id: T; label: ReactNode; count?: number; hot?: boolean }[];
+  ext?: boolean;
+}) {
+  return (
+    <div className={`segtabs${ext ? ' segtabs--ext' : ''}`} role="tablist" aria-label={label}>
+      {tabs.map((tab) => (
+        <button key={tab.id} type="button" role="tab" aria-selected={value === tab.id}
+          className={`segtab${value === tab.id ? ' is-on' : ''}${tab.hot ? ' segtab--hot' : ''}`}
+          onClick={() => onChange(tab.id)}>
+          <span className="segtab__label">{tab.label}</span>
+          {tab.count !== undefined && <span className="segtab__n">{tab.count}</span>}
+        </button>
+      ))}
     </div>
   );
 }

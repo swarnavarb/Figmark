@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { AdvanceStrip } from '../components/Buy';
 import { Link } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
 import {
@@ -374,6 +375,7 @@ function LootCard({ listing }: { listing: Rated }) {
         {rarity.priceDropPercent && <span className="qsticker-tag qsticker-tag--drop">−{rarity.priceDropPercent}%</span>}
         {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
       </Thumb>
+      <AdvanceStrip percent={listing.advancePercent} />
 
       <div className="qloot__body">
         <span className="qloot__title">{listing.title}</span>

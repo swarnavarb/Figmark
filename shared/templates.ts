@@ -48,6 +48,23 @@ export interface PostTemplate extends BaseDocument {
   /** The template a lot created from one of these items should travel. */
   lotRouteId: string | null;
   lotRouteName: string | null;
+  /**
+   * 'power' is a power sale's quick fill: what every item in a run shares.
+   * Absent on older templates, which are all Quick Post ones.
+   */
+  kind?: 'post' | 'power';
+  /** A power quick fill's stock and payment terms. */
+  terms?: TemplateTerms | null;
+}
+
+/** Stock, payment and timing a quick fill hands to each item it fills. */
+export interface TemplateTerms {
+  quantityMode: 'fixed' | 'multiple';
+  quantity: number;
+  advancePercent: number | null;
+  /** A limited time deal's length in days; null when it is not one. */
+  limitedDays: number | null;
+  allowMultiple: boolean;
 }
 
 /**

@@ -17,10 +17,10 @@ export function LBox({ icon, title, hint, right, children, tone }: {
   right?: ReactNode;
   children?: ReactNode;
   /** A PRO box wears gold. */
-  tone?: 'pro';
+  tone?: 'pro' | Shade;
 }) {
   return (
-    <section className={`lbox${tone ? ` lbox--${tone}` : ''}`}>
+    <section className={`lbox lbox--${tone ?? SHADE_BY_ICON[icon] ?? 'violet'}`}>
       <header className="lbox__head">
         <span className="lbox__icon" aria-hidden="true">{icon}</span>
         <span className="lbox__titles">
@@ -32,6 +32,24 @@ export function LBox({ icon, title, hint, right, children, tone }: {
       {children && <div className="lbox__body">{children}</div>}
     </section>
   );
+}
+
+/** Each kind of question keeps its own tint, so a long form reads as distinct boxes. */
+type Shade = 'violet' | 'aqua' | 'coral' | 'lime' | 'gold' | 'rose' | 'sky';
+const SHADE_BY_ICON: Record<string, Shade> = {
+  '⚡': 'gold', '📸': 'sky', '🏷️': 'violet', '📝': 'violet', '💰': 'lime', '🚚': 'aqua', '📅': 'rose',
+  '📦': 'lime', '⏳': 'coral', '📣': 'sky', '⏱️': 'aqua', '👋': 'rose', '🧾': 'gold',
+};
+
+/** An ISO time `days` from now, or null for no number. */
+export function isoInDays(days: string | number): string {
+  return new Date(Date.now() + Math.max(0.01, Number(days) || 0) * 86_400_000).toISOString();
+}
+
+/** Whole days until an ISO time, at least 1. */
+export function daysUntil(iso: string | null | undefined, fallback = 2): number {
+  if (!iso) return fallback;
+  return Math.max(1, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
 }
 
 /** An on/off switch, labelled. */
@@ -111,7 +129,7 @@ export function PreOrderBox({ on, onToggle, units, onUnits, closes, onCloses }: 
   onToggle: (next: boolean) => void;
   units: string;
   onUnits: (next: string) => void;
-  /** A datetime-local value. */
+  /** Days from now. */
   closes: string;
   onCloses: (next: string) => void;
 }) {
@@ -125,8 +143,8 @@ export function PreOrderBox({ on, onToggle, units, onUnits, closes, onCloses }: 
             <input type="number" min="2" value={units} onChange={(e) => onUnits(e.target.value)} />
           </label>
           <label className="field">
-            <span>Bookings close</span>
-            <input type="datetime-local" value={closes} onChange={(e) => onCloses(e.target.value)} />
+            <span>Bookings close in (days)</span>
+            <input type="number" min="1" max="365" value={closes} onChange={(e) => onCloses(e.target.value)} />
           </label>
         </div>
       )}
@@ -134,8 +152,3 @@ export function PreOrderBox({ on, onToggle, units, onUnits, closes, onCloses }: 
   );
 }
 
-/** A datetime-local value `days` from now, in the viewer's own clock. */
-export function localInDays(days: number): string {
-  const at = new Date(Date.now() + days * 86_400_000);
-  return new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}

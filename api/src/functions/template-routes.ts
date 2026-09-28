@@ -5,7 +5,7 @@ import { inLot, isDirect } from '../../../shared/fulfilment.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
 import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf } from '../../../shared/routes.js';
-import type { PostTemplate } from '../../../shared/templates.js';
+import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
@@ -46,6 +46,22 @@ interface TemplateBody {
   preLotSteps?: { id?: string; name?: string; description?: string }[];
   preLotName?: string;
   lotRouteId?: string | null;
+  kind?: string;
+  terms?: Partial<TemplateTerms> | null;
+}
+
+/** A quick fill's terms, bounded; null when none came. */
+function readTerms(raw: Partial<TemplateTerms> | null | undefined): TemplateTerms | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const whole = (value: unknown, min: number, max: number) =>
+    Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Math.round(Number(value)))) : null;
+  return {
+    quantityMode: raw.quantityMode === 'multiple' ? 'multiple' : 'fixed',
+    quantity: whole(raw.quantity, 1, 9999) ?? 1,
+    advancePercent: raw.advancePercent == null ? null : whole(raw.advancePercent, 1, 99),
+    limitedDays: raw.limitedDays == null ? null : whole(raw.limitedDays, 1, 365),
+    allowMultiple: Boolean(raw.allowMultiple),
+  };
 }
 
 /** POST /api/templates/new - write one, or correct one. */
@@ -101,6 +117,8 @@ async function saveTemplate(request: HttpRequest, _context: InvocationContext) {
       : null,
     lotRouteId,
     lotRouteName,
+    kind: body.kind === 'power' ? 'power' : existing?.kind ?? 'post',
+    terms: body.terms !== undefined ? readTerms(body.terms) : existing?.terms ?? null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

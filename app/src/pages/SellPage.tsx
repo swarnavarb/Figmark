@@ -1,20 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import { CONDITION_TAGS, LOT_STAGE_LABELS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
-import type { Lot } from '@shared/models';
 import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
-import { ApiRequestError, api, type PhotoDraft } from '../api';
-import { NewLotDialog } from '../components/LotFields';
+import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
-import { formatMoney } from '../format';
+import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
-import { TermsFields, termsBody, termsDraft } from '../components/Buy';
+import { AdvanceStrip, TermsFields, termsBody, termsDraft } from '../components/Buy';
 import {
-  LBox, OptionTiles, PreOrderBox, SHAPE_OPTIONS, Switch, ToggleRow, localInDays, type Shape,
+  LBox, OptionTiles, PreOrderBox, SHAPE_OPTIONS, Switch, ToggleRow, isoInDays, type Shape,
 } from '../components/ListingForm';
 import { RarityRibbon } from '../components/Quest';
 import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
@@ -76,7 +74,7 @@ const DRAFT_KEY = 'figmark:sell-draft';
 type SellDraft = {
   title: string; description: string; category: string; condition: string; price: string;
   costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>;
-  shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; preOrderCloses: string;
+  shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; preOrderDays: string;
   tags: string; calc: SavedCalc | null; quickPost: boolean; templateId: string; photos: PhotoDraft[];
   preLot: RouteStep[] | null; shape: Shape; lotId: string;
   /** The listing already made from this form, when only the step after it failed. */
@@ -162,14 +160,14 @@ export function SellPage() {
   const [condition, setCondition] = useState<string>(restored?.condition ?? CONDITION_TAGS[0]);
   const [price, setPrice] = useState(() => restored?.price ?? (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
   const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(restored ? restored.costSheet : prefill?.costSheet ?? null);
-  const [terms, setTerms] = useState(() => restored?.terms
-    ?? termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
+  const [terms, setTerms] = useState(() => restored?.terms ? { ...termsDraft(), ...restored.terms }
+    : termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
   const [shareToChannel, setShareToChannel] = useState(restored?.shareToChannel ?? prefill?.share?.channel ?? true);
   const [shareToFeed, setShareToFeed] = useState(restored?.shareToFeed ?? prefill?.share?.feed ?? true);
   const [preOrderMode, setPreOrderMode] = useState(restored?.preOrderMode ?? false);
   const [fillThreshold, setFillThreshold] = useState(restored?.fillThreshold ?? '20');
-  /** When bookings close - also the item's expiry, so a pre-order has one date, not two. */
-  const [preOrderCloses, setPreOrderCloses] = useState(restored?.preOrderCloses ?? localInDays(14));
+  /** Days until bookings close - also the item's expiry, so a pre-order has one date, not two. */
+  const [preOrderDays, setPreOrderDays] = useState(restored?.preOrderDays ?? '14');
   const [tags, setTags] = useState(restored?.tags ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +185,7 @@ export function SellPage() {
   const [photos, setPhotos] = useState<PhotoDraft[]>(restored?.photos ?? []);
   const [preLot, setPreLot] = useState<RouteStep[] | null>(restored?.preLot ?? null);
   const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
-  const [lots, setLots] = useState<Lot[]>([]);
+  const [lots, setLots] = useState<LotSummary[]>([]);
   const [lotId, setLotId] = useState(restored?.lotId ?? '');
   /* The listing this form already made, when publishing got that far and the
      private-deal message after it did not. Publishing again then only retries
@@ -205,7 +203,7 @@ export function SellPage() {
   const published = useRef(false);
   latest.current = {
     title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, preOrderCloses, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    preOrderMode, fillThreshold, preOrderDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
     createdListingId,
   };
   useEffect(() => {
@@ -214,7 +212,7 @@ export function SellPage() {
     }, 400);
     return () => window.clearTimeout(timer);
   }, [draftKey, title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, preOrderCloses, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    preOrderMode, fillThreshold, preOrderDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
     createdListingId]);
   useEffect(() => () => {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
@@ -233,7 +231,6 @@ export function SellPage() {
     if (picked.sellingPriceMinor) setPrice(String(picked.sellingPriceMinor / 100));
     setCostSheet(picked.steps.length ? { templateId: picked.templateId, templateName: picked.templateName, steps: picked.steps } : null);
   }
-  const [creatingLot, setCreatingLot] = useState(false);
 
   // The seller's open lots, so an item can be filed as it is listed rather
   // than published first and tidied up afterwards.
@@ -243,9 +240,9 @@ export function SellPage() {
       .myLots()
       .then((result) => {
         if (cancelled) return;
-        const open = result.lots.map((entry) => entry.lot).filter((lot) => lot.status === 'open');
+        const open = result.lots.filter((entry) => entry.lot.status === 'open');
         setLots(open);
-        setLotId((current) => current || (open[0]?.id ?? ''));
+        setLotId((current) => current || (open[0]?.lot.id ?? ''));
       })
       .catch(() => undefined);
     return () => {
@@ -259,6 +256,7 @@ export function SellPage() {
       .templates()
       .then((result) => {
         if (cancelled) return;
+        result.templates = result.templates.filter((row) => row.kind !== 'power');
         setTemplates(result.templates);
         // The last one used, when it still exists; otherwise the first.
         const remembered = result.templates.find((row) => row.id === lastTemplate());
@@ -316,13 +314,6 @@ export function SellPage() {
     }
   }
 
-  function lotCreated(lot: Lot) {
-    setLots((current) => [lot, ...current]);
-    setLotId(lot.id);
-    setShape('lot');
-    setCreatingLot(false);
-  }
-
   const priceMinor = Math.round(Number(price || 0) * 100);
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   // A lot is bookkeeping the shop does when the lot is packed, which is
@@ -332,7 +323,7 @@ export function SellPage() {
   const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
   const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;
 
-  const closesAt = new Date(preOrderCloses || localInDays(14)).toISOString();
+  const closesAt = isoInDays(preOrderDays || 14);
 
   async function publish(event: FormEvent) {
     event.preventDefault();
@@ -533,18 +524,30 @@ export function SellPage() {
           <LBox icon="🚚" title="Ships from">
             <OptionTiles label="How are you selling this?" value={shape} onChange={setShape} options={SHAPE_OPTIONS} />
             {shape === 'lot' && (
-              <div className="row" style={{ gap: 8 }}>
-                <select value={lotId} onChange={(e) => setLotId(e.target.value)} aria-label="Lot" style={{ flex: 1 }}>
-                  <option value="">File it into a lot later</option>
-                  {lots.map((lot) => (
-                    <option key={lot.id} value={lot.id}>
-                      {lot.name}{lot.origin ? ` — ${lot.origin}` : ''}
-                    </option>
-                  ))}
-                </select>
-                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setCreatingLot(true)}>
-                  + New lot
+              <div className="lotpick" role="radiogroup" aria-label="Lot">
+                {lots.map(({ lot, listingCount, unitCount }) => (
+                  <button key={lot.id} type="button" role="radio" aria-checked={lotId === lot.id}
+                    className={`lotpick__row${lotId === lot.id ? ' is-on' : ''}`} onClick={() => setLotId(lot.id)}>
+                    <b>{lot.name}</b>
+                    <span className="lotpick__meta">
+                      {[lot.originCountry && lot.destinationCountry ? `${lot.originCountry} → ${lot.destinationCountry}` : lot.origin,
+                        LOT_STAGE_LABELS[lot.stage],
+                        lot.estimatedDispatchAt ? `ships ${formatDate(lot.estimatedDispatchAt)}` : null,
+                        `${listingCount} item${listingCount === 1 ? '' : 's'} · ${unitCount} unit${unitCount === 1 ? '' : 's'}`,
+                      ].filter(Boolean).join(' · ')}
+                    </span>
+                  </button>
+                ))}
+                <button type="button" role="radio" aria-checked={!lotId}
+                  className={`lotpick__row${!lotId ? ' is-on' : ''}`} onClick={() => setLotId('')}>
+                  <b>File it into a lot later</b>
                 </button>
+                {/* A lot has a route, a forwarder and costs - too much for a
+                    box here, so this points at the real "New lot" button. The
+                    draft is kept, so coming back finds the form as it was. */}
+                <Link to="/shop?tab=lots&spotlight=new" className="lotpick__new">
+                  + New lot <span aria-hidden="true">→</span> <small>opens Lots, draft kept</small>
+                </Link>
               </div>
             )}
           </LBox>
@@ -552,7 +555,7 @@ export function SellPage() {
           {!deal && (
             <PreOrderBox on={preOrderMode} onToggle={setPreOrderMode}
               units={fillThreshold} onUnits={setFillThreshold}
-              closes={preOrderCloses} onCloses={setPreOrderCloses} />
+              closes={preOrderDays} onCloses={setPreOrderDays} />
           )}
 
           <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} />
@@ -588,6 +591,7 @@ export function SellPage() {
               <span className="qgrade">{condition}</span>
               {preOrderMode && !deal && <span className="qsticker-tag">Pre-order</span>}
             </Thumb>
+            {terms.advance && <AdvanceStrip percent={Number(terms.advancePercent) || 20} />}
             <div className="qloot__body">
               <span className="qloot__title">{title || 'Your listing title'}</span>
               <span className="qloot__price">{priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</span>
@@ -604,7 +608,6 @@ export function SellPage() {
         </aside>
       </div>
 
-      {creatingLot && <NewLotDialog onCreated={lotCreated} onCancel={() => setCreatingLot(false)} />}
     </main>
   );
 }

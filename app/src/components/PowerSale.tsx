@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import type { PostTemplate } from '@shared/templates';
+import { useSession } from '../session';
+import { BackLink } from './ScrollManager';
 import { CONDITION_TAGS } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
 import {
@@ -8,7 +11,7 @@ import {
 import { TermsFields, termsBody, termsDraft, type TermsDraft } from './Buy';
 import { LBox, OptionTiles, ToggleRow } from './ListingForm';
 import { PhotoManager } from './PhotoManager';
-import { EmptyState, ErrorNotice, Icon, Modal } from './ui';
+import { EmptyState, ErrorNotice, Icon } from './ui';
 import type { SavedCalc } from '@shared/profit';
 import { CostSheetField, type CostSheetDraft } from './CostSheetField';
 import { formatMoney, timeAgo } from '../format';
@@ -44,8 +47,12 @@ const STATUS_TONE: Record<PowerSaleView['status'], string> = {
 export function PowerSalePanel({ storeId, startWith }: { storeId: string; startWith?: SavedCalc[] }) {
   const [sales, setSales] = useState<PowerSaleView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const build = useCallback((calcs?: SavedCalc[]) =>
+    navigate(`/shop/power-sale?store=${encodeURIComponent(storeId)}`, { state: calcs?.length ? { saleCalcs: calcs } : null }),
+  [navigate, storeId]);
   // Arriving with saved calculations: the builder opens with them as items.
-  const [building, setBuilding] = useState(Boolean(startWith?.length));
+  useEffect(() => { if (startWith?.length) build(startWith); }, [startWith, build]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -113,18 +120,10 @@ export function PowerSalePanel({ storeId, startWith }: { storeId: string; startW
       )}
 
       <button type="button" className="btn btn--lg" style={{ justifySelf: 'start' }}
-        onClick={() => setBuilding(true)}>
+        onClick={() => build()}>
         <Icon name="plus" size={15} /> Schedule a sale
       </button>
 
-      {building && (
-        <SaleBuilder
-          storeId={storeId}
-          startWith={startWith}
-          onClose={() => setBuilding(false)}
-          onSaved={() => { setBuilding(false); void load(); }}
-        />
-      )}
     </div>
   );
 }
@@ -286,72 +285,101 @@ function Countdown({ to }: { to: string }) {
   );
 }
 
-/** A row in the builder, before it is a sale. */
+/** One item of a run: only what differs between items. The rest is the quick fill. */
 interface ItemDraft {
   key: number;
   title: string;
   description: string;
-  category: string;
-  condition: string;
   price: string;
   listPrice: string;
-  allowMultiple: boolean;
   costSheet: CostSheetDraft | null;
   photos: PhotoDraft[];
+  /** Folded to its name once saved; open while it is being written. */
+  open: boolean;
+}
+
+/** What every item in a run shares - and what a saved quick fill holds. */
+interface QuickFill {
+  category: string;
+  condition: string;
   tags: string;
   sourcing: 'in_hand' | 'import';
-  /** Stock, advance and expiry, as the sell page asks them. */
   terms: TermsDraft;
+  allowMultiple: boolean;
 }
 
 let nextKey = 1;
 const blankItem = (): ItemDraft => ({
-  key: nextKey++,
-  title: '',
-  description: '',
-  category: CATEGORIES[0]!,
-  condition: CONDITION_TAGS[0],
-  price: '',
-  listPrice: '',
-  allowMultiple: false,
-  costSheet: null,
-  photos: [],
-  tags: '',
-  sourcing: 'in_hand',
-  terms: termsDraft(),
+  key: nextKey++, title: '', description: '', price: '', listPrice: '', costSheet: null, photos: [], open: true,
 });
+
+const blankFill = (): QuickFill => ({
+  category: CATEGORIES[0]!, condition: CONDITION_TAGS[0], tags: '', sourcing: 'in_hand',
+  terms: termsDraft(), allowMultiple: false,
+});
+
+/** A saved quick fill back into the form. */
+function fillFromTemplate(template: PostTemplate): QuickFill {
+  const terms = template.terms;
+  return {
+    category: template.category || CATEGORIES[0]!,
+    condition: template.condition ?? CONDITION_TAGS[0],
+    tags: template.tags.join(', '),
+    sourcing: template.sourcing === 'import' ? 'import' : 'in_hand',
+    terms: {
+      ...termsDraft(),
+      quantityMode: terms?.quantityMode ?? 'fixed',
+      quantity: String(terms?.quantity ?? 1),
+      advance: Boolean(terms?.advancePercent),
+      advancePercent: String(terms?.advancePercent ?? 20),
+      limited: Boolean(terms?.limitedDays),
+      days: String(terms?.limitedDays ?? 2),
+    },
+    allowMultiple: Boolean(terms?.allowMultiple),
+  };
+}
 
 /** A saved calculation as a sale item: its name, its price as the members' price, and its costs. */
 const itemFromCalc = (calc: SavedCalc): ItemDraft => ({
   ...blankItem(),
+  open: false,
   title: calc.title,
   price: calc.sellingPriceMinor ? String(calc.sellingPriceMinor / 100) : '',
-  terms: termsDraft({ quantityAvailable: calc.input.quantity || 1 }),
   costSheet: calc.steps.length ? { templateId: calc.templateId, templateName: calc.templateName, steps: calc.steps } : null,
 });
 
+const itemReady = (item: ItemDraft) =>
+  item.title.trim().length > 0 && Number(item.price) > 0 && Number(item.listPrice) > Number(item.price);
+
 /**
- * Building a run.
+ * Building a run, as a page of its own - it is too long for a pop-up.
  *
- * Three questions in order, because that is the order a shop thinks in: what
- * you say to open it, what you are selling, and when it all goes out. Each
- * item is listed with the same boxes as the sell page - everything but "tell
- * people", because a sale item is told to the channel by the sale itself.
- * Where it is announced once its window closes is asked once, for the run.
+ * In the order a shop thinks in: what opens it, what every item shares (the
+ * quick fill, saveable for next time), the items themselves - each folded to
+ * its name once saved - and then when it all goes out and how it closes.
  */
-function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
-  storeId: string;
-  startWith?: SavedCalc[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
+export function PowerSaleBuilderPage() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const startWith = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;
+  const { user } = useSession();
+  const storeId = params.get('store') ?? user?.id ?? '';
+  const back = `/shop?tab=items&view=power${params.get('store') ? `&store=${encodeURIComponent(storeId)}` : ''}`;
+
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
+  const [fills, setFills] = useState<PostTemplate[]>([]);
   useEffect(() => {
     void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
+    void api.templates().then((result) => setFills(result.templates.filter((row) => row.kind === 'power'))).catch(() => undefined);
   }, [storeId]);
+
   const [name, setName] = useState('');
   const [opening, setOpening] = useState('');
   const [closing, setClosing] = useState('');
+  const [fill, setFill] = useState<QuickFill>(blankFill);
+  const [fillId, setFillId] = useState('');
+  const [fillName, setFillName] = useState('');
+  const [fillNote, setFillNote] = useState<string | null>(null);
   const [startNow, setStartNow] = useState<'now' | 'later'>('now');
   const [startAt, setStartAt] = useState('');
   const [lead, setLead] = useState('0');
@@ -365,17 +393,55 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
 
   const set = (key: number, patch: Partial<ItemDraft>) =>
     setItems((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  const setF = (patch: Partial<QuickFill>) => setFill((current) => ({ ...current, ...patch }));
 
-  const ready =
-    opening.trim().length > 3 &&
-    items.length > 0 &&
-    items.every((item) => item.title.trim() && Number(item.price) > 0 && Number(item.listPrice) > Number(item.price));
+  function pickFill(id: string) {
+    setFillId(id);
+    const template = fills.find((row) => row.id === id);
+    if (template) {
+      setFill(fillFromTemplate(template));
+      setFillName(template.name);
+    }
+  }
+
+  async function saveFill() {
+    setFillNote(null);
+    const terms = termsBody(fill.terms);
+    try {
+      const { template } = await api.saveTemplate({
+        id: fillId || undefined,
+        name: fillName.trim() || name.trim() || 'Power sale quick fill',
+        kind: 'power',
+        category: fill.category,
+        condition: fill.condition,
+        tags: fill.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+        sourcing: fill.sourcing,
+        terms: {
+          quantityMode: terms.quantityMode,
+          quantity: Math.max(1, terms.quantityAvailable),
+          advancePercent: terms.advancePercent,
+          limitedDays: fill.terms.limited ? Number(fill.terms.days) || 2 : null,
+          allowMultiple: fill.allowMultiple,
+        },
+      });
+      setFills((rows) => [template, ...rows.filter((row) => row.id !== template.id)]);
+      setFillId(template.id);
+      setFillName(template.name);
+      setFillNote('Saved to your templates.');
+    } catch (err) {
+      setFillNote(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    }
+  }
+
+  const ready = opening.trim().length > 3 && items.length > 0 && items.every(itemReady);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
+      const terms = termsBody(fill.terms);
+      const tags = fill.tags.split(',').map((tag) => tag.trim()).filter(Boolean);
       const draft: PowerSaleDraft = {
         storeId,
         name: name.trim(),
@@ -386,29 +452,26 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
         windowMinutes: Math.max(5, Number(window_) || 60),
         closingBody: closing.trim(),
         afterWindow: { channel: afterChannel, feed: afterFeed },
-        items: items.map((item) => {
-          const terms = termsBody(item.terms);
-          return {
-            title: item.title.trim(),
-            description: item.description.trim(),
-            category: item.category,
-            condition: item.condition,
-            priceMinor: Math.round(Number(item.price) * 100),
-            listPriceMinor: Math.round(Number(item.listPrice) * 100),
-            quantity: Math.max(1, terms.quantityAvailable),
-            allowMultiple: item.allowMultiple,
-            costSheet: item.costSheet,
-            photos: item.photos.map(({ blobName, url, isPrimary }) => ({ blobName, url, isPrimary })),
-            tags: item.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-            sourcing: item.sourcing,
-            quantityMode: terms.quantityMode,
-            expiresAt: terms.expiresAt,
-            advancePercent: terms.advancePercent,
-          };
-        }),
+        items: items.map((item) => ({
+          title: item.title.trim(),
+          description: item.description.trim(),
+          category: fill.category,
+          condition: fill.condition,
+          priceMinor: Math.round(Number(item.price) * 100),
+          listPriceMinor: Math.round(Number(item.listPrice) * 100),
+          quantity: Math.max(1, terms.quantityAvailable),
+          allowMultiple: fill.allowMultiple,
+          costSheet: item.costSheet,
+          photos: item.photos.map(({ blobName, url, isPrimary }) => ({ blobName, url, isPrimary })),
+          tags,
+          sourcing: fill.sourcing,
+          quantityMode: terms.quantityMode,
+          expiresAt: terms.expiresAt,
+          advancePercent: terms.advancePercent,
+        })),
       };
       await api.createPowerSale(draft);
-      onSaved();
+      navigate(back);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not schedule that.');
     } finally {
@@ -417,8 +480,12 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
   }
 
   return (
-    <Modal title="⚡ Power selling" onClose={onClose}>
-      <form className="sellform" onSubmit={submit}>
+    <main className="page">
+      <div className="page__head">
+        <BackLink to={back}>Scheduled sales</BackLink>
+        <h1>⚡ Power selling</h1>
+      </div>
+      <form className="sellform psform" onSubmit={submit}>
         <LBox icon="📝" title="The sale" hint="The name is only for you; the channel sees the message.">
           <label className="field">
             <span>Name</span>
@@ -431,24 +498,58 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
           </label>
         </LBox>
 
-        {items.map((item, index) => (
-          <div key={item.key} className="saleitem">
-            <div className="saleitem__head">
-              <span className="saleitem__num">{index + 1}</span>
-              <b>{item.title.trim() || `Item ${index + 1}`}</b>
-              {items.length > 1 && (
-                <button type="button" className="btn btn--quiet btn--sm"
-                  onClick={() => setItems((rows) => rows.filter((row) => row.key !== item.key))}>
-                  Remove
-                </button>
-              )}
-            </div>
+        <LBox icon="⚡" title="Quick fill" hint="Shared by every item below. Save it to reuse next time."
+          right={<span className="probadge">PRO</span>}>
+          {fills.length > 0 && (
+            <select value={fillId} onChange={(e) => pickFill(e.target.value)} aria-label="Saved quick fill">
+              <option value="">Start from a saved quick fill…</option>
+              {fills.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+            </select>
+          )}
+          <div className="field-row">
+            <label className="field">
+              <span>Category</span>
+              <select value={fill.category} onChange={(e) => setF({ category: e.target.value })}>
+                {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Condition</span>
+              <select value={fill.condition} onChange={(e) => setF({ condition: e.target.value })}>
+                {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="field">
+            <span>Tags</span>
+            <input value={fill.tags} onChange={(e) => setF({ tags: e.target.value })} placeholder="resin, sealed" />
+          </label>
+          <OptionTiles label="Ships from" value={fill.sourcing} onChange={(sourcing) => setF({ sourcing })}
+            options={[
+              { id: 'in_hand', icon: '🏠', title: 'In hand', note: 'Ships from your shelf' },
+              { id: 'import', icon: '✈️', title: 'Import', note: 'Lot added later' },
+            ]} />
+          <TermsFields value={fill.terms} onChange={(terms) => setF({ terms })} />
+          <ToggleRow icon="🛍️" title="One buyer may take several" checked={fill.allowMultiple}
+            onChange={(allowMultiple) => setF({ allowMultiple })} />
+          <div className="row" style={{ gap: 8 }}>
+            <input value={fillName} onChange={(e) => setFillName(e.target.value)} placeholder="Name this quick fill"
+              aria-label="Quick fill name" style={{ flex: 1, minWidth: 0 }} />
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => void saveFill()}>
+              {fillId ? 'Update' : 'Save'} quick fill
+            </button>
+          </div>
+          {fillNote && <span className="lbox__hint">{fillNote}</span>}
+        </LBox>
 
-            <LBox icon="📸" title="Photos">
+        <LBox icon="🧾" title="Items" hint={`${items.length} in this run · posted in this order`}>
+          {items.map((item, index) => item.open ? (
+            <div key={item.key} className="saleitem">
+              <div className="saleitem__head">
+                <span className="saleitem__num">{index + 1}</span>
+                <b>{item.title.trim() || `Item ${index + 1}`}</b>
+              </div>
               <PhotoManager photos={item.photos} onChange={(photos) => set(item.key, { photos })} label={null} />
-            </LBox>
-
-            <LBox icon="🏷️" title="The item">
               <label className="field">
                 <span>Title</span>
                 <input value={item.title} onChange={(e) => set(item.key, { title: e.target.value })}
@@ -461,35 +562,12 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
               </label>
               <div className="field-row">
                 <label className="field">
-                  <span>Category</span>
-                  <select value={item.category} onChange={(e) => set(item.key, { category: e.target.value })}>
-                    {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Condition</span>
-                  <select value={item.condition} onChange={(e) => set(item.key, { condition: e.target.value })}>
-                    {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-                  </select>
-                </label>
-              </div>
-              <label className="field">
-                <span>Tags</span>
-                <input value={item.tags} onChange={(e) => set(item.key, { tags: e.target.value })} placeholder="resin, sealed" />
-              </label>
-            </LBox>
-
-            <LBox icon="💰" title="Price" hint="Members get the first price while the window is open.">
-              <div className="field-row">
-                <label className="field">
                   <span>Members pay (₹)</span>
-                  <input type="number" min="1" value={item.price}
-                    onChange={(e) => set(item.key, { price: e.target.value })} />
+                  <input type="number" min="1" value={item.price} onChange={(e) => set(item.key, { price: e.target.value })} />
                 </label>
                 <label className="field">
                   <span>After the window (₹)</span>
-                  <input type="number" min="1" value={item.listPrice}
-                    onChange={(e) => set(item.key, { listPrice: e.target.value })} />
+                  <input type="number" min="1" value={item.listPrice} onChange={(e) => set(item.key, { listPrice: e.target.value })} />
                 </label>
               </div>
               {Number(item.listPrice) > 0 && Number(item.listPrice) <= Number(item.price) && (
@@ -497,45 +575,51 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
                   The price after the window has to be above the members&rsquo; price.
                 </span>
               )}
-            </LBox>
-
-            <LBox icon="🚚" title="Ships from">
-              <OptionTiles label="Ships from" value={item.sourcing} onChange={(sourcing) => set(item.key, { sourcing })}
-                options={[
-                  { id: 'in_hand', icon: '🏠', title: 'In hand', note: 'Ships from your shelf' },
-                  { id: 'import', icon: '✈️', title: 'Import', note: 'Lot added later' },
-                ]} />
-            </LBox>
-
-            <TermsFields value={item.terms} onChange={(terms) => set(item.key, { terms })} />
-            <ToggleRow icon="🛍️" title="One buyer may take several" checked={item.allowMultiple}
-              onChange={(allowMultiple) => set(item.key, { allowMultiple })} />
-
-            <CostSheetField value={item.costSheet} onChange={(costSheet) => set(item.key, { costSheet })}
-              sellingPriceMinor={Math.round(Number(item.price || 0) * 100)} shop={storeId} />
+              <CostSheetField value={item.costSheet} onChange={(costSheet) => set(item.key, { costSheet })}
+                sellingPriceMinor={Math.round(Number(item.price || 0) * 100)} shop={storeId} />
+              <div className="row" style={{ gap: 8 }}>
+                <button type="button" className="btn btn--sm" disabled={!itemReady(item)}
+                  onClick={() => set(item.key, { open: false })}>
+                  ✓ Save item
+                </button>
+                <button type="button" className="btn btn--ghost btn--sm"
+                  onClick={() => setItems((rows) => rows.filter((row) => row.key !== item.key))}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div key={item.key} className={`saleline${itemReady(item) ? '' : ' saleline--todo'}`}>
+              <span className="saleitem__num">{index + 1}</span>
+              <button type="button" className="saleline__name" onClick={() => set(item.key, { open: true })}>
+                {item.title.trim() || `Item ${index + 1}`}
+                {!itemReady(item) && <small> · needs prices</small>}
+              </button>
+              <button type="button" className="saleline__x" aria-label={`Delete ${item.title || 'item'}`}
+                onClick={() => setItems((rows) => rows.filter((row) => row.key !== item.key))}>✕</button>
+            </div>
+          ))}
+          <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <button type="button" className="saleadd" aria-label="Add an item"
+              onClick={() => setItems((rows) => [...rows.map((row) => (itemReady(row) ? { ...row, open: false } : row)), blankItem()])}>
+              <Icon name="plus" size={16} /> Add item
+            </button>
+            {calcs.length > 0 && (
+              <select value="" aria-label="Add from your saved calculations" style={{ flex: 1, minWidth: 180 }}
+                onChange={(e) => {
+                  const calc = calcs.find((entry) => entry.id === e.target.value);
+                  if (calc) setItems((rows) => [...rows.filter((row) => row.title.trim() || row.price), itemFromCalc(calc)]);
+                }}>
+                <option value="">🧮 Add from a saved calculation…</option>
+                {calcs.map((calc) => (
+                  <option key={calc.id} value={calc.id}>
+                    {calc.title} · {formatMoney(calc.sellingPriceMinor)}{calc.listingId ? ' (listed)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
-        ))}
-
-        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-          <button type="button" className="btn btn--ghost btn--sm"
-            onClick={() => setItems((rows) => [...rows, blankItem()])}>
-            <Icon name="plus" size={13} /> Another item
-          </button>
-          {calcs.length > 0 && (
-            <select value="" aria-label="Add from your saved calculations" style={{ flex: 1, minWidth: 180 }}
-              onChange={(e) => {
-                const calc = calcs.find((entry) => entry.id === e.target.value);
-                if (calc) setItems((rows) => [...rows.filter((row) => row.title.trim() || row.price), itemFromCalc(calc)]);
-              }}>
-              <option value="">🧮 Add from a saved calculation…</option>
-              {calcs.map((calc) => (
-                <option key={calc.id} value={calc.id}>
-                  {calc.title} · {formatMoney(calc.sellingPriceMinor)}{calc.listingId ? ' (listed)' : ''}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+        </LBox>
 
         <LBox icon="⏱️" title="Timing">
           <OptionTiles label="When it starts" value={startNow} onChange={setStartNow}
@@ -581,6 +665,6 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
           {busy ? 'Scheduling…' : startNow === 'now' ? '⚡ Start the sale' : '🗓️ Schedule it'}
         </button>
       </form>
-    </Modal>
+    </main>
   );
 }

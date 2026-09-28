@@ -197,8 +197,13 @@ export function ListingPage() {
                 ? <StockChip listing={listing} />
                 : <span className="badge badge--danger">Sold out</span>}
               <ExpiryChip listing={listing} big />
-              {listing.advancePercent ? <span className="badge badge--lime">💸 {listing.advancePercent}% advance OK</span> : null}
             </div>
+            {listing.advancePercent ? (
+              <p className="advnote">
+                💸 <b>Advance payment accepted</b> — book it with {listing.advancePercent}%
+                ({formatMoney(Math.round(listing.priceMinor * listing.advancePercent / 100), listing.currency)}) now, the rest later.
+              </p>
+            ) : null}
 
             {action && <p className={`notice ${action.includes('—') || action.includes('Bumped') ? 'notice--ok' : 'notice--error'}`}>{action}</p>}
 

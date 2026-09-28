@@ -13,7 +13,7 @@ import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
-import type { PostTemplate } from '@shared/templates';
+import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
@@ -1737,7 +1737,7 @@ export const api = {
     id?: string; name: string; category?: string; tags?: string[];
     condition?: string | null; sourcing?: string; description?: string; defaultLotId?: string | null;
     preLotSteps?: { name: string; description?: string }[]; preLotName?: string;
-    lotRouteId?: string | null;
+    lotRouteId?: string | null; kind?: 'post' | 'power'; terms?: TemplateTerms | null;
   }) => post<{ template: PostTemplate }>('/templates/new', body),
   deleteTemplate: (id: string) =>
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),

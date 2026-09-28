@@ -9,7 +9,7 @@ import { ApiRequestError, api } from '../api';
 import { formatDate, formatMoney } from '../format';
 import { Modal } from './LotFields';
 import { ErrorNotice } from './ui';
-import { LBox, OptionTiles, ToggleRow } from './ListingForm';
+import { LBox, OptionTiles, Switch, ToggleRow, daysUntil, isoInDays } from './ListingForm';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and
@@ -39,6 +39,12 @@ export function ExpiryChip({ listing, big = false }: { listing: Pick<Listing, 'e
       {expired ? '⛔ Expired' : `⏳ ${timeLeft(listing.expiresAt)}`}
     </span>
   );
+}
+
+/** The highlighted line under a card's picture: this can be booked with part of the price. */
+export function AdvanceStrip({ percent }: { percent: number | null | undefined }) {
+  if (!percent) return null;
+  return <span className="advstrip">💸 Advance payment accepted · {percent}%</span>;
 }
 
 /** Total, paid, balance and credit: the four numbers that must never be ambiguous. */
@@ -143,17 +149,14 @@ function creditStory(credit: CreditRecord, currency: string): string {
   return parts.join(' · ');
 }
 
-/** A datetime-local value for an ISO string, in the viewer's own clock. */
-function localInput(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const date = new Date(iso);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
-
 export interface TermsDraft {
   quantityMode: 'fixed' | 'multiple';
   quantity: string;
-  expiresAt: string;
+  /** A limited time deal ends `days` from when it is saved. */
+  limited: boolean;
+  days: string;
+  /** The expiry it came with, kept as is unless the days are changed. */
+  was: { at: string; days: string } | null;
   advance: boolean;
   advancePercent: string;
 }
@@ -162,9 +165,11 @@ export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePerce
   return {
     quantityMode: listing?.quantityMode === 'multiple' ? 'multiple' : 'fixed',
     quantity: String(listing?.quantityAvailable ?? 1),
-    expiresAt: localInput(listing?.expiresAt),
+    limited: listing ? Boolean(listing.expiresAt) : false,
+    days: String(daysUntil(listing?.expiresAt)),
+    was: listing?.expiresAt ? { at: listing.expiresAt, days: String(daysUntil(listing.expiresAt)) } : null,
     advance: Boolean(listing?.advancePercent),
-    advancePercent: String(listing?.advancePercent ?? 30),
+    advancePercent: String(listing?.advancePercent ?? 20),
   };
 }
 
@@ -173,8 +178,8 @@ export function termsBody(draft: TermsDraft) {
   return {
     quantityMode: draft.quantityMode,
     quantityAvailable: Math.max(draft.quantityMode === 'multiple' ? 1 : 0, Number(draft.quantity) || 0),
-    expiresAt: draft.expiresAt ? new Date(draft.expiresAt).toISOString() : null,
-    advancePercent: draft.advance ? Math.min(99, Math.max(1, Number(draft.advancePercent) || 30)) : null,
+    expiresAt: !draft.limited ? null : draft.was && draft.was.days === draft.days ? draft.was.at : isoInDays(draft.days),
+    advancePercent: draft.advance ? Math.min(99, Math.max(1, Number(draft.advancePercent) || 20)) : null,
   };
 }
 
@@ -222,9 +227,14 @@ export function TermsFields({ value, onChange, preOrder = false }: {
       </LBox>
 
       {!preOrder && (
-        <LBox icon="⏳" title="Ends" hint="Leave empty to keep it up until you take it down.">
-          <input type="datetime-local" value={value.expiresAt} aria-label="Ends"
-            onChange={(e) => set({ expiresAt: e.target.value })} />
+        <LBox icon="⏳" title="Limited time deal" hint={value.limited ? `Comes off sale in ${value.days || '—'} days.` : 'Off: stays up until you take it down.'}
+          right={<Switch checked={value.limited} onChange={(limited) => set({ limited })} label="Limited time deal" />}>
+          {value.limited && (
+            <label className="field">
+              <span>Ends in (days)</span>
+              <input type="number" min="1" max="365" value={value.days} onChange={(e) => set({ days: e.target.value })} />
+            </label>
+          )}
         </LBox>
       )}
     </>

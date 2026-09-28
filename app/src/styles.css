@@ -8897,7 +8897,18 @@ a.ohead__thumb:hover { transform: scale(1.04); }
   display: grid; gap: 12px; padding: 14px; border-radius: var(--r-lg);
   background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
 }
-.lbox--pro { box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.45); }
+.lbox--pro, .lbox--gold { --tint: 251, 191, 36; }
+.lbox--violet { --tint: 139, 92, 246; }
+.lbox--aqua { --tint: 34, 211, 238; }
+.lbox--coral { --tint: 251, 113, 133; }
+.lbox--lime { --tint: 163, 230, 53; }
+.lbox--rose { --tint: 236, 72, 153; }
+.lbox--sky { --tint: 96, 165, 250; }
+.lbox[class*="lbox--"] {
+  background: linear-gradient(160deg, rgba(var(--tint), 0.11), rgba(var(--tint), 0.03) 60%), var(--surface);
+  box-shadow: inset 0 0 0 1px rgba(var(--tint), 0.28);
+}
+.lbox[class*="lbox--"] .lbox__icon { background: rgba(var(--tint), 0.18); box-shadow: inset 0 0 0 1px rgba(var(--tint), 0.4); }
 .lbox__head { display: flex; align-items: center; gap: 10px; }
 .lbox__icon {
   display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 10px; font-size: 16px;
@@ -8965,13 +8976,89 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 /* A box's own bare controls - a template picker, an end date, a closing
    message - dressed like every other field. */
 .lbox__body > input, .lbox__body > select, .lbox__body > textarea,
-.lbox__body > .row > select, .sellform > .row > select {
+.lbox__body > .row > select, .lbox__body > .row > input, .sellform > .row > select {
   min-width: 0; max-width: 100%; width: 100%;
   padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-base);
 }
 .lbox__body > textarea { resize: vertical; min-height: 72px; line-height: 1.55; }
 .lbox__body > input:focus, .lbox__body > select:focus, .lbox__body > textarea:focus,
-.lbox__body > .row > select:focus, .sellform > .row > select:focus {
+.lbox__body > .row > select:focus, .lbox__body > .row > input:focus, .sellform > .row > select:focus {
   outline: none; border-color: var(--accent-line); background: var(--surface-hover);
 }
+
+/* ── Segmented tabs: one full-width track; the row under it is its extension ── */
+.segwrap { display: grid; }
+.segtabs {
+  display: flex; gap: 4px; padding: 4px; border-radius: 16px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
+}
+.segtab {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 6px; border: 0; border-radius: 12px; background: transparent; cursor: pointer;
+  color: var(--text-dim); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi);
+  transition: background 0.15s, color 0.15s;
+}
+.segtab__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.segtab__n {
+  flex: none; min-width: 20px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-variant-numeric: tabular-nums;
+  background: var(--surface-2); color: var(--text-dim);
+}
+.segtab.is-on { background: var(--grad-blue); color: #fff; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35); }
+.segtab.is-on .segtab__n { background: rgba(255, 255, 255, 0.24); color: #fff; }
+.segtab--hot .segtab__n { background: var(--coral); color: var(--coral-ink); }
+.segwrap > .segtabs:first-child:not(:last-child) { border-radius: 16px 16px 0 0; }
+.segtabs--ext {
+  margin: 0 10px; padding: 3px 4px; border-radius: 0 0 14px 14px; gap: 2px;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); clip-path: inset(0 -20px -20px -20px);
+}
+.segtabs--ext .segtab { padding: 7px 6px; font-size: var(--t-xs); border-radius: 10px; }
+.segtabs--ext .segtab.is-on { background: rgba(99, 102, 241, 0.2); color: var(--text); box-shadow: inset 0 -2px 0 #818cf8; }
+
+/* ── Lot picker on the listing form ── */
+.lotpick { display: grid; gap: 6px; }
+.lotpick__row {
+  display: grid; gap: 2px; text-align: left; padding: 10px 12px; border: 0; border-radius: 12px; cursor: pointer;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); color: var(--text); font: inherit;
+}
+.lotpick__row.is-on { box-shadow: inset 0 0 0 2px var(--aqua); background: rgba(34, 211, 238, 0.08); }
+.lotpick__meta { font-size: var(--t-xs); color: var(--text-faint); }
+.lotpick__new {
+  display: flex; align-items: center; gap: 6px; justify-self: start; padding: 8px 12px; border-radius: 999px;
+  color: var(--aqua); font-weight: var(--w-semi); font-size: var(--t-sm); text-decoration: none;
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.4);
+}
+.lotpick__new small { color: var(--text-faint); font-weight: 400; }
+
+/* ── Advance accepted: under a card's picture, and on the item page ── */
+.advstrip {
+  display: block; padding: 5px 10px; font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0.01em;
+  color: var(--lime-ink); background: linear-gradient(90deg, var(--lime), #4ade80);
+}
+.advnote {
+  margin: 0; padding: 10px 12px; border-radius: 12px; font-size: var(--t-sm);
+  background: var(--lime-soft); box-shadow: inset 0 0 0 1px var(--lime-line);
+}
+
+/* ── Power sale builder page: items fold to a line once saved ── */
+.psform { max-width: 680px; }
+.saleline {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
+}
+.saleline--todo { box-shadow: inset 0 0 0 1px var(--coral); }
+.saleline__name {
+  flex: 1 1 auto; min-width: 0; text-align: left; border: 0; background: none; color: var(--text); cursor: pointer;
+  font: inherit; font-weight: var(--w-semi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.saleline__name small { color: var(--coral); font-weight: 400; }
+.saleline__x {
+  flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; cursor: pointer;
+  background: transparent; color: var(--text-faint);
+}
+.saleline__x:hover { background: rgba(251, 113, 133, 0.15); color: var(--coral); }
+.saleadd {
+  display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border: 1px dashed rgba(251, 191, 36, 0.6);
+  border-radius: 999px; background: rgba(251, 191, 36, 0.08); color: #fbbf24; font: inherit; font-weight: var(--w-semi); cursor: pointer;
+}
+@media (max-width: 480px) { .segtab__icon { display: none; } .segtab { font-size: var(--t-xs); gap: 4px; } }

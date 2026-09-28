@@ -1,4 +1,5 @@
 import { StrictMode, lazy, type ComponentType } from 'react';
+import { PowerSaleBuilderPage } from './components/PowerSale';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './AppShell';
@@ -81,6 +82,7 @@ function App() {
         <Route path="/listing/:id" element={<ListingPage />} />
         <Route path="/sell" element={<SellPage />} />
         <Route path="/shop" element={<ShopPage />} />
+        <Route path="/shop/power-sale" element={<PowerSaleBuilderPage />} />
         <Route path="/lot/:id" element={<LotBoardPage />} />
         {/* Lots live on the Sell tab's own Lots section, not a separate page -
             these both just point there so nothing bookmarked or linked breaks. */}

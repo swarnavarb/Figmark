@@ -71,7 +71,7 @@ export function useCalcAction(store: StoreAccess | null) {
   return (calc: SavedCalc, action: CalcAction, buyer?: string) => {
     if (!store) return;
     if (action === 'sale') {
-      navigate('/shop?tab=items', { state: { saleCalcs: [calc], store: store.ownerId } });
+      navigate(`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`, { state: { saleCalcs: [calc] } });
       return;
     }
     if (action === 'deal') {
