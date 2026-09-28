@@ -156,6 +156,7 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>
           <Link role="menuitem" to="/refunds" className="pmenu__item">↩️ My refunds</Link>
           <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
+          <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>
           <button role="menuitem" type="button" className="pmenu__item pmenu__item--out" onClick={onSignOut}>
             👋 Sign Out
           </button>

@@ -4,6 +4,7 @@ import type { AuthUser, HealthResponse } from '@shared/contracts';
 import { ApiRequestError, admin } from './api';
 import { UsersView } from './UsersView';
 import { DisputesView } from './DisputesView';
+import { LearnView } from './LearnView';
 import '../styles.css';
 
 /**
@@ -26,7 +27,7 @@ import '../styles.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'disputes';
+type Tab = 'users' | 'disputes' | 'learn';
 
 function Console() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -88,14 +89,14 @@ function Console() {
 
       <main className="ops__body ops">
         <div className="tabs">
-          {(['users', 'disputes'] as Tab[]).map((entry) => (
+          {(['users', 'disputes', 'learn'] as Tab[]).map((entry) => (
             <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
-              {entry === 'users' ? 'People and stores' : 'Disputes'}
+              {entry === 'users' ? 'People and stores' : entry === 'disputes' ? 'Disputes' : 'Learn page'}
             </button>
           ))}
         </div>
 
-        {tab === 'users' ? <UsersView /> : <DisputesView />}
+        {tab === 'users' ? <UsersView /> : tab === 'disputes' ? <DisputesView /> : <LearnView />}
 
         <BackendStatus />
       </main>

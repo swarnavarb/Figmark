@@ -7703,4 +7703,65 @@ await check('the leaderboard ranks collectors by XP', async () => {
   assert.equal(board.top[0].rank, 1);
 });
 
+
+/* ── the Learn guide ──────────────────────────────────────────────────── */
+console.log('learn guide');
+
+const {
+  learnRoute: learnRead, opsLearnRoute: opsLearnRead, opsLearnSaveRoute: opsLearnSave, opsLearnResetRoute: opsLearnReset,
+} = await import(new URL('learn-routes.js', fns));
+
+await check('the guide ships with Buy, Sell, Services and Social, and anybody can read it', async () => {
+  const guide = (await learnRead(req(), ctx)).jsonBody;
+  assert.deepEqual(guide.tabs.map((tab) => tab.id), ['buy', 'sell', 'services', 'social']);
+  assert.equal(guide.customised, false);
+  const buy = guide.tabs[0];
+  assert.ok(buy.sections.length >= 8, 'the Buy guide is complete');
+  assert.ok(buy.sections.some((section) => section.steps.some((entry) => entry.image?.startsWith('/learn/'))), 'with pictures');
+});
+
+await check('only an operator can change the guide', async () => {
+  const buyer = await newBuyer('Learn Reader');
+  assert.equal((await opsLearnRead(req({ headers: buyer.headers }), ctx)).status, 403);
+  assert.equal((await opsLearnSave(req({ headers: buyer.headers, body: { tabs: [] } }), ctx)).status, 403);
+  assert.equal((await opsLearnReset(req({ headers: buyer.headers }), ctx)).status, 403);
+  assert.equal((await opsLearnSave(req({ body: { tabs: [] } }), ctx)).status, 401);
+});
+
+await check('an operator can add a tab, hide one, and reset to the default', async () => {
+  const start = (await opsLearnRead(req({ headers: auth }), ctx)).jsonBody;
+  const tabs = [
+    ...start.tabs,
+    { title: 'Payments', icon: '💳', intro: 'How money moves.', sections: [
+      { title: 'UPI', body: 'Pay with **UPI**.', steps: [{ title: 'Open your app', body: '', image: '/api/photos/abc.jpg', caption: '' }] },
+    ] },
+    { title: 'Draft', icon: '📝', intro: '', sections: [], hidden: true },
+  ];
+  const saved = await opsLearnSave(req({ headers: auth, body: { tabs } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.customised, true);
+  assert.ok(saved.jsonBody.updatedBy);
+  assert.equal(saved.jsonBody.tabs.find((tab) => tab.title === 'Payments').id, 'payments', 'ids are made from titles');
+
+  const seen = (await learnRead(req(), ctx)).jsonBody;
+  assert.ok(seen.tabs.some((tab) => tab.id === 'payments'));
+  assert.equal(seen.tabs.some((tab) => tab.title === 'Draft'), false, 'a hidden tab is not shown');
+
+  const back = (await opsLearnReset(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(back.customised, false);
+  assert.deepEqual(back.tabs.map((tab) => tab.id), ['buy', 'sell', 'services', 'social']);
+});
+
+await check('a guide that could not be drawn is refused with the reason', async () => {
+  const refuse = async (tabs) => (await opsLearnSave(req({ headers: auth, body: { tabs } }), ctx)).jsonBody.error;
+  assert.equal(await refuse([]), 'invalid_guide');
+  assert.equal(await refuse([{ title: '' }]), 'invalid_guide');
+  assert.equal(await refuse([{ title: 'Only', hidden: true }]), 'invalid_guide');
+  const badPicture = await opsLearnSave(req({ headers: auth, body: { tabs: [{ title: 'X', sections: [
+    { title: 'S', steps: [{ title: 'T', image: 'javascript:alert(1)' }] },
+  ] }] } }), ctx);
+  assert.equal(badPicture.status, 400);
+  assert.match(badPicture.jsonBody.message, /picture/);
+});
+
 console.log(`\n${passed} checks passed`);

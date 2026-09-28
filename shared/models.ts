@@ -212,6 +212,16 @@ export interface CollectionItem {
   addedAt: string;
 }
 
+/**
+ * A page the operators write, stored whole under a fixed id ("learn").
+ * `data` is validated by whoever owns that page before it is saved.
+ */
+export interface SiteContent extends BaseDocument {
+  data: unknown;
+  /** The operator who last saved it. */
+  updatedBy: string | null;
+}
+
 export interface CollectionGroup {
   id: string;
   name: string;

@@ -30,6 +30,7 @@ import { SessionProvider, useSession } from './session';
 import { ToastHost } from './components/Feedback';
 import { QuestProvider } from './components/Quest';
 import { QuestsPage } from './pages/QuestsPage';
+import { LearnPage } from './pages/LearnPage';
 import './styles.css';
 
 /**
@@ -97,6 +98,7 @@ function App() {
         <Route path="/refunds" element={<MyRefundsPage />} />
         <Route path="/disputes" element={<MyDisputesPage />} />
         <Route path="/quests" element={<QuestsPage />} />
+        <Route path="/learn" element={<LearnPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
         <Route path="/:username" element={<ProfileByHandlePage />} />

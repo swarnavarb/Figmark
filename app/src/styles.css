@@ -8495,3 +8495,116 @@ body.is-locked { overflow: hidden; }
   .qcardface--tap, .qsticker__hex { transition: none; }
   .qcardface--tap:hover, .qsticker--tap:hover .qsticker__hex { transform: none; }
 }
+
+/* ==========================================================================
+   Learn
+
+   A rail of tabs down the side and the chosen guide beside it. On a phone the
+   rail stays at the side but narrows to icon-over-label, so the page never
+   loses its map; from 720px it widens into a proper sidebar.
+   ========================================================================== */
+
+.learn { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 14px; align-items: start; padding-top: 12px; }
+.learn__rail {
+  position: sticky; top: calc(var(--nav-h) + 8px); display: grid; gap: 6px;
+  max-height: calc(100vh - var(--nav-h) - var(--tabbar-h) - 24px); overflow-y: auto; scrollbar-width: none;
+}
+.learn__rail::-webkit-scrollbar { display: none; }
+.learn__railhead { display: none; margin: 0 0 4px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+.learn__tab {
+  display: grid; justify-items: center; gap: 4px; padding: 10px 4px; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+  font: inherit; font-size: var(--t-2xs); font-weight: var(--w-semi); text-align: center;
+}
+.learn__tab:hover { border-color: var(--border-strong); color: var(--text); }
+.learn__tab.is-on { background: var(--violet-soft); border-color: var(--violet-line); color: var(--text); }
+.learn__icon { font-size: 22px; line-height: 1; }
+.learn__label { line-height: 1.2; overflow-wrap: anywhere; }
+
+.learn__body { min-width: 0; display: grid; gap: 18px; padding-bottom: var(--s6); }
+.learn__head { display: flex; gap: 12px; align-items: flex-start; }
+/* On a phone the rail already shows the icon, so the header gives its width to the words. */
+@media (max-width: 719px) { .learn__bigicon { display: none; } }
+.learn__bigicon {
+  width: 52px; height: 52px; flex: none; display: grid; place-items: center; font-size: 28px;
+  border-radius: 16px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.learn__head h1 { font-size: var(--t-xl); }
+.learn__intro { margin: 6px 0 0; color: var(--text-dim); }
+
+.learn__toc { padding: 12px 14px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); }
+.learn__toc b { font-size: var(--t-xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.learn__toc ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: var(--t-sm); }
+.learn__toc a { color: var(--violet-text); text-decoration: none; }
+.learn__toc a:hover { text-decoration: underline; }
+
+.learn__section { display: grid; gap: 10px; scroll-margin-top: calc(var(--nav-h) + 12px); }
+.learn__section h2 { font-size: var(--t-lg); }
+.learn__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.learn__step {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; padding: 12px;
+  border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border);
+}
+.learn__num {
+  width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%;
+  background: var(--violet); color: #fff; font-family: var(--mono); font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+.learn__stepbody { min-width: 0; display: grid; gap: 6px; }
+.learn__stepbody h3 { font-size: var(--t-md); line-height: 1.3; padding-top: 3px; }
+.learn__figure { margin: 4px 0 0; display: grid; gap: 6px; }
+.learn__shot {
+  display: block; padding: 0; border: 1px solid var(--border-strong); border-radius: 14px; overflow: hidden;
+  background: var(--bg); cursor: zoom-in; max-width: 320px;
+}
+.learn__shot img { display: block; width: 100%; height: auto; }
+.learn__figure figcaption { font-size: var(--t-xs); color: var(--text-faint); }
+.learn__updated { margin: 0; font-size: var(--t-xs); }
+
+.learntext { display: grid; gap: 8px; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.6; }
+.learntext p, .learntext ul { margin: 0; }
+.learntext ul { padding-left: 18px; display: grid; gap: 4px; }
+.learntext strong { color: var(--text); }
+.learntext a { color: var(--violet-text); }
+
+@media (min-width: 720px) {
+  .learn { grid-template-columns: 210px minmax(0, 1fr); gap: 28px; }
+  .learn__railhead { display: block; }
+  .learn__tab { grid-template-columns: 28px 1fr; justify-items: start; align-items: center; padding: 10px 12px; font-size: var(--t-sm); text-align: left; }
+  .learn__icon { font-size: 20px; }
+  .learn__step { grid-template-columns: 34px minmax(0, 1fr); padding: 16px; }
+}
+
+/* ── The Learn editor, in the operations console ───────────────────────── */
+
+.learned { gap: 16px; }
+.learned__bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.learned__grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+.learned__tabs { display: grid; gap: 6px; }
+.learned__label { margin: 0; font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em; }
+.learned__tab { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 4px; }
+.learned__tab.is-on { border-color: var(--violet-line); background: var(--violet-soft); }
+.learned__pick { flex: 1; min-width: 0; text-align: left; border: 0; background: none; color: var(--text); font: inherit; padding: 6px 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.learned__tools { display: inline-flex; gap: 4px; flex: none; }
+.learned__tools button {
+  width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-dim); cursor: pointer; font: inherit;
+}
+.learned__tools button:disabled { opacity: 0.35; cursor: default; }
+.learned__hint { margin: 0; font-size: var(--t-xs); }
+.learned__edit { display: grid; gap: 12px; min-width: 0; }
+.learned__row { display: flex; align-items: center; gap: 10px; }
+.learned__icon { width: 80px; }
+.learned__check { gap: 8px; font-size: var(--t-sm); cursor: pointer; }
+.learned__danger { color: var(--danger-text); }
+.learned__fold { flex: 1; min-width: 0; text-align: left; border: 0; background: none; color: var(--text); font: inherit; cursor: pointer; padding: 4px 0; }
+.learned__section { gap: 12px; }
+.learned__steps { gap: 10px; }
+.learned__step { display: grid; gap: 8px; padding: 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.learned__steptitle { flex: 1; min-width: 0; font-weight: var(--w-semi); }
+.learned__image { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.learned__thumb { width: 96px; max-height: 160px; object-fit: cover; object-position: top; border-radius: 10px; border: 1px solid var(--border-strong); }
+.learned__preview { display: grid; gap: 14px; padding: 16px; border-radius: var(--r-lg); border: 1px dashed var(--border-strong); }
+
+@media (min-width: 900px) {
+  .learned__grid { grid-template-columns: 240px minmax(0, 1fr); }
+}

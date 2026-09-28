@@ -1,5 +1,6 @@
 import type { HealthResponse } from '@shared/contracts';
 import type { Dispute, EscrowRights, SellerTrustSignals, TrustSignals } from '@shared/models';
+import type { LearnDoc, LearnTab } from '@shared/learn';
 import { ApiRequestError, api as marketplace } from '../api';
 
 /**
@@ -128,6 +129,13 @@ export const admin = {
   disputes: () => request<{ disputes: AdminDisputeRow[] }>('/ops/disputes'),
   resolve: (id: string, body: { outcome: string; refundMinor: number; note: string }) =>
     post<{ dispute: Dispute }>(`/ops/disputes/${encodeURIComponent(id)}/resolve`, body),
+
+  /** The Learn guide, hidden tabs included, and whether it differs from the one that ships. */
+  learn: () => request<LearnDoc & { customised: boolean }>('/ops/learn'),
+  saveLearn: (tabs: LearnTab[]) => post<LearnDoc & { customised: boolean }>('/ops/learn/save', { tabs }),
+  resetLearn: () => post<LearnDoc & { customised: boolean }>('/ops/learn/reset'),
+  /** Upload a picture for a guide step; the same store listing photos use. */
+  uploadImage: (dataUrl: string) => marketplace.uploadPhoto(dataUrl),
 };
 
 export { ApiRequestError };

@@ -7,7 +7,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
 import { matchesSearch } from '../../../shared/catalog.js';
@@ -1734,6 +1734,29 @@ export class CosmosRepository implements Repository {
       .items.query<Follow>({ query: 'SELECT * FROM c' }, { partitionKey: followerId })
       .fetchAll();
     return resources.map((follow) => follow.sellerId);
+  }
+
+  async getSiteContent(id: string): Promise<SiteContent | null> {
+    try {
+      const { resource } = await this.container('siteContent').item(id, id).read<SiteContent>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async saveSiteContent(content: SiteContent): Promise<SiteContent> {
+    const { resource } = await this.container('siteContent').items.upsert<SiteContent>(content);
+    return (resource as SiteContent | undefined) ?? content;
+  }
+
+  async deleteSiteContent(id: string): Promise<void> {
+    try {
+      await this.container('siteContent').item(id, id).delete();
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+    }
   }
 
   async listFollowsBy(followerId: string): Promise<Follow[]> {

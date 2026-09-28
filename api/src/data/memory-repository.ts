@@ -5,7 +5,7 @@ import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
 import { matchesKind, matchesSearch } from '../../../shared/catalog.js';
@@ -60,6 +60,7 @@ export class MemoryRepository implements Repository {
   private readonly comments = new Map<string, ListingComment>();
   private readonly likes = new Map<string, Like>();
   private readonly follows = new Map<string, Follow>();
+  private readonly siteContent = new Map<string, SiteContent>();
   private readonly posts = new Map<string, Post>();
   private readonly forums = new Map<string, Forum>();
   private readonly messages = new Map<string, Message>();
@@ -512,6 +513,19 @@ export class MemoryRepository implements Repository {
 
   async listFollowedSellerIds(followerId: string): Promise<string[]> {
     return [...this.follows.values()].filter((f) => f.followerId === followerId).map((f) => f.sellerId);
+  }
+
+  async getSiteContent(id: string): Promise<SiteContent | null> {
+    return this.siteContent.get(id) ?? null;
+  }
+
+  async saveSiteContent(content: SiteContent): Promise<SiteContent> {
+    this.siteContent.set(content.id, content);
+    return content;
+  }
+
+  async deleteSiteContent(id: string): Promise<void> {
+    this.siteContent.delete(id);
   }
 
   async listFollowsBy(followerId: string): Promise<Follow[]> {

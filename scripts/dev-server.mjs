@@ -97,6 +97,7 @@ const {
   publicCollectionRoute, myCollectionRoute, collectionAddRoute, collectionEditRoute,
   collectionRemoveRoute, collectionGroupsRoute,
 } = await import(new URL('collection-routes.js', apiRoot));
+const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -209,6 +210,10 @@ const routes = [
   ['GET', '/api/quest/leaderboard', questLeaderboardRoute],
   ['GET', '/api/users/:id/collector', collectorRoute],
   ['GET', '/api/users/:id/collection', publicCollectionRoute],
+  ['GET', '/api/learn', learnRoute],
+  ['GET', '/api/ops/learn', opsLearnRoute],
+  ['POST', '/api/ops/learn/save', opsLearnSaveRoute],
+  ['POST', '/api/ops/learn/reset', opsLearnResetRoute],
   ['GET', '/api/me/collection', myCollectionRoute],
   ['POST', '/api/me/collection/add', collectionAddRoute],
   ['POST', '/api/me/collection/edit', collectionEditRoute],

@@ -252,6 +252,12 @@ export const CONTAINERS = {
       'Mock-auth session revocation list. Tokens are self-describing and stateless; this container only records explicit logouts, so it stays tiny and expires itself.',
     defaultTtlSeconds: -1,
   },
+  siteContent: {
+    name: 'siteContent',
+    partitionKeyPath: '/id',
+    rationale:
+      'Pages the operators write rather than the code - the Learn guide first. A handful of documents read whole by id, so each is its own partition and every read is a point read.',
+  },
 } as const satisfies Record<string, ContainerDefinition>;
 
 export type ContainerName = keyof typeof CONTAINERS;

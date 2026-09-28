@@ -3,7 +3,7 @@ import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, SiteContent, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -301,6 +301,11 @@ export interface Repository {
    * rare and deliberate - not on any page render.
    */
   listFollowerIds(sellerId: string): Promise<string[]>;
+
+  /** A page the operators write (the Learn guide), or null before anybody has saved one. */
+  getSiteContent(id: string): Promise<SiteContent | null>;
+  saveSiteContent(content: SiteContent): Promise<SiteContent>;
+  deleteSiteContent(id: string): Promise<void>;
 
   /** Saves an edited account - the storefront editor is the only caller. */
   updateUser(user: User): Promise<User>;

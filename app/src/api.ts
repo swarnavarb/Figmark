@@ -23,6 +23,7 @@ import type { DisputeAction } from '@shared/disputes';
 import type { Allocation, OrderMoney } from '@shared/payments';
 import type { CardDef, QuestView, StickerView } from '@shared/quest';
 import type { CollectionGroup, CollectionItem } from '@shared/models';
+import type { LearnDoc } from '@shared/learn';
 
 /** Somebody named on a screen, and the page their name opens. */
 export interface PartyRef {
@@ -1555,6 +1556,7 @@ export const api = {
   questOpen: (packId: string) => post<QuestResult>('/quest/open', { packId }),
   leaderboard: () => request<{ top: LeaderRow[]; me: LeaderRow | null; total: number }>('/quest/leaderboard'),
   collector: (userId: string) => request<CollectorPage>(`/users/${encodeURIComponent(userId)}/collector`),
+  learn: () => request<LearnDoc & { customised: boolean }>('/learn'),
   collection: (userId: string) => request<CollectionShelf>(`/users/${encodeURIComponent(userId)}/collection`),
   myCollection: () => request<CollectionShelf & { candidates: CollectionCandidate[] }>('/me/collection'),
   collectionAdd: (orderId: string, name?: string, groupId?: string | null) =>
