@@ -4,8 +4,9 @@ import { PAYMENT_METHOD_LABELS, allocatePayment } from '@shared/payments';
 import { ApiRequestError, api, type ItemGroup } from '../api';
 import { MoneyBar } from '../components/Buy';
 import { Modal } from '../components/LotFields';
+import { ShipmentChip, StatusBanner, buyerStatus, type StatusFacts } from '../components/OrderStatus';
 import { EmptyState, ErrorNotice, Thumb } from '../components/ui';
-import { formatDate, formatMoney } from '../format';
+import { formatDate, formatMoney, timeAgo } from '../format';
 
 type Item = ItemGroup['items'][number];
 
@@ -24,55 +25,101 @@ function sum(items: readonly Item[], key: 'totalMinor' | 'paidMinor' | 'outstand
   return items.reduce((total, item) => total + item[key], 0);
 }
 
-/**
- * Where one item is, in a word, for every kind of group - a lot's ladder only
- * says where the crate is, and direct or waiting items had no word at all.
- */
-function deliveryBadge(item: Item): { tone: string; text: string } | null {
-  if (!item.placed) return null;
-  if (item.status === 'delivered') return { tone: 'ok', text: item.deliveredAt ? `📬 Delivered ${formatDate(item.deliveredAt)}` : '📬 Delivered' };
-  if (item.status === 'shipped' || item.checkpoints.dispatched) return { tone: 'aqua', text: '🚚 On its way to you' };
-  if (item.status === 'refunded' || item.status === 'cancelled_reversed') return { tone: 'quiet', text: 'Refunded' };
-  if (item.status === 'pending_payment') return null;
-  return { tone: 'quiet', text: '📦 Being prepared' };
+/** The facts the status line is read from, off one purchase card. */
+export function factsOf(item: Item): StatusFacts {
+  return {
+    placed: item.placed,
+    status: item.status,
+    paymentStatus: item.paymentStatus,
+    bookingOnly: item.bookingOnly,
+    accepted: item.accepted,
+    canPay: item.canPay,
+    claimDenied: item.claimDenied,
+    outstandingMinor: item.outstandingMinor,
+    currency: item.currency,
+    dispatched: item.status === 'shipped' || Boolean(item.checkpoints.dispatched),
+    shipment: item.shipment,
+    receivedAt: item.receivedAt,
+    inHand: item.inHand,
+    disputed: item.disputed,
+  };
 }
 
 function lotTitle(group: ItemGroup): string {
   if (group.lot) return `Lot #${group.lot.number}`;
-  return group.kind === 'awaiting' ? 'Waiting for a lot' : 'Shipped direct';
+  return group.kind === 'awaiting' ? 'Waiting for a lot' : 'In hand · ships from the seller';
+}
+
+/** Only what the buyer went ahead with; the rest is still their cart. */
+function placedOnly(groups: ItemGroup[]): ItemGroup[] {
+  return groups
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.placed) }))
+    .filter((group) => group.items.length > 0);
+}
+
+/** Pressed Buy, never paid or booked - one flat list, newest first. */
+function cartOnly(groups: ItemGroup[]): { item: Item; group: ItemGroup }[] {
+  return groups
+    .flatMap((group) => group.items.filter((item) => !item.placed).map((item) => ({ item, group })))
+    .sort((a, b) => b.item.createdAt.localeCompare(a.item.createdAt));
 }
 
 /**
- * Everything this person has bought, by store and then by lot, with the money
- * on every item and a Pay More on every group that still owes something.
+ * Everything this person has bought, by store and then by lot.
+ *
+ * Only orders they went ahead with - paid, paid an advance, or booked. A Buy
+ * they never finished is in the cart, not here. Every item leads with one
+ * highlighted line saying where it stands, the same line the order itself
+ * opens with.
  */
 export function PurchasesPage() {
   const [groups, setGroups] = useState<ItemGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState<ItemGroup | null>(null);
+  const [cartCount, setCartCount] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      setGroups((await api.myItems()).groups);
+      const all = (await api.myItems()).groups;
+      setGroups(placedOnly(all));
+      setCartCount(cartOnly(all).length);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your purchases.');
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
+  const toPay = (groups ?? []).flatMap((group) => group.items).filter((item) => item.canPay && item.accepted);
+
   return (
     <main className="page">
       <div className="purch__hero">
         <h1>🛍️ My Purchases</h1>
-        <p>Everything you bought, what is paid and what is left.</p>
+        <p>Everything you ordered or booked, and where it is.</p>
       </div>
+
+      {cartCount > 0 && (
+        <Link to="/cart" className="cartnudge">
+          🛒 <b>{cartCount} {cartCount === 1 ? 'item' : 'items'} in your cart</b>
+          <span>Finish checkout →</span>
+        </Link>
+      )}
+
+      {toPay.length > 0 && (
+        <StatusBanner line={{
+          tone: 'urgent', icon: '🔔',
+          title: toPay.length === 1 ? '1 item is waiting for your payment' : `${toPay.length} items are waiting for your payment`,
+          note: 'The seller accepted. Pay now to lock it in.',
+        }} />
+      )}
 
       {error && <ErrorNotice message={error} />}
       {!groups ? (
         <p className="muted">Loading…</p>
       ) : groups.length === 0 ? (
-        <EmptyState icon="🛒" title="Nothing here yet!">
-          Your haul shows up here the moment you buy something. <Link to="/">Go find something fun →</Link>
+        <EmptyState icon="🛍️" title="No purchases yet">
+          Orders you pay for or book show up here.{' '}
+          {cartCount > 0 ? <Link to="/cart">Finish what is in your cart →</Link> : <Link to="/">Go find something fun →</Link>}
         </EmptyState>
       ) : (
         <div className="stack">
@@ -87,48 +134,12 @@ export function PurchasesPage() {
                 return (
                   <article key={group.key} className="purch__lot">
                     <div className="row row--between">
-                      <span className="purch__lotname">📦 {lotTitle(group)}</span>
+                      <span className="purch__lotname">{group.kind === 'direct' ? '🏠' : '📦'} {lotTitle(group)}</span>
                       {step && <span className="badge badge--aqua">{step.name}</span>}
                     </div>
 
                     <div className="purch__items">
-                      {group.items.map((item) => (
-                        <Link key={item.id} to={`/order/${item.id}`} className="purch__item">
-                          <Thumb seed={item.id} label={item.itemName} photo={item.photo ? { url: item.photo } : null} />
-                          <div className="purch__itembody">
-                            <b>{item.itemName}{item.quantity > 1 ? ` ×${item.quantity}` : ''}</b>
-                            <span>Total <b>{formatMoney(item.totalMinor, item.currency)}</b></span>
-                            <span>Paid <b className="purch__paid">{formatMoney(item.paidMinor, item.currency)}</b></span>
-                            {item.outstandingMinor > 0 ? (
-                              <span>Balance <b className="purch__due">{formatMoney(item.outstandingMinor, item.currency)}</b></span>
-                            ) : item.paidMinor > 0 ? (
-                              <span className="badge badge--ok">✅ Paid in full</span>
-                            ) : !item.placed ? (
-                              <span className="badge badge--warn">🛒 Checkout not finished — pay or book to place it</span>
-                            ) : (
-                              <span className="badge badge--warn">Awaiting payment</span>
-                            )}
-                            {(() => {
-                              const badge = deliveryBadge(item);
-                              return badge && <span className={`badge badge--${badge.tone}`}>{badge.text}</span>;
-                            })()}
-                            {item.canConfirm && (
-                              <span className="faint">
-                                {item.paymentHeld
-                                  ? 'Tap to confirm it arrived (releases the payment), or report a problem.'
-                                  : 'Tap to confirm you received it.'}
-                              </span>
-                            )}
-                            {item.receivedAt && <span className="faint">📬 You confirmed receipt</span>}
-                            {item.status === 'delivered' && !item.inCollection && (
-                              <span className="purch__collect">🎁 Ready to add to your collection</span>
-                            )}
-                            {item.creditMinor > 0 && (
-                              <span className="badge badge--pink">💰 Credit {formatMoney(item.creditMinor, item.currency)}</span>
-                            )}
-                          </div>
-                        </Link>
-                      ))}
+                      {group.items.map((item) => <PurchaseCard key={item.id} item={item} />)}
                     </div>
 
                     <MoneyBar
@@ -157,6 +168,118 @@ export function PurchasesPage() {
       {paying && (
         <PayMore group={paying} onClose={() => setPaying(null)}
           onPaid={async () => { setPaying(null); await load(); }} />
+      )}
+    </main>
+  );
+}
+
+/**
+ * One purchase: the picture and the money, and above them the one line that
+ * says what is happening - highlighted, and loud when it needs the buyer.
+ */
+function PurchaseCard({ item }: { item: Item }) {
+  const line = buyerStatus(factsOf(item));
+  const urgent = line.tone === 'urgent';
+  return (
+    <div className={`pcard pcard--${line.tone}`}>
+      <Link to={`/order/${item.id}`} className="pcard__main">
+        <Thumb seed={item.id} label={item.itemName} photo={item.photo ? { url: item.photo } : null} />
+        <span className="pcard__body">
+          <b className="pcard__name">{item.itemName}{item.quantity > 1 ? ` ×${item.quantity}` : ''}</b>
+          <span className="pcard__money">
+            <span><b>{formatMoney(item.totalMinor, item.currency)}</b></span>
+            {item.paidMinor > 0 && <span className="purch__paid">Paid {formatMoney(item.paidMinor, item.currency)}</span>}
+            {item.outstandingMinor > 0 && item.paidMinor > 0 && (
+              <span className="purch__due">Due {formatMoney(item.outstandingMinor, item.currency)}</span>
+            )}
+          </span>
+          <span className="pcard__tags">
+            {item.inHand && <span className="badge badge--ok">🏠 In hand</span>}
+            {item.deliveredAt && <span className="badge badge--ok">📬 {formatDate(item.deliveredAt)}</span>}
+            {item.creditMinor > 0 && (
+              <span className="badge badge--pink">💰 Credit {formatMoney(item.creditMinor, item.currency)}</span>
+            )}
+            {item.status === 'delivered' && !item.inCollection && (
+              <span className="purch__collect">🎁 Ready for your collection</span>
+            )}
+          </span>
+        </span>
+      </Link>
+
+      <StatusBanner line={line} compact>
+        {urgent && <Link to={`/order/${item.id}`} className="sbanner__cta">Pay now</Link>}
+      </StatusBanner>
+      {item.shipment && <ShipmentChip shipment={item.shipment} />}
+
+      <div className="pcard__foot">
+        <Link to={`/listing/${item.listingId}`} className="pcard__link">👁 View listing</Link>
+        {item.canConfirm && <span className="faint">Tap to confirm it arrived</span>}
+        <Link to={`/order/${item.id}`} className="pcard__link pcard__link--go">Open order →</Link>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The cart: every Buy that was never paid or booked.
+ *
+ * Nothing here is an order yet - the seller has not been told, and no stock is
+ * held. Finishing checkout is what moves an item across to My Purchases.
+ */
+export function CartPage() {
+  const [items, setItems] = useState<{ item: Item; group: ItemGroup }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.myItems()
+      .then((result) => setItems(cartOnly(result.groups)))
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your cart.'));
+  }, []);
+
+  const total = (items ?? []).reduce((sumMinor, { item }) => sumMinor + item.totalMinor, 0);
+
+  return (
+    <main className="page">
+      <div className="cart__hero">
+        <h1>🛒 Your cart</h1>
+        <p>Things you pressed Buy on. Pay or book to place the order.</p>
+      </div>
+
+      {error && <ErrorNotice message={error} />}
+      {!items ? (
+        <p className="muted">Loading…</p>
+      ) : items.length === 0 ? (
+        <EmptyState icon="🛒" title="Your cart is empty">
+          Press Buy on anything you like and it waits here. <Link to="/">Go find something fun →</Link>
+        </EmptyState>
+      ) : (
+        <div className="stack">
+          <div className="cart__sum">
+            <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
+            <b>{formatMoney(total, items[0]?.item.currency)}</b>
+          </div>
+          {items.map(({ item, group }) => (
+            <article key={item.id} className="cart__item">
+              <Link to={`/listing/${item.listingId}`} className="cart__thumb" aria-label="See the listing">
+                <Thumb seed={item.id} label={item.itemName} photo={item.photo ? { url: item.photo } : null} />
+              </Link>
+              <div className="cart__body">
+                <Link to={`/listing/${item.listingId}`} className="cart__name">
+                  {item.itemName}{item.quantity > 1 ? ` ×${item.quantity}` : ''}
+                </Link>
+                <span className="faint">
+                  🏪 {group.sellerName} · added {timeAgo(item.createdAt)}
+                  {item.inHand ? ' · 🏠 In hand' : ''}
+                </span>
+                <b className="cart__price">{formatMoney(item.totalMinor, item.currency)}</b>
+                <div className="cart__acts">
+                  <Link to={`/order/${item.id}`} className="btn btn--sm">💳 Checkout</Link>
+                  <Link to={`/listing/${item.listingId}`} className="btn btn--quiet btn--sm">👁 View listing</Link>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
       )}
     </main>
   );

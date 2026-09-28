@@ -46,6 +46,7 @@ const EscrowPage = page(() => import('./pages/EscrowPage'), 'EscrowPage');
 const ForwardersPage = page(() => import('./pages/ForwardersPage'), 'ForwardersPage');
 const ProfilePage = page(() => import('./pages/ProfilePage'), 'ProfilePage');
 const PurchasesPage = page(() => import('./pages/PurchasesPage'), 'PurchasesPage');
+const CartPage = page(() => import('./pages/PurchasesPage'), 'CartPage');
 const MyRefundsPage = page(() => import('./pages/MyRefundsPage'), 'MyRefundsPage');
 const MyDisputesPage = page(() => import('./pages/MyDisputesPage'), 'MyDisputesPage');
 const QuestsPage = page(() => import('./pages/QuestsPage'), 'QuestsPage');
@@ -97,6 +98,9 @@ function App() {
         <Route path="/services/mine" element={<MyServicesPage />} />
         <Route path="/services/mine/forwarder" element={<ConsignmentsPage />} />
         <Route path="/services/mine/handler" element={<DistributionPage />} />
+        {/* Freight forwarders are the forwarder directory itself, which used
+            to hang off the header and now lives here with the other trades. */}
+        <Route path="/services/forwarder" element={<ForwardersPage />} />
         {/* Last of the four, so the static paths above win the match. */}
         <Route path="/services/:kind" element={<ServiceDirectoryPage />} />
         <Route path="/social" element={<SocialPage />} />
@@ -109,9 +113,10 @@ function App() {
         <Route path="/order/:id" element={<OrderPage />} />
         <Route path="/dispute/:id" element={<DisputePage />} />
         <Route path="/escrow" element={<EscrowPage />} />
-        <Route path="/forwarders" element={<ForwardersPage />} />
+        <Route path="/forwarders" element={<Navigate to="/services/forwarder" replace />} />
         <Route path="/me" element={<ProfilePage />} />
         <Route path="/purchases" element={<PurchasesPage />} />
+        <Route path="/cart" element={<CartPage />} />
         {/* Old notifications still link here; the details live under My refunds now. */}
         <Route path="/buyer-settings" element={<Navigate to="/refunds?tab=details" replace />} />
         <Route path="/refunds" element={<MyRefundsPage />} />

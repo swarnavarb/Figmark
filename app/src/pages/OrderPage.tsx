@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { isDirect, isLotEvent, labelFor } from '@shared/fulfilment';
+import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, WAITING_FOR_LOT } from '@shared/routes';
 import { REVIEW_REVEAL_DAYS, isStopped, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
@@ -14,7 +14,9 @@ import { Ladder } from '../components/Ladder';
 import { ReportButton } from '../components/ReportButton';
 import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
-import { ErrorNotice, Icon, Modal, PersonLink, StepMark } from '../components/ui';
+import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
+import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
+import { DirectTrack, TrackHero } from '../components/OrderTrack';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 
 /**
@@ -84,10 +86,15 @@ export function OrderPage() {
   if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
   if (!data || !state) return <main className="page"><p className="muted">Loading…</p></main>;
 
-  const { order, stages, currentStage } = data;
-  const currentIndex = stages.indexOf(currentStage);
+  const { order } = data;
   /** The lot it is in now, as opposed to the ones it has been in. */
   const latestLotAt = [...order.stageHistory].reverse().find(isLotEvent)?.enteredAt ?? null;
+  /* The same headline the list showed for this item, so opening it never
+     reads differently from the card that was tapped. */
+  const facts = factsFromOrder(order, state.actions);
+  const statusLine = state.side === 'seller'
+    ? sellerStatus({ ...facts, claimOpen: Boolean(order.paymentClaim && order.paymentClaim.decision === null) })
+    : buyerStatus(facts);
 
   return (
     <main className="page">
@@ -97,24 +104,45 @@ export function OrderPage() {
           seller lands on their orders with this one in view. */}
       <button className="btn btn--quiet" style={{ marginBottom: 16 }}
         onClick={() => navigate(
-          cameFrom ?? (state.side === 'seller' ? '/shop?tab=payments' : '/purchases'),
+          cameFrom ?? (state.side === 'seller' ? '/shop?tab=payments' : order.placedAt === null ? '/cart' : '/purchases'),
           { state: { focusOrder: order.id } },
         )}>
-        <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : 'My Purchases'}
+        <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : order.placedAt === null ? 'Cart' : 'My Purchases'}
       </button>
 
-      <div className="page__head">
-        <div>
-          <h1>{order.itemName}</h1>
-          <p className="muted">
+      <div className="ohead">
+        {/* The item as it was listed, one tap away for either side. */}
+        {data.listing ? (
+          <Link to={`/listing/${data.listing.id}`} className="ohead__thumb" aria-label="See the listing">
+            {data.listing.photoUrl
+              ? <img src={data.listing.photoUrl} alt="" />
+              : <span className="ohead__nophoto" aria-hidden="true">🧸</span>}
+          </Link>
+        ) : (
+          <span className="ohead__thumb"><span className="ohead__nophoto" aria-hidden="true">🧸</span></span>
+        )}
+        <div className="ohead__body">
+          <h1 className="ohead__name">{order.itemName}</h1>
+          <p className="muted ohead__meta">
             {state.side === 'seller' ? 'Sold to' : 'From'} <PersonLink party={state.counterparty} /> · ordered{' '}
             {timeAgo(order.createdAt)}
           </p>
+          <span className="ohead__chips">
+            <span className={`badge badge--${statusTone(order.status)} order-status`}>
+              {order.status.replace(/_/g, ' ')}
+            </span>
+            {isDirect(order) && <span className="badge badge--ok">🏠 In hand</span>}
+            <span className="ohead__price">{formatMoney(order.unitPriceMinor * order.quantity, order.currency)}</span>
+          </span>
         </div>
-        <span className={`badge badge--${statusTone(order.status)} order-status`}>
-          {order.status.replace(/_/g, ' ')}
-        </span>
+        {data.listing && (
+          <Link to={`/listing/${data.listing.id}`} className="btn btn--ghost btn--sm ohead__view">
+            👁 View listing
+          </Link>
+        )}
       </div>
+
+      {statusLine && <StatusBanner line={statusLine} />}
 
       {/* What to do about it comes before where it is: someone opening this
           screen with a payment to make should not have to scroll past a
@@ -136,9 +164,9 @@ export function OrderPage() {
       </div>
 
       {tab === 'tracking' && (
-        <div className="card card--pad stack">
+        <div className="stack">
           <div className="row row--between">
-            <h2 style={{ margin: 0 }}>Where it is</h2>
+            <h2 style={{ margin: 0 }}>Tracking</h2>
             {/* The same tick the order row offers, so a seller working from
                 this screen never has to go back to the list for it. */}
             {state.side === 'seller' && !isDirect(order) && (
@@ -167,14 +195,15 @@ export function OrderPage() {
                * states - ticked in the top ladder, hollow in the one below.
                * Once there is a lot, the lot's route is the whole
                * journey and the only thing worth drawing. */
-              <>
-                {/* Which shipment it is in, before the journey rather than
-                    after it: for an item bought into a lot that is the first
-                    thing its buyer wants, and the timeline below is the
-                    answer to the second. */}
-                <span className="field__hint">
-                  Travelling in {data.route.lotName} · lot #{data.route.lotNumber}
-                </span>
+              /* Which shipment it is in sits under the headline: for an item
+                 bought into a lot that is the first thing its buyer wants,
+                 and the ladder below is the answer to the second. */
+              <TrackHero icon={data.route.waitingForLot ? '⏳' : '🚢'}
+                now={data.route.waitingForLot ? 'Waiting for the lot to move' : data.route.steps[data.route.currentStep]?.name ?? 'On its way'}
+                sub={<>📦 {data.route.lotName} · lot #{data.route.lotNumber}</>}
+                done={data.route.currentStep + 1} total={data.route.steps.length}>
+                {order.shipment && <ShipmentChip shipment={order.shipment} />}
+                <div className="trk__ladder">
                 {/* With what the seller actually said along the way, hung
                     off the rung it happened at and dated - so a payment made
                     after the parcel reached the warehouse reads under the
@@ -201,30 +230,24 @@ export function OrderPage() {
                         </span>
                       ) : null)
                     : undefined} />
-              </>
+                </div>
+              </TrackHero>
             ) : (
-              <>
-                <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
-                  history={data.order.stageHistory}
-                  waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
-                <p className="notice notice--info">
-                  <strong>Not yet added to a shipment lot.</strong> The rest of the journey
-                  appears as soon as your order is added to a lot.
-                </p>
-              </>
+              <TrackHero icon="⏳"
+                now={data.preLot.steps[data.preLot.currentStep]?.name ?? 'Ordered'}
+                sub="Not in a shipment lot yet — the rest of the journey appears once it is."
+                done={data.preLot.currentStep + 1} total={data.preLot.steps.length + 1}>
+                <div className="trk__ladder">
+                  <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
+                    history={data.order.stageHistory}
+                    waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
+                </div>
+              </TrackHero>
             )
           ) : (
-            <ol className="track" style={{ flexWrap: 'wrap' }}>
-              {stages.map((stage, index) => (
-                <li key={stage}
-                  className={`track__step${index < currentIndex ? ' is-done' : ''}${index === currentIndex ? ' is-current' : ''}`}>
-                  <span className="track__dot" aria-hidden="true">
-                    <StepMark state={index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'todo'} size={7} />
-                  </span>
-                  <span>{labelFor(stage)}</span>
-                </li>
-              ))}
-            </ol>
+            /* In hand: no lot and no warehouse - the seller's shelf, a
+               courier, and the buyer's door. */
+            <DirectTrack order={order} />
           )}
         </div>
       )}
@@ -674,9 +697,28 @@ function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => 
   const { order } = state;
   const [busy, setBusy] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  /** The courier-and-AWB dialog: opened to dispatch, or to fix the details after. */
+  const [shipping, setShipping] = useState(false);
+  const [courier, setCourier] = useState(order.shipment?.courier ?? '');
+  const [awb, setAwb] = useState(order.shipment?.awb ?? '');
   const [error, setError] = useState<string | null>(null);
 
   if (state.side !== 'seller' || order.placedAt === null || isStopped(order.status)) return null;
+  const inHand = isDirect(order);
+
+  async function ship() {
+    setBusy('ship');
+    setError(null);
+    try {
+      await api.setCheckpoint(order.id, 'dispatched', true, { courier: courier.trim(), awb: awb.trim() });
+      setShipping(false);
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(null);
+    }
+  }
   const dispatched = Boolean(order.checkpoints?.dispatched);
   const delivered = order.status === 'delivered';
   const released = order.escrow.state === 'released';
@@ -715,8 +757,13 @@ function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => 
       <div className="row" style={{ flexWrap: 'wrap' }}>
         {!delivered && (
           <button type="button" className={`btn${dispatched ? ' btn--quiet' : ''}`} disabled={busy !== null}
-            onClick={() => void tick('dispatched', !dispatched)}>
+            onClick={() => (dispatched ? void tick('dispatched', false) : setShipping(true))}>
             {busy === 'dispatched' ? 'Saving…' : dispatched ? '↩︎ Not dispatched yet' : '📦 Mark dispatched'}
+          </button>
+        )}
+        {dispatched && (
+          <button type="button" className="btn btn--quiet" disabled={busy !== null} onClick={() => setShipping(true)}>
+            {order.shipment ? '✏️ Edit courier & AWB' : '➕ Add courier & AWB'}
           </button>
         )}
         {!delivered ? (
@@ -734,8 +781,43 @@ function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => 
           </span>
         )}
       </div>
+      {order.shipment && <ShipmentChip shipment={order.shipment} />}
       <span className="field__hint">{hint}</span>
       {error && <ErrorNotice message={error} />}
+
+      {shipping && (
+        <Modal title={dispatched ? '🚚 Courier & AWB' : '📦 Dispatch it'} onClose={() => setShipping(false)}>
+          <form className="stack" onSubmit={(event) => { event.preventDefault(); void ship(); }}>
+            <p style={{ margin: 0 }}>
+              {inHand
+                ? 'Add the courier and AWB so the buyer can track their parcel.'
+                : 'Add the courier and AWB for this parcel, if you have them.'}
+            </p>
+            <label className="field">
+              <span>Courier name</span>
+              <input value={courier} onChange={(event) => setCourier(event.target.value)} maxLength={80}
+                placeholder="Delhivery, Blue Dart, DTDC…" autoFocus />
+            </label>
+            <label className="field">
+              <span>AWB / tracking number</span>
+              <input value={awb} onChange={(event) => setAwb(event.target.value)} maxLength={80}
+                placeholder="e.g. 1234567890" inputMode="text" className="mono" />
+            </label>
+            {!dispatched && (
+              <span className="field__hint">
+                No AWB yet? Dispatch now and add it later.
+                {held ? ` This starts the ${state.autoReleaseDays}-day protection window.` : ''}
+              </span>
+            )}
+            {error && <ErrorNotice message={error} />}
+            <button type="submit" className="btn btn--block"
+              disabled={busy !== null || (dispatched && !courier.trim() && !awb.trim())}>
+              {busy === 'ship' ? 'Saving…' : dispatched ? 'Save details' : '📦 Mark dispatched'}
+            </button>
+            <button type="button" className="btn btn--quiet btn--block" onClick={() => setShipping(false)}>Cancel</button>
+          </form>
+        </Modal>
+      )}
 
       {asking && (
         <Modal title="Mark delivered?" onClose={() => setAsking(false)}>

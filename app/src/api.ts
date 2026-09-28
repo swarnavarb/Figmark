@@ -39,7 +39,7 @@ export interface EvidenceDraft {
 }
 import type {
   BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
-  MessageDeal, MessageParty, Order, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
+  MessageDeal, MessageParty, Order, OrderShipment, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
   StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
 } from '@shared/models';
 
@@ -444,6 +444,8 @@ export interface Checkout {
 /** One order waiting on the seller to say whether the money arrived. */
 export interface SaleRow {
   id: string;
+  /** The listing it was bought from, to see it as it was listed. */
+  listingId: string;
   itemName: string;
   /** Bought from a private deal made in a chat. */
   privateDeal?: boolean;
@@ -459,6 +461,10 @@ export interface SaleRow {
      what does it need" without opening anything. */
   escrowState: string;
   inHand: boolean;
+  /** The courier and AWB it went out with, once the seller gave them. */
+  shipment: OrderShipment | null;
+  /** When the seller ticked it dispatched. */
+  dispatchedAt: string | null;
   awaitingLot: boolean;
   lotId: string | null;
   lotName: string | null;
@@ -1368,6 +1374,8 @@ export interface ItemGroup {
   sellerId: string;
   items: (OrderMoney & {
     id: string;
+    /** The listing it was bought from, to see it as it was listed. */
+    listingId: string;
     itemName: string;
     quantity: number;
     status: string;
@@ -1389,6 +1397,20 @@ export interface ItemGroup {
     receivedAt: string | null;
     /** The buyer can tap "I received it" (or "Yes, it arrived") now. */
     canConfirm: boolean;
+    /** Placed as a booking: no payment until the seller accepts. */
+    bookingOnly: boolean;
+    /** The seller has said yes. */
+    accepted: boolean;
+    /** The buyer may pay for it now. */
+    canPay: boolean;
+    /** The seller said a claimed payment never arrived. */
+    claimDenied: boolean;
+    /** Ships from the seller's shelf rather than in a lot. */
+    inHand: boolean;
+    shipment: OrderShipment | null;
+    /** Held money under dispute. */
+    disputed: boolean;
+    createdAt: string;
   })[];
 }
 
@@ -1797,10 +1819,11 @@ export const api = {
     request<LotBoard>(
       `/lots/${encodeURIComponent(id)}/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
     ),
-  setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint, on: boolean) =>
+  setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint, on: boolean,
+    shipment?: { courier?: string; awb?: string }) =>
     post<{ order: { id: string; checkpoints: BoardOrder['checkpoints'] }; tally: LotTally }>(
       `/orders/${encodeURIComponent(orderId)}/checkpoint`,
-      { checkpoint, on },
+      { checkpoint, on, ...shipment },
     ),
 
   inbox: () => request<Inbox>('/messages'),

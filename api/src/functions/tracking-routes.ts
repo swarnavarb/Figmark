@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
   BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
@@ -821,6 +821,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
       sellerId: items[0]!.sellerId,
       items: items.map((order) => ({
         id: order.id,
+        listingId: order.listingId,
         itemName: order.itemName,
         quantity: order.quantity,
         status: order.status,
@@ -846,6 +847,16 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         receivedAt: order.receivedAt ?? null,
         /** Whether this buyer can tap "I received it" / "It arrived" now. */
         canConfirm: actionsFor(order, user.id).includes('confirm'),
+        /** The status line on the card: booked, accepted, paid, and so on. */
+        bookingOnly: order.bookingOnly ?? false,
+        accepted: order.accepted ?? false,
+        canPay: actionsFor(order, user.id).includes('pay'),
+        claimDenied: order.paymentClaim?.decision === 'denied' && order.paymentStatus !== 'paid',
+        /** Ships from the seller's shelf, never in a lot. */
+        inHand: isDirect(order),
+        shipment: order.shipment ?? null,
+        disputed: order.escrow.state === 'disputed',
+        createdAt: order.createdAt,
       })),
     };
   });

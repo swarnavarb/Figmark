@@ -7,7 +7,12 @@ import {
 import { countOf } from '@shared/board';
 import { CATEGORIES } from '@shared/catalog';
 import { countryFlag } from '@shared/countries';
-import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
+import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import { sourcingOf } from '@shared/fulfilment';
+import { preOrderView } from '@shared/preorder';
+import { listingRarity } from '@shared/quest';
+import { RarityRibbon, XpBar } from '../components/Quest';
+import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderStatus';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
 import { RouteEditor, RoutesList } from './RoutesPage';
@@ -751,33 +756,11 @@ function MyItems({ store }: { store: StoreAccess }) {
                 : 'Items land here on their own and can be brought back from here.'}
             </EmptyState>
           )}
-          <div className="grid">
+          {/* The same collectible card buyers see on the Buy tab, so a shop
+              reads its shelf the way its customers do - rarity included. */}
+          <div className="grid qgrid">
             {mine.map((listing) => (
-              <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
-                <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
-                  <div className="thumb__badges">
-                    <span className="badge badge--solid">{listing.condition}</span>
-                    <ExpiryChip listing={listing} />
-                  </div>
-                </Thumb>
-                <div className="listing__body">
-                  <span className="listing__title">{listing.title}</span>
-                  <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-                  <StockChip listing={listing} />
-                  <button type="button" className="btn btn--ghost btn--sm"
-                    onClick={(event) => { event.preventDefault(); setEditing(listing); }}>
-                    {isExpired(listing) ? '✨ Make available again' : '✏️ Edit'}
-                  </button>
-                  <div className="listing__meta">
-                    {/* An item with no lot is not a problem to fix - most
-                        never need one. It says which it is and stops there. */}
-                    <span className={`badge${listing.lotId ? '' : ' badge--quiet'}`}>
-                      {listing.lotId ? 'In a lot' : 'No lot'}
-                    </span>
-                    <span className="faint">{listing.viewCount} views</span>
-                  </div>
-                </div>
-              </Link>
+              <ShelfCard key={listing.id} listing={listing} onEdit={() => setEditing(listing)} />
             ))}
           </div>
         </>
@@ -787,6 +770,64 @@ function MyItems({ store }: { store: StoreAccess }) {
           onSaved={() => { setEditing(null); load(); }} />
       )}
     </div>
+  );
+}
+
+/**
+ * One of the shop's own listings as a Quest loot card: framed in its rarity,
+ * the condition stamped on, with the shop's own numbers - stock, views,
+ * saves, lot - where a buyer would see the seller's crest.
+ */
+function ShelfCard({ listing, onEdit }: { listing: Listing; onEdit: () => void }) {
+  const rarity = listingRarity(listing);
+  const tier = rarity.tier;
+  const view = listing.preOrder ? preOrderView(listing.preOrder) : null;
+  const sourcing = sourcingOf(listing);
+  const expired = isExpired(listing);
+  return (
+    <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}`}>
+      <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
+        {tier && <RarityRibbon tier={tier} />}
+        <span className="qgrade" title="Condition">{listing.condition}</span>
+        {expired
+          ? <span className="qsticker-tag qsticker-tag--drop">Expired</span>
+          : listing.status === 'sold_out'
+            ? <span className="qsticker-tag qsticker-tag--drop">Sold out</span>
+            : listing.preOrder && <span className="qsticker-tag">Pre-order</span>}
+      </Thumb>
+
+      <div className="qloot__body">
+        <span className="qloot__title">{listing.title}</span>
+        <span className="qloot__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        <span className="qloot__meta">
+          <b className={sourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[sourcing]}</b>
+          {' · '}{listing.category}
+        </span>
+        <StockChip listing={listing} />
+        <ExpiryChip listing={listing} />
+
+        {view && (
+          <span className="qloot__lv">
+            <span className="qloot__lvlabel">LV {view.committed}/{view.fillThreshold}</span>
+            <XpBar progress={view.committed / view.fillThreshold} tone={tier === 'legendary' ? 'gold' : 'violet'} />
+          </span>
+        )}
+        {rarity.reasons.length > 0 && (
+          <span className="qloot__why">{rarity.reasons.slice(0, 2).join(' · ')}</span>
+        )}
+
+        <span className="qloot__foot">
+          <span className="faint">👁 {listing.viewCount} · ♥ {listing.likeCount ?? 0}</span>
+          {/* An item with no lot is not a problem to fix - most never need
+              one. It says which it is and stops there. */}
+          <span className={`badge${listing.lotId ? '' : ' badge--quiet'}`}>{listing.lotId ? 'In a lot' : 'No lot'}</span>
+        </span>
+        <button type="button" className="btn btn--ghost btn--sm shelf__edit"
+          onClick={(event) => { event.preventDefault(); event.stopPropagation(); onEdit(); }}>
+          {expired ? '✨ Make available again' : '✏️ Edit'}
+        </button>
+      </div>
+    </Link>
   );
 }
 
@@ -811,9 +852,15 @@ function stateOf(row: SaleRow): OrderState {
 }
 
 const ORDER_STATE_LABELS: Record<OrderState, string> = {
-  active: 'Active orders',
-  completed: 'Completed orders',
+  active: 'Active',
+  completed: 'Completed',
   closed: 'Cancelled',
+};
+
+const ORDER_STATE_ICONS: Record<OrderState, string> = {
+  active: '🔥',
+  completed: '✅',
+  closed: '🚫',
 };
 
 /**
@@ -965,41 +1012,64 @@ function Orders({ store }: { store: StoreAccess }) {
     <div className="stack">
       {error && <ErrorNotice message={error} />}
 
-      <div className="seg" role="tablist" aria-label="Order status">
+      {/* Three big tiles for where orders are, each in its own colour, then
+          chips for what an active order needs - the one that needs the
+          seller lights up when anything is in it. */}
+      <div className="ostates" role="tablist" aria-label="Order status">
         {(['active', 'completed', 'closed'] as const).map((entry) => (
           <button key={entry} type="button" role="tab" aria-selected={statusFilter === entry}
-            className={statusFilter === entry ? 'is-on' : ''}
+            className={`ostate ostate--${entry}${statusFilter === entry ? ' is-on' : ''}`}
             onClick={() => setStatusFilter(entry)}>
-            {ORDER_STATE_LABELS[entry]} {countOfState(entry)}
+            <span className="ostate__icon" aria-hidden="true">{ORDER_STATE_ICONS[entry]}</span>
+            <span className="ostate__count">{countOfState(entry)}</span>
+            <span className="ostate__label">{ORDER_STATE_LABELS[entry]}</span>
           </button>
         ))}
       </div>
 
       {statusFilter === 'active' && (
-        <div className="seg" role="tablist" aria-label="Which orders">
+        <div className="ofilters" role="tablist" aria-label="Which orders">
           {([
-            ['all', `All ${scoped.length}`],
-            ['answer', `To answer ${toAnswer.length}`],
-            ['nolot', `No lot ${withoutLot.length}`],
-          ] as [OrderFilter, string][]).map(([id, label]) => (
+            ['all', '📋', 'All', scoped.length],
+            ['answer', '🔔', 'To answer', toAnswer.length],
+            ['nolot', '📦', 'No lot', withoutLot.length],
+          ] as [OrderFilter, string, string, number][]).map(([id, icon, label, count]) => (
             <button key={id} type="button" role="tab" aria-selected={filter === id}
-              className={filter === id ? 'is-on' : ''} onClick={() => setFilter(id)}>
+              className={`ofilter${filter === id ? ' is-on' : ''}${id === 'answer' && count > 0 ? ' ofilter--hot' : ''}`}
+              onClick={() => setFilter(id)}>
+              <span aria-hidden="true">{icon}</span>
               {label}
+              <span className="ofilter__count">{count}</span>
             </button>
           ))}
         </div>
       )}
 
       {shown.length === 0 ? (
-        <p className="muted">
-          {statusFilter === 'completed'
-            ? 'Nothing delivered yet.'
-            : statusFilter === 'closed'
-              ? 'Nothing cancelled or turned down.'
-              : filter === 'answer'
-                ? 'Nothing waiting on you.'
-                : filter === 'nolot' ? 'Every order is in a lot.' : 'No active orders right now.'}
-        </p>
+        <div className="oempty">
+          <span className="oempty__icon" aria-hidden="true">
+            {statusFilter === 'completed' ? '📬' : statusFilter === 'closed' ? '🕊️'
+              : filter === 'answer' ? '🎉' : filter === 'nolot' ? '✅' : '🛍️'}
+          </span>
+          <b className="oempty__title">
+            {statusFilter === 'completed'
+              ? 'Nothing delivered yet'
+              : statusFilter === 'closed'
+                ? 'Nothing cancelled or turned down'
+                : filter === 'answer'
+                  ? 'All caught up!'
+                  : filter === 'nolot' ? 'Every order is in a lot' : 'No active orders right now'}
+          </b>
+          <span className="faint">
+            {statusFilter === 'completed'
+              ? 'Orders land here once they reach the buyer.'
+              : statusFilter === 'closed'
+                ? 'Good news — every order is still going.'
+                : filter === 'answer'
+                  ? 'Nothing is waiting on you.'
+                  : filter === 'nolot' ? 'Nothing is waiting to be filed.' : 'New orders show up here the moment someone buys.'}
+          </span>
+        </div>
       ) : (
         <div className="orows">
           {shown.map((row, index) => (
@@ -1443,6 +1513,23 @@ function OrderRow({
   const paidShare = row.totalMinor > 0 ? Math.min(100, Math.round((row.paidMinor / row.totalMinor) * 100)) : 0;
   const orderLink = { pathname: `/order/${row.id}` };
   const linkState = { from };
+  const statusLine = sellerStatus({
+    placed: true,
+    status: row.status,
+    paymentStatus: row.paymentStatus,
+    bookingOnly: row.bookingOnly,
+    accepted: row.accepted,
+    canPay: false,
+    claimDenied: false,
+    outstandingMinor: row.outstandingMinor,
+    currency: row.currency,
+    dispatched: Boolean(row.dispatchedAt) || row.status === 'shipped',
+    shipment: row.shipment,
+    receivedAt: null,
+    inHand: row.inHand,
+    disputed: row.escrowState === 'disputed',
+    claimOpen: awaitingClaim,
+  });
 
   return (
     <article id={`order-${row.id}`}
@@ -1483,6 +1570,24 @@ function OrderRow({
           {row.creditMinor > 0 && <span className="ocard__extra">💰 {formatMoney(row.creditMinor, row.currency)} extra</span>}
         </div>
       </div>
+
+      {/* The one line on where it stands. A claimed payment already has its
+          own line below, with the amount and the reference. */}
+      {statusLine && !awaitingClaim && <StatusBanner line={statusLine} compact />}
+
+      {/* In hand: no lot and no warehouse, so what it needs is a courier. */}
+      {row.inHand && (
+        <div className="ocard__chips">
+          <span className="ocard__chip ocard__chip--ok">🏠 In hand</span>
+          {row.shipment
+            ? <ShipmentChip shipment={row.shipment} />
+            : row.dispatchedAt
+              ? <Link to={orderLink} state={linkState} className="ocard__chip ocard__chip--none">➕ Add courier & AWB</Link>
+              : !isClosed(row) && row.status !== 'delivered' && (
+                <Link to={orderLink} state={linkState} className="ocard__chip ocard__chip--step">📦 Dispatch & add AWB</Link>
+              )}
+        </div>
+      )}
 
       {!row.inHand && (lotHref || !isClosed(row)) && (
         <div className="ocard__chips">
@@ -1555,6 +1660,9 @@ function OrderRow({
             )}
           </>
         )}
+        <Link to={`/listing/${row.listingId}`} className="ocard__view" aria-label="See the listing as it was listed">
+          👁 Listing
+        </Link>
         <span className="ocard__spacer" />
         {row.canCancel && !awaitingClaim && (
           <button type="button" className="ocard__x" aria-label="Cancel this order" disabled={busy} onClick={onCancel}>

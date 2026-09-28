@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type DirectoryForwarder } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, TrustBadge } from '../components/ui';
 import { formatMoney } from '../format';
+import { BackLink } from '../components/ScrollManager';
 
 /**
  * The freight forwarder directory.
@@ -31,6 +32,7 @@ export function ForwardersPage() {
 
   return (
     <main className="page">
+      <BackLink to="/services">← Services</BackLink>
       <div className="page__head">
         <div>
           <h1>Freight forwarders</h1>

@@ -1063,6 +1063,20 @@ export interface Order extends BaseDocument {
   buyClicks?: number;
   /** Bought from a private deal made in a chat, not from the catalog. */
   privateDeal?: boolean;
+  /**
+   * The courier an item went out with, and its AWB, as the seller typed them
+   * when they dispatched it. Mostly for in-hand items, which never ride a lot
+   * and so have no lot tracking reference to borrow.
+   */
+  shipment?: OrderShipment | null;
+}
+
+/** Who is carrying a parcel, and the number to track it by. */
+export interface OrderShipment {
+  courier: string;
+  awb: string;
+  /** When these details were last saved. */
+  at: string;
 }
 
 /**

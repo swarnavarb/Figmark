@@ -332,6 +332,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       outstandingMinor,
       creditMinor,
       id: order.id,
+      listingId: order.listingId,
       itemName: order.itemName,
       quantity: order.quantity,
       totalMinor: order.unitPriceMinor * order.quantity,
@@ -346,6 +347,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       escrowState: order.escrow.state,
       /** A domestic sale is in hand by definition: there is nothing to import. */
       inHand: isDirect(order),
+      /** The courier and AWB it went out with, once dispatched. */
+      shipment: order.shipment ?? null,
+      dispatchedAt: order.checkpoints?.dispatched ?? null,
       awaitingLot: awaitingLot(order),
       lotId: lot?.id ?? null,
       lotName: lot?.name ?? null,

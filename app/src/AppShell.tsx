@@ -6,6 +6,7 @@ import { ScrollBars } from './components/ScrollBars';
 import { ScrollManager } from './components/ScrollManager';
 import { TabBar } from './components/TabBar';
 import { Avatar, Icon } from './components/ui';
+import { api } from './api';
 import { useSession } from './session';
 
 /**
@@ -66,9 +67,9 @@ export function AppShell() {
             the things that are not a section - search, who you are, and the
             way out. */}
         <nav className="nav__links">
-          <NavLink to="/forwarders" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`}>
-            Forwarders
-          </NavLink>
+          {/* The cart: every Buy not yet paid or booked. Forwarders, which
+              used to sit here, are under Services now. */}
+          {user && <CartButton />}
           {/* Before the avatar, because it is about you rather than about the
               app, and because that is where a thumb already goes. */}
           {user && <Notifications />}
@@ -122,6 +123,41 @@ export function AppShell() {
 }
 
 /**
+ * The cart, with how many items are waiting in it.
+ *
+ * Re-counted whenever the screen changes, because that is when an item can
+ * have joined it (Buy on a listing) or left it (paid or booked on the order).
+ */
+function CartButton() {
+  const { pathname } = useLocation();
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.myItems()
+      .then((result) => {
+        if (cancelled) return;
+        setCount(result.groups.reduce((total, group) => total + group.items.filter((item) => !item.placed).length, 0));
+      })
+      .catch(() => { /* A count that cannot load is simply not shown. */ });
+    return () => { cancelled = true; };
+  }, [pathname]);
+
+  return (
+    <NavLink to="/cart" className={({ isActive }) => `navcart${isActive ? ' is-active' : ''}`}
+      aria-label={count > 0 ? `Cart, ${count} ${count === 1 ? 'item' : 'items'}` : 'Cart'}>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6.2" />
+        <circle cx="10" cy="20" r="1.3" />
+        <circle cx="17" cy="20" r="1.3" />
+      </svg>
+      {count > 0 && <span className="navcart__dot">{count > 9 ? '9+' : count}</span>}
+    </NavLink>
+  );
+}
+
+/**
  * The avatar opens who you are: your page, your shop, what you bought, and the
  * way out. "My Purchases" rather than "My Orders" - it is the buyer's word.
  */
@@ -158,6 +194,7 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <Link role="menuitem" to="/quests" className="pmenu__item">🏆 Quests &amp; rewards</Link>
           <Link role="menuitem" to="/shop" className="pmenu__item">🏪 My Storefront</Link>
           <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>
+          <Link role="menuitem" to="/cart" className="pmenu__item">🛒 My Cart</Link>
           <Link role="menuitem" to="/refunds" className="pmenu__item">↩️ My refunds</Link>
           <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
           <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>

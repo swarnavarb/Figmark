@@ -862,7 +862,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
     awaitingLot: awaitingLot(order),
     sellerName: sellers[0]?.sellerProfile?.storefrontName ?? sellers[0]?.displayName ?? 'Seller',
     // The only two things the lot contributes to the buyer's view.
-    trackingReference: lot?.forwarder?.trackingReference ?? null,
+    trackingReference: lot?.forwarder?.trackingReference ?? (order.shipment?.awb || null),
     estimatedDispatchAt: lot?.estimatedDispatchAt ?? null,
     // For the Details tab's product card - the listing as it is now, not the
     // order's own frozen snapshot, so a photo added after the sale still shows.
@@ -1013,7 +1013,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const orderId = request.params.id;
   if (!orderId) return error(400, 'invalid_order', 'An order id is required.');
 
-  let body: { checkpoint?: OrderCheckpoint; on?: boolean; orderIds?: string[] };
+  let body: { checkpoint?: OrderCheckpoint; on?: boolean; orderIds?: string[]; courier?: string; awb?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -1065,6 +1065,48 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const on = body.on !== false;
   const now = new Date().toISOString();
 
+  /*
+   * The courier and AWB a parcel went out with. Given with the dispatched
+   * tick, or on their own for a parcel already dispatched - a seller often
+   * has the AWB only once the courier has picked it up. Either way they are
+   * written on the timeline too, so the buyer reads them where they read
+   * everything else.
+   */
+  const courier = typeof body.courier === 'string' ? body.courier.trim().slice(0, 80) : '';
+  const awb = typeof body.awb === 'string' ? body.awb.trim().slice(0, 80) : '';
+  const withShipment = checkpoint === 'dispatched' && on && Boolean(courier || awb);
+  if (withShipment && isStopped(order.status)) {
+    return error(409, 'order_stopped', 'That order was called off or refunded, so it is not being shipped.');
+  }
+  const shipmentNote = withShipment
+    ? `Courier: ${courier || '—'}${awb ? ` · AWB ${awb}` : ''}`
+    : null;
+  if (withShipment && order.checkpoints?.dispatched) {
+    // Already on its way: only the details change, and the tick keeps its date.
+    order.shipment = { courier, awb, at: now };
+    order.updatedAt = now;
+    order.stageHistory = [
+      ...order.stageHistory,
+      { stage: order.stage, enteredAt: now, note: `${shipmentNote} (updated)`, recordedBy: user.id },
+    ];
+    const saved = await repository.updateOrder(order);
+    await notify(
+      repository,
+      [order.buyerId],
+      { kind: 'lot_moved', title: `${order.itemName}: tracking details`, body: shipmentNote!, link: `/order/${order.id}` },
+      { except: order.sellerId },
+    );
+    const siblings = !inLot(order)
+      ? (await repository.listOrdersForSeller(order.sellerId)).filter((row) => row.lotId === order.lotId)
+      : await repository.listOrdersForLot(order.lotId);
+    return json(200, {
+      order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, status: saved.status },
+      tally: tally(siblings),
+    });
+  }
+  if (withShipment) order.shipment = { courier, awb, at: now };
+  if (checkpoint === 'dispatched' && !on) order.shipment = null;
+
   // Delivered is the one tick with consequences beyond the board: it is what
   // puts the purchase in the buyer's collection and unlocks their review. An
   // order that has left the road cannot be delivered, and one whose money has
@@ -1097,6 +1139,11 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       note: on ? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
       recordedBy: user.id,
     },
+    // Its own line rather than folded into the tick's, which reading an order
+    // matches word for word to tell a recorded tick from an unrecorded one.
+    ...(shipmentNote
+      ? [{ stage: order.stage, step: tickedStep?.name, enteredAt: now, note: shipmentNote, recordedBy: user.id }]
+      : []),
   ];
 
   // Dispatching is already recorded here, so the order takes its shipped state
