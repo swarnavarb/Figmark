@@ -1,6 +1,6 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { LOT_STAGES, LOT_STAGE_LABELS, STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
-import type { BuyerReversalDetails, Lot, SellerProfile } from '../../../shared/models.js';
+import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
+import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
 import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
@@ -191,89 +191,70 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
 }
 
 /**
- * GET /api/me/dashboard - what is moving, and how the shop is doing.
+ * GET /api/me/dashboard - how the shop is doing.
  *
- * Both dashboards in one call because they are one screen and read the same
- * rows: splitting them would double the work to render them side by side.
+ * Every figure comes out of one pass over the orders: the daily chart and
+ * the best sellers used to re-scan the whole book once per day and once per
+ * listing.
  */
 async function dashboard(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const [orders, listings, lots] = await Promise.all([
+  const [allOrders, listings] = await Promise.all([
     repository.listOrdersForSeller(user.id),
     repository.listListings({ sellerId: user.id }),
-    repository.listLots({ sellerId: user.id }),
   ]);
 
-  /* Tracking: what is in flight, grouped by the stage it is sitting at. */
-  const byStage = LOT_STAGES.map((stage) => ({
-    stage,
-    label: LOT_STAGE_LABELS[stage],
-    lots: lots.filter((lot) => lot.stage === stage).length,
-  }));
-
-  const openLots = lots.filter((lot) => lot.status === 'open');
-  const inFlight = orders.filter((order) => order.status !== 'delivered' && !isCancelledLike(order.status));
-
   /* Analytics: the numbers a seller checks, and nothing they cannot act on. */
-  const revenueMinor = orders
-    .filter((order) => !isCancelledLike(order.status))
-    .reduce((sum, order) => sum + order.quantity * order.unitPriceMinor, 0);
-  const unitsSold = orders
-    .filter((order) => !isCancelledLike(order.status))
-    .reduce((sum, order) => sum + order.quantity, 0);
-  const views = listings.reduce((sum, listing) => sum + listing.viewCount, 0);
-  const saves = listings.reduce((sum, listing) => sum + listing.likeCount, 0);
+  const orders = allOrders.filter((order) => !isCancelledLike(order.status));
 
   // Thirty days of orders, so the shape of the last month is visible rather
   // than just its total.
   const dayMs = 86_400_000;
   const start = Date.now() - 29 * dayMs;
-  const daily = Array.from({ length: 30 }, (_, index) => {
-    const day = new Date(start + index * dayMs);
-    const key = day.toISOString().slice(0, 10);
-    const onDay = orders.filter((order) => order.createdAt.slice(0, 10) === key && !isCancelledLike(order.status));
-    return {
-      date: key,
-      orders: onDay.length,
-      revenueMinor: onDay.reduce((sum, order) => sum + order.quantity * order.unitPriceMinor, 0),
-    };
-  });
+  const daily = Array.from({ length: 30 }, (_, index) => ({
+    date: new Date(start + index * dayMs).toISOString().slice(0, 10),
+    orders: 0,
+    revenueMinor: 0,
+  }));
+  const dayOf = new Map(daily.map((day) => [day.date, day]));
+  const unitsByListing = new Map<string, number>();
+
+  let revenueMinor = 0;
+  let unitsSold = 0;
+  for (const order of orders) {
+    const value = order.quantity * order.unitPriceMinor;
+    revenueMinor += value;
+    unitsSold += order.quantity;
+    unitsByListing.set(order.listingId, (unitsByListing.get(order.listingId) ?? 0) + order.quantity);
+    const day = dayOf.get(order.createdAt.slice(0, 10));
+    if (day) {
+      day.orders += 1;
+      day.revenueMinor += value;
+    }
+  }
+  const views = listings.reduce((sum, listing) => sum + listing.viewCount, 0);
+  const saves = listings.reduce((sum, listing) => sum + listing.likeCount, 0);
 
   // The items actually earning their place in the storefront.
-  const topListings = [...listings]
+  const topListings = listings
     .map((listing) => ({
       id: listing.id,
       title: listing.title,
       viewCount: listing.viewCount,
       likeCount: listing.likeCount,
-      unitsSold: orders
-        .filter((order) => order.listingId === listing.id && !isCancelledLike(order.status))
-        .reduce((sum, order) => sum + order.quantity, 0),
+      unitsSold: unitsByListing.get(listing.id) ?? 0,
     }))
     .sort((a, b) => b.unitsSold - a.unitsSold || b.viewCount - a.viewCount)
     .slice(0, 5);
 
   return json(200, {
-    tracking: {
-      openLots: openLots.length,
-      inFlightOrders: inFlight.length,
-      byStage: byStage.filter((row) => row.lots > 0),
-      lots: openLots.map((lot) => ({
-        id: lot.id,
-        name: lot.name,
-        stage: lot.stage,
-        origin: lot.origin ?? '',
-        estimatedDispatchAt: lot.estimatedDispatchAt,
-        orderCount: orders.filter((order) => order.lotId === lot.id).length,
-      })),
-    },
     analytics: {
       revenueMinor,
       unitsSold,
-      orderCount: orders.filter((order) => !isCancelledLike(order.status)).length,
+      orderCount: orders.length,
       activeListings: listings.length,
       views,
       saves,
@@ -311,46 +292,45 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   }
 
   const orders = await repository.listOrdersForSeller(storeId);
-  const buyers = new Map<string, ReturnType<typeof personRef>>();
+  const lotIds = [...new Set(orders.filter(inLot).map((order) => order.lotId))];
+
+  /* The buyers, the lots and the listings behind these orders, read side by
+     side and each once: one lookup for every buyer, one per lot rather than
+     per row, and one query for the shop's listings - so the "add to a lot"
+     screen can pre-select the route the Quick Post template set up. */
+  const [people, lotRows, listingRows] = await Promise.all([
+    repository.listUsersByIds([...new Set(orders.map((order) => order.buyerId))]),
+    Promise.all(lotIds.map((id) => repository.getLot(storeId, id))),
+    repository.listListings({ sellerId: storeId, includeHidden: true, limit: 10_000 }),
+  ]);
+  const buyerById = new Map(people.map((person) => [person.id, person]));
+  const buyers = new Map(orders.map((order) => [order.buyerId, personRef(buyerById.get(order.buyerId) ?? null)]));
   /* Where each buyer's money goes back to - shown only in Refunds, beside a
      refund this shop owes them, because that is what it is for. */
-  const payouts = new Map<string, BuyerReversalDetails | null>();
-  for (const order of orders) {
-    if (buyers.has(order.buyerId)) continue;
-    const buyer = await repository.getUserById(order.buyerId);
-    buyers.set(order.buyerId, personRef(buyer));
-    payouts.set(order.buyerId, buyer?.reversalDetails ?? null);
-  }
-
-  /* Every lot these orders ride in, read once rather than per row: a shop
-     with forty orders in three lots should not make forty lookups to put
-     three numbers on cards. */
-  const lots = new Map<string, Lot | null>();
-  for (const order of orders) {
-    if (!inLot(order) || lots.has(order.lotId)) continue;
-    lots.set(order.lotId, await repository.getLot(storeId, order.lotId));
-  }
-
-  /* The listings behind the orders still waiting for a lot, so the "add to a
-     lot" screen can pre-select the route the Quick Post template set up for
-     them. One query for the shop rather than one per order. */
-  const listings = new Map(
-    (await repository.listListings({ sellerId: storeId, includeHidden: true }))
-      .map((listing) => [listing.id, listing]),
+  const payouts = new Map<string, BuyerReversalDetails | null>(
+    orders.map((order) => [order.buyerId, buyerById.get(order.buyerId)?.reversalDetails ?? null]),
   );
+  const lots = new Map(lotIds.map((id, index) => [id, lotRows[index] ?? null]));
+  const listings = new Map(listingRows.map((listing) => [listing.id, listing]));
+
+  /* Worked out once per order: the money is read by the card, the credits and
+     the refund picker, and each used to recompute it. */
+  const moneyOf = new Map(orders.map((order) => [order.id, orderMoney(order)]));
+  const money = (order: (typeof orders)[number]) => moneyOf.get(order.id)!;
 
   const row = (order: (typeof orders)[number]) => {
     const lot = inLot(order) ? lots.get(order.lotId) ?? null : null;
     const listing = listings.get(order.listingId);
     const photo = listing?.photos.find((entry) => entry.isPrimary) ?? listing?.photos[0] ?? null;
-    const money = orderMoney(order);
+    const { paidMinor, outstandingMinor, creditMinor } = money(order);
+    const actions = actionsFor(order, storeId);
     return {
       photoUrl: photo?.url ?? null,
       /** Bought from a private deal made in a chat. */
       privateDeal: order.privateDeal === true,
-      paidMinor: money.paidMinor,
-      outstandingMinor: money.outstandingMinor,
-      creditMinor: money.creditMinor,
+      paidMinor,
+      outstandingMinor,
+      creditMinor,
       id: order.id,
       itemName: order.itemName,
       quantity: order.quantity,
@@ -385,7 +365,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
        * the last link in the chain a Quick Post template sets up: pick the
        * template once, and the buyer's whole journey is configured.
        */
-      lotRouteId: listings.get(order.listingId)?.lotRouteId ?? null,
+      lotRouteId: listing?.lotRouteId ?? null,
       /** Whether the buyer chose Book: no charge yet, waiting on acceptance. */
       bookingOnly: order.bookingOnly ?? false,
       accepted: order.accepted ?? false,
@@ -393,12 +373,12 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       reversal: order.reversal ?? null,
       /** From the one shared rule, so this card never offers a button the
        *  server would refuse. */
-      canAccept: actionsFor(order, storeId).includes('accept'),
-      canCancel: actionsFor(order, storeId).includes('cancel'),
+      canAccept: actions.includes('accept'),
+      canCancel: actions.includes('cancel'),
     };
   };
 
-  // Four piles, because they need four different things from the seller.
+  // Two piles, because they need two different things from the seller.
   // Somebody who has said they paid is waiting on a yes or no about money.
   // Somebody who has only ordered is waiting to hear whether it can be served
   // at all - that used to be invisible here, so an order the shop could not
@@ -414,12 +394,6 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   const placed = orders
     .filter((order) => order.status === 'pending_payment' && order.paymentStatus === 'unpaid')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-
-  const answered = orders
-    .filter((order) => order.paymentClaim?.decision || isCancelledLike(order.status)
-      || order.status === 'cancelled_reversed' || order.status === 'dispute_raised')
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, 12);
 
   /*
    * Every extra payment a buyer has made in this shop, in one place.
@@ -457,8 +431,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       targets: orders
         .filter((other) => other.id !== order.id && other.buyerId === order.buyerId
           && !isCancelledLike(other.status) && other.paymentStatus !== 'claimed'
-          && orderMoney(other).outstandingMinor > 0)
-        .map((other) => ({ orderId: other.id, itemName: other.itemName, outstandingMinor: orderMoney(other).outstandingMinor })),
+          && money(other).outstandingMinor > 0)
+        .map((other) => ({ orderId: other.id, itemName: other.itemName, outstandingMinor: money(other).outstandingMinor })),
     })))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -495,7 +469,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
         buyer: buyers.get(order.buyerId) ?? personRef(null),
         buyerDetails: payouts.get(order.buyerId) ?? null,
         detailsCheck: order.detailsCheck ?? null,
-        refundableMinor: Math.max(0, orderMoney(order).paidMinor - reserved),
+        refundableMinor: Math.max(0, money(order).paidMinor - reserved),
       };
     })
     .filter((entry) => entry.refundableMinor > 0)
@@ -507,12 +481,11 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     refundable,
     waiting: waiting.map(row),
     placed: placed.map(row),
-    answered: answered.map(row),
-    /* Every purchase, newest first. The three piles above are the ones that
-       need an answer about money; this is the shop's whole book, which is what
-       the seller is actually working from. */
-    orders: orders
-      .filter((order) => !isCancelledLike(order.status))
+    /* Every purchase, newest first. The two piles above are the ones that
+       need an answer; this is the shop's whole book, which is what the seller
+       is actually working from - cancelled and turned-down orders included,
+       so there is a record of them. */
+    orders: [...orders]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(row),
   });
@@ -538,10 +511,9 @@ async function myStores(request: HttpRequest, _context: InvocationContext) {
     if (access) stores.push(access);
   }
 
-  // Stores that named this account as a manager. A scan of stores rather than
-  // an index: a person manages a handful, and the alternative is a second
-  // container to keep in step with the membership list itself.
-  for (const owner of await repository.listStoreOwners()) {
+  // Stores that named this account as a manager, found by the database from
+  // the membership list itself rather than by reading every store there is.
+  for (const owner of await repository.listStoresManagedBy(user.id)) {
     if (owner.id === user.id) continue;
     const access = accessFor(owner, user.id);
     if (access) stores.push(access);

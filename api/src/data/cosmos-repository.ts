@@ -1113,6 +1113,14 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listLivePowerSales(): Promise<PowerSale[]> {
+    // Cross-partition, and bounded by how many sales are live right now.
+    const { resources } = await this.container('powerSales')
+      .items.query<PowerSale>({ query: 'SELECT * FROM c WHERE c.status IN ("scheduled", "running")' })
+      .fetchAll();
+    return resources;
+  }
+
   async getPowerSale(sellerId: string, id: string): Promise<PowerSale | null> {
     try {
       const { resource } = await this.container('powerSales').item(id, sellerId).read<PowerSale>();
@@ -1220,6 +1228,18 @@ export class CosmosRepository implements Repository {
   async listStoreOwners(): Promise<User[]> {
     const { resources } = await this.container('users')
       .items.query<User>({ query: 'SELECT * FROM c WHERE IS_DEFINED(c.sellerProfile) AND c.sellerProfile != null' })
+      .fetchAll();
+    return resources;
+  }
+
+  async listStoresManagedBy(userId: string): Promise<User[]> {
+    // A partial match on the manager entry: only its userId has to agree.
+    const { resources } = await this.container('users')
+      .items.query<User>({
+        query: 'SELECT * FROM c WHERE IS_DEFINED(c.sellerProfile.managers)'
+          + ' AND ARRAY_CONTAINS(c.sellerProfile.managers, { "userId": @id }, true)',
+        parameters: [{ name: '@id', value: userId }],
+      })
       .fetchAll();
     return resources;
   }

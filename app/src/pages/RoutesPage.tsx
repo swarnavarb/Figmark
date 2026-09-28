@@ -345,6 +345,23 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
     }
   }
 
+  /* Lots carry their own copy of a route, so deleting one only takes it off
+     this list - every lot already on it keeps travelling exactly as before. */
+  async function remove() {
+    if (!editing) return;
+    if (!window.confirm(`Delete "${name.trim() || 'this route'}"? Lots already on it keep their steps.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteRoute(editing);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not delete that route.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const named = steps.filter((step) => step.name.trim()).length;
   /** How much of this route works itself, which is the point of binding one. */
   const bound = steps.filter((step) => step.name.trim() && step.trigger).length;
@@ -471,6 +488,12 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
           {busy ? 'Saving…' : 'Save route'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>{cancelLabel}</button>
+        {editing && (
+          <button type="button" className="btn btn--ghost btn--danger" style={{ marginLeft: 'auto' }}
+            disabled={busy} onClick={() => void remove()}>
+            Delete route
+          </button>
+        )}
       </div>
       {named < 2 && (
         <span className="field__hint">A route needs at least two named steps.</span>

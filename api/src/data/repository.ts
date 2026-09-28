@@ -234,10 +234,15 @@ export interface Repository {
   /**
    * A shop's scheduled sales, newest first.
    *
-   * One partition. The runner that posts them reads the same list, because
-   * there is no scheduler here: a sale is advanced by somebody looking at it.
+   * One partition. Read by the shop's own console, which advances what it
+   * reads, as well as by the clock below.
    */
   listPowerSales(sellerId: string): Promise<PowerSale[]>;
+  /**
+   * Every sale still to run or running, across all shops, for the clock that
+   * advances them whether or not anybody has the console open.
+   */
+  listLivePowerSales(): Promise<PowerSale[]>;
   getPowerSale(sellerId: string, id: string): Promise<PowerSale | null>;
   savePowerSale(sale: PowerSale): Promise<PowerSale>;
   /** Everything waiting for one person, newest first. */
@@ -312,6 +317,13 @@ export interface Repository {
 
   /** Every account that has opened a store, for resolving who manages what. */
   listStoreOwners(): Promise<User[]>;
+  /**
+   * The stores that name this account among their managers.
+   *
+   * Filtered by the database rather than by reading every store and checking
+   * each one, which grew with the whole platform on every Sell tab open.
+   */
+  listStoresManagedBy(userId: string): Promise<User[]>;
 
   /** Resolves a username to the account behind it, and whether it is a store. */
   getByHandle(username: string): Promise<{ user: User; isStore: boolean } | null>;

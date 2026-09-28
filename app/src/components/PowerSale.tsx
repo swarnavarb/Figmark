@@ -59,20 +59,42 @@ export function PowerSalePanel({ storeId, startWith }: { storeId: string; startW
   }, [load]);
 
   /**
-   * A running sale moves on the server when somebody asks for it, so the page
-   * asks again while one is live. Not a poll for its own sake: this is the only
-   * thing that makes the next item go out while the shop is watching.
+   * A running sale moves on the server's own clock; the page asks again while
+   * one is live so what it shows keeps up. Only while the tab is actually on
+   * screen - a hidden tab has nobody to show it to - and once more on coming
+   * back, so it is current the moment it is looked at again.
    */
+  const live = Boolean(sales?.some((sale) => sale.status === 'running' || sale.status === 'scheduled'));
   useEffect(() => {
-    if (!sales?.some((sale) => sale.status === 'running' || sale.status === 'scheduled')) return;
-    const timer = window.setInterval(() => void load(), 30_000);
-    return () => window.clearInterval(timer);
-  }, [sales, load]);
+    if (!live) return;
+    let timer: number | undefined;
+    const start = () => {
+      window.clearInterval(timer);
+      timer = window.setInterval(() => void load(), 30_000);
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        window.clearInterval(timer);
+      } else {
+        void load();
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [live, load]);
 
-  if (error) return <ErrorNotice message={error} />;
+  // A failed refresh keeps what was already on screen; only a first load that
+  // fails has nothing else to show.
+  if (error && !sales) return <ErrorNotice message={error} />;
 
   return (
     <div className="stack">
+      {error && <ErrorNotice message={error} />}
       {sales && sales.length > 0 && (
         <div className="stack" style={{ gap: 10 }}>
           {sales.map((sale) => (
@@ -230,16 +252,17 @@ function SaleCard({ sale, storeId, onChanged }: {
  */
 function Countdown({ to }: { to: string }) {
   const [left, setLeft] = useState(() => Date.parse(to) - Date.now());
+  // A minute apart once there is more than an hour on it: a second hand on a
+  // four-hour countdown is motion for its own sake, and a render a second for
+  // every card on the screen. Crossing under the hour re-arms the timer, so
+  // the seconds start moving the moment they are shown.
+  const long = left > 3_600_000;
 
   useEffect(() => {
     setLeft(Date.parse(to) - Date.now());
-    // A minute apart once there is more than an hour on it: a second hand on a
-    // four-hour countdown is motion for its own sake, and a render a second for
-    // every card on the screen.
-    const step = Date.parse(to) - Date.now() > 3_600_000 ? 30_000 : 1_000;
-    const timer = window.setInterval(() => setLeft(Date.parse(to) - Date.now()), step);
+    const timer = window.setInterval(() => setLeft(Date.parse(to) - Date.now()), long ? 30_000 : 1_000);
     return () => window.clearInterval(timer);
-  }, [to]);
+  }, [to, long]);
 
   if (left <= 0) return <span className="countdown countdown--done">handing over…</span>;
 

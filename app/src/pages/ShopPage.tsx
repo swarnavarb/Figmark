@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  LOT_CARD_LABELS, LOT_STAGES,
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
 } from '@shared/enums';
-import { countOf, type LotTally } from '@shared/board';
+import { countOf } from '@shared/board';
 import { CATEGORIES } from '@shared/catalog';
 import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
@@ -17,7 +16,7 @@ import {
   BUILT_IN_ROUTE, preSteps as preStepsOf, suggestLotName,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import type { BuyerReversalDetails, Listing, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import type { BuyerReversalDetails, Listing, Lot, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
@@ -30,7 +29,6 @@ import {
   type InsightsResponse,
   type PartyRef,
   type StorefrontDraft,
-  type ActivityResponse,
   type LotSummary,
   type LotsResponse,
   type SaleRow,
@@ -46,7 +44,9 @@ import { ProfitCalculator } from './ProfitCalculator';
 import { SalesPanel } from './SalesPanel';
 import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
-import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
+import {
+  currencySymbol, formatDateOrdinal, formatMoney, formatTotals, fromMinor, timeAgo, toMinor,
+} from '../format';
 import { useSession } from '../session';
 import { CalcIcon } from '../components/CalcIcon';
 
@@ -60,12 +60,12 @@ const SECTIONS: { id: Section; label: string }[] = [
   // would only be a way to break the rights that reference it.
   { id: 'payments', label: 'Orders' },
   // Who saved what, who stopped at Buy, and how items convert - the Pro tab.
-  { id: 'insights', label: '✨ Insights' },
+  { id: 'insights', label: 'Insights' },
   // Landed cost and margin on the seller's own rates - Pro, beside Insights.
   { id: 'calculator', label: 'Calculator' },
   // Every amount owed back to a buyer - overpaid, cancelled, or a refund the
   // seller starts - in one place, set apart on the right of the same row.
-  { id: 'refunds', label: '↩️ Refunds' },
+  { id: 'refunds', label: 'Refunds' },
   { id: 'lots', label: 'Track' },
   { id: 'routes', label: 'Routes' },
   { id: 'packing', label: 'Packing' },
@@ -200,7 +200,7 @@ function RouteIntro() {
       </div>
       <p className="muted" style={{ marginTop: 0 }}>
         Start from a shape close to yours — everything in it is editable — or skip and do it
-        later from Track → Routes.
+        later from Sell → Routes.
       </p>
     </div>
   );
@@ -268,8 +268,10 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     setParams((current) => {
       const copy = new URLSearchParams(current);
       copy.set('tab', next);
-      // A sub-view belongs to the tab it was opened in.
+      // A sub-view belongs to the tab it was opened in, and so does an order
+      // waiting to be filed into a lot about to be opened.
       copy.delete('view');
+      copy.delete('file');
       return copy;
     }, { replace: true });
 
@@ -428,12 +430,17 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /* The chips as typed, commas, spaces and all. Parsing them on every
+     keystroke threw away a comma or a trailing space the moment it was
+     typed, so a second chip - or a two-word one - could only be pasted in. */
+  const [chipsText, setChipsText] = useState('');
 
   useEffect(() => {
     void api
       .storefront()
       .then((result) => {
         setSaved(result.storefront);
+        setChipsText((result.storefront?.tags ?? []).join(', '));
         setDraft({
           storefrontName: result.storefront?.storefrontName ?? result.displayName,
           username: result.storefront?.username ?? suggestUsername(result.displayName),
@@ -471,7 +478,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
     setFlash(null);
     setError(null);
     try {
-      const result = await api.saveStorefront(draft!);
+      const result = await api.saveStorefront({ ...draft!, tags: chipsOf(chipsText) });
       setSaved(result.storefront);
       setFlash('Storefront saved.');
       onSaved?.();
@@ -520,9 +527,7 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           <span>Photo</span>
           <input value={draft.photoUrl ?? ''} onChange={(e) => set('photoUrl', e.target.value)}
             placeholder="https://…" inputMode="url" />
-          <span className="field__hint">
-            A link to an image for now — uploads land with blob storage, and this is the field they will fill.
-          </span>
+          <span className="field__hint">A link to an image of your shop or logo.</span>
         </label>
 
         <label className="field">
@@ -530,14 +535,13 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           <input value={draft.coverUrl ?? ''} onChange={(e) => set('coverUrl', e.target.value)}
             placeholder="https://…" inputMode="url" />
           <span className="field__hint">
-            The band behind your name. A link for now, same as the picture.
+            The band behind your name, as a link to an image, same as the picture.
           </span>
         </label>
 
         <label className="field">
           <span>Chips</span>
-          <input value={(draft.tags ?? []).join(', ')}
-            onChange={(e) => set('tags', e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))}
+          <input value={chipsText} onChange={(e) => setChipsText(e.target.value)}
             placeholder="Custom painter, Fujian, ships weekly" />
           <span className="field__hint">
             Up to six, separated by commas. These are scanned, not read — a paragraph gets skipped,
@@ -634,6 +638,12 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           </p>
           {draft.username && <span className="faint">@{draft.username}</span>}
           {draft.link && <span className="badge">{draft.link.replace(/^https?:\/\//, '')}</span>}
+          {/* The chips as they will be saved, so the cap of six shows before saving. */}
+          {chipsOf(chipsText).length > 0 && (
+            <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+              {chipsOf(chipsText).map((chip) => <span key={chip} className="badge badge--quiet">{chip}</span>)}
+            </div>
+          )}
           <div className="row">
             <span className="badge">{saved?.tier ?? 'unverified'}</span>
             <span className="faint">{saved?.followerCount ?? 0} followers</span>
@@ -644,11 +654,18 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
   );
 }
 
+/** Typed chips as the server keeps them: trimmed, deduplicated, at most six of 24 characters. */
+function chipsOf(text: string): string[] {
+  return [...new Set(text.split(',').map((chip) => chip.trim()).filter(Boolean))]
+    .map((chip) => chip.slice(0, 24))
+    .slice(0, 6);
+}
+
 /* ── Items ──────────────────────────────────────────────────────────────── */
 
 /** What is listed, and the way back to the lots that carry it. */
 function MyItems({ store }: { store: StoreAccess }) {
-  const [data, setData] = useState<ActivityResponse | null>(null);
+  const [data, setData] = useState<{ listings: Listing[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // "Add to a power sale" from a saved calculation lands here, with it.
   const saleCalcs = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;
@@ -658,7 +675,7 @@ function MyItems({ store }: { store: StoreAccess }) {
 
   const load = useCallback(() => {
     void api
-      .activity()
+      .myListings()
       .then(setData)
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your listings.'),
@@ -683,7 +700,7 @@ function MyItems({ store }: { store: StoreAccess }) {
           a timer. Both are here because a shop does both, at different hours. */}
       <div className="doors doors--two">
         <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="door">
-          <span className="door__glyph" aria-hidden="true">{<Icon name="tag" size={19} />}️</span>
+          <span className="door__glyph" aria-hidden="true"><Icon name="tag" size={19} /></span>
           <span className="door__title">List an item</span>
           <span className="door__note">One thing, up for anyone browsing.</span>
         </Link>
@@ -699,7 +716,7 @@ function MyItems({ store }: { store: StoreAccess }) {
       <div className="seg" role="tablist" aria-label="Items view">
         <button type="button" role="tab" aria-selected={mode === 'stock'}
           className={mode === 'stock' ? 'is-on' : ''} onClick={() => setMode('stock')}>
-          Your stock{mine.length > 0 ? ` · ${mine.length}` : ''}
+          Your stock{all.length > 0 ? ` · ${all.length}` : ''}
         </button>
         <button type="button" role="tab" aria-selected={mode === 'power'}
           className={mode === 'power' ? 'is-on' : ''} onClick={() => setMode('power')}>
@@ -723,7 +740,7 @@ function MyItems({ store }: { store: StoreAccess }) {
             {(['available', 'expired', 'sold_out'] as const).map((entry) => (
               <button key={entry} type="button" role="tab" aria-selected={shelf === entry}
                 className={shelf === entry ? 'is-on' : ''} onClick={() => setShelf(entry)}>
-                {entry === 'available' ? '🟢 Available' : entry === 'expired' ? '⛔ Expired' : '📭 Sold out'} · {counts[entry]}
+                {entry === 'available' ? 'Available' : entry === 'expired' ? 'Expired' : 'Sold out'} · {counts[entry]}
               </button>
             ))}
           </div>
@@ -779,8 +796,25 @@ type OrderFilter = 'all' | 'answer' | 'nolot';
 /** Done, either because the buyer confirmed it or because the seller ticked
  *  it delivered on the lot's own item list - either one is the same fact. */
 function isCompleted(row: SaleRow): boolean {
-  return row.status === 'delivered' || Boolean(row.deliveredAt);
+  return !isClosed(row) && (row.status === 'delivered' || Boolean(row.deliveredAt));
 }
+
+/** Called off for good - turned down, cancelled, or cancelled with the money sent back. */
+function isClosed(row: SaleRow): boolean {
+  return row.status === 'rejected' || row.status === 'cancelled' || row.status === 'cancelled_reversed';
+}
+
+type OrderState = 'active' | 'completed' | 'closed';
+
+function stateOf(row: SaleRow): OrderState {
+  return isClosed(row) ? 'closed' : isCompleted(row) ? 'completed' : 'active';
+}
+
+const ORDER_STATE_LABELS: Record<OrderState, string> = {
+  active: 'Active orders',
+  completed: 'Completed orders',
+  closed: 'Cancelled',
+};
 
 /**
  * Every customer purchase, one card each.
@@ -812,15 +846,16 @@ function Orders({ store }: { store: StoreAccess }) {
   const location = useLocation();
   const navigate = useNavigate();
   const filter = (['all', 'answer', 'nolot'] as const).find((entry) => entry === params.get('show')) ?? 'all';
-  /** Delivered is done; everything else is still being worked. */
-  const statusFilter = params.get('state') === 'completed' ? 'completed' : 'active';
+  /** Delivered is done, called off is closed; everything else is still being worked. */
+  const statusFilter: OrderState = (['completed', 'closed'] as const)
+    .find((entry) => entry === params.get('state')) ?? 'active';
   const setParam = (key: string, value: string) => setParams((current) => {
     const copy = new URLSearchParams(current);
     copy.set(key, value);
     return copy;
   }, { replace: true });
   const setFilter = (next: OrderFilter) => setParam('show', next);
-  const setStatusFilter = (next: 'active' | 'completed') => setParam('state', next);
+  const setStatusFilter = (next: OrderState) => setParam('state', next);
   const here = `${location.pathname}${location.search}`;
   const focusOrder = (location.state as { focusOrder?: string } | null)?.focusOrder ?? null;
   const [glowing, setGlowing] = useState<string | null>(null);
@@ -858,7 +893,13 @@ function Orders({ store }: { store: StoreAccess }) {
     setError(null);
     try {
       await api.setCheckpoint(row.id, 'china_received', on);
-      await load();
+      // Only this card's tick changed, so only this card is redrawn - rather
+      // than reading the whole book again for one checkmark.
+      const at = on ? new Date().toISOString() : null;
+      setData((current) => current && {
+        ...current,
+        orders: current.orders.map((entry) => (entry.id === row.id ? { ...entry, chinaReceivedAt: at } : entry)),
+      });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {
@@ -900,16 +941,16 @@ function Orders({ store }: { store: StoreAccess }) {
   if (!data) return <p className="muted">Loading…</p>;
 
   const needsAnswer = new Set([...data.waiting, ...data.placed].map((row) => row.id));
-  const scoped = data.orders.filter((row) =>
-    statusFilter === 'completed' ? isCompleted(row) : !isCompleted(row));
+  const scoped = data.orders.filter((row) => stateOf(row) === statusFilter);
   /* The "All / To answer / No lot" split only means anything for active
-     orders - a completed one needs nothing answered and rides no lot search. */
-  const shown = statusFilter === 'completed' ? scoped : scoped.filter((row) =>
-    filter === 'all'
-      ? true
-      : filter === 'answer'
-        ? needsAnswer.has(row.id)
-        : row.awaitingLot);
+     orders - a completed or cancelled one needs nothing answered and rides
+     no lot search. */
+  const toAnswer = scoped.filter((row) => needsAnswer.has(row.id));
+  const withoutLot = scoped.filter((row) => row.awaitingLot);
+  const shown = statusFilter !== 'active' || filter === 'all'
+    ? scoped
+    : filter === 'answer' ? toAnswer : withoutLot;
+  const countOfState = (state: OrderState) => data.orders.filter((row) => stateOf(row) === state).length;
 
   if (data.orders.length === 0) {
     return (
@@ -925,13 +966,11 @@ function Orders({ store }: { store: StoreAccess }) {
       {error && <ErrorNotice message={error} />}
 
       <div className="seg" role="tablist" aria-label="Order status">
-        {(['active', 'completed'] as const).map((entry) => (
+        {(['active', 'completed', 'closed'] as const).map((entry) => (
           <button key={entry} type="button" role="tab" aria-selected={statusFilter === entry}
             className={statusFilter === entry ? 'is-on' : ''}
             onClick={() => setStatusFilter(entry)}>
-            {entry === 'active'
-              ? `Active orders ${data.orders.filter((row) => !isCompleted(row)).length}`
-              : `Completed orders ${data.orders.filter(isCompleted).length}`}
+            {ORDER_STATE_LABELS[entry]} {countOfState(entry)}
           </button>
         ))}
       </div>
@@ -940,8 +979,8 @@ function Orders({ store }: { store: StoreAccess }) {
         <div className="seg" role="tablist" aria-label="Which orders">
           {([
             ['all', `All ${scoped.length}`],
-            ['answer', `To answer ${needsAnswer.size}`],
-            ['nolot', `No lot ${scoped.filter((row) => row.awaitingLot).length}`],
+            ['answer', `To answer ${toAnswer.length}`],
+            ['nolot', `No lot ${withoutLot.length}`],
           ] as [OrderFilter, string][]).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={filter === id}
               className={filter === id ? 'is-on' : ''} onClick={() => setFilter(id)}>
@@ -955,7 +994,11 @@ function Orders({ store }: { store: StoreAccess }) {
         <p className="muted">
           {statusFilter === 'completed'
             ? 'Nothing delivered yet.'
-            : filter === 'answer' ? 'Nothing waiting on you.' : 'Every order is in a lot.'}
+            : statusFilter === 'closed'
+              ? 'Nothing cancelled or turned down.'
+              : filter === 'answer'
+                ? 'Nothing waiting on you.'
+                : filter === 'nolot' ? 'Every order is in a lot.' : 'No active orders right now.'}
         </p>
       ) : (
         <div className="orows">
@@ -1051,7 +1094,9 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
   }, [load]);
 
   async function remove(template: PostTemplate) {
+    if (!window.confirm(`Delete the template "${template.name}"? Items already listed from it keep what it filled in.`)) return;
     setBusy(template.id);
+    setError(null);
     try {
       await api.deleteTemplate(template.id);
       await load();
@@ -1062,7 +1107,9 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
     }
   }
 
-  if (error) return <ErrorNotice message={error} />;
+  // Only a first load that fails has nothing to show; a failed delete says so
+  // above the list and leaves the list where it is.
+  if (error && templates === null) return <ErrorNotice message={error} />;
   if (templates === null) return <p className="muted">Loading…</p>;
 
   if (editing) {
@@ -1078,6 +1125,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
 
   return (
     <div className="stack">
+      {error && <ErrorNotice message={error} />}
       <button type="button" className="btn" style={{ justifySelf: 'start' }}
         onClick={() => setEditing('new')}>
         <Icon name="plus" size={15} /> Create template
@@ -1146,8 +1194,18 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
   useEffect(() => {
     void api.myLots(store.isOwner ? undefined : store.ownerId)
       .then((result) => setLots(result.lots)).catch(() => setLots([]));
-    void api.routes().then(setRoutes).catch(() => setRoutes(null));
   }, [store.ownerId, store.isOwner]);
+
+  /* "Write a route" opens in a new tab so this half-written template is not
+     lost; coming back to this one reads the routes again, so the new route is
+     there to pick. */
+  useEffect(() => {
+    const readRoutes = () => void api.routes().then(setRoutes).catch(() => setRoutes(null));
+    readRoutes();
+    const onVisible = () => { if (!document.hidden) readRoutes(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1287,7 +1345,8 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           </select>
           <span className="field__hint">
             Pre-selected when you open a lot for one of these items.{' '}
-            <Link to="/routes">Write a route</Link> if none of these is the journey.
+            <Link to="/routes/new" target="_blank" rel="noopener">Write a route</Link> (opens in a new
+            tab) if none of these is the journey.
           </span>
         </label>
 
@@ -1319,14 +1378,6 @@ const PAYMENT_WORDS: Record<string, string> = {
   claimed: 'Says paid',
   paid: 'Paid',
   refunded: 'Refunded',
-};
-
-const ESCROW_WORDS: Record<string, string> = {
-  none: 'No escrow',
-  held: 'Held',
-  released: 'Released',
-  refunded: 'Refunded',
-  disputed: 'In dispute',
 };
 
 /**
@@ -1433,7 +1484,7 @@ function OrderRow({
         </div>
       </div>
 
-      {!row.inHand && (
+      {!row.inHand && (lotHref || !isClosed(row)) && (
         <div className="ocard__chips">
           {lotHref
             /* The lot by the name the seller gave it, which is what the lot
@@ -1483,8 +1534,9 @@ function OrderRow({
       )}
 
       <div className="ocard__acts">
-        {/* A domestic sale never goes near a warehouse and never joins a lot. */}
-        {!row.inHand && (
+        {/* A domestic sale never goes near a warehouse and never joins a lot,
+            and one that has been called off is not going anywhere at all. */}
+        {!row.inHand && !isClosed(row) && (
           <>
             <button type="button" disabled={busy} aria-pressed={received}
               className={`orow__toggle${received ? ' is-on' : ''}`}
@@ -1505,7 +1557,7 @@ function OrderRow({
         )}
         <span className="ocard__spacer" />
         {row.canCancel && !awaitingClaim && (
-          <button type="button" className="ocard__x" aria-label="Cancel this order" onClick={onCancel}>
+          <button type="button" className="ocard__x" aria-label="Cancel this order" disabled={busy} onClick={onCancel}>
             <Icon name="close" size={14} />
           </button>
         )}
@@ -1552,11 +1604,11 @@ function Refunds({ store }: { store: StoreAccess }) {
 
   const deciding = data.credits.filter((credit) => credit.status !== 'refund_pending');
   const waiting = data.credits.filter((credit) => credit.status === 'refund_pending');
-  const owedMinor = data.credits.reduce((sum, credit) => sum + credit.leftMinor, 0);
-  const sentMinor = data.refundHistory
+  // Per currency: a shop selling in two never sees them added together.
+  const owed = formatTotals(data.credits.map((credit) => ({ amountMinor: credit.leftMinor, currency: credit.currency })));
+  const sent = formatTotals(data.refundHistory
     .filter((entry) => entry.kind === 'refund' && entry.status === 'received')
-    .reduce((sum, entry) => sum + entry.amountMinor, 0);
-  const currency = data.credits[0]?.currency ?? data.refundHistory[0]?.currency ?? 'INR';
+    .map((entry) => ({ amountMinor: entry.amountMinor, currency: entry.currency })));
 
   return (
     <div className="stack">
@@ -1565,9 +1617,9 @@ function Refunds({ store }: { store: StoreAccess }) {
       <section className="rfhero">
         <div className="rfhero__main">
           <small>Still to refund</small>
-          <b>{formatMoney(owedMinor, currency)}</b>
+          <b>{owed}</b>
           <span>
-            {deciding.length} to decide · {waiting.length} waiting on the buyer · {formatMoney(sentMinor, currency)} refunded so far
+            {deciding.length} to decide · {waiting.length} waiting on the buyer · {sent} refunded so far
           </span>
         </div>
         <button type="button" className="rfhero__new" onClick={() => setStarting((open) => !open)}>
@@ -1642,11 +1694,12 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
   const [shot, setShot] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [target, setTarget] = useState('');
+  const [inPerson, setInPerson] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pending = credit.status === 'refund_pending';
   const chosen = credit.targets.find((entry) => entry.orderId === target);
-  const typedMinor = Math.round(Number(amount) * 100) || 0;
+  const typedMinor = toMinor(amount);
   const cap = mode === 'apply' && chosen ? Math.min(credit.leftMinor, chosen.outstandingMinor) : credit.leftMinor;
 
   function open(next: 'refund' | 'apply') {
@@ -1654,14 +1707,15 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
     setError(null);
     setReference('');
     setShot(null);
+    setInPerson(false);
     // Filled with what is owed, and editable: refund less and the rest stays here.
     if (next === 'refund') {
-      setAmount(String(credit.leftMinor / 100));
+      setAmount(fromMinor(credit.leftMinor));
       setMessage('');
     } else {
       const first = credit.targets[0];
       setTarget(first?.orderId ?? '');
-      setAmount(first ? String(Math.min(credit.leftMinor, first.outstandingMinor) / 100) : '');
+      setAmount(first ? fromMinor(Math.min(credit.leftMinor, first.outstandingMinor)) : '');
     }
   }
 
@@ -1752,8 +1806,13 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
       {mode && (
         <div className="xcredit__form">
           {mode === 'refund' && (
-            <PayoutDetails orderId={credit.orderId} buyerName={credit.buyer.name}
-              details={credit.buyerDetails} check={credit.detailsCheck} onChanged={onChanged} />
+            <>
+              <InPersonTick checked={inPerson} onChange={setInPerson} buyerName={credit.buyer.name} />
+              {!inPerson && (
+                <PayoutDetails orderId={credit.orderId} buyerName={credit.buyer.name}
+                  details={credit.buyerDetails} check={credit.detailsCheck} onChanged={onChanged} />
+              )}
+            </>
           )}
           {mode === 'apply' && (
             <label className="field">
@@ -1761,7 +1820,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
               <select value={target} onChange={(e) => {
                 setTarget(e.target.value);
                 const next = credit.targets.find((entry) => entry.orderId === e.target.value);
-                if (next) setAmount(String(Math.min(credit.leftMinor, next.outstandingMinor) / 100));
+                if (next) setAmount(fromMinor(Math.min(credit.leftMinor, next.outstandingMinor)));
               }}>
                 {credit.targets.map((entry) => (
                   <option key={entry.orderId} value={entry.orderId}>
@@ -1772,7 +1831,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
             </label>
           )}
           <label className="field">
-            <span>Amount (₹)</span>
+            <span>Amount ({currencySymbol(credit.currency)})</span>
             <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} />
             <span className="field__hint">
               {typedMinor > cap
@@ -1784,15 +1843,8 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           </label>
           {mode === 'refund' && (
             <>
-              <label className="field">
-                <span>Transaction id (UTR)</span>
-                <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. 412345678901" />
-              </label>
-              <div className="field">
-                <span>Screenshot of the transfer</span>
-                <ProofPicker value={shot} onChange={setShot} />
-                <span className="field__hint">The transaction id or a screenshot - at least one of the two.</span>
-              </div>
+              <ProofFields inPerson={inPerson} reference={reference} onReference={setReference}
+                shot={shot} onShot={setShot} />
               <label className="field">
                 <span>Message to {credit.buyer.name}</span>
                 <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)}
@@ -1804,11 +1856,13 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <button type="button" className="btn btn--ok"
               disabled={busy !== null || typedMinor <= 0 || typedMinor > cap || (mode === 'apply' && !target)
-                || (mode === 'refund' && ((!reference.trim() && !shot) || !payoutReady(credit.buyerDetails, credit.detailsCheck)))}
+                || (mode === 'refund' && ((!reference.trim() && !shot)
+                  || (!inPerson && !payoutReady(credit.buyerDetails, credit.detailsCheck))))}
               onClick={() => void run(mode, () => (mode === 'refund'
                 ? api.refundCredit(credit.orderId, {
                     creditId: credit.creditId, amountMinor: typedMinor, screenshotUrl: shot ?? undefined,
                     reference: reference.trim() || undefined, message: message.trim() || undefined,
+                    inPerson,
                   })
                 : api.applyCredit(credit.orderId, { creditId: credit.creditId, targetOrderId: target, amountMinor: typedMinor })))}>
               {busy ? 'Saving…' : mode === 'refund'
@@ -1926,6 +1980,64 @@ function PayoutDetails({ orderId, buyerName, details, check, onChanged }: {
   );
 }
 
+/**
+ * Money handed back across a counter rather than sent to an account.
+ *
+ * Without it a buyer who never added payout details could never be recorded
+ * as refunded, however the money actually went back. The buyer still confirms
+ * it arrived, the same as any other refund.
+ */
+function InPersonTick({ checked, onChange, buyerName }: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  buyerName: string;
+}) {
+  return (
+    <label className="row" style={{ gap: 9, alignItems: 'flex-start' }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ marginTop: 3 }} />
+      <span>
+        <span style={{ fontSize: 'var(--t-sm)' }}>Handed back in person (cash)</span>
+        <span className="field__hint" style={{ display: 'block' }}>
+          No account needed. {buyerName} is still asked to confirm they got it.
+        </span>
+      </span>
+    </label>
+  );
+}
+
+/** The proof a refund carries: a transfer's id and screenshot, or a note of the hand-over. */
+function ProofFields({ inPerson, reference, onReference, shot, onShot }: {
+  inPerson: boolean;
+  reference: string;
+  onReference: (next: string) => void;
+  shot: string | null;
+  onShot: (next: string | null) => void;
+}) {
+  if (inPerson) {
+    return (
+      <label className="field">
+        <span>When and where</span>
+        <input value={reference} onChange={(e) => onReference(e.target.value)}
+          placeholder="Cash at the Sunday meet, 14 Sept" />
+        <span className="field__hint">What the buyer will recognise when asked to confirm it.</span>
+      </label>
+    );
+  }
+  return (
+    <>
+      <label className="field">
+        <span>Transaction id (UTR)</span>
+        <input value={reference} onChange={(e) => onReference(e.target.value)} placeholder="e.g. 412345678901" />
+      </label>
+      <div className="field">
+        <span>Screenshot of the transfer</span>
+        <ProofPicker value={shot} onChange={onShot} />
+        <span className="field__hint">The transaction id or a screenshot - at least one of the two.</span>
+      </div>
+    </>
+  );
+}
+
 /** A refund needs somewhere to go, and the seller's own doubt about it answered. */
 function payoutReady(details: BuyerReversalDetails | null, check: ShopCredit['detailsCheck']): boolean {
   return Boolean(details) && !(check?.requestedAt && !check.confirmedAt);
@@ -1948,10 +2060,11 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
   const [reference, setReference] = useState('');
   const [shot, setShot] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [inPerson, setInPerson] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chosen = refundable.find((entry) => entry.orderId === orderId);
-  const typedMinor = Math.round(Number(amount) * 100) || 0;
+  const typedMinor = toMinor(amount);
 
   async function submit() {
     if (!chosen) return;
@@ -1961,6 +2074,7 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
       await api.startRefund(chosen.orderId, {
         amountMinor: typedMinor, reason: reason.trim(), screenshotUrl: shot ?? undefined,
         reference: reference.trim() || undefined, message: message.trim() || undefined,
+        inPerson,
       });
       await onDone();
     } catch (err) {
@@ -1979,7 +2093,7 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
         <>
           <label className="field">
             <span>Order</span>
-            <select value={orderId} onChange={(e) => setOrderId(e.target.value)}>
+            <select value={orderId} onChange={(e) => { setOrderId(e.target.value); setAmount(''); }}>
               <option value="">Choose an order…</option>
               {refundable.map((entry) => (
                 <option key={entry.orderId} value={entry.orderId}>
@@ -1989,11 +2103,16 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
             </select>
           </label>
           {chosen && (
-            <PayoutDetails orderId={chosen.orderId} buyerName={chosen.buyer.name}
-              details={chosen.buyerDetails} check={chosen.detailsCheck} onChanged={onChanged} />
+            <>
+              <InPersonTick checked={inPerson} onChange={setInPerson} buyerName={chosen.buyer.name} />
+              {!inPerson && (
+                <PayoutDetails orderId={chosen.orderId} buyerName={chosen.buyer.name}
+                  details={chosen.buyerDetails} check={chosen.detailsCheck} onChanged={onChanged} />
+              )}
+            </>
           )}
           <label className="field">
-            <span>Amount (₹)</span>
+            <span>Amount ({currencySymbol(chosen?.currency)})</span>
             <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
             {chosen && typedMinor > chosen.refundableMinor && (
               <span className="field__hint">At most {formatMoney(chosen.refundableMinor, chosen.currency)} on this order.</span>
@@ -2004,15 +2123,8 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
             <input value={reason} onChange={(e) => setReason(e.target.value)}
               placeholder="Box arrived dented — settled after the dispute" />
           </label>
-          <label className="field">
-            <span>Transaction id (UTR)</span>
-            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. 412345678901" />
-          </label>
-          <div className="field">
-            <span>Screenshot of the transfer</span>
-            <ProofPicker value={shot} onChange={setShot} />
-            <span className="field__hint">The transaction id or a screenshot - at least one of the two.</span>
-          </div>
+          <ProofFields inPerson={inPerson} reference={reference} onReference={setReference}
+            shot={shot} onShot={setShot} />
           <label className="field">
             <span>Message to the buyer</span>
             <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)}
@@ -2022,7 +2134,7 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
             <button type="button" className="btn btn--ok"
               disabled={busy || !chosen || typedMinor <= 0 || typedMinor > (chosen?.refundableMinor ?? 0)
                 || reason.trim().length < 3 || (!reference.trim() && !shot)
-                || !payoutReady(chosen?.buyerDetails ?? null, chosen?.detailsCheck ?? null)}
+                || (!inPerson && !payoutReady(chosen?.buyerDetails ?? null, chosen?.detailsCheck ?? null))}
               onClick={() => void submit()}>
               {busy ? 'Sending…' : typedMinor > 0 && chosen ? `Refund ${formatMoney(typedMinor, chosen.currency)}` : 'Refund'}
             </button>
@@ -2065,9 +2177,12 @@ function FileIntoLot({ row, store, onClose, onDone }: {
       .catch(() => setLots([]));
   }, [store.ownerId, store.isOwner]);
 
+  /* The order goes along, so the lot opened there has this order filed into it
+     and the seller comes straight back to the order - rather than opening the
+     lot and then having to find the order again. */
   function goCreateLot() {
     onClose();
-    navigate('/shop?tab=lots&spotlight=new');
+    navigate(`/shop?tab=lots&spotlight=new&file=${encodeURIComponent(row.id)}`);
   }
 
   async function submit() {
@@ -2097,7 +2212,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
           ) : lots.length === 0 ? (
             <p className="muted" style={{ margin: 0 }}>No lots open yet. Create one below.</p>
           ) : (
-            lots.map(({ lot, tally }) => (
+            lots.map(({ lot }) => (
               <label key={lot.id} className={`pick${lotId === lot.id ? ' is-on' : ''}`}>
                 <input type="radio" name="lot" checked={lotId === lot.id}
                   onChange={() => setLotId(lot.id)} />
@@ -2119,7 +2234,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
 
         <button type="button" className="silkcta" onClick={goCreateLot}>
           <span className="silkcta__label">✨ Create a new lot</span>
-          <span className="silkcta__note">Opens the lots tab, ready to fill in</span>
+          <span className="silkcta__note">Opens the lots tab, and files this order into it once saved</span>
         </button>
 
         {error && <ErrorNotice message={error} />}
@@ -2323,7 +2438,7 @@ function CancelOrderRow({ row, onClose, onDone }: {
 function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNew?: boolean }) {
   const [data, setData] = useState<LotsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const navigate = useNavigate();
   /*
    * Which lot is open lives in the URL, like the tab does, so a lot is a place
    * that can be linked to. An order's timeline sends its seller straight here
@@ -2332,6 +2447,36 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
    */
   const [params, setParams] = useSearchParams();
   const openId = params.get('lot');
+  /** An order sent here from Orders to be filed into the lot about to be opened. */
+  const fileOrder = params.get('file');
+  const [creating, setCreating] = useState(Boolean(fileOrder));
+
+  /* The lot is open; put the order that asked for it inside, and take the
+     seller back to that order on the Orders screen. */
+  async function created(lot: Lot) {
+    setCreating(false);
+    if (!fileOrder) {
+      void load();
+      return;
+    }
+    try {
+      await api.assignOrderToLot(fileOrder, { lotId: lot.id });
+      navigate('/shop?tab=payments', { replace: true, state: { focusOrder: fileOrder } });
+    } catch (err) {
+      dropFileOrder();
+      // Read first: a reload clears the error, and this one has to stay up.
+      await load();
+      setError(err instanceof ApiRequestError
+        ? `The lot is open, but the order was not filed into it: ${err.message}`
+        : 'The lot is open, but the order was not filed into it.');
+    }
+  }
+  const dropFileOrder = () =>
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      copy.delete('file');
+      return copy;
+    }, { replace: true });
   const setOpenId = (next: string | null) =>
     setParams((current) => {
       const copy = new URLSearchParams(current);
@@ -2360,7 +2505,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
     return <LotDetail lotId={openId} onBack={() => { setOpenId(null); void load(); }} />;
   }
 
-  if (error) return <ErrorNotice message={error} />;
+  if (error && !data) return <ErrorNotice message={error} />;
   if (!data) return <p className="muted">Loading…</p>;
 
   const filtered = data.lots.filter((entry) =>
@@ -2368,11 +2513,12 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
 
   return (
     <div className="stack">
+      {error && <ErrorNotice message={error} />}
       {creating ? (
         <NewLotForm
           suggestedName={suggestLotName()}
-          onDone={() => { setCreating(false); void load(); }}
-          onCancel={() => setCreating(false)}
+          onDone={(lot) => void created(lot)}
+          onCancel={() => { setCreating(false); dropFileOrder(); }}
         />
       ) : (
         // Routes now live on their own Sell-home card, not beside this button.
@@ -2425,8 +2571,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
           ) : (
             <div className="lot-grid">
               {filtered.map((summary) => (
-                <LotCard key={summary.lot.id} summary={summary} store={store}
-                  onOpen={() => setOpenId(summary.lot.id)} />
+                <LotCard key={summary.lot.id} summary={summary} onOpen={() => setOpenId(summary.lot.id)} />
               ))}
             </div>
           )}
@@ -2487,9 +2632,8 @@ function MiniTile({ icon, value, tone, onClick, open }: {
  * number and a stage, and the packing figures it was worked by are history the
  * moment it is on a plane.
  */
-function LotCard({ summary, store, onOpen }: {
+function LotCard({ summary, onOpen }: {
   summary: LotSummary;
-  store: StoreAccess;
   onOpen: () => void;
 }) {
   const { lot, tally } = summary;
@@ -2632,6 +2776,8 @@ function Analytics({ store }: { store: StoreAccess }) {
   const [pro, setPro] = useState<InsightsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [proError, setProError] = useState<string | null>(null);
+  /** The day tapped on the chart - touch has no hover to show it on. */
+  const [picked, setPicked] = useState<string | null>(null);
 
   useEffect(() => {
     void api
@@ -2663,6 +2809,9 @@ function Analytics({ store }: { store: StoreAccess }) {
 
   const { analytics } = data;
   const peak = Math.max(1, ...analytics.daily.map((day) => day.revenueMinor));
+  const dayLabel = (day: (typeof analytics.daily)[number]) =>
+    `${formatDateOrdinal(day.date)}: ${formatMoney(day.revenueMinor)} from ${day.orders} order${day.orders === 1 ? '' : 's'}`;
+  const pickedDay = analytics.daily.find((day) => day.date === picked) ?? null;
 
   return (
     <div className="stack">
@@ -2680,18 +2829,36 @@ function Analytics({ store }: { store: StoreAccess }) {
       <div className="card card--pad stack">
         <div>
           <h2>Last 30 days</h2>
-          <span className="field__hint">Revenue per day. Hover a bar for the date.</span>
+          <span className="field__hint">Revenue per day. Tap a bar for that day.</span>
         </div>
         <div className="spark">
           {analytics.daily.map((day) => (
             <span
               key={day.date}
+              role="button"
+              tabIndex={0}
+              aria-pressed={picked === day.date}
+              aria-label={dayLabel(day)}
               className={`spark__bar${day.revenueMinor === 0 ? ' spark__bar--empty' : ''}`}
-              style={{ height: `${Math.max(4, (day.revenueMinor / peak) * 100)}%` }}
-              title={`${day.date}: ${formatMoney(day.revenueMinor)} from ${day.orders} order${day.orders === 1 ? '' : 's'}`}
+              style={{
+                height: `${Math.max(4, (day.revenueMinor / peak) * 100)}%`,
+                cursor: 'pointer',
+                outline: picked === day.date ? '2px solid currentColor' : undefined,
+              }}
+              title={dayLabel(day)}
+              onClick={() => setPicked((current) => (current === day.date ? null : day.date))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setPicked((current) => (current === day.date ? null : day.date));
+                }
+              }}
             />
           ))}
         </div>
+        <span className="field__hint" aria-live="polite">
+          {pickedDay ? dayLabel(pickedDay) : 'Nothing picked.'}
+        </span>
       </div>
 
       <div className="card card--pad stack">
@@ -2830,7 +2997,8 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
       );
   }, [store.ownerId]);
 
-  async function run(fn: () => Promise<{ managers: StoreManager[] }>, message: string) {
+  /** Whether it worked, so the caller only clears what was typed when it did. */
+  async function run(fn: () => Promise<{ managers: StoreManager[] }>, message: string): Promise<boolean> {
     setBusy(true);
     setError(null);
     setFlash(null);
@@ -2838,8 +3006,10 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
       setManagers((await fn()).managers);
       setFlash(message);
       await onChanged();
+      return true;
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -2889,7 +3059,7 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
             void run(
               () => api.updateManager({ storeId: store.ownerId, identifier: identifier.trim(), permissions: granted }),
               'Added.',
-            ).then(() => setIdentifier(''))
+            ).then((ok) => { if (ok) setIdentifier(''); })
           }>
           {busy ? 'Saving…' : 'Add to the shop'}
         </button>
@@ -2914,12 +3084,13 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
               <div className="channel__top">
                 <span className="channel__name">{manager.displayName}</span>
                 <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
-                  onClick={() =>
+                  onClick={() => {
+                    if (!window.confirm(`Remove ${manager.displayName} from this shop? They lose every right here at once.`)) return;
                     void run(
                       () => api.updateManager({ storeId: store.ownerId, identifier: manager.userId, remove: true }),
                       'Removed.',
-                    )
-                  }>
+                    );
+                  }}>
                   Remove
                 </button>
               </div>

@@ -7,6 +7,37 @@ export function formatMoney(minor: number, currency = 'INR'): string {
   }).format(minor / 100);
 }
 
+/**
+ * What a typed amount is in minor units - the inverse of `formatMoney`, so a
+ * form and the figure it shows back can never disagree about the scale.
+ */
+export function toMinor(typed: string): number {
+  return Math.round(Number(typed) * 100) || 0;
+}
+
+/** The other way: a minor-unit amount as a form field's starting text. */
+export function fromMinor(minor: number): string {
+  return String(minor / 100);
+}
+
+/** The symbol for a currency, for a field label: "₹" for INR, "$" for USD. */
+export function currencySymbol(currency = 'INR'): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency })
+    .formatToParts(0)
+    .find((part) => part.type === 'currency')?.value ?? currency;
+}
+
+/**
+ * Amounts in several currencies, added up per currency and said together:
+ * "₹4,500 + $30". Adding rupees to dollars as one number is how a total lies.
+ */
+export function formatTotals(rows: readonly { amountMinor: number; currency: string }[], fallback = 'INR'): string {
+  const sums = new Map<string, number>();
+  for (const row of rows) sums.set(row.currency, (sums.get(row.currency) ?? 0) + row.amountMinor);
+  if (sums.size === 0) return formatMoney(0, fallback);
+  return [...sums].map(([currency, minor]) => formatMoney(minor, currency)).join(' + ');
+}
+
 export function formatWeight(grams: number): string {
   return grams >= 1000 ? `${(grams / 1000).toFixed(2)} kg` : `${grams} g`;
 }

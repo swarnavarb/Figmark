@@ -21,7 +21,7 @@ const { healthRoute } = await import(new URL('health.js', apiRoot));
 const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
-  addCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, forwardersRoute,
+  addCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
   editListingRoute, deleteListingRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const {
@@ -116,6 +116,7 @@ const routes = [
   ['GET', '/api/feed', feedRoute],
   ['GET', '/api/forwarders', forwardersRoute],
   ['GET', '/api/me/activity', myActivityRoute],
+  ['GET', '/api/me/listings', myListingsRoute],
   ['POST', '/api/orders', createOrderRoute],
   ['POST', '/api/listings', createListingRoute],
   ['GET', '/api/listings/:id', listingDetailRoute],
@@ -430,3 +431,11 @@ const server = createServer((request, response) => {
 
 const port = Number(process.env.PORT ?? 5173);
 server.listen(port, () => console.log(`Figmark dev server on http://127.0.0.1:${port}`));
+
+/* The Functions host runs the power-sale clock as a timer trigger; this server
+   has no host, so it keeps the same once-a-minute beat itself. */
+const { tickPowerSales } = await import(new URL('power-sale.js', apiRoot));
+const { getRepository } = await import(new URL('../data/index.js', apiRoot));
+setInterval(() => {
+  void getRepository().then((repository) => tickPowerSales(repository)).catch(() => undefined);
+}, 60_000).unref();

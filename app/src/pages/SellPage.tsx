@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
@@ -9,7 +9,7 @@ import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
 import { ApiRequestError, api, type PhotoDraft } from '../api';
 import { NewLotDialog } from '../components/LotFields';
-import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
+import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { TermsFields, termsBody, termsDraft } from '../components/Buy';
@@ -77,7 +77,14 @@ type SellDraft = {
   shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; cutoffDays: string;
   tags: string; calc: SavedCalc | null; quickPost: boolean; templateId: string; photos: PhotoDraft[];
   preLot: RouteStep[] | null; shape: Shape; lotId: string;
+  /** The listing already made from this form, when only the step after it failed. */
+  createdListingId?: string | null;
+  /** When it was last written, so old visits' drafts can be let go. */
+  savedAt?: number;
 };
+
+/** How many visits' drafts are kept. Each visit has its own key, and nothing else ever removed them. */
+const KEEP_DRAFTS = 5;
 
 function readDraft(key: string): SellDraft | null {
   try {
@@ -89,9 +96,26 @@ function readDraft(key: string): SellDraft | null {
 
 function writeDraft(key: string, draft: SellDraft) {
   try {
-    sessionStorage.setItem(key, JSON.stringify(draft));
+    sessionStorage.setItem(key, JSON.stringify({ ...draft, savedAt: Date.now() }));
   } catch {
     /* A private window: the form just is not kept. */
+  }
+}
+
+/** Drop all but the newest few drafts, keeping the one this visit is using. */
+function pruneDrafts(current: string) {
+  try {
+    const drafts: { key: string; at: number }[] = [];
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (!key?.startsWith(`${DRAFT_KEY}:`) || key === current) continue;
+      drafts.push({ key, at: readDraft(key)?.savedAt ?? 0 });
+    }
+    drafts.sort((a, b) => b.at - a.at)
+      .slice(KEEP_DRAFTS - 1)
+      .forEach(({ key }) => sessionStorage.removeItem(key));
+  } catch {
+    /* Storage unavailable: there is nothing kept to prune. */
   }
 }
 
@@ -163,14 +187,36 @@ export function SellPage() {
   const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
   const [lots, setLots] = useState<Lot[]>([]);
   const [lotId, setLotId] = useState(restored?.lotId ?? '');
+  /* The listing this form already made, when publishing got that far and the
+     private-deal message after it did not. Publishing again then only retries
+     the message, rather than making a second copy of the item. */
+  const [createdListingId, setCreatedListingId] = useState<string | null>(restored?.createdListingId ?? null);
 
+  useEffect(() => { pruneDrafts(draftKey); }, [draftKey]);
+
+  /* Written a moment after typing stops rather than on every keystroke: the
+     draft carries the photos too, and serialising all of it per character
+     was work the form paid for while being typed into. Leaving the page
+     writes whatever is still waiting, so nothing typed is lost - unless it
+     was published, when there is nothing left to keep. */
+  const latest = useRef<SellDraft | null>(null);
+  const published = useRef(false);
+  latest.current = {
+    title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
+    preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    createdListingId,
+  };
   useEffect(() => {
-    writeDraft(draftKey, {
-      title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
-      preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
-    });
+    const timer = window.setTimeout(() => {
+      if (!published.current && latest.current) writeDraft(draftKey, latest.current);
+    }, 400);
+    return () => window.clearTimeout(timer);
   }, [draftKey, title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId]);
+    preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    createdListingId]);
+  useEffect(() => () => {
+    if (!published.current && latest.current) writeDraft(draftKey, latest.current);
+  }, [draftKey]);
 
   useEffect(() => {
     void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
@@ -218,7 +264,7 @@ export function SellPage() {
         // Coming back to a form already filled in: leave it as it was.
         if (chosen && !restored) {
           setTemplateId(chosen.id);
-          applyTemplate(chosen);
+          applyTemplate(chosen, true);
         }
       })
       .catch(() => undefined);
@@ -226,13 +272,36 @@ export function SellPage() {
     // Once: re-applying on every render would undo edits as they were typed.
   }, []);
 
-  /** Fill the form in from a template, leaving everything editable. */
-  function applyTemplate(template: PostTemplate) {
+  /**
+   * What the last template put in each field, so switching to another one
+   * replaces what the first one wrote - including clearing a field the new
+   * one leaves blank - without touching anything typed by hand since.
+   */
+  const applied = useRef<{ category: string; tags: string; condition: string; description: string } | null>(null);
+
+  /**
+   * Fill the form in from a template, leaving everything editable.
+   *
+   * On the first, automatic fill, a field that arrived already filled in -
+   * a private deal's description, the calculator's - is left as it came.
+   */
+  function applyTemplate(template: PostTemplate, initial = false) {
     const fill = fillFrom(template);
-    if (fill.category) setCategory(fill.category);
-    if (fill.tags) setTags(fill.tags);
-    if (fill.condition) setCondition(fill.condition);
-    if (fill.description) setDescription(fill.description);
+    const next = {
+      category: fill.category || CATEGORIES[0]!,
+      tags: fill.tags ?? '',
+      condition: fill.condition || CONDITION_TAGS[0],
+      description: fill.description ?? '',
+    };
+    const before = applied.current;
+    // Untouched since the last template (or, first time, never prefilled).
+    const free = (field: keyof typeof next, current: string, prefilled = false) =>
+      before ? current === before[field] : !prefilled;
+    if (free('category', category)) setCategory(next.category);
+    if (free('tags', tags)) setTags(next.tags);
+    if (free('condition', condition)) setCondition(next.condition);
+    if (free('description', description, initial && Boolean(prefill?.description))) setDescription(next.description);
+    applied.current = next;
     setPreLot(template.preLotRoute?.steps ?? null);
     // A lot named by the template wins; otherwise the template's own answer
     // about what it lists, which is the thing a shop should not have to repeat
@@ -266,7 +335,9 @@ export function SellPage() {
     setBusy(true);
     setError(null);
     try {
-      const result = await api.createListing({
+      // Made already, on an earlier try whose deal message failed: only the
+      // message is still owed, and a second listing would be a duplicate.
+      const listingId = createdListingId ?? (await api.createListing({
         title: title.trim(),
         description: description.trim(),
         category,
@@ -298,20 +369,33 @@ export function SellPage() {
           ? { preLotSteps: preLot.map((step) => ({ name: step.name, description: step.description })) }
           : {}),
         ...(quickPost && chosenTemplate?.lotRouteId ? { lotRouteId: chosenTemplate.lotRouteId } : {}),
-      });
-      // Remembered for the next item, which is the point of a template.
-      if (quickPost && templateId) rememberTemplate(templateId);
-      clearDraft(draftKey);
-      if (calc) {
-        await api.saveCalc({ ...calc, listingId: result.listing.id }, storeId).catch(() => undefined);
+      })).listing.id;
+      if (!createdListingId) {
+        setCreatedListingId(listingId);
+        // Remembered for the next item, which is the point of a template.
+        if (quickPost && templateId) rememberTemplate(templateId);
+        if (calc) {
+          await api.saveCalc({ ...calc, listingId }, storeId).catch(() => undefined);
+        }
       }
       if (deal) {
         // The item is made; the deal card in the chat is what the buyer opens it from.
-        await api.sendMessage(deal.handle, '', deal.as, { kind: 'offer', listingId: result.listing.id });
+        try {
+          await api.sendMessage(deal.handle, '', deal.as, { kind: 'offer', listingId });
+        } catch (err) {
+          setError(`The item is made, but the deal was not sent to ${deal.displayName}: ${
+            err instanceof ApiRequestError ? err.message : 'the message did not go through'
+          }. Send it again - the item will not be made twice.`);
+          return;
+        }
+        published.current = true;
+        clearDraft(draftKey);
         navigate(`/messages/${encodeURIComponent(deal.handle)}?as=${encodeURIComponent(deal.as)}`, { replace: true });
         return;
       }
-      navigate(`/listing/${result.listing.id}`);
+      published.current = true;
+      clearDraft(draftKey);
+      navigate(`/listing/${listingId}`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not publish this listing.');
     } finally {
@@ -380,8 +464,8 @@ export function SellPage() {
             {quickPost && (
               templates.length === 0 ? (
                 <span className="field__hint">
-                  No templates yet. Make one from <Link to="/shop">Items</Link> and the next listing
-                  starts half-written.
+                  No templates yet. Make one from <Link to="/shop?tab=items">Items → Templates</Link> and
+                  the next listing starts half-written.
                 </span>
               ) : (
                 <label className="field">
@@ -589,7 +673,7 @@ export function SellPage() {
                 <span className="field__hint">
                   {lotId
                     ? 'Buyers follow this lot through customs and get its dispatch estimate.'
-                    : 'It goes up as an import with no dispatch date until you file it — any time, from Items.'}
+                    : 'It goes up as an import with no dispatch date until you file it — any time, from Orders once it sells.'}
                 </span>
                 <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start', marginTop: 8 }}
                   onClick={() => setCreatingLot(true)}>
@@ -611,7 +695,7 @@ export function SellPage() {
         <aside className="stack">
           <span className="muted">Preview</span>
           <div className="card" style={{ maxWidth: 280 }}>
-            <Thumb seed={title || 'preview'} label={title || 'Your listing'}>
+            <Thumb seed={title || 'preview'} label={title || 'Your listing'} photo={leadPhoto({ photos })}>
               <div className="thumb__badges">
                 <span className="badge badge--solid">{condition}</span>
                 {preOrderMode && <span className="badge badge--accent">Pre-order</span>}
@@ -630,7 +714,7 @@ export function SellPage() {
             </div>
           </div>
           <p className="faint">
-            Photo upload lands with blob storage. Until then listings use a generated placeholder.
+            Leads with your main photo. Without one, the listing uses a generated placeholder.
           </p>
         </aside>
       </div>

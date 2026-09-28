@@ -75,7 +75,41 @@ export function setSessionRejectedHandler(handler: (() => void) | null): void {
 /** Endpoints where a 401 is a normal answer rather than a lost session. */
 const EXPECTS_401 = ['/auth/me', '/auth/login', '/auth/signup'];
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Reads, shared for a moment.
+ *
+ * Several panels on one screen ask for the same thing - Orders and Refunds
+ * both read the sales book, Analytics and Insights both read the lot figures -
+ * and flipping between them used to fetch it again every time. An identical
+ * GET made while one is in flight rides the same request, and an answer is
+ * reused for a few seconds. Any write empties the lot, so a screen reloading
+ * after it has changed something always reads the new state.
+ */
+const READ_TTL_MS = 5_000;
+const reads = new Map<string, { at: number; promise: Promise<unknown> }>();
+
+function forgetReads(): void {
+  reads.clear();
+}
+
+function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? 'GET').toUpperCase();
+  if (method !== 'GET') {
+    forgetReads();
+    return send<T>(path, init);
+  }
+  const held = reads.get(path);
+  if (held && Date.now() - held.at < READ_TTL_MS) return held.promise as Promise<T>;
+  const promise = send<T>(path, init);
+  reads.set(path, { at: Date.now(), promise });
+  // A failure is not an answer worth keeping: the next ask tries again.
+  promise.catch(() => {
+    if (reads.get(path)?.promise === promise) reads.delete(path);
+  });
+  return promise;
+}
+
+async function send<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
@@ -554,8 +588,7 @@ export interface SalesResponse {
   refundable: RefundableOrder[];
   waiting: SaleRow[];
   placed: SaleRow[];
-  answered: SaleRow[];
-  /** Every purchase, newest first: the shop's whole book. */
+  /** Every purchase, newest first: the shop's whole book, cancelled and rejected ones included. */
   orders: SaleRow[];
 }
 
@@ -913,19 +946,6 @@ export interface SocialSearchResult {
 /* ── Seller dashboards ─────────────────────────────────────────────────── */
 
 export interface DashboardResponse {
-  tracking: {
-    openLots: number;
-    inFlightOrders: number;
-    byStage: { stage: string; label: string; lots: number }[];
-    lots: {
-      id: string;
-      name: string;
-      stage: FulfilmentStage;
-      origin: string;
-      estimatedDispatchAt: string | null;
-      orderCount: number;
-    }[];
-  };
   analytics: {
     revenueMinor: number;
     unitsSold: number;
@@ -1430,10 +1450,6 @@ export interface BoardCustomer {
   trackingReference: string | null;
 }
 
-export interface LotsBoard {
-  lots: { lot: BoardLot; tally: LotTally }[];
-}
-
 export interface LotBoard {
   lot: BoardLot;
   tally: LotTally;
@@ -1546,6 +1562,8 @@ export const api = {
     post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
   refundCredit: (id: string, body: {
     creditId?: string; reference?: string; screenshotUrl?: string; message?: string; amountMinor?: number;
+    /** Handed back in person: no payout account is needed. */
+    inPerson?: boolean;
   } = {}) =>
     post<{ order: Order; sentMinor: number }>(`/orders/${encodeURIComponent(id)}/refund-credit`, body),
   ackCreditRefund: (id: string, received: boolean, creditId?: string) =>
@@ -1554,6 +1572,7 @@ export const api = {
     post<{ source: Order; target: Order; appliedMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-apply`, body),
   startRefund: (id: string, body: {
     amountMinor: number; reason: string; reference?: string; screenshotUrl?: string; message?: string;
+    inPerson?: boolean;
   }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
   myRefunds: () => request<{
@@ -1593,7 +1612,6 @@ export const api = {
   order: (listingId: string, quantity = 1, via?: string | null) =>
     post<{ order: Order }>('/orders', { listingId, quantity, via: via ?? undefined }),
 
-  preOrder: (id: string) => request<PreOrderRoster>(`/listings/${encodeURIComponent(id)}/preorder`),
   /**
    * Join a pre-order, or leave it.
    *
@@ -1607,6 +1625,8 @@ export const api = {
     }),
 
   activity: () => request<ActivityResponse>('/me/activity'),
+  /** Just the seller's own stock - what the Items screen shows, without the rest of the account. */
+  myListings: () => request<{ listings: Listing[] }>('/me/listings'),
 
   myLots: (storeId?: string) =>
     request<LotsResponse>(`/me/lots${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
@@ -1626,8 +1646,6 @@ export const api = {
   lotContents: (id: string) => request<LotContents>(`/lots/${encodeURIComponent(id)}/contents`),
   assignToLot: (id: string, listingIds: string[], remove = false) =>
     post<{ changed: number }>(`/lots/${encodeURIComponent(id)}/assign`, { listingIds, remove }),
-  advanceStage: (id: string, stage: string, note?: string) =>
-    post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/stage`, { stage, note }),
   setTracking: (id: string, body: { trackingReference?: string; forwarderName?: string; forwarderContact?: string; forwarderUserId?: string }) =>
     post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/tracking`, body),
 
@@ -1739,19 +1757,10 @@ export const api = {
     ),
   createPowerSale: (draft: PowerSaleDraft) =>
     post<{ sale: PowerSaleView }>('/power-sales/new', draft),
-  powerSale: (id: string, storeId?: string) =>
-    request<{ sale: PowerSaleView }>(
-      `/power-sales/${encodeURIComponent(id)}${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
-    ),
   stopPowerSale: (id: string, storeId?: string) =>
     post<{ sale: PowerSaleView }>(
       `/power-sales/${encodeURIComponent(id)}/stop${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
       {},
-    ),
-  payOrder: (id: string, protection: boolean, escrowAgentId?: string) =>
-    post<{ order: Order; simulatedPayment: boolean }>(
-      `/orders/${encodeURIComponent(id)}/pay`,
-      { protection, escrowAgentId },
     ),
   confirmOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/confirm`),
   openDispute: (id: string, body: { reasonCode: string; reason: string; evidence: EvidenceDraft[] }) =>
@@ -1784,8 +1793,6 @@ export const api = {
     remove?: boolean;
   }) => post<{ managers: StoreManager[] }>('/me/storefront/managers', body),
 
-  lotsBoard: (storeId?: string) =>
-    request<LotsBoard>(`/me/lots/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
   lotBoard: (id: string, storeId?: string) =>
     request<LotBoard>(
       `/lots/${encodeURIComponent(id)}/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
@@ -1814,16 +1821,16 @@ export const api = {
   report: (body: { targetType: ReportTarget; targetId: string; parentId: string; reason: string }) =>
     post<{ report: ContentReport }>('/reports', body),
   /** The shop-wide rules, such as how long protected payments are held. */
-  settings: () => request<{ autoReleaseDays: number }>('/settings'),
   writePageReview: (userId: string, body: { rating: number; body: string }) =>
     post<{ review: PageReview }>(`/users/${encodeURIComponent(userId)}/page-reviews/new`, body),
   saveProfile: (body: { bio?: string; coverUrl?: string; tags?: string[] }) =>
     post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
   setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
 
-  supplierLots: () =>
+  /** Lots to pack; one store's only when `storeId` is given, filtered on the server. */
+  supplierLots: (storeId?: string) =>
     request<{ lots: { store: SupplierStore; lot: SupplierLot['lot']; tally: LotTally }[] }>(
-      '/supplier/lots',
+      `/supplier/lots${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
     ),
   supplierLot: (id: string) => request<SupplierLot>(`/supplier/lots/${encodeURIComponent(id)}`),
 

@@ -269,6 +269,26 @@ export async function releaseItems(repository: Repo, sale: PowerSale, now = new 
   }
 }
 
+/**
+ * Advance every live sale on the platform, whoever is or is not watching.
+ *
+ * The clock the timer trigger (and the local dev server) runs once a minute.
+ * Before it, a sale only moved while its shop had the console open, so an
+ * item due at 3am went out whenever the seller next looked. Returns how many
+ * sales it touched, for the log.
+ */
+export async function tickPowerSales(repository: Repo, now = new Date()): Promise<number> {
+  const live = await repository.listLivePowerSales();
+  for (const sale of live) {
+    try {
+      await advancePowerSale(repository, sale, { now });
+    } catch {
+      /* One stuck sale must not hold up the others; it is retried next minute. */
+    }
+  }
+  return live.length;
+}
+
 /** Advance a shop's live sales, and hand back the list. */
 export async function advanceAll(repository: Repo, sellerId: string): Promise<PowerSale[]> {
   const sales = await repository.listPowerSales(sellerId);

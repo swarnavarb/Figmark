@@ -555,5 +555,3 @@ export function ShowcaseModal({ cards, stickers, whose, onClose, start = 'cards'
     </Modal>
   );
 }
-
-export const RARITY_ORDER: readonly CardRarity[] = ['legendary', 'epic', 'rare', 'common'];

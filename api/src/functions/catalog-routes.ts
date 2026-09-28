@@ -626,6 +626,23 @@ async function myActivity(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
+ * GET /api/me/listings - the signed-in account's own stock, and nothing else.
+ *
+ * What the Sell tab's Items screen draws. It used to read `/me/activity`,
+ * which also fetches every purchase, sale, like and follow on the account.
+ */
+async function myListings(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  // The same shelf as `/me/activity`: sold out and expired included, withdrawn
+  // and scheduled-sale items not.
+  const listings = (await repository.listListings({ sellerId: user.id, includeHidden: true, limit: 10_000 }))
+    .filter((row) => row.status !== 'archived' && !row.unlisted);
+  return json(200, { listings });
+}
+
+/**
  * The seller-set terms shared by create and edit: stock mode, expiry, advance.
  *
  * Only fields present in the body are returned, so an edit that does not
@@ -783,6 +800,7 @@ export const createOrderRoute = handler(createOrder);
 export const editListingRoute = handler(editListing);
 export const deleteListingRoute = handler(deleteListing);
 export const myActivityRoute = handler(myActivity);
+export const myListingsRoute = handler(myListings);
 export const forwardersRoute = handler(forwarders);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -797,4 +815,5 @@ app.http('listing-edit', { ...anon, methods: ['POST'], route: 'listings/{id}/edi
 app.http('listing-delete', { ...anon, methods: ['POST'], route: 'listings/{id}/delete', handler: deleteListingRoute });
 app.http('order-create', { ...anon, methods: ['POST'], route: 'orders', handler: createOrderRoute });
 app.http('me-activity', { ...anon, methods: ['GET'], route: 'me/activity', handler: myActivityRoute });
+app.http('me-listings', { ...anon, methods: ['GET'], route: 'me/listings', handler: myListingsRoute });
 app.http('forwarders', { ...anon, methods: ['GET'], route: 'forwarders', handler: forwardersRoute });

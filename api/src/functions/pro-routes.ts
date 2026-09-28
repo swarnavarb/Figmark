@@ -27,7 +27,6 @@ const MAX_COST_HISTORY = 10;
  * orders and saves the shop already has.
  */
 
-type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 const DAY = 86_400_000;
 

@@ -252,11 +252,6 @@ export function preSteps(route: HasSteps): RouteStep[] {
   return route.steps.filter((step, index) => sideOf(step, index) === 'pre');
 }
 
-/** The steps the whole lot travels together. */
-export function postSteps(route: HasSteps): RouteStep[] {
-  return route.steps.filter((step, index) => sideOf(step, index) === 'post');
-}
-
 /**
  * Where the hand-over sits: the index of the first `post` step.
  *
@@ -832,20 +827,6 @@ export type StepState = 'done' | 'current' | 'todo';
  */
 export function stepStateAt(index: number, current: number): StepState {
   return index <= current ? 'done' : 'todo';
-}
-
-/**
- * The step a lot is on, for a card that has room for one line.
- *
- * A lot below its own first step has not taken one: it is open and filling,
- * and naming the item step it happens to sit above would put "received at the
- * international warehouse" on a card for a crate nobody has touched.
- */
-export function currentStepName(lot: Pick<Lot, 'route' | 'currentStep' | 'stage'>): string {
-  const route = routeOf(lot);
-  const at = currentStepOf(lot);
-  if (at < lotOffset(route)) return 'Filling';
-  return route.steps[at]?.name ?? 'Not started';
 }
 
 /** Whether the lot has reached the point where items are worked one by one. */

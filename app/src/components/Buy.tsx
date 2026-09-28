@@ -70,8 +70,8 @@ export function MoneyBar({ totalMinor, paidMinor, outstandingMinor, creditMinor 
  * Every payment on an order as its own dated line, with the totals summed from
  * them. The seller gets the refund button for any extra that is still held.
  */
-export function PaymentHistory({ order, side, onChanged }: {
-  order: Order; side: 'buyer' | 'seller' | null; onChanged: () => void | Promise<void>;
+export function PaymentHistory({ order, side }: {
+  order: Order; side: 'buyer' | 'seller' | null;
 }) {
   const money = orderMoney(order);
   const records = order.payments ?? [];

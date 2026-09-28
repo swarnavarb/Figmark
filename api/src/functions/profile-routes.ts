@@ -26,7 +26,6 @@ import { confirmDetailsOn } from './order-routes.js';
  * the earned number is only worth reading because nothing unearned can move it.
  */
 
-type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** Reviews of trades, counted per side. */
 function summarise(reviews: readonly Review[], direction: string) {

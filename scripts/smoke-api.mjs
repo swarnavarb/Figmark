@@ -892,9 +892,8 @@ await check('the storefront is private to its owner', async () => {
   assert.equal((await saveStorefront(req({ body: { storefrontName: 'Nope' } }), ctx)).status, 401);
 });
 
-await check('the dashboard reports tracking and analytics together', async () => {
+await check('the dashboard reports the shop analytics', async () => {
   const body = (await dashboard(req({ headers: auth }), ctx)).jsonBody;
-  assert.ok(body.tracking.openLots >= 1);
   assert.equal(body.analytics.daily.length, 30, 'thirty days, one entry each');
   assert.ok(body.analytics.activeListings >= 2);
   // Revenue is what the seller sold, never what they bought.
@@ -4236,12 +4235,12 @@ await check('the buyer cannot turn down their own order, and neither side can on
 
 await check('every order a shop has to answer is on one screen', async () => {
   const board = (await sales(req({ headers: auth }), ctx)).jsonBody;
-  // Three piles, and they need three different things: money confirmed,
-  // servability confirmed, and a record of what was already said.
-  for (const pile of ['waiting', 'placed', 'answered']) {
+  // Two piles waiting on the shop - money confirmed and servability
+  // confirmed - and the whole book, turned-down orders included.
+  for (const pile of ['waiting', 'placed', 'orders']) {
     assert.ok(Array.isArray(board[pile]), `${pile} should be a list`);
   }
-  assert.ok(board.answered.some((row) => row.status === 'rejected'), 'a turned-down order is on the record');
+  assert.ok(board.orders.some((row) => row.status === 'rejected'), 'a turned-down order is on the record');
   assert.ok(board.placed.every((row) => row.paymentStatus === 'unpaid'));
 });
 
@@ -5502,7 +5501,7 @@ await check('the order card carries everything it needs answering about', async 
   }
   // The three piles that need an answer about money are still there: this
   // screen replaced nothing, it absorbed it.
-  for (const pile of ['waiting', 'placed', 'answered']) {
+  for (const pile of ['waiting', 'placed']) {
     assert.ok(Array.isArray(board[pile]), `${pile} should still be a list`);
   }
 });

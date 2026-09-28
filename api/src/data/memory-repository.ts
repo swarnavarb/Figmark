@@ -679,6 +679,11 @@ export class MemoryRepository implements Repository {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  async listLivePowerSales(): Promise<PowerSale[]> {
+    return [...this.powerSales.values()]
+      .filter((sale) => sale.status === 'scheduled' || sale.status === 'running');
+  }
+
   async getPowerSale(sellerId: string, id: string): Promise<PowerSale | null> {
     const sale = this.powerSales.get(id);
     return sale && sale.sellerId === sellerId ? sale : null;
@@ -810,6 +815,11 @@ export class MemoryRepository implements Repository {
 
   async listStoreOwners(): Promise<User[]> {
     return [...this.users.values()].filter((user) => user.sellerProfile !== null);
+  }
+
+  async listStoresManagedBy(userId: string): Promise<User[]> {
+    return [...this.users.values()].filter((user) =>
+      (user.sellerProfile?.managers ?? []).some((entry) => entry.userId === userId));
   }
 
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {

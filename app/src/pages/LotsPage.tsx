@@ -4,7 +4,7 @@ import {
   ORDER_CHECKPOINTS, type OrderCheckpoint,
 } from '@shared/enums';
 import {
-  TRIGGER_LABELS, WAITING_FOR_LOT, laneOf, lotEndIndex, suggestLotName, type RouteStep,
+  TRIGGER_LABELS, WAITING_FOR_LOT, laneOf, lotEndIndex, type RouteStep,
 } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
@@ -224,7 +224,8 @@ function summarise(steps: readonly { name: string }[]): string {
 }
 
 export function NewLotForm({ onDone, onCancel, suggestedName }: {
-  onDone: () => void;
+  /** Handed the lot just opened, for a caller that has something to put in it. */
+  onDone: (lot: Lot) => void;
   onCancel: () => void;
   /** What to call it if the seller does not care, which is most of the time. */
   suggestedName?: string;
@@ -267,7 +268,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
     setBusy(true);
     setError(null);
     try {
-      await api.createLot({
+      const { lot } = await api.createLot({
         ...details,
         name: details.name.trim(),
         // Either a directory forwarder or one you already work with; the lot
@@ -279,7 +280,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
         // generic ladder, and can be pointed at a route once one exists.
         routeId: routeId || undefined,
       });
-      onDone();
+      onDone(lot);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not create the lot.');
     } finally {
@@ -822,12 +823,23 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
      opening a lot to move it on should not pay for a manifest of names. */
   const [people, setPeople] = useState<LotBoard | null>(null);
 
-  const load = useCallback(async () => {
+  /*
+   * The lot itself, and - only when asked - the shop's other lots and loose
+   * listings beside it. Those two only change when something joins or leaves
+   * this lot, so a tick or a step reads back just this lot rather than every
+   * lot the shop has.
+   */
+  const load = useCallback(async (withLots = true) => {
     try {
-      const [contents, lots] = await Promise.all([api.lotContents(lotId), api.myLots()]);
+      const [contents, lots] = await Promise.all([
+        api.lotContents(lotId),
+        withLots ? api.myLots() : Promise.resolve(null),
+      ]);
       setData(contents);
-      setUnassigned(lots.unassigned);
-      setSiblings(lots.lots);
+      if (lots) {
+        setUnassigned(lots.unassigned);
+        setSiblings(lots.lots);
+      }
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load this lot.');
     }
@@ -843,8 +855,9 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
         setError(err instanceof ApiRequestError ? err.message : 'Could not load who is in this lot.'));
   }, [section, people, lotId]);
 
-  if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
+  // A <div>, not a <main>: this is drawn inside the Sell tab's own <main>.
+  if (error && !data) return <div className="page"><ErrorNotice message={error} /></div>;
+  if (!data) return <div className="page"><p className="muted">Loading…</p></div>;
 
   const { lot, listings, totals, route, items } = data;
   /** Somewhere else an item could ride: any open lot of this shop but this one. */
@@ -867,19 +880,20 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   const status = lotStep < 0 ? 'Filling' : lotSteps[lotStep]?.name ?? 'Not started';
   const done = lotStep >= lotSteps.length - 1;
 
-  async function run(label: string, fn: () => Promise<void>) {
+  /** `membership` for anything that moves an item or listing in or out of this lot. */
+  async function run(label: string, fn: () => Promise<void>, membership = false) {
     setBusy(true);
     setFlash(null);
     try {
       await fn();
-      await load();
+      await load(membership);
       // The board is a second read of the same lot, so a tick that changes one
       // must not leave the other showing what it used to say.
       setPeople(null);
       setFlash({ text: label, ok: true });
     } catch (err) {
       setFlash({
-        text: err instanceof ApiRequestError ? err.message : 'Something went wrong.',
+        text: err instanceof Error ? err.message : 'Something went wrong.',
         ok: false,
       });
     } finally {
@@ -926,13 +940,21 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
     setGate(null);
     setConfirmingBypass(false);
     await run(label, async () => {
-      await Promise.all(missing.map((item) => api.setCheckpoint(item.id, 'china_received', true)));
+      /* Every tick is tried, and the lot moves only if all of them landed.
+         Firing them all and moving regardless left a lot past the warehouse
+         with some of its items never marked as having arrived there. */
+      const ticks = await Promise.allSettled(
+        missing.map((item) => api.setCheckpoint(item.id, 'china_received', true)));
+      const failed = ticks.filter((tick) => tick.status === 'rejected').length;
+      if (failed > 0) {
+        throw new Error(`${failed} of ${missing.length} items could not be marked received, so the lot has not moved. Try again.`);
+      }
       await api.stepLot(lot.id, { to: targetAbsolute, ...details });
     });
   }
 
   return (
-    <main className="page">
+    <div className="page">
       <button className="backlink" onClick={onBack}>
         <Icon name="back" size={14} /> All lots
       </button>
@@ -1041,7 +1063,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                     run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
                   onRelot={(to) =>
                     run('Item moved to another lot.', () =>
-                      api.assignOrderToLot(item.id, { lotId: to }).then(() => {}))}
+                      api.assignOrderToLot(item.id, { lotId: to }).then(() => {}), true)}
                 />
               ))
             )}
@@ -1235,7 +1257,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                   <span className="tagrow__name">{listing.title}</span>
                   <button className="btn btn--quiet btn--sm" disabled={busy}
                     onClick={() => void run('Removed from lot.', () =>
-                      api.assignToLot(lot.id, [listing.id], true).then(() => {}))}>
+                      api.assignToLot(lot.id, [listing.id], true).then(() => {}), true)}>
                     Remove
                   </button>
                 </div>
@@ -1250,7 +1272,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                     <span className="tagrow__name muted">{listing.title}</span>
                     <button className="btn btn--ghost btn--sm" disabled={busy}
                       onClick={() => void run('Added to lot.', () =>
-                        api.assignToLot(lot.id, [listing.id]).then(() => {}))}>
+                        api.assignToLot(lot.id, [listing.id]).then(() => {}), true)}>
                       Add
                     </button>
                   </div>
@@ -1271,6 +1293,6 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
           onCancel={() => setRerouting(false)}
           onSaved={() => { setRerouting(false); void load(); }} />
       )}
-    </main>
+    </div>
   );
 }

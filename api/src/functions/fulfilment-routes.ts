@@ -182,35 +182,53 @@ async function myLots(request: HttpRequest, _context: InvocationContext) {
   const sellerId = await lotsStoreFor(request, user, request.query.get('store') ?? undefined);
   if (!sellerId) return error(403, 'forbidden', 'You cannot work the lots in that store.');
 
-  const lots = await repository.listLots({ sellerId });
-  const withContents = await Promise.all(
-    lots.map(async (lot) => {
-      const [listings, orders] = await Promise.all([
-        repository.listListingsInLot(lot.id),
-        repository.listOrdersForLot(lot.id),
-      ]);
-      return {
-        lot,
-        listingCount: listings.length,
-        orderCount: orders.length,
-        unitCount: orders.reduce((sum, order) => sum + order.quantity, 0),
-        weightGrams: orders.reduce((sum, o) => sum + o.quantity * o.unitWeightGrams, 0),
-        valueMinor: orders.reduce((sum, o) => sum + o.quantity * o.unitPriceMinor, 0),
-        // The packing tally, off the orders already in hand. Managing a lot
-        // and tracking one were two screens asking for the same rows twice;
-        // this is the same answer at no extra cost.
-        tally: tally(orders),
-      };
-    }),
-  );
+  /* Three reads for the whole shop rather than two per lot: every lot, every
+     order and every listing, grouped here. A shop with thirty lots used to cost
+     sixty-one queries to draw this screen. */
+  const [lots, allOrders, allListings] = await Promise.all([
+    repository.listLots({ sellerId }),
+    repository.listOrdersForSeller(sellerId),
+    repository.listListings({ sellerId, includeHidden: true, limit: 10_000 }),
+  ]);
+  const ordersByLot = groupBy(allOrders, (order) => order.lotId);
+  const listingsByLot = groupBy(allListings, (listing) => listing.lotId);
+
+  const withContents = lots.map((lot) => {
+    const listings = listingsByLot.get(lot.id) ?? [];
+    const orders = ordersByLot.get(lot.id) ?? [];
+    return {
+      lot,
+      listingCount: listings.length,
+      orderCount: orders.length,
+      unitCount: orders.reduce((sum, order) => sum + order.quantity, 0),
+      weightGrams: orders.reduce((sum, o) => sum + o.quantity * o.unitWeightGrams, 0),
+      valueMinor: orders.reduce((sum, o) => sum + o.quantity * o.unitPriceMinor, 0),
+      // The packing tally, off the orders already in hand. Managing a lot
+      // and tracking one were two screens asking for the same rows twice;
+      // this is the same answer at no extra cost.
+      tally: tally(orders),
+    };
+  });
 
   // Most recently touched first: the lot that just moved is the lot being
   // worked. Creation order would put a quiet old one above it.
   withContents.sort((a, b) => (a.lot.updatedAt < b.lot.updatedAt ? 1 : -1));
 
-  // Listings not yet in any lot: the seller's to-do list.
-  const all = await repository.listListings({ sellerId });
-  return json(200, { lots: withContents, unassigned: all.filter((l) => l.lotId === null) });
+  // Listings on sale and not yet in any lot: the seller's to-do list.
+  const unassigned = allListings.filter((l) => l.status === 'active' && !l.unlisted && l.lotId === null);
+  return json(200, { lots: withContents, unassigned });
+}
+
+/** Rows grouped by a key, in the order they came. */
+function groupBy<T, K>(rows: readonly T[], keyOf: (row: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+  return groups;
 }
 
 /** POST /api/lots - open a new shipment lot. */
@@ -1151,35 +1169,33 @@ async function supplierLots(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const rows: {
-    store: { ownerId: string; name: string; handle: string | null };
-    lot: unknown;
-    tally: unknown;
-  }[] = [];
-  for (const owner of await repository.listStoreOwners()) {
+  // One shop's lots when the Sell tab asks for its own Packing section, so the
+  // filtering happens here rather than after every shop's lots are sent.
+  const only = request.query.get('store');
+  const owners = (await repository.listStoreOwners()).filter((owner) => !only || owner.id === only);
+
+  // Every shop, and every lot within one, read side by side rather than in turn.
+  const perOwner = await Promise.all(owners.map(async (owner) => {
     const standing = can(owner, user.id, 'export');
-    const lots = await repository.listLots({ sellerId: owner.id });
-    for (const lot of lots) {
+    const lots = (await repository.listLots({ sellerId: owner.id }))
       // Two ways to be here: the shop's standing packer, or named on this one
       // lot. The second is how a shop asks somebody to check a single run
-      // without handing over the rest of the shop.
-      if (!standing && supplierIdOf(lot) !== user.id) continue;
-      // Only what is still on their side of the water.
-      if (!PACKABLE_STAGES.includes(lot.stage)) continue;
-      const orders = await repository.listOrdersForLot(lot.id);
-      rows.push({
-        store: {
-          ownerId: owner.id,
-          name: owner.sellerProfile?.storefrontName ?? owner.displayName,
-          handle: owner.sellerProfile?.username ?? null,
-        },
-        lot: { id: lot.id, name: lot.name, stage: lot.stage, origin: lot.origin ?? '' },
-        tally: tally(orders),
-      });
-    }
-  }
+      // without handing over the rest of the shop. And only what is still on
+      // their side of the water.
+      .filter((lot) => (standing || supplierIdOf(lot) === user.id) && PACKABLE_STAGES.includes(lot.stage));
+    const store = {
+      ownerId: owner.id,
+      name: owner.sellerProfile?.storefrontName ?? owner.displayName,
+      handle: owner.sellerProfile?.username ?? null,
+    };
+    return Promise.all(lots.map(async (lot) => ({
+      store,
+      lot: { id: lot.id, name: lot.name, stage: lot.stage, origin: lot.origin ?? '' },
+      tally: tally(await repository.listOrdersForLot(lot.id)),
+    })));
+  }));
 
-  return json(200, { lots: rows });
+  return json(200, { lots: perOwner.flat() });
 }
 
 /**

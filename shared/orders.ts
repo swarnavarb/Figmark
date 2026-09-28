@@ -32,8 +32,6 @@ import { rupees } from './payments.js';
  * already running.
  */
 export const DEFAULT_AUTO_RELEASE_DAYS = 10;
-/** @deprecated Read the live setting; kept so older imports still compile. */
-export const AUTO_RELEASE_DAYS = DEFAULT_AUTO_RELEASE_DAYS;
 
 /**
  * Days a blind review stays hidden when only one side has written.

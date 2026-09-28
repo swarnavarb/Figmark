@@ -171,9 +171,8 @@ export function Ladder({
                             {event.shipper && <>Shipper: <strong>{event.shipper}</strong></>}
                             {event.shipper && event.trackingId && ' · '}
                             {event.trackingId && <>Tracking ID: <strong>{event.trackingId}</strong></>}
-                            {/* No carrier API is connected yet (see
-                                api/src/tracking/provider.ts), so this looks the
-                                current status up rather than showing it inline. */}
+                            {/* No carrier API is connected yet, so this looks
+                                the current status up rather than showing it inline. */}
                             {event.trackingId && (
                               <a href={trackingSearchUrl(event.shipper ?? '', event.trackingId)}
                                 target="_blank" rel="noopener noreferrer" className="ladder__track-link">

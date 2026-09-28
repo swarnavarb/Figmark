@@ -260,8 +260,6 @@ export const CONTAINERS = {
   },
 } as const satisfies Record<string, ContainerDefinition>;
 
-export type ContainerName = keyof typeof CONTAINERS;
-
 export const CONTAINER_LIST: ContainerDefinition[] = Object.values(CONTAINERS);
 
 /** Blob container holding listing and condition photos. */

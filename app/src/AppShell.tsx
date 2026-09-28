@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FloatingCalc } from './components/FloatingCalc';
 import { Notifications } from './components/Notifications';
@@ -108,7 +108,11 @@ export function AppShell() {
         </div>
       )}
 
-      <Outlet />
+      {/* Each screen is its own download (see main.tsx), fetched the first
+          time it is opened; the chrome around it stays put meanwhile. */}
+      <Suspense fallback={<main className="page"><p className="muted">Loading…</p></main>}>
+        <Outlet />
+      </Suspense>
 
       {user && <FloatingCalc />}
 

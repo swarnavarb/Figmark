@@ -1,7 +1,6 @@
 /**
  * Where "see the current status" goes, for a courier and an AWB/tracking
- * number, until a live carrier API is connected (see
- * `api/src/tracking/provider.ts`).
+ * number, until a live carrier API is connected.
  *
  * Deep-linking straight into a courier's own tracking page would need that
  * courier's exact, current URL format verified against the real site - not

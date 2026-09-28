@@ -122,7 +122,7 @@ export function OrderPage() {
       <OrderActions state={state} onDone={load} />
       <DeliveryControls state={state} onDone={load} />
       <CollectionPrompt state={state} />
-      <DisputePanel state={state} onDone={load} />
+      <DisputePanel state={state} />
 
       <div className="tabs tabs--vivid">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
@@ -274,7 +274,7 @@ export function OrderPage() {
           </div>
 
           <aside className="stack">
-            <PaymentHistory order={order} side={state.side} onChanged={load} />
+            <PaymentHistory order={order} side={state.side} />
 
             {/* Only while it is actually held. On a finished order this was still
                 explaining a hold that had already been released. */}
@@ -794,7 +794,7 @@ function CollectionCard({ state }: { state: OrderState }) {
  * else, with a reason. Both only put it on record - on the timeline, in
  * My disputes for both people, and in a notification to the other side.
  */
-function DisputePanel({ state, onDone }: { state: OrderState; onDone: () => Promise<void> }) {
+function DisputePanel({ state }: { state: OrderState }) {
   const [writing, setWriting] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState<string | null>(null);

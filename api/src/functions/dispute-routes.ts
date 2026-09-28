@@ -169,7 +169,7 @@ export async function settleDispute(
   }
 
   const held = order.escrow.amountMinor;
-  const { toBuyerMinor, toSellerMinor } = splitFor(outcome, held, refundMinor);
+  const { toBuyerMinor } = splitFor(outcome, held, refundMinor);
 
   dispute.status = outcome === 'withdrawn' ? 'withdrawn' : 'resolved';
   dispute.resolution = {

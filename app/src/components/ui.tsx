@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import type { StepState } from '@shared/routes';
@@ -131,37 +131,6 @@ export function WaveLoader() {
     <span className="waveloader" aria-hidden="true">
       <span /><span /><span />
     </span>
-  );
-}
-
-/**
- * Live fill progress for a group-buy lot.
- *
- * The bar gets warmer as the lot fills and lights up when it is there: a run
- * at 29 of 30 should feel different from one at 3 of 30, and the number alone
- * was not carrying that. The thresholds are coarse on purpose - four states
- * rather than a continuous ramp, so the change is something you notice rather
- * than something only a colour picker could find.
- */
-export function fillToneOf(percent: number): string {
-  if (percent >= 100) return ' is-full';
-  if (percent >= 80) return ' is-hot';
-  if (percent >= 45) return ' is-warm';
-  return '';
-}
-
-export function LotMeter({ filled, threshold }: { filled: number; threshold: number }) {
-  const percent = Math.min(100, Math.round((filled / Math.max(1, threshold)) * 100));
-  return (
-    <div
-      className={`meter${fillToneOf(percent)}`}
-      role="img"
-      aria-label={`${percent}% filled`}
-    >
-      {/* Scaled rather than resized: animating width relayouts the page on
-          every frame, and a transform does not. */}
-      <div className="meter__fill" style={{ '--fill': percent / 100 } as CSSProperties} />
-    </div>
   );
 }
 

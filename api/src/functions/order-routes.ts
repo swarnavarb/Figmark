@@ -4,14 +4,13 @@ import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { threadIdFor } from '../../../shared/handles.js';
 import type {
-  CreditRecord, Dispute, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
+  CreditRecord, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
 } from '../../../shared/models.js';
 import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
-  DISPUTE_RESPONSE_DAYS,
   REVIEW_REVEAL_DAYS,
   actionsFor,
   protectionFeeMinor,
@@ -938,13 +937,13 @@ async function refundCredit(request: HttpRequest, _context: InvocationContext) {
   }
 
   const body = await bodyOf<{
-    creditId: string; reference: string; screenshotUrl: string; message: string; amountMinor: number;
+    creditId: string; reference: string; screenshotUrl: string; message: string; amountMinor: number; inPerson: boolean;
   }>(request);
   const reference = body.reference?.trim() || null;
   const proof = refundProof(reference, body.screenshotUrl);
   if ('refusal' in proof) return proof.refusal;
   const screenshotUrl = proof.screenshotUrl;
-  const blocked = await refundBlocked(repository, order);
+  const blocked = await refundBlocked(repository, order, body.inPerson === true);
   if (blocked) return blocked;
   // A part-refund is one refund, named: returning "some" of everything on the
   // order at once would leave no way to say which balance is left where.
@@ -997,8 +996,15 @@ function refundProof(
  * Payment Reversal Details, and while the seller has asked them to check
  * those details and they have not answered - the seller asked because they
  * were not sure, so the refund waits until they are.
+ *
+ * Except when the money was handed back in person - cash across a counter
+ * needs no account to go to. The buyer is still asked whether it arrived, so
+ * saying so settles nothing on the seller's word alone.
  */
-async function refundBlocked(repository: Repo, order: Order): Promise<ReturnType<typeof error> | null> {
+async function refundBlocked(
+  repository: Repo, order: Order, inPerson = false,
+): Promise<ReturnType<typeof error> | null> {
+  if (inPerson) return null;
   const buyer = await repository.getUserById(order.buyerId);
   if (!buyer?.reversalDetails) {
     return error(409, 'buyer_details_missing', 'The buyer has not added Payment Reversal Details yet. Ask them from the refund window.');
@@ -1060,7 +1066,9 @@ async function startRefund(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
   if (order.sellerId !== user.id) return error(403, 'not_the_seller', 'Only the seller can refund this order.');
 
-  const body = await bodyOf<{ amountMinor: number; reason: string; reference: string; screenshotUrl: string; message: string }>(request);
+  const body = await bodyOf<{
+    amountMinor: number; reason: string; reference: string; screenshotUrl: string; message: string; inPerson: boolean;
+  }>(request);
   const amountMinor = Math.round(Number(body.amountMinor) || 0);
   const reason = body.reason?.trim() ?? '';
   const reference = body.reference?.trim() || null;
@@ -1068,7 +1076,7 @@ async function startRefund(request: HttpRequest, _context: InvocationContext) {
   if (reason.length < 3) return error(400, 'no_reason', 'Say what this refund is for, so the buyer knows.');
   const proof = refundProof(reference, body.screenshotUrl);
   if ('refusal' in proof) return proof.refusal;
-  const blocked = await refundBlocked(repository, order);
+  const blocked = await refundBlocked(repository, order, body.inPerson === true);
   if (blocked) return blocked;
 
   // An overpayment was never part of what was paid for the item, so it does

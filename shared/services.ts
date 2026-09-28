@@ -164,22 +164,6 @@ export function servicesOf(
 export type CrewRole = 'supplier' | 'handler';
 
 /**
- * Named on the lot itself, as opposed to holding a right in the shop.
- *
- * A shop can hand one run to one person without making them staff, which is
- * how most of this work is actually arranged - a friend with a warehouse, for
- * this lot, this month.
- */
-export function crewRoleOf(
-  lot: Pick<Lot, 'handler' | 'supplier' | 'exporterUserId'>,
-  userId: string,
-): CrewRole | null {
-  if (supplierIdOf(lot) === userId) return 'supplier';
-  if (lot.handler?.handlerUserId === userId) return 'handler';
-  return null;
-}
-
-/**
  * The account behind this lot's supplier, wherever it was written.
  *
  * Lots named before the merge put them in `exporterUserId`, because the two

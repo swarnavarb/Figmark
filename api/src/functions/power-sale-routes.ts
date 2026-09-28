@@ -16,14 +16,16 @@ import {
   advancePowerSale,
   finishesAt,
   releaseItems,
+  tickPowerSales,
   windowLeftMinutes,
 } from './power-sale.js';
 
 /**
  * Power selling: a sale a shop schedules once and does not have to sit through.
  *
- * The console half. The runner is in power-sale.ts, and everything here calls
- * it before answering, because a sale only moves when somebody looks.
+ * The console half, plus the once-a-minute clock at the bottom. The runner is
+ * in power-sale.ts; the console calls it before answering too, so what it
+ * shows is never a minute behind.
  */
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -309,3 +311,17 @@ app.http('power-sales', { ...anon, methods: ['GET'], route: 'power-sales', handl
 app.http('power-sale-create', { ...anon, methods: ['POST'], route: 'power-sales/new', handler: powerSaleCreateRoute });
 app.http('power-sale-read', { ...anon, methods: ['GET'], route: 'power-sales/{id}', handler: powerSaleReadRoute });
 app.http('power-sale-stop', { ...anon, methods: ['POST'], route: 'power-sales/{id}/stop', handler: powerSaleStopRoute });
+
+/**
+ * The clock: every minute, every live sale moves to where it should be.
+ *
+ * The console still advances what it reads, so a seller watching sees the next
+ * item the moment it is due; this is what moves it when nobody is watching.
+ */
+app.timer('power-sale-clock', {
+  schedule: '0 */1 * * * *',
+  handler: async (_timer, context) => {
+    const touched = await tickPowerSales(await getRepository());
+    if (touched > 0) context.log(`power-sale-clock: advanced ${touched} live sale(s)`);
+  },
+});

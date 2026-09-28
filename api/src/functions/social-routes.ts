@@ -1132,7 +1132,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
 
 /** POST /api/social/posts/{channel}/{id}/comments/{comment}/like - a heart on a comment, or not. */
 async function likeComment(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post, actor } = await target(request);
+  const { repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
   if (post.channel === 'forum' && actor.storeId) return shopsStayOut();

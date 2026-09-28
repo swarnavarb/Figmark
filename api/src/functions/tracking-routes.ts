@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
 } from '../../../shared/routes.js';
 import { actionsFor, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
@@ -869,11 +869,6 @@ export const noteOnLotRoute = handler(noteOnLot);
 export const setLotRouteRoute = handler(setLotRoute);
 export const stepItemRoute = handler(stepItem);
 export const myItemsRoute = handler(myItems);
-
-/** Route templates as the create-lot form needs them, for reuse elsewhere. */
-export function templateFrom(name: string, steps: readonly RouteStep[], routeId: string | null): LotRoute {
-  return { routeId, name, steps: normaliseSteps(steps) };
-}
 
 export { stepId, type TrackingRoute };
 
