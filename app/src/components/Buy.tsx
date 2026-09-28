@@ -9,6 +9,7 @@ import { ApiRequestError, api } from '../api';
 import { formatDate, formatMoney } from '../format';
 import { Modal } from './LotFields';
 import { ErrorNotice } from './ui';
+import { LBox, OptionTiles, ToggleRow } from './ListingForm';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and
@@ -177,53 +178,56 @@ export function termsBody(draft: TermsDraft) {
   };
 }
 
-/** Quantity (a number, or Multiple), expiry and advance - on the sell form and the edit dialog. */
-export function TermsFields({ value, onChange }: { value: TermsDraft; onChange: (next: TermsDraft) => void }) {
+/**
+ * Stock, advance and expiry - on every listing form, in the same boxes.
+ *
+ * A pre-order passes `preOrder`: it has no fixed stock and its bookings-close
+ * date is its expiry, so both questions step aside rather than being asked
+ * twice.
+ */
+export function TermsFields({ value, onChange, preOrder = false }: {
+  value: TermsDraft;
+  onChange: (next: TermsDraft) => void;
+  preOrder?: boolean;
+}) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
   return (
-    <div className="stack">
-      <div className="field">
-        <span>Quantity</span>
-        <div className="seg" role="radiogroup" aria-label="Quantity">
-          <button type="button" role="radio" aria-checked={value.quantityMode === 'fixed'}
-            className={value.quantityMode === 'fixed' ? 'is-on' : ''} onClick={() => set({ quantityMode: 'fixed' })}>
-            🔢 Specific number
-          </button>
-          <button type="button" role="radio" aria-checked={value.quantityMode === 'multiple'}
-            className={value.quantityMode === 'multiple' ? 'is-on' : ''} onClick={() => set({ quantityMode: 'multiple' })}>
-            ∞ Multiple
-          </button>
-        </div>
-        {value.quantityMode === 'fixed' ? (
-          <input type="number" min="0" step="1" value={value.quantity} aria-label="How many"
-            onChange={(e) => set({ quantity: e.target.value })} />
-        ) : (
-          <span className="field__hint">Not sure how many? It stays available with no fixed count.</span>
+    <>
+      <LBox icon="📦" title="Stock & payment">
+        {!preOrder && (
+          <>
+            <OptionTiles label="Quantity" value={value.quantityMode} onChange={(quantityMode) => set({ quantityMode })}
+              options={[
+                { id: 'fixed', icon: '🔢', title: 'Set number' },
+                { id: 'multiple', icon: '∞', title: 'Multiple', note: 'No fixed count' },
+              ]} />
+            {value.quantityMode === 'fixed' && (
+              <label className="field">
+                <span>How many</span>
+                <input type="number" min="0" step="1" value={value.quantity}
+                  onChange={(e) => set({ quantity: e.target.value })} />
+              </label>
+            )}
+          </>
         )}
-      </div>
+        <ToggleRow icon="💳" title="Accept an advance" hint="Buyers pay part now, the rest later."
+          checked={value.advance} onChange={(advance) => set({ advance })} />
+        {value.advance && (
+          <label className="field">
+            <span>Advance (% of the price)</span>
+            <input type="number" min="1" max="99" value={value.advancePercent}
+              onChange={(e) => set({ advancePercent: e.target.value })} />
+          </label>
+        )}
+      </LBox>
 
-      <label className="field">
-        <span>⏳ Expires</span>
-        <input type="datetime-local" value={value.expiresAt} onChange={(e) => set({ expiresAt: e.target.value })} />
-        <span className="field__hint">Leave empty to keep it up until you take it down.</span>
-      </label>
-
-      <label className="row" style={{ cursor: 'pointer' }}>
-        <input type="checkbox" checked={value.advance} onChange={(e) => set({ advance: e.target.checked })}
-          style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
-        <span>
-          <b>Accept advance payment</b>
-          <span className="field__hint" style={{ display: 'block' }}>Buyers can pay part now and the rest later.</span>
-        </span>
-      </label>
-      {value.advance && (
-        <label className="field">
-          <span>Advance (% of the price)</span>
-          <input type="number" min="1" max="99" value={value.advancePercent}
-            onChange={(e) => set({ advancePercent: e.target.value })} />
-        </label>
+      {!preOrder && (
+        <LBox icon="⏳" title="Ends" hint="Leave empty to keep it up until you take it down.">
+          <input type="datetime-local" value={value.expiresAt} aria-label="Ends"
+            onChange={(e) => set({ expiresAt: e.target.value })} />
+        </LBox>
       )}
-    </div>
+    </>
   );
 }
 
@@ -272,15 +276,17 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
             This expired, so buyers cannot purchase it. Clear the expiry or set a new one to put it back on sale.
           </p>
         )}
-        <label className="field">
-          <span>Title</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} required />
-        </label>
-        <label className="field">
-          <span>Price (₹)</span>
-          <input type="number" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
-        </label>
-        <TermsFields value={terms} onChange={setTerms} />
+        <LBox icon="🏷️" title="The item">
+          <label className="field">
+            <span>Title</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+          </label>
+          <label className="field">
+            <span>Price (₹)</span>
+            <input type="number" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
+          </label>
+        </LBox>
+        <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} />
         {error && <ErrorNotice message={error} />}
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button className="btn btn--lg" disabled={busy}>

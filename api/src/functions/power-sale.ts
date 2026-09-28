@@ -42,7 +42,9 @@ function minutes(n: number): number {
 }
 
 /** A post the runner writes as the shop, into the shop's own channel. */
-function shopPost(shop: User, body: string, listingId: string | null, announcement: boolean): Post {
+function shopPost(
+  shop: User, body: string, listingId: string | null, announcement: boolean, reach: Post['reach'] = 'channel',
+): Post {
   const now = new Date().toISOString();
   return {
     id: `pst_${randomUUID().slice(0, 12)}`,
@@ -60,7 +62,7 @@ function shopPost(shop: User, body: string, listingId: string | null, announceme
     // A scheduled sale lives in the room it was scheduled for. The whole point
     // of the members' window is that being in the channel is worth something,
     // and pushing every item to everyone's feed would give it away.
-    reach: 'channel',
+    reach,
     announcement,
     createdAt: now,
     updatedAt: now,
@@ -84,9 +86,12 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     priceMinor: item.priceMinor,
     currency: 'INR',
     quantityAvailable: item.quantity,
+    quantityMode: item.quantityMode ?? 'fixed',
+    expiresAt: item.expiresAt ?? null,
+    advancePercent: item.advancePercent ?? null,
     preOrder: null,
     lotId: null,
-    sourcing: 'in_hand',
+    sourcing: item.sourcing ?? 'in_hand',
     bundle: false,
     // Out of the catalog while the window is open. The people in the room can
     // buy it from the post that dropped it; nobody else can find it. That is
@@ -94,8 +99,8 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     // browsing the buy page could take, which is not the same thing at all.
     unlisted: true,
     costSheet: item.costSheet ?? null,
-    photos: [],
-    tags: [],
+    photos: item.photos ?? [],
+    tags: item.tags ?? [],
     likeCount: 0,
     viewCount: 0,
     bumpedAt: null,
@@ -202,6 +207,24 @@ export async function advancePowerSale(
     }
     item.liftedAt = stamp;
     changed = true;
+
+    // Now it is everybody's, so it can be said to everybody - where the shop
+    // chose when it scheduled the sale. One post: a feed post is already in
+    // the channel, so asking for both writes it once.
+    const after = sale.afterWindow;
+    if (listing && after && (after.channel || after.feed)) {
+      try {
+        await repository.createPost(shopPost(
+          shop,
+          `${item.title} — now available to everyone.`,
+          item.listingId,
+          true,
+          after.feed ? 'feed' : 'channel',
+        ));
+      } catch {
+        /* The item went public either way; a lost announcement is the lesser loss. */
+      }
+    }
   }
 
   // 3. The next item, if its turn has come. One per pass - see the note at the

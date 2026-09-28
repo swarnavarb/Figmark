@@ -13,8 +13,11 @@ import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { TermsFields, termsBody, termsDraft } from '../components/Buy';
+import {
+  LBox, OptionTiles, PreOrderBox, SHAPE_OPTIONS, Switch, ToggleRow, localInDays, type Shape,
+} from '../components/ListingForm';
+import { RarityRibbon } from '../components/Quest';
 import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
-import { CalcIcon } from '../components/CalcIcon';
 import { useGoBack } from '../components/ScrollManager';
 
 /**
@@ -60,7 +63,6 @@ function rememberTemplate(id: string): void {
  * it, so every such item went up as a domestic sale and its buyer was shown a
  * three-step timeline for something crossing an ocean.
  */
-type Shape = 'single' | 'waiting' | 'lot';
 
 /**
  * List something.
@@ -73,8 +75,8 @@ const DRAFT_KEY = 'figmark:sell-draft';
 
 type SellDraft = {
   title: string; description: string; category: string; condition: string; price: string;
-  costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>; bundle: boolean;
-  shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; cutoffDays: string;
+  costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>;
+  shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; preOrderCloses: string;
   tags: string; calc: SavedCalc | null; quickPost: boolean; templateId: string; photos: PhotoDraft[];
   preLot: RouteStep[] | null; shape: Shape; lotId: string;
   /** The listing already made from this form, when only the step after it failed. */
@@ -162,12 +164,12 @@ export function SellPage() {
   const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(restored ? restored.costSheet : prefill?.costSheet ?? null);
   const [terms, setTerms] = useState(() => restored?.terms
     ?? termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
-  const [bundle, setBundle] = useState(restored?.bundle ?? false);
   const [shareToChannel, setShareToChannel] = useState(restored?.shareToChannel ?? prefill?.share?.channel ?? true);
-  const [shareToFeed, setShareToFeed] = useState(restored?.shareToFeed ?? prefill?.share?.feed ?? false);
+  const [shareToFeed, setShareToFeed] = useState(restored?.shareToFeed ?? prefill?.share?.feed ?? true);
   const [preOrderMode, setPreOrderMode] = useState(restored?.preOrderMode ?? false);
   const [fillThreshold, setFillThreshold] = useState(restored?.fillThreshold ?? '20');
-  const [cutoffDays, setCutoffDays] = useState(restored?.cutoffDays ?? '14');
+  /** When bookings close - also the item's expiry, so a pre-order has one date, not two. */
+  const [preOrderCloses, setPreOrderCloses] = useState(restored?.preOrderCloses ?? localInDays(14));
   const [tags, setTags] = useState(restored?.tags ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -202,8 +204,8 @@ export function SellPage() {
   const latest = useRef<SellDraft | null>(null);
   const published = useRef(false);
   latest.current = {
-    title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
+    preOrderMode, fillThreshold, preOrderCloses, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
     createdListingId,
   };
   useEffect(() => {
@@ -211,8 +213,8 @@ export function SellPage() {
       if (!published.current && latest.current) writeDraft(draftKey, latest.current);
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [draftKey, title, description, category, condition, price, costSheet, terms, bundle, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, cutoffDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+  }, [draftKey, title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
+    preOrderMode, fillThreshold, preOrderCloses, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
     createdListingId]);
   useEffect(() => () => {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
@@ -330,6 +332,8 @@ export function SellPage() {
   const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
   const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;
 
+  const closesAt = new Date(preOrderCloses || localInDays(14)).toISOString();
+
   async function publish(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -343,8 +347,12 @@ export function SellPage() {
         category,
         condition,
         priceMinor,
-        ...termsBody(terms),
-        bundle,
+        // A pre-order has no fixed count, and its bookings-close date is
+        // the date it comes down.
+        ...(preOrderMode && !deal
+          ? { ...termsBody({ ...terms, quantityMode: 'multiple' }), expiresAt: closesAt }
+          : termsBody(terms)),
+        bundle: false,
         // A private deal is never announced: only its buyer ever sees it.
         shareToChannel: deal ? false : shareToChannel,
         shareToFeed: deal ? false : shareToFeed,
@@ -353,7 +361,7 @@ export function SellPage() {
         preOrder: preOrderMode && !deal
           ? {
               fillThreshold: Math.max(2, Number(fillThreshold) || 2),
-              cutoffAt: new Date(Date.now() + (Number(cutoffDays) || 14) * 86_400_000).toISOString(),
+              cutoffAt: closesAt,
             }
           : null,
         sourcing: effectiveSourcing,
@@ -430,11 +438,11 @@ export function SellPage() {
       <button type="button" className="backlink" onClick={goBack}>← Back</button>
       <div className="page__head">
         <div>
-          <h1>{deal ? `🤝 Private deal for ${deal.displayName}` : 'Sell something'}</h1>
+          <h1>{deal ? `🤝 Private deal for ${deal.displayName}` : 'List an item'}</h1>
           <p className="muted">
             {deal
               ? `Only ${deal.displayName} can see and buy this. It never appears in your shop, channel or the feed - once bought it is a normal order.`
-              : 'Takes about a minute. You can edit or remove it afterwards.'}
+              : 'About a minute. You can edit it any time.'}
           </p>
         </div>
       </div>
@@ -446,223 +454,87 @@ export function SellPage() {
         </p>
       )}
 
-      <div className="detail">
-        <form className="form" onSubmit={publish}>
+      <div className="sellgrid">
+        <form className="sellform" onSubmit={publish}>
           {/* First, because it fills in most of what is below it. On by
               default and remembering the last one used: a template nobody has
               to go and switch on is a template that gets used. */}
-          <div className="quickpost">
-            <label className="tick">
-              <input type="checkbox" checked={quickPost}
-                onChange={(e) => setQuickPost(e.target.checked)} />
-              <span>
-                Quick Post
-                <span className="faint"> — fill this in from a template.</span>
+          <LBox icon="⚡" title="Quick Post" hint="Fill this in from a template."
+            right={<Switch checked={quickPost} onChange={setQuickPost} label="Quick Post" />}>
+            {quickPost && (templates.length === 0 ? (
+              <span className="lbox__hint">
+                No templates yet — make one in <Link to="/shop?tab=items">Items → Templates</Link>.
               </span>
-            </label>
-
-            {quickPost && (
-              templates.length === 0 ? (
-                <span className="field__hint">
-                  No templates yet. Make one from <Link to="/shop?tab=items">Items → Templates</Link> and
-                  the next listing starts half-written.
-                </span>
-              ) : (
-                <label className="field">
-                  <span>Template</span>
-                  <select value={templateId} onChange={(e) => {
-                    setTemplateId(e.target.value);
-                    const picked = templates.find((row) => row.id === e.target.value);
-                    if (picked) applyTemplate(picked);
-                  }}>
-                    {templates.map((template) => (
-                      <option key={template.id} value={template.id}>{template.name}</option>
-                    ))}
-                  </select>
-                  <span className="field__hint">
-                    Everything it fills in stays editable — change anything before you publish.
-                  </span>
-                </label>
-              )
-            )}
-          </div>
-
-          {calcs.length > 0 && (
-            <label className="field">
-              <span><CalcIcon size={15} /> From your saved items</span>
-              <select value={calc?.id ?? ''} onChange={(e) => fillFromSaved(e.target.value)}>
-                <option value="">Pick a saved calculation to fill this in…</option>
+            ) : (
+              <select value={templateId} aria-label="Template" onChange={(e) => {
+                setTemplateId(e.target.value);
+                const picked = templates.find((row) => row.id === e.target.value);
+                if (picked) applyTemplate(picked);
+              }}>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+            ))}
+            {calcs.length > 0 && (
+              <select value={calc?.id ?? ''} aria-label="From your saved items" onChange={(e) => fillFromSaved(e.target.value)}>
+                <option value="">🧮 Fill from a saved calculation…</option>
                 {calcs.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.title} · {formatMoney(entry.sellingPriceMinor)}{entry.listingId ? ' (listed)' : ''}
                   </option>
                 ))}
               </select>
-            </label>
-          )}
-
-          <label className="field">
-            <span>Title</span>
-            <input value={title} onChange={(e) => setTitle(e.target.value)}
-              placeholder="1/7 scale figure, sealed" required />
-          </label>
-
-          <label className="field">
-            <span>Description</span>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)}
-              placeholder="Condition, what's included, where it ships from…" />
-          </label>
-
-          <PhotoManager photos={photos} onChange={setPhotos} />
-
-          <div className="field-row">
-            <label className="field">
-              <span>Category</span>
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-              </select>
-              <span className="field__hint">
-                Fixed on purpose: one catalog where three sellers type three spellings of the same
-                thing is three categories with a third of the stock each.
-              </span>
-            </label>
-            <label className="field">
-              <span>Condition</span>
-              <select value={condition} onChange={(e) => setCondition(e.target.value)}>
-                {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-              </select>
-            </label>
-          </div>
-
-          {/* A job lot is a different thing to buy from one named item, and the
-              people who want one rarely want the other - so buyers can filter
-              it out, which only works if sellers can say it. */}
-          <label className="row" style={{ gap: 9, alignItems: 'flex-start' }}>
-            <input type="checkbox" checked={bundle} onChange={(e) => setBundle(e.target.checked)}
-              style={{ marginTop: 3 }} />
-            <span>
-              <span style={{ fontSize: 'var(--t-sm)' }}>Sold as one mixed lot</span>
-              <span className="field__hint" style={{ display: 'block' }}>
-                An assorted bundle — a shelf clearance, a box of blind-box figures, loose parts —
-                rather than a single named item.
-              </span>
-            </span>
-          </label>
-
-          {/* Telling people is part of listing, not a second job to remember
-              afterwards - which is how a shop ends up with a channel nobody
-              reads because nothing is ever posted in it. */}
-          {!deal && <div className="field">
-            <span>Tell people</span>
-            <label className="row" style={{ gap: 9, alignItems: 'flex-start' }}>
-              <input type="checkbox" checked={shareToChannel} style={{ marginTop: 3 }}
-                onChange={(e) => setShareToChannel(e.target.checked)} />
-              <span>
-                <span style={{ fontSize: 'var(--t-sm)' }}>Post it in your channel</span>
-                <span className="field__hint" style={{ display: 'block' }}>
-                  Your followers see it in the room. Nobody else does.
-                </span>
-              </span>
-            </label>
-            <label className="row" style={{ gap: 9, alignItems: 'flex-start', marginTop: 8 }}>
-              <input type="checkbox" checked={shareToFeed} style={{ marginTop: 3 }}
-                onChange={(e) => setShareToFeed(e.target.checked)} />
-              <span>
-                <span style={{ fontSize: 'var(--t-sm)' }}>Post it in the feed</span>
-                <span className="field__hint" style={{ display: 'block' }}>
-                  Everyone who follows you sees it in their feed as well.
-                </span>
-              </span>
-            </label>
-          </div>}
-
-          <div className="field-row">
-            <label className="field">
-              <span>Price (₹)</span>
-              <input type="number" min="1" step="1" value={price}
-                onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
-            </label>
-          </div>
-
-          <div className="card card--pad">
-            <TermsFields value={terms} onChange={setTerms} />
-          </div>
-
-          <label className="field">
-            <span>Tags</span>
-            <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, scale, sealed" />
-            <span className="field__hint">Comma separated. Helps buyers find it in search.</span>
-          </label>
-
-          {!deal && <div className="card card--pad stack">
-            <label className="row" style={{ cursor: 'pointer' }}>
-              <input type="checkbox" checked={preOrderMode} onChange={(e) => setPreOrderMode(e.target.checked)}
-                style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
-              <div>
-                <div style={{ fontWeight: 600 }}>Take pre-orders</div>
-                <span className="field__hint">
-                  Buyers book ahead and you only commit the cash once enough units are spoken for. Nothing
-                  ships until you place the order.
-                </span>
-              </div>
-            </label>
-
-            {preOrderMode && (
-              <div className="field-row">
-                <label className="field">
-                  <span>Units needed</span>
-                  <input type="number" min="2" value={fillThreshold} onChange={(e) => setFillThreshold(e.target.value)} />
-                </label>
-                <label className="field">
-                  <span>Booking window (days)</span>
-                  <input type="number" min="1" value={cutoffDays} onChange={(e) => setCutoffDays(e.target.value)} />
-                </label>
-              </div>
             )}
-          </div>}
+          </LBox>
 
-          <div className="card card--pad stack">
-            <div>
-              <div style={{ fontWeight: 600 }}>How are you selling this?</div>
-              <span className="field__hint">
-                Every imported item travels in a lot — that is what produces the tracking buyers follow.
-                They never see the lot itself, only the stages it moves through.
-              </span>
-            </div>
+          <LBox icon="📸" title="Photos" hint="The first one leads the listing.">
+            <PhotoManager photos={photos} onChange={setPhotos} label={null} />
+          </LBox>
 
-            <div className="seg" role="radiogroup" aria-label="How are you selling this?">
-              <button type="button" role="radio" aria-checked={shape === 'single'}
-                className={shape === 'single' ? 'is-on' : ''} onClick={() => setShape('single')}>
-                In hand
-              </button>
-              <button type="button" role="radio" aria-checked={shape === 'waiting'}
-                className={shape === 'waiting' ? 'is-on' : ''} onClick={() => setShape('waiting')}>
-                Import — lot later
-              </button>
-              <button type="button" role="radio" aria-checked={shape === 'lot'}
-                className={shape === 'lot' ? 'is-on' : ''} onClick={() => setShape('lot')}>
-                Import — in a lot
-              </button>
-            </div>
-
-            {shape === 'single' ? (
-              <p className="field__hint">
-                Ships from your shelf. Buyers see <strong>{SOURCING_LABELS.in_hand}</strong> and expect it to go
-                out straight away.
-              </p>
-            ) : shape === 'waiting' ? (
-              <p className="field__hint">
-                It goes up as an import with no dispatch date. When it sells it lands on your Orders
-                screen waiting for a lot — file it into one there, any time.
-              </p>
-            ) : (
+          <LBox icon="🏷️" title="The item">
+            <label className="field">
+              <span>Title</span>
+              <input value={title} onChange={(e) => setTitle(e.target.value)}
+                placeholder="1/7 scale figure, sealed" required />
+            </label>
+            <label className="field">
+              <span>Description</span>
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+                placeholder="Condition, what's included…" />
+            </label>
+            <div className="field-row">
               <label className="field">
-                <span>Lot</span>
-                {/* Filing an item into a lot is bookkeeping done when the
-                    lot is actually being packed, often weeks after the item
-                    went up. Requiring it here made shops either misdescribe the
-                    sourcing or not list at all, so "later" is a real answer. */}
-                <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
+                <span>Category</span>
+                <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                  {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Condition</span>
+                <select value={condition} onChange={(e) => setCondition(e.target.value)}>
+                  {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="field-row">
+              <label className="field">
+                <span>Price (₹)</span>
+                <input type="number" min="1" step="1" value={price} inputMode="numeric"
+                  onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
+              </label>
+              <label className="field">
+                <span>Tags</span>
+                <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, sealed" />
+              </label>
+            </div>
+          </LBox>
+
+          <LBox icon="🚚" title="Ships from">
+            <OptionTiles label="How are you selling this?" value={shape} onChange={setShape} options={SHAPE_OPTIONS} />
+            {shape === 'lot' && (
+              <div className="row" style={{ gap: 8 }}>
+                <select value={lotId} onChange={(e) => setLotId(e.target.value)} aria-label="Lot" style={{ flex: 1 }}>
                   <option value="">File it into a lot later</option>
                   {lots.map((lot) => (
                     <option key={lot.id} value={lot.id}>
@@ -670,52 +542,65 @@ export function SellPage() {
                     </option>
                   ))}
                 </select>
-                <span className="field__hint">
-                  {lotId
-                    ? 'Buyers follow this lot through customs and get its dispatch estimate.'
-                    : 'It goes up as an import with no dispatch date until you file it — any time, from Orders once it sells.'}
-                </span>
-                <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start', marginTop: 8 }}
-                  onClick={() => setCreatingLot(true)}>
+                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setCreatingLot(true)}>
                   + New lot
                 </button>
-              </label>
+              </div>
             )}
-          </div>
+          </LBox>
+
+          {!deal && (
+            <PreOrderBox on={preOrderMode} onToggle={setPreOrderMode}
+              units={fillThreshold} onUnits={setFillThreshold}
+              closes={preOrderCloses} onCloses={setPreOrderCloses} />
+          )}
+
+          <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} />
+
+          {/* Telling people is part of listing, not a second job to remember
+              afterwards. Both on unless the seller says otherwise. */}
+          {!deal && (
+            <LBox icon="📣" title="Tell people">
+              <ToggleRow icon="💬" title="Post in your channel" hint="Your followers see it in the room."
+                checked={shareToChannel} onChange={setShareToChannel} />
+              <ToggleRow icon="🌐" title="Post in the feed" hint="Everyone who follows you sees it."
+                checked={shareToFeed} onChange={setShareToFeed} />
+            </LBox>
+          )}
 
           <CostSheetField value={costSheet} onChange={setCostSheet} sellingPriceMinor={priceMinor} shop={storeId} />
 
           {error && <ErrorNotice message={error} />}
 
-          <button type="submit" className="btn btn--lg" disabled={busy || !canPublish}>
-            {busy ? (deal ? 'Sending…' : 'Publishing…') : deal ? '🤝 Send private deal' : 'Publish listing'}
+          <button type="submit" className="btn btn--lg btn--block sellform__go" disabled={busy || !canPublish}>
+            {busy ? (deal ? 'Sending…' : 'Publishing…') : deal ? '🤝 Send private deal' : '🚀 Publish listing'}
           </button>
         </form>
 
-        <aside className="stack">
-          <span className="muted">Preview</span>
-          <div className="card" style={{ maxWidth: 280 }}>
-            <Thumb seed={title || 'preview'} label={title || 'Your listing'} photo={leadPhoto({ photos })}>
-              <div className="thumb__badges">
-                <span className="badge badge--solid">{condition}</span>
-                {preOrderMode && <span className="badge badge--accent">Pre-order</span>}
-              </div>
+        {/* The same card the Buy tab draws, so what the seller sees here is
+            what a buyer will scroll past. */}
+        <aside className="sellpreview">
+          <span className="lbox__hint">Preview</span>
+          <div className="qloot qloot--new">
+            <Thumb seed={title || 'preview'} label={title || 'Your listing'} photo={leadPhoto({ photos })}
+              className="thumb qloot__art">
+              <RarityRibbon tier="new" />
+              <span className="qgrade">{condition}</span>
+              {preOrderMode && !deal && <span className="qsticker-tag">Pre-order</span>}
             </Thumb>
-            <div className="listing__body">
-              <span className="listing__title">{title || 'Your listing title'}</span>
-              <span className="listing__price">{priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</span>
-              <div className="listing__meta">
-                <span className="badge">{SOURCING_LABELS[effectiveSourcing]}</span>
-                <span className="badge">{category}</span>
-              </div>
-              <div className="listing__foot">
-                <span className="faint">{user?.sellerProfile?.storefrontName ?? user?.displayName ?? 'You'}</span>
-              </div>
+            <div className="qloot__body">
+              <span className="qloot__title">{title || 'Your listing title'}</span>
+              <span className="qloot__price">{priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</span>
+              <span className="qloot__meta">
+                <b className={effectiveSourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[effectiveSourcing]}</b>
+                {' · '}{category}
+              </span>
+              <span className="qloot__foot">
+                <span className="faint">just now</span>
+                <span className="qcrest">{user?.sellerProfile?.storefrontName ?? user?.displayName ?? 'You'}</span>
+              </span>
             </div>
           </div>
-          <p className="faint">
-            Leads with your main photo. Without one, the listing uses a generated placeholder.
-          </p>
         </aside>
       </div>
 

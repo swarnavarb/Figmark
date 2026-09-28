@@ -13,6 +13,7 @@ import { preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
 import { RarityRibbon, XpBar } from '../components/Quest';
 import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderStatus';
+import { LBox, OptionTiles } from '../components/ListingForm';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
 import { RouteEditor, RoutesList } from './RoutesPage';
@@ -718,17 +719,17 @@ function MyItems({ store }: { store: StoreAccess }) {
         </button>
       </div>
 
-      <div className="seg" role="tablist" aria-label="Items view">
+      <div className="sections sections--sub" role="tablist" aria-label="Items view">
         <button type="button" role="tab" aria-selected={mode === 'stock'}
-          className={mode === 'stock' ? 'is-on' : ''} onClick={() => setMode('stock')}>
-          Your stock{all.length > 0 ? ` · ${all.length}` : ''}
+          className={`chip chip--count${mode === 'stock' ? ' is-on' : ''}`} onClick={() => setMode('stock')}>
+          Your stock{all.length > 0 && <span className="chip__count">{all.length}</span>}
         </button>
         <button type="button" role="tab" aria-selected={mode === 'power'}
-          className={mode === 'power' ? 'is-on' : ''} onClick={() => setMode('power')}>
+          className={`chip${mode === 'power' ? ' is-on' : ''}`} onClick={() => setMode('power')}>
           Scheduled sales
         </button>
         <button type="button" role="tab" aria-selected={mode === 'templates'}
-          className={mode === 'templates' ? 'is-on' : ''} onClick={() => setMode('templates')}>
+          className={`chip${mode === 'templates' ? ' is-on' : ''}`} onClick={() => setMode('templates')}>
           Templates
         </button>
       </div>
@@ -741,11 +742,12 @@ function MyItems({ store }: { store: StoreAccess }) {
         <p className="muted">Loading…</p>
       ) : (
         <>
-          <div className="seg" role="tablist" aria-label="Shelf">
+          <div className="sections sections--sub" role="tablist" aria-label="Shelf">
             {(['available', 'expired', 'sold_out'] as const).map((entry) => (
               <button key={entry} type="button" role="tab" aria-selected={shelf === entry}
-                className={shelf === entry ? 'is-on' : ''} onClick={() => setShelf(entry)}>
-                {entry === 'available' ? 'Available' : entry === 'expired' ? 'Expired' : 'Sold out'} · {counts[entry]}
+                className={`chip chip--count${shelf === entry ? ' is-on' : ''}`} onClick={() => setShelf(entry)}>
+                {entry === 'available' ? 'Available' : entry === 'expired' ? 'Expired' : 'Sold out'}
+                <span className="chip__count">{counts[entry]}</span>
               </button>
             ))}
           </div>
@@ -1015,31 +1017,29 @@ function Orders({ store }: { store: StoreAccess }) {
       {/* Three big tiles for where orders are, each in its own colour, then
           chips for what an active order needs - the one that needs the
           seller lights up when anything is in it. */}
-      <div className="ostates" role="tablist" aria-label="Order status">
+      <div className="sections sections--sub" role="tablist" aria-label="Order status">
         {(['active', 'completed', 'closed'] as const).map((entry) => (
           <button key={entry} type="button" role="tab" aria-selected={statusFilter === entry}
-            className={`ostate ostate--${entry}${statusFilter === entry ? ' is-on' : ''}`}
+            className={`chip chip--count${statusFilter === entry ? ' is-on' : ''}`}
             onClick={() => setStatusFilter(entry)}>
-            <span className="ostate__icon" aria-hidden="true">{ORDER_STATE_ICONS[entry]}</span>
-            <span className="ostate__count">{countOfState(entry)}</span>
-            <span className="ostate__label">{ORDER_STATE_LABELS[entry]}</span>
+            {ORDER_STATE_ICONS[entry]} {ORDER_STATE_LABELS[entry]}
+            <span className="chip__count">{countOfState(entry)}</span>
           </button>
         ))}
       </div>
 
       {statusFilter === 'active' && (
-        <div className="ofilters" role="tablist" aria-label="Which orders">
+        <div className="sections sections--sub" role="tablist" aria-label="Which orders">
           {([
-            ['all', '📋', 'All', scoped.length],
-            ['answer', '🔔', 'To answer', toAnswer.length],
-            ['nolot', '📦', 'No lot', withoutLot.length],
-          ] as [OrderFilter, string, string, number][]).map(([id, icon, label, count]) => (
+            ['all', 'All', scoped.length],
+            ['answer', 'To answer', toAnswer.length],
+            ['nolot', 'No lot', withoutLot.length],
+          ] as [OrderFilter, string, number][]).map(([id, label, count]) => (
             <button key={id} type="button" role="tab" aria-selected={filter === id}
-              className={`ofilter${filter === id ? ' is-on' : ''}${id === 'answer' && count > 0 ? ' ofilter--hot' : ''}`}
+              className={`chip chip--count${filter === id ? ' is-on' : ''}${id === 'answer' && count > 0 ? ' chip--hot' : ''}`}
               onClick={() => setFilter(id)}>
-              <span aria-hidden="true">{icon}</span>
               {label}
-              <span className="ofilter__count">{count}</span>
+              <span className="chip__count">{count}</span>
             </button>
           ))}
         </div>
@@ -1315,121 +1315,87 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
   const before = preStepsOf(chosen);
 
   return (
-    <form className="card card--pad form" onSubmit={submit}>
-      <h2>{template ? 'Edit template' : 'New template'}</h2>
+    <form className="sellform" onSubmit={submit}>
+      <h2 style={{ margin: 0 }}>{template ? 'Edit template' : 'New template'}</h2>
 
-      <label className="field">
-        <span>Template name *</span>
-        <input value={name} onChange={(e) => setName(e.target.value)}
+      <LBox icon="⚡" title="Template" hint="What you pick it by. Buyers never see it.">
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Template name"
           placeholder="Marvel Standard" required autoFocus />
-        <span className="field__hint">What you will pick it by. Buyers never see it.</span>
-      </label>
+      </LBox>
 
-      <div className="field-row">
-        <label className="field">
-          <span>Category</span>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span>Condition</span>
-          <select value={condition} onChange={(e) => setCondition(e.target.value)}>
-            <option value="">Ask each time</option>
-            {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <label className="field">
-        <span>Tags</span>
-        <input value={tags} onChange={(e) => setTags(e.target.value)}
-          placeholder="Marvel, Action figure, 1/12" />
-        <span className="field__hint">Comma separated.</span>
-      </label>
-
-      <div className="field">
-        <span>What this lists</span>
-        <div className="seg" role="radiogroup" aria-label="What this template lists">
-          <button type="button" role="radio" aria-checked={sourcing === 'in_hand'}
-            className={sourcing === 'in_hand' ? 'is-on' : ''} onClick={() => setSourcing('in_hand')}>
-            In hand
-          </button>
-          <button type="button" role="radio" aria-checked={sourcing === 'import'}
-            className={sourcing === 'import' ? 'is-on' : ''} onClick={() => setSourcing('import')}>
-            Imports
-          </button>
+      <LBox icon="🏷️" title="The item" hint="Everything here stays editable on every listing.">
+        <div className="field-row">
+          <label className="field">
+            <span>Category</span>
+            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
+            </select>
+          </label>
+          <label className="field">
+            <span>Condition</span>
+            <select value={condition} onChange={(e) => setCondition(e.target.value)}>
+              <option value="">Ask each time</option>
+              {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+            </select>
+          </label>
         </div>
-        <span className="field__hint">
-          An import sold before its run is opened waits on the Orders screen until you file it into
-          one. Say it here and you never have to say it again.
-        </span>
-      </div>
+        <label className="field">
+          <span>Tags</span>
+          <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Marvel, Action figure, 1/12" />
+        </label>
+        <label className="field">
+          <span>Description</span>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+            placeholder={'Original Marvel Legends figure.\nCondition: MISB.'} />
+        </label>
+      </LBox>
 
-      <label className="field">
-        <span>Description</span>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
-          placeholder={'Original Marvel Legends figure.\nCondition: MISB.\nShipping extra as applicable.'} />
-        <span className="field__hint">The lines you write every time. Editable on every listing.</span>
-      </label>
-
-      <label className="field">
-        <span>Default lot</span>
-        <select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
-          <option value="">No lot — filed after it sells</option>
-          {lots.map(({ lot }) => (
-            <option key={lot.id} value={lot.id}>
-              {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
-            </option>
-          ))}
-        </select>
-        <span className="field__hint">
-          Most items are sold first and filed into a run later, which is what the Orders screen is
-          for. Pick one only if the run is already open.
-        </span>
-      </label>
+      <LBox icon="🚚" title="Ships from">
+        <OptionTiles label="What this template lists" value={sourcing} onChange={setSourcing}
+          options={[
+            { id: 'in_hand', icon: '🏠', title: 'In hand', note: 'Ships from your shelf' },
+            { id: 'import', icon: '✈️', title: 'Import', note: 'Travels in a lot' },
+          ]} />
+        <label className="field">
+          <span>Default lot</span>
+          <select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
+            <option value="">No lot — filed after it sells</option>
+            {lots.map(({ lot }) => (
+              <option key={lot.id} value={lot.id}>
+                {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </LBox>
 
       {/* One route, not two ladders. The route already says where the item
           stops travelling alone, so both halves come from the same list and
           cannot contradict each other the way two written ones did. */}
-      <div className="card card--pad stack" style={{ background: 'var(--surface-2)' }}>
-        <div>
-          <div style={{ fontWeight: 600 }}>Tracking</div>
-          <span className="field__hint">
-            What a buyer of this item reads. Pick the journey it travels; the route says which
-            steps happen to the order on its own and which happen once it is in a lot.
-          </span>
-        </div>
-
-        <label className="field">
-          <span>Route</span>
-          <select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)}>
-            <option value="">
-              {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
+      <LBox icon="🧭" title="Tracking" hint="The journey a buyer of this item follows.">
+        <select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)} aria-label="Route">
+          <option value="">
+            {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
+          </option>
+          {(routes?.routes ?? []).map((route) => (
+            <option key={route.id} value={route.id}>
+              {route.name} — {route.steps.length} steps
             </option>
-            {(routes?.routes ?? []).map((route) => (
-              <option key={route.id} value={route.id}>
-                {route.name} — {route.steps.length} steps
-              </option>
-            ))}
-          </select>
-          <span className="field__hint">
-            Pre-selected when you open a lot for one of these items.{' '}
-            <Link to="/routes/new" target="_blank" rel="noopener">Write a route</Link> (opens in a new
-            tab) if none of these is the journey.
-          </span>
-        </label>
-
+          ))}
+        </select>
+        <span className="lbox__hint">
+          None fit? <Link to="/routes/new" target="_blank" rel="noopener">Write a route</Link> (new tab).
+        </span>
         <div className="field">
           <span>Before it joins a lot</span>
           <Ladder steps={before} current={-1} />
           <span className="field__hint">
             {before.length === 0
-              ? 'This route has no steps before the lot, so a buyer waits with no timeline until one is opened.'
-              : `What the buyer reads while they wait. The other ${chosen.steps.length - before.length} steps arrive with the lot.`}
+              ? 'No steps before the lot — the buyer waits with no timeline until one is opened.'
+              : `The other ${chosen.steps.length - before.length} steps arrive with the lot.`}
           </span>
         </div>
-      </div>
+      </LBox>
 
       {error && <ErrorNotice message={error} />}
       <div className="row">

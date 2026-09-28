@@ -1766,6 +1766,11 @@ export interface PowerSale extends BaseDocument {
   openedAt: string | null;
   /** Set when the closing message went out, or when it was cancelled. */
   closedAt: string | null;
+  /**
+   * Where an item is announced when its members' window closes and it goes
+   * public. Absent on older sales, which announced nothing at that point.
+   */
+  afterWindow?: { channel: boolean; feed: boolean };
 }
 
 export type PowerSaleStatus = 'draft' | 'scheduled' | 'running' | 'done' | 'cancelled';
@@ -1800,6 +1805,15 @@ export interface PowerSaleItem {
   listingId: string | null;
   /** What one unit cost (Pro), carried onto the listing when it posts. */
   costSheet?: ItemCostSheet | null;
+  /* The same listing options the sell page offers, carried onto the listing
+     when the item posts. All optional: sales scheduled before these existed
+     post exactly as they did. */
+  photos?: ListingPhoto[];
+  tags?: string[];
+  sourcing?: Sourcing;
+  quantityMode?: 'fixed' | 'multiple';
+  expiresAt?: string | null;
+  advancePercent?: number | null;
 }
 
 /**

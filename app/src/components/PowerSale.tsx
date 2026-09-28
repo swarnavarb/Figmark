@@ -3,13 +3,15 @@ import { Link } from 'react-router-dom';
 import { CONDITION_TAGS } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
 import {
-  ApiRequestError, api, type PowerSaleDraft, type PowerSaleView,
+  ApiRequestError, api, type PhotoDraft, type PowerSaleDraft, type PowerSaleView,
 } from '../api';
+import { TermsFields, termsBody, termsDraft, type TermsDraft } from './Buy';
+import { LBox, OptionTiles, ToggleRow } from './ListingForm';
+import { PhotoManager } from './PhotoManager';
 import { EmptyState, ErrorNotice, Icon, Modal } from './ui';
 import type { SavedCalc } from '@shared/profit';
 import { CostSheetField, type CostSheetDraft } from './CostSheetField';
 import { formatMoney, timeAgo } from '../format';
-import { CalcIcon } from './CalcIcon';
 
 /**
  * Power selling: a channel sale a shop schedules once and walks away from.
@@ -235,7 +237,10 @@ function SaleCard({ sale, storeId, onChanged }: {
 
           <p className="faint">
             Items are in your channel only while their window is open. Each one joins the buy page
-            and your own grid the moment its window closes.
+            and your own grid the moment its window closes
+            {sale.afterWindow.feed || sale.afterWindow.channel
+              ? ` and is announced in ${sale.afterWindow.feed ? 'the feed' : 'your channel'}.`
+              : '.'}
           </p>
         </div>
       )}
@@ -290,9 +295,13 @@ interface ItemDraft {
   condition: string;
   price: string;
   listPrice: string;
-  quantity: string;
   allowMultiple: boolean;
   costSheet: CostSheetDraft | null;
+  photos: PhotoDraft[];
+  tags: string;
+  sourcing: 'in_hand' | 'import';
+  /** Stock, advance and expiry, as the sell page asks them. */
+  terms: TermsDraft;
 }
 
 let nextKey = 1;
@@ -304,28 +313,32 @@ const blankItem = (): ItemDraft => ({
   condition: CONDITION_TAGS[0],
   price: '',
   listPrice: '',
-  quantity: '1',
   allowMultiple: false,
   costSheet: null,
+  photos: [],
+  tags: '',
+  sourcing: 'in_hand',
+  terms: termsDraft(),
+});
+
+/** A saved calculation as a sale item: its name, its price as the members' price, and its costs. */
+const itemFromCalc = (calc: SavedCalc): ItemDraft => ({
+  ...blankItem(),
+  title: calc.title,
+  price: calc.sellingPriceMinor ? String(calc.sellingPriceMinor / 100) : '',
+  terms: termsDraft({ quantityAvailable: calc.input.quantity || 1 }),
+  costSheet: calc.steps.length ? { templateId: calc.templateId, templateName: calc.templateName, steps: calc.steps } : null,
 });
 
 /**
  * Building a run.
  *
  * Three questions in order, because that is the order a shop thinks in: what
- * you say to open it, what you are selling, and when it all goes out. The
- * timing is last on purpose - it is the part that has a sensible default, and
- * the part nobody wants to think about before they have decided what to sell.
+ * you say to open it, what you are selling, and when it all goes out. Each
+ * item is listed with the same boxes as the sell page - everything but "tell
+ * people", because a sale item is told to the channel by the sale itself.
+ * Where it is announced once its window closes is asked once, for the run.
  */
-/** A saved calculation as a sale item: its name, its price as the members' price, and its costs. */
-const itemFromCalc = (calc: SavedCalc): ItemDraft => ({
-  ...blankItem(),
-  title: calc.title,
-  price: calc.sellingPriceMinor ? String(calc.sellingPriceMinor / 100) : '',
-  quantity: String(calc.input.quantity || 1),
-  costSheet: calc.steps.length ? { templateId: calc.templateId, templateName: calc.templateName, steps: calc.steps } : null,
-});
-
 function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
   storeId: string;
   startWith?: SavedCalc[];
@@ -339,11 +352,13 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
   const [name, setName] = useState('');
   const [opening, setOpening] = useState('');
   const [closing, setClosing] = useState('');
-  const [startNow, setStartNow] = useState(true);
+  const [startNow, setStartNow] = useState<'now' | 'later'>('now');
   const [startAt, setStartAt] = useState('');
   const [lead, setLead] = useState('0');
   const [every, setEvery] = useState('5');
   const [window_, setWindow] = useState('60');
+  const [afterChannel, setAfterChannel] = useState(true);
+  const [afterFeed, setAfterFeed] = useState(true);
   const [items, setItems] = useState<ItemDraft[]>(() => (startWith?.length ? startWith.map(itemFromCalc) : [blankItem()]));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -365,22 +380,32 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
         storeId,
         name: name.trim(),
         openingBody: opening.trim(),
-        openingAt: startNow || !startAt ? null : new Date(startAt).toISOString(),
+        openingAt: startNow === 'now' || !startAt ? null : new Date(startAt).toISOString(),
         leadMinutes: Math.max(0, Number(lead) || 0),
         everyMinutes: Math.max(1, Number(every) || 5),
         windowMinutes: Math.max(5, Number(window_) || 60),
         closingBody: closing.trim(),
-        items: items.map((item) => ({
-          title: item.title.trim(),
-          description: item.description.trim(),
-          category: item.category,
-          condition: item.condition,
-          priceMinor: Math.round(Number(item.price) * 100),
-          listPriceMinor: Math.round(Number(item.listPrice) * 100),
-          quantity: Math.max(1, Number(item.quantity) || 1),
-          allowMultiple: item.allowMultiple,
-          costSheet: item.costSheet,
-        })),
+        afterWindow: { channel: afterChannel, feed: afterFeed },
+        items: items.map((item) => {
+          const terms = termsBody(item.terms);
+          return {
+            title: item.title.trim(),
+            description: item.description.trim(),
+            category: item.category,
+            condition: item.condition,
+            priceMinor: Math.round(Number(item.price) * 100),
+            listPriceMinor: Math.round(Number(item.listPrice) * 100),
+            quantity: Math.max(1, terms.quantityAvailable),
+            allowMultiple: item.allowMultiple,
+            costSheet: item.costSheet,
+            photos: item.photos.map(({ blobName, url, isPrimary }) => ({ blobName, url, isPrimary })),
+            tags: item.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+            sourcing: item.sourcing,
+            quantityMode: terms.quantityMode,
+            expiresAt: terms.expiresAt,
+            advancePercent: terms.advancePercent,
+          };
+        }),
       };
       await api.createPowerSale(draft);
       onSaved();
@@ -392,159 +417,168 @@ function SaleBuilder({ storeId, startWith, onClose, onSaved }: {
   }
 
   return (
-    <Modal title="Schedule a sale" onClose={onClose}>
-      <form className="form" onSubmit={submit}>
-        <label className="field">
-          <span>Name it, for you</span>
-          <input value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="Friday drop" maxLength={80} />
-          <span className="field__hint">Only you see this. The channel sees the message below.</span>
-        </label>
+    <Modal title="⚡ Power selling" onClose={onClose}>
+      <form className="sellform" onSubmit={submit}>
+        <LBox icon="📝" title="The sale" hint="The name is only for you; the channel sees the message.">
+          <label className="field">
+            <span>Name</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Friday drop" maxLength={80} />
+          </label>
+          <label className="field">
+            <span>Opening message</span>
+            <textarea value={opening} onChange={(e) => setOpening(e.target.value)} rows={3}
+              placeholder="Friday drop starts now — members get an hour on each piece." />
+          </label>
+        </LBox>
 
-        <label className="field">
-          <span>The message that opens it</span>
-          <textarea value={opening} onChange={(e) => setOpening(e.target.value)} rows={3}
-            placeholder="Friday drop starts now — members get an hour on each piece before it goes public." />
-        </label>
+        {items.map((item, index) => (
+          <div key={item.key} className="saleitem">
+            <div className="saleitem__head">
+              <span className="saleitem__num">{index + 1}</span>
+              <b>{item.title.trim() || `Item ${index + 1}`}</b>
+              {items.length > 1 && (
+                <button type="button" className="btn btn--quiet btn--sm"
+                  onClick={() => setItems((rows) => rows.filter((row) => row.key !== item.key))}>
+                  Remove
+                </button>
+              )}
+            </div>
 
-        <div className="field">
-          <span>What you are selling</span>
-          <div className="stack" style={{ gap: 10 }}>
-            {items.map((item, index) => (
-              <div key={item.key} className="runitem">
-                <div className="row row--between">
-                  <span className="faint">Item {index + 1}</span>
-                  {items.length > 1 && (
-                    <button type="button" className="btn btn--quiet btn--sm"
-                      onClick={() => setItems((rows) => rows.filter((row) => row.key !== item.key))}>
-                      Remove
-                    </button>
-                  )}
-                </div>
+            <LBox icon="📸" title="Photos">
+              <PhotoManager photos={item.photos} onChange={(photos) => set(item.key, { photos })} label={null} />
+            </LBox>
+
+            <LBox icon="🏷️" title="The item">
+              <label className="field">
+                <span>Title</span>
                 <input value={item.title} onChange={(e) => set(item.key, { title: e.target.value })}
                   placeholder="What it is" maxLength={120} />
-                <div className="field-row">
-                  <label className="field">
-                    <span>Members pay (₹)</span>
-                    <input type="number" min="1" value={item.price}
-                      onChange={(e) => set(item.key, { price: e.target.value })} />
-                  </label>
-                  <label className="field">
-                    <span>After the window (₹)</span>
-                    <input type="number" min="1" value={item.listPrice}
-                      onChange={(e) => set(item.key, { listPrice: e.target.value })} />
-                  </label>
-                </div>
-                <div className="field-row">
-                  <label className="field">
-                    <span>How many</span>
-                    <input type="number" min="1" value={item.quantity}
-                      onChange={(e) => set(item.key, { quantity: e.target.value })} />
-                  </label>
-                  <label className="field">
-                    <span>Category</span>
-                    <select value={item.category} onChange={(e) => set(item.key, { category: e.target.value })}>
-                      {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-                    </select>
-                  </label>
-                </div>
-                <label className="row" style={{ gap: 8, fontSize: 'var(--t-sm)', color: 'var(--text-dim)' }}>
-                  <input type="checkbox" checked={item.allowMultiple}
-                    onChange={(e) => set(item.key, { allowMultiple: e.target.checked })} />
-                  One buyer may take more than one
-                </label>
-                <CostSheetField value={item.costSheet} onChange={(costSheet) => set(item.key, { costSheet })}
-                  sellingPriceMinor={Math.round(Number(item.price || 0) * 100)} shop={storeId} />
-                {Number(item.listPrice) > 0 && Number(item.listPrice) <= Number(item.price) && (
-                  <span className="field__hint" style={{ color: 'var(--danger)' }}>
-                    The price after the window has to be above the members&rsquo; price — otherwise the
-                    window is not worth being in the channel for.
-                  </span>
-                )}
-              </div>
-            ))}
-            <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }}
-              onClick={() => setItems((rows) => [...rows, blankItem()])}>
-              <Icon name="plus" size={13} /> Another item
-            </button>
-            {calcs.length > 0 && (
-              <label className="field">
-                <span><CalcIcon size={15} /> Add from your saved calculations</span>
-                <select value="" onChange={(e) => {
-                  const calc = calcs.find((entry) => entry.id === e.target.value);
-                  if (calc) setItems((rows) => [...rows.filter((row) => row.title.trim() || row.price), itemFromCalc(calc)]);
-                }}>
-                  <option value="">Pick one…</option>
-                  {calcs.map((calc) => (
-                    <option key={calc.id} value={calc.id}>
-                      {calc.title} · {formatMoney(calc.sellingPriceMinor)}{calc.listingId ? ' (listed)' : ''}
-                    </option>
-                  ))}
-                </select>
               </label>
-            )}
-          </div>
-        </div>
+              <label className="field">
+                <span>Description</span>
+                <textarea value={item.description} rows={2} placeholder="Condition, what's included…"
+                  onChange={(e) => set(item.key, { description: e.target.value })} />
+              </label>
+              <div className="field-row">
+                <label className="field">
+                  <span>Category</span>
+                  <select value={item.category} onChange={(e) => set(item.key, { category: e.target.value })}>
+                    {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Condition</span>
+                  <select value={item.condition} onChange={(e) => set(item.key, { condition: e.target.value })}>
+                    {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label className="field">
+                <span>Tags</span>
+                <input value={item.tags} onChange={(e) => set(item.key, { tags: e.target.value })} placeholder="resin, sealed" />
+              </label>
+            </LBox>
 
-        <div className="field">
-          <span>When it runs</span>
-          <div className="seg" role="radiogroup" aria-label="When it starts">
-            <button type="button" role="radio" aria-checked={startNow}
-              className={startNow ? 'is-on' : ''} onClick={() => setStartNow(true)}>
-              Start now
-            </button>
-            <button type="button" role="radio" aria-checked={!startNow}
-              className={!startNow ? 'is-on' : ''} onClick={() => setStartNow(false)}>
-              At a time
-            </button>
+            <LBox icon="💰" title="Price" hint="Members get the first price while the window is open.">
+              <div className="field-row">
+                <label className="field">
+                  <span>Members pay (₹)</span>
+                  <input type="number" min="1" value={item.price}
+                    onChange={(e) => set(item.key, { price: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>After the window (₹)</span>
+                  <input type="number" min="1" value={item.listPrice}
+                    onChange={(e) => set(item.key, { listPrice: e.target.value })} />
+                </label>
+              </div>
+              {Number(item.listPrice) > 0 && Number(item.listPrice) <= Number(item.price) && (
+                <span className="field__hint" style={{ color: 'var(--danger)' }}>
+                  The price after the window has to be above the members&rsquo; price.
+                </span>
+              )}
+            </LBox>
+
+            <LBox icon="🚚" title="Ships from">
+              <OptionTiles label="Ships from" value={item.sourcing} onChange={(sourcing) => set(item.key, { sourcing })}
+                options={[
+                  { id: 'in_hand', icon: '🏠', title: 'In hand', note: 'Ships from your shelf' },
+                  { id: 'import', icon: '✈️', title: 'Import', note: 'Lot added later' },
+                ]} />
+            </LBox>
+
+            <TermsFields value={item.terms} onChange={(terms) => set(item.key, { terms })} />
+            <ToggleRow icon="🛍️" title="One buyer may take several" checked={item.allowMultiple}
+              onChange={(allowMultiple) => set(item.key, { allowMultiple })} />
+
+            <CostSheetField value={item.costSheet} onChange={(costSheet) => set(item.key, { costSheet })}
+              sellingPriceMinor={Math.round(Number(item.price || 0) * 100)} shop={storeId} />
           </div>
-          {!startNow && (
-            <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)}
-              style={{ marginTop: 8 }} />
+        ))}
+
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <button type="button" className="btn btn--ghost btn--sm"
+            onClick={() => setItems((rows) => [...rows, blankItem()])}>
+            <Icon name="plus" size={13} /> Another item
+          </button>
+          {calcs.length > 0 && (
+            <select value="" aria-label="Add from your saved calculations" style={{ flex: 1, minWidth: 180 }}
+              onChange={(e) => {
+                const calc = calcs.find((entry) => entry.id === e.target.value);
+                if (calc) setItems((rows) => [...rows.filter((row) => row.title.trim() || row.price), itemFromCalc(calc)]);
+              }}>
+              <option value="">🧮 Add from a saved calculation…</option>
+              {calcs.map((calc) => (
+                <option key={calc.id} value={calc.id}>
+                  {calc.title} · {formatMoney(calc.sellingPriceMinor)}{calc.listingId ? ' (listed)' : ''}
+                </option>
+              ))}
+            </select>
           )}
         </div>
 
-        <div className="field-row">
-          <label className="field">
-            <span>Wait before item 1 (min)</span>
-            <input type="number" min="0" value={lead} onChange={(e) => setLead(e.target.value)} />
-            <span className="field__hint">
-              Its own number: how long to let the room read &ldquo;we are starting&rdquo; is a
-              different question from how fast to drop things once it has. Zero sends the first
-              item with the announcement.
-            </span>
-          </label>
-          <label className="field">
-            <span>Minutes between items</span>
-            <input type="number" min="1" value={every} onChange={(e) => setEvery(e.target.value)} />
-          </label>
-        </div>
+        <LBox icon="⏱️" title="Timing">
+          <OptionTiles label="When it starts" value={startNow} onChange={setStartNow}
+            options={[
+              { id: 'now', icon: '▶️', title: 'Start now' },
+              { id: 'later', icon: '🗓️', title: 'At a time' },
+            ]} />
+          {startNow === 'later' && (
+            <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} aria-label="Start at" />
+          )}
+          <div className="field-row field-row--3">
+            <label className="field">
+              <span>Wait before item 1 (min)</span>
+              <input type="number" min="0" value={lead} onChange={(e) => setLead(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Between items (min)</span>
+              <input type="number" min="1" value={every} onChange={(e) => setEvery(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Members&rsquo; window (min)</span>
+              <input type="number" min="5" value={window_} onChange={(e) => setWindow(e.target.value)} />
+            </label>
+          </div>
+        </LBox>
 
-        <label className="field">
-          <span>Members&rsquo; price lasts (min)</span>
-          <input type="number" min="5" value={window_} onChange={(e) => setWindow(e.target.value)} />
-          <span className="field__hint">
-            Each item holds its members&rsquo; price for this long, counted from when it posts.
-          </span>
-        </label>
+        {/* During the window an item is the channel's alone - that is what the
+            members' price is for. Once it closes the item is everybody's, and
+            this is where the shop says whether to tell everybody. */}
+        <LBox icon="📣" title="When the window closes" hint="Each item goes public at the higher price. Announce it:">
+          <ToggleRow icon="💬" title="Post in your channel" checked={afterChannel} onChange={setAfterChannel} />
+          <ToggleRow icon="🌐" title="Post in the feed" checked={afterFeed} onChange={setAfterFeed} />
+        </LBox>
 
-        <label className="field">
-          <span>The message that closes it</span>
-          <textarea value={closing} onChange={(e) => setClosing(e.target.value)} rows={2}
-            placeholder="That's the lot — thanks everyone. Anything left is at the public price now." />
-          <span className="field__hint">Optional. Goes out once every window has closed.</span>
-        </label>
+        <LBox icon="👋" title="Closing message" hint="Optional. Goes out once every window has closed.">
+          <textarea value={closing} onChange={(e) => setClosing(e.target.value)} rows={2} aria-label="Closing message"
+            placeholder="That's the lot — thanks everyone!" />
+        </LBox>
 
         {error && <p className="notice notice--error">{error}</p>}
 
-        <p className="faint">
-          Posts go out in your channel, not to everyone&rsquo;s feed — that is what makes the
-          members&rsquo; price worth having. Each item is listed publicly at the higher price once
-          its window closes, so nothing is lost by being late.
-        </p>
-
-        <button type="submit" className="btn btn--lg btn--block" disabled={busy || !ready}>
-          {busy ? 'Scheduling…' : startNow ? 'Start the sale' : 'Schedule it'}
+        <button type="submit" className="btn btn--lg btn--block sellform__go" disabled={busy || !ready}>
+          {busy ? 'Scheduling…' : startNow === 'now' ? '⚡ Start the sale' : '🗓️ Schedule it'}
         </button>
       </form>
     </Modal>

@@ -628,6 +628,8 @@ export interface PowerSaleView {
   closingBody: string;
   openedAt: string | null;
   closedAt: string | null;
+  /** Where each item is announced once it goes public. */
+  afterWindow: { channel: boolean; feed: boolean };
   /** When the last item hands over and the whole run is public. */
   finishesAt: string | null;
   posted: number;
@@ -656,7 +658,15 @@ export interface PowerSaleDraft {
     quantity: number;
     allowMultiple: boolean;
     costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
+    photos?: { blobName: string; url: string; isPrimary: boolean }[];
+    tags?: string[];
+    sourcing?: Sourcing;
+    quantityMode?: 'fixed' | 'multiple';
+    expiresAt?: string | null;
+    advancePercent?: number | null;
   }[];
+  /** Where each item is announced once its members' window closes. */
+  afterWindow?: { channel: boolean; feed: boolean };
 }
 
 export interface EscrowHolding {

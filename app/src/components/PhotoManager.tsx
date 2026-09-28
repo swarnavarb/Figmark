@@ -58,9 +58,11 @@ export async function shrink(file: File): Promise<string> {
  * decision a seller makes deliberately - by dragging on a pointer, or with the
  * arrows, which are the only ones that work on a phone.
  */
-export function PhotoManager({ photos, onChange }: {
+export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
   photos: PhotoDraft[];
   onChange: (next: PhotoDraft[]) => void;
+  /** Null inside a box that already says what this is. */
+  label?: string | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +113,7 @@ export function PhotoManager({ photos, onChange }: {
 
   return (
     <div className="field">
-      <span>Item photos</span>
+      {label && <span>{label}</span>}
       <div className="photos">
         {photos.map((photo, index) => (
           <figure

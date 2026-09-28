@@ -96,6 +96,7 @@ function card(sale: PowerSale, now = new Date()) {
     closingBody: sale.closingBody,
     openedAt: sale.openedAt,
     closedAt: sale.closedAt,
+    afterWindow: sale.afterWindow ?? { channel: false, feed: false },
     /** When the last item hands over and the whole run is public. */
     finishesAt: finishesAt(sale),
     posted,
@@ -184,7 +185,44 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
           return null;
         }
       })(),
+      ...listingOptions(entry),
     },
+  };
+}
+
+/**
+ * The sell page's own options for one item - photos, tags, where it ships
+ * from, stock, expiry, advance - read the same way the listing route reads
+ * them, so an item from a sale is listed exactly as one listed by hand.
+ */
+function listingOptions(entry: Record<string, unknown>): Partial<PowerSaleItem> {
+  const photos = (Array.isArray(entry.photos) ? entry.photos : [])
+    .slice(0, 6)
+    .map((raw) => (raw ?? {}) as Record<string, unknown>)
+    .map((photo) => ({
+      blobName: typeof photo.blobName === 'string' ? photo.blobName : '',
+      url: typeof photo.url === 'string' ? photo.url : '',
+      imageHash: null,
+      isPrimary: photo.isPrimary === true,
+    }))
+    .filter((photo) => photo.blobName || photo.url);
+  if (photos.length > 0 && !photos.some((photo) => photo.isPrimary)) photos[0]!.isPrimary = true;
+
+  const tags = (Array.isArray(entry.tags) ? entry.tags : [])
+    .filter((tag): tag is string => typeof tag === 'string')
+    .map((tag) => tag.trim().slice(0, 30))
+    .filter(Boolean)
+    .slice(0, 12);
+
+  const expires = typeof entry.expiresAt === 'string' ? new Date(entry.expiresAt) : null;
+  const advance = Math.round(Number(entry.advancePercent) || 0);
+  return {
+    photos,
+    tags,
+    sourcing: entry.sourcing === 'import' ? 'import' : 'in_hand',
+    quantityMode: entry.quantityMode === 'multiple' ? 'multiple' : 'fixed',
+    expiresAt: expires && !Number.isNaN(expires.getTime()) ? expires.toISOString() : null,
+    advancePercent: advance > 0 && advance < 100 ? advance : null,
   };
 }
 
@@ -242,6 +280,11 @@ async function create(request: HttpRequest, _context: InvocationContext) {
     items,
     openedAt: null,
     closedAt: null,
+    // Announced when each item goes public, unless the shop said not to.
+    afterWindow: {
+      channel: (body.afterWindow as { channel?: unknown } | undefined)?.channel !== false,
+      feed: (body.afterWindow as { feed?: unknown } | undefined)?.feed !== false,
+    },
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
