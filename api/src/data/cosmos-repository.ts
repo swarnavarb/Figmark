@@ -10,7 +10,7 @@ import type {
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
-import { matchesSearch } from '../../../shared/catalog.js';
+import { matchesSearch, popularity } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -1449,7 +1449,8 @@ export class CosmosRepository implements Repository {
    * all of history, so the window is opened wider when there is a term.
    */
   async listListings(query: CatalogQuery = {}): Promise<Listing[]> {
-    const limit = query.limit ?? (query.search ? 400 : 100);
+    const byPopularity = query.sort === 'popular';
+    const limit = byPopularity ? 400 : query.limit ?? (query.search ? 400 : 100);
     // Followed-first is not expressible in SQL - the ranking is a fact about
     // the reader, not the row - and it is only wanted while the reader has not
     // asked for an order of their own.
@@ -1492,6 +1493,10 @@ export class CosmosRepository implements Repository {
     const matched = query.search
       ? resources.filter((listing) => matchesSearch(listing, query.search!))
       : resources;
+
+    if (byPopularity) {
+      return [...matched].sort((a, b) => popularity(b) - popularity(a)).slice(0, query.limit ?? 100);
+    }
 
     const followed = new Set(query.followedSellerIds ?? []);
     if (!ranked || followed.size === 0) return matched;
@@ -1837,7 +1842,9 @@ const CATALOG_ORDER: Record<string, string> = {
   newest: ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
   price_asc: ' ORDER BY c.priceMinor ASC OFFSET 0 LIMIT @limit',
   price_desc: ' ORDER BY c.priceMinor DESC OFFSET 0 LIMIT @limit',
-  popular: ' ORDER BY c.likeCount DESC OFFSET 0 LIMIT @limit',
+  // Popularity is a sum of two fields, which Cosmos cannot ORDER BY. The newest
+  // window is fetched wide and ranked in JavaScript instead; see listListings.
+  popular: ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
 };
 
 /** The clause for one sort, falling back to newest for anything unrecognised. */

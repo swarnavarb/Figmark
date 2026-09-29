@@ -358,6 +358,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     // The owner's own handle, so a shop page can point at the person behind it.
     ownerHandle: isStore ? (user.username ?? null) : null,
     sellerId: user.id,
+    // The same Trust a listing's "Posted by" card shows, so the two never disagree.
+    trustScore: isStore ? user.sellerTrust.score : null,
     memberSince: user.createdAt,
     lastSeenAt: user.lastSeenAt ?? null,
     /** What the tabs and chips count, so neither has to guess. */

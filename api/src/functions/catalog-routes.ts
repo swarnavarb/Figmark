@@ -31,6 +31,9 @@ function toSellerCard(user: User) {
     followerCount: user.sellerProfile?.followerCount ?? 0,
     trustScore: user.sellerTrust.score,
     onTimeDispatchRate: user.sellerTrust.onTimeDispatchRate,
+    // Orders delivered and not lost in a dispute, counted as each one lands.
+    completedSales: user.sellerTrust.completedTransactions,
+    memberSince: user.createdAt,
   };
 }
 

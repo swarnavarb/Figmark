@@ -9593,11 +9593,16 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 
 /* ── Posted by: the seller under their own awning ───────────────────────── */
 .sellercard { position: relative; overflow: hidden; display: grid; gap: 14px; padding: 0 16px 16px; }
-.sellercard__awning { position: relative; height: 44px; margin: 0 -16px; background: var(--sf-grad, var(--grad-hero)); }
+.sellercard__awning {
+  position: relative; height: 78px; margin: 0 -16px; background: var(--sf-grad, var(--grad-hero));
+  /* The shop's colour runs on under the canopy and stops behind the photo, as on its shop page. */
+  box-shadow: inset 0 -24px 30px -18px rgba(0, 0, 0, 0.35);
+}
 .sellercard__awning .canopy { height: 40px; }
-.sellercard__sign { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; margin-top: -6px; }
-.sellercard__avatar { display: grid; padding: 3px; border-radius: 50%; background: var(--sf-grad, var(--grad-hero)); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); }
-.sellercard__who { display: grid; gap: 1px; min-width: 0; }
+.sellercard__sign { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; margin-top: -44px; }
+.sellercard__avatar { display: grid; padding: 3px; border-radius: 50%; background: var(--sf-grad, var(--grad-hero)); box-shadow: 0 0 0 3px var(--surface), 0 8px 18px rgba(0, 0, 0, 0.4); }
+.sellercard__who { display: grid; gap: 1px; min-width: 0; padding-top: 48px; }
+.sellercard__stat--wide { grid-column: 1 / -1; }
 .sellercard__name { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); line-height: 1.2; }
 .sellercard__where { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-xs); color: var(--text-dim); }
 .sellercard__stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
@@ -9616,3 +9621,102 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   .urgency, .fire__flame, .fire__ember, .hashtag, .posts__thread, .post__actions, .post__picker button, .post__chip, .posts__replying { animation: none; }
   .fire__ember { display: none; }
 }
+
+/* ── Feed shelves: In demand (fire) and Ending soon (rush) ─────────────── */
+.rail {
+  grid-column: 1 / -1; position: relative; overflow: hidden; isolation: isolate; margin: 4px 0;
+  padding: 14px 0 30px; border-radius: var(--r-lg); color: #fff; border: 1px solid transparent;
+  animation: lp-rise 600ms var(--spring) both;
+}
+.rail__head { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 0 14px 12px; }
+.rail__icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 50%; }
+.rail__titles { display: grid; min-width: 0; }
+.rail__titles h2 { margin: 0; font-size: var(--t-lg); line-height: 1.15; }
+.rail__titles small { font-size: var(--t-xs); opacity: 0.8; }
+.rail__all {
+  margin-left: auto; flex: none; padding: 6px 12px; border-radius: var(--r-pill); color: #fff; text-decoration: none;
+  font-size: var(--t-xs); font-weight: var(--w-bold); background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28); backdrop-filter: blur(4px); transition: background 200ms, transform 200ms var(--bounce);
+}
+.rail__all:hover { background: rgba(255, 255, 255, 0.22); transform: translateX(2px); }
+.rail__track {
+  position: relative; z-index: 1; display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory; scroll-padding: 0 14px; padding: 2px 14px 4px; scrollbar-width: none;
+}
+.rail__track::-webkit-scrollbar { display: none; }
+.railitem {
+  flex: 0 0 136px; display: grid; align-content: start; gap: 7px; color: #fff; text-decoration: none; scroll-snap-align: start;
+  animation: rail-in 520ms var(--spring) both; animation-delay: calc(var(--i, 0) * 60ms);
+}
+@keyframes rail-in { from { opacity: 0; transform: translateX(24px) scale(0.96); } }
+.railitem__photo {
+  aspect-ratio: 3 / 4; overflow: hidden; border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  transition: transform 260ms var(--bounce);
+}
+.railitem__photo .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+.railitem:hover .railitem__photo { transform: translateY(-4px) rotate(-1deg); }
+.railitem__name {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 1.3; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+/* Fire: the same ember palette as the listing's In demand box, flames on both sides of the photos. */
+.rail--fire {
+  background: radial-gradient(120% 90% at 50% 120%, #B4320C 0%, #4A1209 45%, #1A0A0B 100%) padding-box,
+    linear-gradient(120deg, #FDBA74, #F97316 40%, #DC2626 75%, #FB923C) border-box;
+  box-shadow: 0 12px 34px rgba(249, 115, 22, 0.3); animation: lp-rise 600ms var(--spring) both, fire-glow 2.4s ease-in-out infinite alternate;
+}
+.rail--fire .rail__icon { color: #FDBA74; background: radial-gradient(circle at 50% 70%, rgba(249, 115, 22, 0.6), rgba(249, 115, 22, 0.15)); animation: lp-pulse 1.6s ease-in-out infinite; }
+.rail--fire .rail__titles h2 { text-shadow: 0 0 16px rgba(251, 146, 60, 0.8); }
+.fire--back { height: 100%; --fire-lift: 3.2; opacity: 0.75; }
+.fire--front { z-index: 2; height: 44px; --fire-lift: 0.9; }
+.fire--front .fire__flame { opacity: 0.95; }
+
+/* Rush: electric blue with speed streaks racing right to left. */
+.rail--rush {
+  background: radial-gradient(120% 100% at 0% 0%, #1E3A8A 0%, #111338 50%, #0B0B1A 100%) padding-box,
+    linear-gradient(120deg, #67E8F9, #3B82F6 45%, #8B5CF6 80%, #22D3EE) border-box;
+  box-shadow: 0 12px 34px rgba(59, 130, 246, 0.3);
+}
+.rail--rush .rail__icon { color: #FDE047; background: rgba(250, 204, 21, 0.16); animation: rush-jolt 1.2s ease-in-out infinite; }
+@keyframes rush-jolt { 0%, 70%, 100% { transform: none; } 75% { transform: translateX(-2px) rotate(-8deg); } 85% { transform: translateX(2px) rotate(6deg); } }
+.rush { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.rush__streak {
+  position: absolute; right: 0; top: calc(6% + var(--n) * 10.5%); width: calc(26% + var(--n) * 3%); height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.9), #fff);
+  opacity: 0; animation: rush-fly calc(0.9s + (var(--n) * 0.13s)) linear infinite; animation-delay: calc(var(--n) * -0.37s);
+}
+.rush__streak:nth-child(3n) { background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.9), #fff); height: 1px; }
+@keyframes rush-fly {
+  0% { transform: translateX(120%); opacity: 0; }
+  15% { opacity: 0.9; }
+  100% { transform: translateX(-420%); opacity: 0; }
+}
+.railitem__left {
+  position: absolute; top: 8px; left: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: var(--r-pill);
+  font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0; color: #fff; text-shadow: none;
+  background: rgba(11, 11, 26, 0.72); box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.5); backdrop-filter: blur(4px);
+}
+.railitem__left.is-hot { background: rgba(185, 28, 28, 0.85); box-shadow: inset 0 0 0 1px rgba(252, 165, 165, 0.7); animation: rush-beat 1s ease-in-out infinite; }
+@keyframes rush-beat { 50% { transform: scale(1.08); } }
+.railitem__drain {
+  position: absolute; left: 0; bottom: 0; height: 4px; width: max(10%, calc(var(--left, 1) * 100%));
+  background: linear-gradient(90deg, #22D3EE, #FDE047); box-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+  animation: rush-drain 1.4s ease-in-out infinite alternate;
+}
+@keyframes rush-drain { to { filter: brightness(1.6); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rail, .railitem, .rail__icon, .rush__streak, .railitem__left, .railitem__drain { animation: none; }
+  .rush__streak { opacity: 0.35; }
+}
+
+/* Trust on the shop page, in the same tones as the listing's "Posted by" card. */
+.credit--store { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; }
+.credit__trust small { font-size: var(--t-2xs); color: var(--text-faint); font-weight: var(--w-semi); }
+.credit__trust--ok { color: #34D399; }
+.credit__trust--warn { color: #FBBF24; }
+.credit__trust--low { color: #F87171; }
+.credit__trust--none { color: var(--text-faint); }
+.lp__about .hashtags { margin-top: 2px; }

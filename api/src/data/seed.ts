@@ -474,7 +474,7 @@ const LISTINGS: ListingSeed[] = [
     description: 'Complete set of three, opened for photos then re-boxed. No damage to the figures.',
     category: 'Anime merch', condition: 'BIB', priceMinor: 24_500,
     quantity: 2, tags: ['prize', 'figure', 'set'],
-    likeCount: 8, viewCount: 97, ageDays: -18,
+    likeCount: 8, viewCount: 97, ageDays: -18, expiresInHours: 100,
   },
   {
     id: 'lst_sneaker_retro', sellerId: 'usr_sneakervault', title: 'Retro high-top — UK 9, deadstock',
@@ -488,7 +488,7 @@ const LISTINGS: ListingSeed[] = [
     description: 'Worn twice indoors, soles clean. Selling because the fit was wrong for me.',
     category: 'Sneakers', condition: 'LOOSE', priceMinor: 68_000,
     quantity: 1, tags: ['sneakers', 'used', 'uk85'],
-    likeCount: 5, viewCount: 71, ageDays: -9,
+    likeCount: 5, viewCount: 71, ageDays: -9, expiresInHours: 31,
   },
   {
     id: 'lst_iem_audio', sellerId: 'usr_gadgetgrid', title: 'Planar IEM — Shenzhen direct',
@@ -520,7 +520,7 @@ const LISTINGS: ListingSeed[] = [
     description: 'Brought back two, only need one. Tag still on it.',
     category: 'Bags & watches', condition: 'MIB', priceMinor: 24_000,
     quantity: 2, tags: ['bag', 'canvas', 'japan'],
-    likeCount: 7, viewCount: 91, ageDays: -8,
+    likeCount: 7, viewCount: 91, ageDays: -8, expiresInHours: 7,
   },
   {
     id: 'lst_bulk_gunpla', sellerId: 'usr_tokyoline', title: 'Mixed lot — 9 HG kits, mostly opened boxes',

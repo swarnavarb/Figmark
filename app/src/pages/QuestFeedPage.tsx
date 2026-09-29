@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { AdvanceStrip, DropTag } from '../components/Buy';
 import { Link } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
@@ -10,6 +10,9 @@ import { preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing } from '../api';
 import { CategoryIcon } from '../components/CategoryIcon';
+import {
+  DemandRail, EndingRail, FEED_VIEW_TITLES, demandPicks, endingPicks, isFeedView,
+} from '../components/FeedRails';
 import { SkeletonGrid } from '../components/Feedback';
 import {
   CardFace, CollectorChip, DesignSwitch, Glyph, RarityRibbon, XpBar, useQuest,
@@ -53,7 +56,16 @@ export function QuestFeedPage() {
     () => (data?.listings ?? []).map((listing) => ({ ...listing, rarity: listingRarity(listing, now) })),
     [data, now],
   );
-  const shown = rarityFilter ? rated.filter((listing) => listing.rarity.tier === rarityFilter) : rated;
+  const viewParam = params.get('view') ?? '';
+  const feedView = isFeedView(viewParam) ? viewParam : null;
+  const demand = useMemo(() => demandPicks(rated), [rated]);
+  const endingSoon = useMemo(() => endingPicks(rated, now), [rated, now]);
+  const base = feedView === 'demand' ? demand : feedView === 'ending' ? endingSoon : rated;
+  const shown = rarityFilter ? base.filter((listing) => listing.rarity.tier === rarityFilter) : base;
+  // The shelves sit in the grid after the 4th and the 8th card, or after the
+  // last one when there are fewer.
+  const demandAt = Math.min(3, shown.length - 1);
+  const endingAt = Math.min(7, shown.length - 1);
 
   const filling = rated
     .filter((listing) => listing.preOrder && !listing.preOrder.closedAt)
@@ -61,12 +73,8 @@ export function QuestFeedPage() {
     .filter(({ view }) => view.toGo > 0)
     .sort((a, b) => b.view.committed / b.view.fillThreshold - a.view.committed / a.view.fillThreshold)
     .slice(0, 6);
-  const ending = rated
-    .filter((listing) => listing.rarity.hoursLeft !== null && listing.rarity.hoursLeft <= 72)
-    .sort((a, b) => (a.rarity.hoursLeft ?? 0) - (b.rarity.hoursLeft ?? 0))
-    .slice(0, 6);
 
-  const browsing = !search && activeFilters === 0 && !rarityFilter;
+  const browsing = !search && activeFilters === 0 && !rarityFilter && !feedView;
   const counts = Object.fromEntries(
     RARITY_FILTERS.map((tier) => [tier, rated.filter((listing) => listing.rarity.tier === tier).length]),
   ) as Record<RarityTier, number>;
@@ -128,7 +136,7 @@ export function QuestFeedPage() {
             <Picker label="Type" value={category} onChange={(value) => set('category', value)}
               empty="Any type" options={data.categories.map((entry) => ({ value: entry, label: entry }))} />
           )}
-          {(activeFilters > 0 || rarityFilter) && (
+          {(activeFilters > 0 || rarityFilter || feedView) && (
             <button type="button" className="filters__clear" onClick={() => setParams(
               search ? new URLSearchParams({ q: search }) : new URLSearchParams(), { replace: true },
             )}>
@@ -159,29 +167,11 @@ export function QuestFeedPage() {
         </section>
       )}
 
-      {browsing && ending.length > 0 && (
-        <section className="qrow">
-          <div className="qrow__head">
-            <h2><Glyph name="clock" size={15} /> Ending soon</h2>
-          </div>
-          <div className="qrow__scroll">
-            {ending.map((listing) => (
-              <Link key={listing.id} to={`/listing/${listing.id}`} className="qboard qboard--ending">
-                <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qboard__thumb" />
-                <span className="qboard__text">
-                  <b>{listing.title}</b>
-                  <small className="qhot">{countdown(listing.rarity.hoursLeft ?? 0)} left</small>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
 
       {error && <ErrorNotice message={error} />}
 
       <div className="qrow__head">
-        <h2>{rarityFilter ? `${RARITY_LABELS[rarityFilter]} finds` : 'All loot'}</h2>
+        <h2>{rarityFilter ? `${RARITY_LABELS[rarityFilter]} finds` : feedView ? FEED_VIEW_TITLES[feedView] : 'All loot'}</h2>
         {data && <span className="faint">{shown.length} {shown.length === 1 ? 'item' : 'items'}</span>}
       </div>
 
@@ -197,7 +187,13 @@ export function QuestFeedPage() {
         </EmptyState>
       ) : (
         <div className="grid qgrid">
-          {shown.map((listing) => <LootCard key={listing.id} listing={listing} />)}
+          {shown.map((listing, n) => (
+            <Fragment key={listing.id}>
+              <LootCard listing={listing} />
+              {browsing && n === demandAt && <DemandRail listings={demand} />}
+              {browsing && n === endingAt && <EndingRail listings={endingSoon} now={now} />}
+            </Fragment>
+          ))}
         </div>
       )}
     </main>

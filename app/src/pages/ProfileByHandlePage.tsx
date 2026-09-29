@@ -202,7 +202,7 @@ export function ProfileByHandlePage() {
             rated as a seller, a person as a buyer. Showing both here invited
             the wrong one to be read — a shop whose owner buys a lot would
             carry a reassuring figure that says nothing about shipping. */}
-        <button type="button" className="credit credit--one" onClick={() => setCreditOpen(true)}>
+        <button type="button" className={`credit credit--one${data.isStore ? ' credit--store' : ''}`} onClick={() => setCreditOpen(true)}>
           <div className="credit__cell">
             <span className={`credit__grade${data.isStore ? '' : ' credit__grade--buyer'}`}>
               {gradeFor(rating?.average ?? null)}
@@ -217,6 +217,16 @@ export function ProfileByHandlePage() {
               {rating?.count ? `from ${rating.count}` : 'unrated'}
             </span>
           </div>
+          {/* The same Trust the listing's "Posted by" card shows: buyer
+              reviews' average star rating times 20, as last recomputed. */}
+          {data.isStore && (
+            <div className="credit__cell">
+              <span className={`credit__figure credit__trust credit__trust--${trustTone(data.trustScore)}`}>
+                {data.trustScore ?? '—'}<small>/100</small>
+              </span>
+              <span className="credit__label">trust</span>
+            </div>
+          )}
           <div className="credit__cell">
             <span className="credit__figure">
               {data.isStore ? data.counts.sold : (pageReviews?.count ?? 0)}
@@ -635,4 +645,9 @@ function gradeFor(average: number | null): string {
 /** Links are stored as typed, so give a bare domain a scheme before opening it. */
 function withScheme(link: string) {
   return /^https?:\/\//i.test(link) ? link : `https://${link}`;
+}
+
+function trustTone(score: number | null): string {
+  if (score === null) return 'none';
+  return score >= 80 ? 'ok' : score >= 50 ? 'warn' : 'low';
 }

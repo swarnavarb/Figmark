@@ -2,6 +2,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
+import { isInDemand } from '@shared/catalog';
 import { sourcingOf } from '@shared/fulfilment';
 import { SOURCING_LABELS } from '@shared/enums';
 import { isMultiple } from '@shared/payments';
@@ -93,9 +94,9 @@ const FLAMES = [
 ] as const;
 const EMBERS = [8, 22, 35, 47, 61, 74, 86, 95];
 
-function Fire() {
+export function Fire({ className = '' }: { className?: string }) {
   return (
-    <span className="fire" aria-hidden="true">
+    <span className={`fire ${className}`} aria-hidden="true">
       {FLAMES.map(([left, scale, delay], n) => (
         <svg key={n} className="fire__flame" viewBox="0 0 40 60"
           style={{ left: `${left}%`, ['--s' as string]: scale, animationDelay: `${-delay}s` }}>
@@ -130,7 +131,9 @@ export function Urgency({ listing, compact }: { listing: Listing; compact?: bool
   if (rarity.priceDropPercent) facts.push({ icon: 'tag', text: `${rarity.priceDropPercent}% off` });
 
   const ticking = until !== null && until > now;
-  if (!ticking && facts.length === 0) return null;
+  // Without a timer the box is a claim that people want this, so it waits for
+  // real attention (views plus saves, see `popularity`) rather than one visit.
+  if (!ticking && !isInDemand(listing)) return null;
   const hot = ticking && until - now < 24 * 3_600_000;
 
   return (

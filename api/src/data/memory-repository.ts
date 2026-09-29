@@ -8,7 +8,7 @@ import type {
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
-import { matchesKind, matchesSearch } from '../../../shared/catalog.js';
+import { matchesKind, matchesSearch, popularity } from '../../../shared/catalog.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import {
@@ -337,7 +337,7 @@ export class MemoryRepository implements Repository {
         case 'price_desc':
           return b.priceMinor - a.priceMinor;
         case 'popular':
-          return b.likeCount - a.likeCount;
+          return popularity(b) - popularity(a);
         default:
           // Recency, with a bump counting as recency.
           return freshness(b).localeCompare(freshness(a));

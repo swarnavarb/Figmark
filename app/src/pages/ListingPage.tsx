@@ -175,17 +175,18 @@ export function ListingPage() {
             <div className="lp__about">
               <span className="dtile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
               <p>{listing.description}</p>
+              {/* Each tag is a search: tapping one shows everything else tagged
+                  the same. Inside the card, so they get its padding below too. */}
+              {listing.tags.length > 0 && (
+                <div className="hashtags">
+                  {listing.tags.map((tag, n) => (
+                    <Link key={tag} to={`/?q=${encodeURIComponent(tag)}`} className="hashtag" style={{ ['--i' as string]: n }}>
+                      <span className="hashtag__hash">#</span>{tag}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
-            {/* Each tag is a search: tapping one shows everything else tagged the same. */}
-            {listing.tags.length > 0 && (
-              <div className="hashtags">
-                {listing.tags.map((tag, n) => (
-                  <Link key={tag} to={`/?q=${encodeURIComponent(tag)}`} className="hashtag" style={{ ['--i' as string]: n }}>
-                    <span className="hashtag__hash">#</span>{tag}
-                  </Link>
-                ))}
-              </div>
-            )}
           </div>
 
           {data.preOrder && (
@@ -233,14 +234,17 @@ export function ListingPage() {
                   <dd>{seller.followerCount}</dd>
                   <span>Get their new drops</span>
                 </div>
-                {seller.onTimeDispatchRate !== null && (
-                  <div className="sellercard__stat">
-                    <dt><Svg name="clock" size={13} /> On time</dt>
-                    <dd>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></dd>
-                    <span>Shipped by the promised date</span>
-                  </div>
-                )}
                 <div className="sellercard__stat">
+                  <dt><Svg name="box" size={13} /> Sales</dt>
+                  <dd>{seller.completedSales}</dd>
+                  <span>Delivered, no lost disputes</span>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="calendar" size={13} /> Here since</dt>
+                  <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>
+                  <span>On Figmark</span>
+                </div>
+                <div className="sellercard__stat sellercard__stat--wide">
                   <dt><Svg name="shield" size={13} /> Tier</dt>
                   <dd style={{ textTransform: 'capitalize' }}>{seller.tier}</dd>
                   <span>{TIER_NOTES[seller.tier] ?? 'Verification level'}</span>

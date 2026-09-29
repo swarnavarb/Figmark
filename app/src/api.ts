@@ -150,6 +150,9 @@ export interface SellerCard {
   followerCount: number;
   trustScore: number;
   onTimeDispatchRate: number | null;
+  /** Orders delivered without being lost in a dispute. */
+  completedSales: number;
+  memberSince: string;
 }
 
 export interface FeedListing extends Listing {
@@ -1538,6 +1541,8 @@ export interface PublicProfile {
   tier: string | null;
   ownerHandle: string | null;
   sellerId: string;
+  /** A shop's seller trust, 0-100; null on a person's page. */
+  trustScore: number | null;
   memberSince: string;
   lastSeenAt: string | null;
   counts: { listings: number; onSale: number; sold: number };
