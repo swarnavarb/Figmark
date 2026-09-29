@@ -181,7 +181,7 @@ const BUY: LearnTab = {
       title: 'Saving, and the daily Loot',
       body: 'Two small habits that pay off.',
       steps: [
-        step('Save with the chest', 'Tap the chest on any card or **Save** on a listing. Saved items are easy to find again, sellers see the interest, and each save earns a little XP.'),
+        step('Save with the heart', 'Tap the heart on any card or **Save** on a listing. Saved items are easy to find again, sellers see the interest, and each save earns a little XP.'),
         step('Reveal the Loot of the day', 'At the top of the Buy tab is a face-down card. Tap **Reveal now** once a day: it turns over to show one of the rarest items in the catalogue, and gives you a free collectible card.', '/learn/buy-reveal.jpg', 'A revealed card. The same card however many times you tap.'),
         step('Do today\'s quests', 'Under the Loot is a short list of today\'s quests - check in, reveal, and two more that change daily. Finished ones can be claimed for XP. See **Quests, XP and levels** below.'),
       ],

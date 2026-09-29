@@ -468,7 +468,7 @@ interface Template {
 
 /* Daily: checking in and the reveal every day, plus two from this pool. */
 const DAILY_POOL: readonly Template[] = [
-  { key: 'save1', title: 'Save something you like', blurb: 'Tap the chest on any listing.', metric: 'save', goal: 1, xp: 15, href: '/' },
+  { key: 'save1', title: 'Save something you like', blurb: 'Tap the heart on any listing.', metric: 'save', goal: 1, xp: 15, href: '/' },
   { key: 'save3', title: 'Save three finds', blurb: 'Build a wishlist: save three listings today.', metric: 'save', goal: 3, xp: 30, href: '/' },
   { key: 'follow1', title: 'Follow a new shop', blurb: 'Follow a shop to see its drops first.', metric: 'follow', goal: 1, xp: 20, href: '/' },
   { key: 'post1', title: 'Say something in Social', blurb: 'Post a haul, a question or a tip.', metric: 'post', goal: 1, xp: 25, href: '/social' },
@@ -581,6 +581,36 @@ function known(taskId: string): KnownTask | null {
   return KNOWN.get(taskId) ?? LEGACY[taskId] ?? null;
 }
 
+/**
+ * Metrics a person can take back with a tap - unsaving a listing, unfollowing
+ * a shop. A quest met with one of these is only met while it stays met: undo
+ * the saves and the quest opens again and its claimed XP goes with it; redo
+ * them and the same claim counts again, without claiming twice.
+ */
+const UNDOABLE: ReadonlySet<Metric | 'streak' | 'profile'> = new Set(['save', 'follow']);
+
+const TEMPLATE_BY_ID = new Map<string, { kind: TaskKind; template: Template }>();
+for (const [kind, pool] of [['daily', DAILY_POOL], ['weekly', [...WEEKLY_POOL, CHECKIN5]], ['monthly', MONTHLY_POOL]] as const) {
+  for (const template of pool) TEMPLATE_BY_ID.set(`${kind}-${template.key}`, { kind, template });
+}
+
+/** Whether a stored claim still stands, given what the person has now. */
+function claimStands(key: string, context: MeasureContext): boolean {
+  const [taskId = '', period = ''] = key.split(':');
+  const entry = TEMPLATE_BY_ID.get(taskId);
+  if (entry) {
+    if (!UNDOABLE.has(entry.template.metric)) return true;
+    const keyOf = entry.kind === 'daily' ? dayKey : entry.kind === 'weekly' ? weekKey : monthKey;
+    const count = stampsFor(entry.template.metric, context).filter((at) => keyOf(at) === period).length;
+    return count >= entry.template.goal;
+  }
+  const ladder = LADDERS.find((candidate) => taskId.startsWith(`ms-${candidate.key}-`));
+  if (ladder && UNDOABLE.has(ladder.metric)) {
+    return ladderProgress(ladder, context) >= Number(taskId.slice(`ms-${ladder.key}-`.length));
+  }
+  return true;
+}
+
 /** The key a claim is stored under: one claim per task per period. */
 export function claimKey(taskId: string, now: number = Date.now()): string | null {
   const task = KNOWN.get(taskId);
@@ -606,7 +636,8 @@ function view(
   const id = `${kind}-${template.key}`;
   const progress = Math.min(template.goal, countIn(template.metric, kind, context));
   const done = progress >= template.goal;
-  const claimed = auto ? done : Boolean(context.state.claimed[`${id}:${periodOf(kind, context.now)}`]);
+  const key = `${id}:${periodOf(kind, context.now)}`;
+  const claimed = auto ? done : Boolean(context.state.claimed[key]) && claimStands(key, context);
   return {
     id, kind, title: template.title, blurb: template.blurb, xp: template.xp, progress, goal: template.goal,
     done, claimed, claimable: done && !claimed, href: template.href, pack: false,
@@ -643,7 +674,10 @@ function tasksFor(context: MeasureContext): TaskView[] {
   // Milestones: the lowest step on each ladder not yet collected.
   for (const ladder of LADDERS) {
     const progress = ladderProgress(ladder, context);
-    let index = ladder.steps.findIndex((goal) => !state.claimed[`ms-${ladder.key}-${goal}:once`]);
+    let index = ladder.steps.findIndex((goal) => {
+      const key = `ms-${ladder.key}-${goal}:once`;
+      return !state.claimed[key] || !claimStands(key, context);
+    });
     const finished = index === -1;
     if (finished) index = ladder.steps.length - 1;
     const goal = ladder.steps[index] ?? 1;
@@ -899,8 +933,10 @@ export function questView(
     last = day;
   }
 
+  // A claim whose quest has since been undone (the saves taken back) pays nothing.
+  const standing = Object.keys(state.claimed).filter((key) => claimStands(key, context));
   let claimedXp = 0;
-  for (const key of Object.keys(state.claimed)) claimedXp += known(key.split(':')[0] ?? '')?.xp ?? 0;
+  for (const key of standing) claimedXp += known(key.split(':')[0] ?? '')?.xp ?? 0;
   const reveals = state.cards.filter((card) => card.packId.startsWith('daily-')).length;
 
   const owned = state.cards
@@ -921,7 +957,7 @@ export function questView(
   const breakdown = [
     ...recordXp(facts),
     { label: 'Check-ins', xp: checkIn, detail: `${checkInDays.length} days, more for streaks` },
-    { label: 'Quests completed', xp: claimedXp + reveals * 15, detail: `${Object.keys(state.claimed).length} claimed + ${reveals} reveals × 15` },
+    { label: 'Quests completed', xp: claimedXp + reveals * 15, detail: `${standing.length} claimed + ${reveals} reveals × 15` },
     { label: 'Cards collected', xp: cardXp, detail: `${owned.length} cards by rarity` },
     { label: 'Card sets completed', xp: setsDone * SET_BONUS_XP, detail: `${setsDone} × ${SET_BONUS_XP}` },
   ].filter((line) => line.xp !== 0);

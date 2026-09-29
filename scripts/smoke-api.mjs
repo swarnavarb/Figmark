@@ -8092,4 +8092,31 @@ await check('direct and protected buyers in one lot go through the same unpack-a
   }
 });
 
+await check('a quest claimed on saves opens again, and pays nothing, once the saves are taken back', async () => {
+  const { questView, claimKey } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
+  const now = Date.now();
+  const at = new Date(now).toISOString();
+  const facts = (saves) => ({
+    orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], follows: [], posts: [], wants: [],
+    pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false,
+    likes: Array.from({ length: saves }, () => ({ createdAt: at })),
+  });
+  const key = claimKey('daily-save3', now);
+  const state = { checkIns: [], claimed: { [key]: at }, cards: [] };
+  const quests = (view) => view.breakdown.find((line) => line.label === 'Quests completed')?.xp ?? 0;
+  const met = questView('usr_x', facts(3), state, now);
+  const undone = questView('usr_x', facts(2), state, now);
+  const redone = questView('usr_x', facts(3), state, now);
+  assert.equal(quests(met), 30, 'three saves: the claimed reward counts');
+  assert.equal(quests(undone), 0, 'one save taken back: the reward goes with it');
+  assert.equal(met.xp - undone.xp, 30 + 3, 'the quest reward and the save itself both come off');
+  assert.equal(quests(redone), 30, 'saving again brings the same claim back, not a second one');
+  const task = undone.tasks.find((entry) => entry.id === 'daily-save3');
+  if (task) {
+    assert.equal(task.claimed, false, 'the quest is open again');
+    assert.equal(task.claimable, false, 'and not claimable until it is met again');
+    assert.equal(task.progress, 2);
+  }
+});
+
 console.log(`\n${passed} checks passed`);

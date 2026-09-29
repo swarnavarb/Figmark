@@ -286,7 +286,9 @@ export function RarityRibbon({ tier }: { tier: RarityTier }) {
 
 /**
  * Your level, XP and streak in the width of a chip; opens the Quests page. It
- * is the long view while the daily quest board is today's; XP claimed there flies up here, and the chip pops when it lands.
+ * is the long view while the daily quest board is today's. XP claimed there
+ * flies up here and the chip pops when it lands; it shakes red when XP is
+ * taken back, as when a save is undone.
  */
 export function CollectorChip() {
   const { view } = useQuest();
@@ -295,12 +297,12 @@ export function CollectorChip() {
   const xp = view?.xp ?? null;
   useEffect(() => {
     if (xp === null) return;
-    if (seen.current !== null && xp > seen.current) setGain({ id: Date.now(), xp: xp - seen.current });
+    if (seen.current !== null && xp !== seen.current) setGain({ id: Date.now(), xp: xp - seen.current });
     seen.current = xp;
   }, [xp]);
   if (!view) return null;
   return (
-    <Link to="/quests" className={`qchip${gain ? ' is-gain' : ''}`} key={gain?.id}
+    <Link to="/quests" className={`qchip${gain ? (gain.xp > 0 ? ' is-gain' : ' is-loss') : ''}`} key={gain?.id}
       aria-label={`Level ${view.level} ${view.title}, open Quests`}>
       {view.streak.current > 0 && (
         <span className="qchip__streak" title={`${view.streak.current}-day streak`}>
@@ -312,7 +314,7 @@ export function CollectorChip() {
         <small>{view.title}</small>
         <span>{view.xp - view.levelFloor}/{view.nextLevelXp - view.levelFloor} XP</span>
       </span>
-      {gain ? <em className="qchip__gain">+{gain.xp} XP</em> : null}
+      {gain ? <em className={`qchip__gain${gain.xp < 0 ? ' qchip__gain--loss' : ''}`}>{gain.xp > 0 ? `+${gain.xp}` : `−${-gain.xp}`} XP</em> : null}
     </Link>
   );
 }

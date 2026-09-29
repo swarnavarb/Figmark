@@ -7839,6 +7839,9 @@ body.is-locked { overflow: hidden; }
 .qchip:hover { border-color: var(--accent-line); }
 .qchip { position: relative; }
 .qchip.is-gain { animation: qchip-pop .6s cubic-bezier(.3,1.6,.5,1); }
+.qchip.is-loss { animation: qchip-shake .45s ease-in-out; }
+@keyframes qchip-shake { 20%, 60% { transform: translateX(-3px); box-shadow: 0 0 0 3px rgba(248,113,113,.4); } 40%, 80% { transform: translateX(3px); } }
+.qchip__gain.qchip__gain--loss { color: #F87171; }
 @keyframes qchip-pop { 30% { transform: scale(1.08); box-shadow: 0 0 0 3px rgba(250,204,21,.45), 0 0 18px rgba(250,204,21,.6); } }
 .qchip__gain {
   position: absolute; right: 8px; top: -6px; font-style: normal; font-family: ui-monospace, monospace; font-size: 10px; font-weight: 800;
@@ -8086,7 +8089,7 @@ body.is-locked { overflow: hidden; }
 }
 @media (prefers-reduced-motion: reduce) {
   .qarcade__bar > span { transition: none; }
-  .qworld::before, .qworld::after, .qmission__claim, .qarcade__gain, .qmission__stamp, .qchip.is-gain, .qchip__gain { animation: none; }
+  .qworld::before, .qworld::after, .qmission__claim, .qarcade__gain, .qmission__stamp, .qchip.is-gain, .qchip.is-loss, .qchip__gain { animation: none; }
   .qchip__gain { display: none; }
 }
 
@@ -8223,20 +8226,23 @@ body.is-locked { overflow: hidden; }
 .qloot--plain .qgrade { border-color: #56637A; }
 .qgrade small { display: block; font-size: 6.5px; color: var(--text-faint); letter-spacing: 0.12em; text-transform: uppercase; }
 
-.qchest {
+.qheart {
   position: absolute; top: 8px; right: 8px; z-index: 2;
-  width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; cursor: pointer;
+  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; cursor: pointer;
   background: rgba(8, 11, 18, 0.7); border: 1px solid rgba(255, 255, 255, 0.14); color: #fff;
+  transition: background 160ms var(--ease), border-color 160ms var(--ease);
 }
-.qchest.is-on { background: var(--q-gold); border-color: var(--q-gold); color: var(--q-gold-ink); }
-.qchest.is-on svg { animation: q-pop 320ms var(--ease); }
+.qheart:hover { color: #FDA4CF; }
+.qheart.is-on { color: #FF4D8D; border-color: rgba(255, 77, 141, 0.6); background: rgba(40, 8, 24, 0.8); }
+.qheart.is-on svg { animation: q-pop 320ms var(--ease); filter: drop-shadow(0 0 5px rgba(255, 77, 141, 0.8)); }
 @keyframes q-pop {
   0% { transform: scale(1) rotate(0); }
   40% { transform: scale(1.35) rotate(-10deg); }
   100% { transform: scale(1) rotate(0); }
 }
+.qfloat.qfloat--loss { color: #F87171; }
 .qfloat {
-  position: absolute; top: -4px; right: 34px; white-space: nowrap; pointer-events: none;
+  position: absolute; top: 38px; right: 0; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 11px; font-weight: var(--w-bold); color: var(--q-gold);
   animation: q-float 900ms var(--ease) forwards;
 }
@@ -8470,7 +8476,7 @@ body.is-locked { overflow: hidden; }
   .qcardface--legendary::after, .qcardface--epic::after { animation: none; display: none; }
   .qflip__inner, .qloot, .qxp > span { transition: none; }
   .qloot:hover { transform: none; }
-  .qchest.is-on svg, .qfloat { animation: none; }
+  .qheart.is-on svg, .qfloat { animation: none; }
 }
 
 /* ── Collector game, part two: sheets, tiers, ratings, collection ──────── */

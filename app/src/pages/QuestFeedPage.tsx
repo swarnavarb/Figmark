@@ -632,6 +632,19 @@ function QuestShooter() {
 
 /* ── One listing ───────────────────────────────────────────────────────── */
 
+/** A pixel heart for saving: hollow until saved, then full. */
+const HEART_FULL = 'M1 0h1v1h-1zM2 0h1v1h-1zM6 0h1v1h-1zM7 0h1v1h-1zM0 1h1v1h-1zM1 1h1v1h-1zM2 1h1v1h-1zM3 1h1v1h-1zM5 1h1v1h-1zM6 1h1v1h-1zM7 1h1v1h-1zM8 1h1v1h-1zM0 2h1v1h-1zM1 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM5 2h1v1h-1zM6 2h1v1h-1zM7 2h1v1h-1zM8 2h1v1h-1zM0 3h1v1h-1zM1 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM5 3h1v1h-1zM6 3h1v1h-1zM7 3h1v1h-1zM8 3h1v1h-1zM1 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM7 4h1v1h-1zM2 5h1v1h-1zM3 5h1v1h-1zM4 5h1v1h-1zM5 5h1v1h-1zM6 5h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM4 7h1v1h-1z';
+const HEART_EDGE = 'M1 0h1v1h-1zM2 0h1v1h-1zM6 0h1v1h-1zM7 0h1v1h-1zM0 1h1v1h-1zM3 1h1v1h-1zM5 1h1v1h-1zM8 1h1v1h-1zM0 2h1v1h-1zM4 2h1v1h-1zM8 2h1v1h-1zM0 3h1v1h-1zM8 3h1v1h-1zM1 4h1v1h-1zM7 4h1v1h-1zM2 5h1v1h-1zM6 5h1v1h-1zM3 6h1v1h-1zM5 6h1v1h-1zM4 7h1v1h-1z';
+
+function PixelHeart({ full }: { full: boolean }) {
+  return (
+    <svg width="18" height="16" viewBox="0 0 9 8" shapeRendering="crispEdges" aria-hidden="true">
+      {full ? <path d={HEART_FULL} fill="currentColor" /> : <path d={HEART_EDGE} fill="currentColor" />}
+      {full ? <path d="M2 1h1v1h-1zM1 2h1v1h-1z" fill="#fff" opacity=".85" /> : null}
+    </svg>
+  );
+}
+
 /**
  * A listing as a collectible: a frame in its rarity, the condition stamped on
  * like a stamp, the save button as a chest, and a pre-order's fill as a level.
@@ -639,7 +652,7 @@ function QuestShooter() {
 function LootCard({ listing }: { listing: Rated }) {
   const { refresh } = useQuest();
   const [liked, setLiked] = useState(listing.liked);
-  const [pop, setPop] = useState(0);
+  const [pop, setPop] = useState<{ id: number; gain: boolean } | null>(null);
   const { rarity } = listing;
   const tier = rarity.tier;
   const view = listing.preOrder ? preOrderView(listing.preOrder) : null;
@@ -654,7 +667,7 @@ function LootCard({ listing }: { listing: Rated }) {
     event.stopPropagation();
     const next = !liked;
     setLiked(next);
-    if (next) setPop((count) => count + 1);
+    setPop({ id: Date.now(), gain: next });
     try {
       const result = await api.like(listing.id);
       setLiked(result.liked);
@@ -669,10 +682,10 @@ function LootCard({ listing }: { listing: Rated }) {
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
         {tier && <RarityRibbon tier={tier} />}
         <span className="qgrade" title="Condition">{listing.condition}</span>
-        <button type="button" className={`qchest${liked ? ' is-on' : ''}`} onClick={(event) => void toggleSave(event)}
-          aria-label={liked ? 'Remove from your vault' : 'Save to your vault'} aria-pressed={liked}>
-          <Glyph name="chest" size={16} />
-          {pop > 0 && <span key={pop} className="qfloat">+3 XP</span>}
+        <button type="button" className={`qheart${liked ? ' is-on' : ''}`} onClick={(event) => void toggleSave(event)}
+          aria-label={liked ? 'Remove from your saves' : 'Save'} aria-pressed={liked}>
+          <PixelHeart full={liked} />
+          {pop && <span key={pop.id} className={`qfloat${pop.gain ? '' : ' qfloat--loss'}`}>{pop.gain ? '+3 XP' : '−3 XP'}</span>}
         </button>
         {rarity.priceDropPercent && <span className="qsticker-tag qsticker-tag--drop">−{rarity.priceDropPercent}%</span>}
         {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
