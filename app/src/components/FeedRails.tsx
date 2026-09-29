@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { hoursToEnd, isEndingSoon, isInDemand, popularity } from '@shared/catalog';
 import type { FeedListing } from '../api';
-import { Fire, Svg } from './ListingBlocks';
+import { Fire, Rush, Svg } from './ListingBlocks';
 import { Thumb, leadPhoto } from './ui';
 
 /**
@@ -49,14 +49,12 @@ export function DemandRail({ listings }: { listings: readonly FeedListing[] }) {
   );
 }
 
-/** Timers about to run out, with speed streaks racing across behind them. */
+/** Timers about to run out: speed streaks racing across, and lightning now and then. */
 export function EndingRail({ listings, now }: { listings: readonly FeedListing[]; now: number }) {
   if (listings.length === 0) return null;
   return (
     <section className="rail rail--rush" aria-label="Ending soon">
-      <span className="rush" aria-hidden="true">
-        {Array.from({ length: 9 }, (_, n) => <i key={n} className="rush__streak" style={{ ['--n' as string]: n }} />)}
-      </span>
+      <Rush bolts={false} />
       <RailHead icon="bolt" title="Ending soon" sub="Grab these before the clock runs out" view="ending" />
       <div className="rail__track">
         {listings.slice(0, SHELF).map((listing, n) => {
@@ -66,15 +64,11 @@ export function EndingRail({ listings, now }: { listings: readonly FeedListing[]
               <span className={`railitem__left${hours < 24 ? ' is-hot' : ''}`}>
                 <Svg name="clock" size={12} /> {timeLeft(hours)}
               </span>
-              {/* How much of the last week is left, draining as it goes. */}
-              <span className="railitem__drain" style={{ ['--left' as string]: Math.min(1, hours / 168) }} />
             </RailItem>
           );
         })}
       </div>
-      <span className="rush rush--front" aria-hidden="true">
-        {[1, 4, 7].map((n) => <i key={n} className="rush__streak" style={{ ['--n' as string]: n }} />)}
-      </span>
+      <Rush streaks={[1, 4, 7]} front />
     </section>
   );
 }
@@ -98,7 +92,7 @@ function RailItem({ listing, n, children }: { listing: FeedListing; n: number; c
     <Link to={`/listing/${listing.id}`} className="railitem" style={{ ['--i' as string]: n }}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb railitem__photo">
         {children}
-        <span className="railitem__name">{listing.title}</span>
+        <span className="railitem__name"><span>{listing.title}</span></span>
       </Thumb>
     </Link>
   );

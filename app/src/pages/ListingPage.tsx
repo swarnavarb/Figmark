@@ -221,6 +221,9 @@ export function ListingPage() {
                   <PersonLink party={{ name: seller.storefrontName, handle: seller.username }} className="sellercard__name" />
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
+                <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>
+                  <Svg name="shield" size={13} /> {seller.tier}
+                </span>
               </div>
 
               <dl className="sellercard__stats">
@@ -243,11 +246,6 @@ export function ListingPage() {
                   <dt><Svg name="calendar" size={13} /> Here since</dt>
                   <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>
                   <span>On Figmark</span>
-                </div>
-                <div className="sellercard__stat sellercard__stat--wide">
-                  <dt><Svg name="shield" size={13} /> Tier</dt>
-                  <dd style={{ textTransform: 'capitalize' }}>{seller.tier}</dd>
-                  <span>{TIER_NOTES[seller.tier] ?? 'Verification level'}</span>
                 </div>
               </dl>
 

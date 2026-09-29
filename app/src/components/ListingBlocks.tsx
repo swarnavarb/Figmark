@@ -112,6 +112,28 @@ export function Fire({ className = '' }: { className?: string }) {
 }
 
 /**
+ * The clock's look: speed streaks racing right to left and, now and then,
+ * a lightning bolt cracking somewhere different. Each bolt keeps its own
+ * slow beat, so they never strike together. Decoration only.
+ */
+const BOLTS = [[14, 8, 7.3, 1.2], [58, 30, 9.1, 4.6], [86, 4, 11.7, 8.1], [33, 46, 13.3, 10.4]] as const;
+
+export function Rush({ streaks = 9, front, bolts = true }: { streaks?: number | readonly number[]; front?: boolean; bolts?: boolean }) {
+  const lanes = typeof streaks === 'number' ? Array.from({ length: streaks }, (_, n) => n) : streaks;
+  return (
+    <span className={`rush${front ? ' rush--front' : ''}`} aria-hidden="true">
+      {lanes.map((n) => <i key={n} className="rush__streak" style={{ ['--n' as string]: n }} />)}
+      {bolts && BOLTS.map(([left, top, beat, delay], n) => (
+        <svg key={`b${n}`} className="rush__bolt" viewBox="0 0 24 64"
+          style={{ left: `${left}%`, top: `${top}%`, animationDuration: `${beat}s`, animationDelay: `${-delay}s` }}>
+          <path d="M14 0 3 30h8L6 64l15-38h-8l6-26Z" />
+        </svg>
+      ))}
+    </span>
+  );
+}
+
+/**
  * What is running out, and only what really is: the clock the seller set,
  * how few are left, how many already went, and how many people are looking.
  * Nothing is made up - a listing with no timer and plenty of stock gets a
@@ -137,8 +159,8 @@ export function Urgency({ listing, compact }: { listing: Listing; compact?: bool
   const hot = ticking && until - now < 24 * 3_600_000;
 
   return (
-    <div className={`urgency${hot ? ' urgency--hot' : ''}${compact ? ' urgency--compact' : ''}`}>
-      <Fire />
+    <div className={`urgency${ticking ? ' urgency--rush' : ''}${hot ? ' urgency--hot' : ''}${compact ? ' urgency--compact' : ''}`}>
+      {ticking ? <Rush streaks={7} /> : <Fire />}
       {ticking ? (
         <div className="urgency__clock">
           <span className="urgency__pulse"><Svg name="clock" size={20} /></span>
