@@ -675,8 +675,10 @@ export interface ListingComment extends BaseDocument {
   authorId: string;
   authorName: string;
   body: string;
-  /** Set when the seller answers, so replies can be grouped under a question. */
+  /** Set on a reply, so replies can be grouped under the post they answer. */
   replyToId: string | null;
+  /** Who reacted, and with what: one reaction per person. */
+  reactions?: { userId: string; kind: ReactionKind }[];
 }
 
 /** A viewer's bookmark. Kept separate so listings stay cheap to write. */

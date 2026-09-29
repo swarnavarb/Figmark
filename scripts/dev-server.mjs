@@ -21,7 +21,7 @@ const { healthRoute } = await import(new URL('health.js', apiRoot));
 const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
-  addCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
+  addCommentRoute, reactToCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
   editListingRoute, deleteListingRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const {
@@ -125,6 +125,7 @@ const routes = [
   ['POST', '/api/listings/:id/delete', deleteListingRoute],
   ['POST', '/api/listings/:id/bump', bumpListingRoute],
   ['POST', '/api/listings/:id/comments', addCommentRoute],
+  ['POST', '/api/listings/:id/comments/:commentId/react', reactToCommentRoute],
   ['POST', '/api/sellers/:id/follow', toggleFollowRoute],
   ['GET', '/api/me/lots/board', lotsBoardRoute],
   ['GET', '/api/me/lots', myLotsRoute],

@@ -7,6 +7,7 @@ import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulf
 import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
 import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
+import { REACTIONS, isReaction, type ReactionKind } from '../../../shared/social.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
@@ -128,7 +129,7 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   const comments = rawComments
     .filter((comment) => !moderated.isRemoved('comment', comment.id))
     .map((comment) => ({
-      ...comment,
+      ...publicComment(comment, viewer?.id ?? null),
       author: personRef(commenterOf.get(comment.authorId), comment.authorName),
       moderation: moderated.mark('comment', comment.id, viewer?.id),
     }));
@@ -432,8 +433,56 @@ async function addComment(request: HttpRequest, _context: InvocationContext) {
   };
   // Returned in the shape the read path uses, so the page can append it as-is:
   // a comment that came back without its author's address rendered nameless.
-  const saved = await (await getRepository()).addComment(comment);
-  return json(201, { comment: { ...saved, author: personRef(user) } });
+  const repository = await getRepository();
+  // A reply always hangs off the post that started the thread, so a reply to
+  // a reply still lands in the right place and threads never nest deeper.
+  if (comment.replyToId) {
+    const parent = (await repository.listComments(id)).find((c) => c.id === comment.replyToId);
+    if (!parent) return error(404, 'not_found', 'That post is gone.');
+    comment.replyToId = parent.replyToId ?? parent.id;
+  }
+  const saved = await repository.addComment(comment);
+  return json(201, { comment: { ...publicComment(saved, user.id), author: personRef(user) } });
+}
+
+/**
+ * A comment as a reader sees it: how many of each reaction and which one is
+ * theirs - never the list of who reacted.
+ */
+function publicComment(comment: ListingComment, viewerId: string | null) {
+  const { reactions = [], ...rest } = comment;
+  const reactionCounts: Partial<Record<ReactionKind, number>> = {};
+  for (const entry of reactions) reactionCounts[entry.kind] = (reactionCounts[entry.kind] ?? 0) + 1;
+  const myReaction = reactions.find((entry) => entry.userId === viewerId)?.kind ?? null;
+  return { ...rest, reactionCounts, myReaction };
+}
+
+/** POST /api/listings/{id}/comments/{commentId}/react - one reaction per person; the same one again takes it back. */
+async function reactToComment(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const { id, commentId } = request.params;
+  if (!id || !commentId) return error(400, 'invalid_request', 'A listing and a post are required.');
+
+  let body: { kind?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (body.kind !== null && !isReaction(body.kind)) {
+    return error(400, 'invalid_reaction', `A reaction is one of ${REACTIONS.join(', ')}.`);
+  }
+
+  const repository = await getRepository();
+  const comment = (await repository.listComments(id)).find((c) => c.id === commentId);
+  if (!comment) return error(404, 'not_found', 'That post is gone.');
+  const others = (comment.reactions ?? []).filter((entry) => entry.userId !== user.id);
+  comment.reactions = body.kind ? [...others, { userId: user.id, kind: body.kind }] : others;
+  comment.updatedAt = new Date().toISOString();
+  const saved = await repository.updateComment(comment);
+  const { reactionCounts, myReaction } = publicComment(saved, user.id);
+  return json(200, { reactionCounts, myReaction });
 }
 
 /** POST /api/sellers/{id}/follow - toggle following a seller. */
@@ -795,6 +844,7 @@ export const createListingRoute = handler(createListing);
 export const toggleLikeRoute = handler(toggleLike);
 export const bumpListingRoute = handler(bumpListing);
 export const addCommentRoute = handler(addComment);
+export const reactToCommentRoute = handler(reactToComment);
 export const toggleFollowRoute = handler(toggleFollow);
 export const createOrderRoute = handler(createOrder);
 export const editListingRoute = handler(editListing);
@@ -810,6 +860,7 @@ app.http('listing-create', { ...anon, methods: ['POST'], route: 'listings', hand
 app.http('listing-like', { ...anon, methods: ['POST'], route: 'listings/{id}/like', handler: toggleLikeRoute });
 app.http('listing-bump', { ...anon, methods: ['POST'], route: 'listings/{id}/bump', handler: bumpListingRoute });
 app.http('listing-comment', { ...anon, methods: ['POST'], route: 'listings/{id}/comments', handler: addCommentRoute });
+app.http('listing-comment-react', { ...anon, methods: ['POST'], route: 'listings/{id}/comments/{commentId}/react', handler: reactToCommentRoute });
 app.http('seller-follow', { ...anon, methods: ['POST'], route: 'sellers/{id}/follow', handler: toggleFollowRoute });
 app.http('listing-edit', { ...anon, methods: ['POST'], route: 'listings/{id}/edit', handler: editListingRoute });
 app.http('listing-delete', { ...anon, methods: ['POST'], route: 'listings/{id}/delete', handler: deleteListingRoute });

@@ -17,7 +17,7 @@ import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
 import { DirectTrack, TrackHero } from '../components/OrderTrack';
-import { Svg, Urgency } from '../components/ListingBlocks';
+import { ItemCard, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 
@@ -125,40 +125,36 @@ export function OrderPage() {
         <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : order.placedAt === null ? 'Cart' : 'My Purchases'}
       </button>
 
-      {/* The item, as one card - the same card the listing's buy box is, so
-          the two screens read as one journey. */}
-      <div className="itemcard rise">
-        <Link to={data.listing ? `/listing/${data.listing.id}` : '#'} className="itemcard__photo" aria-label="See the listing">
-          {data.listing?.photoUrl
-            ? <img src={data.listing.photoUrl} alt="" />
-            : <Svg name="box" size={30} />}
-        </Link>
-        <div className="itemcard__body">
-          <h1 className="itemcard__name">{order.itemName}</h1>
-          <p className="itemcard__meta">
-            {state.side === 'seller' ? 'Sold to' : 'From'} <PersonLink party={state.counterparty} /> · {timeAgo(order.createdAt)}
+      {/* The item, as one card - the same card the cart shows it in, so the
+          two screens read as one journey. Until the order is placed, the
+          card itself says so; there is no second banner repeating it. */}
+      <ItemCard heading="h1"
+        to={data.listing ? `/listing/${data.listing.id}` : null}
+        photo={data.listing?.photoUrl ?? null}
+        name={order.itemName}
+        eyebrow={placed ? (state.side === 'seller' ? 'Order' : 'Your order') : <><Svg name="cart" size={13} /> In your cart</>}
+        meta={<>{state.side === 'seller' ? 'Sold to' : 'From'} <PersonLink party={state.counterparty} /> · {timeAgo(order.createdAt)}</>}
+        facts={[
+          { label: 'Total', value: formatMoney(order.unitPriceMinor * order.quantity, order.currency), tone: 'accent' },
+          { label: 'Qty', value: order.quantity },
+          { label: 'Stock', value: isDirect(order) ? <><Svg name="home" size={13} /> In hand</> : <><Svg name="ship" size={13} /> Import</>, tone: isDirect(order) ? 'ok' : undefined },
+          { label: 'Status', value: placed ? order.status.replace(/_/g, ' ') : 'Not placed', tone: placed ? statusTone(order.status) : 'warn' },
+        ]}>
+        {!placed && (
+          <p className="icard__note">
+            <b>Not placed yet.</b> The seller only gets your order once you choose how to buy below.
           </p>
-          <div className="itemcard__chips">
-            <span className={`badge badge--${statusTone(order.status)} order-status`}>
-              {placed ? order.status.replace(/_/g, ' ') : 'checkout'}
-            </span>
-            {isDirect(order) && <span className="badge badge--ok"><Svg name="home" size={12} /> In hand</span>}
-            <span className="badge">Qty {order.quantity}</span>
-          </div>
-        </div>
-        <div className="itemcard__side">
-          <span className="itemcard__price">{formatMoney(order.unitPriceMinor * order.quantity, order.currency)}</span>
-          {data.listing && (
-            <Link to={`/listing/${data.listing.id}`} className="itemcard__open">
-              Listing <Svg name="open" size={14} />
-            </Link>
-          )}
-        </div>
-      </div>
+        )}
+        {data.listing && (
+          <Link to={`/listing/${data.listing.id}`} className="icard__open">
+            View listing <Svg name="open" size={14} />
+          </Link>
+        )}
+      </ItemCard>
 
       {!placed && full && <Urgency listing={full} />}
 
-      {statusLine && <StatusBanner line={statusLine} />}
+      {placed && statusLine && <StatusBanner line={statusLine} />}
 
       {/* What to do about it comes before where it is: someone opening this
           screen with a payment to make should not have to scroll past a
@@ -1033,11 +1029,6 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
 
   return (
     <div className="stack">
-      {order.placedAt === null && (
-        <p className="notice notice--info">
-          🛒 Not placed yet — the seller gets your order once you pick one: pay in full, pay an advance, or book.
-        </p>
-      )}
       <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
 
       {/* Full or advance, offered only where the seller takes an advance. The

@@ -475,6 +475,11 @@ export class MemoryRepository implements Repository {
     return comment;
   }
 
+  async updateComment(comment: ListingComment): Promise<ListingComment> {
+    this.comments.set(comment.id, comment);
+    return comment;
+  }
+
   async toggleLike(userId: string, listingId: string): Promise<boolean> {
     const key = likeKey(userId, listingId);
     const listing = this.listings.get(listingId);

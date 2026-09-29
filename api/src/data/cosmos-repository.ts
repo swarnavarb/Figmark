@@ -1709,6 +1709,11 @@ export class CosmosRepository implements Repository {
     return resource ?? comment;
   }
 
+  async updateComment(comment: ListingComment): Promise<ListingComment> {
+    const { resource } = await this.container('comments').items.upsert(comment);
+    return (resource as ListingComment | undefined) ?? comment;
+  }
+
   async toggleLike(userId: string, listingId: string): Promise<boolean> {
     const id = `${userId}__${listingId}`;
     try {

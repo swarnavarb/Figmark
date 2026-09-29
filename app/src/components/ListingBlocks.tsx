@@ -1,5 +1,6 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
 import { sourcingOf } from '@shared/fulfilment';
 import { SOURCING_LABELS } from '@shared/enums';
@@ -15,7 +16,7 @@ import { Lightbox } from './SocialPost';
  * colour and stay sharp at any size.
  */
 
-export type Glyph = 'clock' | 'flame' | 'box' | 'views' | 'open' | 'heart' | 'spark' | 'coin' | 'home' | 'ship' | 'users' | 'tag' | 'bolt' | 'shield' | 'calendar';
+export type Glyph = 'clock' | 'flame' | 'box' | 'views' | 'open' | 'heart' | 'spark' | 'coin' | 'home' | 'ship' | 'users' | 'tag' | 'bolt' | 'shield' | 'calendar' | 'cart' | 'reply' | 'smile' | 'pin' | 'star';
 
 const PATHS: Record<Glyph, string> = {
   clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
@@ -33,6 +34,11 @@ const PATHS: Record<Glyph, string> = {
   bolt: 'M13 2 4 14h7l-1 8 9-12h-7l1-8Z',
   shield: 'M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  cart: 'M3 4h2l2.4 11h10.8L21 7H6.2M9 20h.01M17 20h.01',
+  reply: 'M10 8 5 12l5 4M5 12h9a5 5 0 0 1 5 5v1',
+  smile: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM8.5 14a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01',
+  pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21ZM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+  star: 'm12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z',
 };
 
 export function Svg({ name, size = 18 }: { name: Glyph; size?: number }) {
@@ -76,6 +82,35 @@ function Countdown({ until, now }: { until: number; now: number }) {
 }
 
 /**
+ * The fire along the bottom of the urgency strip: flames of different heights
+ * licking up out of step with each other, and embers drifting off the top.
+ * Pure decoration - it is hidden from screen readers and stands still for
+ * anyone who has asked for less motion.
+ */
+const FLAMES = [
+  [0, 0.9, 0], [9, 1.3, 0.4], [19, 1, 0.9], [28, 1.5, 0.2], [39, 1.1, 0.7], [49, 1.4, 0.1],
+  [59, 1, 0.6], [69, 1.5, 0.3], [79, 1.2, 0.8], [90, 1, 0.5],
+] as const;
+const EMBERS = [8, 22, 35, 47, 61, 74, 86, 95];
+
+function Fire() {
+  return (
+    <span className="fire" aria-hidden="true">
+      {FLAMES.map(([left, scale, delay], n) => (
+        <svg key={n} className="fire__flame" viewBox="0 0 40 60"
+          style={{ left: `${left}%`, ['--s' as string]: scale, animationDelay: `${-delay}s` }}>
+          <path className="fire__outer" d="M20 60C8 60 1 52 3 41c2-9 9-13 8-26 7 6 10 13 9 19 3-3 5-8 4-14 9 8 14 18 13 28-1 9-8 12-17 12Z" />
+          <path className="fire__inner" d="M20 60c-6 0-10-4-9-10 1-5 5-7 5-13 4 3 5 7 5 10 2-1 3-4 3-7 5 5 7 10 6 14-1 4-4 6-10 6Z" />
+        </svg>
+      ))}
+      {EMBERS.map((left, n) => (
+        <i key={n} className="fire__ember" style={{ left: `${left}%`, animationDelay: `${-(n * 0.37) % 2.6}s` }} />
+      ))}
+    </span>
+  );
+}
+
+/**
  * What is running out, and only what really is: the clock the seller set,
  * how few are left, how many already went, and how many people are looking.
  * Nothing is made up - a listing with no timer and plenty of stock gets a
@@ -100,6 +135,7 @@ export function Urgency({ listing, compact }: { listing: Listing; compact?: bool
 
   return (
     <div className={`urgency${hot ? ' urgency--hot' : ''}${compact ? ' urgency--compact' : ''}`}>
+      <Fire />
       {ticking ? (
         <div className="urgency__clock">
           <span className="urgency__pulse"><Svg name="clock" size={20} /></span>
@@ -291,5 +327,48 @@ export function Canopy({ stripes = 12 }: { stripes?: number }) {
         ))}
       </g>
     </svg>
+  );
+}
+
+/**
+ * One item, the way checkout and the cart both show it: the photo, the name
+ * and who it is from, then the facts as a row of labelled cells, then
+ * whatever the screen wants underneath. The same card on both screens, so an
+ * item never looks like a different thing from one step to the next.
+ */
+export function ItemCard({ to, photo, name, meta, eyebrow, facts, children, heading = 'h2', i }: {
+  to: string | null;
+  photo: string | null;
+  name: string;
+  meta: ReactNode;
+  eyebrow?: ReactNode;
+  facts: { label: string; value: ReactNode; tone?: string }[];
+  children?: ReactNode;
+  heading?: 'h1' | 'h2';
+  i?: number;
+}) {
+  const Heading = heading;
+  const picture = photo ? <img src={photo} alt="" loading="lazy" /> : <Svg name="box" size={30} />;
+  return (
+    <article className="icard rise" style={i === undefined ? undefined : { ['--i' as string]: i }}>
+      <div className="icard__top">
+        {to ? <Link to={to} className="icard__photo" aria-label="See the listing">{picture}</Link>
+          : <span className="icard__photo">{picture}</span>}
+        <div className="icard__info">
+          {eyebrow && <span className="icard__eyebrow">{eyebrow}</span>}
+          <Heading className="icard__name">{to ? <Link to={to}>{name}</Link> : name}</Heading>
+          <p className="icard__meta">{meta}</p>
+        </div>
+      </div>
+      <dl className="icard__facts">
+        {facts.map((fact) => (
+          <div key={fact.label} className={`icard__fact${fact.tone ? ` icard__fact--${fact.tone}` : ''}`}>
+            <dt>{fact.label}</dt>
+            <dd>{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {children && <div className="icard__foot">{children}</div>}
+    </article>
   );
 }

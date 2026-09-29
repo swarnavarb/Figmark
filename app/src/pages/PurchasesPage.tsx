@@ -6,7 +6,7 @@ import { MoneyBar } from '../components/Buy';
 import { Modal } from '../components/LotFields';
 import { ShipmentChip, StatusBanner, buyerStatus, type StatusFacts } from '../components/OrderStatus';
 import { EmptyState, ErrorNotice, Thumb } from '../components/ui';
-import { Svg } from '../components/ListingBlocks';
+import { ItemCard, Svg } from '../components/ListingBlocks';
 import { formatDate, formatMoney, timeAgo } from '../format';
 
 type Item = ItemGroup['items'][number];
@@ -241,44 +241,46 @@ export function CartPage() {
 
   return (
     <main className="page">
-      <div className="cart__hero">
-        <h1>🛒 Your cart</h1>
-        <p>Things you pressed Buy on. Pay or book to place the order.</p>
-      </div>
+      <header className="cartbox rise">
+        <span className="cartbox__icon"><Svg name="cart" size={24} /></span>
+        <div className="cartbox__text">
+          <span className="cartbox__eyebrow">Waiting for you</span>
+          <h1 className="cartbox__title">Your cart</h1>
+          <p className="cartbox__lede">Things you pressed Buy on. Nothing is ordered until you pay or book.</p>
+        </div>
+        {items && items.length > 0 && (
+          <div className="cartbox__sum">
+            <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
+            <b>{formatMoney(total, items[0]?.item.currency)}</b>
+          </div>
+        )}
+      </header>
 
       {error && <ErrorNotice message={error} />}
       {!items ? (
         <p className="muted">Loading…</p>
       ) : items.length === 0 ? (
-        <EmptyState icon="🛒" title="Your cart is empty">
+        <EmptyState icon={<Svg name="cart" size={26} />} title="Your cart is empty">
           Press Buy on anything you like and it waits here. <Link to="/">Go find something fun →</Link>
         </EmptyState>
       ) : (
         <div className="stack">
-          <div className="cart__sum">
-            <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
-            <b>{formatMoney(total, items[0]?.item.currency)}</b>
-          </div>
-          {items.map(({ item, group }) => (
-            <article key={item.id} className="cart__item">
-              <Link to={`/listing/${item.listingId}`} className="cart__thumb" aria-label="See the listing">
-                <Thumb seed={item.id} label={item.itemName} photo={item.photo ? { url: item.photo } : null} />
-              </Link>
-              <div className="cart__body">
-                <Link to={`/listing/${item.listingId}`} className="cart__name">
-                  {item.itemName}{item.quantity > 1 ? ` ×${item.quantity}` : ''}
-                </Link>
-                <span className="faint">
-                  🏪 {group.sellerName} · added {timeAgo(item.createdAt)}
-                  {item.inHand ? ' · 🏠 In hand' : ''}
-                </span>
-                <b className="cart__price">{formatMoney(item.totalMinor, item.currency)}</b>
-                <div className="cart__acts">
-                  <Link to={`/order/${item.id}`} className="btn btn--sm">💳 Checkout</Link>
-                  <Link to={`/listing/${item.listingId}`} className="btn btn--quiet btn--sm"><Svg name="open" size={13} /> View listing</Link>
-                </div>
-              </div>
-            </article>
+          {items.map(({ item, group }, n) => (
+            <ItemCard key={item.id} i={n + 1}
+              to={`/listing/${item.listingId}`}
+              photo={item.photo ?? null}
+              name={item.itemName}
+              eyebrow={<><Svg name="cart" size={13} /> In your cart</>}
+              meta={<>From {group.sellerName} · added {timeAgo(item.createdAt)}</>}
+              facts={[
+                { label: 'Total', value: formatMoney(item.totalMinor, item.currency), tone: 'accent' },
+                { label: 'Qty', value: item.quantity },
+                { label: 'Stock', value: item.inHand ? <><Svg name="home" size={13} /> In hand</> : <><Svg name="ship" size={13} /> Import</>, tone: item.inHand ? 'ok' : undefined },
+                { label: 'Status', value: 'Not placed', tone: 'warn' },
+              ]}>
+              <Link to={`/order/${item.id}`} className="btn btn--sm icard__go">Checkout →</Link>
+              <Link to={`/listing/${item.listingId}`} className="icard__open">View listing <Svg name="open" size={14} /></Link>
+            </ItemCard>
           ))}
         </div>
       )}

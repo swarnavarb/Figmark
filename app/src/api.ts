@@ -265,11 +265,19 @@ export interface PreOrderRoster {
   brought: PartyRef[];
 }
 
+/** A post under a listing, with its reactions tallied for this reader. */
+export type ListingPost = Omit<ListingComment, 'reactions'> & {
+  author: PartyRef;
+  moderation?: ModerationMark;
+  reactionCounts: Partial<Record<ReactionKind, number>>;
+  myReaction: ReactionKind | null;
+};
+
 export interface ListingDetail {
   listing: Listing;
   seller: SellerCard | null;
   estimatedDispatchAt: string | null;
-  comments: (ListingComment & { author: PartyRef; moderation?: ModerationMark })[];
+  comments: ListingPost[];
   liked: boolean;
   following: boolean;
   isOwn: boolean;
@@ -1640,7 +1648,11 @@ export const api = {
     post<CollectionShelf>('/me/collection/groups', { action, ...body }),
   bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
-    post<{ comment: ListingComment & { author: PartyRef } }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
+    post<{ comment: ListingPost }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
+  reactToComment: (id: string, commentId: string, kind: ReactionKind | null) =>
+    post<Pick<ListingPost, 'reactionCounts' | 'myReaction'>>(
+      `/listings/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}/react`, { kind },
+    ),
   follow: (sellerId: string) =>
     post<{ following: boolean }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
   order: (listingId: string, quantity = 1, via?: string | null) =>

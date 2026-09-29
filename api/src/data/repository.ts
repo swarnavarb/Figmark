@@ -285,6 +285,7 @@ export interface Repository {
 
   listComments(listingId: string): Promise<ListingComment[]>;
   addComment(comment: ListingComment): Promise<ListingComment>;
+  updateComment(comment: ListingComment): Promise<ListingComment>;
 
   /** Toggles a bookmark. Returns the resulting state. */
   toggleLike(userId: string, listingId: string): Promise<boolean>;
