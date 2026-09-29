@@ -72,6 +72,9 @@ export function EndingRail({ listings, now }: { listings: readonly FeedListing[]
           );
         })}
       </div>
+      <span className="rush rush--front" aria-hidden="true">
+        {[1, 4, 7].map((n) => <i key={n} className="rush__streak" style={{ ['--n' as string]: n }} />)}
+      </span>
     </section>
   );
 }
@@ -95,8 +98,8 @@ function RailItem({ listing, n, children }: { listing: FeedListing; n: number; c
     <Link to={`/listing/${listing.id}`} className="railitem" style={{ ['--i' as string]: n }}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb railitem__photo">
         {children}
+        <span className="railitem__name">{listing.title}</span>
       </Thumb>
-      <span className="railitem__name">{listing.title}</span>
     </Link>
   );
 }
