@@ -200,8 +200,8 @@ export function ListingPage() {
             </div>
             {listing.advancePercent ? (
               <p className="advnote">
-                💸 <b>Advance payment accepted</b> — book it with {listing.advancePercent}%
-                ({formatMoney(Math.round(listing.priceMinor * listing.advancePercent / 100), listing.currency)}) now, the rest later.
+                💸 <b>Booking Amt {listing.advancePercent}%</b> — pay{' '}
+                {formatMoney(Math.round(listing.priceMinor * listing.advancePercent / 100), listing.currency)} now, the rest later.
               </p>
             ) : null}
 

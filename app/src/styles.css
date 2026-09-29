@@ -8987,33 +8987,44 @@ a.ohead__thumb:hover { transform: scale(1.04); }
   outline: none; border-color: var(--accent-line); background: var(--surface-hover);
 }
 
-/* ── Segmented tabs: one full-width track; the row under it is its extension ── */
-.segwrap { display: grid; }
+/* ── Segmented tabs: one rounded card; the sub-row is a softer track inside it ── */
+.segwrap {
+  display: grid; gap: 4px; padding: 5px; border-radius: 20px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  box-shadow: inset 0 0 0 1px var(--border), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 8px 24px rgba(0, 0, 0, 0.25);
+}
 .segtabs {
   display: flex; gap: 4px; padding: 4px; border-radius: 16px;
   background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
 }
+.segwrap > .segtabs { padding: 0; background: none; box-shadow: none; }
 .segtab {
   flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 10px 6px; border: 0; border-radius: 12px; background: transparent; cursor: pointer;
+  padding: 10px 6px; border: 0; border-radius: 15px; background: transparent; cursor: pointer;
   color: var(--text-dim); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi);
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
 }
+.segtab:hover:not(.is-on) { color: var(--text); background: rgba(255, 255, 255, 0.04); }
 .segtab__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .segtab__n {
   flex: none; min-width: 20px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-variant-numeric: tabular-nums;
   background: var(--surface-2); color: var(--text-dim);
 }
-.segtab.is-on { background: var(--grad-blue); color: #fff; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35); }
+.segtab.is-on {
+  background: var(--grad-blue); color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 6px 16px rgba(99, 102, 241, 0.35);
+}
 .segtab.is-on .segtab__n { background: rgba(255, 255, 255, 0.24); color: #fff; }
 .segtab--hot .segtab__n { background: var(--coral); color: var(--coral-ink); }
-.segwrap > .segtabs:first-child:not(:last-child) { border-radius: 16px 16px 0 0; }
-.segtabs--ext {
-  margin: 0 10px; padding: 3px 4px; border-radius: 0 0 14px 14px; gap: 2px;
-  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); clip-path: inset(0 -20px -20px -20px);
+.segwrap > .segtabs--ext {
+  padding: 3px; border-radius: 14px; gap: 2px;
+  background: rgba(0, 0, 0, 0.22); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
-.segtabs--ext .segtab { padding: 7px 6px; font-size: var(--t-xs); border-radius: 10px; }
-.segtabs--ext .segtab.is-on { background: rgba(99, 102, 241, 0.2); color: var(--text); box-shadow: inset 0 -2px 0 #818cf8; }
+.segtabs--ext .segtab { padding: 7px 6px; font-size: var(--t-xs); border-radius: 11px; }
+.segtabs--ext .segtab.is-on {
+  background: rgba(129, 140, 248, 0.18); color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
 
 /* ── Lot picker on the listing form ── */
 .lotpick { display: grid; gap: 6px; }
@@ -9062,3 +9073,12 @@ a.ohead__thumb:hover { transform: scale(1.04); }
   border-radius: 999px; background: rgba(251, 191, 36, 0.08); color: #fbbf24; font: inherit; font-weight: var(--w-semi); cursor: pointer;
 }
 @media (max-width: 480px) { .segtab__icon { display: none; } .segtab { font-size: var(--t-xs); gap: 4px; } }
+.psfold {
+  flex: none; display: grid; place-items: center; width: 30px; height: 30px; margin-left: 6px; border: 0; border-radius: 50%;
+  background: var(--surface-2); color: var(--text-dim); cursor: pointer; transition: transform 0.2s;
+}
+.psfold[aria-expanded="true"] { transform: rotate(180deg); }
+.saleitem__calc { flex: 0 1 55%; min-width: 0; font-size: var(--t-xs); }
+.saleline--blank { background: transparent; box-shadow: none; border: 1px dashed rgba(148, 163, 184, 0.28); }
+.saleline--blank .saleline__name { color: var(--text-dim); font-weight: 400; }
+.saleline__name small.saleline__tap { color: var(--text-faint); }

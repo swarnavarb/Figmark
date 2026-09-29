@@ -44,7 +44,7 @@ export function ExpiryChip({ listing, big = false }: { listing: Pick<Listing, 'e
 /** The highlighted line under a card's picture: this can be booked with part of the price. */
 export function AdvanceStrip({ percent }: { percent: number | null | undefined }) {
   if (!percent) return null;
-  return <span className="advstrip">💸 Advance payment accepted · {percent}%</span>;
+  return <span className="advstrip">💸 Booking Amt · {percent}%</span>;
 }
 
 /** Total, paid, balance and credit: the four numbers that must never be ambiguous. */

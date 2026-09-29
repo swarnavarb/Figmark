@@ -103,6 +103,10 @@ export function PowerSalePanel({ storeId, startWith }: { storeId: string; startW
 
   return (
     <div className="stack">
+            <button type="button" className="btn btn--lg" style={{ justifySelf: 'start' }}
+        onClick={() => build()}>
+        <Icon name="plus" size={15} /> Schedule a sale
+      </button>
       {error && <ErrorNotice message={error} />}
       {sales && sales.length > 0 && (
         <div className="stack" style={{ gap: 10 }}>
@@ -118,11 +122,6 @@ export function PowerSalePanel({ storeId, startWith }: { storeId: string; startW
           posts go out. It runs itself from there.
         </EmptyState>
       )}
-
-      <button type="button" className="btn btn--lg" style={{ justifySelf: 'start' }}
-        onClick={() => build()}>
-        <Icon name="plus" size={15} /> Schedule a sale
-      </button>
 
     </div>
   );
@@ -306,16 +305,20 @@ interface QuickFill {
   sourcing: 'in_hand' | 'import';
   terms: TermsDraft;
   allowMultiple: boolean;
+  /** Goes on every item whose own description is left empty. */
+  description: string;
 }
+
+const DEFAULT_FILL_NAME = 'Quick fill for Power selling';
 
 let nextKey = 1;
 const blankItem = (): ItemDraft => ({
-  key: nextKey++, title: '', description: '', price: '', listPrice: '', costSheet: null, photos: [], open: true,
+  key: nextKey++, title: '', description: '', price: '', listPrice: '', costSheet: null, photos: [], open: false,
 });
 
 const blankFill = (): QuickFill => ({
   category: CATEGORIES[0]!, condition: CONDITION_TAGS[0], tags: '', sourcing: 'in_hand',
-  terms: termsDraft(), allowMultiple: false,
+  terms: termsDraft(), allowMultiple: false, description: '',
 });
 
 /** A saved quick fill back into the form. */
@@ -336,17 +339,26 @@ function fillFromTemplate(template: PostTemplate): QuickFill {
       days: String(terms?.limitedDays ?? 2),
     },
     allowMultiple: Boolean(terms?.allowMultiple),
+    description: template.description ?? '',
   };
 }
 
 /** A saved calculation as a sale item: its name, its price as the members' price, and its costs. */
-const itemFromCalc = (calc: SavedCalc): ItemDraft => ({
-  ...blankItem(),
-  open: false,
+const itemFromCalc = (calc: SavedCalc, base: ItemDraft = blankItem()): ItemDraft => ({
+  ...base,
   title: calc.title,
   price: calc.sellingPriceMinor ? String(calc.sellingPriceMinor / 100) : '',
   costSheet: calc.steps.length ? { templateId: calc.templateId, templateName: calc.templateName, steps: calc.steps } : null,
 });
+
+/** A line the shop has started on; untouched lines are left out of the run. */
+const touched = (item: ItemDraft) =>
+  Boolean(item.title.trim() || item.price || item.listPrice || item.photos.length || item.costSheet);
+
+/** A run starts with five lines to fill; more are a tap away. */
+const START_LINES = 5;
+const padLines = (rows: ItemDraft[]) =>
+  [...rows, ...Array.from({ length: Math.max(0, START_LINES - rows.length) }, blankItem)];
 
 const itemReady = (item: ItemDraft) =>
   item.title.trim().length > 0 && Number(item.price) > 0 && Number(item.listPrice) > Number(item.price);
@@ -378,7 +390,8 @@ export function PowerSaleBuilderPage() {
   const [closing, setClosing] = useState('');
   const [fill, setFill] = useState<QuickFill>(blankFill);
   const [fillId, setFillId] = useState('');
-  const [fillName, setFillName] = useState('');
+  const [fillName, setFillName] = useState(DEFAULT_FILL_NAME);
+  const [fillOpen, setFillOpen] = useState(false);
   const [fillNote, setFillNote] = useState<string | null>(null);
   const [startNow, setStartNow] = useState<'now' | 'later'>('now');
   const [startAt, setStartAt] = useState('');
@@ -387,7 +400,7 @@ export function PowerSaleBuilderPage() {
   const [window_, setWindow] = useState('60');
   const [afterChannel, setAfterChannel] = useState(true);
   const [afterFeed, setAfterFeed] = useState(true);
-  const [items, setItems] = useState<ItemDraft[]>(() => (startWith?.length ? startWith.map(itemFromCalc) : [blankItem()]));
+  const [items, setItems] = useState<ItemDraft[]>(() => padLines((startWith ?? []).map((calc) => itemFromCalc(calc))));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -410,7 +423,8 @@ export function PowerSaleBuilderPage() {
     try {
       const { template } = await api.saveTemplate({
         id: fillId || undefined,
-        name: fillName.trim() || name.trim() || 'Power sale quick fill',
+        name: fillName.trim() || DEFAULT_FILL_NAME,
+        description: fill.description.trim(),
         kind: 'power',
         category: fill.category,
         condition: fill.condition,
@@ -433,7 +447,8 @@ export function PowerSaleBuilderPage() {
     }
   }
 
-  const ready = opening.trim().length > 3 && items.length > 0 && items.every(itemReady);
+  const filled = items.filter(touched);
+  const ready = opening.trim().length > 3 && filled.length > 0 && filled.every(itemReady);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -452,9 +467,9 @@ export function PowerSaleBuilderPage() {
         windowMinutes: Math.max(5, Number(window_) || 60),
         closingBody: closing.trim(),
         afterWindow: { channel: afterChannel, feed: afterFeed },
-        items: items.map((item) => ({
+        items: filled.map((item) => ({
           title: item.title.trim(),
-          description: item.description.trim(),
+          description: item.description.trim() || fill.description.trim(),
           category: fill.category,
           condition: fill.condition,
           priceMinor: Math.round(Number(item.price) * 100),
@@ -482,7 +497,7 @@ export function PowerSaleBuilderPage() {
   return (
     <main className="page">
       <div className="page__head">
-        <BackLink to={back}>Scheduled sales</BackLink>
+        <BackLink to={back}>‹ Back</BackLink>
         <h1>⚡ Power selling</h1>
       </div>
       <form className="sellform psform" onSubmit={submit}>
@@ -499,7 +514,16 @@ export function PowerSaleBuilderPage() {
         </LBox>
 
         <LBox icon="⚡" title="Quick fill" hint="Shared by every item below. Save it to reuse next time."
-          right={<span className="probadge">PRO</span>}>
+          right={(
+            <>
+              <span className="probadge">PRO</span>
+              <button type="button" className="psfold" aria-expanded={fillOpen}
+                aria-label={fillOpen ? 'Collapse quick fill' : 'Expand quick fill'} onClick={() => setFillOpen((v) => !v)}>
+                <Icon name="chevron" size={16} />
+              </button>
+            </>
+          )}>
+          {fillOpen && (<>
           {fills.length > 0 && (
             <select value={fillId} onChange={(e) => pickFill(e.target.value)} aria-label="Saved quick fill">
               <option value="">Start from a saved quick fill…</option>
@@ -521,6 +545,11 @@ export function PowerSaleBuilderPage() {
             </label>
           </div>
           <label className="field">
+            <span>Description</span>
+            <textarea value={fill.description} rows={2} onChange={(e) => setF({ description: e.target.value })}
+              placeholder="Used for any item without its own description" />
+          </label>
+          <label className="field">
             <span>Tags</span>
             <input value={fill.tags} onChange={(e) => setF({ tags: e.target.value })} placeholder="resin, sealed" />
           </label>
@@ -533,21 +562,36 @@ export function PowerSaleBuilderPage() {
           <ToggleRow icon="🛍️" title="One buyer may take several" checked={fill.allowMultiple}
             onChange={(allowMultiple) => setF({ allowMultiple })} />
           <div className="row" style={{ gap: 8 }}>
-            <input value={fillName} onChange={(e) => setFillName(e.target.value)} placeholder="Name this quick fill"
+            <input value={fillName} onChange={(e) => setFillName(e.target.value)} placeholder={DEFAULT_FILL_NAME}
               aria-label="Quick fill name" style={{ flex: 1, minWidth: 0 }} />
             <button type="button" className="btn btn--quiet btn--sm" onClick={() => void saveFill()}>
               {fillId ? 'Update' : 'Save'} quick fill
             </button>
           </div>
           {fillNote && <span className="lbox__hint">{fillNote}</span>}
+          </>)}
         </LBox>
 
-        <LBox icon="🧾" title="Items" hint={`${items.length} in this run · posted in this order`}>
+        <LBox icon="🧾" title="Items" hint={`${filled.length} of ${items.length} filled · posted in this order`}>
           {items.map((item, index) => item.open ? (
             <div key={item.key} className="saleitem">
               <div className="saleitem__head">
                 <span className="saleitem__num">{index + 1}</span>
                 <b>{item.title.trim() || `Item ${index + 1}`}</b>
+                {!touched(item) && calcs.length > 0 && (
+                  <select value="" aria-label={`Fill item ${index + 1} from a saved calculation`} className="saleitem__calc"
+                    onChange={(e) => {
+                      const calc = calcs.find((entry) => entry.id === e.target.value);
+                      if (calc) set(item.key, itemFromCalc(calc, item));
+                    }}>
+                    <option value="">🧮 Add from saved calculations…</option>
+                    {calcs.map((calc) => (
+                      <option key={calc.id} value={calc.id}>
+                        {calc.title} · {formatMoney(calc.sellingPriceMinor)}{calc.listingId ? ' (listed)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <PhotoManager photos={item.photos} onChange={(photos) => set(item.key, { photos })} label={null} />
               <label className="field">
@@ -578,9 +622,9 @@ export function PowerSaleBuilderPage() {
               <CostSheetField value={item.costSheet} onChange={(costSheet) => set(item.key, { costSheet })}
                 sellingPriceMinor={Math.round(Number(item.price || 0) * 100)} shop={storeId} />
               <div className="row" style={{ gap: 8 }}>
-                <button type="button" className="btn btn--sm" disabled={!itemReady(item)}
+                <button type="button" className="btn btn--sm" disabled={touched(item) && !itemReady(item)}
                   onClick={() => set(item.key, { open: false })}>
-                  ✓ Save item
+                  {touched(item) ? '✓ Save item' : 'Close'}
                 </button>
                 <button type="button" className="btn btn--ghost btn--sm"
                   onClick={() => setItems((rows) => rows.filter((row) => row.key !== item.key))}>
@@ -589,36 +633,21 @@ export function PowerSaleBuilderPage() {
               </div>
             </div>
           ) : (
-            <div key={item.key} className={`saleline${itemReady(item) ? '' : ' saleline--todo'}`}>
+            <div key={item.key} className={`saleline${!touched(item) ? ' saleline--blank' : itemReady(item) ? '' : ' saleline--todo'}`}>
               <span className="saleitem__num">{index + 1}</span>
               <button type="button" className="saleline__name" onClick={() => set(item.key, { open: true })}>
                 {item.title.trim() || `Item ${index + 1}`}
-                {!itemReady(item) && <small> · needs prices</small>}
+                {touched(item) && !itemReady(item) && <small> · needs prices</small>}
+                {!touched(item) && <small className="saleline__tap"> · tap to fill</small>}
               </button>
               <button type="button" className="saleline__x" aria-label={`Delete ${item.title || 'item'}`}
                 onClick={() => setItems((rows) => rows.filter((row) => row.key !== item.key))}>✕</button>
             </div>
           ))}
-          <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-            <button type="button" className="saleadd" aria-label="Add an item"
-              onClick={() => setItems((rows) => [...rows.map((row) => (itemReady(row) ? { ...row, open: false } : row)), blankItem()])}>
-              <Icon name="plus" size={16} /> Add item
-            </button>
-            {calcs.length > 0 && (
-              <select value="" aria-label="Add from your saved calculations" style={{ flex: 1, minWidth: 180 }}
-                onChange={(e) => {
-                  const calc = calcs.find((entry) => entry.id === e.target.value);
-                  if (calc) setItems((rows) => [...rows.filter((row) => row.title.trim() || row.price), itemFromCalc(calc)]);
-                }}>
-                <option value="">🧮 Add from a saved calculation…</option>
-                {calcs.map((calc) => (
-                  <option key={calc.id} value={calc.id}>
-                    {calc.title} · {formatMoney(calc.sellingPriceMinor)}{calc.listingId ? ' (listed)' : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+          <button type="button" className="saleadd" aria-label="Add more items" style={{ justifySelf: 'start' }}
+            onClick={() => setItems((rows) => [...rows.map((row) => ({ ...row, open: false })), { ...blankItem(), open: true }])}>
+            <Icon name="plus" size={16} /> Add more
+          </button>
         </LBox>
 
         <LBox icon="⏱️" title="Timing">

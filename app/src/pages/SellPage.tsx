@@ -454,7 +454,7 @@ export function SellPage() {
             right={<Switch checked={quickPost} onChange={setQuickPost} label="Quick Post" />}>
             {quickPost && (templates.length === 0 ? (
               <span className="lbox__hint">
-                No templates yet — make one in <Link to="/shop?tab=items">Items → Templates</Link>.
+                No templates yet — make one in <Link to="/shop?tab=items">Items → Quick Fill</Link>.
               </span>
             ) : (
               <select value={templateId} aria-label="Template" onChange={(e) => {
@@ -538,10 +538,6 @@ export function SellPage() {
                     </span>
                   </button>
                 ))}
-                <button type="button" role="radio" aria-checked={!lotId}
-                  className={`lotpick__row${!lotId ? ' is-on' : ''}`} onClick={() => setLotId('')}>
-                  <b>File it into a lot later</b>
-                </button>
                 {/* A lot has a route, a forwarder and costs - too much for a
                     box here, so this points at the real "New lot" button. The
                     draft is kept, so coming back finds the form as it was. */}

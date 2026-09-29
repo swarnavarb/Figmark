@@ -727,7 +727,7 @@ function MyItems({ store }: { store: StoreAccess }) {
         <SegTabs label="Items view" value={mode} onChange={setMode} tabs={[
           { id: 'stock', label: 'Your stock', count: all.length },
           { id: 'power', label: 'Scheduled sales' },
-          { id: 'templates', label: 'Templates' },
+          { id: 'templates', label: 'Quick Fill' },
         ]} />
         {mode === 'stock' && data && (
           <SegTabs ext label="Shelf" value={shelf} onChange={setShelf} tabs={[
