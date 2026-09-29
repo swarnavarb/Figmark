@@ -125,37 +125,38 @@ export function OrderPage() {
         <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : order.placedAt === null ? 'Cart' : 'My Purchases'}
       </button>
 
-      <div className="ohead rise">
-        {/* The item as it was listed, one tap away for either side. */}
-        {data.listing ? (
-          <Link to={`/listing/${data.listing.id}`} className="ohead__thumb" aria-label="See the listing">
-            {data.listing.photoUrl
-              ? <img src={data.listing.photoUrl} alt="" />
-              : <span className="ohead__nophoto" aria-hidden="true">🧸</span>}
-          </Link>
-        ) : (
-          <span className="ohead__thumb"><span className="ohead__nophoto" aria-hidden="true">🧸</span></span>
-        )}
-        <div className="ohead__body">
-          <h1 className="ohead__name">{order.itemName}</h1>
-          <p className="muted ohead__meta">
-            {state.side === 'seller' ? 'Sold to' : 'From'} <PersonLink party={state.counterparty} /> · ordered{' '}
-            {timeAgo(order.createdAt)}
+      {/* The item, as one card - the same card the listing's buy box is, so
+          the two screens read as one journey. */}
+      <div className="itemcard rise">
+        <Link to={data.listing ? `/listing/${data.listing.id}` : '#'} className="itemcard__photo" aria-label="See the listing">
+          {data.listing?.photoUrl
+            ? <img src={data.listing.photoUrl} alt="" />
+            : <Svg name="box" size={30} />}
+        </Link>
+        <div className="itemcard__body">
+          <h1 className="itemcard__name">{order.itemName}</h1>
+          <p className="itemcard__meta">
+            {state.side === 'seller' ? 'Sold to' : 'From'} <PersonLink party={state.counterparty} /> · {timeAgo(order.createdAt)}
           </p>
-          <span className="ohead__chips">
+          <div className="itemcard__chips">
             <span className={`badge badge--${statusTone(order.status)} order-status`}>
-              {order.status.replace(/_/g, ' ')}
+              {placed ? order.status.replace(/_/g, ' ') : 'checkout'}
             </span>
-            {isDirect(order) && <span className="badge badge--ok">🏠 In hand</span>}
-            <span className="ohead__price">{formatMoney(order.unitPriceMinor * order.quantity, order.currency)}</span>
-          </span>
+            {isDirect(order) && <span className="badge badge--ok"><Svg name="home" size={12} /> In hand</span>}
+            <span className="badge">Qty {order.quantity}</span>
+          </div>
         </div>
-        {data.listing && (
-          <Link to={`/listing/${data.listing.id}`} className="btn btn--ghost btn--sm ohead__view">
-            👁 View listing
-          </Link>
-        )}
+        <div className="itemcard__side">
+          <span className="itemcard__price">{formatMoney(order.unitPriceMinor * order.quantity, order.currency)}</span>
+          {data.listing && (
+            <Link to={`/listing/${data.listing.id}`} className="itemcard__open">
+              Listing <Svg name="open" size={14} />
+            </Link>
+          )}
+        </div>
       </div>
+
+      {!placed && full && <Urgency listing={full} />}
 
       {statusLine && <StatusBanner line={statusLine} />}
 
@@ -166,8 +167,6 @@ export function OrderPage() {
       <DeliveryControls state={state} onDone={load} />
       <CollectionPrompt state={state} />
       <DisputePanel state={state} />
-
-      {!placed && full && <Urgency listing={full} />}
 
       {placed && <div className="tabs tabs--vivid">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}

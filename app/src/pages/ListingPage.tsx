@@ -3,14 +3,14 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge } from '../components/ui';
-import { DetailBlocks, Gallery, Urgency } from '../components/ListingBlocks';
+import { DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
 import { RarityRibbon } from '../components/Quest';
 import { listingRarity } from '@shared/quest';
 import { FillBlock } from '../components/FillMeter';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { isExpired, isMultiple } from '@shared/payments';
-import { EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
+import { EditListingDialog, StockChip } from '../components/Buy';
 
 export function ListingPage() {
   const { id = '' } = useParams();
@@ -105,6 +105,52 @@ export function ListingPage() {
     });
   }
 
+  const buyBox = (
+    <div className="buybox rise" style={{ ['--i' as string]: 1 }}>
+      <div className="buybox__top">
+        <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        {isMultiple(listing) || listing.quantityAvailable > 0
+          ? <StockChip listing={listing} />
+          : <span className="badge badge--danger">Sold out</span>}
+      </div>
+      {listing.advancePercent ? (
+        <p className="buybox__adv">
+          <Svg name="coin" size={15} /> Book with{' '}
+          <b>{formatMoney(Math.round(listing.priceMinor * listing.advancePercent / 100), listing.currency)}</b>{' '}
+          ({listing.advancePercent}%) now, the rest later
+        </p>
+      ) : null}
+
+      {action && <p className={`notice ${action.includes('—') || action.includes('Bumped') ? 'notice--ok' : 'notice--error'}`}>{action}</p>}
+
+      {data.isOwn ? (
+        <div className="buybox__acts">
+          <button className="btn buybox__buy" onClick={() => setEditing(true)}>
+            {isExpired(listing) ? 'Make available again' : 'Edit, quantity or delete'}
+          </button>
+          <button className="btn btn--ghost" onClick={() => void bump()} disabled={busy}>Bump</button>
+        </div>
+      ) : isExpired(listing) ? (
+        <p className="notice notice--warn">This item has expired and can no longer be bought.</p>
+      ) : (
+        <div className="buybox__acts">
+          {/* No purchase on an expired item. The server refuses it too. */}
+          <button className="btn btn--lg buybox__buy" onClick={() => void buy()}
+            disabled={busy || !user || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
+            {busy ? <span className="buybox__opening">Opening checkout</span> : listing.preOrder ? 'Book a place' : 'Buy now'}
+          </button>
+          <button className={`btn btn--ghost buybox__save${data.liked ? ' is-on' : ''}`} aria-label={data.liked ? 'Saved' : 'Save'}
+            onClick={() => void toggleLike()} disabled={busy || !user}>
+            <Icon name="heart" size={18} />
+          </button>
+        </div>
+      )}
+      <p className="buybox__fine">
+        {!user && !data.isOwn ? 'Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
+      </p>
+    </div>
+  );
+
   return (
     <main className="page lp">
       <Link to="/" className="btn btn--quiet lp__back">
@@ -125,12 +171,13 @@ export function ListingPage() {
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
             <h1 className="lp__title">{listing.title}</h1>
             <Urgency listing={listing} />
+            {buyBox}
             <DetailBlocks listing={listing} />
             {listing.privateFor && (
               <div className="badges"><span className="badge badge--pink">🤝 Private deal - {user?.id === listing.privateFor ? 'made just for you' : 'only your buyer can see this'}</span></div>
             )}
-            <div className="block block--blue lp__about">
-              <span className="tile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
+            <div className="lp__about">
+              <span className="dtile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
               <p>{listing.description}</p>
             </div>
             {listing.tags.length > 0 && (
@@ -154,8 +201,8 @@ export function ListingPage() {
             />
           )}
 
-          <section className="detail__section rise" style={{ ['--i' as string]: 2 }}>
-            <h2>Questions</h2>
+          <section className="lpcard rise" style={{ ['--i' as string]: 3 }}>
+            <h2 className="lpcard__title"><Icon name="message" size={18} /> Questions</h2>
             <p className="muted">Public — anyone browsing this listing can read these.</p>
             {comments.length === 0 && <p className="muted">No questions yet.</p>}
             <div>
@@ -198,65 +245,9 @@ export function ListingPage() {
 
         {/* ── Purchase rail ── */}
         <aside className="stack lp__rail">
-          <div className="block buybox stack rise" style={{ ['--i' as string]: 1 }}>
-            <span className="tile__label">Price</span>
-            <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-            {/* Stock and expiry, loud: they decide whether this can be bought. */}
-            <div className="badges">
-              {listing.channelDrop && <span className="badge badge--drop">⚡ Exclusive channel drop</span>}
-              {isMultiple(listing) || listing.quantityAvailable > 0
-                ? <StockChip listing={listing} />
-                : <span className="badge badge--danger">Sold out</span>}
-              <ExpiryChip listing={listing} big />
-            </div>
-            {listing.advancePercent ? (
-              <p className="buybox__adv">
-                <b>Booking Amt {listing.advancePercent}%</b> — pay{' '}
-                {formatMoney(Math.round(listing.priceMinor * listing.advancePercent / 100), listing.currency)} now, the rest later.
-              </p>
-            ) : null}
-
-            {action && <p className={`notice ${action.includes('—') || action.includes('Bumped') ? 'notice--ok' : 'notice--error'}`}>{action}</p>}
-
-            {data.isOwn ? (
-              <>
-                <p className="notice notice--info">This is your listing.</p>
-                <button className="btn btn--oncolour btn--block" onClick={() => setEditing(true)}>
-                  {isExpired(listing) ? '✨ Make available again' : '✏️ Edit, quantity or delete'}
-                </button>
-                <button className="btn btn--onglass btn--block" onClick={() => void bump()} disabled={busy}>
-                  Bump to top
-                </button>
-              </>
-            ) : (
-              <>
-                {/* No purchase on an expired item. The server refuses it too;
-                    this just does not offer what it would refuse. */}
-                {isExpired(listing) ? (
-                  <p className="notice notice--warn">⛔ This item has expired and can no longer be bought.</p>
-                ) : (
-                  <button className="btn btn--lg btn--block btn--oncolour buybox__buy" onClick={() => void buy()}
-                    disabled={busy || !user || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
-                    {busy ? <span className="buybox__opening">Opening checkout</span> : listing.preOrder ? 'Book a place' : 'Buy now'}
-                  </button>
-                )}
-                <button className={`btn btn--onglass btn--block${data.liked ? ' is-on' : ''}`}
-                  onClick={() => void toggleLike()} disabled={busy || !user}>
-                  <Icon name="heart" size={14} /> {data.liked ? 'Saved' : 'Save'}
-                </button>
-                {!user && <p className="faint">Sign in to buy or save this listing.</p>}
-              </>
-            )}
-
-            <p className="faint">
-              Nothing is charged here. The next screen is where you choose how to pay: directly to the
-              seller, or through an escrow who holds it until you confirm the item arrived.
-            </p>
-          </div>
-
           {seller && (
             <div className="card card--pad stack lp__seller rise" style={{ ['--i' as string]: 2 }}>
-              <span className="tile__label">Offered by</span>
+              <span className="dtile__label">Offered by</span>
               <div className="row">
                 <Avatar name={seller.storefrontName} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -391,15 +382,22 @@ function PreOrderPanel({
   }
 
   return (
-    <section className="detail__section">
-      <div className="row row--between">
-        <h2>Pre-order</h2>
+    <section className="pocard rise" style={{ ['--i' as string]: 2 }}>
+      <div className="pocard__head">
+        <FillRing done={view.committed} of={view.fillThreshold} />
+        <div className="pocard__what">
+          <span className="pocard__eyebrow"><Svg name="users" size={13} /> Group pre-order</span>
+          <b className="pocard__title">{view.committed} of {view.fillThreshold} joined</b>
+          <span className="faint">
+            {view.committed >= view.fillThreshold ? 'Filled' : `${view.fillThreshold - view.committed} more to go`}
+          </span>
+        </div>
         <span className={`badge badge--${badge.tone}`}>{badge.label}</span>
       </div>
 
       <FillBlock view={view} people={roster.people} unlisted={roster.unlisted} />
 
-      <p className="muted">
+      <p className="pocard__note">
         {view.state === 'closed' ? (
           <>
             It closed {view.fillThreshold - view.committed} short, so the seller placed no order.
@@ -466,6 +464,22 @@ function PreOrderPanel({
 
       <Roster roster={roster} />
     </section>
+  );
+}
+
+/** How full the group buy is, as a ring that fills in when it arrives. */
+function FillRing({ done, of }: { done: number; of: number }) {
+  const share = of > 0 ? Math.min(1, done / of) : 0;
+  const c = 2 * Math.PI * 26;
+  return (
+    <span className="fillring" aria-hidden="true">
+      <svg width="64" height="64" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="26" className="fillring__track" />
+        <circle cx="32" cy="32" r="26" className="fillring__bar" strokeDasharray={c}
+          style={{ ['--from' as string]: c, strokeDashoffset: c * (1 - share) }} />
+      </svg>
+      <b>{Math.round(share * 100)}%</b>
+    </span>
   );
 }
 

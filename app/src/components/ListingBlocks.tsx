@@ -15,13 +15,14 @@ import { Lightbox } from './SocialPost';
  * colour and stay sharp at any size.
  */
 
-type Glyph = 'clock' | 'flame' | 'box' | 'eye' | 'heart' | 'spark' | 'coin' | 'home' | 'ship' | 'users' | 'tag' | 'bolt' | 'shield' | 'calendar';
+export type Glyph = 'clock' | 'flame' | 'box' | 'views' | 'open' | 'heart' | 'spark' | 'coin' | 'home' | 'ship' | 'users' | 'tag' | 'bolt' | 'shield' | 'calendar';
 
 const PATHS: Record<Glyph, string> = {
   clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
   flame: 'M12 22c4 0 7-2.7 7-6.8C19 10 14 8 14 3c-3 1.5-5 4.5-5 7-1-.5-2-1.8-2-3.2C5.6 8.3 5 10.6 5 12.5 5 18.6 8 22 12 22Z',
   box: 'M3 7.5 12 3l9 4.5v9L12 21l-9-4.5v-9ZM3 7.5l9 4.5 9-4.5M12 12v9',
-  eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+  views: 'M3 20h18M6 16v-4M10 16V8M14 16v-6M18 16V5',
+  open: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
   heart: 'M12 20.4s-7.6-4.6-7.6-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.6 2.8c0 5.6-7.6 10.2-7.6 10.2Z',
   spark: 'M12 2v5M12 17v5M2 12h5M17 12h5M5 5l3 3M16 16l3 3M19 5l-3 3M8 16l-3 3',
   coin: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM15 9h-4.5a1.75 1.75 0 0 0 0 3.5h3a1.75 1.75 0 0 1 0 3.5H9M12 7v2M12 16v2',
@@ -90,7 +91,7 @@ export function Urgency({ listing, compact }: { listing: Listing; compact?: bool
   if (left !== null && left > 0 && left <= 5) facts.push({ icon: 'box', text: left === 1 ? 'Last one left' : `Only ${left} left` });
   if (sold > 0) facts.push({ icon: 'flame', text: `${sold} sold` });
   if (listing.likeCount > 0) facts.push({ icon: 'heart', text: `${listing.likeCount} saved it` });
-  if (listing.viewCount > 0) facts.push({ icon: 'eye', text: `${listing.viewCount} views` });
+  if (listing.viewCount > 0) facts.push({ icon: 'views', text: `${listing.viewCount} views` });
   if (rarity.priceDropPercent) facts.push({ icon: 'tag', text: `${rarity.priceDropPercent}% off` });
 
   const ticking = until !== null && until > now;
@@ -127,11 +128,11 @@ function Tile({ tone, icon, label, value, note, i }: {
   tone: string; icon: Glyph; label: string; value: ReactNode; note?: ReactNode; i: number;
 }) {
   return (
-    <div className={`block block--${tone} tile`} style={{ ['--i' as string]: i }}>
-      <span className="tile__icon"><Svg name={icon} size={18} /></span>
-      <span className="tile__label">{label}</span>
-      <b className="tile__value">{value}</b>
-      {note && <span className="tile__note">{note}</span>}
+    <div className={`dtile dtile--${tone}`} style={{ ['--i' as string]: i }}>
+      <span className="dtile__icon"><Svg name={icon} size={18} /></span>
+      <span className="dtile__label">{label}</span>
+      <b className="dtile__value">{value}</b>
+      {note && <span className="dtile__note">{note}</span>}
     </div>
   );
 }
@@ -172,7 +173,7 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
   }
   if (listing.preOrder) {
     tiles.push({
-      tone: 'hero', icon: 'users', label: 'Pre-order', value: `${listing.preOrder.filledCount} of ${listing.preOrder.fillThreshold} in`,
+      tone: 'hero', icon: 'users', label: 'Pre-order', value: `${listing.preOrder.filledCount + (listing.preOrder.pledgedCount ?? 0)} of ${listing.preOrder.fillThreshold} joined`,
       note: 'Ordered once enough people join',
     });
   }
@@ -186,7 +187,7 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
   tiles.push({ tone: 'cool', icon: 'tag', label: 'Category', value: listing.category });
 
   return (
-    <div className="tiles">
+    <div className="dtiles">
       {tiles.map((tile, i) => <Tile key={tile.label} {...tile} i={i} />)}
     </div>
   );
@@ -242,5 +243,53 @@ export function Gallery({ photos, title, fallback, children }: {
           onClose={() => setOpen(null)} />
       )}
     </div>
+  );
+}
+
+/** Five stars, drawn, filled to the rating (out of five) to the half star. */
+export function StarRow({ value, size = 16 }: { value: number; size?: number }) {
+  const stars = Math.round(value * 2) / 2;
+  return (
+    <span className="starrow" aria-label={`${value.toFixed(1)} out of 5`}>
+      {[0, 1, 2, 3, 4].map((n) => {
+        const fill = Math.max(0, Math.min(1, stars - n));
+        return (
+          <svg key={n} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+            <defs>
+              <linearGradient id={`sr-${n}-${fill}`}>
+                <stop offset={`${fill * 100}%`} stopColor="#FBBF24" />
+                <stop offset={`${fill * 100}%`} stopColor="rgba(255,255,255,0.14)" />
+              </linearGradient>
+            </defs>
+            <path fill={`url(#sr-${n}-${fill})`} d="m12 2.6 2.9 6 6.5.8-4.8 4.5 1.2 6.5L12 17.2l-5.8 3.2 1.2-6.5-4.8-4.5 6.5-.8Z" />
+          </svg>
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * A shop's awning: striped, scalloped along its hem, in the shop's own hue.
+ * It drops in and settles, the way a canopy is pulled down in the morning.
+ */
+export function Canopy({ stripes = 12 }: { stripes?: number }) {
+  const w = 100 / stripes;
+  return (
+    <svg className="canopy" viewBox="0 0 100 16" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <clipPath id="canopy-hem">
+          <path d={`M0 0H100V11${Array.from({ length: stripes }, (_, n) => {
+            const x = 100 - n * w;
+            return `Q${x - w / 2} 17 ${x - w} 11`;
+          }).join('')}Z`} />
+        </clipPath>
+      </defs>
+      <g clipPath="url(#canopy-hem)">
+        {Array.from({ length: stripes }, (_, n) => (
+          <rect key={n} x={n * w} y="0" width={w + 0.05} height="16" className={n % 2 ? 'canopy__light' : 'canopy__hue'} />
+        ))}
+      </g>
+    </svg>
   );
 }

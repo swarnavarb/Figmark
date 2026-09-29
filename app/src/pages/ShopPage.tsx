@@ -54,6 +54,7 @@ import {
   currencySymbol, formatDateOrdinal, formatMoney, formatTotals, fromMinor, timeAgo, toMinor,
 } from '../format';
 import { useSession } from '../session';
+import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
 
 type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
@@ -816,7 +817,7 @@ function ShelfCard({ listing, onEdit }: { listing: Listing; onEdit: () => void }
         )}
 
         <span className="qloot__foot">
-          <span className="faint">👁 {listing.viewCount} · ♥ {listing.likeCount ?? 0}</span>
+          <span className="faint"><Svg name="views" size={13} /> {listing.viewCount} · ♥ {listing.likeCount ?? 0}</span>
           {/* An item with no lot is not a problem to fix - most never need
               one. It says which it is and stops there. */}
           <span className={`badge${listing.lotId ? '' : ' badge--quiet'}`}>{listing.lotId ? 'In a lot' : 'No lot'}</span>
@@ -1615,7 +1616,7 @@ function OrderRow({
           </>
         )}
         <Link to={`/listing/${row.listingId}`} className="ocard__view" aria-label="See the listing as it was listed">
-          👁 Listing
+          <Svg name="open" size={13} /> Listing
         </Link>
         <span className="ocard__spacer" />
         {row.canCancel && !awaitingClaim && (

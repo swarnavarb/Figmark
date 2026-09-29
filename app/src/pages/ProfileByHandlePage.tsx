@@ -11,6 +11,7 @@ import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { MessageButton } from './MessagesPage';
 import { Stars } from './OrderPage';
+import { Canopy, StarRow } from '../components/ListingBlocks';
 import { CollectorProfile } from './CollectorProfile';
 
 /**
@@ -120,16 +121,20 @@ export function ProfileByHandlePage() {
   );
 
   return (
-    <main className="storefront">
+    <main className={`storefront${data.isStore ? ' storefront--shop' : ''}`}>
       {/* The banner. A shop that has not set one gets a full brand gradient in
           its own hue rather than a grey band, so every storefront opens with
           colour and two shops never look like the same shop. */}
       <div className={`storefront__cover storefront__cover--${brandHueFor(data.handle ?? data.displayName)}`}>
         {data.coverUrl && <img src={data.coverUrl} alt="" />}
+        {data.isStore && <Canopy />}
+        {data.isStore && (
+          <span className="storefront__open"><i aria-hidden="true" /> Open for orders</span>
+        )}
       </div>
 
       <div className="storefront__body">
-        <header className="storefront__head">
+        <header className="storefront__head storefront__sign">
           <div className="storefront__avatar">
             {data.photoUrl ? <img src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={76} />}
           </div>
@@ -435,10 +440,37 @@ export function ReviewsTab({ profile, trade, listed, page, canWrite, onWritten }
   canWrite: boolean;
   onWritten: () => void;
 }) {
+  const all = [...listed.map((review) => review.rating), ...(page?.reviews ?? []).map((review) => review.rating)];
+  const average = all.length ? all.reduce((sum, n) => sum + n, 0) / all.length : null;
+  // How many sit at each star, five first - the shape of a record says more
+  // than its average does.
+  const bars = [5, 4, 3, 2, 1].map((star) => ({
+    star, count: all.filter((rating) => Math.round(rating) === star).length,
+  }));
+
   return (
     <div className="stack">
-      <section className="detail__section">
-        <h3>From completed orders</h3>
+      <div className="revsum rise">
+        <div className="revsum__score">
+          <b>{average !== null ? average.toFixed(1) : '—'}</b>
+          <StarRow value={average ?? 0} size={18} />
+          <span className="faint">{all.length} {all.length === 1 ? 'review' : 'reviews'}</span>
+        </div>
+        <div className="revsum__bars">
+          {bars.map((bar, i) => (
+            <div key={bar.star} className="revsum__bar">
+              <span>{bar.star}</span>
+              <span className="revsum__track">
+                <span style={{ width: `${all.length ? (bar.count / all.length) * 100 : 0}%`, ['--i' as string]: i }} />
+              </span>
+              <span className="faint">{bar.count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <section className="stack">
+        <h3 className="revhead">From completed orders <span className="badge badge--ok">Verified</span></h3>
         {!trade ? (
           <p className="faint">Loading…</p>
         ) : listed.length === 0 ? (
@@ -447,44 +479,41 @@ export function ReviewsTab({ profile, trade, listed, page, canWrite, onWritten }
             {trade.pending > 0 && ` ${trade.pending} written and waiting on the other side.`}
           </p>
         ) : (
-          <div className="card card--pad">
-            {listed.map((review) => (
-              <article key={review.id} className="review">
-                <div className="review__head">
-                  <span className="review__who"><PersonLink party={review.author} /></span>
-                  <span className="faint">{timeAgo(review.createdAt)}</span>
+          <div className="revlist">
+            {listed.map((review, i) => (
+              <article key={review.id} className="revcard" style={{ ['--i' as string]: i }}>
+                <div className="revcard__head">
+                  <Avatar name={review.author.name} size={36} />
+                  <span className="revcard__who">
+                    <PersonLink party={review.author} />
+                    <span className="faint">{timeAgo(review.createdAt)}</span>
+                  </span>
+                  <StarRow value={review.rating} />
                 </div>
-                <Stars value={review.rating} />
-                {review.body && <p className="muted">{review.body}</p>}
-                <ReportButton targetType="review" targetId={review.id} parentId={profile.sellerId}
-                  mine={Boolean(review.mine)} moderation={review.moderation} />
-                {review.item && (
-                  <Link to={`/listing/${review.item.listingId}`} className="review__item">
-                    <span>{review.item.name}</span>
-                    <span className="faint">
-                      {formatMoney(review.item.totalMinor, review.item.currency)}
-                    </span>
-                  </Link>
-                )}
+                {review.body && <p className="revcard__body">{review.body}</p>}
+                <div className="revcard__foot">
+                  {review.item && (
+                    <Link to={`/listing/${review.item.listingId}`} className="revcard__item">
+                      <span>{review.item.name}</span>
+                      <b>{formatMoney(review.item.totalMinor, review.item.currency)}</b>
+                    </Link>
+                  )}
+                  <ReportButton targetType="review" targetId={review.id} parentId={profile.sellerId}
+                    mine={Boolean(review.mine)} moderation={review.moderation} />
+                </div>
               </article>
             ))}
             {trade.pending > 0 && (
-              <p className="faint" style={{ marginTop: 10 }}>
-                {trade.pending} more written and hidden until both sides have rated.
-              </p>
+              <p className="faint">{trade.pending} more written and hidden until both sides have rated.</p>
             )}
           </div>
         )}
       </section>
 
-      <section className="detail__section">
-        <h3>
+      <section className="stack">
+        <h3 className="revhead">
           About this page
-          {page && page.count > 0 && (
-            <span className="faint" style={{ fontWeight: 400 }}>
-              {' '}· {(page.average! / 20).toFixed(1)} from {page.count}
-            </span>
-          )}
+          {page && page.count > 0 && <span className="faint" style={{ fontWeight: 400 }}>{(page.average! / 20).toFixed(1)} from {page.count}</span>}
         </h3>
         <p className="faint" style={{ marginTop: 0 }}>
           Anybody can leave one of these, so they are counted on their own and never folded into the
@@ -494,20 +523,25 @@ export function ReviewsTab({ profile, trade, listed, page, canWrite, onWritten }
         {canWrite && <PageReviewForm subjectId={profile.sellerId} existing={page?.yours ?? null} onWritten={onWritten} />}
 
         {page && page.reviews.length > 0 && (
-          <div className="card card--pad" style={{ marginTop: 12 }}>
-            {page.reviews.map((review) => (
-              <article key={review.id} className="review">
-                <div className="review__head">
-                  <span className="review__who">
-                    <PersonLink party={{ name: review.authorName, handle: review.authorHandle }} />
-                    {review.mine && <span className="badge" style={{ marginLeft: 8 }}>yours</span>}
+          <div className="revlist">
+            {page.reviews.map((review, i) => (
+              <article key={review.id} className="revcard" style={{ ['--i' as string]: i }}>
+                <div className="revcard__head">
+                  <Avatar name={review.authorName} size={36} />
+                  <span className="revcard__who">
+                    <span>
+                      <PersonLink party={{ name: review.authorName, handle: review.authorHandle }} />
+                      {review.mine && <span className="badge" style={{ marginLeft: 8 }}>yours</span>}
+                    </span>
+                    <span className="faint">{timeAgo(review.createdAt)}</span>
                   </span>
-                  <span className="faint">{timeAgo(review.createdAt)}</span>
+                  <StarRow value={review.rating} />
                 </div>
-                <Stars value={review.rating} />
-                <p className="muted">{review.body}</p>
-                <ReportButton targetType="store_review" targetId={review.id} parentId={profile.sellerId}
-                  mine={review.mine} moderation={review.moderation} />
+                <p className="revcard__body">{review.body}</p>
+                <div className="revcard__foot">
+                  <ReportButton targetType="store_review" targetId={review.id} parentId={profile.sellerId}
+                    mine={review.mine} moderation={review.moderation} />
+                </div>
               </article>
             ))}
           </div>

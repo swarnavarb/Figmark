@@ -6,6 +6,7 @@ import { MoneyBar } from '../components/Buy';
 import { Modal } from '../components/LotFields';
 import { ShipmentChip, StatusBanner, buyerStatus, type StatusFacts } from '../components/OrderStatus';
 import { EmptyState, ErrorNotice, Thumb } from '../components/ui';
+import { Svg } from '../components/ListingBlocks';
 import { formatDate, formatMoney, timeAgo } from '../format';
 
 type Item = ItemGroup['items'][number];
@@ -212,7 +213,7 @@ function PurchaseCard({ item }: { item: Item }) {
       {item.shipment && <ShipmentChip shipment={item.shipment} />}
 
       <div className="pcard__foot">
-        <Link to={`/listing/${item.listingId}`} className="pcard__link">👁 View listing</Link>
+        <Link to={`/listing/${item.listingId}`} className="pcard__link"><Svg name="open" size={13} /> View listing</Link>
         {item.canConfirm && <span className="faint">Tap to confirm it arrived</span>}
         <Link to={`/order/${item.id}`} className="pcard__link pcard__link--go">Open order →</Link>
       </div>
@@ -274,7 +275,7 @@ export function CartPage() {
                 <b className="cart__price">{formatMoney(item.totalMinor, item.currency)}</b>
                 <div className="cart__acts">
                   <Link to={`/order/${item.id}`} className="btn btn--sm">💳 Checkout</Link>
-                  <Link to={`/listing/${item.listingId}`} className="btn btn--quiet btn--sm">👁 View listing</Link>
+                  <Link to={`/listing/${item.listingId}`} className="btn btn--quiet btn--sm"><Svg name="open" size={13} /> View listing</Link>
                 </div>
               </div>
             </article>
