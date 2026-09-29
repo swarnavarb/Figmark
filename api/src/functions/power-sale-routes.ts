@@ -150,12 +150,11 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
   const priceMinor = positive(entry.priceMinor, 0);
   if (priceMinor <= 0) return { why: `${title} needs a members' price.` };
 
-  // The public price is what it moves to when the window shuts, so it cannot be
-  // the same number or lower - a "discount" that is not one is a lie told to
-  // the people who trusted the shop enough to follow it.
-  const listPriceMinor = positive(entry.listPriceMinor, 0);
-  if (listPriceMinor <= priceMinor) {
-    return { why: `${title}: the price after the window has to be above the members' price.` };
+  // The public price is what it moves to when the window shuts. The same
+  // number is fine - no discount, it just goes public - but never lower.
+  const listPriceMinor = positive(entry.listPriceMinor, 0) || priceMinor;
+  if (listPriceMinor < priceMinor) {
+    return { why: `${title}: the price after the window can't be below the members' price.` };
   }
 
   const category = trimmed(entry.category, 40);
@@ -223,6 +222,8 @@ function listingOptions(entry: Record<string, unknown>): Partial<PowerSaleItem> 
     quantityMode: entry.quantityMode === 'multiple' ? 'multiple' : 'fixed',
     expiresAt: expires && !Number.isNaN(expires.getTime()) ? expires.toISOString() : null,
     advancePercent: advance > 0 && advance < 100 ? advance : null,
+    lotId: typeof entry.lotId === 'string' && entry.lotId ? entry.lotId : null,
+    limitedDays: Math.min(365, Math.max(0, Math.round(Number(entry.limitedDays) || 0))) || null,
   };
 }
 
@@ -255,6 +256,10 @@ async function create(request: HttpRequest, _context: InvocationContext) {
   for (const raw of rawItems) {
     const read = readItem(raw);
     if ('why' in read) return error(400, 'invalid_sale', read.why);
+    // A lot has to be one of the shop's own; another shop's id does not resolve.
+    if (read.item.lotId && !(await repository.getLot(shop.sellerId, read.item.lotId))) {
+      return error(404, 'not_found', `${read.item.title}: no such lot of yours.`);
+    }
     items.push(read.item);
   }
 

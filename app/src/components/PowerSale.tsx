@@ -3,13 +3,13 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import type { PostTemplate } from '@shared/templates';
 import { useSession } from '../session';
 import { BackLink } from './ScrollManager';
-import { CONDITION_TAGS } from '@shared/enums';
+import { CONDITION_TAGS, LOT_STAGE_LABELS } from '@shared/enums';
 import { CATEGORIES } from '@shared/catalog';
 import {
-  ApiRequestError, api, type PhotoDraft, type PowerSaleDraft, type PowerSaleView,
+  ApiRequestError, api, type LotSummary, type PhotoDraft, type PowerSaleDraft, type PowerSaleView,
 } from '../api';
 import { TermsFields, termsBody, termsDraft, type TermsDraft } from './Buy';
-import { LBox, OptionTiles, ToggleRow } from './ListingForm';
+import { LBox, OptionTiles, SHAPE_OPTIONS, Switch, ToggleRow, type Shape } from './ListingForm';
 import { PhotoManager } from './PhotoManager';
 import { EmptyState, ErrorNotice, Icon } from './ui';
 import type { SavedCalc } from '@shared/profit';
@@ -284,7 +284,18 @@ function Countdown({ to }: { to: string }) {
   );
 }
 
-/** One item of a run: only what differs between items. The rest is the quick fill. */
+/** What every item in a run shares by default - and what a saved quick fill holds. */
+interface QuickFill {
+  category: string;
+  condition: string;
+  tags: string;
+  shape: Shape;
+  lotId: string;
+  terms: TermsDraft;
+  allowMultiple: boolean;
+}
+
+/** One item of a run, carrying its own copy of the quick fill options. */
 interface ItemDraft {
   key: number;
   title: string;
@@ -293,58 +304,55 @@ interface ItemDraft {
   listPrice: string;
   costSheet: CostSheetDraft | null;
   photos: PhotoDraft[];
-  /** Folded to its name once saved; open while it is being written. */
+  /** Folded to its name until tapped. */
   open: boolean;
-}
-
-/** What every item in a run shares - and what a saved quick fill holds. */
-interface QuickFill {
-  category: string;
-  condition: string;
-  tags: string;
-  sourcing: 'in_hand' | 'import';
-  terms: TermsDraft;
-  allowMultiple: boolean;
-  /** Goes on every item whose own description is left empty. */
-  description: string;
+  fill: QuickFill;
+  /** Changed for this item alone, so the quick fill above no longer writes over it. */
+  own: boolean;
+  /** Its listing options unfolded. */
+  optsOpen: boolean;
 }
 
 const DEFAULT_FILL_NAME = 'Quick fill for Power selling';
 
-let nextKey = 1;
-const blankItem = (): ItemDraft => ({
-  key: nextKey++, title: '', description: '', price: '', listPrice: '', costSheet: null, photos: [], open: false,
+const blankFill = (): QuickFill => ({
+  category: CATEGORIES[0]!, condition: CONDITION_TAGS[0], tags: '', shape: 'single', lotId: '',
+  terms: termsDraft(), allowMultiple: false,
 });
 
-const blankFill = (): QuickFill => ({
-  category: CATEGORIES[0]!, condition: CONDITION_TAGS[0], tags: '', sourcing: 'in_hand',
-  terms: termsDraft(), allowMultiple: false, description: '',
+let nextKey = 1;
+const blankItem = (fill: QuickFill = blankFill()): ItemDraft => ({
+  key: nextKey++, title: '', description: '', price: '', listPrice: '', costSheet: null, photos: [],
+  open: false, fill, own: false, optsOpen: false,
 });
 
 /** A saved quick fill back into the form. */
-function fillFromTemplate(template: PostTemplate): QuickFill {
+function fillFromTemplate(template: PostTemplate): { fill: QuickFill; description: string } {
   const terms = template.terms;
   return {
-    category: template.category || CATEGORIES[0]!,
-    condition: template.condition ?? CONDITION_TAGS[0],
-    tags: template.tags.join(', '),
-    sourcing: template.sourcing === 'import' ? 'import' : 'in_hand',
-    terms: {
-      ...termsDraft(),
-      quantityMode: terms?.quantityMode ?? 'fixed',
-      quantity: String(terms?.quantity ?? 1),
-      advance: Boolean(terms?.advancePercent),
-      advancePercent: String(terms?.advancePercent ?? 20),
-      limited: Boolean(terms?.limitedDays),
-      days: String(terms?.limitedDays ?? 2),
+    fill: {
+      category: template.category || CATEGORIES[0]!,
+      condition: template.condition ?? CONDITION_TAGS[0],
+      tags: template.tags.join(', '),
+      shape: template.defaultLotId ? 'lot' : template.sourcing === 'import' ? 'waiting' : 'single',
+      lotId: template.defaultLotId ?? '',
+      terms: {
+        ...termsDraft(),
+        quantityMode: terms?.quantityMode ?? 'fixed',
+        quantity: String(terms?.quantity ?? 1),
+        advance: Boolean(terms?.advancePercent),
+        advancePercent: String(terms?.advancePercent ?? 20),
+        limited: Boolean(terms?.limitedDays),
+        days: String(terms?.limitedDays ?? 2),
+      },
+      allowMultiple: Boolean(terms?.allowMultiple),
     },
-    allowMultiple: Boolean(terms?.allowMultiple),
     description: template.description ?? '',
   };
 }
 
-/** A saved calculation as a sale item: its name, its price as the members' price, and its costs. */
-const itemFromCalc = (calc: SavedCalc, base: ItemDraft = blankItem()): ItemDraft => ({
+/** A saved calculation into an item: its name, its price as the members' price, and its costs. */
+const itemFromCalc = (calc: SavedCalc, base: ItemDraft): ItemDraft => ({
   ...base,
   title: calc.title,
   price: calc.sellingPriceMinor ? String(calc.sellingPriceMinor / 100) : '',
@@ -357,18 +365,80 @@ const touched = (item: ItemDraft) =>
 
 /** A run starts with five lines to fill; more are a tap away. */
 const START_LINES = 5;
-const padLines = (rows: ItemDraft[]) =>
-  [...rows, ...Array.from({ length: Math.max(0, START_LINES - rows.length) }, blankItem)];
+
+/** The public price, or the members' price when it is left empty (no discount, it just goes public). */
+const publicPrice = (item: ItemDraft) => Number(item.listPrice) || Number(item.price);
 
 const itemReady = (item: ItemDraft) =>
-  item.title.trim().length > 0 && Number(item.price) > 0 && Number(item.listPrice) > Number(item.price);
+  item.title.trim().length > 0 && Number(item.price) > 0 && publicPrice(item) >= Number(item.price);
+
+const WEEKDAY = new Intl.DateTimeFormat('en-IN', { weekday: 'long' });
+
+/**
+ * The options every item has - category, condition, tags, where it ships from,
+ * stock, advance, limited deal - shown once as the quick fill and again, folded,
+ * inside each item.
+ */
+function FillFields({ value, onChange, lots }: {
+  value: QuickFill;
+  onChange: (next: QuickFill) => void;
+  lots: LotSummary[];
+}) {
+  const set = (patch: Partial<QuickFill>) => onChange({ ...value, ...patch });
+  return (
+    <>
+      <div className="field-row">
+        <label className="field">
+          <span>Category</span>
+          <select value={value.category} onChange={(e) => set({ category: e.target.value })}>
+            {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Condition</span>
+          <select value={value.condition} onChange={(e) => set({ condition: e.target.value })}>
+            {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="field">
+        <span>Tags</span>
+        <input value={value.tags} onChange={(e) => set({ tags: e.target.value })} placeholder="resin, sealed" />
+      </label>
+      <OptionTiles label="Ships from" value={value.shape} onChange={(shape) => set({ shape })} options={SHAPE_OPTIONS} />
+      {value.shape === 'lot' && (
+        lots.length === 0 ? (
+          <Link to="/shop?tab=lots&spotlight=new" className="lotpick__new">
+            + New lot <span aria-hidden="true">→</span> <small>no open lots yet</small>
+          </Link>
+        ) : (
+          <div className="lotpick" role="radiogroup" aria-label="Lot">
+            {lots.map(({ lot, listingCount }) => (
+              <button key={lot.id} type="button" role="radio" aria-checked={value.lotId === lot.id}
+                className={`lotpick__row${value.lotId === lot.id ? ' is-on' : ''}`} onClick={() => set({ lotId: lot.id })}>
+                <b>{lot.name}</b>
+                <span className="lotpick__meta">
+                  {[LOT_STAGE_LABELS[lot.stage], `${listingCount} item${listingCount === 1 ? '' : 's'}`].join(' · ')}
+                </span>
+              </button>
+            ))}
+          </div>
+        )
+      )}
+      <TermsFields value={value.terms} onChange={(terms) => set({ terms })} publicLater />
+      <ToggleRow icon="🛍️" title="One buyer may take several" checked={value.allowMultiple}
+        onChange={(allowMultiple) => set({ allowMultiple })} />
+    </>
+  );
+}
 
 /**
  * Building a run, as a page of its own - it is too long for a pop-up.
  *
- * In the order a shop thinks in: what opens it, what every item shares (the
- * quick fill, saveable for next time), the items themselves - each folded to
- * its name once saved - and then when it all goes out and how it closes.
+ * In the order a shop thinks in: what opens it, the quick fill (saveable for
+ * next time, and copied into every item it is switched on for), the items -
+ * five lines to start, each unfolding to a form - and then when it all goes
+ * out and how it closes.
  */
 export function PowerSaleBuilderPage() {
   const [params] = useSearchParams();
@@ -380,39 +450,61 @@ export function PowerSaleBuilderPage() {
 
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
   const [fills, setFills] = useState<PostTemplate[]>([]);
+  const [lots, setLots] = useState<LotSummary[]>([]);
   useEffect(() => {
     void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
     void api.templates().then((result) => setFills(result.templates.filter((row) => row.kind === 'power'))).catch(() => undefined);
+    void api.myLots(storeId).then((result) => setLots(result.lots.filter((entry) => entry.lot.status === 'open'))).catch(() => undefined);
   }, [storeId]);
 
-  const [name, setName] = useState('');
-  const [opening, setOpening] = useState('');
+  const [name, setName] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
   const [closing, setClosing] = useState('');
   const [fill, setFill] = useState<QuickFill>(blankFill);
+  const [fillOn, setFillOn] = useState(true);
+  const [fillDescription, setFillDescription] = useState('');
   const [fillId, setFillId] = useState('');
   const [fillName, setFillName] = useState(DEFAULT_FILL_NAME);
   const [fillOpen, setFillOpen] = useState(false);
   const [fillNote, setFillNote] = useState<string | null>(null);
   const [startNow, setStartNow] = useState<'now' | 'later'>('now');
-  const [startAt, setStartAt] = useState('');
-  const [lead, setLead] = useState('0');
-  const [every, setEvery] = useState('5');
+  const [startHours, setStartHours] = useState('2');
+  const [lead, setLead] = useState('60');
+  const [every, setEvery] = useState('1');
   const [window_, setWindow] = useState('60');
   const [afterChannel, setAfterChannel] = useState(true);
   const [afterFeed, setAfterFeed] = useState(true);
-  const [items, setItems] = useState<ItemDraft[]>(() => padLines((startWith ?? []).map((calc) => itemFromCalc(calc))));
+  const [items, setItems] = useState<ItemDraft[]>(() => {
+    const rows = (startWith ?? []).map((calc) => itemFromCalc(calc, blankItem()));
+    return [...rows, ...Array.from({ length: Math.max(0, START_LINES - rows.length) }, () => blankItem())];
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Named for the day it opens on, until the shop writes its own.
+  const startsAt = new Date(Date.now() + (startNow === 'later' ? Math.max(0, Number(startHours) || 0) : 0) * 3_600_000);
+  const day = WEEKDAY.format(startsAt);
+  const windowText = Number(window_) >= 60 && Number(window_) % 60 === 0
+    ? `${Number(window_) / 60} hour${Number(window_) === 60 ? '' : 's'}` : `${Number(window_) || 0} minutes`;
+  const saleName = name ?? `${day} drop`;
+  const openingText = opening ?? `⚡ ${day} drop starts now — members get ${windowText} on each piece at the channel price.`;
+
   const set = (key: number, patch: Partial<ItemDraft>) =>
     setItems((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
-  const setF = (patch: Partial<QuickFill>) => setFill((current) => ({ ...current, ...patch }));
+
+  /** The quick fill changed: every item still following it follows. */
+  function applyFill(next: QuickFill, on = fillOn) {
+    setFill(next);
+    if (on) setItems((rows) => rows.map((row) => (row.own ? row : { ...row, fill: next })));
+  }
 
   function pickFill(id: string) {
     setFillId(id);
     const template = fills.find((row) => row.id === id);
     if (template) {
-      setFill(fillFromTemplate(template));
+      const read = fillFromTemplate(template);
+      applyFill(read.fill);
+      setFillDescription(read.description);
       setFillName(template.name);
     }
   }
@@ -424,12 +516,13 @@ export function PowerSaleBuilderPage() {
       const { template } = await api.saveTemplate({
         id: fillId || undefined,
         name: fillName.trim() || DEFAULT_FILL_NAME,
-        description: fill.description.trim(),
+        description: fillDescription.trim(),
         kind: 'power',
         category: fill.category,
         condition: fill.condition,
         tags: fill.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-        sourcing: fill.sourcing,
+        sourcing: fill.shape === 'single' ? 'in_hand' : 'import',
+        defaultLotId: fill.shape === 'lot' && fill.lotId ? fill.lotId : null,
         terms: {
           quantityMode: terms.quantityMode,
           quantity: Math.max(1, terms.quantityAvailable),
@@ -441,49 +534,53 @@ export function PowerSaleBuilderPage() {
       setFills((rows) => [template, ...rows.filter((row) => row.id !== template.id)]);
       setFillId(template.id);
       setFillName(template.name);
-      setFillNote('Saved to your templates.');
+      setFillNote('Saved to your quick fills.');
     } catch (err) {
       setFillNote(err instanceof ApiRequestError ? err.message : 'That did not save.');
     }
   }
 
   const filled = items.filter(touched);
-  const ready = opening.trim().length > 3 && filled.length > 0 && filled.every(itemReady);
+  const ready = openingText.trim().length > 3 && filled.length > 0 && filled.every(itemReady);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const terms = termsBody(fill.terms);
-      const tags = fill.tags.split(',').map((tag) => tag.trim()).filter(Boolean);
       const draft: PowerSaleDraft = {
         storeId,
-        name: name.trim(),
-        openingBody: opening.trim(),
-        openingAt: startNow === 'now' || !startAt ? null : new Date(startAt).toISOString(),
+        name: saleName.trim(),
+        openingBody: openingText.trim(),
+        openingAt: startNow === 'now' ? null : startsAt.toISOString(),
         leadMinutes: Math.max(0, Number(lead) || 0),
-        everyMinutes: Math.max(1, Number(every) || 5),
+        everyMinutes: Math.max(1, Number(every) || 1),
         windowMinutes: Math.max(5, Number(window_) || 60),
         closingBody: closing.trim(),
         afterWindow: { channel: afterChannel, feed: afterFeed },
-        items: filled.map((item) => ({
-          title: item.title.trim(),
-          description: item.description.trim() || fill.description.trim(),
-          category: fill.category,
-          condition: fill.condition,
-          priceMinor: Math.round(Number(item.price) * 100),
-          listPriceMinor: Math.round(Number(item.listPrice) * 100),
-          quantity: Math.max(1, terms.quantityAvailable),
-          allowMultiple: fill.allowMultiple,
-          costSheet: item.costSheet,
-          photos: item.photos.map(({ blobName, url, isPrimary }) => ({ blobName, url, isPrimary })),
-          tags,
-          sourcing: fill.sourcing,
-          quantityMode: terms.quantityMode,
-          expiresAt: terms.expiresAt,
-          advancePercent: terms.advancePercent,
-        })),
+        items: filled.map((item) => {
+          const own = item.fill;
+          const terms = termsBody(own.terms);
+          return {
+            title: item.title.trim(),
+            description: item.description.trim() || fillDescription.trim(),
+            category: own.category,
+            condition: own.condition,
+            priceMinor: Math.round(Number(item.price) * 100),
+            listPriceMinor: Math.round(publicPrice(item) * 100),
+            quantity: Math.max(1, terms.quantityAvailable),
+            allowMultiple: own.allowMultiple,
+            costSheet: item.costSheet,
+            photos: item.photos.map(({ blobName, url, isPrimary }) => ({ blobName, url, isPrimary })),
+            tags: own.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+            sourcing: own.shape === 'single' ? 'in_hand' : 'import',
+            lotId: own.shape === 'lot' && own.lotId ? own.lotId : null,
+            quantityMode: terms.quantityMode,
+            expiresAt: null,
+            limitedDays: own.terms.limited ? Math.max(1, Number(own.terms.days) || 2) : null,
+            advancePercent: terms.advancePercent,
+          };
+        }),
       };
       await api.createPowerSale(draft);
       navigate(back);
@@ -504,19 +601,20 @@ export function PowerSaleBuilderPage() {
         <LBox icon="📝" title="The sale" hint="The name is only for you; the channel sees the message.">
           <label className="field">
             <span>Name</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Friday drop" maxLength={80} />
+            <input value={saleName} onChange={(e) => setName(e.target.value)} maxLength={80} />
           </label>
           <label className="field">
             <span>Opening message</span>
-            <textarea value={opening} onChange={(e) => setOpening(e.target.value)} rows={3}
-              placeholder="Friday drop starts now — members get an hour on each piece." />
+            <textarea value={openingText} onChange={(e) => setOpening(e.target.value)} rows={3} />
           </label>
         </LBox>
 
-        <LBox icon="⚡" title="Quick fill" hint="Shared by every item below. Save it to reuse next time."
+        <LBox icon="⚡" title="Quick fill" hint={fillOn ? 'Fills every item below; change any item on its own.' : 'Off: each item keeps its own options.'}
           right={(
             <>
               <span className="probadge">PRO</span>
+              <Switch checked={fillOn} label="Use the quick fill for every item"
+                onChange={(on) => { setFillOn(on); if (on) applyFill(fill, true); }} />
               <button type="button" className="psfold" aria-expanded={fillOpen}
                 aria-label={fillOpen ? 'Collapse quick fill' : 'Expand quick fill'} onClick={() => setFillOpen((v) => !v)}>
                 <Icon name="chevron" size={16} />
@@ -524,51 +622,26 @@ export function PowerSaleBuilderPage() {
             </>
           )}>
           {fillOpen && (<>
-          {fills.length > 0 && (
-            <select value={fillId} onChange={(e) => pickFill(e.target.value)} aria-label="Saved quick fill">
-              <option value="">Start from a saved quick fill…</option>
-              {fills.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-            </select>
-          )}
-          <div className="field-row">
-            <label className="field">
-              <span>Category</span>
-              <select value={fill.category} onChange={(e) => setF({ category: e.target.value })}>
-                {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
+            {fills.length > 0 && (
+              <select value={fillId} onChange={(e) => pickFill(e.target.value)} aria-label="Saved quick fill">
+                <option value="">Start from a saved quick fill…</option>
+                {fills.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
               </select>
-            </label>
+            )}
             <label className="field">
-              <span>Condition</span>
-              <select value={fill.condition} onChange={(e) => setF({ condition: e.target.value })}>
-                {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-              </select>
+              <span>Description</span>
+              <textarea value={fillDescription} rows={2} onChange={(e) => setFillDescription(e.target.value)}
+                placeholder="Used for any item without its own description" />
             </label>
-          </div>
-          <label className="field">
-            <span>Description</span>
-            <textarea value={fill.description} rows={2} onChange={(e) => setF({ description: e.target.value })}
-              placeholder="Used for any item without its own description" />
-          </label>
-          <label className="field">
-            <span>Tags</span>
-            <input value={fill.tags} onChange={(e) => setF({ tags: e.target.value })} placeholder="resin, sealed" />
-          </label>
-          <OptionTiles label="Ships from" value={fill.sourcing} onChange={(sourcing) => setF({ sourcing })}
-            options={[
-              { id: 'in_hand', icon: '🏠', title: 'In hand', note: 'Ships from your shelf' },
-              { id: 'import', icon: '✈️', title: 'Import', note: 'Lot added later' },
-            ]} />
-          <TermsFields value={fill.terms} onChange={(terms) => setF({ terms })} />
-          <ToggleRow icon="🛍️" title="One buyer may take several" checked={fill.allowMultiple}
-            onChange={(allowMultiple) => setF({ allowMultiple })} />
-          <div className="row" style={{ gap: 8 }}>
-            <input value={fillName} onChange={(e) => setFillName(e.target.value)} placeholder={DEFAULT_FILL_NAME}
-              aria-label="Quick fill name" style={{ flex: 1, minWidth: 0 }} />
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => void saveFill()}>
-              {fillId ? 'Update' : 'Save'} quick fill
-            </button>
-          </div>
-          {fillNote && <span className="lbox__hint">{fillNote}</span>}
+            <FillFields value={fill} onChange={(next) => applyFill(next)} lots={lots} />
+            <div className="row" style={{ gap: 8 }}>
+              <input value={fillName} onChange={(e) => setFillName(e.target.value)} placeholder={DEFAULT_FILL_NAME}
+                aria-label="Quick fill name" style={{ flex: 1, minWidth: 0 }} />
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => void saveFill()}>
+                {fillId ? 'Update' : 'Save'} quick fill
+              </button>
+            </div>
+            {fillNote && <span className="lbox__hint">{fillNote}</span>}
           </>)}
         </LBox>
 
@@ -601,29 +674,58 @@ export function PowerSaleBuilderPage() {
               </label>
               <label className="field">
                 <span>Description</span>
-                <textarea value={item.description} rows={2} placeholder="Condition, what's included…"
+                <textarea value={item.description} rows={2}
+                  placeholder={fillDescription.trim() || "Condition, what's included…"}
                   onChange={(e) => set(item.key, { description: e.target.value })} />
               </label>
               <div className="field-row">
                 <label className="field">
-                  <span>Members pay (₹)</span>
+                  <span>Member price (₹)</span>
                   <input type="number" min="1" value={item.price} onChange={(e) => set(item.key, { price: e.target.value })} />
                 </label>
                 <label className="field">
-                  <span>After the window (₹)</span>
-                  <input type="number" min="1" value={item.listPrice} onChange={(e) => set(item.key, { listPrice: e.target.value })} />
+                  <span>Public price (₹)</span>
+                  <input type="number" min="1" value={item.listPrice} placeholder={item.price || ''}
+                    onChange={(e) => set(item.key, { listPrice: e.target.value })} />
                 </label>
               </div>
-              {Number(item.listPrice) > 0 && Number(item.listPrice) <= Number(item.price) && (
-                <span className="field__hint" style={{ color: 'var(--danger)' }}>
-                  The price after the window has to be above the members&rsquo; price.
-                </span>
+              {Number(item.price) > 0 && (
+                publicPrice(item) < Number(item.price) ? (
+                  <span className="field__hint" style={{ color: 'var(--danger)' }}>
+                    The public price can&rsquo;t be below the member price.
+                  </span>
+                ) : publicPrice(item) === Number(item.price) ? (
+                  <span className="field__hint">Same price: no member discount — it simply goes public after the member window.</span>
+                ) : (
+                  <span className="field__hint">Members save {formatMoney(Math.round((publicPrice(item) - Number(item.price)) * 100))}; the price goes up when the window closes.</span>
+                )
               )}
               <CostSheetField value={item.costSheet} onChange={(costSheet) => set(item.key, { costSheet })}
                 sellingPriceMinor={Math.round(Number(item.price || 0) * 100)} shop={storeId} />
+
+              <button type="button" className={`saleopts${item.optsOpen ? ' is-open' : ''}`} aria-expanded={item.optsOpen}
+                onClick={() => set(item.key, { optsOpen: !item.optsOpen })}>
+                <span aria-hidden="true">⚙️</span>
+                <b>Listing options</b>
+                <small>{item.own ? 'edited for this item' : fillOn ? 'from quick fill' : 'this item'}</small>
+                <Icon name="chevron" size={15} />
+              </button>
+              {item.optsOpen && (
+                <div className="saleopts__body">
+                  <FillFields value={item.fill} lots={lots}
+                    onChange={(next) => set(item.key, { fill: next, own: true })} />
+                  {item.own && fillOn && (
+                    <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }}
+                      onClick={() => set(item.key, { fill, own: false })}>
+                      ↺ Use the quick fill again
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="row" style={{ gap: 8 }}>
                 <button type="button" className="btn btn--sm" disabled={touched(item) && !itemReady(item)}
-                  onClick={() => set(item.key, { open: false })}>
+                  onClick={() => set(item.key, { open: false, optsOpen: false })}>
                   {touched(item) ? '✓ Save item' : 'Close'}
                 </button>
                 <button type="button" className="btn btn--ghost btn--sm"
@@ -639,13 +741,14 @@ export function PowerSaleBuilderPage() {
                 {item.title.trim() || `Item ${index + 1}`}
                 {touched(item) && !itemReady(item) && <small> · needs prices</small>}
                 {!touched(item) && <small className="saleline__tap"> · tap to fill</small>}
+                {touched(item) && item.own && <small className="saleline__tap"> · own options</small>}
               </button>
               <button type="button" className="saleline__x" aria-label={`Delete ${item.title || 'item'}`}
                 onClick={() => setItems((rows) => rows.filter((row) => row.key !== item.key))}>✕</button>
             </div>
           ))}
           <button type="button" className="saleadd" aria-label="Add more items" style={{ justifySelf: 'start' }}
-            onClick={() => setItems((rows) => [...rows.map((row) => ({ ...row, open: false })), { ...blankItem(), open: true }])}>
+            onClick={() => setItems((rows) => [...rows.map((row) => ({ ...row, open: false })), { ...blankItem(fillOn ? fill : blankFill()), open: true }])}>
             <Icon name="plus" size={16} /> Add more
           </button>
         </LBox>
@@ -657,28 +760,46 @@ export function PowerSaleBuilderPage() {
               { id: 'later', icon: '🗓️', title: 'At a time' },
             ]} />
           {startNow === 'later' && (
-            <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} aria-label="Start at" />
+            <label className="field">
+              <span>The opening message is dropped in</span>
+              <span className="psunit">
+                <input type="number" min="0" step="0.5" value={startHours} onChange={(e) => setStartHours(e.target.value)} />
+                <span>hrs from now</span>
+              </span>
+              <span className="field__hint">
+                {startsAt.toLocaleString('en-IN', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+              </span>
+            </label>
           )}
-          <div className="field-row field-row--3">
-            <label className="field">
-              <span>Wait before item 1 (min)</span>
+          <label className="field">
+            <span>Wait for the 1st item to drop</span>
+            <span className="psunit">
               <input type="number" min="0" value={lead} onChange={(e) => setLead(e.target.value)} />
+              <span>min after the opening message</span>
+            </span>
+          </label>
+          <div className="field-row">
+            <label className="field">
+              <span>Wait between each drop</span>
+              <span className="psunit">
+                <input type="number" min="1" value={every} onChange={(e) => setEvery(e.target.value)} />
+                <span>min</span>
+              </span>
             </label>
             <label className="field">
-              <span>Between items (min)</span>
-              <input type="number" min="1" value={every} onChange={(e) => setEvery(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Members&rsquo; window (min)</span>
-              <input type="number" min="5" value={window_} onChange={(e) => setWindow(e.target.value)} />
+              <span>Member price</span>
+              <span className="psunit">
+                <input type="number" min="5" value={window_} onChange={(e) => setWindow(e.target.value)} />
+                <span>min</span>
+              </span>
             </label>
           </div>
         </LBox>
 
         {/* During the window an item is the channel's alone - that is what the
-            members' price is for. Once it closes the item is everybody's, and
+            member price is for. Once it closes the item is everybody's, and
             this is where the shop says whether to tell everybody. */}
-        <LBox icon="📣" title="When the window closes" hint="Each item goes public at the higher price. Announce it:">
+        <LBox icon="📣" title="When the member price ends" hint="Each item goes public, labelled as an exclusive channel drop. Announce it:">
           <ToggleRow icon="💬" title="Post in your channel" checked={afterChannel} onChange={setAfterChannel} />
           <ToggleRow icon="🌐" title="Post in the feed" checked={afterFeed} onChange={setAfterFeed} />
         </LBox>

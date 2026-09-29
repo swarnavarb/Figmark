@@ -24,7 +24,7 @@ import {
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { BuyerReversalDetails, Listing, Lot, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
-import { AdvanceStrip, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
+import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
 import type { StoreAccess } from '@shared/stores';
 import type { SavedCalc } from '@shared/profit';
@@ -791,6 +791,7 @@ function ShelfCard({ listing, onEdit }: { listing: Listing; onEdit: () => void }
           : listing.status === 'sold_out'
             ? <span className="qsticker-tag qsticker-tag--drop">Sold out</span>
             : listing.preOrder && <span className="qsticker-tag">Pre-order</span>}
+        <DropTag on={listing.channelDrop} />
       </Thumb>
       <AdvanceStrip percent={listing.advancePercent} />
 

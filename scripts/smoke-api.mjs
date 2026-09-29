@@ -4039,16 +4039,16 @@ await check('an item nobody has taken goes public at the higher price', async ()
   assert.ok(catalog.some((entry) => entry.id === item.listingId), 'it is on the buy page now');
 });
 
-await check('a members-only price has to actually be one', async () => {
+await check('the price after the window is never below the members\' price', async () => {
   const same = await schedulePowerSale(req({
     headers: auth,
     body: {
       openingBody: 'Starting.',
-      items: [saleItem('No discount at all', 20_000, 20_000)],
+      items: [saleItem('Cheaper after', 20_000, 15_000)],
     },
   }), ctx);
   assert.equal(same.status, 400);
-  assert.match(same.jsonBody.message, /above the members/);
+  assert.match(same.jsonBody.message, /below the members/);
 });
 
 await check('a run needs something to say and something to sell', async () => {

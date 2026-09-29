@@ -44,6 +44,7 @@ function minutes(n: number): number {
 /** A post the runner writes as the shop, into the shop's own channel. */
 function shopPost(
   shop: User, body: string, listingId: string | null, announcement: boolean, reach: Post['reach'] = 'channel',
+  drop: Post['drop'] = null,
 ): Post {
   const now = new Date().toISOString();
   return {
@@ -64,6 +65,7 @@ function shopPost(
     // and pushing every item to everyone's feed would give it away.
     reach,
     announcement,
+    ...(drop ? { drop } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -90,8 +92,9 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     expiresAt: item.expiresAt ?? null,
     advancePercent: item.advancePercent ?? null,
     preOrder: null,
-    lotId: null,
-    sourcing: item.sourcing ?? 'in_hand',
+    lotId: item.lotId ?? null,
+    sourcing: item.lotId ? 'import' : item.sourcing ?? 'in_hand',
+    channelDrop: true,
     bundle: false,
     // Out of the catalog while the window is open. The people in the room can
     // buy it from the post that dropped it; nobody else can find it. That is
@@ -107,6 +110,11 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** A limited time deal runs from when the item goes public. */
+function publicExpiry(item: PowerSaleItem, now: Date): string | null {
+  return item.limitedDays ? new Date(now.getTime() + item.limitedDays * 86_400_000).toISOString() : null;
 }
 
 /** When the nth item is due out, counting from the opening message. */
@@ -202,6 +210,7 @@ export async function advancePowerSale(
         ...listing,
         priceMinor: item.listPriceMinor,
         unlisted: false,
+        expiresAt: publicExpiry(item, now) ?? listing.expiresAt,
         updatedAt: stamp,
       });
     }
@@ -216,7 +225,7 @@ export async function advancePowerSale(
       try {
         await repository.createPost(shopPost(
           shop,
-          `${item.title} — now available to everyone.`,
+          `✨ Exclusive channel drop, now open to everyone: ${item.title}.`,
           item.listingId,
           true,
           after.feed ? 'feed' : 'channel',
@@ -235,12 +244,20 @@ export async function advancePowerSale(
     const listing = await repository.createListing(listingFor(sale, item, stamp));
     const endsAt = new Date(now.getTime() + minutes(sale.windowMinutes)).toISOString();
 
+    const rises = item.listPriceMinor > item.priceMinor;
     await repository.createPost(
       shopPost(
         shop,
-        `${item.title} — ${sale.windowMinutes} minutes at the members' price.`,
+        rises
+          ? `⚡ Drop ${next + 1}/${sale.items.length}: ${item.title} — members' price for ${sale.windowMinutes} min, then the price goes up.`
+          : `⚡ Drop ${next + 1}/${sale.items.length}: ${item.title} — yours first for ${sale.windowMinutes} min, then it goes public.`,
         listing.id,
         false,
+        'channel',
+        {
+          endsAt, memberPriceMinor: item.priceMinor, publicPriceMinor: item.listPriceMinor,
+          index: next + 1, total: sale.items.length, saleName: sale.name,
+        },
       ),
     );
 
@@ -285,6 +302,7 @@ export async function releaseItems(repository: Repo, sale: PowerSale, now = new 
       ...listing,
       priceMinor: item.listPriceMinor,
       unlisted: false,
+      expiresAt: publicExpiry(item, now) ?? listing.expiresAt,
       updatedAt: stamp,
     });
     item.liftedAt = stamp;

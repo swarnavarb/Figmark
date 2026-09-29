@@ -9082,3 +9082,58 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 .saleline--blank { background: transparent; box-shadow: none; border: 1px dashed rgba(148, 163, 184, 0.28); }
 .saleline--blank .saleline__name { color: var(--text-dim); font-weight: 400; }
 .saleline__name small.saleline__tap { color: var(--text-faint); }
+
+/* ── Power sale drop, as the channel sees it ── */
+.dropcard {
+  position: relative; display: grid; gap: 10px; padding: 12px; border-radius: 18px; overflow: hidden;
+  color: var(--text); text-decoration: none;
+  background: radial-gradient(120% 90% at 100% 0%, rgba(251, 191, 36, 0.18), transparent 55%),
+    linear-gradient(160deg, #1d1633, #0f1424 70%);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.dropcard__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dropcard__tag {
+  flex: none; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0.03em;
+  color: #1f1300; background: linear-gradient(90deg, #fde68a, #fbbf24);
+}
+.dropcard__sale { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-xs); color: var(--text-dim); }
+.dropcard__main { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.dropcard__photo { flex: none; width: 76px; height: 76px; border-radius: 12px; object-fit: cover; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.dropcard__body { display: grid; gap: 3px; min-width: 0; }
+.dropcard__name { font-weight: var(--w-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropcard__cond { font-size: var(--t-xs); color: var(--text-faint); }
+.dropcard__prices { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dropcard__prices b { font-size: 1.25rem; color: #fde68a; }
+.dropcard__prices s { color: var(--text-faint); font-size: var(--t-sm); }
+.dropcard__off { padding: 1px 6px; border-radius: 6px; font-size: 11px; font-weight: var(--w-bold); background: var(--lime); color: var(--lime-ink); }
+.dropcard__clock {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-radius: 12px;
+  font-size: var(--t-xs); color: var(--text-dim); background: rgba(0, 0, 0, 0.28);
+}
+.dropcard__timer {
+  font-variant-numeric: tabular-nums; font-weight: var(--w-bold); font-size: var(--t-sm); color: #fff;
+  padding: 2px 8px; border-radius: 8px; background: linear-gradient(90deg, #f43f5e, #f97316);
+}
+.dropcard__cta { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; color: #fbbf24; font-weight: var(--w-semi); }
+.dropcard--over { box-shadow: inset 0 0 0 1px var(--border); }
+.dropcard--over .dropcard__prices b { color: var(--text); }
+
+/* On a public card's picture: overlaid so the card keeps its size. */
+.droptag {
+  position: absolute; left: 8px; bottom: 8px; z-index: 2; max-width: calc(100% - 16px);
+  padding: 3px 7px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 9.5px; font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
+  color: #1f1300; background: linear-gradient(90deg, #fde68a, #fbbf24); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.badge--drop { background: linear-gradient(90deg, #fde68a, #fbbf24); color: #1f1300; }
+.saleopts {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 0; border-radius: 12px; cursor: pointer;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); color: var(--text); font: inherit; text-align: left;
+}
+.saleopts small { flex: 1 1 auto; color: var(--text-faint); font-size: var(--t-xs); }
+.saleopts svg { transition: transform 0.2s; }
+.saleopts.is-open svg { transform: rotate(180deg); }
+.saleopts__body { display: grid; gap: 12px; padding: 12px; border-radius: 14px; background: rgba(0, 0, 0, 0.18); }
+.psunit { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.psunit input { flex: 0 1 110px; min-width: 0; }
+.psunit > span { font-size: var(--t-sm); color: var(--text-dim); }

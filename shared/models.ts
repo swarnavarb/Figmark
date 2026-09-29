@@ -519,6 +519,8 @@ export interface Listing extends BaseDocument {
    * the catalog by definition.
    */
   unlisted?: boolean;
+  /** First dropped in the shop's channel by a power sale; public cards say so. */
+  channelDrop?: boolean;
   /**
    * Sold as one assorted lot rather than as a single item.
    *
@@ -1508,6 +1510,8 @@ export interface Post extends BaseDocument {
    * one picture keeps reading the right one.
    */
   photoUrls?: string[];
+  /** Set on a power sale drop: the members' window and what comes after it. */
+  drop?: PostDrop | null;
   /**
    * Who reacted, and how. One per person.
    *
@@ -1787,9 +1791,8 @@ export interface PowerSaleItem {
   /**
    * What it costs once the window closes.
    *
-   * Never below the members' price: the window has to be worth being in the
-   * channel for, and a "discount" that is the same number as the public price
-   * is a lie told to people who trusted the shop enough to follow it.
+   * Never below the members' price. The same number is allowed: there is no
+   * discount then, and the item simply goes public when the window closes.
    */
   listPriceMinor: number;
   quantity: number;
@@ -1814,6 +1817,24 @@ export interface PowerSaleItem {
   quantityMode?: 'fixed' | 'multiple';
   expiresAt?: string | null;
   advancePercent?: number | null;
+  /** The lot it travels in, when the shop picked one. */
+  lotId?: string | null;
+  /**
+   * A limited time deal, in days, counted from when the item goes public -
+   * not from when it drops, because the members' window is not the deal.
+   */
+  limitedDays?: number | null;
+}
+
+/** What a channel drop post shows beside its item: the clock and the price after it. */
+export interface PostDrop {
+  endsAt: string;
+  memberPriceMinor: number;
+  publicPriceMinor: number;
+  /** Its place in the run, 1-based, and how many the run carries. */
+  index: number;
+  total: number;
+  saleName: string;
 }
 
 /**

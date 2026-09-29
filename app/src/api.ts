@@ -664,6 +664,8 @@ export interface PowerSaleDraft {
     quantityMode?: 'fixed' | 'multiple';
     expiresAt?: string | null;
     advancePercent?: number | null;
+    lotId?: string | null;
+    limitedDays?: number | null;
   }[];
   /** Where each item is announced once its members' window closes. */
   afterWindow?: { channel: boolean; feed: boolean };

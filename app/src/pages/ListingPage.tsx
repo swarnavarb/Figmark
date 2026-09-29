@@ -193,6 +193,7 @@ export function ListingPage() {
             <span className="detail__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
             {/* Stock and expiry, loud: they decide whether this can be bought. */}
             <div className="badges">
+              {listing.channelDrop && <span className="badge badge--drop">⚡ Exclusive channel drop</span>}
               {isMultiple(listing) || listing.quantityAvailable > 0
                 ? <StockChip listing={listing} />
                 : <span className="badge badge--danger">Sold out</span>}

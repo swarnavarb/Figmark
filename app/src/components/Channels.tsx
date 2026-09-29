@@ -8,7 +8,7 @@ import { useSession } from '../session';
 import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb } from './ui';
 import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
-import { Lightbox, copyLink, withReaction } from './SocialPost';
+import { DropCard, Lightbox, copyLink, withReaction } from './SocialPost';
 import { PersonVoice, useVoice } from './SocialVoice';
 import { RoomBar, useLongPress, useScrolledPast } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
@@ -668,8 +668,9 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
               ))}
             </div>
           )}
-          {post.body && <p className="cmsg__body">{post.body}</p>}
-          {listing && (
+          {post.body && !(listing && post.drop) && <p className="cmsg__body">{post.body}</p>}
+          {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
+          {listing && !post.drop && (
             <Link to={`/listing/${listing.id}`} className="cmsg__item">
               {listing.photoUrl
                 ? <img src={listing.photoUrl} alt="" className="cmsg__itemimg" />

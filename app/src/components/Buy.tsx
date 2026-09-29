@@ -41,6 +41,11 @@ export function ExpiryChip({ listing, big = false }: { listing: Pick<Listing, 'e
   );
 }
 
+/** On a public card's picture: this first dropped in the shop's channel. Overlaid, so the card stays its size. */
+export function DropTag({ on }: { on: boolean | undefined }) {
+  return on ? <span className="droptag">⚡ Exclusive channel drop</span> : null;
+}
+
 /** The highlighted line under a card's picture: this can be booked with part of the price. */
 export function AdvanceStrip({ percent }: { percent: number | null | undefined }) {
   if (!percent) return null;
@@ -190,10 +195,12 @@ export function termsBody(draft: TermsDraft) {
  * date is its expiry, so both questions step aside rather than being asked
  * twice.
  */
-export function TermsFields({ value, onChange, preOrder = false }: {
+export function TermsFields({ value, onChange, preOrder = false, publicLater = false }: {
   value: TermsDraft;
   onChange: (next: TermsDraft) => void;
   preOrder?: boolean;
+  /** A power sale item: the deal clock starts when it goes public, after the member price. */
+  publicLater?: boolean;
 }) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
   return (
@@ -227,7 +234,9 @@ export function TermsFields({ value, onChange, preOrder = false }: {
       </LBox>
 
       {!preOrder && (
-        <LBox icon="⏳" title="Limited time deal" hint={value.limited ? `Comes off sale in ${value.days || '—'} days.` : 'Off: stays up until you take it down.'}
+        <LBox icon="⏳" title="Limited time deal" hint={publicLater
+            ? `For the public listing: starts when the member price ends${value.limited ? `, lasts ${value.days || '—'} days` : ''}.`
+            : value.limited ? `Comes off sale in ${value.days || '—'} days.` : 'Off: stays up until you take it down.'}
           right={<Switch checked={value.limited} onChange={(limited) => set({ limited })} label="Limited time deal" />}>
           {value.limited && (
             <label className="field">

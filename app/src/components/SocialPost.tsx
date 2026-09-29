@@ -59,6 +59,68 @@ export function withReaction(summary: ReactionSummary, kind: ReactionKind | null
   };
 }
 
+/** mm:ss (or h:mm:ss) until a time, ticking each second; null once it has passed. */
+function useCountdown(endsAt: string): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  const end = Date.parse(endsAt);
+  useEffect(() => {
+    if (end <= Date.now()) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [end]);
+  const left = Math.max(0, Math.floor((end - now) / 1000));
+  if (left === 0) return null;
+  const h = Math.floor(left / 3600);
+  const m = Math.floor((left % 3600) / 60);
+  const sec = String(left % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+/**
+ * A power sale drop in the channel: the item, the members' price, a live clock,
+ * and what happens when it runs out - the price going up, or the item going public.
+ */
+export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['listing']>; drop: NonNullable<PostCard['post']['drop']> }) {
+  const left = useCountdown(drop.endsAt);
+  const rises = drop.publicPriceMinor > drop.memberPriceMinor;
+  const off = rises ? Math.round((1 - drop.memberPriceMinor / drop.publicPriceMinor) * 100) : 0;
+  return (
+    <Link to={`/listing/${listing.id}`} className={`dropcard${left ? '' : ' dropcard--over'}`}>
+      <span className="dropcard__top">
+        <span className="dropcard__tag">⚡ Drop {drop.index}/{drop.total}</span>
+        <span className="dropcard__sale">{drop.saleName}</span>
+      </span>
+      <span className="dropcard__main">
+        {listing.photoUrl ? (
+          <img className="dropcard__photo" src={listing.photoUrl} alt="" loading="lazy" />
+        ) : (
+          <Thumb seed={listing.id} label={listing.title} className="dropcard__photo" />
+        )}
+        <span className="dropcard__body">
+          <span className="dropcard__name">{listing.title}</span>
+          <span className="dropcard__cond">{listing.condition} · members only</span>
+          <span className="dropcard__prices">
+            <b>{formatMoney(drop.memberPriceMinor, listing.currency)}</b>
+            {rises && <s>{formatMoney(drop.publicPriceMinor, listing.currency)}</s>}
+            {off > 0 && <span className="dropcard__off">−{off}%</span>}
+          </span>
+        </span>
+      </span>
+      <span className="dropcard__clock">
+        {left ? (
+          <>
+            <span className="dropcard__timer" aria-label="Time left">⏱ {left}</span>
+            <span>{rises ? `then the price goes up to ${formatMoney(drop.publicPriceMinor, listing.currency)}` : 'then it goes public'}</span>
+          </>
+        ) : (
+          <span>Member price ended{rises ? ` · now ${formatMoney(drop.publicPriceMinor, listing.currency)}` : ' · now public'}</span>
+        )}
+        <span className="dropcard__cta">Buy <Icon name="right" size={12} /></span>
+      </span>
+    </Link>
+  );
+}
+
 function reduceMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
@@ -242,7 +304,9 @@ export function SocialPostCard({
           }} />
       )}
 
-      {listing && (
+      {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
+
+      {listing && !post.drop && (
         <Link to={`/listing/${listing.id}`} className="spost__item">
           {listing.photoUrl ? (
             <img className="spost__itemphoto" src={listing.photoUrl} alt="" loading="lazy" />
