@@ -1512,6 +1512,8 @@ export interface Post extends BaseDocument {
   photoUrls?: string[];
   /** Set on a power sale drop: the members' window and what comes after it. */
   drop?: PostDrop | null;
+  /** Written by a power sale run - its drops and its messages - and tagged as such. */
+  powerSale?: boolean;
   /**
    * Who reacted, and how. One per person.
    *

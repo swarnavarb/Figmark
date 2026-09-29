@@ -66,6 +66,7 @@ function shopPost(
     reach,
     announcement,
     ...(drop ? { drop } : {}),
+    powerSale: true,
     createdAt: now,
     updatedAt: now,
   };

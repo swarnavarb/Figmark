@@ -204,7 +204,9 @@ export function SocialPostCard({
       )}
       {social.poll && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
       {hot && <span className="spost__kind spost__kind--hot">🔥 Hot</span>}
-      {post.channel === 'seller' && post.reach === 'channel' && isAnnouncement(post) && (
+      {post.powerSale || post.drop ? (
+        <span className="spost__kind spost__kind--drop">⚡ Exclusive drop <span className="probadge">PRO</span></span>
+      ) : post.channel === 'seller' && post.reach === 'channel' && isAnnouncement(post) && (
         <span className="spost__kind"><Icon name="megaphone" size={11} /> Announcement</span>
       )}
     </>

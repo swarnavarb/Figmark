@@ -648,7 +648,9 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
           aria-label="Message. Press and hold for actions" {...press}
           onDoubleClick={() => void react('love')}
           onKeyDown={(event) => (event.key === 'Enter' || event.key === 'ContextMenu') && setOpen(!open)}>
-          {announced && (
+          {post.powerSale || post.drop ? (
+            <span className="cmsg__announce cmsg__announce--drop">⚡ Exclusive drop <span className="probadge">PRO</span></span>
+          ) : announced && (
             <span className="cmsg__announce"><Icon name="megaphone" size={12} /> Announcement</span>
           )}
           {post.pinned && <span className="cmsg__pinned"><Icon name="star" size={11} /> Pinned</span>}
