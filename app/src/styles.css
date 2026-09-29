@@ -7945,7 +7945,7 @@ body.is-locked { overflow: hidden; }
 /* Dark in both themes: a little arcade cabinet set into the page. The quests
    sit in a HUD; the game plays underneath, slow enough to ignore. */
 .qarcade {
-  --strip: 40px;
+  --strip: 60px;
   position: relative; overflow: hidden; margin-bottom: 14px; padding: 10px 12px var(--strip);
   border-radius: var(--r-lg); color: #EDE9FE;
   background:
@@ -7976,52 +7976,11 @@ body.is-locked { overflow: hidden; }
 }
 @keyframes qworld-stars { to { background-position-y: 180px; } }
 
-/* The invader fleet shuffles along the strip; one of them keeps getting hit. */
-.qworld__fleet {
-  position: absolute; left: 50%; bottom: 22px; display: flex; gap: 14px;
-  transform: translateX(-50%);
-  animation: qworld-march 8s steps(8) infinite alternate;
-}
-@keyframes qworld-march { from { margin-left: -60px; } to { margin-left: 60px; } }
-.qworld__alien { position: relative; width: 24px; height: 16px; }
-.qworld__alien::before {
-  content: ''; position: absolute; left: 0; top: 0; width: 2px; height: 2px;
-  box-shadow: 6px 0px #A78BFA, 18px 0px #A78BFA, 8px 2px #A78BFA, 16px 2px #A78BFA, 6px 4px #A78BFA, 8px 4px #A78BFA, 10px 4px #A78BFA, 12px 4px #A78BFA, 14px 4px #A78BFA, 16px 4px #A78BFA, 18px 4px #A78BFA, 4px 6px #A78BFA, 6px 6px #A78BFA, 10px 6px #A78BFA, 12px 6px #A78BFA, 14px 6px #A78BFA, 18px 6px #A78BFA, 20px 6px #A78BFA, 2px 8px #A78BFA, 4px 8px #A78BFA, 6px 8px #A78BFA, 8px 8px #A78BFA, 10px 8px #A78BFA, 12px 8px #A78BFA, 14px 8px #A78BFA, 16px 8px #A78BFA, 18px 8px #A78BFA, 20px 8px #A78BFA, 22px 8px #A78BFA, 2px 10px #A78BFA, 6px 10px #A78BFA, 8px 10px #A78BFA, 10px 10px #A78BFA, 12px 10px #A78BFA, 14px 10px #A78BFA, 16px 10px #A78BFA, 18px 10px #A78BFA, 22px 10px #A78BFA, 2px 12px #A78BFA, 6px 12px #A78BFA, 18px 12px #A78BFA, 22px 12px #A78BFA, 8px 14px #A78BFA, 10px 14px #A78BFA, 14px 14px #A78BFA, 16px 14px #A78BFA;
-  filter: drop-shadow(0 0 3px rgba(167,139,250,.8));
-  animation: qworld-wiggle .8s steps(1) infinite;
-}
-.qworld__alien:nth-child(even)::before { box-shadow: 6px 0px #22D3EE, 18px 0px #22D3EE, 8px 2px #22D3EE, 16px 2px #22D3EE, 6px 4px #22D3EE, 8px 4px #22D3EE, 10px 4px #22D3EE, 12px 4px #22D3EE, 14px 4px #22D3EE, 16px 4px #22D3EE, 18px 4px #22D3EE, 4px 6px #22D3EE, 6px 6px #22D3EE, 10px 6px #22D3EE, 12px 6px #22D3EE, 14px 6px #22D3EE, 18px 6px #22D3EE, 20px 6px #22D3EE, 2px 8px #22D3EE, 4px 8px #22D3EE, 6px 8px #22D3EE, 8px 8px #22D3EE, 10px 8px #22D3EE, 12px 8px #22D3EE, 14px 8px #22D3EE, 16px 8px #22D3EE, 18px 8px #22D3EE, 20px 8px #22D3EE, 22px 8px #22D3EE, 2px 10px #22D3EE, 6px 10px #22D3EE, 8px 10px #22D3EE, 10px 10px #22D3EE, 12px 10px #22D3EE, 14px 10px #22D3EE, 16px 10px #22D3EE, 18px 10px #22D3EE, 22px 10px #22D3EE, 2px 12px #22D3EE, 6px 12px #22D3EE, 18px 12px #22D3EE, 22px 12px #22D3EE, 8px 14px #22D3EE, 10px 14px #22D3EE, 14px 14px #22D3EE, 16px 14px #22D3EE; filter: drop-shadow(0 0 3px rgba(34,211,238,.8)); animation-name: qworld-wiggle-c; }
-@keyframes qworld-wiggle { 50% { box-shadow: 6px 0px #A78BFA, 18px 0px #A78BFA, 2px 2px #A78BFA, 8px 2px #A78BFA, 16px 2px #A78BFA, 22px 2px #A78BFA, 2px 4px #A78BFA, 6px 4px #A78BFA, 8px 4px #A78BFA, 10px 4px #A78BFA, 12px 4px #A78BFA, 14px 4px #A78BFA, 16px 4px #A78BFA, 18px 4px #A78BFA, 22px 4px #A78BFA, 2px 6px #A78BFA, 4px 6px #A78BFA, 6px 6px #A78BFA, 10px 6px #A78BFA, 12px 6px #A78BFA, 14px 6px #A78BFA, 18px 6px #A78BFA, 20px 6px #A78BFA, 22px 6px #A78BFA, 2px 8px #A78BFA, 4px 8px #A78BFA, 6px 8px #A78BFA, 8px 8px #A78BFA, 10px 8px #A78BFA, 12px 8px #A78BFA, 14px 8px #A78BFA, 16px 8px #A78BFA, 18px 8px #A78BFA, 20px 8px #A78BFA, 22px 8px #A78BFA, 4px 10px #A78BFA, 6px 10px #A78BFA, 8px 10px #A78BFA, 10px 10px #A78BFA, 12px 10px #A78BFA, 14px 10px #A78BFA, 16px 10px #A78BFA, 18px 10px #A78BFA, 20px 10px #A78BFA, 6px 12px #A78BFA, 18px 12px #A78BFA, 4px 14px #A78BFA, 20px 14px #A78BFA; } }
-@keyframes qworld-wiggle-c { 50% { box-shadow: 6px 0px #22D3EE, 18px 0px #22D3EE, 2px 2px #22D3EE, 8px 2px #22D3EE, 16px 2px #22D3EE, 22px 2px #22D3EE, 2px 4px #22D3EE, 6px 4px #22D3EE, 8px 4px #22D3EE, 10px 4px #22D3EE, 12px 4px #22D3EE, 14px 4px #22D3EE, 16px 4px #22D3EE, 18px 4px #22D3EE, 22px 4px #22D3EE, 2px 6px #22D3EE, 4px 6px #22D3EE, 6px 6px #22D3EE, 10px 6px #22D3EE, 12px 6px #22D3EE, 14px 6px #22D3EE, 18px 6px #22D3EE, 20px 6px #22D3EE, 22px 6px #22D3EE, 2px 8px #22D3EE, 4px 8px #22D3EE, 6px 8px #22D3EE, 8px 8px #22D3EE, 10px 8px #22D3EE, 12px 8px #22D3EE, 14px 8px #22D3EE, 16px 8px #22D3EE, 18px 8px #22D3EE, 20px 8px #22D3EE, 22px 8px #22D3EE, 4px 10px #22D3EE, 6px 10px #22D3EE, 8px 10px #22D3EE, 10px 10px #22D3EE, 12px 10px #22D3EE, 14px 10px #22D3EE, 16px 10px #22D3EE, 18px 10px #22D3EE, 20px 10px #22D3EE, 6px 12px #22D3EE, 18px 12px #22D3EE, 4px 14px #22D3EE, 20px 14px #22D3EE; } }
-.qworld__alien:nth-child(4) { animation: qworld-hit 4s steps(1) infinite; }
-.qworld__alien:nth-child(4)::after {
-  content: ''; position: absolute; inset: -4px; opacity: 0; border-radius: 50%;
-  background: radial-gradient(circle, #FDE047 20%, #F472B6 45%, transparent 70%);
-  animation: qworld-boom 4s ease-out infinite;
-}
-@keyframes qworld-hit { 0%, 58% { opacity: 1; } 60%, 88% { opacity: 0; } 90% { opacity: 1; } }
-@keyframes qworld-boom { 0%, 57% { opacity: 0; transform: scale(.3); } 59% { opacity: 1; transform: scale(1); } 66%, 100% { opacity: 0; transform: scale(1.6); } }
+/* The game itself is drawn on a canvas that fills the board. */
+.qworld__game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
-/* The ship patrols the bottom edge and fires a laser now and then. */
-.qworld__ship {
-  position: absolute; bottom: 3px; left: 8%; width: 20px; height: 12px;
-  animation: qworld-patrol 9s ease-in-out infinite alternate;
-}
-@keyframes qworld-patrol { to { left: calc(92% - 20px); } }
-.qworld__ship > span {
-  position: absolute; left: 0; top: 0; width: 2px; height: 2px;
-  box-shadow: 10px 0px #22D3EE, 8px 2px #22D3EE, 10px 2px #22D3EE, 12px 2px #22D3EE, 8px 4px #22D3EE, 10px 4px #22D3EE, 12px 4px #22D3EE, 4px 6px #22D3EE, 6px 6px #22D3EE, 8px 6px #22D3EE, 10px 6px #22D3EE, 12px 6px #22D3EE, 14px 6px #22D3EE, 16px 6px #22D3EE, 2px 8px #22D3EE, 4px 8px #22D3EE, 6px 8px #22D3EE, 8px 8px #22D3EE, 10px 8px #22D3EE, 12px 8px #22D3EE, 14px 8px #22D3EE, 16px 8px #22D3EE, 18px 8px #22D3EE, 2px 10px #22D3EE, 4px 10px #22D3EE, 6px 10px #22D3EE, 8px 10px #22D3EE, 10px 10px #22D3EE, 12px 10px #22D3EE, 14px 10px #22D3EE, 16px 10px #22D3EE, 18px 10px #22D3EE; filter: drop-shadow(0 0 3px rgba(34,211,238,.9));
-}
-.qworld__ship::before {
-  content: ''; position: absolute; left: 9px; bottom: 12px; width: 2px; height: 7px; border-radius: 1px;
-  background: #FDE047; box-shadow: 0 0 6px #FDE047; opacity: 0;
-  animation: qworld-laser 1.6s linear infinite;
-}
-@keyframes qworld-laser { 0% { opacity: 1; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-26px); } 41%, 100% { opacity: 0; transform: translateY(-26px); } }
-
-/* Heading on the left with the clock under it; View all on the right. */
-.qarcade__head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
-.qarcade__heading { display: grid; gap: 2px; min-width: 0; }
+/* Title, reset clock beside it, View all on the right. */
+.qarcade__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .qarcade__title, .qarcade__reset b, .qarcade__label, .qmission__stamp, .qmission__count, .qmission__xp, .qmission__claim {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
 }
@@ -8030,7 +7989,11 @@ body.is-locked { overflow: hidden; }
   text-transform: uppercase; letter-spacing: .1em; color: #fff; text-shadow: 0 0 10px rgba(167,139,250,.7);
 }
 .qarcade__title svg { color: #FDE047; filter: drop-shadow(0 0 4px rgba(253,224,71,.7)); }
-.qarcade__reset { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-2xs); color: #A78BFA; }
+.qarcade__reset {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 6px; border-radius: 999px;
+  font-size: var(--t-2xs); color: #A78BFA; background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.28);
+}
+.qarcade__reset svg { flex: none; }
 .qarcade__reset b { font-weight: 700; color: #E9D5FF; }
 .qarcade__all {
   margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px;
@@ -8123,8 +8086,7 @@ body.is-locked { overflow: hidden; }
 }
 @media (prefers-reduced-motion: reduce) {
   .qarcade__bar > span { transition: none; }
-  .qworld::before, .qworld::after, .qworld__fleet, .qworld__alien, .qworld__alien::before, .qworld__alien::after,
-  .qworld__ship, .qworld__ship::before, .qmission__claim, .qarcade__gain, .qmission__stamp, .qchip.is-gain, .qchip__gain { animation: none; }
+  .qworld::before, .qworld::after, .qmission__claim, .qarcade__gain, .qmission__stamp, .qchip.is-gain, .qchip__gain { animation: none; }
   .qchip__gain { display: none; }
 }
 

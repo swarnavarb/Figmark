@@ -285,9 +285,8 @@ export function RarityRibbon({ tier }: { tier: RarityTier }) {
 }
 
 /**
- * Your level and streak in the width of a chip; opens the Quests page. It is
- * the long view - how far to the next level - while the daily quest board is
- * today's; XP claimed there flies up here, and the chip pops when it lands.
+ * Your level, XP and streak in the width of a chip; opens the Quests page. It
+ * is the long view while the daily quest board is today's; XP claimed there flies up here, and the chip pops when it lands.
  */
 export function CollectorChip() {
   const { view } = useQuest();
@@ -300,10 +299,9 @@ export function CollectorChip() {
     seen.current = xp;
   }, [xp]);
   if (!view) return null;
-  const toNext = view.nextLevelXp - view.xp;
   return (
     <Link to="/quests" className={`qchip${gain ? ' is-gain' : ''}`} key={gain?.id}
-      aria-label={`Level ${view.level} ${view.title}, ${toNext} XP to level ${view.level + 1}, open Quests`}>
+      aria-label={`Level ${view.level} ${view.title}, open Quests`}>
       {view.streak.current > 0 && (
         <span className="qchip__streak" title={`${view.streak.current}-day streak`}>
           <Glyph name="flame" size={13} />{view.streak.current}
@@ -312,7 +310,7 @@ export function CollectorChip() {
       <LevelRing level={view.level} progress={view.progress} size={30} />
       <span className="qchip__text">
         <small>{view.title}</small>
-        <span>{toNext} XP to LV {view.level + 1}</span>
+        <span>{view.xp - view.levelFloor}/{view.nextLevelXp - view.levelFloor} XP</span>
       </span>
       {gain ? <em className="qchip__gain">+{gain.xp} XP</em> : null}
     </Link>
