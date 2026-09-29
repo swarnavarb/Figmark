@@ -9616,17 +9616,19 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 /* ── Posted by: the seller under their own awning ───────────────────────── */
 .sellercard { position: relative; overflow: hidden; display: grid; gap: 12px; padding: 0 14px 14px; }
 .sellercard__awning {
-  position: relative; height: 64px; margin: 0 -14px; background: var(--sf-grad, var(--grad-hero));
+  position: relative; height: 114px; margin: 0 -14px; background: var(--sf-grad, var(--grad-hero));
   /* The shop's colour runs on under the canopy and stops behind the photo, as on its shop page. */
   box-shadow: inset 0 -24px 30px -18px rgba(0, 0, 0, 0.35);
 }
 .sellercard__awning .canopy { height: 40px; }
-.sellercard__sign { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: start; margin-top: -34px; }
+.sellercard__sign { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: -70px; }
 .sellercard__avatar { display: grid; padding: 3px; border-radius: 50%; background: var(--sf-grad, var(--grad-hero)); box-shadow: 0 0 0 3px var(--surface), 0 8px 18px rgba(0, 0, 0, 0.4); }
-.sellercard__who { display: grid; gap: 0; min-width: 0; padding-top: 36px; }
+.sellercard__who { display: grid; gap: 0; min-width: 0; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45); }
+.sellercard__who .dtile__label, .sellercard__who .sellercard__where, .sellercard__who .sellercard__name { color: #fff; }
+.sellercard__who .dtile__label { opacity: 0.8; }
 .sellercard__tier {
-  display: inline-flex; align-items: center; gap: 4px; margin-top: 40px; padding: 3px 9px; border-radius: var(--r-pill); text-transform: capitalize;
-  font-size: var(--t-xs); font-weight: var(--w-bold); color: var(--sf-hue, var(--pink)); background: var(--surface-2); box-shadow: inset 0 0 0 1px currentColor;
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: var(--r-pill); text-transform: capitalize;
+  font-size: var(--t-xs); font-weight: var(--w-bold); color: #fff; background: rgba(0, 0, 0, 0.28); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
 }
 .sellercard__name { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); line-height: 1.2; }
 .sellercard__where { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-xs); color: var(--text-dim); }
@@ -9669,7 +9671,7 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .rail__all:hover { background: rgba(255, 255, 255, 0.2); transform: translateX(2px); }
 .rail__track {
   position: relative; z-index: 1; display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory; scroll-padding: 0 16px; padding: 4px 16px 6px; scrollbar-width: none;
+  scroll-snap-type: x mandatory; scroll-padding: 0 16px; padding: 4px 16px 40px; margin-bottom: -34px; scrollbar-width: none;
 }
 .rail__track::-webkit-scrollbar { display: none; }
 .railitem {
