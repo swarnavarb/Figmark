@@ -291,21 +291,21 @@ function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
 
 /* ── Today's quests, as an arcade quest board ─────────────────────────── */
 
-/** A mission name and a glyph for each daily task, keyed by what it counts. */
-const MISSIONS: Record<string, { code: string; glyph: GlyphName }> = {
-  checkin: { code: 'Report in', glyph: 'clock' },
-  reveal: { code: 'Loot drop', glyph: 'gift' },
-  save: { code: 'Scout', glyph: 'chest' },
-  follow: { code: 'Ally up', glyph: 'heart' },
-  post: { code: 'Broadcast', glyph: 'chat' },
-  order: { code: 'Acquire', glyph: 'bag' },
-  review: { code: 'Judge', glyph: 'star' },
-  collect: { code: 'Vault', glyph: 'crown' },
+/** A glyph for each daily task, keyed by what it counts. */
+const MISSIONS: Record<string, { glyph: GlyphName }> = {
+  checkin: { glyph: 'clock' },
+  reveal: { glyph: 'gift' },
+  save: { glyph: 'chest' },
+  follow: { glyph: 'heart' },
+  post: { glyph: 'chat' },
+  order: { glyph: 'bag' },
+  review: { glyph: 'star' },
+  collect: { glyph: 'crown' },
 };
 
 function missionOf(id: string) {
   const key = id.replace(/^daily-/, '').replace(/\d+$/, '');
-  return MISSIONS[key] ?? { code: 'Quest', glyph: 'bolt' as GlyphName };
+  return MISSIONS[key] ?? { glyph: 'bolt' as GlyphName };
 }
 
 /** Time left until the daily quests roll over at midnight, India time. */
@@ -324,9 +324,10 @@ function useResetClock() {
 type Coin = { id: number; x: number; y: number; sx: number; sy: number; dx: number; dy: number; delay: number };
 
 /**
- * Today's daily tasks as mission cards. Claiming one flips its card to
- * COMPLETE and throws a handful of coins at the XP bar, which then fills -
- * the reward is seen landing, not just a number changing.
+ * Today's daily tasks as one-line missions over a small side-scrolling
+ * scene. Claiming one stamps it CLEAR! and throws a handful of coins at the
+ * XP bar, which then fills - the reward is seen landing, not just a number
+ * changing.
  */
 function TodayQuests() {
   const { view, act } = useQuest();
@@ -371,67 +372,59 @@ function TodayQuests() {
 
   return (
     <section className="qarcade" aria-label="Daily quests">
-      <div className="qarcade__head">
-        <span className="qarcade__title"><Glyph name="shield" size={16} /> Daily quests</span>
-        <span className="qarcade__reset" title="Daily quests reset at midnight, India time">
-          <Glyph name="clock" size={12} /> Resets in <b>{clock}</b>
-        </span>
-        <Link to="/quests" className="qarcade__all">
-          {waiting > 0 ? <span className="qdot">{waiting}</span> : null}All quests &rsaquo;
-        </Link>
+      <div className="qworld" aria-hidden="true">
+        <span className="qworld__block qworld__block--a">?</span>
+        <span className="qworld__coin qworld__coin--a" />
+        <span className="qworld__pipe" />
+        <span className="qworld__block qworld__block--b">?</span>
+        <span className="qworld__coin qworld__coin--b" />
+        <span className="qworld__hero"><span /></span>
       </div>
 
-      <div className="qarcade__hud">
-        <span className="qarcade__lvl">LVL {view.level}</span>
-        <span className="qarcade__rank">{view.title}</span>
-        <div className="qarcade__bar" ref={barRef}>
-          <span style={{ width: `${Math.round(Math.min(1, Math.max(0, view.progress)) * 100)}%` }} />
-          {gain ? <em key={gain.id} className="qarcade__gain">+{gain.xp} XP</em> : null}
-        </div>
-        <span className="qarcade__num">{into}<i>/{span} XP</i></span>
-        <span className="qarcade__clear">{done}/{daily.length} cleared</span>
+      <div className="qarcade__head">
+        <span className="qarcade__title"><Glyph name="shield" size={14} /> Daily quests</span>
+        <span className="qarcade__reset" title="Daily quests reset at midnight, India time">
+          <Glyph name="clock" size={11} /> <b>{clock}</b>
+        </span>
+        <Link to="/quests" className="qarcade__all">
+          {waiting > 0 ? <span className="qdot">{waiting}</span> : null}All &rsaquo;
+        </Link>
+        <span className="qarcade__hud" title={`${view.title} - ${done}/${daily.length} quests cleared today`}>
+          <span className="qarcade__lvl">LV{view.level}</span>
+          <span className="qarcade__bar" ref={barRef}>
+            <span style={{ width: `${Math.round(Math.min(1, Math.max(0, view.progress)) * 100)}%` }} />
+            {gain ? <em key={gain.id} className="qarcade__gain">+{gain.xp}</em> : null}
+          </span>
+          <span className="qarcade__num">{into}<i>/{span}</i></span>
+        </span>
       </div>
 
       <ul className="qarcade__list">
-        {daily.map((task, index) => {
+        {daily.map((task) => {
           const mission = missionOf(task.id);
-          const flipped = task.claimed || claiming === task.id;
-          const state = flipped ? 'is-complete' : task.claimable ? 'is-ready' : '';
+          const cleared = task.claimed || claiming === task.id;
+          const state = cleared ? 'is-clear' : task.claimable ? 'is-ready' : '';
           return (
-            <li key={task.id} className={`qmission ${state}`}>
-              <div className="qmission__inner">
-                <div className="qmission__front">
-                  <span className="qmission__icon"><Glyph name={mission.glyph} size={20} /></span>
-                  <span className="qmission__tag">Quest {index + 1} &middot; {mission.code}</span>
-                  <span className="qmission__title">{task.title}</span>
-                  <span className="qmission__meter">
-                    <span style={{ width: `${Math.round((task.progress / task.goal) * 100)}%` }} />
-                  </span>
-                  <span className="qmission__foot">
-                    <span className="qmission__count">{task.progress}/{task.goal}</span>
-                    {task.claimable ? (
-                      <button type="button" className="qmission__claim" disabled={claiming !== null}
-                        onClick={(event) => claim(event, task.id, task.xp)}>
-                        Claim +{task.xp} XP
-                      </button>
-                    ) : (
-                      <span className="qmission__xp"><Glyph name="star" size={11} /> +{task.xp} XP</span>
-                    )}
-                  </span>
-                </div>
-                <div className="qmission__back" aria-hidden={!flipped}>
-                  <span className="qmission__stamp">Complete</span>
-                  <span className="qmission__won">+{task.xp} XP earned</span>
-                </div>
-              </div>
+            <li key={task.id} className={`qmission ${state}`} title={task.blurb}>
+              <span className="qmission__icon"><Glyph name={cleared ? 'star' : mission.glyph} size={13} /></span>
+              <span className="qmission__title">{task.title}</span>
+              {cleared ? (
+                <span className="qmission__stamp">Clear!</span>
+              ) : task.claimable ? (
+                <button type="button" className="qmission__claim" disabled={claiming !== null}
+                  onClick={(event) => claim(event, task.id, task.xp)}>
+                  +{task.xp} XP
+                </button>
+              ) : (
+                <>
+                  <span className="qmission__count">{task.progress}/{task.goal}</span>
+                  <span className="qmission__xp">+{task.xp}</span>
+                </>
+              )}
             </li>
           );
         })}
       </ul>
-
-      {daily.length > 0 && done === daily.length ? (
-        <p className="qarcade__allclear"><b>All clear!</b> New quests in {clock}</p>
-      ) : null}
 
       {coins.length > 0 ? createPortal(
         <div className="qcoins" aria-hidden="true">
