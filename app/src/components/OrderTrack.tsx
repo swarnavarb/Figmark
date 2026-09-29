@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Order } from '@shared/models';
 import { formatDateOrdinal, timeAgo } from '../format';
 import { ShipmentChip } from './OrderStatus';
+import { DrawnCheck } from './Royal';
 
 /**
  * Where an order has got to, as one card: a headline for the step it is on,
@@ -33,7 +34,7 @@ export function TrackHero({ icon, now, sub, done, total, children }: {
       </div>
       <div className="trk__bar" role="progressbar" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100}
         aria-label="How far along it is">
-        <span style={{ width: `${share}%` }} />
+        <span style={{ ['--to' as string]: `${share}%`, width: `${share}%` }} />
       </div>
       {children}
     </div>
@@ -60,7 +61,9 @@ function directSteps(order: Order): Step[] {
   const dispatchedAt = order.checkpoints?.dispatched ?? null;
   const delivered = order.status === 'delivered';
   return [
-    { key: 'placed', icon: '🧾', label: order.bookingOnly ? 'Booked' : 'Order placed', at: order.placedAt ?? order.createdAt, done: true },
+    { key: 'placed', icon: '🧾', label: order.bookingOnly ? 'Booked' : 'Order placed',
+      // Pressing Buy only opens a checkout; it is placed once they choose how to pay.
+      at: order.placedAt ?? order.createdAt, done: order.placedAt !== null },
     {
       key: 'accepted', icon: '🤝', label: 'Seller accepted',
       at: order.acceptedAt ?? null, done: Boolean(order.accepted) || paid,
@@ -103,9 +106,9 @@ export function DirectTrack({ order }: { order: Order }) {
       done={done} total={steps.length}>
       <ol className="trk__steps">
         {steps.map((step, index) => (
-          <li key={step.key}
+          <li key={step.key} style={{ ['--i' as string]: index }}
             className={`trk__step${step.done ? ' is-done' : ''}${index === current ? ' is-next' : ''}`}>
-            <span className="trk__dot" aria-hidden="true">{step.done ? '✓' : step.icon}</span>
+            <span className="trk__dot" aria-hidden="true">{step.done ? <DrawnCheck /> : step.icon}</span>
             <span className="trk__body">
               <span className="trk__label">{step.label}</span>
               {step.at && step.done && <span className="trk__at">{formatDateOrdinal(step.at)}</span>}
@@ -126,5 +129,48 @@ export function DirectTrack({ order }: { order: Order }) {
         </div>
       )}
     </TrackHero>
+  );
+}
+
+/**
+ * A checkout that is not an order yet.
+ *
+ * Pressing Buy creates this so the screen can ask how to pay, but the seller
+ * has not been told and nothing is held. Drawing a tracking ladder with
+ * "Order placed" ticked would say otherwise.
+ */
+export function CheckoutPending() {
+  const steps = [
+    { label: 'Choose how to pay', sub: 'Directly to the seller, or through an escrow.' },
+    { label: 'Order placed', sub: 'The seller is told and holds it for you.' },
+    { label: 'Tracking begins', sub: 'Every step, dated, from here on.' },
+  ];
+  return (
+    <div className="trk">
+      <div className="trk__hero">
+        <span className="trk__icon trk__icon--pulse" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18M7 15h4" />
+          </svg>
+        </span>
+        <span className="trk__now">
+          <span className="trk__eyebrow">Not placed yet</span>
+          <b className="trk__title">Waiting for you to choose how to pay</b>
+          <span className="trk__sub">Nothing has been sent to the seller and nothing is charged until you do.</span>
+        </span>
+      </div>
+      <ol className="trk__steps">
+        {steps.map((step, index) => (
+          <li key={step.label} style={{ ['--i' as string]: index }}
+            className={`trk__step${index === 0 ? ' is-next' : ''}`}>
+            <span className="trk__dot" aria-hidden="true">{index + 1}</span>
+            <span className="trk__body">
+              <span className="trk__label">{step.label}</span>
+              <span className="trk__at">{step.sub}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }

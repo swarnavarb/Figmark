@@ -530,10 +530,14 @@ function Carousel({ photos, alt, burst, onOpen, onDoubleTap }: {
 }
 
 /** A photo filling the screen, with the rest a swipe or an arrow key away. */
-export function Lightbox({ photos, start, onClose, title, caption }: {
+export function Lightbox({ photos, start, onClose, title, caption, origin, royal }: {
   photos: string[];
   start: number;
   onClose: () => void;
+  /** Where the tapped photo sat, so the viewer grows out of it and shrinks back into it. */
+  origin?: DOMRect | null;
+  /** The listing's dress: a blurred wash of the photo behind it and gold chrome. */
+  royal?: boolean;
   /** A heading over the photo - a collection card's name. */
   title?: string;
   /** One line under the heading - when it joined the collection. */
@@ -541,10 +545,50 @@ export function Lightbox({ photos, start, onClose, title, caption }: {
 }) {
   const [index, setIndex] = useState(start);
   const touch = useRef<number | null>(null);
+  const img = useRef<HTMLImageElement>(null);
+  const shell = useRef<HTMLDivElement>(null);
+  const closing = useRef(false);
+  const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  /** The transform that puts the full-size photo exactly over the thumbnail it came from. */
+  const fromOrigin = () => {
+    const box = img.current?.getBoundingClientRect();
+    if (!origin || !box || !box.width) return null;
+    const dx = origin.left + origin.width / 2 - (box.left + box.width / 2);
+    const dy = origin.top + origin.height / 2 - (box.top + box.height / 2);
+    return `translate(${dx}px, ${dy}px) scale(${origin.width / box.width})`;
+  };
+
+  // Grows out of the photo that was tapped. Only the first photo does it: once
+  // they have swiped on, the thumbnail on the page is no longer the one shown.
+  useEffect(() => {
+    const el = img.current;
+    if (!el || still || !origin) return;
+    const run = () => {
+      const from = fromOrigin();
+      if (from) el.animate([{ transform: from, borderRadius: '12px' }, { transform: 'none', borderRadius: '4px' }],
+        { duration: 460, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' });
+    };
+    if (el.complete) run(); else el.addEventListener('load', run, { once: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const close = useCallback(() => {
+    if (closing.current) return;
+    closing.current = true;
+    const from = index === start ? fromOrigin() : null;
+    if (still || !img.current) { onClose(); return; }
+    shell.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: 'ease-out', fill: 'forwards' });
+    img.current.animate(from
+      ? [{ transform: 'none' }, { transform: from }]
+      : [{ transform: 'none', opacity: 1 }, { transform: 'scale(0.92)', opacity: 0 }],
+    { duration: 320, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }).finished.then(onClose, onClose);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, start, onClose, still]);
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') close();
       if (event.key === 'ArrowRight') setIndex((at) => Math.min(photos.length - 1, at + 1));
       if (event.key === 'ArrowLeft') setIndex((at) => Math.max(0, at - 1));
     };
@@ -555,11 +599,11 @@ export function Lightbox({ photos, start, onClose, title, caption }: {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = overflow;
     };
-  }, [onClose, photos.length]);
+  }, [close, photos.length]);
 
   return createPortal(
-    <div className="lightbox" role="dialog" aria-modal="true" aria-label="Photo"
-      onClick={(event) => event.target === event.currentTarget && onClose()}
+    <div ref={shell} className={`lightbox${royal ? ' lightbox--royal' : ''}`} role="dialog" aria-modal="true" aria-label="Photo"
+      onClick={(event) => event.target === event.currentTarget && close()}
       onTouchStart={(event) => { touch.current = event.touches[0]?.clientX ?? null; }}
       onTouchEnd={(event) => {
         const from = touch.current;
@@ -568,7 +612,8 @@ export function Lightbox({ photos, start, onClose, title, caption }: {
         if (from === null || to === undefined || Math.abs(to - from) < 40) return;
         setIndex((at) => Math.max(0, Math.min(photos.length - 1, at + (to < from ? 1 : -1))));
       }}>
-      <button type="button" className="lightbox__close" aria-label="Close" onClick={onClose}>
+      {royal && <img className="lightbox__wash" src={photos[index]} alt="" aria-hidden="true" />}
+      <button type="button" className="lightbox__close" aria-label="Close" onClick={close}>
         <Icon name="close" size={20} />
       </button>
       {(title || caption) && (
@@ -577,7 +622,7 @@ export function Lightbox({ photos, start, onClose, title, caption }: {
           {caption && <span className="lightbox__caption">{caption}</span>}
         </div>
       )}
-      <img key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
+      <img ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
       {photos.length > 1 && (
         <>
           <span className="lightbox__count">{index + 1} / {photos.length}</span>

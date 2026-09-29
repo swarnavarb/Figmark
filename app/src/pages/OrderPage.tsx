@@ -16,7 +16,7 @@ import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
-import { DirectTrack, TrackHero } from '../components/OrderTrack';
+import { CheckoutPending, DirectTrack, TrackHero } from '../components/OrderTrack';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 
 /**
@@ -96,8 +96,10 @@ export function OrderPage() {
     ? sellerStatus({ ...facts, claimOpen: Boolean(order.paymentClaim && order.paymentClaim.decision === null) })
     : buyerStatus(facts);
 
+  const placed = order.placedAt !== null;
+
   return (
-    <main className="page">
+    <main className="page royal royal--order">
       {/* Back to exactly where they came from - the list, its filters, and
           this order within it - rather than to the top of some list. Opened
           from anywhere that did not say (a notification, a shared link), a
@@ -110,7 +112,7 @@ export function OrderPage() {
         <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : order.placedAt === null ? 'Cart' : 'My Purchases'}
       </button>
 
-      <div className="ohead">
+      <div className="ohead royal__frame rise">
         {/* The item as it was listed, one tap away for either side. */}
         {data.listing ? (
           <Link to={`/listing/${data.listing.id}`} className="ohead__thumb" aria-label="See the listing">
@@ -152,7 +154,9 @@ export function OrderPage() {
       <CollectionPrompt state={state} />
       <DisputePanel state={state} />
 
-      <div className="tabs tabs--vivid">
+      {!placed && <CheckoutPending />}
+
+      {placed && <div className="tabs tabs--vivid royal__tabs">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
           onClick={() => setTab('tracking')}>
           Tracking
@@ -161,9 +165,9 @@ export function OrderPage() {
           onClick={() => setTab('details')}>
           Details
         </button>
-      </div>
+      </div>}
 
-      {tab === 'tracking' && (
+      {placed && tab === 'tracking' && (
         <div className="stack">
           <div className="row row--between">
             <h2 style={{ margin: 0 }}>Tracking</h2>
@@ -252,7 +256,7 @@ export function OrderPage() {
         </div>
       )}
 
-      {tab === 'details' && (
+      {placed && tab === 'details' && (
         <div className="detail">
           <div className="card card--pad stack">
             <div className="row row--between">

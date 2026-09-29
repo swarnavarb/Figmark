@@ -2,7 +2,8 @@ import { ReportButton } from '../components/ReportButton';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge, leadPhoto } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge } from '../components/ui';
+import { Crown, Gallery, Ornament } from '../components/Royal';
 import { FillBlock } from '../components/FillMeter';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -41,6 +42,11 @@ export function ListingPage() {
   if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
 
   const { listing, seller, comments } = data;
+  // The primary photo first, then the rest in the order they were added.
+  const photos = [...(listing.photos ?? [])]
+    .sort((a, b) => Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary)))
+    .map((photo) => photo.url)
+    .filter((url): url is string => Boolean(url));
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true);
@@ -97,28 +103,30 @@ export function ListingPage() {
   }
 
   return (
-    <main className="page">
-      <Link to="/" className="btn btn--quiet" style={{ marginBottom: 16 }}>
+    <main className="page royal">
+      <Link to="/" className="btn btn--quiet royal__back" style={{ marginBottom: 16 }}>
         <Icon name="back" size={14} /> Back to browse
       </Link>
 
       <div className="detail">
         <div>
-          <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb detail__hero">
-            <div className="thumb__badges">
-              <span className="badge badge--solid">{listing.condition}</span>
-              {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
-            </div>
-          </Thumb>
+          <Gallery photos={photos} title={listing.title}
+            fallback={<Thumb seed={listing.id} label={listing.title} className="thumb gallery__fallback" />}>
+            <span className="gallery__badges">
+              <span className="royal__tag">{listing.condition}</span>
+              {listing.preOrder && <span className="royal__tag royal__tag--gold">Pre-order</span>}
+            </span>
+          </Gallery>
 
-          <div className="detail__section" style={{ marginTop: 22 }}>
-            <h1>{listing.title}</h1>
+          <div className="detail__section rise" style={{ marginTop: 28, ['--i' as string]: 1 }}>
+            <span className="royal__eyebrow">{listing.category}</span>
+            <h1 className="royal__title">{listing.title}</h1>
+            <Ornament className="ornament--left" />
             {listing.privateFor && (
               <div className="badges"><span className="badge badge--pink">🤝 Private deal - {user?.id === listing.privateFor ? 'made just for you' : 'only your buyer can see this'}</span></div>
             )}
             {listing.expiresAt && <div className="badges"><ExpiryChip listing={listing} big /><StockChip listing={listing} /></div>}
-            <div className="spread muted">
-              <span>{listing.category}</span>
+            <div className="spread muted royal__meta">
               <span>{listing.viewCount} views</span>
               <span>{listing.likeCount} saved</span>
               <span>Listed {timeAgo(listing.createdAt)}</span>
@@ -145,8 +153,8 @@ export function ListingPage() {
             />
           )}
 
-          <section className="detail__section">
-            <h2>Questions</h2>
+          <section className="detail__section rise" style={{ ['--i' as string]: 2 }}>
+            <h2 className="royal__h2">Questions</h2>
             <p className="muted">Public — anyone browsing this listing can read these.</p>
             {comments.length === 0 && <p className="muted">No questions yet.</p>}
             <div>
@@ -188,9 +196,10 @@ export function ListingPage() {
         </div>
 
         {/* ── Purchase rail ── */}
-        <aside className="stack">
-          <div className="card card--pad stack">
-            <span className="detail__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        <aside className="stack royal__rail">
+          <div className="card card--pad stack royal__frame rise" style={{ ['--i' as string]: 1 }}>
+            <span className="royal__eyebrow"><Crown size={14} /> Price</span>
+            <span className="detail__price royal__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
             {/* Stock and expiry, loud: they decide whether this can be bought. */}
             <div className="badges">
               {listing.channelDrop && <span className="badge badge--drop">⚡ Exclusive channel drop</span>}
@@ -225,9 +234,9 @@ export function ListingPage() {
                 {isExpired(listing) ? (
                   <p className="notice notice--warn">⛔ This item has expired and can no longer be bought.</p>
                 ) : (
-                  <button className="btn btn--lg btn--block" onClick={() => void buy()}
+                  <button className="btn btn--lg btn--block royal__buy" onClick={() => void buy()}
                     disabled={busy || !user || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
-                    {listing.preOrder ? 'Book a place' : 'Buy now'}
+                    {busy ? <span className="royal__opening">Opening checkout</span> : listing.preOrder ? 'Book a place' : 'Buy now'}
                   </button>
                 )}
                 <button className={`btn btn--ghost btn--block${data.liked ? ' is-on' : ''}`}
@@ -246,7 +255,8 @@ export function ListingPage() {
           </div>
 
           {seller && (
-            <div className="card card--pad stack">
+            <div className="card card--pad stack royal__frame rise" style={{ ['--i' as string]: 2 }}>
+              <span className="royal__eyebrow">Offered by</span>
               <div className="row">
                 <Avatar name={seller.storefrontName} />
                 <div style={{ flex: 1, minWidth: 0 }}>
