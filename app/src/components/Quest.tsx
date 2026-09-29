@@ -1,5 +1,5 @@
 import {
-  createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode,
+  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -284,12 +284,26 @@ export function RarityRibbon({ tier }: { tier: RarityTier }) {
   return <span className={`qribbon qribbon--${tier}`}>{RARITY_LABELS[tier]}</span>;
 }
 
-/** Your level, XP and streak in the width of a chip; opens the Quests page. */
+/**
+ * Your level and streak in the width of a chip; opens the Quests page. It is
+ * the long view - how far to the next level - while the daily quest board is
+ * today's; XP claimed there flies up here, and the chip pops when it lands.
+ */
 export function CollectorChip() {
   const { view } = useQuest();
+  const seen = useRef<number | null>(null);
+  const [gain, setGain] = useState<{ id: number; xp: number } | null>(null);
+  const xp = view?.xp ?? null;
+  useEffect(() => {
+    if (xp === null) return;
+    if (seen.current !== null && xp > seen.current) setGain({ id: Date.now(), xp: xp - seen.current });
+    seen.current = xp;
+  }, [xp]);
   if (!view) return null;
+  const toNext = view.nextLevelXp - view.xp;
   return (
-    <Link to="/quests" className="qchip" aria-label={`Level ${view.level} ${view.title}, open Quests`}>
+    <Link to="/quests" className={`qchip${gain ? ' is-gain' : ''}`} key={gain?.id}
+      aria-label={`Level ${view.level} ${view.title}, ${toNext} XP to level ${view.level + 1}, open Quests`}>
       {view.streak.current > 0 && (
         <span className="qchip__streak" title={`${view.streak.current}-day streak`}>
           <Glyph name="flame" size={13} />{view.streak.current}
@@ -298,8 +312,9 @@ export function CollectorChip() {
       <LevelRing level={view.level} progress={view.progress} size={30} />
       <span className="qchip__text">
         <small>{view.title}</small>
-        <span>{view.xp - view.levelFloor}/{view.nextLevelXp - view.levelFloor} XP</span>
+        <span>{toNext} XP to LV {view.level + 1}</span>
       </span>
+      {gain ? <em className="qchip__gain">+{gain.xp} XP</em> : null}
     </Link>
   );
 }

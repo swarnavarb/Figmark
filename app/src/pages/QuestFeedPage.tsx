@@ -338,19 +338,23 @@ function TodayQuests() {
   const [gain, setGain] = useState<{ id: number; xp: number } | null>(null);
   if (!view) return null;
   const daily = view.tasks.filter((task) => task.kind === 'daily');
-  const done = daily.filter((task) => task.claimed).length;
+  const done = daily.filter((task) => task.claimed || claiming === task.id).length;
   const waiting = view.tasks.filter((task) => task.claimable).length + view.packs.length;
-  const into = view.xp - view.levelFloor;
-  const span = view.nextLevelXp - view.levelFloor;
+  // Today's XP out of what today's quests can pay - the board's own number,
+  // next to the level chip's long view. A claim in flight counts already.
+  const total = daily.reduce((sum, task) => sum + task.xp, 0);
+  const earned = daily.reduce((sum, task) => sum + (task.claimed || claiming === task.id ? task.xp : 0), 0);
+  const toNext = view.nextLevelXp - view.xp;
 
   function claim(event: MouseEvent<HTMLButtonElement>, id: string, xp: number) {
     const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const bar = barRef.current?.getBoundingClientRect();
+    const chip = document.querySelector('.qchip')?.getBoundingClientRect();
+    const bar = chip && chip.bottom > 0 ? chip : barRef.current?.getBoundingClientRect();
     if (!still && bar) {
       const from = event.currentTarget.getBoundingClientRect();
       const x = from.left + from.width / 2;
       const y = from.top + from.height / 2;
-      const tx = bar.left + Math.min(bar.width, bar.width * view!.progress + 12);
+      const tx = bar === chip ? bar.left + 18 : bar.left + bar.width / 2;
       const ty = bar.top + bar.height / 2;
       const stamp = Date.now();
       setCoins(Array.from({ length: 9 }, (_, i) => {
@@ -373,29 +377,34 @@ function TodayQuests() {
   return (
     <section className="qarcade" aria-label="Daily quests">
       <div className="qworld" aria-hidden="true">
-        <span className="qworld__block qworld__block--a">?</span>
-        <span className="qworld__coin qworld__coin--a" />
-        <span className="qworld__pipe" />
-        <span className="qworld__block qworld__block--b">?</span>
-        <span className="qworld__coin qworld__coin--b" />
-        <span className="qworld__hero"><span /></span>
+        <span className="qworld__fleet">
+          {[0, 1, 2, 3, 4, 5].map((n) => <span key={n} className="qworld__alien" />)}
+        </span>
+        <span className="qworld__ship"><span /></span>
       </div>
 
       <div className="qarcade__head">
-        <span className="qarcade__title"><Glyph name="shield" size={14} /> Daily quests</span>
-        <span className="qarcade__reset" title="Daily quests reset at midnight, India time">
-          <Glyph name="clock" size={11} /> <b>{clock}</b>
+        <span className="qarcade__heading">
+          <span className="qarcade__title"><Glyph name="shield" size={14} /> Daily quests</span>
+          <span className="qarcade__reset" title="Daily quests reset at midnight, India time">
+            <Glyph name="clock" size={11} /> Resets in <b>{clock}</b>
+          </span>
         </span>
         <Link to="/quests" className="qarcade__all">
-          {waiting > 0 ? <span className="qdot">{waiting}</span> : null}All &rsaquo;
+          {waiting > 0 ? <span className="qdot">{waiting}</span> : null}View all <span aria-hidden="true">&rsaquo;</span>
         </Link>
-        <span className="qarcade__hud" title={`${view.title} - ${done}/${daily.length} quests cleared today`}>
-          <span className="qarcade__lvl">LV{view.level}</span>
-          <span className="qarcade__bar" ref={barRef}>
-            <span style={{ width: `${Math.round(Math.min(1, Math.max(0, view.progress)) * 100)}%` }} />
-            {gain ? <em key={gain.id} className="qarcade__gain">+{gain.xp}</em> : null}
-          </span>
-          <span className="qarcade__num">{into}<i>/{span}</i></span>
+      </div>
+
+      <div className="qarcade__today">
+        <span className="qarcade__label">Today <b>{earned}</b><i>/{total} XP</i></span>
+        <span className="qarcade__bar" ref={barRef}>
+          <span style={{ width: `${total ? Math.round((earned / total) * 100) : 0}%` }} />
+          {gain ? <em key={gain.id} className="qarcade__gain">+{gain.xp}</em> : null}
+        </span>
+        <span className="qarcade__next">
+          {done}/{daily.length} cleared &middot; {total - earned > 0
+            ? <><b>+{total - earned}</b> left toward LV {view.level + 1}</>
+            : <>all banked toward LV {view.level + 1}</>}
         </span>
       </div>
 
