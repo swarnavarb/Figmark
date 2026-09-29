@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { Order } from '@shared/models';
 import { formatDateOrdinal, timeAgo } from '../format';
 import { ShipmentChip } from './OrderStatus';
-import { DrawnCheck } from './Royal';
+import { Ladder } from './Ladder';
 
 /**
  * Where an order has got to, as one card: a headline for the step it is on,
@@ -34,7 +34,7 @@ export function TrackHero({ icon, now, sub, done, total, children }: {
       </div>
       <div className="trk__bar" role="progressbar" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100}
         aria-label="How far along it is">
-        <span style={{ ['--to' as string]: `${share}%`, width: `${share}%` }} />
+        <span style={{ width: `${share}%` }} />
       </div>
       {children}
     </div>
@@ -87,7 +87,11 @@ function directSteps(order: Order): Step[] {
   ];
 }
 
-/** The in-hand journey, as the hero and a dated vertical timeline. */
+/**
+ * The in-hand journey, drawn on the same ladder a lot uses - so an item from
+ * the seller's shelf and one crossing in a container read as one kind of
+ * thing, with only the steps differing.
+ */
 export function DirectTrack({ order }: { order: Order }) {
   const steps = directSteps(order);
   const done = steps.filter((step) => step.done).length;
@@ -99,24 +103,21 @@ export function DirectTrack({ order }: { order: Order }) {
     .filter((event) => event.note && !/^Courier:/.test(event.note))
     .slice(-6)
     .reverse();
+  const rungs = steps.map((step, position) => ({
+    id: step.key, position, name: step.label,
+    description: step.done && step.at ? formatDateOrdinal(step.at) : step.key === 'paid' && order.paymentStatus === 'claimed'
+      ? 'Payment sent — the seller is checking it.' : '',
+  }));
 
   return (
     <TrackHero icon={here.icon} now={here.label}
       sub={<>🏠 In hand · ships from the seller{next ? <> · next: <b>{next.label}</b></> : null}</>}
       done={done} total={steps.length}>
-      <ol className="trk__steps">
-        {steps.map((step, index) => (
-          <li key={step.key} style={{ ['--i' as string]: index }}
-            className={`trk__step${step.done ? ' is-done' : ''}${index === current ? ' is-next' : ''}`}>
-            <span className="trk__dot" aria-hidden="true">{step.done ? <DrawnCheck /> : step.icon}</span>
-            <span className="trk__body">
-              <span className="trk__label">{step.label}</span>
-              {step.at && step.done && <span className="trk__at">{formatDateOrdinal(step.at)}</span>}
-              {step.detail}
-            </span>
-          </li>
-        ))}
-      </ol>
+      {order.shipment && <ShipmentChip shipment={order.shipment} />}
+      <div className="trk__ladder">
+        <Ladder steps={rungs} current={done - 1} />
+      </div>
+      {order.receivedAt && <span className="faint">Buyer confirmed receipt {timeAgo(order.receivedAt)}.</span>}
       {notes.length > 0 && (
         <div className="trk__notes">
           <span className="trk__eyebrow">Updates</span>
@@ -129,48 +130,5 @@ export function DirectTrack({ order }: { order: Order }) {
         </div>
       )}
     </TrackHero>
-  );
-}
-
-/**
- * A checkout that is not an order yet.
- *
- * Pressing Buy creates this so the screen can ask how to pay, but the seller
- * has not been told and nothing is held. Drawing a tracking ladder with
- * "Order placed" ticked would say otherwise.
- */
-export function CheckoutPending() {
-  const steps = [
-    { label: 'Choose how to pay', sub: 'Directly to the seller, or through an escrow.' },
-    { label: 'Order placed', sub: 'The seller is told and holds it for you.' },
-    { label: 'Tracking begins', sub: 'Every step, dated, from here on.' },
-  ];
-  return (
-    <div className="trk">
-      <div className="trk__hero">
-        <span className="trk__icon trk__icon--pulse" aria-hidden="true">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18M7 15h4" />
-          </svg>
-        </span>
-        <span className="trk__now">
-          <span className="trk__eyebrow">Not placed yet</span>
-          <b className="trk__title">Waiting for you to choose how to pay</b>
-          <span className="trk__sub">Nothing has been sent to the seller and nothing is charged until you do.</span>
-        </span>
-      </div>
-      <ol className="trk__steps">
-        {steps.map((step, index) => (
-          <li key={step.label} style={{ ['--i' as string]: index }}
-            className={`trk__step${index === 0 ? ' is-next' : ''}`}>
-            <span className="trk__dot" aria-hidden="true">{index + 1}</span>
-            <span className="trk__body">
-              <span className="trk__label">{step.label}</span>
-              <span className="trk__at">{step.sub}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }

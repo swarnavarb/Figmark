@@ -16,7 +16,9 @@ import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
-import { CheckoutPending, DirectTrack, TrackHero } from '../components/OrderTrack';
+import { DirectTrack, TrackHero } from '../components/OrderTrack';
+import { Svg, Urgency } from '../components/ListingBlocks';
+import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 
 /**
@@ -83,6 +85,17 @@ export function OrderPage() {
     void load();
   }, [load]);
 
+  // The listing itself, only while this is still a checkout: its clock and
+  // its stock are what say "decide now", and they are the listing's facts.
+  const [full, setFull] = useState<Listing | null>(null);
+  const checkoutOf = data && data.order.placedAt === null ? data.listing?.id ?? null : null;
+  useEffect(() => {
+    if (!checkoutOf) return;
+    let cancelled = false;
+    void api.listing(checkoutOf).then((result) => !cancelled && setFull(result.listing)).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [checkoutOf]);
+
   if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
   if (!data || !state) return <main className="page"><p className="muted">Loading…</p></main>;
 
@@ -99,12 +112,12 @@ export function OrderPage() {
   const placed = order.placedAt !== null;
 
   return (
-    <main className="page royal royal--order">
+    <main className="page lp">
       {/* Back to exactly where they came from - the list, its filters, and
           this order within it - rather than to the top of some list. Opened
           from anywhere that did not say (a notification, a shared link), a
           seller lands on their orders with this one in view. */}
-      <button className="btn btn--quiet" style={{ marginBottom: 16 }}
+      <button className="btn btn--quiet lp__back"
         onClick={() => navigate(
           cameFrom ?? (state.side === 'seller' ? '/shop?tab=payments' : order.placedAt === null ? '/cart' : '/purchases'),
           { state: { focusOrder: order.id } },
@@ -112,7 +125,7 @@ export function OrderPage() {
         <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : order.placedAt === null ? 'Cart' : 'My Purchases'}
       </button>
 
-      <div className="ohead royal__frame rise">
+      <div className="ohead rise">
         {/* The item as it was listed, one tap away for either side. */}
         {data.listing ? (
           <Link to={`/listing/${data.listing.id}`} className="ohead__thumb" aria-label="See the listing">
@@ -154,9 +167,9 @@ export function OrderPage() {
       <CollectionPrompt state={state} />
       <DisputePanel state={state} />
 
-      {!placed && <CheckoutPending />}
+      {!placed && full && <Urgency listing={full} />}
 
-      {placed && <div className="tabs tabs--vivid royal__tabs">
+      {placed && <div className="tabs tabs--vivid">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
           onClick={() => setTab('tracking')}>
           Tracking
@@ -1031,7 +1044,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       {/* Full or advance, offered only where the seller takes an advance. The
           method chosen below is then the one every later payment uses. */}
       {quote.advanceMinor != null && (
-        <div className="seg" role="radiogroup" aria-label="How much to pay now">
+        <div className="seg seg--vivid" role="radiogroup" aria-label="How much to pay now">
           <button type="button" role="radio" aria-checked={plan === 'full'}
             className={plan === 'full' ? 'is-on' : ''} onClick={() => setPlan('full')}>
             💯 Pay full · {formatMoney(quote.itemMinor, quote.currency)}
@@ -1043,14 +1056,16 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         </div>
       )}
       {plan === 'advance' && quote.advanceMinor != null && (
-        <p className="notice notice--info">
-          {quote.advancePercent}% now, {formatMoney(quote.itemMinor - quote.advanceMinor, quote.currency)} later
+        <p className="block block--play buyway__adv">
+          <b>Booking amount:</b> {quote.advancePercent}% now, {formatMoney(quote.itemMinor - quote.advanceMinor, quote.currency)} later
           from My Purchases — using the same payment method you pick here.
         </p>
       )}
 
-      <button type="button" className="buyway" disabled={!canPayDirect}
+      <span className="buyway__head">Choose how to buy</span>
+      <button type="button" className="buyway buyway--sea" disabled={!canPayDirect} style={{ ['--i' as string]: 0 }}
         onClick={() => setRoute('direct')}>
+        <span className="buyway__icon"><Svg name="coin" size={22} /></span>
         <span className="buyway__title">Buy directly from the seller</span>
         <span className="buyway__note">
           {canPayDirect
@@ -1060,14 +1075,15 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         <span className="buyway__price">{formatMoney(dueNow, quote.currency)}</span>
       </button>
 
-      <button type="button" className={`buyway${route === 'protected' ? ' is-on' : ''}`}
-        disabled={!canProtect}
+      <button type="button" className={`buyway buyway--cool${route === 'protected' ? ' is-on' : ''}`}
+        disabled={!canProtect} style={{ ['--i' as string]: 1 }}
         onClick={() => {
           setRoute('protected');
           if (!chosen) setPicking(true);
         }}>
+        <span className="buyway__icon"><Svg name="shield" size={22} /></span>
         <span className="buyway__title">Add buyer protection</span>
-        <span className="badge badge--accent" style={{ justifySelf: 'start' }}>Escrow: Community Manager</span>
+        <span className="buyway__tag">Escrow: Community Manager</span>
         <span className="buyway__note">
           {canProtect
             ? 'The payment is considered held by Figmark until you confirm the item arrived, and settled if the two of you disagree. Their fee is on top.'
@@ -1081,8 +1097,9 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       </button>
 
       {!order.bookingOnly && (
-        <button type="button" className="buyway" onClick={() => void onBook()}>
-          <span className="buyway__title">📘 Book</span>
+        <button type="button" className="buyway buyway--warm" style={{ ['--i' as string]: 2 }} onClick={() => void onBook()}>
+          <span className="buyway__icon"><Svg name="calendar" size={22} /></span>
+          <span className="buyway__title">Book</span>
           <span className="buyway__note">
             Payment to be done immediately as the seller confirms the availability of the item. Booking
             itself does not count as payment.

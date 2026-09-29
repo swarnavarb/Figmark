@@ -3,7 +3,9 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge } from '../components/ui';
-import { Crown, Gallery, Ornament } from '../components/Royal';
+import { DetailBlocks, Gallery, Urgency } from '../components/ListingBlocks';
+import { RarityRibbon } from '../components/Quest';
+import { listingRarity } from '@shared/quest';
 import { FillBlock } from '../components/FillMeter';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -43,6 +45,7 @@ export function ListingPage() {
 
   const { listing, seller, comments } = data;
   // The primary photo first, then the rest in the order they were added.
+  const rarity = listingRarity(listing);
   const photos = [...(listing.photos ?? [])]
     .sort((a, b) => Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary)))
     .map((photo) => photo.url)
@@ -103,8 +106,8 @@ export function ListingPage() {
   }
 
   return (
-    <main className="page royal">
-      <Link to="/" className="btn btn--quiet royal__back" style={{ marginBottom: 16 }}>
+    <main className="page lp">
+      <Link to="/" className="btn btn--quiet lp__back">
         <Icon name="back" size={14} /> Back to browse
       </Link>
 
@@ -113,25 +116,23 @@ export function ListingPage() {
           <Gallery photos={photos} title={listing.title}
             fallback={<Thumb seed={listing.id} label={listing.title} className="thumb gallery__fallback" />}>
             <span className="gallery__badges">
-              <span className="royal__tag">{listing.condition}</span>
-              {listing.preOrder && <span className="royal__tag royal__tag--gold">Pre-order</span>}
+              {rarity.tier && <RarityRibbon tier={rarity.tier} />}
+              <span className="badge badge--solid">{listing.condition}</span>
+              {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
             </span>
           </Gallery>
 
-          <div className="detail__section rise" style={{ marginTop: 28, ['--i' as string]: 1 }}>
-            <span className="royal__eyebrow">{listing.category}</span>
-            <h1 className="royal__title">{listing.title}</h1>
-            <Ornament className="ornament--left" />
+          <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
+            <h1 className="lp__title">{listing.title}</h1>
+            <Urgency listing={listing} />
+            <DetailBlocks listing={listing} />
             {listing.privateFor && (
               <div className="badges"><span className="badge badge--pink">🤝 Private deal - {user?.id === listing.privateFor ? 'made just for you' : 'only your buyer can see this'}</span></div>
             )}
-            {listing.expiresAt && <div className="badges"><ExpiryChip listing={listing} big /><StockChip listing={listing} /></div>}
-            <div className="spread muted royal__meta">
-              <span>{listing.viewCount} views</span>
-              <span>{listing.likeCount} saved</span>
-              <span>Listed {timeAgo(listing.createdAt)}</span>
+            <div className="block block--blue lp__about">
+              <span className="tile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
+              <p>{listing.description}</p>
             </div>
-            <p style={{ marginTop: 6, lineHeight: 1.65 }}>{listing.description}</p>
             {listing.tags.length > 0 && (
               <div className="chips">
                 {listing.tags.map((tag) => (
@@ -154,7 +155,7 @@ export function ListingPage() {
           )}
 
           <section className="detail__section rise" style={{ ['--i' as string]: 2 }}>
-            <h2 className="royal__h2">Questions</h2>
+            <h2>Questions</h2>
             <p className="muted">Public — anyone browsing this listing can read these.</p>
             {comments.length === 0 && <p className="muted">No questions yet.</p>}
             <div>
@@ -196,10 +197,10 @@ export function ListingPage() {
         </div>
 
         {/* ── Purchase rail ── */}
-        <aside className="stack royal__rail">
-          <div className="card card--pad stack royal__frame rise" style={{ ['--i' as string]: 1 }}>
-            <span className="royal__eyebrow"><Crown size={14} /> Price</span>
-            <span className="detail__price royal__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        <aside className="stack lp__rail">
+          <div className="block buybox stack rise" style={{ ['--i' as string]: 1 }}>
+            <span className="tile__label">Price</span>
+            <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
             {/* Stock and expiry, loud: they decide whether this can be bought. */}
             <div className="badges">
               {listing.channelDrop && <span className="badge badge--drop">⚡ Exclusive channel drop</span>}
@@ -209,8 +210,8 @@ export function ListingPage() {
               <ExpiryChip listing={listing} big />
             </div>
             {listing.advancePercent ? (
-              <p className="advnote">
-                💸 <b>Booking Amt {listing.advancePercent}%</b> — pay{' '}
+              <p className="buybox__adv">
+                <b>Booking Amt {listing.advancePercent}%</b> — pay{' '}
                 {formatMoney(Math.round(listing.priceMinor * listing.advancePercent / 100), listing.currency)} now, the rest later.
               </p>
             ) : null}
@@ -220,10 +221,10 @@ export function ListingPage() {
             {data.isOwn ? (
               <>
                 <p className="notice notice--info">This is your listing.</p>
-                <button className="btn btn--block" onClick={() => setEditing(true)}>
+                <button className="btn btn--oncolour btn--block" onClick={() => setEditing(true)}>
                   {isExpired(listing) ? '✨ Make available again' : '✏️ Edit, quantity or delete'}
                 </button>
-                <button className="btn btn--ghost btn--block" onClick={() => void bump()} disabled={busy}>
+                <button className="btn btn--onglass btn--block" onClick={() => void bump()} disabled={busy}>
                   Bump to top
                 </button>
               </>
@@ -234,14 +235,13 @@ export function ListingPage() {
                 {isExpired(listing) ? (
                   <p className="notice notice--warn">⛔ This item has expired and can no longer be bought.</p>
                 ) : (
-                  <button className="btn btn--lg btn--block royal__buy" onClick={() => void buy()}
+                  <button className="btn btn--lg btn--block btn--oncolour buybox__buy" onClick={() => void buy()}
                     disabled={busy || !user || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
-                    {busy ? <span className="royal__opening">Opening checkout</span> : listing.preOrder ? 'Book a place' : 'Buy now'}
+                    {busy ? <span className="buybox__opening">Opening checkout</span> : listing.preOrder ? 'Book a place' : 'Buy now'}
                   </button>
                 )}
-                <button className={`btn btn--ghost btn--block${data.liked ? ' is-on' : ''}`}
-                  onClick={() => void toggleLike()} disabled={busy || !user}
-                  style={data.liked ? { color: 'var(--accent)', borderColor: 'var(--accent-line)' } : undefined}>
+                <button className={`btn btn--onglass btn--block${data.liked ? ' is-on' : ''}`}
+                  onClick={() => void toggleLike()} disabled={busy || !user}>
                   <Icon name="heart" size={14} /> {data.liked ? 'Saved' : 'Save'}
                 </button>
                 {!user && <p className="faint">Sign in to buy or save this listing.</p>}
@@ -255,8 +255,8 @@ export function ListingPage() {
           </div>
 
           {seller && (
-            <div className="card card--pad stack royal__frame rise" style={{ ['--i' as string]: 2 }}>
-              <span className="royal__eyebrow">Offered by</span>
+            <div className="card card--pad stack lp__seller rise" style={{ ['--i' as string]: 2 }}>
+              <span className="tile__label">Offered by</span>
               <div className="row">
                 <Avatar name={seller.storefrontName} />
                 <div style={{ flex: 1, minWidth: 0 }}>

@@ -9141,212 +9141,193 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 .cmsg__announce--drop .probadge, .spost__kind--drop .probadge { font-size: 9px; padding: 1px 5px; letter-spacing: 0.06em; }
 
 /* ==========================================================================
-   Royal: the listing and the order, dressed quietly.
+   Listing and checkout, in the Buy tab's colours.
 
-   Scoped to `.royal` so nothing else in the app changes. One accent (antique
-   gold) in place of the brand gradients, a serif for names and prices, and
-   borders drawn as backgrounds - a gradient on the border-box under a solid
-   padding-box - so the gold can fade along an edge, which a plain border
-   cannot do. Motion is spring-like on transforms and opacity only.
+   Every fact in a gradient block of its own (the same `.block` the Buy tab's
+   hero uses), a strip that counts down what is running out, and motion on
+   transforms and opacity only.
    ========================================================================== */
 
-.royal {
-  --gold: #C9A96E;
-  --gold-lit: #E4CB94;
-  --gold-deep: #8C7142;
-  --gold-soft: rgba(201, 169, 110, 0.12);
-  --gold-line: rgba(201, 169, 110, 0.38);
-  --serif: 'Cormorant Garamond', 'Playfair Display', ui-serif, Georgia, 'Times New Roman', serif;
-  --spring: cubic-bezier(0.32, 0.72, 0, 1);
-  --bounce: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --plate: #0B0E17;
-}
+.lp { padding-top: 6px; --spring: cubic-bezier(0.32, 0.72, 0, 1); --bounce: cubic-bezier(0.34, 1.4, 0.64, 1); }
+.lp__back { margin-bottom: 8px; transition: transform var(--dur-2) var(--spring); }
+.lp__back:hover { transform: translateX(-3px); }
+.lp__title { margin: 0; font-family: var(--display); font-size: clamp(26px, 4vw, 38px); line-height: 1.1; letter-spacing: -0.02em; }
+.lp .rise { animation: lp-rise 600ms var(--spring) both; animation-delay: calc(var(--i, 0) * 80ms); }
+@keyframes lp-rise { from { opacity: 0; transform: translateY(14px); } }
+@media (min-width: 900px) { .lp__rail { position: sticky; top: 76px; } }
 
-/* Frames: a gold hairline that fades toward the middle of each edge. */
-.royal .royal__frame {
+.block--hero { --block-grad: var(--grad-hero); }
+.block--rarity-legendary { --block-grad: linear-gradient(135deg, #F59E0B 0%, #FBBF24 45%, #F97316 100%); color: #2B1500; }
+.block--rarity-epic { --block-grad: linear-gradient(135deg, #7C3AED 0%, #C026D3 60%, #EC4899 100%); }
+.block--rarity-new { --block-grad: var(--grad-play); color: var(--lime-ink); }
+
+/* The detail tiles. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tile {
+  display: grid; gap: 2px; align-content: start; padding: 14px; min-height: 104px;
+  animation: lp-pop 520ms var(--bounce) both; animation-delay: calc(120ms + var(--i, 0) * 55ms);
+  transition: transform 260ms var(--bounce), box-shadow 260ms var(--spring);
+}
+.tile:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35); }
+@keyframes lp-pop { from { opacity: 0; transform: translateY(10px) scale(0.94); } }
+.tile__icon {
+  display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 6px; border-radius: 10px;
+  background: rgba(255, 255, 255, 0.2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+.tile__label { font-size: 11px; font-weight: var(--w-semi); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85; }
+.tile__value { font-size: var(--t-md); line-height: 1.2; text-transform: capitalize; }
+.tile__note { font-size: var(--t-xs); opacity: 0.88; line-height: 1.35; }
+.lp__about { display: grid; gap: 6px; padding: 16px 18px; }
+.lp__about p { margin: 0; line-height: 1.65; }
+
+/* The urgency strip. */
+.urgency {
+  position: relative; overflow: hidden; display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--r-lg); color: #fff;
+  background: linear-gradient(120deg, #FF5A5F, #EC4899 55%, #7C3AED);
+  box-shadow: 0 12px 30px rgba(236, 72, 153, 0.3);
+  animation: lp-rise 600ms var(--spring) both;
+}
+.urgency::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 35%, rgba(255, 255, 255, 0.22) 50%, transparent 65%);
+  animation: lp-sheen 3.2s ease-in-out 1s infinite;
+}
+@keyframes lp-sheen { 60%, 100% { transform: translateX(100%); } }
+.urgency--hot { background: linear-gradient(120deg, #E11D48, #FF5A5F 50%, #F97316); box-shadow: 0 12px 34px rgba(244, 63, 94, 0.45); }
+.urgency--compact { padding: 10px 12px; border-radius: var(--r-md); background: rgba(0, 0, 0, 0.28); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
+.urgency--compact::after { display: none; }
+.urgency__clock { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.urgency__pulse {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2); animation: lp-pulse 1.6s ease-in-out infinite;
+}
+@keyframes lp-pulse { 50% { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0); transform: scale(1.08); } 0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.45); } }
+.urgency__label { font-weight: var(--w-bold); letter-spacing: 0.02em; }
+.urgency__facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.urgency__fact {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: var(--w-semi); background: rgba(0, 0, 0, 0.22);
+}
+.lpclock { display: inline-flex; gap: 5px; margin-left: auto; }
+.lpclock__cell {
+  display: grid; justify-items: center; min-width: 40px; padding: 4px 6px; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+.lpclock__num { font-family: var(--mono); font-size: var(--t-md); line-height: 1.1; animation: lp-tick 360ms var(--bounce); }
+.lpclock__cell small { font-size: 10px; opacity: 0.8; text-transform: uppercase; }
+@keyframes lp-tick { from { transform: translateY(-40%); opacity: 0; } }
+.urgency--compact .lpclock { margin-left: 0; }
+
+/* The buy box: the Buy tab's hero block. */
+.buybox { padding: 20px; box-shadow: 0 20px 44px rgba(124, 58, 237, 0.35); }
+.buybox__price { font-family: var(--display); font-size: 42px; font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1; }
+.buybox__adv { margin: 0; padding: 10px 12px; border-radius: var(--r-md); font-size: var(--t-sm); background: rgba(0, 0, 0, 0.22); }
+.buybox .faint { color: rgba(255, 255, 255, 0.82); }
+.buybox .badge { background: rgba(0, 0, 0, 0.25); color: #fff; border-color: rgba(255, 255, 255, 0.3); }
+.buybox .btn--onglass.is-on { background: #fff; color: var(--pink); }
+.buybox__buy { font-weight: var(--w-bold); transition: transform 220ms var(--bounce), box-shadow 220ms; }
+.buybox__buy:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(0, 0, 0, 0.3); }
+.buybox__buy:active:not(:disabled) { transform: scale(0.97); }
+.buybox__opening::after { content: '…'; display: inline-block; width: 1em; text-align: left; animation: lp-dots 1s steps(4) infinite; }
+@keyframes lp-dots { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.lp__seller {
   border: 1px solid transparent;
-  background:
-    linear-gradient(var(--plate), var(--plate)) padding-box,
-    linear-gradient(140deg, var(--gold-line), rgba(201, 169, 110, 0.06) 38%, rgba(201, 169, 110, 0.06) 62%, var(--gold-line)) border-box;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--grad-cool) border-box;
 }
-
-/* Staggered arrival. */
-.royal .rise { animation: royal-rise 700ms var(--spring) both; animation-delay: calc(var(--i, 0) * 90ms); }
-@keyframes royal-rise { from { opacity: 0; transform: translateY(14px); } }
-
-.royal__eyebrow {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold);
-}
-.royal__title {
-  margin: 2px 0 0; font-family: var(--serif); font-weight: 500;
-  font-size: clamp(30px, 4.2vw, 46px); line-height: 1.08; letter-spacing: -0.01em;
-}
-.royal__h2 { font-family: var(--serif); font-weight: 500; font-size: 26px; letter-spacing: 0; }
-.royal__meta { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
-.royal__back { transition: transform var(--dur-2) var(--spring), color var(--dur-2); }
-.royal__back:hover { transform: translateX(-3px); color: var(--gold-lit); }
-
-.royal .detail__section + .detail__section { border-top: 0; position: relative; }
-.royal .detail__section + .detail__section::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--gold-line), transparent);
-}
-
-.ornament { display: block; width: 180px; height: 14px; color: var(--gold); }
-.ornament path { stroke: currentColor; stroke-width: 1; }
-.ornament__line { stroke-dasharray: 240; stroke-dashoffset: 240; animation: ornament-draw 1.1s var(--spring) 250ms forwards; }
-.ornament--left { margin: 4px 0 6px; }
-@keyframes ornament-draw { to { stroke-dashoffset: 0; } }
-
-.royal__tag {
-  padding: 4px 10px; border-radius: 2px; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-  color: #F4EEE2; background: rgba(8, 10, 16, 0.55); backdrop-filter: blur(8px);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-}
-.royal__tag--gold { color: #1A1409; background: linear-gradient(135deg, var(--gold-lit), var(--gold)); box-shadow: none; }
-
-.royal__price { font-family: var(--serif); font-weight: 500; font-size: 44px; letter-spacing: -0.01em; color: #F6EFE0; }
-.royal__price::after {
-  content: ''; display: block; height: 1px; margin-top: 10px; transform-origin: left;
-  background: linear-gradient(90deg, var(--gold), transparent); animation: royal-rule 900ms var(--spring) 300ms both;
-}
-@keyframes royal-rule { from { transform: scaleX(0); } }
-
-/* The one gold button, with a slow sheen and a press that gives. */
-.royal .royal__buy {
-  position: relative; overflow: hidden; border: 0; color: #1A1409; font-weight: 600; letter-spacing: 0.04em;
-  background: linear-gradient(135deg, var(--gold-lit), var(--gold) 55%, var(--gold-deep));
-  box-shadow: 0 10px 28px rgba(201, 169, 110, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  transition: transform 220ms var(--bounce), box-shadow 220ms var(--spring);
-}
-.royal .royal__buy::after {
-  content: ''; position: absolute; inset: 0; transform: translateX(-120%);
-  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
-}
-.royal .royal__buy:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 16px 36px rgba(201, 169, 110, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.4); }
-.royal .royal__buy:hover:not(:disabled)::after { transform: translateX(120%); transition: transform 900ms var(--spring); }
-.royal .royal__buy:active:not(:disabled) { transform: scale(0.97); transition-duration: 90ms; }
-.royal__opening::after { content: '…'; display: inline-block; animation: royal-dots 1s steps(4) infinite; width: 1em; text-align: left; }
-@keyframes royal-dots { 0% { clip-path: inset(0 100% 0 0); } 100% { clip-path: inset(0 0 0 0); } }
-
-@media (min-width: 900px) { .royal__rail { position: sticky; top: 84px; } }
 
 /* ── Gallery ─────────────────────────────────────────────────────────── */
 
-.gallery { display: grid; gap: 12px; animation: royal-rise 800ms var(--spring) both; }
+.gallery { display: grid; gap: 10px; animation: lp-rise 700ms var(--spring) both; }
 .gallery__stage {
-  position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; padding: 0; overflow: hidden;
-  cursor: zoom-in; border-radius: 6px; border: 1px solid transparent;
-  background:
-    linear-gradient(#07090F, #07090F) padding-box,
-    linear-gradient(135deg, var(--gold), rgba(201, 169, 110, 0.05) 30%, rgba(201, 169, 110, 0.05) 70%, var(--gold)) border-box;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; cursor: zoom-in;
+  border-radius: var(--r-lg); border: 2px solid transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--grad-hero) border-box;
+  box-shadow: 0 20px 50px rgba(124, 58, 237, 0.25);
 }
 .gallery__img {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
-  opacity: 0; transform: scale(1.04); transition: opacity 600ms var(--spring), transform 1.2s var(--spring);
+  opacity: 0; transform: scale(1.05); transition: opacity 500ms var(--spring), transform 1s var(--spring);
 }
 .gallery__img.is-on { opacity: 1; transform: none; }
 .gallery__stage:hover .gallery__img.is-on { transform: scale(1.03); }
 .gallery__fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
-.gallery__badges { position: absolute; top: 14px; left: 14px; display: flex; gap: 6px; }
+.gallery__badges { position: absolute; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .gallery__zoom {
-  position: absolute; right: 14px; bottom: 14px; display: grid; place-items: center; width: 36px; height: 36px;
-  border-radius: 50%; color: var(--gold-lit); background: rgba(8, 10, 16, 0.55); backdrop-filter: blur(8px);
-  box-shadow: inset 0 0 0 1px var(--gold-line); opacity: 0; transform: scale(0.8);
-  transition: opacity 260ms var(--spring), transform 260ms var(--bounce);
+  position: absolute; right: 12px; bottom: 12px; display: grid; place-items: center; width: 38px; height: 38px;
+  border-radius: 50%; color: #fff; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(8px);
+  opacity: 0; transform: scale(0.8); transition: opacity 240ms var(--spring), transform 240ms var(--bounce);
 }
 .gallery__stage:hover .gallery__zoom, .gallery__stage:focus-visible .gallery__zoom { opacity: 1; transform: none; }
-.gallery__strip { display: flex; gap: 10px; overflow-x: auto; padding: 2px; scrollbar-width: none; }
+.gallery__strip { display: flex; gap: 8px; overflow-x: auto; padding: 3px; scrollbar-width: none; }
 .gallery__thumb {
-  flex: 0 0 72px; height: 72px; padding: 0; border: 0; border-radius: 4px; overflow: hidden; cursor: pointer;
-  opacity: 0.5; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  transition: opacity 260ms var(--spring), transform 260ms var(--bounce), box-shadow 260ms;
+  flex: 0 0 68px; height: 68px; padding: 0; border: 2px solid transparent; border-radius: 12px; overflow: hidden; cursor: pointer;
+  opacity: 0.55; background: var(--surface-2);
+  transition: opacity 240ms var(--spring), transform 240ms var(--bounce);
 }
 .gallery__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.gallery__thumb:hover { opacity: 0.85; transform: translateY(-2px); }
-.gallery__thumb.is-on { opacity: 1; box-shadow: 0 0 0 1px var(--gold), 0 6px 16px rgba(0, 0, 0, 0.4); }
+.gallery__thumb:hover { opacity: 0.9; transform: translateY(-2px); }
+.gallery__thumb.is-on { opacity: 1; background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--grad-hero) border-box; }
 
-/* The viewer, dressed for the listing: a blurred wash of the photo itself. */
-.lightbox--royal { background: rgba(4, 5, 9, 0.92); animation: royal-fade 360ms var(--ease) both; }
+/* The viewer, for a listing: a blurred wash of the photo itself behind it. */
+.lightbox--royal { animation: lp-fade 320ms var(--ease) both; }
 .lightbox__wash {
   position: absolute; inset: -40px; width: calc(100% + 80px); height: calc(100% + 80px); object-fit: cover;
-  filter: blur(40px) saturate(1.2); opacity: 0.35; pointer-events: none; transition: opacity 400ms;
+  filter: blur(40px) saturate(1.4); opacity: 0.4; pointer-events: none;
 }
-.lightbox--royal .lightbox__img { position: relative; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }
-.lightbox--royal .lightbox__close, .lightbox--royal .lightbox__nav {
-  color: #E4CB94; background: rgba(8, 10, 16, 0.5); box-shadow: inset 0 0 0 1px rgba(201, 169, 110, 0.38);
-  transition: transform 200ms cubic-bezier(0.34, 1.4, 0.64, 1), background 200ms;
-}
-.lightbox--royal .lightbox__close:hover, .lightbox--royal .lightbox__nav:hover { background: rgba(201, 169, 110, 0.2); }
+.lightbox--royal .lightbox__img { position: relative; border-radius: 4px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }
+.lightbox--royal .lightbox__close, .lightbox--royal .lightbox__nav { transition: transform 200ms cubic-bezier(0.34, 1.4, 0.64, 1), background 200ms; }
 .lightbox--royal .lightbox__nav:active, .lightbox--royal .lightbox__close:active { transform: scale(0.9); }
 .lightbox--royal .lightbox__nav { translate: 0 -50%; }
-.lightbox--royal .lightbox__count, .lightbox--royal .lightbox__title {
-  font-family: 'Cormorant Garamond', ui-serif, Georgia, serif; letter-spacing: 0.12em; color: #F4EEE2;
-}
 .lightbox--royal .lightbox__head, .lightbox--royal .lightbox__count { position: absolute; z-index: 1; }
-@keyframes royal-fade { from { opacity: 0; } }
+@keyframes lp-fade { from { opacity: 0; } }
 
-/* ── The order ───────────────────────────────────────────────────────── */
+/* ── Checkout: the three ways to buy, as gradient buttons ────────────── */
 
-.royal--order .ohead { background:
-    linear-gradient(var(--plate), var(--plate)) padding-box,
-    linear-gradient(140deg, var(--gold-line), rgba(201, 169, 110, 0.06) 40%, rgba(201, 169, 110, 0.06) 60%, var(--gold-line)) border-box; }
-.royal--order .ohead__name { font-family: var(--serif); font-weight: 500; font-size: 28px; }
-.royal--order .ohead__thumb { transition: transform 300ms var(--bounce); }
-.royal--order .ohead__thumb:hover { transform: scale(1.05) rotate(-1deg); }
-.royal--order .ohead__price { color: var(--gold-lit); }
-
-.royal__tabs .tab { transition: color 240ms var(--spring), background 240ms var(--spring), transform 200ms var(--bounce); }
-.royal__tabs .tab:active { transform: scale(0.96); }
-
-.royal--order .trk {
-  border: 1px solid transparent; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
-  background:
-    radial-gradient(90% 70% at 100% 0%, var(--gold-soft), transparent 60%) padding-box,
-    linear-gradient(var(--plate), var(--plate)) padding-box,
-    linear-gradient(140deg, var(--gold-line), rgba(201, 169, 110, 0.06) 40%, rgba(201, 169, 110, 0.06) 60%, var(--gold-line)) border-box;
-  animation: royal-rise 700ms var(--spring) 120ms both;
+.buyway__head { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); }
+.buyway[class*='buyway--'] {
+  position: relative; isolation: isolate; overflow: hidden; grid-template-columns: auto 1fr auto; gap: 4px 14px;
+  padding: 16px; border: 0; border-radius: var(--r-lg); color: #fff; background: var(--bw-grad);
+  box-shadow: 0 10px 26px var(--bw-glow);
+  animation: lp-pop 520ms var(--bounce) both; animation-delay: calc(var(--i, 0) * 90ms);
+  transition: transform 240ms var(--bounce), box-shadow 240ms var(--spring), filter 240ms;
 }
-.royal--order .trk__icon {
-  color: var(--gold-lit); background: rgba(201, 169, 110, 0.1); border-radius: 50%;
-  box-shadow: inset 0 0 0 1px var(--gold-line), 0 0 24px rgba(201, 169, 110, 0.15);
+.buyway[class*='buyway--']::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(120% 90% at 10% 0%, rgba(255, 255, 255, 0.22), transparent 58%);
 }
-.royal--order .trk__icon--pulse { animation: royal-pulse 2.4s ease-in-out infinite; }
-@keyframes royal-pulse { 50% { box-shadow: inset 0 0 0 1px var(--gold), 0 0 0 8px rgba(201, 169, 110, 0.06); } }
-.royal--order .trk__title { font-family: var(--serif); font-weight: 500; font-size: 26px; }
-.royal--order .trk__eyebrow { color: var(--gold); letter-spacing: 0.2em; }
-.royal--order .trk__pct { font-family: var(--serif); color: var(--gold-lit); font-size: 28px; font-weight: 500; }
-.royal--order .trk__bar { height: 3px; background: rgba(201, 169, 110, 0.12); }
-.royal--order .trk__bar span {
-  background: linear-gradient(90deg, var(--gold-deep), var(--gold-lit)); box-shadow: 0 0 12px rgba(201, 169, 110, 0.5);
-  animation: royal-fill 1.2s var(--spring) 400ms both;
+.buyway[class*='buyway--']:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 16px 34px var(--bw-glow); background: var(--bw-grad); }
+.buyway[class*='buyway--']:active:not(:disabled) { transform: scale(0.98); }
+.buyway[class*='buyway--'].is-on { box-shadow: 0 0 0 3px #fff, 0 16px 34px var(--bw-glow); background: var(--bw-grad); }
+.buyway[class*='buyway--']:disabled { filter: grayscale(0.8); }
+.buyway--sea  { --bw-grad: var(--grad-sea);  --bw-glow: rgba(6, 214, 231, 0.3); }
+.buyway--cool { --bw-grad: var(--grad-cool); --bw-glow: rgba(124, 58, 237, 0.35); }
+.buyway--warm { --bw-grad: var(--grad-warm); --bw-glow: rgba(236, 72, 153, 0.35); }
+.buyway__icon {
+  grid-column: 1; grid-row: 1 / span 3; align-self: start; display: grid; place-items: center; width: 44px; height: 44px;
+  border-radius: 14px; background: rgba(255, 255, 255, 0.22); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
 }
-@keyframes royal-fill { from { width: 0; } }
+.buyway[class*='buyway--'] .buyway__title { grid-column: 2; grid-row: 1; font-size: var(--t-md); font-weight: var(--w-bold); }
+.buyway[class*='buyway--'] .buyway__price { grid-column: 3; grid-row: 1; font-size: var(--t-md); font-weight: var(--w-bold); }
+.buyway[class*='buyway--'] .buyway__note { grid-column: 2 / -1; color: rgba(255, 255, 255, 0.9); }
+.buyway[class*='buyway--'] .buyway__note a { color: #fff; text-decoration: underline; }
+.buyway__tag {
+  grid-column: 2 / -1; justify-self: start; padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: var(--w-semi); background: rgba(0, 0, 0, 0.22);
+}
+.buyway__adv { margin: 0; padding: 12px 14px; font-size: var(--t-sm); }
+.seg--vivid { padding: 5px; background: var(--surface-2); }
+.seg--vivid button { transition: background 240ms var(--spring), color 240ms, transform 200ms var(--bounce); }
+.seg--vivid button.is-on { color: #fff; background: var(--grad-hero); box-shadow: 0 6px 16px rgba(236, 72, 153, 0.35); }
+.seg--vivid button:active { transform: scale(0.97); }
 
-.royal--order .trk__step { animation: royal-rise 600ms var(--spring) both; animation-delay: calc(300ms + var(--i, 0) * 110ms); }
-.royal--order .trk__step.is-done::before { background: linear-gradient(var(--gold), rgba(201, 169, 110, 0.25)); }
-.royal--order .trk__dot { font-size: 13px; font-family: var(--serif); color: var(--text-dim); }
-.royal--order .trk__step.is-done .trk__dot {
-  color: #1A1409; background: linear-gradient(135deg, var(--gold-lit), var(--gold)); box-shadow: 0 0 14px rgba(201, 169, 110, 0.35);
-}
-.royal--order .trk__step.is-next .trk__dot { box-shadow: inset 0 0 0 1.5px var(--gold), 0 0 16px rgba(201, 169, 110, 0.3); animation: royal-next 2s ease-in-out infinite; color: var(--gold-lit); }
-@keyframes royal-next { 50% { box-shadow: inset 0 0 0 1.5px var(--gold), 0 0 0 7px rgba(201, 169, 110, 0.08); } }
-.royal--order .trk__note { background: rgba(201, 169, 110, 0.05); transition: transform 240ms var(--spring); }
-.royal--order .trk__note:hover { transform: translateX(3px); }
-
-.drawn-check path {
-  stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
-  stroke-dasharray: 16; stroke-dashoffset: 16; animation: check-draw 500ms var(--ease) forwards;
-  animation-delay: calc(500ms + var(--i, 0) * 110ms);
-}
-@keyframes check-draw { to { stroke-dashoffset: 0; } }
+/* The tracking card arrives, and its bar fills, the same for every journey. */
+.lp .trk { animation: lp-rise 600ms var(--spring) 100ms both; }
+.lp .trk__bar span { animation: lp-fill 1.1s var(--spring) 300ms both; }
+@keyframes lp-fill { from { width: 0; } }
+.lp .ladder__row { animation: lp-rise 500ms var(--spring) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .royal .rise, .gallery, .royal--order .trk, .royal--order .trk__step, .royal--order .trk__bar span,
-  .royal__price::after, .lightbox--royal, .royal--order .trk__icon--pulse, .royal--order .trk__step.is-next .trk__dot { animation: none; }
-  .ornament__line, .drawn-check path { animation: none; stroke-dashoffset: 0; }
-  .gallery__img, .gallery__thumb, .royal .royal__buy, .royal .royal__buy::after { transition: none; }
+  .lp .rise, .tile, .urgency, .urgency::after, .urgency__pulse, .lpclock__num, .gallery, .lightbox--royal,
+  .buyway[class*='buyway--'], .lp .trk, .lp .trk__bar span, .lp .ladder__row { animation: none; }
+  .gallery__img, .gallery__thumb, .tile, .buyway[class*='buyway--'], .buybox__buy { transition: none; }
 }
