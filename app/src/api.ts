@@ -439,6 +439,11 @@ export interface EscrowOption {
 
 export interface Checkout {
   itemMinor: number;
+  /**
+   * Credit this seller kept for the buyer from an earlier order. It is spent
+   * on this one the moment it is placed, so what is due now is less by it.
+   */
+  creditMinor?: number;
   /** Null when the seller takes no advance on this item. */
   advanceMinor: number | null;
   advancePercent: number | null;

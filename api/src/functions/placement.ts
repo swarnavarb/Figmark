@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import type { Order } from '../../../shared/models.js';
-import { isExpired, isMultiple } from '../../../shared/payments.js';
+import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
 import type { getRepository } from '../data/index.js';
 import { notify } from './notify.js';
 import { reconcilePreOrder } from './preorder.js';
@@ -65,6 +66,8 @@ export async function placeOrder(
     }
   }
 
+  await adjustHeldCredit(repository, order, actorId);
+
   await repository.updateOrder(order);
   await repository.takeStock(order);
 
@@ -83,4 +86,98 @@ export async function placeOrder(
     });
   }
   return null;
+}
+
+/**
+ * What this buyer has sitting with this seller as credit kept for later.
+ *
+ * Only `held` - the seller said "keep it for their next order". An `open`
+ * credit is one nobody has decided on yet, and spending it here would make
+ * that decision for the seller.
+ */
+export async function heldCreditMinor(
+  repository: Repo,
+  order: Pick<Order, 'id' | 'buyerId' | 'sellerId'>,
+): Promise<number> {
+  const theirs = await repository.listOrdersForBuyer(order.buyerId);
+  return theirs
+    .filter((entry) => entry.id !== order.id && entry.sellerId === order.sellerId)
+    .flatMap((entry) => entry.credits ?? [])
+    .filter((credit) => credit.status === 'held')
+    .reduce((sum, credit) => sum + creditLeft(credit), 0);
+}
+
+/**
+ * Spends credit the seller kept for this buyer on the order being placed.
+ *
+ * "Keep it for their next order" used to be only a note: the next order came
+ * in asking for the full price, and the credit sat there until somebody
+ * remembered to move it by hand. It is moved here, at the moment the next
+ * order exists - oldest credit first, never more than the order costs - and
+ * written on both orders the same way a hand-moved credit is, so the buyer
+ * and the seller read one account of where the money went.
+ *
+ * Mutates `order` (the caller saves it); saves the orders the credit came from.
+ */
+export async function adjustHeldCredit(repository: Repo, order: Order, actorId: string): Promise<number> {
+  let owing = orderMoney(order).outstandingMinor;
+  if (owing <= 0) return 0;
+
+  const sources = (await repository.listOrdersForBuyer(order.buyerId))
+    .filter((entry) => entry.id !== order.id && entry.sellerId === order.sellerId
+      && (entry.credits ?? []).some((credit) => credit.status === 'held' && creditLeft(credit) > 0))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  const now = new Date().toISOString();
+  let applied = 0;
+  for (const source of sources) {
+    if (owing <= 0) break;
+    let moved = 0;
+    source.credits = (source.credits ?? []).map((credit) => {
+      if (owing <= 0 || credit.status !== 'held') return credit;
+      const take = Math.min(creditLeft(credit), owing);
+      if (take <= 0) return credit;
+      owing -= take;
+      moved += take;
+      const next = {
+        ...credit,
+        appliedMinor: (credit.appliedMinor ?? 0) + take,
+        applications: [...(credit.applications ?? []), { orderId: order.id, itemName: order.itemName, amountMinor: take, at: now }],
+      };
+      return { ...next, status: creditLeft(next) > 0 ? 'held' as const : 'applied' as const };
+    });
+    if (moved <= 0) continue;
+    applied += moved;
+
+    order.payments = [
+      ...(order.payments ?? []),
+      {
+        id: `pay_${randomUUID().slice(0, 12)}`,
+        at: now,
+        kind: 'credit',
+        method: 'direct',
+        amountMinor: moved,
+        batchId: null,
+        batchTotalMinor: null,
+        reference: null,
+        recordedBy: actorId,
+      },
+    ];
+    order.stageHistory = [
+      ...order.stageHistory,
+      { stage: order.stage, enteredAt: now, note: `💰 Credit adjusted — ${rupees(moved)} kept from "${source.itemName}".`, recordedBy: actorId },
+    ];
+    source.stageHistory = [
+      ...source.stageHistory,
+      { stage: source.stage, enteredAt: now, note: `💰 ${rupees(moved)} of the kept credit went towards "${order.itemName}".`, recordedBy: actorId },
+    ];
+    source.updatedAt = now;
+    await repository.updateOrder(source);
+  }
+
+  if (applied > 0) {
+    const money = orderMoney(order);
+    order.paymentStatus = money.outstandingMinor === 0 ? 'paid' : 'partially_paid';
+  }
+  return applied;
 }

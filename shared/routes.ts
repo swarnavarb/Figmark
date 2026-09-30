@@ -294,6 +294,23 @@ export function lotEndIndex(route: HasSteps): number {
 }
 
 /**
+ * The first rung an item reaches on its own again, once it is out of its lot.
+ *
+ * The rung after the crate's last one - or earlier, where the route binds a
+ * last-mile tick (ready, packed, dispatched) to a step on the lot's half:
+ * that step is reached by pressing the item's own button, not by moving the
+ * crate, so from the seller's side that is where per-item tracking starts.
+ * For drawing the line only; `lotEndIndex` still decides how far a lot moves.
+ */
+export function itemLeaveIndex(route: HasSteps): number {
+  const afterCrate = lotEndIndex(route) + 1;
+  const offset = lotOffset(route);
+  const ownTick = route.steps.findIndex((step, index) => index > offset
+    && (step.trigger === 'ready_to_dispatch' || step.trigger === 'packed' || step.trigger === 'dispatched'));
+  return ownTick === -1 ? afterCrate : Math.min(afterCrate, ownTick);
+}
+
+/**
  * Where a lot's own ladder starts inside the route.
  *
  * A lot never gets "received at the international warehouse" - its items do,

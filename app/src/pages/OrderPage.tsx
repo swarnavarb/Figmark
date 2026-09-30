@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
-import { WAITING_FOR_A_LOT, WAITING_FOR_LOT } from '@shared/routes';
+import { WAITING_FOR_A_LOT, WAITING_FOR_LOT, itemLeaveIndex } from '@shared/routes';
 import { REVIEW_REVEAL_DAYS, isStopped, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS } from '@shared/enums';
@@ -16,7 +16,10 @@ import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
-import { DirectTrack, TrackHero } from '../components/OrderTrack';
+import { DirectTrack, TrackHero, badgesFor } from '../components/OrderTrack';
+import { ITEM_DISPATCH_ID, ItemDispatch } from '../components/ItemDispatch';
+import { STEP_XP } from '../components/Ladder';
+import { useTrackStyle } from '../components/trackStyle';
 import { ItemCard, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
@@ -57,6 +60,8 @@ export function OrderPage() {
   const [changing, setChanging] = useState(false);
   const [tab, setTab] = useState<'tracking' | 'details'>('tracking');
   const [checkpointBusy, setCheckpointBusy] = useState(false);
+  /* Quest or classic: the viewer's pick, kept on this device. */
+  const [skin, setSkin] = useTrackStyle();
 
   async function toggleWarehouse(order: Order) {
     setCheckpointBusy(true);
@@ -111,6 +116,23 @@ export function OrderPage() {
 
   const placed = order.placedAt !== null;
 
+  /*
+   * Where this item stops riding its lot. From there the seller works it alone - dispatched, delivered - from
+   * the item's own card, not by moving the lot.
+   */
+  const leaveAt = data.route ? itemLeaveIndex(data.route) : undefined;
+  const leftLot = data.route && leaveAt !== undefined ? data.route.currentStep + 1 >= leaveAt : false;
+  const seller = state.side === 'seller';
+  /** To the item's own dispatch card, lit briefly so the eye lands on it. */
+  function toItemDispatch() {
+    const card = document.getElementById(ITEM_DISPATCH_ID);
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.remove('is-flash');
+    void card.offsetWidth;
+    card.classList.add('is-flash');
+  }
+
   return (
     <main className="page lp">
       {/* Back to exactly where they came from - the list, its filters, and
@@ -160,7 +182,13 @@ export function OrderPage() {
           screen with a payment to make should not have to scroll past a
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
-      <DeliveryControls state={state} onDone={load} />
+      <ItemDispatch state={state} onDone={load} skin={skin}
+        withLot={data.route && !leftLot && !order.checkpoints?.dispatched && order.status !== 'delivered' ? (
+          <>
+            Still travelling with <strong>{data.route.lotName}</strong> — its next move is the lot's.{' '}
+            <Link to={`/shop?tab=lots&lot=${encodeURIComponent(data.route.lotId)}`}>Open the lot</Link>
+          </>
+        ) : null} />
       <CollectionPrompt state={state} />
       <DisputePanel state={state} />
 
@@ -177,8 +205,19 @@ export function OrderPage() {
 
       {placed && tab === 'tracking' && (
         <div className="stack">
-          <div className="row row--between">
+          <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
             <h2 style={{ margin: 0 }}>Tracking</h2>
+            {/* The game board or the plain ladder - same steps, same facts. */}
+            <div className="seg trkstyle" role="radiogroup" aria-label="Tracking look">
+              <button type="button" role="radio" aria-checked={skin === 'quest'}
+                className={skin === 'quest' ? 'is-on' : ''} onClick={() => setSkin('quest')}>
+                🎮 Quest
+              </button>
+              <button type="button" role="radio" aria-checked={skin === 'classic'}
+                className={skin === 'classic' ? 'is-on' : ''} onClick={() => setSkin('classic')}>
+                📋 Classic
+              </button>
+            </div>
             {/* The same tick the order row offers, so a seller working from
                 this screen never has to go back to the list for it. */}
             {state.side === 'seller' && !isDirect(order) && (
@@ -210,9 +249,13 @@ export function OrderPage() {
               /* Which shipment it is in sits under the headline: for an item
                  bought into a lot that is the first thing its buyer wants,
                  and the ladder below is the answer to the second. */
-              <TrackHero icon={data.route.waitingForLot ? '⏳' : '🚢'}
+              <TrackHero icon={data.route.waitingForLot ? '⏳' : '🚢'} skin={skin}
                 now={data.route.waitingForLot ? 'Waiting for the lot to move' : data.route.steps[data.route.currentStep]?.name ?? 'On its way'}
-                sub={<>📦 {data.route.lotName} · lot #{data.route.lotNumber}</>}
+                sub={<>📦 {data.route.lotName} · lot #{data.route.lotNumber}{leftLot ? ' · now travelling on its own' : ''}</>}
+                badges={badgesFor(data.route.steps, data.route.currentStep)}
+                next={data.route.steps[data.route.currentStep + 1]
+                  ? <>Next level: <b>{data.route.steps[data.route.currentStep + 1]!.name}</b> <span className="qtrk__reward">+{STEP_XP} XP</span></>
+                  : null}
                 done={data.route.currentStep + 1} total={data.route.steps.length}>
                 {order.shipment && <ShipmentChip shipment={order.shipment} />}
                 <div className="trk__ladder">
@@ -222,6 +265,15 @@ export function OrderPage() {
                     warehouse tick, not above it. */}
                 <Ladder steps={data.route.steps} current={data.route.currentStep}
                   history={data.order.stageHistory}
+                  skin={skin}
+                  /* Only the seller is told who moves the tracking from here:
+                     for the buyer it is one journey, whoever is pushing it. */
+                  leaveAt={seller ? leaveAt : undefined}
+                  leaveNote={seller ? (
+                    <button type="button" className="ladder__leave-go" onClick={toItemDispatch}>
+                      Update this item <Icon name="right" size={11} />
+                    </button>
+                  ) : undefined}
                   waitingFor={data.route.waitingForLot ? WAITING_FOR_LOT : null}
                   /* The lot is where a seller's next question leads - change
                      it, or go and move it on - so the answers sit on the lot
@@ -235,23 +287,32 @@ export function OrderPage() {
                             onClick={() => setChanging(true)}>
                             Change lot
                           </button>
-                          <Link className="ladder__act ladder__act--move"
-                            to={`/shop?tab=lots&lot=${encodeURIComponent(data.route!.lotId)}`}>
-                            Record progress to the lot
-                          </Link>
+                          {/* Once the item has left its lot, moving the lot
+                              moves nothing for it - the item's own card does. */}
+                          {leftLot ? (
+                            <button type="button" className="ladder__act ladder__act--move" onClick={toItemDispatch}>
+                              Update this item
+                            </button>
+                          ) : (
+                            <Link className="ladder__act ladder__act--move"
+                              to={`/shop?tab=lots&lot=${encodeURIComponent(data.route!.lotId)}`}>
+                              Record progress to the lot
+                            </Link>
+                          )}
                         </span>
                       ) : null)
                     : undefined} />
                 </div>
               </TrackHero>
             ) : (
-              <TrackHero icon="⏳"
+              <TrackHero icon="⏳" skin={skin}
+                badges={badgesFor(data.preLot.steps, data.preLot.currentStep)}
                 now={data.preLot.steps[data.preLot.currentStep]?.name ?? 'Ordered'}
                 sub="Not in a shipment lot yet — the rest of the journey appears once it is."
                 done={data.preLot.currentStep + 1} total={data.preLot.steps.length + 1}>
                 <div className="trk__ladder">
                   <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
-                    history={data.order.stageHistory}
+                    history={data.order.stageHistory} skin={skin}
                     waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
                 </div>
               </TrackHero>
@@ -259,7 +320,7 @@ export function OrderPage() {
           ) : (
             /* In hand: no lot and no warehouse - the seller's shelf, a
                courier, and the buyer's door. */
-            <DirectTrack order={order} />
+            <DirectTrack order={order} skin={skin} />
           )}
         </div>
       )}
@@ -696,161 +757,6 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   );
 }
 
-/**
- * The seller's own last-mile buttons for this one item.
- *
- * Once a lot is unpacked every item goes to its buyer on its own, so this is
- * where a seller says it left (starting the buyer-protection clock) and that it
- * arrived (which lets the buyer add it to their collection and review it).
- * Marking delivered never releases held money - that stays with the buyer, a
- * dispute, or the auto-release window.
- */
-function DeliveryControls({ state, onDone }: { state: OrderState; onDone: () => void | Promise<void> }) {
-  const { order } = state;
-  const [busy, setBusy] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
-  /** The courier-and-AWB dialog: opened to dispatch, or to fix the details after. */
-  const [shipping, setShipping] = useState(false);
-  const [courier, setCourier] = useState(order.shipment?.courier ?? '');
-  const [awb, setAwb] = useState(order.shipment?.awb ?? '');
-  const [error, setError] = useState<string | null>(null);
-
-  if (state.side !== 'seller' || order.placedAt === null || isStopped(order.status)) return null;
-  const inHand = isDirect(order);
-
-  async function ship() {
-    setBusy('ship');
-    setError(null);
-    try {
-      await api.setCheckpoint(order.id, 'dispatched', true, { courier: courier.trim(), awb: awb.trim() });
-      setShipping(false);
-      await onDone();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
-    } finally {
-      setBusy(null);
-    }
-  }
-  const dispatched = Boolean(order.checkpoints?.dispatched);
-  const delivered = order.status === 'delivered';
-  const released = order.escrow.state === 'released';
-  const held = order.escrow.state === 'held';
-  const received = Boolean(order.receivedAt);
-
-  async function tick(checkpoint: 'dispatched' | 'delivered', on: boolean) {
-    setBusy(checkpoint);
-    setError(null);
-    try {
-      await api.setCheckpoint(order.id, checkpoint, on);
-      setAsking(false);
-      await onDone();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const hint = delivered
-    ? received
-      ? `The buyer confirmed they received it on ${formatDate(order.receivedAt!)}.`
-      : held
-        ? `Delivered. Waiting for the buyer to confirm - that releases the payment${order.escrow.autoReleaseAt ? `, or it releases on ${formatDate(order.escrow.autoReleaseAt)}` : ''} if they raise no dispute.`
-        : released
-          ? 'Delivered, and the payment has been released.'
-          : 'Delivered. Waiting for the buyer to confirm they received it.'
-    : dispatched
-      ? 'On its way. Mark it delivered once it reaches the buyer.'
-      : `Mark it dispatched when it leaves you${held ? ` - that starts the ${state.autoReleaseDays}-day protection window` : ''}.`;
-
-  return (
-    <div className="card card--pad stack" style={{ marginBottom: 20 }}>
-      <h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>🚚 Getting it to {state.counterparty.name}</h2>
-      <div className="row" style={{ flexWrap: 'wrap' }}>
-        {!delivered && (
-          <button type="button" className={`btn${dispatched ? ' btn--quiet' : ''}`} disabled={busy !== null}
-            onClick={() => (dispatched ? void tick('dispatched', false) : setShipping(true))}>
-            {busy === 'dispatched' ? 'Saving…' : dispatched ? '↩︎ Not dispatched yet' : '📦 Mark dispatched'}
-          </button>
-        )}
-        {dispatched && (
-          <button type="button" className="btn btn--quiet" disabled={busy !== null} onClick={() => setShipping(true)}>
-            {order.shipment ? '✏️ Edit courier & AWB' : '➕ Add courier & AWB'}
-          </button>
-        )}
-        {!delivered ? (
-          <button type="button" className="btn" disabled={busy !== null} onClick={() => setAsking(true)}>
-            ✅ Mark delivered
-          </button>
-        ) : !received && !released ? (
-          <button type="button" className="btn btn--quiet" disabled={busy !== null}
-            onClick={() => void tick('delivered', false)}>
-            {busy === 'delivered' ? 'Saving…' : '↩︎ Undo delivered'}
-          </button>
-        ) : (
-          <span className="badge badge--ok">
-            {received ? '📬 Buyer confirmed receipt' : 'Delivered'}{released ? ' · paid out' : ''}
-          </span>
-        )}
-      </div>
-      {order.shipment && <ShipmentChip shipment={order.shipment} />}
-      <span className="field__hint">{hint}</span>
-      {error && <ErrorNotice message={error} />}
-
-      {shipping && (
-        <Modal title={dispatched ? '🚚 Courier & AWB' : '📦 Dispatch it'} onClose={() => setShipping(false)}>
-          <form className="stack" onSubmit={(event) => { event.preventDefault(); void ship(); }}>
-            <p style={{ margin: 0 }}>
-              {inHand
-                ? 'Add the courier and AWB so the buyer can track their parcel.'
-                : 'Add the courier and AWB for this parcel, if you have them.'}
-            </p>
-            <label className="field">
-              <span>Courier name</span>
-              <input value={courier} onChange={(event) => setCourier(event.target.value)} maxLength={80}
-                placeholder="Delhivery, Blue Dart, DTDC…" autoFocus />
-            </label>
-            <label className="field">
-              <span>AWB / tracking number</span>
-              <input value={awb} onChange={(event) => setAwb(event.target.value)} maxLength={80}
-                placeholder="e.g. 1234567890" inputMode="text" className="mono" />
-            </label>
-            {!dispatched && (
-              <span className="field__hint">
-                No AWB yet? Dispatch now and add it later.
-                {held ? ` This starts the ${state.autoReleaseDays}-day protection window.` : ''}
-              </span>
-            )}
-            {error && <ErrorNotice message={error} />}
-            <button type="submit" className="btn btn--block"
-              disabled={busy !== null || (dispatched && !courier.trim() && !awb.trim())}>
-              {busy === 'ship' ? 'Saving…' : dispatched ? 'Save details' : '📦 Mark dispatched'}
-            </button>
-            <button type="button" className="btn btn--quiet btn--block" onClick={() => setShipping(false)}>Cancel</button>
-          </form>
-        </Modal>
-      )}
-
-      {asking && (
-        <Modal title="Mark delivered?" onClose={() => setAsking(false)}>
-          <div className="stack">
-            <p style={{ margin: 0 }}>
-              This tells <strong>{state.counterparty.name}</strong> that <strong>{order.itemName}</strong> has
-              reached them. They can then add it to their collection and review the order.
-              {held && ' It does not release the held payment - the buyer confirms that, or it releases on its own if they raise no dispute.'}
-            </p>
-            <button type="button" className="btn btn--block" disabled={busy !== null}
-              onClick={() => void tick('delivered', true)}>
-              {busy ? 'Marking…' : 'Mark delivered'}
-            </button>
-            <button type="button" className="btn btn--quiet btn--block" onClick={() => setAsking(false)}>Cancel</button>
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
 /** Delivered to the buyer: the nudge to put it on a collection shelf. */
 function CollectionPrompt({ state }: { state: OrderState }) {
   if (state.side !== 'buyer' || state.order.status !== 'delivered') return null;
@@ -1013,7 +919,13 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   const canProtect = quote.escrows.length > 0;
   const canPayDirect = quote.sellerPayment !== null;
 
-  const dueNow = plan === 'advance' && quote.advanceMinor != null ? quote.advanceMinor : quote.itemMinor;
+  /* Credit the seller kept for this buyer counts towards what is due now -
+     an advance first, then the balance - so the price on every way to buy
+     is what actually leaves their account. */
+  const credit = quote.creditMinor ?? 0;
+  const planDue = plan === 'advance' && quote.advanceMinor != null ? quote.advanceMinor : quote.itemMinor;
+  const dueNow = Math.max(0, planDue - credit);
+  const coveredByCredit = credit > 0 && dueNow === 0;
 
   if (route === 'direct' && quote.sellerPayment) {
     return (
@@ -1030,6 +942,26 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   return (
     <div className="stack">
       <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
+      {credit > 0 && (
+        <>
+          <div className="kv kv--credit">
+            <dt>💰 Credit kept for you by <PersonLink party={quote.seller} /></dt>
+            <dd>−{formatMoney(Math.min(credit, planDue), quote.currency)}</dd>
+          </div>
+          <div className="kv"><dt><strong>Due now</strong></dt><dd><strong>{formatMoney(dueNow, quote.currency)}</strong></dd></div>
+        </>
+      )}
+      {coveredByCredit && (
+        <div className="card card--pad stack">
+          <p style={{ margin: 0 }}>
+            Your credit covers {plan === 'advance' ? 'the advance' : 'the whole item'} — nothing to send.
+          </p>
+          <button type="button" className="btn btn--block" disabled={busy === 'claim'}
+            onClick={() => void onPaid({ reference: '', screenshot: null, plan })}>
+            {busy === 'claim' ? 'Placing…' : '💰 Place order with my credit'}
+          </button>
+        </div>
+      )}
 
       {/* Full or advance, offered only where the seller takes an advance. The
           method chosen below is then the one every later payment uses. */}
@@ -1037,11 +969,11 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         <div className="seg seg--vivid" role="radiogroup" aria-label="How much to pay now">
           <button type="button" role="radio" aria-checked={plan === 'full'}
             className={plan === 'full' ? 'is-on' : ''} onClick={() => setPlan('full')}>
-            💯 Pay full · {formatMoney(quote.itemMinor, quote.currency)}
+            💯 Pay full · {formatMoney(Math.max(0, quote.itemMinor - credit), quote.currency)}
           </button>
           <button type="button" role="radio" aria-checked={plan === 'advance'}
             className={plan === 'advance' ? 'is-on' : ''} onClick={() => setPlan('advance')}>
-            🌱 Pay advance · {formatMoney(quote.advanceMinor, quote.currency)}
+            🌱 Pay advance · {formatMoney(Math.max(0, quote.advanceMinor - credit), quote.currency)}
           </button>
         </div>
       )}
@@ -1053,7 +985,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       )}
 
       <span className="buyway__head">Choose how to buy</span>
-      <button type="button" className="buyway buyway--sea" disabled={!canPayDirect} style={{ ['--i' as string]: 0 }}
+      <button type="button" className="buyway buyway--sea" disabled={!canPayDirect || coveredByCredit} style={{ ['--i' as string]: 0 }}
         onClick={() => setRoute('direct')}>
         <span className="buyway__icon"><Svg name="coin" size={22} /></span>
         <span className="buyway__title">Buy directly from the seller</span>
@@ -1066,7 +998,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       </button>
 
       <button type="button" className={`buyway buyway--cool${route === 'protected' ? ' is-on' : ''}`}
-        disabled={!canProtect} style={{ ['--i' as string]: 1 }}
+        disabled={!canProtect || coveredByCredit} style={{ ['--i' as string]: 1 }}
         onClick={() => {
           setRoute('protected');
           if (!chosen) setPicking(true);
@@ -1081,8 +1013,8 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         </span>
         <span className="buyway__price">
           {chosen
-            ? formatMoney(quote.itemMinor + chosen.feeMinor, quote.currency)
-            : `${formatMoney(quote.itemMinor, quote.currency)} + fee`}
+            ? formatMoney(dueNow + chosen.feeMinor, quote.currency)
+            : `${formatMoney(dueNow, quote.currency)} + fee`}
         </span>
       </button>
 
@@ -1105,7 +1037,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
           </div>
           <div className="kv">
             <dt><strong>Total</strong></dt>
-            <dd><strong>{formatMoney(quote.itemMinor + chosen.feeMinor, quote.currency)}</strong></dd>
+            <dd><strong>{formatMoney(dueNow + chosen.feeMinor, quote.currency)}</strong></dd>
           </div>
           <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
             onClick={() => setPicking(true)}>
@@ -1120,7 +1052,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
             paying into one does not yet. Buy directly from the seller in the meantime.
           </p>
           <button className="btn btn--lg" disabled>
-            Pay {formatMoney(quote.itemMinor + chosen.feeMinor, quote.currency)}
+            Pay {formatMoney(dueNow + chosen.feeMinor, quote.currency)}
           </button>
         </div>
       )}

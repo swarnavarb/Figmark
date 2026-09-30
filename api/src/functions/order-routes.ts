@@ -28,7 +28,7 @@ import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
-import { placeOrder } from './placement.js';
+import { heldCreditMinor, placeOrder } from './placement.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -114,6 +114,20 @@ function planAmount(order: Order, plan: unknown): { plan: 'full' | 'advance'; am
   return { plan: 'advance', amountMinor: advanceMinor(totalMinor, order.advancePercent) };
 }
 
+/**
+ * What the chosen plan still asks for once kept credit has been spent on it.
+ *
+ * Credit counts towards whatever is due now - an advance first, then the
+ * balance - rather than sitting on top of it, and never asks for more than
+ * the order still owes.
+ */
+function dueAfterCredit(order: Order, planMinor: number): number {
+  const credited = (order.payments ?? [])
+    .filter((payment) => payment.kind === 'credit')
+    .reduce((sum, payment) => sum + payment.amountMinor, 0);
+  return Math.max(0, Math.min(planMinor - credited, orderMoney(order).outstandingMinor));
+}
+
 /** Settles an order whose protection window ran out, on the read that notices it. */
 const settle = (order: Order, repository: Repo): Promise<Order> => settleDue(order, repository);
 
@@ -179,6 +193,9 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
 
   const now = new Date().toISOString();
   const totalMinor = order.unitPriceMinor * order.quantity;
+  // Credit the seller kept for this buyer was spent when the order was
+  // placed, so only what it did not cover is asked for now.
+  const dueMinor = dueAfterCredit(order, terms.amountMinor);
 
   order.status = 'confirmed';
   order.accepted = true;
@@ -204,7 +221,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     order.escrow = {
       ...order.escrow,
       state: 'held',
-      amountMinor: terms.amountMinor,
+      amountMinor: dueMinor,
       heldAt: now,
       // Deliberately not set yet. The clock starts at dispatch, because an
       // import can sit in a lot for weeks and a window opened at checkout would
@@ -217,7 +234,9 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     order.escrow = { ...order.escrow, state: 'none', heldAt: null, autoReleaseAt: null };
     note(order, 'Paid directly to the seller, without protection.', user.id);
   }
-  record(order, { kind: terms.plan, method: order.paymentMethod, amountMinor: terms.amountMinor, recordedBy: user.id });
+  if (dueMinor > 0) {
+    record(order, { kind: terms.plan, method: order.paymentMethod, amountMinor: dueMinor, recordedBy: user.id });
+  }
   statusFromMoney(order);
 
   return json(200, {
@@ -260,6 +279,8 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     itemMinor: totalMinor,
+    /** Credit this seller kept for this buyer, spent on the order the moment it is placed. */
+    creditMinor: Math.min(totalMinor, await heldCreditMinor(repository, order)),
     /** Null when the seller does not take an advance on this item. */
     advanceMinor: order.advancePercent ? advanceMinor(totalMinor, order.advancePercent) : null,
     advancePercent: order.advancePercent ?? null,
@@ -592,9 +613,13 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   const reference = (body.reference ?? '').trim();
   const screenshot = (body.screenshot ?? '').trim();
 
+  // Kept credit that covers the whole of what is due needs no proof: no money
+  // is moving, so there is nothing for the seller to check.
+  const covered = await heldCreditMinor(repository, order) >= terms.amountMinor;
+
   // One of the two, at minimum. A claim with neither is just a button press,
   // and the seller has nothing to check it against.
-  if (!reference && !screenshot) {
+  if (!covered && !reference && !screenshot) {
     return error(400, 'no_proof', 'Add the transaction reference or a screenshot of it.');
   }
   if (screenshot && !screenshot.startsWith('data:image/')) {
@@ -614,6 +639,26 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   if (refusal) return error(409, 'unavailable', refusal);
 
   const now = new Date().toISOString();
+  const dueMinor = dueAfterCredit(order, terms.amountMinor);
+  if (dueMinor === 0) {
+    // Paid for entirely by credit the seller already holds.
+    order.status = 'confirmed';
+    order.accepted = true;
+    order.acceptedAt = order.acceptedAt ?? now;
+    order.paymentPlan = terms.plan;
+    order.paymentMethod = 'direct';
+    order.updatedAt = now;
+    statusFromMoney(order);
+    note(order, 'Paid with the credit the seller kept for you.', user.id);
+    const saved = await repository.updateOrder(order);
+    await notify(repository, [order.sellerId], {
+      kind: 'order_placed',
+      title: 'New order — paid with the credit you kept',
+      body: order.itemName,
+      link: `/order/${order.id}`,
+    });
+    return json(200, { order: saved });
+  }
   order.paymentStatus = 'claimed';
   order.updatedAt = now;
   order.paymentClaim = {
@@ -624,7 +669,7 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
     decidedAt: null,
     decidedReason: null,
     plan: terms.plan,
-    amountMinor: terms.amountMinor,
+    amountMinor: dueMinor,
   };
   order.paymentPlan = terms.plan;
   order.paymentMethod = 'direct';

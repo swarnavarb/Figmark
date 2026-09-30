@@ -4,7 +4,7 @@ import {
   ORDER_CHECKPOINTS, type OrderCheckpoint,
 } from '@shared/enums';
 import {
-  TRIGGER_LABELS, WAITING_FOR_LOT, laneOf, lotEndIndex, type RouteStep,
+  TRIGGER_LABELS, WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
 } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
@@ -14,6 +14,7 @@ import {
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { Ladder } from '../components/Ladder';
+import { useTrackStyle } from '../components/trackStyle';
 import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { ErrorNotice, Icon, type IconName } from '../components/ui';
@@ -569,8 +570,9 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
  * own. Before that the ticks would be a lie - nothing can be packed while it is
  * over the Bay of Bengal - so they are not offered.
  */
-function LotItemRow({ item, steps, others, busy, onTick, onRequestDeliver, onMove, onNote, onRelot }: {
+function LotItemRow({ item, lotId, steps, others, busy, onTick, onRequestDeliver, onMove, onNote, onRelot }: {
   item: LotItem;
+  lotId: string;
   /** The lot's route, which is the ladder this item rides. */
   steps: RouteStep[];
   /** The shop's other open lots, for an item that has to ride a different one. */
@@ -584,6 +586,15 @@ function LotItemRow({ item, steps, others, busy, onTick, onRequestDeliver, onMov
   onRelot: (lotId: string) => void | Promise<void>;
 }) {
   const gone = Boolean(item.checkpoints.dispatched) || Boolean(item.checkpoints.delivered);
+  /* Past the crate's last rung the item is worked on its own: from its
+     order, with the same dispatch card an in-hand sale uses. */
+  const leaveAt = itemLeaveIndex({ steps });
+  const onItsOwn = item.currentStep + 1 >= leaveAt;
+  const toItem = (
+    <Link className="ladder__leave-go" to={`/order/${item.id}`} state={{ from: `/shop?tab=lots&lot=${encodeURIComponent(lotId)}` }}>
+      Dispatch &amp; track this item <Icon name="right" size={11} />
+    </Link>
+  );
   /** Folded away by default: thirty-four open ladders is not a manifest. */
   const [open, setOpen] = useState(false);
 
@@ -598,6 +609,13 @@ function LotItemRow({ item, steps, others, busy, onTick, onRequestDeliver, onMov
         {item.buyerHandle ? <Link to={`/${item.buyerHandle}`}>{item.buyerName}</Link> : item.buyerName}
         {item.quantity > 1 && ` · ×${item.quantity}`}
       </span>
+
+      {onItsOwn && (
+        <div className="lotitem__own">
+          <span className="faint">Out of the lot — tracked on its own now.</span>
+          {toItem}
+        </div>
+      )}
 
       {/* The buttons that move this item's tracking.
           One press, and its buyer's timeline says the step the shop bound to
@@ -640,6 +658,8 @@ function LotItemRow({ item, steps, others, busy, onTick, onRequestDeliver, onMov
             current={item.currentStep}
             history={item.history}
             waitingFor={item.waitingForLot ? WAITING_FOR_LOT : null}
+            leaveAt={leaveAt}
+            leaveNote={toItem}
             busy={busy}
             whose={`Only ${item.buyerName} reads this one.`}
             onMove={onMove}
@@ -816,6 +836,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   /* Customers & Orders first: it's where every item's own tracking - and
      the one tick that ends it, "Delivered" - actually happens. */
   const [section, setSection] = useState<LotSection>('people');
+  const [skin] = useTrackStyle();
   const [editing, setEditing] = useState(false);
   const [rerouting, setRerouting] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -1050,6 +1071,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                 <LotItemRow
                   key={item.id}
                   item={item}
+                  lotId={lot.id}
                   steps={route.steps}
                   others={others}
                   busy={busy}
@@ -1111,6 +1133,15 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               steps={lotSteps}
               current={lotStep}
               history={data.history}
+              skin={skin}
+              /* Where the crate is unpacked: from the rung after it, each item
+                 is dispatched and delivered on its own, from its own order. */
+              leaveAt={itemLeaveIndex(route) - route.offset}
+              leaveNote={
+                <button type="button" className="ladder__leave-go" onClick={() => setSection('people')}>
+                  Update items one by one <Icon name="right" size={11} />
+                </button>
+              }
               busy={busy}
               vars={{ origin: lot.originCountry, destination: lot.destinationCountry }}
               whose={items.length === 0

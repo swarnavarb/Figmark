@@ -3,7 +3,7 @@ import { isLotEvent, kindOf } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import {
-  groupStages, renderStepText, stepForStage, stepStateAt, waitMessageFor, type RouteStep,
+  groupStages, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep,
 } from '@shared/routes';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { formatDateOrdinal } from '../format';
@@ -27,6 +27,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
+  leaveAt, leaveNote, skin = 'classic',
 }: {
   steps: RouteStep[];
   current: number;
@@ -61,6 +62,20 @@ export function Ladder({
    * route being written where no real hand-over has happened yet to show one.
    */
   forwardExample?: boolean;
+  /**
+   * Where the item stops riding its lot and is worked one at a time again -
+   * the index of the first rung past the crate's end. A thin line is drawn
+   * above it, and `leaveNote` (the seller's way to where that happens) hangs
+   * on it. Absent, or past the last rung, draws nothing.
+   */
+  leaveAt?: number;
+  leaveNote?: ReactNode;
+  /**
+   * `quest` draws the same rungs as a game board - numbered level nodes,
+   * gold coins for the ones reached, XP on each. `classic` is the plain
+   * ladder, kept so the look can be switched back.
+   */
+  skin?: 'classic' | 'quest';
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -78,7 +93,11 @@ export function Ladder({
     setShipper('');
   }
 
-  const notes = notesByStep(steps, history ?? []);
+  const notes = notesByStep(steps, history ?? [], current);
+  /* Whether the lot has started carrying this item: until the item reaches a
+     rung on the lot's half of the route, the lot is still a promise. */
+  const stillWaiting = current < 0 || !steps[current] || sideOf(steps[current]!, current) === 'pre';
+  const quest = skin === 'quest';
   const editable = Boolean(onMove || onNote);
 
   /*
@@ -114,7 +133,7 @@ export function Ladder({
   const gapMessage = waitingFor || (current >= 0 ? waitMessageFor(steps[current]) : null);
 
   return (
-    <ol className={`ladder${editable ? ' ladder--live' : ''}`}>
+    <ol className={`ladder${editable ? ' ladder--live' : ''}${quest ? ' ladder--quest' : ''}`}>
       {steps.map((step, index) => {
         // Reaching a step is what ticks it - the present is the gap after
         // it, drawn as its own row below, not a mark on the rung itself.
@@ -129,13 +148,31 @@ export function Ladder({
               <span>{renderStepText(stage.stageName, vars ?? {})}</span>
             </li>
           )}
+          {/* Where the crate is unpacked and this piece goes on alone. Quiet on
+              purpose: it is a change of who moves the tracking, not a step. */}
+          {leaveAt === index && leaveAt > 0 && (
+            <li className={`ladder__leave${index <= current ? ' is-past' : ''}`}>
+              <span className="ladder__leave-line" aria-hidden="true" />
+              <span className="ladder__leave-body">
+                <span className="ladder__leave-text">
+                  <Icon name="box" size={11} /> Leaves the lot · tracked per item from here
+                </span>
+                {leaveNote}
+              </span>
+            </li>
+          )}
           <li className={`ladder__row is-${state}`}>
             <span className="ladder__dot" aria-hidden="true">
-              <StepMark state={state} size={11} />
+              {quest && state !== 'done'
+                ? <span className="ladder__lvl">{index + 1}</span>
+                : <StepMark state={state} size={11} />}
             </span>
 
             <span className="ladder__body">
-              <span className="ladder__name">{renderStepText(step.name, vars ?? {})}</span>
+              <span className="ladder__name">
+                {renderStepText(step.name, vars ?? {})}
+                {quest && state === 'done' && <span className="ladder__xp">+{STEP_XP} XP</span>}
+              </span>
               {step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
 
               {said.map((event, at) => (
@@ -146,17 +183,17 @@ export function Ladder({
                      or halfway down the ladder. */
                   ? (
                     <span key={`${event.enteredAt}-${at}`} className="ladder__lot">
-                      <Icon name="box" size={13} />
+                      <span className="ladder__lot-icon" aria-hidden="true"><Icon name="box" size={13} /></span>
                       <span className="ladder__lot-text">
                         {kindOf(event) === 'moved' && event.from
                           ? <>Moved to <strong>{event.lot?.name}</strong> from {event.from.name}</>
                           /* Tense from where the journey actually is, so an
                              item still waiting reads as a promise and one
                              already moving reads as a fact. */
-                          : index >= current
+                          : stillWaiting
                             ? <>Will be shipped with <strong>{event.lot?.name}</strong></>
                             : <>Travelling with <strong>{event.lot?.name}</strong></>}
-                        {event.lot?.number && <span className="faint"> · LOT {event.lot.number}</span>}
+                        {event.lot?.number && <span className="ladder__lot-no">LOT {event.lot.number}</span>}
                       </span>
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>
                       {lotAction?.(event)}
@@ -308,7 +345,7 @@ export function Ladder({
  * back to the rung their coarse stage implies, which is roughly where they
  * belong rather than bunched at the top pretending to be the beginning.
  */
-function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, StageEvent[]> {
+function notesByStep(steps: RouteStep[], history: StageEvent[], current: number): Map<number, StageEvent[]> {
   const index = new Map<string, number>();
   steps.forEach((step, at) => { if (!index.has(step.name)) index.set(step.name, at); });
 
@@ -332,13 +369,24 @@ function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, Sta
     const named = event.step ? index.get(event.step) : undefined;
     if (named !== undefined) reached = Math.max(reached, named);
     if (!event.note && !event.trackingId && !event.shipper && !isLotEvent(event)) continue;
-    const at = named ?? Math.max(stepForStage({ steps }, event.stage as LotStage), reached);
+    let at = named ?? Math.max(stepForStage({ steps }, event.stage as LotStage), reached);
+    /*
+     * Joining a lot happens to the item where it is, so it can never sit
+     * below the rung the item has reached. Filed by a step name borrowed from
+     * another lot's route, or by a coarse stage that rounds up, it used to
+     * land several rungs ahead - "Will be shipped with…" hanging under
+     * Domestic dispatch while the parcel was still leaving China.
+     */
+    if (isLotEvent(event) && current >= 0 && at > current) at = current;
     const existing = out.get(at);
     if (existing) existing.push(event);
     else out.set(at, [event]);
   }
   return out;
 }
+
+/** What reaching one rung is worth on the quest skin. Flat, so it reads as a count. */
+export const STEP_XP = 100;
 
 /** A date a person reads at a glance, not a timestamp. */
 function when(iso: string): string {

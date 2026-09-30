@@ -6355,6 +6355,47 @@ await check('the rest is returned, the buyer confirms, and only then is it a ref
   assert.ok(!(await sales(req({ headers: auth }), ctx)).jsonBody.credits.some((c) => c.orderId === id), 'settled ones leave the list');
 });
 
+await check('credit kept for later is taken off the buyer\'s next order on its own', async () => {
+  // A kept credit of ₹500 on one of this buyer's orders with this shop.
+  const repository = await getRepository();
+  const source = await repository.getOrder(oA.id);
+  await repository.updateOrder({
+    ...source,
+    credits: [...(source.credits ?? []), {
+      id: 'cr_keep', createdAt: new Date().toISOString(), amountMinor: 50_000, batchId: null,
+      refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'held',
+    }],
+  });
+
+  // The next order costs less than the credit: the checkout says so, and it
+  // is placed without anybody sending money or proof.
+  const open = async (title, priceMinor) =>
+    (await openCheckout(req({ headers: payAuth, body: { listingId: (await list({ title, priceMinor })).id } }), ctx)).jsonBody.order;
+  const small = await open('Item G', 30_000);
+  const quote = (await checkout(req({ headers: payAuth, params: { id: small.id } }), ctx)).jsonBody;
+  assert.equal(quote.creditMinor, 30_000);
+  const covered = await claimPayment(req({ headers: payAuth, params: { id: small.id }, body: { plan: 'full' } }), ctx);
+  assert.equal(covered.status, 200, JSON.stringify(covered.jsonBody));
+  assert.equal(covered.jsonBody.order.paymentStatus, 'paid');
+  assert.deepEqual(covered.jsonBody.order.payments.map((p) => [p.kind, p.amountMinor]), [['credit', 30_000]]);
+  assert.ok(covered.jsonBody.order.stageHistory.some((e) => /Credit adjusted — ₹300/.test(e.note ?? '')));
+
+  let kept = (await repository.getOrder(oA.id)).credits.find((c) => c.id === 'cr_keep');
+  assert.equal(kept.appliedMinor, 30_000);
+  assert.equal(kept.status, 'held', 'what is left stays kept');
+
+  // The one after costs more: the rest of the credit goes on it, and only
+  // the difference is asked for.
+  const big = await open('Item H', 40_000);
+  const claimed = await claimPayment(req({ headers: payAuth, params: { id: big.id }, body: { reference: 'UTR9', plan: 'full' } }), ctx);
+  assert.equal(claimed.jsonBody.order.paymentClaim.amountMinor, 20_000);
+  const settled = (await settleClaim(req({ headers: auth, params: { id: big.id }, body: { accept: true } }), ctx)).jsonBody.order;
+  assert.equal(settled.paymentStatus, 'paid');
+  assert.deepEqual(settled.payments.map((p) => [p.kind, p.amountMinor]), [['credit', 20_000], ['full', 20_000]]);
+  kept = (await repository.getOrder(oA.id)).credits.find((c) => c.id === 'cr_keep');
+  assert.equal(kept.status, 'applied');
+});
+
 await check('a group paid two different ways is refused rather than switched', async () => {
   const lD = await list({ title: 'Item D', priceMinor: 200_000, advancePercent: 50 });
   const lE = await list({ title: 'Item E', priceMinor: 200_000, advancePercent: 50 });
