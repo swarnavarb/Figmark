@@ -1207,16 +1207,4 @@ function ShareSheet({ card, onClose, onShared }: {
   );
 }
 
-/** A small celebration, for things worth one. Respects reduced motion by not happening. */
-export function Confetti({ run }: { run: number }): ReactNode {
-  if (run === 0 || reduceMotion()) return null;
-  const pieces = Array.from({ length: 18 }, (_, index) => index);
-  return (
-    <span key={run} className="confetti" aria-hidden="true">
-      {pieces.map((index) => (
-        <span key={index} className={`confetti__bit confetti__bit--${index % 6}`}
-          style={{ left: `${(index * 53) % 100}%`, animationDelay: `${(index % 6) * 40}ms` }} />
-      ))}
-    </span>
-  );
-}
+export { Confetti } from './Confetti';

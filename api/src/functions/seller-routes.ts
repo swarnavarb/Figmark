@@ -431,7 +431,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     .sort((a, b) => (a.paymentClaim?.claimedAt ?? a.updatedAt).localeCompare(b.paymentClaim?.claimedAt ?? b.updatedAt));
 
   const placed = orders
-    .filter((order) => order.status === 'pending_payment' && order.paymentStatus === 'unpaid')
+    // The same rule that draws the Accept button, so an order or booking is in
+    // this pile exactly when the seller has a yes or no to give on it.
+    .filter((order) => actionsFor(order, storeId).includes('accept'))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   /*

@@ -28,7 +28,7 @@ import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
-import { heldCreditMinor, placeOrder } from './placement.js';
+import { adjustHeldCredit, heldCreditMinor, placeOrder, returnKeptCredit } from './placement.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -190,6 +190,9 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   // Choosing to pay is what makes a checkout an order the seller sees.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id);
   if (refusal) return error(409, 'unavailable', refusal);
+  // A booking was placed without touching kept credit; paying for it is when
+  // that money moves.
+  if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
   const now = new Date().toISOString();
   const totalMinor = order.unitPriceMinor * order.quantity;
@@ -524,16 +527,26 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = await settle(found.order, repository);
 
-  const reviews = await repository.listReviewsForOrder(order.id);
-  const mine = reviews.find((entry) => entry.authorId === user.id) ?? null;
-  const theirs = reviews.find((entry) => entry.authorId !== user.id) ?? null;
-
   // The other party, named. This screen reads the same for both sides, so
   // "from Arjun Collects" on Arjun's own sale is the kind of thing that only
   // shows up once somebody looks at their own order.
   const side = sideOf(order, user.id);
   const otherId = side === 'buyer' ? order.sellerId : order.buyerId;
-  const [other] = await repository.listUsersByIds([otherId]);
+
+  // Everything else this screen needs is independent of everything else, so
+  // it is read side by side rather than one round trip after another.
+  const [reviews, people, dispute, releaseDays] = await Promise.all([
+    repository.listReviewsForOrder(order.id),
+    // Both parties at once: the counterparty's name, the buyer's reversal
+    // details (seller side) and the buyer's own collection (buyer side).
+    repository.listUsersByIds([...new Set([otherId, user.id])]),
+    order.escrow.disputeId ? repository.getDispute(order.id, order.escrow.disputeId) : Promise.resolve(null),
+    autoReleaseDays(repository),
+  ]);
+  const mine = reviews.find((entry) => entry.authorId === user.id) ?? null;
+  const theirs = reviews.find((entry) => entry.authorId !== user.id) ?? null;
+  const other = people.find((person) => person.id === otherId);
+  const self = people.find((person) => person.id === user.id);
 
   return json(200, {
     order,
@@ -547,22 +560,18 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     simulatedPayment: true,
     // Lets the seller's cancel/reversal screen know, before they try, whether
     // the buyer has somewhere for the money to go.
-    buyerHasReversalDetails: side === 'seller'
-      ? Boolean((await repository.getUserById(order.buyerId))?.reversalDetails)
-      : null,
+    buyerHasReversalDetails: side === 'seller' ? Boolean(other?.reversalDetails) : null,
     myReview: mine,
     // Only if it may be seen: an unrevealed review is exactly what this whole
     // mechanism exists to keep out of the counterparty's hands.
     theirReview: theirs && reviewRevealed(theirs, mine !== null) ? theirs : null,
     theirReviewPending: theirs !== null && !(theirs && reviewRevealed(theirs, mine !== null)),
-    dispute: order.escrow.disputeId
-      ? await repository.getDispute(order.id, order.escrow.disputeId)
-      : null,
+    dispute,
     /** The protection window as operators have it set today, for the words on screen. */
-    autoReleaseDays: await autoReleaseDays(repository),
+    autoReleaseDays: releaseDays,
     /** Whether the buyer already has this one on a collection shelf. */
     inCollection: side === 'buyer'
-      ? Boolean((await repository.getUserById(user.id))?.collection?.some((item) => item.orderId === order.id))
+      ? Boolean(self?.collection?.some((item) => item.orderId === order.id))
       : false,
   });
 }
@@ -637,6 +646,7 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   // The claim itself tells the seller, so placing stays quiet.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id, { tellSeller: false });
   if (refusal) return error(409, 'unavailable', refusal);
+  if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
   const now = new Date().toISOString();
   const dueMinor = dueAfterCredit(order, terms.amountMinor);
@@ -1604,6 +1614,9 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
     order.paymentClaim.decidedAt = now;
     order.paymentClaim.decidedReason = reason;
   }
+  // Kept credit a booking spent goes back to the buyer's balance with this
+  // seller; it was never money the buyer sent, so there is nothing to refund.
+  await returnKeptCredit(repository, order, user.id);
   if (order.paymentStatus === 'paid' || order.paymentStatus === 'claimed') {
     order.paymentStatus = 'refunded';
   }
@@ -1705,6 +1718,14 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
   order.accepted = true;
   order.acceptedAt = now;
   order.updatedAt = now;
+  // A booking that kept credit already covers in full has nothing left to pay
+  // for, so saying yes is what confirms it.
+  const covered = (order.payments ?? []).length > 0 && orderMoney(order).outstandingMinor === 0;
+  if (covered) {
+    order.status = 'confirmed';
+    order.paymentStatus = 'paid';
+    order.paymentMethod = order.paymentMethod ?? 'direct';
+  }
   note(order, order.bookingOnly ? 'Booking accepted by seller.' : 'Order accepted by seller.', user.id);
   await repository.updateOrder(order);
 
@@ -1712,7 +1733,7 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
     ? {
         kind: 'booking_accepted',
         title: 'Your booking has been accepted',
-        body: 'Please make the payment.',
+        body: covered ? 'It is paid for with the credit the seller kept for you.' : 'Please make the payment.',
         link: `/order/${order.id}`,
       }
     : {
@@ -2165,10 +2186,16 @@ async function bookOrder(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'cannot_book', 'This order cannot be booked.');
   }
 
-  const refusal = await placeOrder(repository, order, 'booked', user.id);
-  if (refusal) return error(409, 'unavailable', refusal);
-
+  // Marked before placing, so the order is a booking from its first save -
+  // placing reads it to leave kept credit alone, and the seller's first look
+  // at it must be a booking waiting on their yes.
   order.bookingOnly = true;
+  const refusal = await placeOrder(repository, order, 'booked', user.id);
+  if (refusal) {
+    order.bookingOnly = false;
+    return error(409, 'unavailable', refusal);
+  }
+
   order.updatedAt = new Date().toISOString();
   note(order, 'Buyer chose to book — payment is due once the seller confirms availability.', user.id);
   await repository.updateOrder(order);

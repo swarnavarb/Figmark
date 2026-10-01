@@ -1,5 +1,4 @@
 import { StrictMode, lazy, type ComponentType } from 'react';
-import { PowerSaleBuilderPage } from './components/PowerSale';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './AppShell';
@@ -53,6 +52,7 @@ const MyDisputesPage = page(() => import('./pages/MyDisputesPage'), 'MyDisputesP
 const QuestsPage = page(() => import('./pages/QuestsPage'), 'QuestsPage');
 const LearnPage = page(() => import('./pages/LearnPage'), 'LearnPage');
 const ProfileByHandlePage = page(() => import('./pages/ProfileByHandlePage'), 'ProfileByHandlePage');
+const PowerSaleBuilderPage = page(() => import('./components/PowerSale'), 'PowerSaleBuilderPage');
 
 /**
  * Signed-out visitors get the auth page and nothing else.

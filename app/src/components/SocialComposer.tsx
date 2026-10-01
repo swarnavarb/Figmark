@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiRequestError, api, type ForumRow, type ShareableListing } from '../api';
 import { Thumb } from './ui';
 import { Icon } from './Icon';
-import { Confetti } from './SocialPost';
+import { Confetti } from './Confetti';
 import { VoiceAvatar, VoicePicker, useVoice } from './SocialVoice';
 import { shrink } from './PhotoManager';
 import {

@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { FloatingCalc } from './components/FloatingCalc';
+import { FloatingCalc } from './components/FloatingCalcFab';
 import { Notifications } from './components/Notifications';
 import { ScrollBars } from './components/ScrollBars';
 import { ScrollManager } from './components/ScrollManager';

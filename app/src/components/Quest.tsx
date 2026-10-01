@@ -9,7 +9,7 @@ import {
 import { ApiRequestError, api, type QuestResult } from '../api';
 import { useSession } from '../session';
 import { useToast } from './Feedback';
-import { Confetti } from './SocialPost';
+import { Confetti } from './Confetti';
 import { Modal } from './ui';
 
 /*

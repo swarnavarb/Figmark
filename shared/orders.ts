@@ -143,7 +143,15 @@ export function actionsFor(
   // A brand new order or booking is waiting on the seller to say yes before
   // anything else happens to it - nobody has paid, nobody has claimed to, and
   // the seller has not yet said either way.
-  const fresh = order.status === 'pending_payment' && order.paymentStatus === 'unpaid'
+  //
+  // Credit the seller kept for this buyer is not the buyer paying: it is the
+  // seller's own money moving between two of their orders. A booking placed
+  // before bookings stopped spending it (see placeOrder) carries a credit
+  // payment and so reads as part-paid, and must still be accepted or rejected.
+  const payments = order.payments ?? [];
+  const onlyKeptCredit = payments.length > 0 && payments.every((payment) => payment.kind === 'credit');
+  const fresh = order.status === 'pending_payment'
+    && (order.paymentStatus === 'unpaid' || (onlyKeptCredit && order.paymentStatus !== 'claimed'))
     && !order.accepted && !order.paymentClaim;
   if (side === 'seller' && fresh) actions.push('accept');
 

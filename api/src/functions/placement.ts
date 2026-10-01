@@ -66,7 +66,11 @@ export async function placeOrder(
     }
   }
 
-  await adjustHeldCredit(repository, order, actorId);
+  // A booking moves no money until the seller has said yes - kept credit
+  // included. Spending it here left a booking part-paid before anybody had
+  // accepted it, which took the Accept and Reject buttons away from the
+  // seller. It is spent when the buyer pays for the accepted booking instead.
+  if (!order.bookingOnly) await adjustHeldCredit(repository, order, actorId);
 
   await repository.updateOrder(order);
   await repository.takeStock(order);
@@ -180,4 +184,61 @@ export async function adjustHeldCredit(repository: Repo, order: Order, actorId: 
     order.paymentStatus = money.outstandingMinor === 0 ? 'paid' : 'partially_paid';
   }
   return applied;
+}
+
+/**
+ * Puts kept credit this order spent back where it came from - for an order
+ * the seller turns down before taking it on.
+ *
+ * The reverse of `adjustHeldCredit`: each source order gets its credit back as
+ * `held`, and this order drops the credit payments, since none of that money
+ * was ever the buyer paying for it. Mutates `order` (the caller saves it);
+ * saves the source orders.
+ */
+export async function returnKeptCredit(repository: Repo, order: Order, actorId: string): Promise<number> {
+  const spent = (order.payments ?? []).filter((payment) => payment.kind === 'credit');
+  if (spent.length === 0) return 0;
+
+  const now = new Date().toISOString();
+  let returned = 0;
+  const sources = (await repository.listOrdersForBuyer(order.buyerId))
+    .filter((entry) => entry.id !== order.id && entry.sellerId === order.sellerId);
+  for (const source of sources) {
+    let back = 0;
+    source.credits = (source.credits ?? []).map((credit) => {
+      const mine = (credit.applications ?? []).filter((entry) => entry.orderId === order.id);
+      if (mine.length === 0) return credit;
+      const amount = mine.reduce((sum, entry) => sum + entry.amountMinor, 0);
+      back += amount;
+      return {
+        ...credit,
+        appliedMinor: Math.max(0, (credit.appliedMinor ?? 0) - amount),
+        applications: (credit.applications ?? []).filter((entry) => entry.orderId !== order.id),
+        status: credit.status === 'applied' ? 'held' as const : credit.status,
+      };
+    });
+    if (back <= 0) continue;
+    returned += back;
+    source.stageHistory = [
+      ...source.stageHistory,
+      { stage: source.stage, enteredAt: now, note: `💰 ${rupees(back)} of kept credit came back from "${order.itemName}".`, recordedBy: actorId },
+    ];
+    source.updatedAt = now;
+    await repository.updateOrder(source);
+  }
+
+  order.payments = (order.payments ?? []).filter((payment) => payment.kind !== 'credit');
+  if (returned > 0) {
+    order.stageHistory = [
+      ...order.stageHistory,
+      { stage: order.stage, enteredAt: now, note: `💰 ${rupees(returned)} of kept credit returned to the buyer's balance with the seller.`, recordedBy: actorId },
+    ];
+  }
+  // Read from what is left, not `orderMoney`: with no records left it would
+  // take the stale 'paid' status at its word.
+  const paidMinor = order.payments.filter((payment) => payment.kind !== 'refund')
+    .reduce((sum, payment) => sum + payment.amountMinor, 0);
+  const totalMinor = order.unitPriceMinor * order.quantity;
+  order.paymentStatus = paidMinor === 0 ? 'unpaid' : paidMinor >= totalMinor ? 'paid' : 'partially_paid';
+  return returned;
 }

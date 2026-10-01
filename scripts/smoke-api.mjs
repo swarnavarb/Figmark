@@ -6586,6 +6586,77 @@ await check('credit kept for later is taken off the buyer\'s next order on its o
   assert.equal(kept.status, 'applied');
 });
 
+await check('a booking leaves kept credit alone until it is accepted, so the seller can still say yes or no', async () => {
+  const repository = await getRepository();
+  const source = await repository.getOrder(oA.id);
+  await repository.updateOrder({
+    ...source,
+    credits: [...(source.credits ?? []), {
+      id: 'cr_book', createdAt: new Date().toISOString(), amountMinor: 50_000, batchId: null,
+      refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'held',
+    }],
+  });
+  const open = async (title, priceMinor) =>
+    (await openCheckout(req({ headers: payAuth, body: { listingId: (await list({ title, priceMinor })).id } }), ctx)).jsonBody.order;
+
+  // Booked: nothing moves, and the seller has the decision in front of them.
+  const first = await open('Item J', 30_000);
+  const booked = await bookOrder(req({ headers: payAuth, params: { id: first.id }, body: {} }), ctx);
+  assert.equal(booked.status, 200, JSON.stringify(booked.jsonBody));
+  assert.equal(booked.jsonBody.order.paymentStatus, 'unpaid');
+  assert.deepEqual(booked.jsonBody.order.payments, []);
+  const seen = (await orderState(req({ headers: auth, params: { id: first.id } }), ctx)).jsonBody;
+  assert.ok(seen.actions.includes('accept') && seen.actions.includes('reject'), JSON.stringify(seen.actions));
+  const row = (await sales(req({ headers: auth }), ctx)).jsonBody.placed.find((entry) => entry.id === first.id);
+  assert.ok(row?.canAccept, 'in the pile waiting on the seller, with the button');
+  assert.equal((await repository.getOrder(oA.id)).credits.find((c) => c.id === 'cr_book').appliedMinor ?? 0, 0);
+
+  // Accepted, then paid: the credit covers it and no proof is needed.
+  await acceptOrder(req({ headers: auth, params: { id: first.id }, body: {} }), ctx);
+  const paid = await claimPayment(req({ headers: payAuth, params: { id: first.id }, body: { plan: 'full' } }), ctx);
+  assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+  assert.equal(paid.jsonBody.order.paymentStatus, 'paid');
+  assert.deepEqual(paid.jsonBody.order.payments.map((p) => [p.kind, p.amountMinor]), [['credit', 30_000]]);
+});
+
+await check('a booking stuck part-paid by kept credit can still be accepted or rejected, and rejecting gives the credit back', async () => {
+  // The shape bookings had before they stopped spending credit on placement.
+  const repository = await getRepository();
+  const listing = await list({ title: 'Item K', priceMinor: 40_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const booked = (await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx)).jsonBody.order;
+  const sourceBefore = await repository.getOrder(oA.id);
+  const at = new Date().toISOString();
+  await repository.updateOrder({
+    ...sourceBefore,
+    credits: sourceBefore.credits.map((c) => c.id === 'cr_book'
+      ? { ...c, appliedMinor: 50_000, status: 'applied', applications: [...(c.applications ?? []), { orderId: booked.id, itemName: 'Item K', amountMinor: 20_000, at }] }
+      : c),
+  });
+  await repository.updateOrder({
+    ...booked,
+    paymentStatus: 'partially_paid',
+    payments: [{ id: 'pay_stuck', at, kind: 'credit', method: 'direct', amountMinor: 20_000, batchId: null, batchTotalMinor: null, reference: null, recordedBy: booked.buyerId }],
+  });
+
+  const seen = (await orderState(req({ headers: auth, params: { id: booked.id } }), ctx)).jsonBody;
+  assert.ok(seen.actions.includes('accept') && seen.actions.includes('reject'), JSON.stringify(seen.actions));
+
+  const rejected = await rejectOrder(req({ headers: auth, params: { id: booked.id }, body: { reason: 'Out of stock' } }), ctx);
+  assert.equal(rejected.status, 200, JSON.stringify(rejected.jsonBody));
+  assert.equal(rejected.jsonBody.order.status, 'rejected');
+  assert.equal(rejected.jsonBody.order.paymentStatus, 'unpaid');
+  assert.deepEqual(rejected.jsonBody.order.payments, []);
+  const back = (await repository.getOrder(oA.id)).credits.find((c) => c.id === 'cr_book');
+  assert.equal(back.status, 'held');
+  assert.equal(back.appliedMinor, 30_000);
+  assert.ok(!back.applications.some((entry) => entry.orderId === booked.id));
+
+  // Leave the shop as the checks after this one expect it: nothing kept.
+  const tidy = await repository.getOrder(oA.id);
+  await repository.updateOrder({ ...tidy, credits: tidy.credits.filter((c) => c.id !== 'cr_book') });
+});
+
 await check('a group paid two different ways is refused rather than switched', async () => {
   const lD = await list({ title: 'Item D', priceMinor: 200_000, advancePercent: 50 });
   const lE = await list({ title: 'Item E', priceMinor: 200_000, advancePercent: 50 });
