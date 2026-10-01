@@ -69,9 +69,6 @@ const {
   stepItemRoute, myItemsRoute,
 } = await import(new URL('tracking-routes.js', apiRoot));
 const {
-  listFlowsRoute, saveFlowRoute, saveKitRoute, deleteFlowDocRoute,
-} = await import(new URL('flow-routes.js', apiRoot));
-const {
   listTemplatesRoute, saveTemplateRoute, deleteTemplateRoute,
   uploadRoute, photoRoute, assignOrderToLotRoute,
 } = await import(new URL('template-routes.js', apiRoot));
@@ -266,10 +263,6 @@ const routes = [
   ['GET', '/api/routes', listRoutesRoute],
   ['POST', '/api/routes/new', saveRouteRoute],
   ['POST', '/api/routes/:id/delete', deleteRouteRoute],
-  ['GET', '/api/flows', listFlowsRoute],
-  ['POST', '/api/flows/new', saveFlowRoute],
-  ['POST', '/api/flows/kits/new', saveKitRoute],
-  ['POST', '/api/flows/:id/delete', deleteFlowDocRoute],
   ['GET', '/api/lots/:id/candidates', lotCandidatesRoute],
   ['POST', '/api/lots/:id/items', addItemsRoute],
   ['POST', '/api/lots/:id/step', stepLotRoute],

@@ -29,7 +29,6 @@ const LotBoardPage = page(() => import('./pages/LotBoardPage'), 'LotBoardPage');
 const RoutesPage = page(() => import('./pages/RoutesPage'), 'RoutesPage');
 const RouteEditorPage = page(() => import('./pages/RoutesPage'), 'RouteEditorPage');
 const RouteStudioPage = page(() => import('./pages/RouteStudioPage'), 'RouteStudioPage');
-const FlowBuilderPage = page(() => import('./pages/FlowPage'), 'FlowBuilderPage');
 const ServicesPage = page(() => import('./pages/ServicesPage'), 'ServicesPage');
 const MyServicesPage = page(() => import('./pages/ServicesPage'), 'MyServicesPage');
 const ConsignmentsPage = page(() => import('./pages/ServicesPage'), 'ConsignmentsPage');
@@ -94,8 +93,6 @@ function App() {
         <Route path="/routes/new" element={<RouteEditorPage />} />
         {/* The experimental node-based builder, being compared against the one
             above. Its own paths, so neither can be reached by the other's link. */}
-        <Route path="/routes/flow/new" element={<FlowBuilderPage />} />
-        <Route path="/routes/flow/:id" element={<FlowBuilderPage />} />
         <Route path="/routes/studio/new" element={<RouteStudioPage />} />
         <Route path="/routes/studio/:id" element={<RouteStudioPage />} />
         <Route path="/routes/:id" element={<RouteEditorPage />} />

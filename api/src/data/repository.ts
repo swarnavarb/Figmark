@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import type { TrackingRoute } from '../../../shared/routes.js';
-import type { FlowDoc } from '../../../shared/flows.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
@@ -112,14 +111,6 @@ export interface Repository {
   getRoute(sellerId: string, routeId: string): Promise<TrackingRoute | null>;
   saveRoute(route: TrackingRoute): Promise<TrackingRoute>;
   deleteRoute(sellerId: string, routeId: string): Promise<boolean>;
-
-  /**
-   * The button kits and flows a shop has built. Kept beside its routes, in
-   * the same partition, because a flow is three pieces of which a route is one.
-   */
-  listFlowDocs(sellerId: string): Promise<FlowDoc[]>;
-  saveFlowDoc(doc: FlowDoc): Promise<FlowDoc>;
-  deleteFlowDoc(sellerId: string, id: string): Promise<boolean>;
 
   /** Sold, bound for a lot, not yet in one. */
   listOrdersAwaitingLot(sellerId: string): Promise<Order[]>;

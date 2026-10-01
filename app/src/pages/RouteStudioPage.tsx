@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, type FormEvent } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ORDER_CHECKPOINTS } from '@shared/enums';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, TRIGGER_LABELS, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
@@ -68,23 +68,15 @@ function ensureDelivered(steps: readonly RouteStep[]): RouteStep[] {
 export function RouteStudioPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  /* Opened from a flow's "In a lot" piece: go back there with the route
-     snapped in, rather than to the list. Only ever a flow screen. */
-  const back = params.get('back');
-  const flowBack = back && back.startsWith('/routes/flow/') ? back : null;
-  const home = flowBack ?? '/routes';
   return (
     <main className="page">
-      <Link to={home} className="backlink">
-        <Icon name="back" size={14} /> {flowBack ? 'Flow builder' : 'Routes'}
+      <Link to="/routes" className="backlink">
+        <Icon name="back" size={14} /> Routes
       </Link>
       <RouteStudio
         editing={id && id !== 'new' ? id : null}
-        onSaved={(routeId) => navigate(flowBack && routeId
-          ? `${flowBack}${flowBack.includes('?') ? '&' : '?'}route=${encodeURIComponent(routeId)}`
-          : home)}
-        onCancel={() => navigate(home)}
+        onSaved={() => navigate('/routes')}
+        onCancel={() => navigate('/routes')}
       />
     </main>
   );
@@ -96,7 +88,7 @@ const blankStep = (seed: number): RouteStep => ({
 
 function RouteStudio({ editing, onSaved, onCancel }: {
   editing: string | null;
-  onSaved: (routeId?: string) => void;
+  onSaved: () => void;
   onCancel: () => void;
 }) {
   const [library, setLibrary] = useState<RoutesResponse | null>(null);
@@ -189,7 +181,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     setBusy(true);
     setError(null);
     try {
-      const saved = await api.saveRoute({
+      await api.saveRoute({
         id: editing ?? undefined,
         name: name.trim(),
         steps: sided
@@ -205,7 +197,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             lastMile: step.lastMile,
           })),
       });
-      onSaved(saved.route.id);
+      onSaved();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that route.');
     } finally {

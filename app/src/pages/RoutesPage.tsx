@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { TRIGGER_LABELS, joinIndexOf, sideOf, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
 import { RouteBuilder, STAGE_ICON_META } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
-import { FlowShelf } from './FlowPage';
 
 /**
  * The routes a shop can send a lot along.
@@ -71,10 +70,6 @@ export function RoutesList({ spotlightNew = false }: {
           </button>
         </span>
       </div>
-
-      {/* Flows first: the whole journey as three pieces, of which the routes
-          below are the middle one. */}
-      <FlowShelf />
 
       {error && <ErrorNotice message={error} />}
       {!data && !error && <SkeletonRows count={4} />}
@@ -255,22 +250,15 @@ export function RouteRow({ name, steps, to, onClick, note }: {
 export function RouteEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  /* Opened from a flow's "In a lot" piece: back there with the route snapped in. */
-  const back = params.get('back');
-  const flowBack = back && back.startsWith('/routes/flow/') ? back : null;
-  const home = flowBack ?? '/routes';
   return (
     <main className="page">
-      <Link to={home} className="backlink">
-        <Icon name="back" size={14} /> {flowBack ? 'Flow builder' : 'Routes'}
+      <Link to="/routes" className="backlink">
+        <Icon name="back" size={14} /> Routes
       </Link>
       <RouteEditor
         editing={id && id !== 'new' ? id : null}
-        onSaved={(routeId) => navigate(flowBack && routeId
-          ? `${flowBack}${flowBack.includes('?') ? '&' : '?'}route=${encodeURIComponent(routeId)}`
-          : home)}
-        onCancel={() => navigate(home)}
+        onSaved={() => navigate('/routes')}
+        onCancel={() => navigate('/routes')}
       />
     </main>
   );
@@ -286,7 +274,7 @@ export function RouteEditorPage() {
  */
 export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel' }: {
   editing: string | null;
-  onSaved: (routeId?: string) => void;
+  onSaved: () => void;
   onCancel: () => void;
   /** Said above the shapes, for somebody meeting routes for the first time. */
   intro?: ReactNode;
@@ -329,7 +317,7 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
     setBusy(true);
     setError(null);
     try {
-      const saved = await api.saveRoute({
+      await api.saveRoute({
         id: editing ?? undefined,
         name: name.trim(),
         steps: steps
@@ -349,7 +337,7 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
             waitMessage: step.waitMessage,
           })),
       });
-      onSaved(saved.route.id);
+      onSaved();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that route.');
     } finally {

@@ -1,7 +1,6 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
-import type { FlowDoc } from '../../../shared/flows.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { CosmosClient, type Container, type ContainerRequest, type Database } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
@@ -712,8 +711,7 @@ export class CosmosRepository implements Repository {
     const { resources } = await this.container('routes')
       .items.query<TrackingRoute>(
         {
-          // Kits and flows share the partition and carry a `kind`; a route has none.
-          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId AND NOT IS_DEFINED(c.kind) ORDER BY c.name ASC',
+          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId ORDER BY c.name ASC',
           parameters: [{ name: '@sellerId', value: sellerId }],
         },
         { partitionKey: sellerId },
@@ -725,7 +723,7 @@ export class CosmosRepository implements Repository {
   async getRoute(sellerId: string, routeId: string): Promise<TrackingRoute | null> {
     try {
       const { resource } = await this.container('routes').item(routeId, sellerId).read<TrackingRoute>();
-      return resource && !(resource as { kind?: string }).kind ? resource : null;
+      return resource ?? null;
     } catch {
       return null;
     }
@@ -744,33 +742,6 @@ export class CosmosRepository implements Repository {
       return false;
     }
   }
-  async listFlowDocs(sellerId: string): Promise<FlowDoc[]> {
-    const { resources } = await this.container('routes')
-      .items.query<FlowDoc>(
-        {
-          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId AND IS_DEFINED(c.kind) ORDER BY c.name ASC',
-          parameters: [{ name: '@sellerId', value: sellerId }],
-        },
-        { partitionKey: sellerId },
-      )
-      .fetchAll();
-    return resources;
-  }
-
-  async saveFlowDoc(doc: FlowDoc): Promise<FlowDoc> {
-    const { resource } = await this.container('routes').items.upsert<FlowDoc>(doc);
-    return resource ?? doc;
-  }
-
-  async deleteFlowDoc(sellerId: string, id: string): Promise<boolean> {
-    try {
-      await this.container('routes').item(id, sellerId).delete();
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
 
   async listOrdersAwaitingLot(sellerId: string): Promise<Order[]> {
     // Single-partition: every waiting item is filed under the one sentinel, so

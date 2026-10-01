@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import type { OrderCheckpoint } from '@shared/enums';
-import { kitButtons, type KitSnapshot } from '@shared/flows';
 import {
-  WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
+  ORDER_CHECKPOINTS, type OrderCheckpoint,
+} from '@shared/enums';
+import {
+  TRIGGER_LABELS, WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
 } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
@@ -13,7 +14,6 @@ import {
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { Ladder } from '../components/Ladder';
-import { KitButtons } from '../components/KitButtons';
 import { useTrackStyle } from '../components/trackStyle';
 import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
@@ -570,14 +570,11 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
  * own. Before that the ticks would be a lie - nothing can be packed while it is
  * over the Bay of Bengal - so they are not offered.
  */
-function LotItemRow({ item, lotId, steps, afterKit, vars, others, busy, onTick, onRequestDeliver, onMove, onNote, onRelot }: {
+function LotItemRow({ item, lotId, steps, others, busy, onTick, onRequestDeliver, onMove, onNote, onRelot }: {
   item: LotItem;
   lotId: string;
   /** The lot's route, which is the ladder this item rides. */
   steps: RouteStep[];
-  /** The buttons it gets once the lot is unpacked, from the flow wired to the route. */
-  afterKit?: KitSnapshot;
-  vars?: { origin?: string | null; destination?: string | null };
   /** The shop's other open lots, for an item that has to ride a different one. */
   others: { id: string; name: string; lotNumber?: string | null }[];
   busy: boolean;
@@ -620,14 +617,27 @@ function LotItemRow({ item, lotId, steps, afterKit, vars, others, busy, onTick, 
         </div>
       )}
 
-      {/* The buttons that move this item's tracking: its own kit's before
-          the lot, the lot's flow's after it - only the ones this item can
-          actually use, rather than every checkpoint the shop has ever had.
-          One press, and its buyer's timeline says the step it is bound to. */}
+      {/* The buttons that move this item's tracking.
+          One press, and its buyer's timeline says the step the shop bound to
+          it - which is the whole point of binding one. A button with nothing
+          bound still records the fact; it simply moves no timeline, and says
+          so rather than looking broken. */}
       <div className="lotitem__acts">
-        <KitButtons look="tile" busy={busy} steps={steps} vars={vars} checkpoints={item.checkpoints}
-          buttons={[...kitButtons(item.itemKit, 'before'), ...kitButtons(afterKit, 'after')]}
-          onPress={onTick} onRequestDeliver={onRequestDeliver} />
+        {ORDER_CHECKPOINTS.map((checkpoint) => {
+          const done = Boolean(item.checkpoints[checkpoint]);
+          const moves = steps.find((step) => step.trigger === checkpoint);
+          return (
+            <button key={checkpoint} type="button" disabled={busy} aria-pressed={done}
+              className={`tickbtn${done ? ' is-on' : ''}${checkpoint === 'delivered' ? ' tickbtn--delivered' : ''}`}
+              title={moves
+                ? `${done ? 'Pressed' : 'Press'} when ${TRIGGER_LABELS[checkpoint].means} — moves tracking to “${moves.name}”`
+                : `${TRIGGER_LABELS[checkpoint].button}: recorded, but no step is bound to it`}
+              onClick={() => (checkpoint === 'delivered' && !done ? onRequestDeliver() : onTick(checkpoint, !done))}>
+              {TRIGGER_LABELS[checkpoint].button}
+              {moves && <span className="tickbtn__to">{moves.name}</span>}
+            </button>
+          );
+        })}
       </div>
 
       {/* One item's own timeline. Almost always the lot's, which is why it is
@@ -870,7 +880,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   if (error && !data) return <div className="page"><ErrorNotice message={error} /></div>;
   if (!data) return <div className="page"><p className="muted">Loading…</p></div>;
 
-  const { lot, listings, totals, route, items, afterKit } = data;
+  const { lot, listings, totals, route, items } = data;
   /** Somewhere else an item could ride: any open lot of this shop but this one. */
   const others = siblings
     .map((entry) => entry.lot)
@@ -1063,8 +1073,6 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
                   item={item}
                   lotId={lot.id}
                   steps={route.steps}
-                  afterKit={afterKit}
-                  vars={{ origin: lot.originCountry, destination: lot.destinationCountry }}
                   others={others}
                   busy={busy}
                   onTick={(checkpoint, on) =>

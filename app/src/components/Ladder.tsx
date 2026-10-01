@@ -316,7 +316,7 @@ export function Ladder({
                 <WaveLoader />
               </span>
               <span className="ladder__body">
-                <span className="ladder__name">{renderStepText(gapMessage, vars ?? {})}</span>
+                <span className="ladder__name">{gapMessage}</span>
                 {waitingFor && (
                   <span className="faint">
                     Everything from here happens to the whole lot, not to this piece alone.
