@@ -1,6 +1,7 @@
-import { useEffect, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
+import type { StepState } from '@shared/routes';
 import { brandHueFor, gradientFor, initialsOf } from '../format';
 
 /*
@@ -104,34 +105,32 @@ export function ErrorNotice({ message }: { message: string }) {
   return <p className="notice notice--error">{message}</p>;
 }
 
+export type { StepState };
+
 /**
- * Live fill progress for a group-buy lot.
- *
- * The bar gets warmer as the lot fills and lights up when it is there: a run
- * at 29 of 30 should feel different from one at 3 of 30, and the number alone
- * was not carrying that. The thresholds are coarse on purpose - four states
- * rather than a continuous ramp, so the change is something you notice rather
- * than something only a colour picker could find.
+ * How one step of a journey reads, drawn the same way everywhere a journey is
+ * shown - a route's own ladder, the plain line a direct-ship order gets,
+ * anywhere else one is added later. A tick once it is behind you, a small
+ * spinner while it is the one under way, nothing yet for what has not been
+ * reached: one vocabulary, whatever shape the route behind it actually has.
  */
-export function fillToneOf(percent: number): string {
-  if (percent >= 100) return ' is-full';
-  if (percent >= 80) return ' is-hot';
-  if (percent >= 45) return ' is-warm';
-  return '';
+export function StepMark({ state, size = 11 }: { state: StepState; size?: number }) {
+  if (state === 'done') return <Icon name="check" size={size} className="stepmark stepmark--done" />;
+  if (state === 'current') return <span className="stepmark stepmark--current" aria-hidden="true" />;
+  return null;
 }
 
-export function LotMeter({ filled, threshold }: { filled: number; threshold: number }) {
-  const percent = Math.min(100, Math.round((filled / Math.max(1, threshold)) * 100));
+/**
+ * The gap between two steps, while whatever is in it is actually moving: a
+ * small wave rather than a spinner, so "in transit" reads differently from
+ * "working on it" does elsewhere in the app - this one specifically means
+ * something is travelling, not that a request is pending.
+ */
+export function WaveLoader() {
   return (
-    <div
-      className={`meter${fillToneOf(percent)}`}
-      role="img"
-      aria-label={`${percent}% filled`}
-    >
-      {/* Scaled rather than resized: animating width relayouts the page on
-          every frame, and a transform does not. */}
-      <div className="meter__fill" style={{ '--fill': percent / 100 } as CSSProperties} />
-    </div>
+    <span className="waveloader" aria-hidden="true">
+      <span /><span /><span />
+    </span>
   );
 }
 

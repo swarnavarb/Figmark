@@ -6,11 +6,12 @@ import {
   type DisputeOutcome,
   type DisputeReason,
 } from '../../../shared/enums.js';
-import type { Dispute, DisputeEvidence, DisputeMessage, Order } from '../../../shared/models.js';
+import type { Dispute, DisputeEvidence, DisputeMessage, DisputeTopic, Order } from '../../../shared/models.js';
 import {
   RESPONSE_DAYS,
   disputeActionsFor,
   feeRefunded,
+  holdsMoney,
   loserOf,
   reasonsFor,
   responseOverdue,
@@ -20,6 +21,7 @@ import { actionsFor, daysFrom, sideOf } from '../../../shared/orders.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { countCompleted, dropFromCollection } from '../delivery.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
@@ -142,8 +144,32 @@ export async function settleDispute(
   repository: Repo,
 ): Promise<{ dispute: Dispute; order: Order }> {
   const now = new Date().toISOString();
+
+  // Nothing is held on anything but an escrow dispute, so ending one records
+  // how it ended and moves no money: the order carries on as it was.
+  if (!holdsMoney(dispute)) {
+    dispute.status = outcome === 'withdrawn' ? 'withdrawn' : 'resolved';
+    dispute.resolution = { outcome, refundMinor: 0, note: noteText, decidedBy, byCompany, decidedAt: now };
+    dispute.resolutionNote = noteText;
+    dispute.resolvedAt = now;
+    dispute.respondByAt = null;
+    dispute.offer = null;
+    dispute.updatedAt = now;
+    order.updatedAt = now;
+    note(order, `Dispute ${outcome === 'withdrawn' ? 'withdrawn' : 'settled'}: ${noteText}`, decidedBy);
+    const settled = await repository.updateDispute(dispute);
+    const saved = await repository.updateOrder(order);
+    await notify(repository, [order.buyerId, order.sellerId], {
+      kind: 'dispute_settled',
+      title: outcome === 'withdrawn' ? 'A dispute was withdrawn' : 'A dispute was settled',
+      body: order.itemName,
+      link: `/dispute/${dispute.id}`,
+    }, { except: decidedBy });
+    return { dispute: settled, order: saved };
+  }
+
   const held = order.escrow.amountMinor;
-  const { toBuyerMinor, toSellerMinor } = splitFor(outcome, held, refundMinor);
+  const { toBuyerMinor } = splitFor(outcome, held, refundMinor);
 
   dispute.status = outcome === 'withdrawn' ? 'withdrawn' : 'resolved';
   dispute.resolution = {
@@ -192,6 +218,11 @@ export async function settleDispute(
     }
   }
 
+  // A refunded purchase is not something the buyer has; a card for it comes
+  // off their collection. A seller-kept or split outcome is a finished trade.
+  if (order.status === 'refunded') await dropFromCollection(repository, order.buyerId, order.id);
+  else await countCompleted(order, repository);
+
   const settled = await repository.updateDispute(dispute);
   const saved = await repository.updateOrder(order);
 
@@ -205,6 +236,71 @@ export async function settleDispute(
   }, { except: decidedBy });
 
   return { dispute: settled, order: saved };
+}
+
+/**
+ * Every dispute on the marketplace starts here, whatever it is about.
+ *
+ * Creates the one record both sides then work on the same page, indexes it on
+ * the order so it is never raised twice and always listed, and tells the
+ * other side and whoever holds the money. The caller saves the order: most
+ * callers are changing it for their own reasons in the same breath.
+ */
+export async function openDisputeRecord(
+  repository: Repo,
+  order: Order,
+  input: {
+    raisedBy: string;
+    side: 'buyer' | 'seller';
+    topic: DisputeTopic;
+    subject?: string;
+    reasonCode: DisputeReason;
+    reason: string;
+    evidence?: DisputeEvidence[];
+    amountMinor?: number | null;
+  },
+): Promise<Dispute> {
+  const now = new Date().toISOString();
+  const id = `dsp_${randomUUID().slice(0, 12)}`;
+  const record: Dispute = {
+    id,
+    orderId: order.id,
+    topic: input.topic,
+    subject: input.subject ?? id,
+    amountMinor: input.amountMinor ?? null,
+    raisedBy: input.raisedBy,
+    againstUserId: input.side === 'buyer' ? order.sellerId : order.buyerId,
+    raisedSide: input.side,
+    reasonCode: input.reasonCode,
+    reason: input.reason,
+    status: 'awaiting_response',
+    messages: [message(input.raisedBy, input.side, input.reason, input.evidence ?? [])],
+    offer: null,
+    respondByAt: daysFrom(RESPONSE_DAYS),
+    escalatedAt: null,
+    resolution: null,
+    resolutionNote: null,
+    resolvedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await repository.createDispute(record);
+
+  order.disputeLinks = [...(order.disputeLinks ?? []), {
+    id, topic: input.topic, subject: record.subject!, raisedBy: input.raisedBy, raisedSide: input.side, raisedAt: now,
+  }];
+  order.updatedAt = now;
+
+  // The other end of the trade, and whoever is holding the money: a dispute
+  // nobody was told about is one that runs down its clock unanswered.
+  await notify(repository, [record.againstUserId, holdsMoney(record) ? order.protection?.escrowAgentId : undefined], {
+    kind: 'dispute_opened',
+    title: `A dispute was opened on ${order.itemName}`,
+    body: input.reason,
+    link: `/dispute/${id}`,
+  }, { except: input.raisedBy });
+
+  return record;
 }
 
 /** POST /api/orders/{id}/dispute - open one, from either side. */
@@ -260,43 +356,15 @@ async function open(request: HttpRequest, _context: InvocationContext) {
   const evidence = evidenceFrom(body.evidence, user.id);
   if (evidence === null) return error(400, 'invalid_evidence', 'Evidence must be http(s) links.');
 
-  const now = new Date().toISOString();
-  const record: Dispute = {
-    id: `dsp_${randomUUID().slice(0, 12)}`,
-    orderId: order.id,
-    raisedBy: user.id,
-    againstUserId: side === 'buyer' ? order.sellerId : order.buyerId,
-    raisedSide: side,
-    reasonCode,
-    reason,
-    status: 'awaiting_response',
-    messages: [message(user.id, side, reason, evidence)],
-    offer: null,
-    respondByAt: daysFrom(RESPONSE_DAYS),
-    escalatedAt: null,
-    resolution: null,
-    resolutionNote: null,
-    resolvedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-  await repository.createDispute(record);
+  const record = await openDisputeRecord(repository, order, {
+    raisedBy: user.id, side, topic: 'escrow', reasonCode, reason, evidence, amountMinor: order.escrow.amountMinor,
+  });
 
   // The hold freezes: no auto-release can run while this is open, whichever
   // side opened it.
   order.escrow = { ...order.escrow, state: 'disputed', disputeId: record.id, autoReleaseAt: null };
-  order.updatedAt = now;
   note(order, `${side === 'buyer' ? 'Buyer' : 'Seller'} opened a dispute.`, user.id);
   await repository.updateOrder(order);
-
-  // The other end of the trade, and whoever is holding the money: a dispute
-  // nobody was told about is one that runs down its clock unanswered.
-  await notify(repository, [record.againstUserId, order.protection?.escrowAgentId], {
-    kind: 'dispute_opened',
-    title: 'A dispute was opened on your order',
-    body: order.itemName,
-    link: `/dispute/${record.id}`,
-  }, { except: user.id });
 
   return json(201, { dispute: record });
 }

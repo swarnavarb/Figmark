@@ -167,6 +167,3 @@ export const config: AppConfig = {
   storage: resolveStorage(),
   adminEmails: resolveAdmins(cosmos),
 };
-
-/** True when the session secret is the constant published in this repository. */
-export const usingDevSessionSecret = session.source === 'development';

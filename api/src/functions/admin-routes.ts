@@ -1,6 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { DISPUTE_OUTCOMES, type DisputeOutcome } from '../../../shared/enums.js';
 import type { EscrowRights, User } from '../../../shared/models.js';
+import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { settleDispute } from './dispute-routes.js';
@@ -229,9 +230,18 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
   if (!id || !ownerId) return error(400, 'invalid_request', 'Name what to delete and whose it is.');
 
   switch (kind) {
-    case 'listing':
+    case 'listing': {
+      // Something somebody bought stays: their order, tracking and collection
+      // card all point at it. It can be expired instead, which takes it out of
+      // the catalogue without taking it out of anybody's history.
+      const bought = (await repository.listOrdersForListing(id))
+        .some((order) => isPlaced(order) && !isCancelledLike(order.status));
+      if (bought) {
+        return error(409, 'listing_purchased', 'This item has been bought, so it cannot be deleted. Expire it instead.');
+      }
       await repository.deleteListing(ownerId, id);
       break;
+    }
     case 'lot':
       await repository.deleteLot(ownerId, id);
       break;

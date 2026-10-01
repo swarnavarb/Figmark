@@ -1,44 +1,36 @@
-import { useState, type DragEvent } from 'react';
-import { Icon } from './Icon';
+import { useState } from 'react';
+import { Icon, type IconName } from './Icon';
+import { Modal } from './ui';
 import { ORDER_CHECKPOINTS } from '@shared/enums';
-import { TRIGGER_LABELS, sideOf, stepId, type RouteStep, type StepSide } from '@shared/routes';
+import {
+  STAGE_ICONS, STAGE_ICON_LABELS, TRACKING_STATUS_OPTIONS, TRIGGER_LABELS, groupStages, sideOf, stepId,
+  type RouteStep, type StageGroup, type StageIcon, type StepSide,
+} from '@shared/routes';
 
 /**
- * The step list, editable.
+ * The route builder: stage boxes, steps inside them, an arrow between each.
  *
- * Drag to reorder on a pointer, arrows to reorder on a phone. Both, not one:
- * HTML5 drag and drop does not fire on touch at all, and this app is read on a
- * phone first - a builder that only worked with a mouse would be a builder
- * most sellers could never use. The arrows are the mechanism; dragging is the
- * shortcut for whoever has a mouse in their hand.
+ * A stage is nothing new stored - it is `stageId`/`stageName`/`stageIcon` on
+ * the same `RouteStep` this app has always tracked, folded into boxes by
+ * `groupStages`. A step is still the one thing that gets tracked; the box is
+ * only how it is drawn, so nothing here can drift from what the buyer's
+ * timeline (`Ladder`) shows, because both read the same steps and the same
+ * grouping function.
  *
- * A step is a name, a line of explanation, and a position. Nothing else: the
- * moment a step carries a state machine or a rule about who may tick it,
- * sellers stop writing routes and start asking support to write them.
- *
- * `split` turns the one list into two halves with the hand-over drawn between
- * them - what happens to an item on its own, and what happens to it once it
- * travels inside a lot. Two halves on the screen, one list underneath: a
- * step's side is a property of the step, so dragging it across the divider is
- * the same operation as dragging it up one place.
+ * Mobile-first: one column, big tap targets, a bottom sheet to rename a stage
+ * or pick its icon. The same markup reflows into a wrapping row on a wide
+ * screen (see `.routebuilder` in styles.css) rather than becoming a second,
+ * denser component.
  */
 export function RouteBuilder({ steps, onChange, split = false }: {
   steps: RouteStep[];
   onChange: (next: RouteStep[]) => void;
   split?: boolean;
 }) {
-  const [dragging, setDragging] = useState<number | null>(null);
-  const [over, setOver] = useState<number | null>(null);
+  const [editingStage, setEditingStage] = useState<string | null>(null);
+  const [joinInfoOpen, setJoinInfoOpen] = useState(false);
 
-  /**
-   * Positions renumbered on every change, so they are never stale - and, when
-   * the list is split, the halves kept in order.
-   *
-   * The partition is not cosmetic. Everything downstream reads the hand-over
-   * as "the first step on the far side", so a pre-lot step sitting after a
-   * lot step is a route that cannot be walked. Enforcing it here means no
-   * caller has to remember it.
-   */
+  /** Positions renumbered, and - when split - the two halves kept in order. */
   const commit = (next: RouteStep[]) => {
     const ordered = split
       ? [...next.filter((step) => step.side !== 'post'), ...next.filter((step) => step.side === 'post')]
@@ -46,259 +38,305 @@ export function RouteBuilder({ steps, onChange, split = false }: {
     onChange(ordered.map((step, index) => ({ ...step, position: index })));
   };
 
-  /** Move a step, optionally landing it on the other side of the divider. */
-  const move = (from: number, to: number, side?: StepSide) => {
-    if (from === to && !side) return;
-    if (to < 0 || to > steps.length) return;
-    const next = [...steps];
-    const [taken] = next.splice(from, 1);
-    if (!taken) return;
-    next.splice(to > from ? to - 1 : to, 0, side ? { ...taken, side } : taken);
-    commit(next);
-  };
-
   const setAt = (index: number, patch: Partial<RouteStep>) =>
     commit(steps.map((step, i) => (i === index ? { ...step, ...patch } : step)));
 
-  const remove = (index: number) => commit(steps.filter((_, i) => i !== index));
+  const removeStep = (index: number) => commit(steps.filter((_, i) => i !== index));
 
-  /** A new step lands at the end of its own half, which is where the eye is. */
-  const add = (side?: StepSide) => {
-    const at = side === 'pre'
-      ? steps.filter((step) => step.side !== 'post').length
-      : steps.length;
+  /** Reorder within a stage only - callers disable the buttons at its edges. */
+  const moveStep = (from: number, to: number) => {
+    if (to < 0 || to >= steps.length) return;
     const next = [...steps];
-    next.splice(at, 0, {
-      id: stepId(steps.length), name: '', description: '', position: at, side,
-    });
+    const [taken] = next.splice(from, 1);
+    if (!taken) return;
+    next.splice(to, 0, taken);
     commit(next);
   };
 
-  const rows = (side: StepSide) => steps
-    .map((step, index) => ({ step, index }))
-    .filter(({ step, index }) => sideOf(step, index) === side);
-
-  const shared = {
-    onMove: move,
-    onSet: setAt,
-    onRemove: remove,
-    dragging,
-    over,
-    setDragging,
-    setOver,
+  const addStepAfter = (index: number, template: Pick<RouteStep, 'stageId' | 'stageName' | 'stageIcon' | 'side'>) => {
+    const next = [...steps];
+    next.splice(index + 1, 0, { id: stepId(steps.length), name: '', description: '', position: 0, ...template });
+    commit(next);
   };
 
-  if (!split) {
-    return (
-      <div className="steps">
-        <StepRows rows={steps.map((step, index) => ({ step, index }))} {...shared} side={undefined} />
-        <AddStep onClick={() => add()} />
-        {steps.filter((step) => step.name.trim()).length < 2 && (
-          <span className="field__hint">
-            A route needs at least two steps — one step is a status, not a journey.
-          </span>
-        )}
-      </div>
-    );
-  }
+  /** A new box, opened for editing straight away - a stage nobody names is a stage nobody reads. */
+  const addStage = () => {
+    const side: StepSide = split ? 'post' : 'pre';
+    const id = stepId(steps.length);
+    commit([...steps, {
+      id, name: 'New step', description: '', position: 0,
+      side, stageId: id, stageName: 'New stage', stageIcon: 'warehouse',
+    }]);
+    setEditingStage(id);
+  };
 
-  const post = rows('post');
+  const setStage = (stageId: string, patch: { stageName?: string; stageIcon?: StageIcon }) =>
+    commit(steps.map((step) => ((step.stageId ?? step.id) === stageId ? { ...step, ...patch } : step)));
+
+  const removeStage = (stageId: string) =>
+    commit(steps.filter((step) => (step.stageId ?? step.id) !== stageId));
+
+  /** Move a whole box - and every step in it - earlier or later. */
+  const moveStage = (from: number, dir: -1 | 1) => {
+    const groups = groupStages(steps);
+    const to = from + dir;
+    if (to < 0 || to >= groups.length) return;
+    // Neither end of the swap may hold a locked step - "Order Placed" is
+    // always first, so nothing may trade places with its stage either.
+    if (groups[from]!.steps.some(({ step }) => step.locked)) return;
+    if (groups[to]!.steps.some(({ step }) => step.locked)) return;
+    const next = [...groups];
+    const [taken] = next.splice(from, 1);
+    next.splice(to, 0, taken!);
+    commit(next.flatMap((group) => group.steps.map(({ step }) => step)));
+  };
+
+  const stages = groupStages(steps);
+  const joinAt = split ? steps.findIndex((step, index) => sideOf(step, index) === 'post') : -1;
+  const editing = stages.find((group) => group.stageId === editingStage);
 
   return (
-    <div className="steps steps--split">
-      <Half side="pre" title="Before it joins a lot"
-        hint="Written about one item on its own — what its buyer reads before a lot carries it."
-        rows={rows('pre')} onAdd={() => add('pre')} {...shared}
-        onDropEnd={(from) => move(from, steps.filter((step) => step.side !== 'post').length, 'pre')} />
+    <div className="routebuilder">
+      {stages.map((stage, stageIndex) => (
+        <div key={stage.stageId} className="routebuilder__unit">
+          {stageIndex > 0 && <Icon name="down" size={16} className="routearrow" />}
+          {joinAt >= 0 && stage.steps[0]!.index === joinAt && (
+            <div className="joinline">
+              <span className="joinline__label">
+                usually joins a lot here
+                {/* Tap, not hover: most of this is worked from a phone. */}
+                <button type="button" className="joinline__info" aria-expanded={joinInfoOpen}
+                  aria-label="Why this line is only usual, not required"
+                  onClick={() => setJoinInfoOpen((value) => !value)}>
+                  i
+                </button>
+              </span>
+            </div>
+          )}
+          {joinAt >= 0 && stage.steps[0]!.index === joinAt && joinInfoOpen && (
+            <p className="field__hint joinline__note">
+              An item can be added to a lot at any time — before this line or after it. It is
+              tracked automatically either way: the moment it joins, it is placed at the right
+              point on this ladder from what has already happened to it and how far the lot has
+              already moved.
+            </p>
+          )}
+          <StageBox
+            stage={stage}
+            stageIndex={stageIndex}
+            stageCount={stages.length}
+            onEdit={() => setEditingStage(stage.stageId)}
+            onMoveStage={(dir) => moveStage(stageIndex, dir)}
+            onAddStep={() => addStepAfter(stage.steps[stage.steps.length - 1]!.index, {
+              stageId: stage.stageId, stageName: stage.stageName, stageIcon: stage.stageIcon,
+              side: stage.steps[0]!.step.side,
+            })}
+            onStepChange={setAt}
+            onStepRemove={removeStep}
+            onStepMove={moveStep}
+          />
+        </div>
+      ))}
 
-      {/* Where the hand-over usually falls, not where it must: an item can be
-          in a lot before it is listed, or join halfway down. The timeline draws
-          the join where it actually happened; this split only says which steps
-          are written about one item on its own. */}
-      <div className="joinline">
-        <span>usually joins a lot around here</span>
-      </div>
+      <button type="button" className="btn btn--quiet routebuilder__add" onClick={addStage}>
+        <Icon name="plus" size={14} /> Add stage
+      </button>
 
-      <Half side="post" title="After it joins a lot"
-        hint="Written about the whole lot. Moving the lot forward moves every item in it."
-        rows={post} onAdd={() => add('post')} {...shared}
-        onDropEnd={(from) => move(from, steps.length, 'post')}
-        empty="Nothing below the line, so this route never joins a lot — which is right for a courier run where every order travels on its own." />
+      {steps.filter((step) => step.name.trim()).length < 2 && (
+        <span className="field__hint">A route needs at least two steps — one step is a status, not a journey.</span>
+      )}
+
+      {editing && (
+        <Modal title="Edit stage" onClose={() => setEditingStage(null)}>
+          <label className="field">
+            <span>Name</span>
+            <input autoFocus value={editing.stageName} placeholder="e.g. Freight forwarder"
+              onChange={(event) => setStage(editing.stageId, { stageName: event.target.value })} />
+          </label>
+
+          <label className="field">
+            <span>Icon</span>
+            <div className="stageicons">
+              {STAGE_ICONS.map((key) => (
+                <button key={key} type="button"
+                  className={`stageicon stageicon--${key}${editing.stageIcon === key ? ' is-active' : ''}`}
+                  aria-label={STAGE_ICON_LABELS[key]}
+                  onClick={() => setStage(editing.stageId, { stageIcon: key })}>
+                  <Icon name={STAGE_ICON_META[key].icon} size={18} />
+                </button>
+              ))}
+            </div>
+          </label>
+
+          <div className="row row--between">
+            {!editing.steps.some(({ step }) => step.locked) && (
+              <button type="button" className="btn btn--quiet btn--sm"
+                onClick={() => { removeStage(editing.stageId); setEditingStage(null); }}>
+                <Icon name="trash" size={13} /> Delete stage
+              </button>
+            )}
+            <button type="button" className="btn btn--sm" onClick={() => setEditingStage(null)}>Done</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
-/** The shared machinery of a list of steps, however many lists there are. */
-interface RowProps {
-  onMove: (from: number, to: number, side?: StepSide) => void;
-  onSet: (index: number, patch: Partial<RouteStep>) => void;
-  onRemove: (index: number) => void;
-  dragging: number | null;
-  over: number | null;
-  setDragging: (index: number | null) => void;
-  setOver: (index: number | null) => void;
-}
+/** Which drawn icon and hue each stage type gets. The six brand hues, reused. */
+export const STAGE_ICON_META: Record<StageIcon, { icon: IconName }> = {
+  supplier: { icon: 'truck' },
+  warehouse: { icon: 'box' },
+  transit: { icon: 'plane' },
+  customs: { icon: 'bank' },
+  delivery: { icon: 'home' },
+};
 
-/**
- * One half of a split ladder: a heading, its rows, and a way to add one.
- *
- * The whole section is a drop target, not only its rows, so a step can be
- * dragged into a half that is still empty - which is exactly the half a seller
- * is most likely to be filling.
- */
-function Half({ side, title, hint, rows, onAdd, onDropEnd, empty, ...row }: RowProps & {
-  side: StepSide;
-  title: string;
-  hint: string;
-  rows: { step: RouteStep; index: number }[];
-  onAdd: () => void;
-  /** Where a step dropped on the empty part of this half should land. */
-  onDropEnd: (from: number) => void;
-  empty?: string;
+/** One box: its icon and name (tap to edit), reorder arrows, and its steps. */
+function StageBox({ stage, stageIndex, stageCount, onEdit, onMoveStage, onAddStep, onStepChange, onStepRemove, onStepMove }: {
+  stage: StageGroup;
+  stageIndex: number;
+  stageCount: number;
+  onEdit: () => void;
+  onMoveStage: (dir: -1 | 1) => void;
+  onAddStep: () => void;
+  onStepChange: (index: number, patch: Partial<RouteStep>) => void;
+  onStepRemove: (index: number) => void;
+  onStepMove: (from: number, to: number) => void;
 }) {
+  const icon = stage.stageIcon ? STAGE_ICON_META[stage.stageIcon].icon : 'box';
   return (
-    <section
-      className="stepsec"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault();
-        // Dropped on the section rather than on a row: land it at the end of
-        // this half, which is where the empty space it was dropped on is.
-        if (row.dragging !== null) onDropEnd(row.dragging);
-        row.setDragging(null);
-        row.setOver(null);
-      }}
-    >
-      <div className="stepsec__head">
-        <h3>{title}</h3>
-        <span className="field__hint">{hint}</span>
+    <div className={`stagebox${stage.stageIcon ? ` stagebox--${stage.stageIcon}` : ''}`}>
+      <div className="stagebox__head">
+        <button type="button" className="stagebox__title" onClick={onEdit}>
+          <span className="stagebox__icon"><Icon name={icon} size={18} /></span>
+          <span className="stagebox__name">{stage.stageName || 'Untitled stage'}</span>
+          <Icon name="chevron" size={13} />
+        </button>
+        {!stage.steps.some(({ step }) => step.locked) && (
+          <span className="stagebox__reorder">
+            <button type="button" className="iconbtn" aria-label="Move stage earlier"
+              disabled={stageIndex === 0} onClick={() => onMoveStage(-1)}><Icon name="up" size={12} /></button>
+            <button type="button" className="iconbtn" aria-label="Move stage later"
+              disabled={stageIndex === stageCount - 1} onClick={() => onMoveStage(1)}><Icon name="down" size={12} /></button>
+          </span>
+        )}
       </div>
-      <StepRows rows={rows} side={side} {...row} />
-      {empty && rows.length === 0 && <p className="stepsec__none">{empty}</p>}
-      <AddStep onClick={onAdd} />
-    </section>
+
+      <div className="stagebox__steps">
+        {stage.steps.map(({ step, index }, row) => (
+          <StepRow key={step.id} step={step} index={index} row={row} count={stage.steps.length}
+            onChange={onStepChange} onRemove={onStepRemove} onMove={onStepMove} />
+        ))}
+      </div>
+
+      <button type="button" className="btn btn--quiet btn--sm stagebox__addstep" onClick={onAddStep}>
+        <Icon name="plus" size={12} /> Add step
+      </button>
+    </div>
   );
 }
 
-/** The rows of one list, or of one half of a split one. */
-function StepRows({ rows, onMove, onSet, onRemove, dragging, over, setDragging, setOver, side }: RowProps & {
-  rows: { step: RouteStep; index: number }[];
-  side: StepSide | undefined;
+/** One step: its name always showing, everything else behind a tap. */
+function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
+  step: RouteStep;
+  index: number;
+  row: number;
+  count: number;
+  onChange: (index: number, patch: Partial<RouteStep>) => void;
+  onRemove: (index: number) => void;
+  onMove: (from: number, to: number) => void;
 }) {
-  const onDrop = (event: DragEvent, index: number) => {
-    event.preventDefault();
-    // Stopped here so the surrounding half does not also handle the drop and
-    // send the step to the end of the list the seller just aimed past.
-    event.stopPropagation();
-    if (dragging !== null) onMove(dragging, index, side);
-    setDragging(null);
-    setOver(null);
-  };
+  const [open, setOpen] = useState(false);
+  const isPreset = (TRACKING_STATUS_OPTIONS as readonly string[]).includes(step.name);
+  /* Once the seller has typed their own words, stay in that mode even while
+     they are still typing and the name happens to be empty or mid-edit -
+     recomputing "is this a preset" from the value alone would snap them back
+     to the dropdown on every keystroke. Called unconditionally, before the
+     locked-step return below, so this component's hook order never depends
+     on that flag. */
+  const [customMode, setCustomMode] = useState(!isPreset && step.name.trim().length > 0);
+
+  if (step.locked) {
+    // Always present, never renamed, moved or removed - "Order Placed" reads
+    // as a fact about every route rather than a step a seller could break.
+    return (
+      <div className="stagestep stagestep--locked">
+        <div className="stagestep__main">
+          <span className="stagestep__dot" aria-hidden="true" />
+          <span className="stagestep__name stagestep__name--static">{step.name}</span>
+          <Icon name="lock" size={13} />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
-      {rows.map(({ step, index }, row) => (
-        <div
-          key={step.id}
-          className={`step${dragging === index ? ' is-dragging' : ''}${over === index && dragging !== null && dragging !== index ? ' is-over' : ''}`}
-          onDragOver={(event) => { event.preventDefault(); setOver(index); }}
-          onDrop={(event) => onDrop(event, index)}
-        >
-          {/* Only the handle starts a drag, so a tap into the field to rename a
-              step does not become a drag of the row it is in. */}
-          <span
-            className="step__grip"
-            draggable
-            onDragStart={() => setDragging(index)}
-            onDragEnd={() => { setDragging(null); setOver(null); }}
-            aria-hidden="true"
-          >
-            <Icon name="grip" size={15} />
-          </span>
+    <div className="stagestep">
+      <div className="stagestep__main">
+        <span className="stagestep__dot" aria-hidden="true" />
+        <select className="stagestep__name" aria-label={`Step ${row + 1} status`}
+          value={customMode ? 'Custom' : (isPreset ? step.name : '')}
+          onChange={(event) => {
+            if (event.target.value === 'Custom') { setCustomMode(true); return; }
+            setCustomMode(false);
+            onChange(index, { name: event.target.value });
+          }}>
+          <option value="" disabled>What happens here</option>
+          {TRACKING_STATUS_OPTIONS.map((label) => <option key={label} value={label}>{label}</option>)}
+          <option value="Custom">Custom</option>
+        </select>
+        <button type="button" className="iconbtn" onClick={() => setOpen((value) => !value)}
+          aria-label={open ? 'Collapse step details' : 'Edit step details'}>
+          <Icon name="chevron" size={13} />
+        </button>
+      </div>
 
-          <span className="step__no">{row + 1}</span>
+      {customMode && (
+        <div className="stagestep__custom">
+          <input className="stagestep__desc" value={step.name} placeholder="Name this status"
+            aria-label={`Step ${row + 1} custom name`}
+            onChange={(event) => onChange(index, { name: event.target.value })} />
+        </div>
+      )}
 
-          <input
-            className="step__name"
-            value={step.name}
-            aria-label={`Step ${row + 1} name`}
-            placeholder="What happens here"
-            onChange={(event) => onSet(index, { name: event.target.value })}
-          />
+      {open && (
+        <div className="stagestep__more">
+          <input className="stagestep__desc" value={step.description}
+            placeholder="Say what happens here, in one line" aria-label={`Step ${row + 1} description`}
+            onChange={(event) => onChange(index, { description: event.target.value })} />
 
-          {/* The sentence the buyer reads under the step name on their
-              timeline. Written here, beside the step it explains, because a
-              seller who has to open a second screen to describe a step
-              describes none of them. */}
-          <input
-            className="step__desc"
-            value={step.description}
-            aria-label={`Step ${row + 1} description`}
-            placeholder="Say what happens here, in one line"
-            onChange={(event) => onSet(index, { description: event.target.value })}
-          />
-
-          {/* What actually moves it. A route is a list of words until somebody
-              presses something, and the thing they press is a button they are
-              already pressing: the piece lands, they tap China WH, and this
-              step is what the buyer reads. */}
-          <label className="step__trig">
-            <span className="step__trig-lead">Moved by</span>
-            <select
-              value={step.trigger ?? ''}
-              aria-label={`What advances step ${row + 1}`}
-              onChange={(event) => onSet(index, {
-                trigger: (event.target.value || undefined) as RouteStep['trigger'],
-              })}
-            >
+          <label className="stagestep__trig">
+            <span>Moved by</span>
+            <select value={step.trigger ?? ''} aria-label={`What advances step ${row + 1}`}
+              onChange={(event) => onChange(index, { trigger: (event.target.value || undefined) as RouteStep['trigger'] })}>
               <option value="">Me, by hand</option>
               {ORDER_CHECKPOINTS.map((checkpoint) => (
-                <option key={checkpoint} value={checkpoint}>
-                  The “{TRIGGER_LABELS[checkpoint].button}” button
-                </option>
+                <option key={checkpoint} value={checkpoint}>The "{TRIGGER_LABELS[checkpoint].button}" button</option>
               ))}
             </select>
-            {step.trigger && (
-              <span className="step__trig-say">
-                Press it when {TRIGGER_LABELS[step.trigger].means}.
-              </span>
+            {/* Data the trigger has always carried, said plainly: a step bound
+                to a checkpoint moves itself when that checkpoint is ticked,
+                today from this app's own buttons and later, potentially, from
+                a carrier API - the binding does not change, only what presses
+                it. */}
+            {step.trigger ? (
+              <span className="badge badge--accent" style={{ justifySelf: 'start' }}>⚡ Activity Triggered</span>
+            ) : (
+              <span className="badge badge--quiet" style={{ justifySelf: 'start' }}>✋ Manual</span>
             )}
           </label>
 
-          <span className="step__acts">
+          <div className="stagestep__acts">
             <button type="button" className="iconbtn" aria-label={`Move step ${row + 1} up`}
-              disabled={row === 0} onClick={() => onMove(index, index - 1)}>
-              <Icon name="up" size={13} />
-            </button>
+              disabled={row === 0} onClick={() => onMove(index, index - 1)}><Icon name="up" size={12} /></button>
             <button type="button" className="iconbtn" aria-label={`Move step ${row + 1} down`}
-              disabled={row === rows.length - 1} onClick={() => onMove(index, index + 2)}>
-              <Icon name="down" size={13} />
-            </button>
-            {side && (
-              <button type="button" className="iconbtn"
-                aria-label={side === 'pre'
-                  ? `Move step ${row + 1} below the line`
-                  : `Move step ${row + 1} above the line`}
-                title={side === 'pre' ? 'Move below the line' : 'Move above the line'}
-                onClick={() => onSet(index, { side: side === 'pre' ? 'post' : 'pre' })}>
-                <Icon name="sort" size={13} />
-              </button>
-            )}
-            <button type="button" className="iconbtn iconbtn--danger"
-              aria-label={`Delete step ${row + 1}`}
-              onClick={() => onRemove(index)}><Icon name="close" size={13} /></button>
-          </span>
+              disabled={row === count - 1} onClick={() => onMove(index, index + 1)}><Icon name="down" size={12} /></button>
+            <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${row + 1}`}
+              onClick={() => onRemove(index)}><Icon name="close" size={12} /></button>
+          </div>
         </div>
-      ))}
-    </>
-  );
-}
-
-function AddStep({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
-      onClick={onClick}>
-      <Icon name="plus" size={13} /> Add a step
-    </button>
+      )}
+    </div>
   );
 }

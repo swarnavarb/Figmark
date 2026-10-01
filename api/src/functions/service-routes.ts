@@ -1,5 +1,6 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { tally } from '../../../shared/board.js';
+import { isCancelledLike } from '../../../shared/orders.js';
 import type { HandlerProfile, Lot, Order, User } from '../../../shared/models.js';
 import {
   SERVICES,
@@ -370,7 +371,7 @@ async function distribution(request: HttpRequest, _context: InvocationContext) {
   const rows = await Promise.all(
     (await lotsNaming(repository, user.id, 'handler')).map(async ({ owner, lot }) => {
       const orders = await repository.listOrdersForLot(lot.id);
-      const live = orders.filter((order) => order.status !== 'cancelled');
+      const live = orders.filter((order) => !isCancelledLike(order.status));
       const buyers = new Set(live.map((order) => order.buyerId));
       const gone = new Set(
         live.filter((order) => order.checkpoints?.dispatched).map((order) => order.buyerId),
@@ -413,7 +414,7 @@ async function distributionDetail(request: HttpRequest, _context: InvocationCont
   if (!found) return error(403, 'forbidden', 'That lot is not yours to distribute.');
 
   const orders = (await repository.listOrdersForLot(lotId)).filter(
-    (order) => order.status !== 'cancelled',
+    (order) => !isCancelledLike(order.status),
   );
   const buyers = await repository.listUsersByIds([...new Set(orders.map((o) => o.buyerId))]);
   const byId = new Map(buyers.map((buyer) => [buyer.id, buyer]));

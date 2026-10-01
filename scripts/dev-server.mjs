@@ -21,7 +21,8 @@ const { healthRoute } = await import(new URL('health.js', apiRoot));
 const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
-  addCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, forwardersRoute,
+  addCommentRoute, reactToCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
+  editListingRoute, deleteListingRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
@@ -32,14 +33,19 @@ const {
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
-  socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute,
-  listForumsRoute, createForumRoute,
+  socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
+  listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
+  addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
+  removePostRoute, trendingRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
 } = await import(new URL('social-routes.js', apiRoot));
-const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute } =
+const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
   payRoute, confirmRoute, reviewRoute, orderStateRoute, checkoutRoute,
-  claimPaymentRoute, settleClaimRoute, rejectOrderRoute,
+  claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
+  acceptOrderRoute, cancelOrderRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
+  submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
+  ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, myRefundsRoute, flagDisputeRoute, myDisputesRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
@@ -51,7 +57,12 @@ const { preOrderReadRoute, preOrderPledgeRoute } =
 const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
 } = await import(new URL('power-sale-routes.js', apiRoot));
-const { insightsRoute } = await import(new URL('insight-routes.js', apiRoot));
+const { insightsRoute, interestRoute, marketRoute } = await import(new URL('insight-routes.js', apiRoot));
+const {
+  listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute,
+  listSavedCalcsRoute, saveSavedCalcRoute, deleteSavedCalcRoute,
+} = await import(new URL('profit-routes.js', apiRoot));
+const { costsRoute, saveCostSheetRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
 const {
   listRoutesRoute, saveRouteRoute, deleteRouteRoute,
   lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, setLotRouteRoute,
@@ -65,8 +76,10 @@ const {
   servicesHubRoute, serviceDirectoryRoute, offerServiceRoute,
   consignmentsRoute, distributionRoute, distributionDetailRoute,
 } = await import(new URL('service-routes.js', apiRoot));
-const { creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute } =
-  await import(new URL('profile-routes.js', apiRoot));
+const {
+  creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute,
+  saveReversalDetailsRoute, reversalDetailsRoute,
+} = await import(new URL('profile-routes.js', apiRoot));
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
   acceptDisputeRoute, withdrawDisputeRoute, escalateDisputeRoute,
@@ -76,6 +89,19 @@ const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
   adminDeleteResourceRoute, adminEscrowRoute, adminDisputesRoute, adminResolveRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
+const {
+  questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questOpenRoute,
+  questLeaderboardRoute, collectorRoute,
+} = await import(new URL('quest-routes.js', apiRoot));
+const {
+  publicCollectionRoute, myCollectionRoute, collectionAddRoute, collectionEditRoute,
+  collectionRemoveRoute, collectionGroupsRoute,
+} = await import(new URL('collection-routes.js', apiRoot));
+const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
+const { settingsRoute, opsSettingsRoute, opsSettingsSaveRoute } = await import(new URL('settings-routes.js', apiRoot));
+const {
+  reportCreateRoute, reportMineRoute, opsReportsRoute, opsReportResolveRoute,
+} = await import(new URL('report-routes.js', apiRoot));
 
 /**
  * [method, path pattern, handler]. `:name` segments become route params.
@@ -90,12 +116,16 @@ const routes = [
   ['GET', '/api/feed', feedRoute],
   ['GET', '/api/forwarders', forwardersRoute],
   ['GET', '/api/me/activity', myActivityRoute],
+  ['GET', '/api/me/listings', myListingsRoute],
   ['POST', '/api/orders', createOrderRoute],
   ['POST', '/api/listings', createListingRoute],
   ['GET', '/api/listings/:id', listingDetailRoute],
   ['POST', '/api/listings/:id/like', toggleLikeRoute],
+  ['POST', '/api/listings/:id/edit', editListingRoute],
+  ['POST', '/api/listings/:id/delete', deleteListingRoute],
   ['POST', '/api/listings/:id/bump', bumpListingRoute],
   ['POST', '/api/listings/:id/comments', addCommentRoute],
+  ['POST', '/api/listings/:id/comments/:commentId/react', reactToCommentRoute],
   ['POST', '/api/sellers/:id/follow', toggleFollowRoute],
   ['GET', '/api/me/lots/board', lotsBoardRoute],
   ['GET', '/api/me/lots', myLotsRoute],
@@ -115,25 +145,61 @@ const routes = [
   ['GET', '/api/me/stores', myStoresRoute],
   ['POST', '/api/me/storefront/managers', updateManagersRoute],
   ['GET', '/api/social/feed', socialFeedRoute],
+  ['GET', '/api/me/posts', myPostsRoute],
+  ['GET', '/api/users/:id/posts', personPostsRoute],
   ['GET', '/api/social/channels', channelsRoute],
   ['GET', '/api/social/channels/:id', channelThreadRoute],
   ['POST', '/api/social/posts', createPostRoute],
   ['GET', '/api/social/forums', listForumsRoute],
   ['POST', '/api/social/forums/new', createForumRoute],
+  ['POST', '/api/social/forums/:id/join', joinForumRoute],
+  ['GET', '/api/social/search', socialSearchRoute],
+  ['GET', '/api/social/trending', trendingRoute],
+  ['GET', '/api/social/shareable', shareableRoute],
+  ['GET', '/api/social/posts/:channel/:id', readPostRoute],
+  ['POST', '/api/social/posts/:channel/:id/react', reactRoute],
+  ['GET', '/api/social/posts/:channel/:id/reactions', reactorsRoute],
+  ['POST', '/api/social/posts/:channel/:id/comments', addPostCommentRoute],
+  ['POST', '/api/social/posts/:channel/:id/comments/:comment/like', likeCommentRoute],
+  ['POST', '/api/social/posts/:channel/:id/comments/:comment/delete', deletePostCommentRoute],
+  ['POST', '/api/social/posts/:channel/:id/share', sharePostRoute],
+  ['POST', '/api/social/posts/:channel/:id/vote', voteRoute],
+  ['POST', '/api/social/posts/:channel/:id/delete', removePostRoute],
+  ['POST', '/api/social/posts/:channel/:id/pin', pinPostRoute],
   ['GET', '/api/messages', inboxRoute],
   ['GET', '/api/messages/:handle', threadRoute],
   ['POST', '/api/messages/:handle/send', sendMessageRoute],
+  ['POST', '/api/messages/:handle/react', reactToMessageRoute],
   ['GET', '/api/u/:handle', publicProfileRoute],
   ['POST', '/api/me/username', setUsernameRoute],
   ['GET', '/api/orders/:id/state', orderStateRoute],
   ['GET', '/api/orders/:id/checkout', checkoutRoute],
   ['POST', '/api/orders/:id/pay', payRoute],
+  ['POST', '/api/orders/:id/refund-credit', refundCreditRoute],
+  ['POST', '/api/orders/:id/credit-ack', ackCreditRefundRoute],
+  ['POST', '/api/orders/:id/credit-apply', applyCreditRoute],
+  ['POST', '/api/orders/:id/credit-hold', holdCreditRoute],
+  ['POST', '/api/orders/:id/refund-new', startRefundRoute],
+  ['GET', '/api/me/refunds', myRefundsRoute],
+  ['GET', '/api/me/disputes', myDisputesRoute],
+  ['POST', '/api/orders/:id/flag-dispute', flagDisputeRoute],
+  ['POST', '/api/me/purchases/pay', payMoreRoute],
   ['POST', '/api/orders/:id/claim-payment', claimPaymentRoute],
   ['POST', '/api/orders/:id/settle-claim', settleClaimRoute],
   ['POST', '/api/orders/:id/reject', rejectOrderRoute],
   ['POST', '/api/orders/:id/confirm', confirmRoute],
   ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],
+  ['POST', '/api/orders/:id/book', bookOrderRoute],
+  ['POST', '/api/orders/:id/accept', acceptOrderRoute],
+  ['POST', '/api/orders/:id/cancel', cancelOrderRoute],
+  ['POST', '/api/orders/:id/reversal/request-details', requestReversalDetailsRoute],
+  ['POST', '/api/orders/:id/reversal/confirm-details', confirmReversalDetailsRoute],
+  ['POST', '/api/orders/:id/reversal/submit', submitReversalRoute],
+  ['POST', '/api/orders/:id/reversal/ack', ackReversalRoute],
+  ['POST', '/api/orders/:id/reversal/dispute', raiseDisputeRoute],
+  ['GET', '/api/me/reversal-details', reversalDetailsRoute],
+  ['POST', '/api/me/reversal-details/save', saveReversalDetailsRoute],
   ['GET', '/api/disputes/:id', readDisputeRoute],
   ['POST', '/api/disputes/:id/reply', replyDisputeRoute],
   ['POST', '/api/disputes/:id/offer', offerDisputeRoute],
@@ -142,6 +208,30 @@ const routes = [
   ['POST', '/api/disputes/:id/escalate', escalateDisputeRoute],
   ['POST', '/api/disputes/:id/settle', settleAsEscrowRoute],
   ['GET', '/api/escrow/holdings', escrowHoldingsRoute],
+  ['GET', '/api/quest/me', questMeRoute],
+  ['POST', '/api/quest/checkin', questCheckInRoute],
+  ['POST', '/api/quest/claim', questClaimRoute],
+  ['POST', '/api/quest/reveal', questRevealRoute],
+  ['POST', '/api/quest/open', questOpenRoute],
+  ['GET', '/api/quest/leaderboard', questLeaderboardRoute],
+  ['GET', '/api/users/:id/collector', collectorRoute],
+  ['GET', '/api/users/:id/collection', publicCollectionRoute],
+  ['GET', '/api/learn', learnRoute],
+  ['GET', '/api/ops/learn', opsLearnRoute],
+  ['POST', '/api/ops/learn/save', opsLearnSaveRoute],
+  ['POST', '/api/ops/learn/reset', opsLearnResetRoute],
+  ['GET', '/api/settings', settingsRoute],
+  ['GET', '/api/ops/settings', opsSettingsRoute],
+  ['POST', '/api/ops/settings/save', opsSettingsSaveRoute],
+  ['POST', '/api/reports', reportCreateRoute],
+  ['GET', '/api/reports/mine', reportMineRoute],
+  ['GET', '/api/ops/reports', opsReportsRoute],
+  ['POST', '/api/ops/reports/:id/resolve', opsReportResolveRoute],
+  ['GET', '/api/me/collection', myCollectionRoute],
+  ['POST', '/api/me/collection/add', collectionAddRoute],
+  ['POST', '/api/me/collection/edit', collectionEditRoute],
+  ['POST', '/api/me/collection/remove', collectionRemoveRoute],
+  ['POST', '/api/me/collection/groups', collectionGroupsRoute],
   ['GET', '/api/ops/users', adminUsersRoute],
   ['GET', '/api/ops/users/:id', adminUserDetailRoute],
   ['POST', '/api/ops/users/:id/suspend', adminSuspendRoute],
@@ -157,6 +247,19 @@ const routes = [
   ['POST', '/api/wants/:id/close', wantCloseRoute],
   ['POST', '/api/wants/:id/me', wantAlsoMeRoute],
   ['GET', '/api/me/insights', insightsRoute],
+  ['GET', '/api/me/interest', interestRoute],
+  ['GET', '/api/me/market', marketRoute],
+  ['GET', '/api/me/profit-templates', listProfitTemplatesRoute],
+  ['POST', '/api/me/profit-templates/save', saveProfitTemplateRoute],
+  ['POST', '/api/me/profit-templates/:id/delete', deleteProfitTemplateRoute],
+  ['GET', '/api/me/calcs', listSavedCalcsRoute],
+  ['POST', '/api/me/calcs/save', saveSavedCalcRoute],
+  ['POST', '/api/me/calcs/:id/delete', deleteSavedCalcRoute],
+  ['GET', '/api/me/costs', costsRoute],
+  ['POST', '/api/me/listings/:id/cost-sheet', saveCostSheetRoute],
+  ['GET', '/api/me/deep', deepRoute],
+  ['GET', '/api/me/sales-report', salesReportRoute],
+  ['POST', '/api/me/nudge', nudgeRoute],
   ['GET', '/api/routes', listRoutesRoute],
   ['POST', '/api/routes/new', saveRouteRoute],
   ['POST', '/api/routes/:id/delete', deleteRouteRoute],
@@ -329,3 +432,11 @@ const server = createServer((request, response) => {
 
 const port = Number(process.env.PORT ?? 5173);
 server.listen(port, () => console.log(`Figmark dev server on http://127.0.0.1:${port}`));
+
+/* The Functions host runs the power-sale clock as a timer trigger; this server
+   has no host, so it keeps the same once-a-minute beat itself. */
+const { tickPowerSales } = await import(new URL('power-sale.js', apiRoot));
+const { getRepository } = await import(new URL('../data/index.js', apiRoot));
+setInterval(() => {
+  void getRepository().then((repository) => tickPowerSales(repository)).catch(() => undefined);
+}, 60_000).unref();

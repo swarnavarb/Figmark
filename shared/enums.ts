@@ -112,6 +112,17 @@ export const ORDER_STATUSES = [
   'delivered',
   'cancelled',
   'refunded',
+  /** Seller turned it down before it was accepted or placed. Never used once accepted. */
+  'rejected',
+  /**
+   * Accepted or placed, then called off by the seller with nothing paid.
+   * Distinct from `rejected`: this order had already been accepted.
+   */
+  'payment_reversal_pending',
+  /** A paid, accepted order that was cancelled and the reversal has been recorded. */
+  'cancelled_reversed',
+  /** The buyer says a marked reversal never arrived. */
+  'dispute_raised',
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
@@ -188,7 +199,12 @@ export const SELLER_DISPUTE_REASONS = [
   'delivery_refused',
 ] as const;
 
-export const DISPUTE_REASONS = [...BUYER_DISPUTE_REASONS, ...SELLER_DISPUTE_REASONS] as const;
+/**
+ * Every reason a dispute record can carry. `other` is for disputes that come
+ * from a rejected payment or a free-form complaint rather than the escrow
+ * form, whose topic already says what they are about.
+ */
+export const DISPUTE_REASONS = [...BUYER_DISPUTE_REASONS, ...SELLER_DISPUTE_REASONS, 'other'] as const;
 export type DisputeReason = (typeof DISPUTE_REASONS)[number];
 
 export const DISPUTE_REASON_LABELS: Record<DisputeReason, string> = {
@@ -201,6 +217,7 @@ export const DISPUTE_REASON_LABELS: Record<DisputeReason, string> = {
   false_claim: 'The claim against me is untrue',
   returned_damaged: 'Came back damaged',
   delivery_refused: 'Buyer refused the delivery',
+  other: 'Something else',
 };
 
 /**
@@ -268,6 +285,13 @@ export const ORDER_CHECKPOINTS = [
   'ready_to_dispatch',
   'packed',
   'dispatched',
+  /**
+   * The last one: the piece is in the buyer's hands. Seller-only (see
+   * `CREW_CHECKPOINTS` in shared/services.ts, which does not list it for
+   * either crew role) and gated behind a confirmation on the screen that
+   * ticks it - the one checkpoint serious enough to ask twice.
+   */
+  'delivered',
 ] as const;
 export type OrderCheckpoint = (typeof ORDER_CHECKPOINTS)[number];
 
@@ -279,6 +303,7 @@ export const CHECKPOINT_LABELS: Record<OrderCheckpoint, string> = {
   ready_to_dispatch: 'Ready',
   packed: 'Packed',
   dispatched: 'Dispatched',
+  delivered: 'Delivered',
 };
 
 /** Long forms, for the counts on a lot card. */
@@ -289,6 +314,7 @@ export const CHECKPOINT_COUNT_LABELS: Record<OrderCheckpoint, string> = {
   ready_to_dispatch: 'Ready to dispatch',
   packed: 'Packed',
   dispatched: 'Dispatched',
+  delivered: 'Delivered',
 };
 
 /** Which side of the water a checkpoint sits on, for the two status bands. */
@@ -299,6 +325,7 @@ export const CHECKPOINT_SIDE: Record<OrderCheckpoint, 'china' | 'india'> = {
   ready_to_dispatch: 'india',
   packed: 'india',
   dispatched: 'india',
+  delivered: 'india',
 };
 
 /**

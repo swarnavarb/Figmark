@@ -1,3 +1,4 @@
+import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type {
   ApiError,
   AuthUser,
@@ -6,16 +7,24 @@ import type {
   LoginResponse,
   MeResponse,
 } from '@shared/contracts';
-import type { FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
+import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
-import type { RouteStep, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
-import type { PostTemplate } from '@shared/templates';
+import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
+import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
+import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
-import type { OrderAction, OrderSide } from '@shared/orders';
+import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
+import type {
+  CommentThread, PollView, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
+} from '@shared/social';
 import type { DisputeAction } from '@shared/disputes';
+import type { Allocation, OrderMoney } from '@shared/payments';
+import type { CardDef, QuestView, StickerView } from '@shared/quest';
+import type { CollectionGroup, CollectionItem } from '@shared/models';
+import type { LearnDoc } from '@shared/learn';
 
 /** Somebody named on a screen, and the page their name opens. */
 export interface PartyRef {
@@ -29,8 +38,9 @@ export interface EvidenceDraft {
   caption: string;
 }
 import type {
-  Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message, MessageParty,
-  Order, PaymentClaim, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent, StoreManager,
+  BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
+  MessageDeal, MessageParty, Order, OrderShipment, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
+  StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
 } from '@shared/models';
 
 /**
@@ -65,7 +75,41 @@ export function setSessionRejectedHandler(handler: (() => void) | null): void {
 /** Endpoints where a 401 is a normal answer rather than a lost session. */
 const EXPECTS_401 = ['/auth/me', '/auth/login', '/auth/signup'];
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Reads, shared for a moment.
+ *
+ * Several panels on one screen ask for the same thing - Orders and Refunds
+ * both read the sales book, Analytics and Insights both read the lot figures -
+ * and flipping between them used to fetch it again every time. An identical
+ * GET made while one is in flight rides the same request, and an answer is
+ * reused for a few seconds. Any write empties the lot, so a screen reloading
+ * after it has changed something always reads the new state.
+ */
+const READ_TTL_MS = 5_000;
+const reads = new Map<string, { at: number; promise: Promise<unknown> }>();
+
+function forgetReads(): void {
+  reads.clear();
+}
+
+function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? 'GET').toUpperCase();
+  if (method !== 'GET') {
+    forgetReads();
+    return send<T>(path, init);
+  }
+  const held = reads.get(path);
+  if (held && Date.now() - held.at < READ_TTL_MS) return held.promise as Promise<T>;
+  const promise = send<T>(path, init);
+  reads.set(path, { at: Date.now(), promise });
+  // A failure is not an answer worth keeping: the next ask tries again.
+  promise.catch(() => {
+    if (reads.get(path)?.promise === promise) reads.delete(path);
+  });
+  return promise;
+}
+
+async function send<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
@@ -106,6 +150,9 @@ export interface SellerCard {
   followerCount: number;
   trustScore: number;
   onTimeDispatchRate: number | null;
+  /** Orders delivered without being lost in a dispute. */
+  completedSales: number;
+  memberSince: string;
 }
 
 export interface FeedListing extends Listing {
@@ -122,6 +169,84 @@ export interface FeedResponse {
 }
 
 export type { PreOrderView };
+
+/* ── The collector game ────────────────────────────────────────────────── */
+
+/** What any game write answers with: the new state and what it did to the numbers. */
+export interface QuestResult {
+  view: QuestView;
+  gained: number;
+  levelBefore: number;
+  levelAfter: number;
+  already?: boolean;
+  card?: CardDef;
+  cardXp?: number;
+}
+
+export interface LeaderRow {
+  rank: number;
+  userId: string;
+  name: string;
+  handle: string | null;
+  xp: number;
+  level: number;
+  cards: number;
+}
+
+/** An average out of 100 (null when unrated), how many, and a count per star from five down to one. */
+export interface RatingSummary {
+  average: number | null;
+  count: number;
+  stars: number[];
+}
+
+/** A delivered purchase waiting to be added to the collection. */
+export interface CollectionCandidate {
+  orderId: string;
+  listingId: string;
+  itemName: string;
+  photo: string | null;
+  deliveredAt: string;
+}
+
+export interface CollectionShelf {
+  groups: CollectionGroup[];
+  items: CollectionItem[];
+}
+
+/** Somebody's public collector page: the game's showable parts and their trade record. */
+export interface CollectorPage {
+  userId: string;
+  level: number;
+  title: string;
+  xp: number;
+  levelFloor: number;
+  nextLevelXp: number;
+  progress: number;
+  streak: { current: number; best: number };
+  stickers: StickerView[];
+  /** One of each card owned, with how many copies. */
+  cards: (QuestView['cards'][number] & { copies: number })[];
+  cardCount: number;
+  sets: QuestView['sets'];
+  /** XP lost to low ratings and lost disputes, as a positive number. */
+  penalty: number;
+  ratings: { buyer: RatingSummary; seller: RatingSummary; page: RatingSummary };
+  stats: {
+    rating: number | null;
+    ratingCount: number;
+    orders: number;
+    completed: number;
+    reviewsWritten: number;
+    preOrders: number;
+    following: number;
+    disputesWon: number;
+    disputesLost: number;
+    disputesSettled: number;
+    disputesOpen: number;
+    memberSince: string;
+  };
+}
 
 export interface PreOrderMember {
   ref: PartyRef;
@@ -143,11 +268,19 @@ export interface PreOrderRoster {
   brought: PartyRef[];
 }
 
+/** A post under a listing, with its reactions tallied for this reader. */
+export type ListingPost = Omit<ListingComment, 'reactions'> & {
+  author: PartyRef;
+  moderation?: ModerationMark;
+  reactionCounts: Partial<Record<ReactionKind, number>>;
+  myReaction: ReactionKind | null;
+};
+
 export interface ListingDetail {
   listing: Listing;
   seller: SellerCard | null;
   estimatedDispatchAt: string | null;
-  comments: (ListingComment & { author: PartyRef })[];
+  comments: ListingPost[];
   liked: boolean;
   following: boolean;
   isOwn: boolean;
@@ -223,6 +356,8 @@ export interface OrderTracking {
   sellerName: string;
   trackingReference: string | null;
   estimatedDispatchAt: string | null;
+  /** The item bought, as it is now - for the Details tab's product card. */
+  listing: { id: string; title: string; photoUrl: string | null } | null;
 }
 
 /* ── The order lifecycle ───────────────────────────────────────────────── */
@@ -238,6 +373,9 @@ export interface PublicReview {
   item: {
     orderId: string; listingId: string; name: string; totalMinor: number; currency: string;
   } | null;
+  /** This viewer wrote it. */
+  mine?: boolean;
+  moderation?: ModerationMark;
 }
 
 /** An opinion left on somebody's page, which nothing had to be bought to write. */
@@ -249,6 +387,7 @@ export interface PageReview {
   authorHandle: string | null;
   createdAt: string;
   mine: boolean;
+  moderation?: ModerationMark;
 }
 
 export interface PageReviews {
@@ -300,6 +439,14 @@ export interface EscrowOption {
 
 export interface Checkout {
   itemMinor: number;
+  /**
+   * Credit this seller kept for the buyer from an earlier order. It is spent
+   * on this one the moment it is placed, so what is due now is less by it.
+   */
+  creditMinor?: number;
+  /** Null when the seller takes no advance on this item. */
+  advanceMinor: number | null;
+  advancePercent: number | null;
   currency: string;
   seller: PartyRef;
   /** Where to send the money on a direct sale. Null when the seller has set none. */
@@ -313,7 +460,11 @@ export interface Checkout {
 /** One order waiting on the seller to say whether the money arrived. */
 export interface SaleRow {
   id: string;
+  /** The listing it was bought from, to see it as it was listed. */
+  listingId: string;
   itemName: string;
+  /** Bought from a private deal made in a chat. */
+  privateDeal?: boolean;
   quantity: number;
   totalMinor: number;
   currency: string;
@@ -326,6 +477,10 @@ export interface SaleRow {
      what does it need" without opening anything. */
   escrowState: string;
   inHand: boolean;
+  /** The courier and AWB it went out with, once the seller gave them. */
+  shipment: OrderShipment | null;
+  /** When the seller ticked it dispatched. */
+  dispatchedAt: string | null;
   awaitingLot: boolean;
   lotId: string | null;
   lotName: string | null;
@@ -333,16 +488,129 @@ export interface SaleRow {
   lotStep: string | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
+  /** When the seller ticked it delivered, on the lot's own item list. */
+  deliveredAt: string | null;
   /** The route its Quick Post template set up for the lot that will carry it. */
   lotRouteId: string | null;
+  /** True once the buyer chose Book: no charge yet, waiting on acceptance. */
+  bookingOnly: boolean;
+  accepted: boolean;
+  cancelReason: string | null;
+  reversal: Order['reversal'];
+  canAccept: boolean;
+  canCancel: boolean;
+  photoUrl: string | null;
+  paidMinor: number;
+  outstandingMinor: number;
+  creditMinor: number;
+}
+
+/** One buyer's extra payment, with the orders of theirs it could still go towards. */
+export interface ShopCredit {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  buyer: PartyRef;
+  creditId: string;
+  createdAt: string;
+  origin: RefundOrigin;
+  reason: string | null;
+  amountMinor: number;
+  refundedMinor: number;
+  leftMinor: number;
+  status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
+  pendingRefund: { amountMinor: number; reference: string | null; screenshotUrl?: string | null; sentAt: string } | null;
+  refundDenials: number;
+  disputable: DisputeSubject[];
+  /** Where the buyer's money goes back to, if they have said. */
+  buyerDetails: BuyerReversalDetails | null;
+  /** The seller asked them to add or check those details; open until they do. */
+  detailsCheck: Order['detailsCheck'];
+  applications: { orderId: string; itemName: string; amountMinor: number; at: string }[];
+  targets: { orderId: string; itemName: string; outstandingMinor: number }[];
 }
 
 /** Everything a shop's payments screen has to answer, in three piles. */
+/** One refund sent, or one amount moved onto another order instead. */
+export interface RefundHistoryEntry {
+  id: string;
+  kind: 'refund' | 'moved';
+  orderId: string;
+  itemName: string;
+  currency: string;
+  buyer: PartyRef;
+  origin: RefundOrigin;
+  reason: string | null;
+  amountMinor: number;
+  at: string;
+  reference: string | null;
+  screenshotUrl: string | null;
+  status: RefundLogEntry['status'];
+  answeredAt: string | null;
+  movedTo: string | null;
+}
+
+/** An order a fresh refund could be started on, and how much of it could go back. */
+export interface RefundableOrder {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  createdAt: string;
+  buyer: PartyRef;
+  buyerDetails: BuyerReversalDetails | null;
+  detailsCheck: Order['detailsCheck'];
+  refundableMinor: number;
+}
+
+/** A buyer's own view of one refund owed to them. */
+export interface MyRefund {
+  orderId: string;
+  itemName: string;
+  currency: string;
+  sellerName: string;
+  creditId: string;
+  origin: RefundOrigin;
+  reason: string | null;
+  createdAt: string;
+  amountMinor: number;
+  refundedMinor: number;
+  leftMinor: number;
+  status: ShopCredit['status'];
+  pendingRefund: ShopCredit['pendingRefund'];
+  log: RefundLogEntry[];
+  applications: ShopCredit['applications'];
+}
+
+/** One dispute, as either side's list shows it. */
+export interface DisputeRow {
+  id: string;
+  orderId: string;
+  itemName: string;
+  currency: string;
+  counterpartyName: string;
+  topic: DisputeTopic;
+  label: string;
+  amountMinor: number | null;
+  reason: string;
+  raisedAt: string;
+  raisedByMe: boolean;
+  raisedBySide: 'buyer' | 'seller';
+  status: DisputeStatus;
+}
+
+export interface MyDisputesResponse {
+  asBuyer: DisputeRow[];
+  asStore: DisputeRow[];
+  orders: { id: string; itemName: string; side: 'buyer' | 'seller'; counterpartyName: string; createdAt: string }[];
+}
+
 export interface SalesResponse {
+  credits: ShopCredit[];
+  refundHistory: RefundHistoryEntry[];
+  refundable: RefundableOrder[];
   waiting: SaleRow[];
   placed: SaleRow[];
-  answered: SaleRow[];
-  /** Every purchase, newest first: the shop's whole book. */
+  /** Every purchase, newest first: the shop's whole book, cancelled and rejected ones included. */
   orders: SaleRow[];
 }
 
@@ -376,6 +644,8 @@ export interface PowerSaleView {
   closingBody: string;
   openedAt: string | null;
   closedAt: string | null;
+  /** Where each item is announced once it goes public. */
+  afterWindow: { channel: boolean; feed: boolean };
   /** When the last item hands over and the whole run is public. */
   finishesAt: string | null;
   posted: number;
@@ -403,7 +673,18 @@ export interface PowerSaleDraft {
     listPriceMinor: number;
     quantity: number;
     allowMultiple: boolean;
+    costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
+    photos?: { blobName: string; url: string; isPrimary: boolean }[];
+    tags?: string[];
+    sourcing?: Sourcing;
+    quantityMode?: 'fixed' | 'multiple';
+    expiresAt?: string | null;
+    advancePercent?: number | null;
+    lotId?: string | null;
+    limitedDays?: number | null;
   }[];
+  /** Where each item is announced once its members' window closes. */
+  afterWindow?: { channel: boolean; feed: boolean };
 }
 
 export interface EscrowHolding {
@@ -432,6 +713,8 @@ export interface OrderState {
   /** The other party, named from this viewer's side of the order. */
   counterparty: PartyRef;
   actions: OrderAction[];
+  /** Rejections of a payment this viewer made, that they could dispute. */
+  disputable: DisputeSubject[];
   /** True while no payment provider is wired; the hold is recorded, not taken. */
   simulatedPayment: boolean;
   myReview: Review | null;
@@ -439,6 +722,12 @@ export interface OrderState {
   theirReview: Review | null;
   theirReviewPending: boolean;
   dispute: Dispute | null;
+  /** Seller-side only: whether the buyer has somewhere for a reversal to go. */
+  buyerHasReversalDetails: boolean | null;
+  /** The protection window operators have set today, in days. */
+  autoReleaseDays: number;
+  /** Buyer-side: already on one of their collection shelves. */
+  inCollection: boolean;
 }
 
 /** Out of 100, or null when nobody has rated that side of them yet. */
@@ -457,12 +746,19 @@ export interface ReviewsAbout {
 }
 
 export interface NewListing {
+  /** What one unit cost (Pro), step by step. */
+  costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
+  /** A private deal for this one buyer: never in the catalog, channels or feed. */
+  privateFor?: string | null;
   title: string;
   description: string;
   category: string;
   condition: string;
   priceMinor: number;
   quantityAvailable: number;
+  quantityMode?: 'fixed' | 'multiple';
+  expiresAt?: string | null;
+  advancePercent?: number | null;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
@@ -491,6 +787,8 @@ export interface LotDetails {
   name: string;
   description?: string;
   origin?: string;
+  originCountry?: string;
+  destinationCountry?: string;
   estimatedDispatchAt?: string | null;
   supplierName?: string;
   /** Their account here, by handle. Empty clears the tag and keeps the name. */
@@ -503,9 +801,29 @@ export interface LotDetails {
 
 export interface PostCard {
   post: Post;
-  listing: { id: string; title: string; priceMinor: number; currency: string; condition: string } | null;
+  listing: {
+    id: string; title: string; priceMinor: number; currency: string; condition: string; photoUrl?: string | null;
+  } | null;
   /** Where the author's name goes. Resolved on read, not frozen into the post. */
   author: PartyRef;
+  /** Reactions, comments, shares and the poll, as this viewer sees them. */
+  social: PostSocial;
+  /** Whether the viewer follows the channel it was posted in. */
+  following: boolean;
+  /** What a repost passes on. Null when the original has been taken down. */
+  original?: PostCard | null;
+  /** The forum it was said in, when read anywhere but that forum. */
+  forum?: { id: string; name: string } | null;
+  /** Other forums the same post went to. */
+  alsoIn?: { id: string; name: string }[];
+  /** Said by a shop in its own name, so it has a channel to open. */
+  shop?: boolean;
+}
+
+/** One post read in full, with everything said under it. */
+export interface PostDetail {
+  card: PostCard;
+  comments: CommentThread[];
 }
 
 export interface ChannelRow {
@@ -519,9 +837,19 @@ export interface ChannelRow {
   lastPost: string | null;
   lastPostAt: string | null;
   lastPostKind: string | null;
+  lastPostBy?: string | null;
+  bio?: string;
+  followerCount?: number;
+  following?: boolean;
+  /** Whether it has something pinned for newcomers. */
+  pinned?: boolean;
+  /** When its newest messages from other people arrived, for counting what is new. */
+  recent?: string[];
 }
 
 export interface ChannelThread {
+  /** A shop's channel you do not follow: only the door is shown. */
+  locked?: boolean;
   channel: {
     id: string;
     kind: 'seller' | 'forum';
@@ -529,12 +857,39 @@ export interface ChannelThread {
     description: string;
     handle?: string | null;
     photoUrl?: string | null;
+    tier?: string | null;
+    followerCount?: number;
+    following?: boolean;
     /** Whether you may post as this shop rather than as a customer. */
     mine: boolean;
+    postCount?: number;
+    /** Forums: how many are in it, and whether you are. */
+    memberCount?: number;
+    member?: boolean;
   };
   /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
-  shareable: { id: string; title: string; priceMinor: number; currency: string }[];
+  shareable: { id: string; title: string; priceMinor: number; currency: string; condition?: string; photoUrl?: string | null }[];
   posts: PostCard[];
+}
+
+/** Which voice a social call speaks in: a shop's id, or nothing for the person. */
+function voice(as?: string | null): string {
+  return as ? `?as=${encodeURIComponent(as)}` : '';
+}
+
+/** One of a shop's items, offered for putting in a post. */
+export interface ShareableListing {
+  id: string;
+  title: string;
+  priceMinor: number;
+  currency: string;
+  condition: string;
+  photoUrl: string | null;
+}
+
+/** Where one post lives on the API. */
+function postPath(channelId: string, id: string): string {
+  return `/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(id)}`;
 }
 
 /* ── Wanted ────────────────────────────────────────────────────────────── */
@@ -548,6 +903,8 @@ export interface WantCard {
   category: string;
   budgetMinor: number | null;
   currency: string;
+  /** What they are in search of, if they had a photo. */
+  photoUrls: string[];
   condition: string | null;
   status: 'open' | 'closed';
   offerCount: number;
@@ -563,6 +920,8 @@ export interface WantCard {
 export interface WantOfferRow {
   id: string;
   seller: PartyRef;
+  /** A collector answering, or a shop. */
+  voice: 'person' | 'shop';
   message: string;
   priceMinor: number | null;
   createdAt: string;
@@ -588,31 +947,39 @@ export interface WantDetail {
   seekerCount: number;
   /** Your own answer, if you have already made one. */
   yours: { id: string; message: string; priceMinor: number | null; listingId: string | null } | null;
+  /** Your answers by the voice you gave them in. */
+  yoursBy: Partial<Record<'person' | 'shop', { id: string; message: string; priceMinor: number | null; listingId: string | null }>>;
   offers: WantOfferRow[];
 }
 
+/** A forum as a list shows it. */
+export interface ForumRow extends Omit<Forum, 'memberIds'> {
+  memberCount: number;
+  member: boolean;
+  lastPost: string | null;
+  lastPostAt: string | null;
+  lastPostBy: string | null;
+}
+
 export interface ForumsResponse {
-  forums: Forum[];
+  forums: ForumRow[];
   cap: number;
   remaining: number;
+}
+
+/** What the social search finds. */
+export interface SocialSearchResult {
+  people: { id: string; name: string; handle: string | null; bio: string; following: boolean }[];
+  shops: {
+    id: string; name: string; handle: string | null; bio: string; photoUrl: string | null;
+    followerCount: number; tier: string | null; following: boolean; mine: boolean;
+  }[];
+  forums: ForumRow[];
 }
 
 /* ── Seller dashboards ─────────────────────────────────────────────────── */
 
 export interface DashboardResponse {
-  tracking: {
-    openLots: number;
-    inFlightOrders: number;
-    byStage: { stage: string; label: string; lots: number }[];
-    lots: {
-      id: string;
-      name: string;
-      stage: FulfilmentStage;
-      origin: string;
-      estimatedDispatchAt: string | null;
-      orderCount: number;
-    }[];
-  };
   analytics: {
     revenueMinor: number;
     unitsSold: number;
@@ -627,6 +994,187 @@ export interface DashboardResponse {
 }
 
 /* ── Pro analytics ─────────────────────────────────────────────────────── */
+
+export interface WeekFigures { saves: number; buys: number; orders: number; revenueMinor: number }
+
+/** One of the shop's own items, and how it is moving. */
+export interface TrendingRow {
+  listingId: string; title: string; photo: string | null; category: string;
+  saves: number; buys: number; orders: number; score: number;
+  /** Fourteen days of weighted activity, oldest first. */
+  spark: number[];
+  rank: number; prevRank: number | null;
+  trend: 'new' | 'up' | 'steady' | 'down';
+  soldOut: boolean; stockLeft: number | null; daysLeft: number | null; perWeek: number;
+}
+
+/** One lot, item or customer's real profit, from each item's saved costs. */
+export interface ProfitRow {
+  key: string;
+  name: string;
+  sub: string | null;
+  photo: string | null;
+  orders: number;
+  units: number;
+  revenueMinor: number;
+  costMinor: number;
+  profitMinor: number;
+  marginPercent: number | null;
+  uncostedUnits: number;
+  stages: Record<CostStage, number>;
+  steps: { id: string; label: string; stage: CostStage; amountMinor: number }[];
+}
+
+export interface ProfitSplit { active: ProfitRow[]; closed: ProfitRow[] }
+
+export interface SheetItem {
+  listingId: string;
+  title: string;
+  photo: string | null;
+  priceMinor: number;
+  currency: string;
+  lotName: string | null;
+  onSale: boolean;
+  sold: number;
+  sheet: ItemCostSheet | null;
+  costMinor: number;
+  /** What Remove steps back to; null when removing clears the costs. */
+  previousCostMinor: number | null;
+}
+
+/** `GET /api/me/costs` - real profit per lot, item and customer. */
+export interface CostsResponse {
+  totals: { active: ProfitRow; closed: ProfitRow };
+  lots: ProfitSplit;
+  items: ProfitSplit;
+  customers: ProfitSplit;
+  handles: Record<string, string | null>;
+  sheets: SheetItem[];
+}
+
+export type ValueLabel = 'vip' | 'regular' | 'at_risk' | 'one_time' | 'new';
+
+/** `GET /api/me/deep` - the deeper Pro figures. */
+export interface DeepResponse {
+  cohorts: { month: string; size: number; back: (number | null)[] }[];
+  value: {
+    counts: Record<ValueLabel, number>;
+    averageMinor: number;
+    rows: { who: PartyRef; orders: number; spentMinor: number; lastAt: string; label: ValueLabel }[];
+  };
+  pricing: {
+    listingId: string; title: string; photo: string | null; currency: string;
+    periods: { priceMinor: number; from: string; days: number; saves: number; units: number; perWeek: number }[];
+  }[];
+  forecast: {
+    cycleDays: number;
+    conversionPercent: number;
+    rows: { listingId: string; title: string; photo: string | null; perWeek: number; waiting: number; pledged: number; inStock: number | null; next: number }[];
+  };
+  reminders: {
+    buyerId: string; who: PartyRef; listingId: string; title: string; photo: string | null; currency: string;
+    wasMinor: number; nowMinor: number; reason: 'cheaper' | 'restocked'; savedAt: string;
+  }[];
+  bundles: { count: number; items: { listingId: string; title: string; photo: string | null; priceMinor: number }[] }[];
+  returns: {
+    overall: { orders: number; cancelled: number; disputed: number; ratePercent: number };
+    items: { listingId: string; title: string; orders: number; cancelled: number; disputed: number; ratePercent: number }[];
+    categories: { category: string; orders: number; cancelled: number; disputed: number; ratePercent: number }[];
+  };
+}
+
+export interface SalesFigures { orders: number; units: number; revenueMinor: number; customers: number }
+
+/** `GET /api/me/sales` - the free Analytics figures. */
+export interface SalesResponse {
+  days: number;
+  bucket: 'day' | 'week' | 'month';
+  totals: SalesFigures;
+  before: SalesFigures;
+  series: { start: string; orders: number; revenueMinor: number }[];
+  best: {
+    units: { listingId: string; title: string; photo: string | null; units: number; revenueMinor: number }[];
+    revenue: { listingId: string; title: string; photo: string | null; units: number; revenueMinor: number }[];
+  };
+  ageing: {
+    fresh: { count: number; amountMinor: number };
+    week: { count: number; amountMinor: number };
+    old: { count: number; amountMinor: number };
+    rows: { orderId: string; who: PartyRef; title: string; outstandingMinor: number; currency: string; days: number }[];
+  };
+  sources: ({ source: 'shared' | 'sale' | 'preorder' | 'shop' } & SalesFigures)[];
+  stock: { listingId: string; title: string; photo: string | null; left: number; soldRecently: number }[];
+  rows: {
+    date: string; orderId: string; item: string; buyer: string; handle: string | null; quantity: number;
+    unitPriceMinor: number; totalMinor: number; paidMinor: number; outstandingMinor: number;
+    currency: string; status: string; payment: string; lot: string;
+  }[];
+}
+
+export type NudgeRequest =
+  | { kind: 'payment' | 'checkout'; orderId: string }
+  | { kind: 'saved'; listingId: string; buyerId: string };
+
+/** `GET /api/me/market` - other sellers' items in this shop's categories, as rough levels only. */
+export interface MarketResponse {
+  categories: {
+    category: string; level: 'hot' | 'rising' | 'steady' | 'quiet';
+    trend: 'up' | 'steady' | 'down'; supply: 'crowded' | 'some' | 'few';
+  }[];
+  items: { title: string; photo: string | null; category: string; priceMinor: number; currency: string; level: 'hot' | 'rising' | 'steady' }[];
+  prices: {
+    listingId: string; title: string; category: string; priceMinor: number; currency: string;
+    low: number; mid: number; high: number; position: 'below' | 'within' | 'above';
+  }[];
+  wanted: { title: string; category: string; budgetMinor: number | null; demand: 'many' | 'several' | 'one' }[];
+}
+
+/** One customer of a shop, as Insights (Pro) reads them. */
+export interface CustomerRow {
+  who: PartyRef; orders: number; spentMinor: number; firstAt: string; lastAt: string;
+  returning: boolean; daysSince: number;
+}
+
+/** `GET /api/me/interest` - the Insights (Pro) tab: who wants what. */
+export interface InterestResponse {
+  summary: {
+    views: number;
+    saves: number;
+    buyClicks: number;
+    stalled: number;
+    stalledMinor: number;
+    orders: number;
+    paid: number;
+    placedPercent: number | null;
+  };
+  saved: {
+    listingId: string; title: string; photo: string | null; priceMinor: number; currency: string;
+    people: { who: PartyRef; savedAt: string; state: 'saved' | 'checkout' | 'bought' }[];
+  }[];
+  checkout: {
+    orderId: string; listingId: string; title: string; photo: string | null; who: PartyRef;
+    firstAt: string; lastAt: string; clicks: number; amountMinor: number; currency: string;
+    stillForSale: boolean; boughtElsewhere: boolean;
+  }[];
+  items: {
+    listingId: string; title: string; photo: string | null; live: boolean; views: number; saves: number;
+    buyClicks: number; orders: number; paid: number; revenueMinor: number; currency: string; expiresAt: string | null;
+  }[];
+  leads: { who: PartyRef; saves: number; checkouts: number; lastAt: string }[];
+  customers: {
+    total: number; returning: number; newcomers: number; dormant: number;
+    repeatPercent: number | null; avgOrderMinor: number;
+    top: CustomerRow[]; returningList: CustomerRow[]; newList: CustomerRow[]; dormantList: CustomerRow[];
+  };
+  trending: TrendingRow[];
+  categories: { category: string; score: number; before: number }[];
+  week: { now: WeekFigures; before: WeekFigures };
+  /** Oldest first, today last. */
+  daily: { saves: number; buys: number; orders: number }[];
+  overlooked: { listingId: string; title: string; photo: string | null; views: number }[];
+  expiring: { listingId: string; title: string; expiresAt: string | null; saves: number; buyClicks: number }[];
+  activity: string[];
+}
 
 /**
  * What the consignments have been doing, read off the packing board.
@@ -683,6 +1231,8 @@ export interface InsightsResponse {
     closedShort: boolean;
   }[];
   powerSales: { runs: number; posted: number; inWindow: number; handedOver: number };
+  /** Balances on accepted orders, by buyer. Largest first. */
+  toCollect: { who: PartyRef; outstandingMinor: number; orders: number; currency: string }[];
 }
 
 /* ── Services ──────────────────────────────────────────────────────────── */
@@ -775,6 +1325,8 @@ export interface RoutesResponse {
   presets: RoutePreset[];
   /** What a blank route opens with, so nobody starts at an empty list. */
   suggested: RouteStep[];
+  /** The logistics-scenario cards: where an order enters the lot's journey. */
+  routeTemplates: (RoutePreset & { icon: StageIcon })[];
 }
 
 /** An item that could go in a lot: sold, bound for one, not in one. */
@@ -847,13 +1399,47 @@ export interface ItemGroup {
   } | null;
   sellerName: string;
   sellerHandle: string | null;
-  items: {
+  sellerId: string;
+  items: (OrderMoney & {
     id: string;
+    /** The listing it was bought from, to see it as it was listed. */
+    listingId: string;
     itemName: string;
     quantity: number;
     status: string;
+    paymentStatus: string;
+    currency: string;
+    photo: string | null;
+    method: PaymentMethod;
+    canPayMore: boolean;
+    /** False while the buyer has pressed Buy but not yet paid or booked. */
+    placed: boolean;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
-  }[];
+    /** When it reached the buyer, or null while it is still on its way. */
+    deliveredAt: string | null;
+    /** Delivered and already on a collection shelf. */
+    inCollection: boolean;
+    /** Payment still held under buyer protection. */
+    paymentHeld: boolean;
+    /** When the buyer confirmed it reached them, or null. */
+    receivedAt: string | null;
+    /** The buyer can tap "I received it" (or "Yes, it arrived") now. */
+    canConfirm: boolean;
+    /** Placed as a booking: no payment until the seller accepts. */
+    bookingOnly: boolean;
+    /** The seller has said yes. */
+    accepted: boolean;
+    /** The buyer may pay for it now. */
+    canPay: boolean;
+    /** The seller said a claimed payment never arrived. */
+    claimDenied: boolean;
+    /** Ships from the seller's shelf rather than in a lot. */
+    inHand: boolean;
+    shipment: OrderShipment | null;
+    /** Held money under dispute. */
+    disputed: boolean;
+    createdAt: string;
+  })[];
 }
 
 /* ── Quick Post templates and photos ───────────────────────────────────── */
@@ -914,10 +1500,6 @@ export interface BoardCustomer {
   trackingReference: string | null;
 }
 
-export interface LotsBoard {
-  lots: { lot: BoardLot; tally: LotTally }[];
-}
-
 export interface LotBoard {
   lot: BoardLot;
   tally: LotTally;
@@ -964,6 +1546,8 @@ export interface PublicProfile {
   tier: string | null;
   ownerHandle: string | null;
   sellerId: string;
+  /** A shop's seller trust, 0-100; null on a person's page. */
+  trustScore: number | null;
   memberSince: string;
   lastSeenAt: string | null;
   counts: { listings: number; onSale: number; sold: number };
@@ -1022,15 +1606,68 @@ export const api = {
   listing: (id: string) => request<ListingDetail>(`/listings/${encodeURIComponent(id)}`),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
+  editListing: (id: string, body: Partial<NewListing>) =>
+    post<{ listing: Listing }>(`/listings/${encodeURIComponent(id)}/edit`, body),
+  expireListing: (id: string) =>
+    post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
+  payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
+    post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
+  refundCredit: (id: string, body: {
+    creditId?: string; reference?: string; screenshotUrl?: string; message?: string; amountMinor?: number;
+    /** Handed back in person: no payout account is needed. */
+    inPerson?: boolean;
+  } = {}) =>
+    post<{ order: Order; sentMinor: number }>(`/orders/${encodeURIComponent(id)}/refund-credit`, body),
+  ackCreditRefund: (id: string, received: boolean, creditId?: string) =>
+    post<{ order: Order; answeredMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-ack`, { received, creditId }),
+  applyCredit: (id: string, body: { creditId: string; targetOrderId: string; amountMinor?: number }) =>
+    post<{ source: Order; target: Order; appliedMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-apply`, body),
+  startRefund: (id: string, body: {
+    amountMinor: number; reason: string; reference?: string; screenshotUrl?: string; message?: string;
+    inPerson?: boolean;
+  }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
+  myRefunds: () => request<{
+    refunds: MyRefund[];
+    hasDetails: boolean;
+    detailsRequests: { orderId: string; itemName: string; sellerName: string; requestedAt: string }[];
+  }>('/me/refunds'),
+  myDisputes: () => request<MyDisputesResponse>('/me/disputes'),
+  flagDispute: (id: string, body: { subject?: string; reason?: string }) =>
+    post<{ order: Order; dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/flag-dispute`, body),
+  holdCredit: (id: string, creditId?: string) =>
+    post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
+  myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),
+  personPosts: (userId: string) => request<{ posts: PostCard[] }>(`/users/${encodeURIComponent(userId)}/posts`),
+  quest: () => request<{ view: QuestView }>('/quest/me'),
+  questCheckIn: () => post<QuestResult>('/quest/checkin'),
+  questClaim: (taskId: string) => post<QuestResult>('/quest/claim', { taskId }),
+  questReveal: () => post<QuestResult>('/quest/reveal'),
+  questOpen: (packId: string) => post<QuestResult>('/quest/open', { packId }),
+  leaderboard: () => request<{ top: LeaderRow[]; me: LeaderRow | null; total: number }>('/quest/leaderboard'),
+  collector: (userId: string) => request<CollectorPage>(`/users/${encodeURIComponent(userId)}/collector`),
+  learn: () => request<LearnDoc & { customised: boolean }>('/learn'),
+  collection: (userId: string) => request<CollectionShelf>(`/users/${encodeURIComponent(userId)}/collection`),
+  myCollection: () => request<CollectionShelf & { candidates: CollectionCandidate[] }>('/me/collection'),
+  collectionAdd: (orderId: string, name?: string, groupId?: string | null) =>
+    post<CollectionShelf & { item: CollectionItem }>('/me/collection/add', { orderId, name, groupId }),
+  collectionEdit: (orderId: string, changes: { name?: string; groupId?: string | null }) =>
+    post<CollectionShelf & { item: CollectionItem }>('/me/collection/edit', { orderId, ...changes }),
+  collectionRemove: (orderId: string) => post<CollectionShelf>('/me/collection/remove', { orderId }),
+  collectionGroups: (action: 'create' | 'rename' | 'delete', body: { id?: string; name?: string }) =>
+    post<CollectionShelf>('/me/collection/groups', { action, ...body }),
   bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
-    post<{ comment: ListingComment & { author: PartyRef } }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
+    post<{ comment: ListingPost }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
+  reactToComment: (id: string, commentId: string, kind: ReactionKind | null) =>
+    post<Pick<ListingPost, 'reactionCounts' | 'myReaction'>>(
+      `/listings/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}/react`, { kind },
+    ),
   follow: (sellerId: string) =>
     post<{ following: boolean }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
   order: (listingId: string, quantity = 1, via?: string | null) =>
     post<{ order: Order }>('/orders', { listingId, quantity, via: via ?? undefined }),
 
-  preOrder: (id: string) => request<PreOrderRoster>(`/listings/${encodeURIComponent(id)}/preorder`),
   /**
    * Join a pre-order, or leave it.
    *
@@ -1044,6 +1681,8 @@ export const api = {
     }),
 
   activity: () => request<ActivityResponse>('/me/activity'),
+  /** Just the seller's own stock - what the Items screen shows, without the rest of the account. */
+  myListings: () => request<{ listings: Listing[] }>('/me/listings'),
 
   myLots: (storeId?: string) =>
     request<LotsResponse>(`/me/lots${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
@@ -1051,7 +1690,10 @@ export const api = {
     body: LotDetails & {
       forwarderUserId?: string; forwarderName?: string; forwarderContact?: string;
       routeId?: string; routeName?: string;
-      routeSteps?: { id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+      routeSteps?: {
+        id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+        stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
+      }[];
       supplierHandle?: string; handlerUserId?: string; handlerName?: string;
     },
   ) => post<{ lot: Lot }>('/lots', body),
@@ -1060,8 +1702,6 @@ export const api = {
   lotContents: (id: string) => request<LotContents>(`/lots/${encodeURIComponent(id)}/contents`),
   assignToLot: (id: string, listingIds: string[], remove = false) =>
     post<{ changed: number }>(`/lots/${encodeURIComponent(id)}/assign`, { listingIds, remove }),
-  advanceStage: (id: string, stage: string, note?: string) =>
-    post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/stage`, { stage, note }),
   setTracking: (id: string, body: { trackingReference?: string; forwarderName?: string; forwarderContact?: string; forwarderUserId?: string }) =>
     post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/tracking`, body),
 
@@ -1088,7 +1728,11 @@ export const api = {
   saveRoute: (body: {
     id?: string;
     name: string;
-    steps: { id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+    steps: {
+      id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+      stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
+      waitMessage?: string; lastMile?: boolean;
+    }[];
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),
@@ -1099,7 +1743,7 @@ export const api = {
   addItemsToLot: (id: string, orderIds: string[]) =>
     post<{ added: number; orderIds: string[] }>(`/lots/${encodeURIComponent(id)}/items`, { orderIds }),
   /** Move the lot along its route. Omit `to` for the next step. */
-  stepLot: (id: string, body: { to?: number; note?: string } = {}) =>
+  stepLot: (id: string, body: { to?: number; note?: string; trackingId?: string; shipper?: string } = {}) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
   /** Put the lot on a different ladder, carrying its position across. */
   setLotRoute: (id: string, routeId: string | null, note?: string) =>
@@ -1108,7 +1752,7 @@ export const api = {
   noteOnLot: (id: string, note: string, at?: number) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/note`, { note, at }),
   /** Move one item on its own, or note something about it. Omit `to` to just note. */
-  stepItem: (id: string, body: { to?: number; note?: string; at?: number }) =>
+  stepItem: (id: string, body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/step`, body),
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
 
@@ -1117,7 +1761,7 @@ export const api = {
     id?: string; name: string; category?: string; tags?: string[];
     condition?: string | null; sourcing?: string; description?: string; defaultLotId?: string | null;
     preLotSteps?: { name: string; description?: string }[]; preLotName?: string;
-    lotRouteId?: string | null;
+    lotRouteId?: string | null; kind?: 'post' | 'power'; terms?: TemplateTerms | null;
   }) => post<{ template: PostTemplate }>('/templates/new', body),
   deleteTemplate: (id: string) =>
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
@@ -1130,7 +1774,7 @@ export const api = {
   orderTracking: (id: string) => request<OrderTracking>(`/orders/${encodeURIComponent(id)}`),
   orderState: (id: string) => request<OrderState>(`/orders/${encodeURIComponent(id)}/state`),
   checkout: (id: string) => request<Checkout>(`/orders/${encodeURIComponent(id)}/checkout`),
-  claimPayment: (id: string, body: { reference: string; screenshot: string | null }) =>
+  claimPayment: (id: string, body: { reference: string; screenshot: string | null; plan?: 'full' | 'advance' }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/claim-payment`, body),
   settleClaim: (id: string, body: { accept: boolean; reason?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/settle-claim`, body),
@@ -1141,25 +1785,38 @@ export const api = {
   rejectOrder: (id: string, reason: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reject`, { reason }),
 
+  /** The buyer chooses Book instead of paying now. */
+  bookOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/book`, {}),
+  /** The seller says yes to a fresh order or booking. */
+  acceptOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/accept`, {}),
+  /** The seller calls off an already-accepted order. */
+  cancelOrder: (id: string, body: { reason: string; message?: string }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/cancel`, body),
+  requestReversalDetails: (id: string, message?: string) =>
+    post<{ sent: boolean }>(`/orders/${encodeURIComponent(id)}/reversal/request-details`, { message }),
+  confirmReversalDetails: (id: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/confirm-details`, {}),
+  submitReversal: (id: string, body: { reference?: string; screenshot?: string; amountMinor?: number }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/submit`, body),
+  ackReversal: (id: string, received: boolean) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/ack`, { received }),
+  raiseDispute: (id: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reversal/dispute`, {}),
+  reversalDetails: () => request<{ reversalDetails: BuyerReversalDetails | null }>('/me/reversal-details'),
+  saveReversalDetails: (body: {
+    method: string; identifier: string; accountName: string; notes?: string; qrCodeUrl?: string;
+  }) => post<{ reversalDetails: BuyerReversalDetails | null; answeredRequests: number }>('/me/reversal-details/save', body),
+
   powerSales: (storeId?: string) =>
     request<{ sales: PowerSaleView[] }>(
       `/power-sales${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
     ),
   createPowerSale: (draft: PowerSaleDraft) =>
     post<{ sale: PowerSaleView }>('/power-sales/new', draft),
-  powerSale: (id: string, storeId?: string) =>
-    request<{ sale: PowerSaleView }>(
-      `/power-sales/${encodeURIComponent(id)}${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
-    ),
   stopPowerSale: (id: string, storeId?: string) =>
     post<{ sale: PowerSaleView }>(
       `/power-sales/${encodeURIComponent(id)}/stop${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
       {},
-    ),
-  payOrder: (id: string, protection: boolean, escrowAgentId?: string) =>
-    post<{ order: Order; simulatedPayment: boolean }>(
-      `/orders/${encodeURIComponent(id)}/pay`,
-      { protection, escrowAgentId },
     ),
   confirmOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/confirm`),
   openDispute: (id: string, body: { reasonCode: string; reason: string; evidence: EvidenceDraft[] }) =>
@@ -1192,35 +1849,45 @@ export const api = {
     remove?: boolean;
   }) => post<{ managers: StoreManager[] }>('/me/storefront/managers', body),
 
-  lotsBoard: (storeId?: string) =>
-    request<LotsBoard>(`/me/lots/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
   lotBoard: (id: string, storeId?: string) =>
     request<LotBoard>(
       `/lots/${encodeURIComponent(id)}/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
     ),
-  setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint, on: boolean) =>
+  setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint, on: boolean,
+    shipment?: { courier?: string; awb?: string }) =>
     post<{ order: { id: string; checkpoints: BoardOrder['checkpoints'] }; tally: LotTally }>(
       `/orders/${encodeURIComponent(orderId)}/checkpoint`,
-      { checkpoint, on },
+      { checkpoint, on, ...shipment },
     ),
 
   inbox: () => request<Inbox>('/messages'),
   thread: (handle: string, as?: string) =>
     request<Thread>(`/messages/${encodeURIComponent(handle)}${as ? `?as=${encodeURIComponent(as)}` : ''}`),
-  sendMessage: (handle: string, body: string, as?: string) =>
-    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, { body, as }),
+  sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>, replyToId?: string) =>
+    post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, {
+      body, as, ...(deal ? { deal } : {}), ...(replyToId ? { replyToId } : {}),
+    }),
+  reactToMessage: (handle: string, messageId: string, kind: ReactionKind | null, as?: string) =>
+    post<{ reactions: { handle: string; kind: ReactionKind }[] }>(
+      `/messages/${encodeURIComponent(handle)}/react`, { messageId, kind, as },
+    ),
   profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
   credit: (userId: string) => request<Credit>(`/users/${encodeURIComponent(userId)}/credit`),
   pageReviews: (userId: string) => request<PageReviews>(`/users/${encodeURIComponent(userId)}/page-reviews`),
+  /** Dispute somebody else's review or comment, or ask Figmark to validate your own. */
+  report: (body: { targetType: ReportTarget; targetId: string; parentId: string; reason: string }) =>
+    post<{ report: ContentReport }>('/reports', body),
+  /** The shop-wide rules, such as how long protected payments are held. */
   writePageReview: (userId: string, body: { rating: number; body: string }) =>
     post<{ review: PageReview }>(`/users/${encodeURIComponent(userId)}/page-reviews/new`, body),
   saveProfile: (body: { bio?: string; coverUrl?: string; tags?: string[] }) =>
     post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
   setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
 
-  supplierLots: () =>
+  /** Lots to pack; one store's only when `storeId` is given, filtered on the server. */
+  supplierLots: (storeId?: string) =>
     request<{ lots: { store: SupplierStore; lot: SupplierLot['lot']; tally: LotTally }[] }>(
-      '/supplier/lots',
+      `/supplier/lots${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
     ),
   supplierLot: (id: string) => request<SupplierLot>(`/supplier/lots/${encodeURIComponent(id)}`),
 
@@ -1231,16 +1898,80 @@ export const api = {
   dashboard: () => request<DashboardResponse>('/me/dashboard'),
   insights: (storeId?: string) =>
     request<InsightsResponse>(`/me/insights${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  interest: (storeId?: string) =>
+    request<InterestResponse>(`/me/interest${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  market: (storeId?: string) =>
+    request<MarketResponse>(`/me/market${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  profitTemplates: (storeId?: string) =>
+    request<{ templates: ProfitTemplate[]; starter: CostLine[] }>(
+      `/me/profit-templates${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  saveProfitTemplate: (template: Partial<ProfitTemplate>, storeId?: string) =>
+    post<{ template: ProfitTemplate; templates: ProfitTemplate[] }>(
+      `/me/profit-templates/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, template),
+  deleteProfitTemplate: (id: string, storeId?: string) =>
+    post<{ templates: ProfitTemplate[] }>(
+      `/me/profit-templates/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
+  costs: (storeId?: string) =>
+    request<CostsResponse>(`/me/costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  savedCalcs: (storeId?: string) =>
+    request<{ calcs: SavedCalc[] }>(`/me/calcs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  saveCalc: (calc: Partial<SavedCalc>, storeId?: string) =>
+    post<{ calc: SavedCalc; calcs: SavedCalc[] }>(`/me/calcs/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, calc),
+  deleteCalc: (id: string, storeId?: string) =>
+    post<{ calcs: SavedCalc[] }>(`/me/calcs/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
+  restoreCostSheet: (listingId: string, storeId?: string) =>
+    post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
+      `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { restore: true }),
+  saveCostSheet: (listingId: string, sheet: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null, storeId?: string) =>
+    post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
+      `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { sheet }),
+  deep: (storeId?: string) =>
+    request<DeepResponse>(`/me/deep${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  salesReport: (days: number, storeId?: string) =>
+    request<SalesResponse>(`/me/sales-report?days=${days}${storeId ? `&store=${encodeURIComponent(storeId)}` : ''}`),
+  nudge: (body: NudgeRequest, storeId?: string) =>
+    post<{ sent: true }>(`/me/nudge${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, body),
 
-  socialFeed: () => request<{ posts: PostCard[] }>('/social/feed'),
-  channels: () => request<{ channels: ChannelRow[] }>('/social/channels'),
-  channelThread: (id: string) => request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}`),
+  socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
+  trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
+  shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
+  channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
+  channelThread: (id: string, as?: string | null) =>
+    request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}${voice(as)}`),
+  pinPost: (channelId: string, id: string) =>
+    post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
   createPost: (body: {
     body: string; forumId?: string; listingId?: string; storeId?: string;
     channelId?: string; announcement?: boolean;
+    photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
+    replyToId?: string; toWall?: boolean; alsoForumIds?: string[];
   }) =>
     post<{ post: Post }>('/social/posts', body),
+  socialPost: (channelId: string, id: string, as?: string | null) =>
+    request<PostDetail>(`${postPath(channelId, id)}${voice(as)}`),
+  react: (channelId: string, id: string, kind: ReactionKind | null, as?: string | null) =>
+    post<{ reactions: ReactionSummary }>(`${postPath(channelId, id)}/react${voice(as)}`, { kind }),
+  reactors: (channelId: string, id: string) =>
+    request<{ reactors: ReactorRow[] }>(`${postPath(channelId, id)}/reactions`),
+  commentOnPost: (channelId: string, id: string, body: string, parentId?: string | null, as?: string | null) =>
+    post<PostDetail & { comment: string }>(
+      `${postPath(channelId, id)}/comments${voice(as)}`, { body, parentId: parentId ?? null },
+    ),
+  likePostComment: (channelId: string, id: string, commentId: string, as?: string | null) =>
+    post<{ liked: boolean; likeCount: number }>(
+      `${postPath(channelId, id)}/comments/${encodeURIComponent(commentId)}/like${voice(as)}`,
+    ),
+  deletePostComment: (channelId: string, id: string, commentId: string, as?: string | null) =>
+    post<PostDetail>(`${postPath(channelId, id)}/comments/${encodeURIComponent(commentId)}/delete${voice(as)}`),
+  sharePost: (channelId: string, id: string, mode: 'repost' | 'link', body?: string, as?: string | null) =>
+    post<{ shareCount: number; repost: PostCard | null }>(`${postPath(channelId, id)}/share${voice(as)}`, { mode, body }),
+  votePoll: (channelId: string, id: string, optionId: string, as?: string | null) =>
+    post<{ poll: PollView }>(`${postPath(channelId, id)}/vote${voice(as)}`, { optionId }),
+  deletePost: (channelId: string, id: string) =>
+    post<{ deleted: string }>(`${postPath(channelId, id)}/delete`),
   forums: () => request<ForumsResponse>('/social/forums'),
+  joinForum: (id: string) => post<{ forum: ForumRow }>(`/social/forums/${encodeURIComponent(id)}/join`),
+  socialSearch: (q: string) => request<SocialSearchResult>(`/social/search?q=${encodeURIComponent(q)}`),
 
   wants: (options: { category?: string; q?: string } = {}) => {
     const query = new URLSearchParams();
@@ -1251,13 +1982,13 @@ export const api = {
   },
   postWant: (body: {
     title: string; details: string; category: string;
-    budgetMinor: number | null; condition: string | null;
+    budgetMinor: number | null; condition: string | null; photoUrls?: string[];
   }) => post<{ want: WantCard }>('/wants/new', body),
   // The buyer is on the path because a want is stored under whoever posted it.
   want: (id: string, buyerId: string) =>
     request<WantDetail>(`/wants/${encodeURIComponent(id)}?buyer=${encodeURIComponent(buyerId)}`),
   offerOnWant: (id: string, buyerId: string, body: {
-    message: string; listingId?: string | null; priceMinor?: number | null;
+    message: string; listingId?: string | null; priceMinor?: number | null; storeId?: string | null;
   }) => post<{ offerCount: number }>(
     `/wants/${encodeURIComponent(id)}/offers?buyer=${encodeURIComponent(buyerId)}`, body,
   ),
@@ -1272,7 +2003,7 @@ export const api = {
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   createForum: (body: { name: string; description?: string }) =>
-    post<{ forum: Forum }>('/social/forums/new', body),
+    post<{ forum: ForumRow }>('/social/forums/new', body),
   forwarders: (route?: string) =>
     request<{ forwarders: DirectoryForwarder[] }>(`/forwarders${route ? `?route=${encodeURIComponent(route)}` : ''}`),
 };

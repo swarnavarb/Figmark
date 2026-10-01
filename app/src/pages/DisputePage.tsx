@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { DISPUTE_OUTCOME_LABELS, DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
-import { RESPONSE_DAYS } from '@shared/disputes';
+import { DISPUTE_TOPIC_LABELS, RESPONSE_DAYS, holdsMoney } from '@shared/disputes';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type PartyRef } from '../api';
 import { Avatar, ErrorNotice, Icon, PersonLink } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
@@ -38,6 +38,11 @@ export function DisputePage() {
   const { dispute, order, side, actions, parties } = data;
   const held = order.escrow.amountMinor;
   const them = side === 'buyer' ? parties.seller : parties.buyer;
+  // Every dispute is worked here. Only an escrow one is about money the
+  // marketplace holds; the rest are about money that went directly between
+  // the two sides, so there is nothing here to split.
+  const escrowed = holdsMoney(dispute);
+  const inQuestion = escrowed ? held : dispute.amountMinor ?? null;
 
   return (
     <main className="page tab-view">
@@ -49,7 +54,8 @@ export function DisputePage() {
         <div>
           <h1>Dispute</h1>
           <p className="muted">
-            {DISPUTE_REASON_LABELS[dispute.reasonCode]} · with <PersonLink party={them} />
+            {escrowed ? DISPUTE_REASON_LABELS[dispute.reasonCode] : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'general']}
+            {' '}· with <PersonLink party={them} />
           </p>
         </div>
         <span className={`badge badge--${dispute.status === 'resolved' ? 'ok' : 'warn'}`}>
@@ -60,10 +66,18 @@ export function DisputePage() {
       {/* The money is the subject, so it is stated once at the top rather than
           left to be inferred from the order behind it. */}
       <div className="card card--pad stack" style={{ marginBottom: 16 }}>
-        <div className="kv">
-          <dt>Held</dt>
-          <dd>{formatMoney(held, order.currency)}</dd>
-        </div>
+        {inQuestion !== null && (
+          <div className="kv">
+            <dt>{escrowed ? 'Held' : 'Amount in question'}</dt>
+            <dd>{formatMoney(inQuestion, order.currency)}</dd>
+          </div>
+        )}
+        {!escrowed && (
+          <p className="faint" style={{ margin: 0 }}>
+            This money went directly between the two of you, so nothing is held here to split. Talk it
+            through below, withdraw it once it is sorted, or ask Figmark to step in.
+          </p>
+        )}
         {order.protection && (
           <div className="kv">
             <dt>Protection fee paid</dt>

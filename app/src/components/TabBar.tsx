@@ -43,7 +43,7 @@ export const TABS = [
     label: 'Sell',
     match: (path: string) =>
       path.startsWith('/shop') || path.startsWith('/sell') || path.startsWith('/lots')
-      || path.startsWith('/lot/'),
+      || path.startsWith('/lot/') || path.startsWith('/routes'),
     icon: (
       <>
         <path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" />

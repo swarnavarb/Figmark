@@ -43,10 +43,8 @@ export function PackingList({ storeId }: { storeId?: string } = {}) {
 
   useEffect(() => {
     void api
-      .supplierLots()
-      .then((result) =>
-        setRows(storeId ? result.lots.filter((row) => row.store.ownerId === storeId) : result.lots),
-      )
+      .supplierLots(storeId)
+      .then((result) => setRows(result.lots))
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.'),
       );

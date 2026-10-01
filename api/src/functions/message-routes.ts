@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
-import type { Message, MessageParty, User } from '../../../shared/models.js';
+import type { Message, MessageDeal, MessageParty, User } from '../../../shared/models.js';
 import { accessFor } from '../../../shared/stores.js';
+import { isReaction } from '../../../shared/social.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -190,15 +191,15 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   const other = request.params.handle;
   if (!other) return error(400, 'invalid_handle', 'Name who this is for.');
 
-  let body: { body?: string; as?: string };
+  let body: { body?: string; as?: string; deal?: Partial<MessageDeal> | null; replyToId?: string | null };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const text = body.body?.trim();
-  if (!text) return error(400, 'invalid_message', 'Write something first.');
+  let text = body.body?.trim() ?? '';
+  if (!text && !body.deal) return error(400, 'invalid_message', 'Write something first.');
   if (text.length > 4000) return error(400, 'invalid_message', 'Keep a message under 4000 characters.');
 
   const mine = await handlesFor(user.id, repository);
@@ -213,19 +214,106 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
   if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
 
+  // A private deal, either way round. An offer is the shop's: an item made
+  // for this buyer alone, bought like any other. A request is the buyer's:
+  // what they want and roughly for how much, for the shop to answer with one.
+  let deal: MessageDeal | null = null;
+  if (body.deal?.kind === 'offer') {
+    const listing = body.deal.listingId ? await repository.getListing(body.deal.listingId) : null;
+    if (!us.isStore || !listing || listing.privateFor !== them.userId || listing.sellerId !== us.userId) {
+      return error(400, 'invalid_deal', 'Make the private deal for this buyer first.');
+    }
+    const photo = listing.photos.find((row) => row.isPrimary) ?? listing.photos[0];
+    deal = {
+      kind: 'offer', listingId: listing.id, title: listing.title, priceMinor: listing.priceMinor,
+      quantity: listing.quantityAvailable, photo: photo?.url || null,
+    };
+    text ||= `Private deal for you: ${listing.title}`;
+  } else if (body.deal?.kind === 'request') {
+    if (!them.isStore) return error(400, 'invalid_deal', 'Ask a shop for a private deal.');
+    const title = body.deal.title?.toString().trim().slice(0, 120);
+    if (!title) return error(400, 'invalid_deal', 'Say what you are looking for.');
+    deal = {
+      kind: 'request', listingId: null, title,
+      priceMinor: Math.max(0, Math.round(Number(body.deal.priceMinor) || 0)),
+      quantity: Math.min(999, Math.max(1, Math.round(Number(body.deal.quantity) || 1))),
+      photo: null,
+    };
+    text ||= `Asking for a private deal: ${title}`;
+  } else if (body.deal) {
+    return error(400, 'invalid_deal', 'A deal is an offer or a request.');
+  }
+
+  // Answering one message in particular: quoted, so the quote survives.
+  const threadId = threadIdFor(us.handle, them.handle);
+  let replyTo: Message['replyTo'] = null;
+  if (typeof body.replyToId === 'string' && body.replyToId) {
+    const original = (await repository.listMessages(threadId)).find((entry) => entry.id === body.replyToId);
+    if (!original) return error(404, 'not_found', 'That message is not in this conversation.');
+    const line = original.body.replace(/\s+/g, ' ').trim();
+    replyTo = {
+      id: original.id,
+      name: original.from.displayName,
+      body: line.length > 80 ? `${line.slice(0, 77)}…` : line,
+    };
+  }
+
   const now = new Date().toISOString();
   const message: Message = {
     id: `msg_${randomUUID().slice(0, 12)}`,
-    threadId: threadIdFor(us.handle, them.handle),
+    threadId,
     from: us,
     to: them,
     body: text,
     readAt: null,
+    ...(deal ? { deal } : {}),
+    ...(replyTo ? { replyTo } : {}),
     createdAt: now,
     updatedAt: now,
   };
 
   return json(201, { message: await repository.sendMessage(message) });
+}
+
+/**
+ * POST /api/messages/{handle}/react - react to one message, change it, or take it back.
+ *
+ * One reaction per handle, as everywhere else: the same reaction again takes
+ * it back, a different one replaces it.
+ */
+async function reactToMessage(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const other = request.params.handle;
+  if (!other) return error(400, 'invalid_handle', 'Name who the conversation is with.');
+
+  let body: { messageId?: string; kind?: unknown; as?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (body.kind !== null && !isReaction(body.kind)) return error(400, 'invalid_reaction', 'No such reaction.');
+
+  const mine = await handlesFor(user.id, repository);
+  const them = await partyFor(other, repository);
+  if (!them) return error(404, 'not_found', `Nobody holds @${other}.`);
+  const us = body.as
+    ? mine.find((party) => party.handle === body.as!.toLowerCase())
+    : await defaultVoice(mine, them.handle, repository);
+  if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
+
+  const message = (await repository.listMessages(threadIdFor(us.handle, them.handle)))
+    .find((entry) => entry.id === body.messageId);
+  if (!message) return error(404, 'not_found', 'That message is not in this conversation.');
+
+  const others = (message.reactions ?? []).filter((entry) => entry.handle !== us.handle);
+  const had = (message.reactions ?? []).find((entry) => entry.handle === us.handle)?.kind ?? null;
+  message.reactions = body.kind && body.kind !== had ? [...others, { handle: us.handle, kind: body.kind }] : others;
+  message.updatedAt = new Date().toISOString();
+  const saved = await repository.updateMessage(message);
+  return json(200, { reactions: saved.reactions ?? [] });
 }
 
 /**
@@ -270,6 +358,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     // The owner's own handle, so a shop page can point at the person behind it.
     ownerHandle: isStore ? (user.username ?? null) : null,
     sellerId: user.id,
+    // The same Trust a listing's "Posted by" card shows, so the two never disagree.
+    trustScore: isStore ? user.sellerTrust.score : null,
     memberSince: user.createdAt,
     lastSeenAt: user.lastSeenAt ?? null,
     /** What the tabs and chips count, so neither has to guess. */
@@ -341,6 +431,7 @@ export const inboxRoute = handler(inbox);
 export const setUsernameRoute = handler(setUsername);
 export const threadRoute = handler(thread);
 export const sendMessageRoute = handler(send);
+export const reactToMessageRoute = handler(reactToMessage);
 export const publicProfileRoute = handler(publicProfile);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -350,5 +441,6 @@ app.http('messages-thread', { ...anon, methods: ['GET'], route: 'messages/{handl
 // A distinct template, not just a distinct method: the Functions host treats
 // equivalent templates as a conflict regardless of verb.
 app.http('messages-send', { ...anon, methods: ['POST'], route: 'messages/{handle}/send', handler: sendMessageRoute });
+app.http('messages-react', { ...anon, methods: ['POST'], route: 'messages/{handle}/react', handler: reactToMessageRoute });
 app.http('public-profile', { ...anon, methods: ['GET'], route: 'u/{handle}', handler: publicProfileRoute });
 app.http('me-username', { ...anon, methods: ['POST'], route: 'me/username', handler: setUsernameRoute });

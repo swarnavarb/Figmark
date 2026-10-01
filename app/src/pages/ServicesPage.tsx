@@ -18,6 +18,7 @@ import {
 import { EmptyState, ErrorNotice, Icon, TrustBadge } from '../components/ui';
 import { SERVICES_GLYPH } from '../components/TabBar';
 import { useSession } from '../session';
+import { BackLink } from '../components/ScrollManager';
 
 /**
  * The trades around the trade.
@@ -155,7 +156,7 @@ export function ServiceDirectoryPage() {
 
   return (
     <main className="page">
-      <Link to="/services" className="backlink">← Services</Link>
+      <BackLink to="/services">← Services</BackLink>
       <div className="page__head">
         <div>
           <h1>{meta.plural}</h1>
@@ -273,7 +274,7 @@ export function MyServicesPage() {
 
   return (
     <main className="page">
-      <Link to="/services" className="backlink">← Services</Link>
+      <BackLink to="/services">← Services</BackLink>
       <div className="page__head">
         <div>
           <h1>My service</h1>
@@ -446,7 +447,7 @@ export function ConsignmentsPage() {
 
   return (
     <main className="page">
-      <Link to="/services/mine" className="backlink">← My service</Link>
+      <BackLink to="/services/mine">← My service</BackLink>
       <div className="page__head">
         <div>
           <h1>Consigned to you</h1>
@@ -517,7 +518,7 @@ export function DistributionPage() {
 
   return (
     <main className="page">
-      <Link to="/services/mine" className="backlink">← My service</Link>
+      <BackLink to="/services/mine">← My service</BackLink>
       <div className="page__head">
         <div>
           <h1>To distribute</h1>

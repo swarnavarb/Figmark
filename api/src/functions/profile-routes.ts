@@ -5,7 +5,9 @@ import { reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
+import { confirmDetailsOn } from './order-routes.js';
 
 /**
  * A page about somebody, and what other people have said about them.
@@ -24,7 +26,6 @@ import { error, handler, json } from './http.js';
  * the earned number is only worth reading because nothing unearned can move it.
  */
 
-type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** Reviews of trades, counted per side. */
 function summarise(reviews: readonly Review[], direction: string) {
@@ -93,7 +94,11 @@ async function credit(request: HttpRequest, _context: InvocationContext) {
   const visible = reviews.filter((entry) => reviewRevealed(entry, false));
   const record = creditFrom({ asSeller, asBuyer }, visible, user.sellerTrust.disputesLost);
 
-  const opinions = storeReviews.map((entry) => entry.rating);
+  // A page review an operator took down after a dispute no longer counts.
+  const moderated = await moderation(repository);
+  const opinions = storeReviews
+    .filter((entry) => !moderated.isRemoved('store_review', entry.id))
+    .map((entry) => entry.rating);
 
   return json(200, {
     memberSince: user.createdAt,
@@ -123,7 +128,9 @@ async function pageReviews(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A user id is required.');
 
-  const reviews = await repository.listStoreReviews(id);
+  const moderated = await moderation(repository);
+  const reviews = (await repository.listStoreReviews(id))
+    .filter((entry) => !moderated.isRemoved('store_review', entry.id));
   const auth = await getAuthService();
   const viewer = await auth.getCurrentUser(request);
 
@@ -136,6 +143,8 @@ async function pageReviews(request: HttpRequest, _context: InvocationContext) {
       authorHandle: entry.authorHandle,
       createdAt: entry.createdAt,
       mine: viewer?.id === entry.authorId,
+      /** Disputed, validated, or waiting on an operator - for the button under it. */
+      moderation: moderated.mark('store_review', entry.id, viewer?.id),
     })),
     average: scoreFrom(reviews.map((entry) => entry.rating)),
     count: reviews.length,
@@ -213,6 +222,10 @@ async function tradeReviews(request: HttpRequest, _context: InvocationContext) {
 
   const all = await repository.listReviewsAbout(id);
   const visible = all.filter((entry) => reviewRevealed(entry, false));
+  const [moderated, viewer] = await Promise.all([
+    moderation(repository),
+    getAuthService().then((auth) => auth.getCurrentUser(request)),
+  ]);
 
   const [authors, orders] = await Promise.all([
     repository.listUsersByIds([...new Set(visible.map((entry) => entry.authorId))]),
@@ -235,6 +248,9 @@ async function tradeReviews(request: HttpRequest, _context: InvocationContext) {
         direction: entry.direction,
         author: personRef(authorOf.get(entry.authorId)),
         createdAt: entry.createdAt,
+        /** Whether this viewer wrote it: their button asks for validation, not a dispute. */
+        mine: viewer?.id === entry.authorId,
+        moderation: moderated.mark('review', entry.id, viewer?.id),
         // What it was about. Null only where the order has since been deleted.
         item: order
           ? {
@@ -300,11 +316,78 @@ async function saveProfile(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/**
+ * POST /api/me/reversal-details - Buyer Settings' "Payment Reversal Details".
+ *
+ * Where a cancelled, paid order's money comes back to. Free text throughout,
+ * the same discipline as a seller's own payment details: this app is not
+ * validating a bank account, only carrying what the buyer typed accurately.
+ * No provider is hard-coded - UPI, bank transfer, whatever the buyer wants to
+ * name in `method`.
+ */
+async function saveReversalDetails(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const record = await repository.getUserById(user.id);
+  if (!record) return error(404, 'not_found', 'This account no longer exists.');
+
+  let body: { method?: string; identifier?: string; accountName?: string; notes?: string; qrCodeUrl?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const method = (body.method ?? '').trim();
+  const identifier = (body.identifier ?? '').trim();
+  const accountName = (body.accountName ?? '').trim();
+  if (!method || !identifier || !accountName) {
+    return error(400, 'invalid_details', 'Add how you are paid, the account/UPI/identifier, and the name on it.');
+  }
+
+  const now = new Date().toISOString();
+  record.reversalDetails = {
+    method: method.slice(0, 60),
+    identifier: identifier.slice(0, 120),
+    accountName: accountName.slice(0, 120),
+    notes: body.notes?.trim().slice(0, 300) || null,
+    qrCodeUrl: body.qrCodeUrl?.trim() || null,
+    updatedAt: now,
+  };
+  record.updatedAt = now;
+  const saved = await repository.updateUser(record);
+
+  // Saving them answers every seller who asked: the details are now current,
+  // which is all a confirmation says. Each is told they can refund.
+  let answered = 0;
+  for (const order of await repository.listOrdersForBuyer(user.id)) {
+    if (!order.detailsCheck?.requestedAt || order.detailsCheck.confirmedAt) continue;
+    await confirmDetailsOn(repository, order, saved, now);
+    answered += 1;
+  }
+  return json(200, { reversalDetails: saved.reversalDetails ?? null, answeredRequests: answered });
+}
+
+/** GET /api/me/reversal-details - read back what is on file. */
+async function reversalDetails(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const record = await repository.getUserById(user.id);
+  if (!record) return error(404, 'not_found', 'This account no longer exists.');
+  return json(200, { reversalDetails: record.reversalDetails ?? null });
+}
+
 export const creditRoute = handler(credit);
 export const saveProfileRoute = handler(saveProfile);
 export const pageReviewsRoute = handler(pageReviews);
 export const writePageReviewRoute = handler(writePageReview);
 export const tradeReviewsRoute = handler(tradeReviews);
+export const saveReversalDetailsRoute = handler(saveReversalDetails);
+export const reversalDetailsRoute = handler(reversalDetails);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -313,3 +396,5 @@ app.http('page-reviews', { ...anon, methods: ['GET'], route: 'users/{id}/page-re
 app.http('page-review-write', { ...anon, methods: ['POST'], route: 'users/{id}/page-reviews/new', handler: writePageReviewRoute });
 app.http('user-reviews', { ...anon, methods: ['GET'], route: 'users/{id}/reviews', handler: tradeReviewsRoute });
 app.http('me-profile-save', { ...anon, methods: ['POST'], route: 'me/profile', handler: saveProfileRoute });
+app.http('me-reversal-details-get', { ...anon, methods: ['GET'], route: 'me/reversal-details', handler: reversalDetailsRoute });
+app.http('me-reversal-details-save', { ...anon, methods: ['POST'], route: 'me/reversal-details/save', handler: saveReversalDetailsRoute });

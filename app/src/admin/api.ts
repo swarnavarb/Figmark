@@ -1,5 +1,8 @@
 import type { HealthResponse } from '@shared/contracts';
 import type { Dispute, EscrowRights, SellerTrustSignals, TrustSignals } from '@shared/models';
+import type { LearnDoc, LearnTab } from '@shared/learn';
+import type { ContentReport } from '@shared/moderation';
+import type { MarketSettings } from '@shared/settings';
 import { ApiRequestError, api as marketplace } from '../api';
 
 /**
@@ -128,6 +131,23 @@ export const admin = {
   disputes: () => request<{ disputes: AdminDisputeRow[] }>('/ops/disputes'),
   resolve: (id: string, body: { outcome: string; refundMinor: number; note: string }) =>
     post<{ dispute: Dispute }>(`/ops/disputes/${encodeURIComponent(id)}/resolve`, body),
+
+  /** The Learn guide, hidden tabs included, and whether it differs from the one that ships. */
+  learn: () => request<LearnDoc & { customised: boolean }>('/ops/learn'),
+  saveLearn: (tabs: LearnTab[]) => post<LearnDoc & { customised: boolean }>('/ops/learn/save', { tabs }),
+  resetLearn: () => post<LearnDoc & { customised: boolean }>('/ops/learn/reset'),
+  /** Upload a picture for a guide step; the same store listing photos use. */
+  uploadImage: (dataUrl: string) => marketplace.uploadPhoto(dataUrl),
+
+  /** Marketplace-wide rules: today, how long protected payments are held. */
+  settings: () => request<MarketSettings>('/ops/settings'),
+  saveSettings: (settings: Pick<MarketSettings, 'autoReleaseDays'>) =>
+    post<MarketSettings>('/ops/settings/save', settings),
+
+  /** Disputed reviews and comments, and authors asking for theirs to be validated. */
+  reports: () => request<{ reports: (ContentReport & { authorName: string })[] }>('/ops/reports'),
+  resolveReport: (id: string, body: { decision: string; note: string }) =>
+    post<{ report: ContentReport }>(`/ops/reports/${encodeURIComponent(id)}/resolve`, body),
 };
 
 export { ApiRequestError };

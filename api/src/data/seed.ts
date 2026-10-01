@@ -18,6 +18,8 @@ import type {
   WantOffer,
 } from '../../../shared/models.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
+import { isCancelledLike } from '../../../shared/orders.js';
+import type { ReactionKind, StoredComment } from '../../../shared/social.js';
 import { hashPassword } from '../auth/passwords.js';
 
 /**
@@ -234,6 +236,10 @@ export function seedUsers(): User[] {
       'Deadstock sneakers, authenticated before dispatch.'),
     storefront('usr_gadgetgrid', 'Gadget Grid', 'Sneha Pillai', 'gadget-grid', 'Hyderabad, TS', 69, 40, 0.83,
       'Shenzhen electronics — audio, handhelds, accessories.'),
+    // Nobody in the demo follows this one, on purpose: it is what the
+    // trending view is for - finding a shop you did not know to look for.
+    storefront('usr_courtside', 'Courtside Kicks', 'Kabir Sethi', 'courtside-kicks', 'Mumbai, MH', 81, 72, 0.9,
+      'Performance basketball and running shoes, imported from the US and Japan.'),
 
     /* Freight forwarders. Directory entries, also not sign-in accounts. */
     forwarder('usr_fwd_lotus', 'Lotus Freight', 'lotus-freight', 'ops@lotusfreight.example',
@@ -434,6 +440,10 @@ interface ListingSeed {
   likeCount: number;
   viewCount: number;
   ageDays: number;
+  /** A timed drop: stops being buyable this many hours after the seed loads. */
+  expiresInHours?: number;
+  /** What it used to cost, so the card has a real price drop to show. */
+  wasPriceMinor?: number;
 }
 
 const LISTINGS: ListingSeed[] = [
@@ -457,14 +467,14 @@ const LISTINGS: ListingSeed[] = [
     description: 'Sealed Japanese print run, not the English release. One box per buyer while stock lasts.',
     category: 'Trading cards', condition: 'MISB', priceMinor: 78_000,
     quantity: 4, tags: ['tcg', 'cards', 'sealed', 'japanese'],
-    likeCount: 51, viewCount: 623, ageDays: -3,
+    likeCount: 51, viewCount: 623, ageDays: -3, expiresInHours: 20,
   },
   {
     id: 'lst_anime_figure', sellerId: 'usr_tokyoline', title: 'Prize figure set — 3 piece',
     description: 'Complete set of three, opened for photos then re-boxed. No damage to the figures.',
     category: 'Anime merch', condition: 'BIB', priceMinor: 24_500,
     quantity: 2, tags: ['prize', 'figure', 'set'],
-    likeCount: 8, viewCount: 97, ageDays: -18,
+    likeCount: 8, viewCount: 97, ageDays: -18, expiresInHours: 100,
   },
   {
     id: 'lst_sneaker_retro', sellerId: 'usr_sneakervault', title: 'Retro high-top — UK 9, deadstock',
@@ -478,7 +488,7 @@ const LISTINGS: ListingSeed[] = [
     description: 'Worn twice indoors, soles clean. Selling because the fit was wrong for me.',
     category: 'Sneakers', condition: 'LOOSE', priceMinor: 68_000,
     quantity: 1, tags: ['sneakers', 'used', 'uk85'],
-    likeCount: 5, viewCount: 71, ageDays: -9,
+    likeCount: 5, viewCount: 71, ageDays: -9, expiresInHours: 31,
   },
   {
     id: 'lst_iem_audio', sellerId: 'usr_gadgetgrid', title: 'Planar IEM — Shenzhen direct',
@@ -503,14 +513,14 @@ const LISTINGS: ListingSeed[] = [
     description: 'Bought in Seoul, sealed. Expiry printed on each box, all 2027 or later.',
     category: 'Beauty', condition: 'MISB', priceMinor: 32_000,
     quantity: 6, tags: ['skincare', 'korea', 'sealed'],
-    likeCount: 12, viewCount: 148, ageDays: -3,
+    likeCount: 12, viewCount: 148, ageDays: -3, expiresInHours: 52, wasPriceMinor: 38_000,
   },
   {
     id: 'lst_canvas_tote', sellerId: 'usr_tokyoline', title: 'Japanese canvas tote — Kyoto maker, unused',
     description: 'Brought back two, only need one. Tag still on it.',
     category: 'Bags & watches', condition: 'MIB', priceMinor: 24_000,
     quantity: 2, tags: ['bag', 'canvas', 'japan'],
-    likeCount: 7, viewCount: 91, ageDays: -8,
+    likeCount: 7, viewCount: 91, ageDays: -8, expiresInHours: 7,
   },
   {
     id: 'lst_bulk_gunpla', sellerId: 'usr_tokyoline', title: 'Mixed lot — 9 HG kits, mostly opened boxes',
@@ -549,7 +559,7 @@ function seededCounts(listingId: string): { filledCount: number; pledgedCount: n
   const orders = [...seedOrders(), seedLiveSale(), ...seedLotOrders()];
   return {
     filledCount: orders
-      .filter((order) => order.listingId === listingId && order.status !== 'cancelled')
+      .filter((order) => order.listingId === listingId && !isCancelledLike(order.status))
       .reduce((total, order) => total + order.quantity, 0),
     pledgedCount: seedPledges()
       .filter((pledge) => pledge.listingId === listingId)
@@ -586,6 +596,13 @@ export function seedListings(): Listing[] {
     tags: entry.tags,
     likeCount: entry.likeCount,
     viewCount: entry.viewCount,
+    // Units sold, from the seeded orders it is a cache of - the same reason
+    // the pre-order counters are summed rather than typed.
+    soldCount: seededCounts(entry.id).filledCount,
+    ...(entry.expiresInHours ? { expiresAt: new Date(Date.now() + entry.expiresInHours * 3_600_000).toISOString() } : {}),
+    ...(entry.wasPriceMinor
+      ? { priceHistory: [{ priceMinor: entry.wasPriceMinor, at: iso(entry.ageDays) }, { priceMinor: entry.priceMinor, at: iso(-1) }] }
+      : {}),
     bumpedAt: null,
     createdAt: iso(entry.ageDays),
     updatedAt: iso(entry.ageDays),
@@ -1017,6 +1034,8 @@ export function seedFollows(): Follow[] {
     { id: 'flw_2', followerId: 'usr_demo', sellerId: 'usr_tokyoline', createdAt: iso(-14), updatedAt: iso(-14) },
     { id: 'flw_3', followerId: 'usr_demo', sellerId: 'usr_gadgetgrid', createdAt: iso(-9), updatedAt: iso(-9) },
     { id: 'flw_4', followerId: 'usr_demo', sellerId: 'usr_sneakervault', createdAt: iso(-5), updatedAt: iso(-5) },
+    // A person, too: the feed is people as well as shops.
+    { id: 'flw_5', followerId: 'usr_demo', sellerId: 'usr_b_sana', createdAt: iso(-4), updatedAt: iso(-4) },
   ];
 }
 
@@ -1039,27 +1058,46 @@ export function seedLikes(): Like[] {
  * that people might actually post in.
  */
 export function seedForums(): Forum[] {
+  // People only, as members and as founders: a forum is somewhere people talk
+  // as themselves, and a shop has its own channel for talking as a shop.
   return [
     {
       id: 'frm_imports', name: 'Import questions',
       description: 'Customs, duty, forwarders, and what actually clears.',
-      createdBy: 'usr_kaiju', postCount: 2,
+      createdBy: 'usr_b_rohit', postCount: 2,
+      memberIds: ['usr_demo', 'usr_b_rohit', 'usr_b_sana', 'usr_b_nikhil', 'usr_b_karan'],
       createdAt: iso(-30), updatedAt: iso(-2),
     },
     {
       id: 'frm_authenticity', name: 'Real or fake',
       description: 'Post photos, get a second opinion before you pay.',
-      createdBy: 'usr_sneakervault', postCount: 1,
+      createdBy: 'usr_b_nikhil', postCount: 1,
+      memberIds: ['usr_demo', 'usr_b_nikhil', 'usr_b_vikram', 'usr_b_farah'],
       createdAt: iso(-26), updatedAt: iso(-3),
     },
     {
       id: 'frm_deals', name: 'Deal spotting',
       description: 'Price drops and group-buys worth joining.',
-      createdBy: 'usr_tokyoline', postCount: 1,
+      createdBy: 'usr_b_sana', postCount: 1,
+      memberIds: ['usr_b_sana', 'usr_b_karan', 'usr_b_aisha'],
       createdAt: iso(-18), updatedAt: iso(-1),
     },
   ];
 }
+
+/**
+ * Fixture posts that were seeded and then withdrawn, as [channel, id].
+ *
+ * The first forum posts were written as shops, which forums no longer allow.
+ * A database seeded before then still has them, so they are named here for
+ * the store to take out.
+ */
+export const RETIRED_FIXTURE_POSTS: readonly (readonly [string, string])[] = [
+  ['frm_imports', 'pst_frm_1'],
+  ['frm_imports', 'pst_frm_2'],
+  ['frm_authenticity', 'pst_frm_3'],
+  ['frm_deals', 'pst_frm_4'],
+];
 
 interface PostSeed {
   id: string;
@@ -1074,6 +1112,21 @@ interface PostSeed {
   replyCount: number;
   ageDays: number;
   ageHours?: number;
+  /** Seed art for a carousel: a caption and a gradient each. */
+  art?: [string, string, string][];
+  /** A conversation under it, as [author id, author name, text, replies]. */
+  talk?: [string, string, string, [string, string, string][]?][];
+  poll?: string[];
+  /** A forum post its author also put on their own wall. */
+  wall?: true;
+  vibe?: Post['vibe'];
+  /** Room messages: said in the channel, not broadcast. */
+  voice?: Post['voice'];
+  reach?: Post['reach'];
+  announcement?: boolean;
+  pinned?: boolean;
+  /** The seed id of the message this one answers. */
+  replyToId?: string;
 }
 
 const POSTS: PostSeed[] = [
@@ -1083,6 +1136,11 @@ const POSTS: PostSeed[] = [
     authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
     body: 'September Guangzhou run is open. Dragon Knight resin is in — 20 units needed before I place the order, 3 booked so far.',
     listingId: 'lst_dragon_knight', likeCount: 24, replyCount: 6, ageDays: -1,
+    talk: [
+      ['usr_b_rohit', 'Rohit Deshmukh', 'Booked two. Let\'s get this to 20!', [
+        ['usr_kaiju', 'Kaiju Imports', 'Thank you Rohit — 5 booked now 🔥'],
+      ]],
+    ],
   },
   {
     id: 'pst_kaiju_2', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
@@ -1113,6 +1171,13 @@ const POSTS: PostSeed[] = [
     authorId: 'usr_sneakervault', authorName: 'Sneaker Vault',
     body: 'Deadstock UK 9 retro high-top, authenticated in-house. One pair, original box.',
     listingId: 'lst_sneaker_retro', likeCount: 47, replyCount: 12, ageDays: 0, ageHours: -5,
+    talk: [
+      ['usr_b_nikhil', 'Nikhil Raghavan', 'Any chance of a UK 10 in the next drop?', [
+        ['usr_sneakervault', 'Sneaker Vault', 'One pair coming in October. I will tag you.'],
+        ['usr_b_nikhil', 'Nikhil Raghavan', 'Legend 🙌'],
+      ]],
+      ['usr_b_aisha', 'Aisha Fernandes', 'The box alone is a collector piece.'],
+    ],
   },
   {
     id: 'pst_demo_1', channelId: 'usr_demo', channel: 'seller', kind: 'update',
@@ -1121,49 +1186,283 @@ const POSTS: PostSeed[] = [
     likeCount: 3, replyCount: 0, ageDays: -5,
   },
 
-  /* Forums. */
   {
-    id: 'pst_frm_1', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
-    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
-    body: 'Duty on resin figures has been assessed at 28% twice running at BLR. Anyone seeing different at MAA?',
-    likeCount: 14, replyCount: 7, ageDays: -2,
-  },
-  {
-    id: 'pst_frm_2', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
-    authorId: 'usr_gadgetgrid', authorName: 'Gadget Grid',
-    body: 'Sea freight to Chennai is running about three weeks door to door right now. Air is a week but roughly triples the per-kg.',
-    likeCount: 9, replyCount: 3, ageDays: -6,
-  },
-  {
-    id: 'pst_frm_3', channelId: 'frm_authenticity', channel: 'forum', kind: 'thread',
-    authorId: 'usr_sneakervault', authorName: 'Sneaker Vault',
-    body: 'Quick checklist for retro high-tops: stitching count on the toe box, insole print depth, and the size tag font. Photos of all three or it is a guess.',
-    likeCount: 22, replyCount: 5, ageDays: -3,
-  },
-  {
-    id: 'pst_frm_4', channelId: 'frm_deals', channel: 'forum', kind: 'thread',
+    id: 'pst_tokyo_poll', channelId: 'usr_tokyoline', channel: 'seller', kind: 'update',
     authorId: 'usr_tokyoline', authorName: 'Tokyo Line',
+    body: 'Picking the next case to split. Which one are you in for?',
+    likeCount: 9, replyCount: 0, ageDays: 0, ageHours: -3,
+    poll: ['Pokémon 151 (JP)', 'One Piece OP-07', 'Dragon Ball Fusion World'],
+  },
+  {
+    id: 'pst_kaiju_qc', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'QC shots from the August lot, straight off the warehouse bench. Swipe through — paint on the capes came out clean this time.',
+    likeCount: 13, replyCount: 0, ageDays: 0, ageHours: -9,
+    art: [
+      ['Warehouse bench', '#7C3AED', '#EC4899'],
+      ['Cape detail', '#06D6E7', '#3B82F6'],
+      ['Boxed & tagged', '#A3E635', '#06D6E7'],
+      ['Ready for the forwarder', '#EC4899', '#FF5A5F'],
+    ],
+    talk: [
+      ['usr_b_sana', 'Sana Qureshi', 'That cape paint is so much better than the July batch 😍', [
+        ['usr_kaiju', 'Kaiju Imports', 'Changed factories for the capes. Worth every rupee.'],
+      ]],
+      ['usr_b_karan', 'Karan Malhotra', 'Is mine the third one from the left? 👀'],
+    ],
+  },
+  {
+    id: 'pst_gadget_vibe', channelId: 'usr_gadgetgrid', channel: 'seller', kind: 'update',
+    authorId: 'usr_gadgetgrid', authorName: 'Gadget Grid',
+    body: 'Customs cleared in 36 hours. Personal best. ⚡',
+    likeCount: 18, replyCount: 0, ageDays: -1, ageHours: -2, vibe: 'sea',
+  },
+
+  /* Inside Kaiju's room: a pinned note, and the shop talking with customers. */
+  {
+    id: 'pst_kaiju_pin', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: '📌 How our group-buys work: book a slot, pay the deposit when the lot fills, balance when it lands in India. Questions go right here.',
+    likeCount: 9, replyCount: 0, ageDays: -12, reach: 'channel', announcement: true, pinned: true,
+  },
+  {
+    id: 'pst_kaiju_q1', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_b_meghna', authorName: 'Meghna Iyer',
+    body: 'Is the Dragon Knight the painted version or the bare resin?',
+    likeCount: 2, replyCount: 0, ageDays: -1, ageHours: 3, voice: 'visitor', reach: 'channel', announcement: false,
+  },
+  {
+    id: 'pst_kaiju_a1', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'Painted! Factory finish, same as the photos. Bare resin is on request.',
+    likeCount: 4, replyCount: 0, ageDays: -1, ageHours: 4, reach: 'channel', announcement: false,
+    replyToId: 'pst_kaiju_q1',
+  },
+  {
+    id: 'pst_kaiju_q2', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_b_tanmay', authorName: 'Tanmay Bose',
+    body: 'Mine arrived today — the box survived the trip 🙌',
+    likeCount: 6, replyCount: 0, ageDays: 0, ageHours: -3, voice: 'visitor', reach: 'channel', announcement: false,
+    art: [['Arrived safe', '#FF5B1F', '#7C3AED']],
+  },
+  {
+    id: 'pst_kaiju_news', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
+    authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: 'Customs cleared for the August lot. Dispatching Tuesday.',
+    likeCount: 11, replyCount: 0, ageDays: 0, ageHours: -1, reach: 'channel', announcement: true,
+  },
+
+  /* From accounts the demo does not follow - what Trending is for. */
+  {
+    id: 'pst_court_1', channelId: 'usr_courtside', channel: 'seller', kind: 'update',
+    authorId: 'usr_courtside', authorName: 'Courtside Kicks',
+    body: 'Match-day restock 🏀 Court shoes in every size from UK 7 to 12. First twenty orders get free socks.',
+    likeCount: 15, replyCount: 0, ageDays: 0, ageHours: -2,
+    art: [
+      ['Court day', '#FF5E1A', '#FF2D87'],
+      ['Fresh pairs', '#FFB800', '#FF5E1A'],
+      ['Sizes 7-12', '#C6FF3D', '#12D6A8'],
+    ],
+    talk: [
+      ['usr_b_vikram', 'Vikram Chauhan', 'Do you have the low-tops in UK 11?', [
+        ['usr_courtside', 'Courtside Kicks', 'Two pairs left. Want me to hold one?'],
+        ['usr_b_vikram', 'Vikram Chauhan', 'Yes please! 🙌'],
+      ]],
+      ['usr_b_farah', 'Farah Sheikh', 'Free socks is the real headline here 😄'],
+      ['usr_b_dev', 'Dev Anand Rao', 'Wore mine for a half-marathon last week. No blisters.'],
+    ],
+  },
+  {
+    id: 'pst_court_2', channelId: 'usr_courtside', channel: 'seller', kind: 'update',
+    authorId: 'usr_courtside', authorName: 'Courtside Kicks',
+    body: 'Race-day energy only ⚡',
+    likeCount: 12, replyCount: 0, ageDays: 0, ageHours: -6, vibe: 'warm',
+  },
+  {
+    id: 'pst_sana_1', channelId: 'usr_b_sana', channel: 'seller', kind: 'update',
+    authorId: 'usr_b_sana', authorName: 'Sana Qureshi',
+    body: 'Finally unboxed the Dragon Knight from the August lot. The cape is unreal in person.',
+    likeCount: 14, replyCount: 0, ageDays: 0, ageHours: -4,
+    art: [['Unboxing day', '#7C3AED', '#FF2D87']],
+    talk: [
+      ['usr_b_karan', 'Karan Malhotra', 'Mine is arriving Friday. Jealous!'],
+      ['usr_kaiju', 'Kaiju Imports', 'So glad it arrived safely 🧡'],
+    ],
+  },
+  {
+    id: 'pst_rohit_1', channelId: 'usr_b_rohit', channel: 'seller', kind: 'update',
+    authorId: 'usr_b_rohit', authorName: 'Rohit Deshmukh',
+    body: 'Which should I split next with the group?',
+    likeCount: 8, replyCount: 0, ageDays: 0, ageHours: -1,
+    poll: ['Retro runners', 'Court shoes', 'Trail shoes'],
+  },
+
+  /* Forums: people only. */
+  {
+    id: 'pst_frm_imports_1', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
+    authorId: 'usr_b_rohit', authorName: 'Rohit Deshmukh',
+    body: 'Duty on resin figures has been assessed at 28% twice running at BLR. Anyone seeing different at MAA?',
+    likeCount: 14, replyCount: 0, ageDays: -2,
+    talk: [
+      ['usr_b_sana', 'Sana Qureshi', 'MAA did 18% on mine last month, declared as models.', [
+        ['usr_b_rohit', 'Rohit Deshmukh', 'Interesting - same HS code?'],
+      ]],
+      ['usr_b_karan', 'Karan Malhotra', 'Keep the invoice in the box, it helped me.'],
+    ],
+  },
+  {
+    id: 'pst_frm_imports_2', channelId: 'frm_imports', channel: 'forum', kind: 'thread',
+    authorId: 'usr_b_nikhil', authorName: 'Nikhil Raghavan',
+    body: 'Which forwarder should I split next with the group?',
+    likeCount: 9, replyCount: 0, ageDays: -1,
+    poll: ['Sea, slow and cheap', 'Air, fast and pricey', 'Whatever clears'],
+  },
+  {
+    id: 'pst_frm_real_1', channelId: 'frm_authenticity', channel: 'forum', kind: 'thread',
+    authorId: 'usr_b_vikram', authorName: 'Vikram Chauhan',
+    body: 'Quick checklist for retro high-tops: stitching count on the toe box, insole print depth, and the size tag font. Photos of all three or it is a guess.',
+    likeCount: 22, replyCount: 0, ageDays: -3, wall: true,
+    art: [['Toe box', '#FF5B1F', '#FF2E7E'], ['Insole', '#7C3AED', '#FF2E7E'], ['Size tag', '#0EA5E9', '#7C3AED']],
+    talk: [['usr_b_farah', 'Farah Sheikh', 'Saving this. The size tag font gets everyone.']],
+  },
+  {
+    id: 'pst_frm_deals_1', channelId: 'frm_deals', channel: 'forum', kind: 'thread',
+    authorId: 'usr_b_sana', authorName: 'Sana Qureshi',
     body: 'Booster boxes are the cheapest they have been in months if you are splitting a case. Worth pooling.',
-    likeCount: 5, replyCount: 2, ageDays: -1,
+    likeCount: 7, replyCount: 0, ageDays: -1, wall: true,
+    talk: [['usr_b_aisha', 'Aisha Fernandes', 'In for two if anyone is organising 🙋‍♀️']],
   },
 ];
 
+/**
+ * Seed pictures, drawn rather than fetched.
+ *
+ * The demo store has no photos in it and the app must run with the network
+ * blocked, so a carousel in the seed feed carries small SVG posters instead of
+ * links to somebody else's server.
+ */
+function seedArt([rawCaption, from, to]: [string, string, string], index: number): string {
+  // Written into XML, so an ampersand or a bracket in a caption would make
+  // the whole picture fail to decode.
+  const caption = rawCaption.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">`
+    + `<defs><linearGradient id="g${index}" x1="0" y1="0" x2="1" y2="1">`
+    + `<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>`
+    + `<rect width="800" height="1000" fill="url(#g${index})"/>`
+    + `<circle cx="600" cy="230" r="150" fill="#fff" fill-opacity=".14"/>`
+    + `<circle cx="190" cy="800" r="230" fill="#000" fill-opacity=".10"/>`
+    + `<text x="400" y="540" text-anchor="middle" font-family="system-ui,sans-serif" font-size="56" font-weight="700" fill="#fff">${caption}</text>`
+    + `</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Everyone who can plausibly react in the demo: the shop's customers.
+ *
+ * A function rather than a constant because the customer list is declared
+ * further down the file, and a constant here would read it before it exists.
+ */
+const reactorIds = (): string[] => LOT_BUYERS.map(([id]) => id);
+const SEED_KINDS: ReactionKind[] = ['love', 'fire', 'love', 'clap', 'haha', 'wow', 'love', 'fire'];
+
 export function seedPosts(): Post[] {
-  return POSTS.map((entry) => ({
-    id: entry.id,
-    channelId: entry.channelId,
-    channel: entry.channel,
-    kind: entry.kind,
-    authorId: entry.authorId,
-    authorName: entry.authorName,
-    body: entry.body,
-    listingId: entry.listingId ?? null,
+  const everyone = reactorIds();
+  const forumName = new Map(seedForums().map((forum) => [forum.id, forum.name]));
+  const posts: Post[] = POSTS.map((entry, postIndex) => {
+    const at = iso(entry.ageDays, entry.ageHours ?? 0);
+    // Reactions from real seed accounts, so "who reacted" has names to show.
+    // Never more than there are people, and never the demo account, whose own
+    // reaction is left for whoever is trying the app to add.
+    const reactors = everyone.filter((id) => id !== entry.authorId).slice(0, entry.likeCount);
+    const reactions = reactors.map((userId, index) => ({
+      userId,
+      kind: SEED_KINDS[(index + postIndex) % SEED_KINDS.length]!,
+      at,
+    }));
+    const comments: StoredComment[] = [];
+    (entry.talk ?? []).forEach(([authorId, authorName, body, replies], index) => {
+      const id = `cmt_${entry.id}_${index}`;
+      comments.push({ id, authorId, authorName, body, parentId: null, likedBy: reactors.slice(0, 3 - index), createdAt: at });
+      (replies ?? []).forEach(([replyAuthor, replyName, replyBody], replyIndex) => {
+        comments.push({
+          id: `${id}_${replyIndex}`, authorId: replyAuthor, authorName: replyName, body: replyBody,
+          parentId: id, likedBy: reactors.slice(0, 1), createdAt: at,
+        });
+      });
+    });
+    const photoUrls = (entry.art ?? []).map((art, index) => seedArt(art, index));
+    return {
+      id: entry.id,
+      channelId: entry.channelId,
+      channel: entry.channel,
+      kind: entry.kind,
+      authorId: entry.authorId,
+      authorName: entry.authorName,
+      body: entry.body,
+      listingId: entry.listingId ?? null,
+      photoUrl: photoUrls[0] ?? null,
+      likeCount: reactions.length,
+      replyCount: comments.length || entry.replyCount,
+      photoUrls,
+      reactions,
+      comments,
+      shareCount: Math.floor(entry.likeCount / 5),
+      poll: entry.poll
+        ? {
+            options: entry.poll.map((label, index) => ({
+              id: `opt_${index + 1}`,
+              label,
+              voterIds: reactors.filter((_, voter) => voter % entry.poll!.length === index),
+            })),
+            closesAt: soon(2),
+          }
+        : null,
+      vibe: entry.vibe ?? null,
+      ...(entry.voice ? { voice: entry.voice } : {}),
+      ...(entry.reach ? { reach: entry.reach } : {}),
+      ...(entry.announcement !== undefined ? { announcement: entry.announcement } : {}),
+      ...(entry.pinned ? { pinned: true } : {}),
+      ...(entry.channel === 'forum' ? { voice: 'visitor' as const, reach: 'channel' as const, announcement: false } : {}),
+      ...(entry.wall ? { wallPostId: `${entry.id}_wall` } : {}),
+      replyTo: entry.replyToId
+        ? (() => {
+            const original = POSTS.find((other) => other.id === entry.replyToId);
+            return original ? { postId: original.id, authorName: original.authorName, body: original.body } : null;
+          })()
+        : null,
+      createdAt: at,
+      updatedAt: at,
+    };
+  });
+
+  // A forum post put on its author's wall: an entry there that points back,
+  // so the conversation stays in one place.
+  const walls: Post[] = posts.filter((post) => post.wallPostId).map((post) => ({
+    id: post.wallPostId!,
+    channelId: post.authorId,
+    channel: 'seller',
+    kind: 'update',
+    authorId: post.authorId,
+    authorName: post.authorName,
+    body: '',
+    listingId: null,
     photoUrl: null,
-    likeCount: entry.likeCount,
-    replyCount: entry.replyCount,
-    createdAt: iso(entry.ageDays, entry.ageHours ?? 0),
-    updatedAt: iso(entry.ageDays, entry.ageHours ?? 0),
+    likeCount: 0,
+    replyCount: 0,
+    voice: 'store',
+    reach: 'feed',
+    announcement: false,
+    photoUrls: [],
+    reactions: [],
+    comments: [],
+    shareCount: 0,
+    poll: null,
+    vibe: null,
+    wallOf: { forumId: post.channelId, forumName: forumName.get(post.channelId) ?? 'a forum', postId: post.id },
+    createdAt: post.createdAt,
+    updatedAt: post.createdAt,
   }));
+  return [...posts, ...walls];
 }
 
 /* -------------------------------------------------------------------------- */

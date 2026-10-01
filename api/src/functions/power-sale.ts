@@ -42,7 +42,10 @@ function minutes(n: number): number {
 }
 
 /** A post the runner writes as the shop, into the shop's own channel. */
-function shopPost(shop: User, body: string, listingId: string | null, announcement: boolean): Post {
+function shopPost(
+  shop: User, body: string, listingId: string | null, announcement: boolean, reach: Post['reach'] = 'channel',
+  drop: Post['drop'] = null,
+): Post {
   const now = new Date().toISOString();
   return {
     id: `pst_${randomUUID().slice(0, 12)}`,
@@ -60,8 +63,10 @@ function shopPost(shop: User, body: string, listingId: string | null, announceme
     // A scheduled sale lives in the room it was scheduled for. The whole point
     // of the members' window is that being in the channel is worth something,
     // and pushing every item to everyone's feed would give it away.
-    reach: 'channel',
+    reach,
     announcement,
+    ...(drop ? { drop } : {}),
+    powerSale: true,
     createdAt: now,
     updatedAt: now,
   };
@@ -84,23 +89,33 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     priceMinor: item.priceMinor,
     currency: 'INR',
     quantityAvailable: item.quantity,
+    quantityMode: item.quantityMode ?? 'fixed',
+    expiresAt: item.expiresAt ?? null,
+    advancePercent: item.advancePercent ?? null,
     preOrder: null,
-    lotId: null,
-    sourcing: 'in_hand',
+    lotId: item.lotId ?? null,
+    sourcing: item.lotId ? 'import' : item.sourcing ?? 'in_hand',
+    channelDrop: true,
     bundle: false,
     // Out of the catalog while the window is open. The people in the room can
     // buy it from the post that dropped it; nobody else can find it. That is
     // the members' window - without this it is a price difference anyone
     // browsing the buy page could take, which is not the same thing at all.
     unlisted: true,
-    photos: [],
-    tags: [],
+    costSheet: item.costSheet ?? null,
+    photos: item.photos ?? [],
+    tags: item.tags ?? [],
     likeCount: 0,
     viewCount: 0,
     bumpedAt: null,
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** A limited time deal runs from when the item goes public. */
+function publicExpiry(item: PowerSaleItem, now: Date): string | null {
+  return item.limitedDays ? new Date(now.getTime() + item.limitedDays * 86_400_000).toISOString() : null;
 }
 
 /** When the nth item is due out, counting from the opening message. */
@@ -196,11 +211,30 @@ export async function advancePowerSale(
         ...listing,
         priceMinor: item.listPriceMinor,
         unlisted: false,
+        expiresAt: publicExpiry(item, now) ?? listing.expiresAt,
         updatedAt: stamp,
       });
     }
     item.liftedAt = stamp;
     changed = true;
+
+    // Now it is everybody's, so it can be said to everybody - where the shop
+    // chose when it scheduled the sale. One post: a feed post is already in
+    // the channel, so asking for both writes it once.
+    const after = sale.afterWindow;
+    if (listing && after && (after.channel || after.feed)) {
+      try {
+        await repository.createPost(shopPost(
+          shop,
+          `✨ Exclusive channel drop, now open to everyone: ${item.title}.`,
+          item.listingId,
+          true,
+          after.feed ? 'feed' : 'channel',
+        ));
+      } catch {
+        /* The item went public either way; a lost announcement is the lesser loss. */
+      }
+    }
   }
 
   // 3. The next item, if its turn has come. One per pass - see the note at the
@@ -211,12 +245,20 @@ export async function advancePowerSale(
     const listing = await repository.createListing(listingFor(sale, item, stamp));
     const endsAt = new Date(now.getTime() + minutes(sale.windowMinutes)).toISOString();
 
+    const rises = item.listPriceMinor > item.priceMinor;
     await repository.createPost(
       shopPost(
         shop,
-        `${item.title} — ${sale.windowMinutes} minutes at the members' price.`,
+        rises
+          ? `⚡ Drop ${next + 1}/${sale.items.length}: ${item.title} — members' price for ${sale.windowMinutes} min, then the price goes up.`
+          : `⚡ Drop ${next + 1}/${sale.items.length}: ${item.title} — yours first for ${sale.windowMinutes} min, then it goes public.`,
         listing.id,
         false,
+        'channel',
+        {
+          endsAt, memberPriceMinor: item.priceMinor, publicPriceMinor: item.listPriceMinor,
+          index: next + 1, total: sale.items.length, saleName: sale.name,
+        },
       ),
     );
 
@@ -261,11 +303,32 @@ export async function releaseItems(repository: Repo, sale: PowerSale, now = new 
       ...listing,
       priceMinor: item.listPriceMinor,
       unlisted: false,
+      expiresAt: publicExpiry(item, now) ?? listing.expiresAt,
       updatedAt: stamp,
     });
     item.liftedAt = stamp;
     item.windowEndsAt = item.windowEndsAt ?? stamp;
   }
+}
+
+/**
+ * Advance every live sale on the platform, whoever is or is not watching.
+ *
+ * The clock the timer trigger (and the local dev server) runs once a minute.
+ * Before it, a sale only moved while its shop had the console open, so an
+ * item due at 3am went out whenever the seller next looked. Returns how many
+ * sales it touched, for the log.
+ */
+export async function tickPowerSales(repository: Repo, now = new Date()): Promise<number> {
+  const live = await repository.listLivePowerSales();
+  for (const sale of live) {
+    try {
+      await advancePowerSale(repository, sale, { now });
+    } catch {
+      /* One stuck sale must not hold up the others; it is retried next minute. */
+    }
+  }
+  return live.length;
 }
 
 /** Advance a shop's live sales, and hand back the list. */

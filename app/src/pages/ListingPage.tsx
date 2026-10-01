@@ -1,10 +1,24 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { ReportButton } from '../components/ReportButton';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge, leadPhoto } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
+import { ListingPosts } from '../components/ListingPosts';
+import { RarityRibbon } from '../components/Quest';
+import { listingRarity } from '@shared/quest';
 import { FillBlock } from '../components/FillMeter';
-import { formatDate, formatMoney, timeAgo } from '../format';
+import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { isExpired, isMultiple } from '@shared/payments';
+import { EditListingDialog, StockChip } from '../components/Buy';
+
+/** What each verification tier means, in a line. */
+const TIER_NOTES: Record<string, string> = {
+  unverified: 'Not verified yet',
+  verified: 'ID, phone and bank checked',
+  pro: 'Registered business, deposit held',
+};
 
 export function ListingPage() {
   const { id = '' } = useParams();
@@ -20,7 +34,7 @@ export function ListingPage() {
   const [error, setError] = useState<string | null>(null);
   const [action, setAction] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState('');
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +51,12 @@ export function ListingPage() {
   if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
 
   const { listing, seller, comments } = data;
+  // The primary photo first, then the rest in the order they were added.
+  const rarity = listingRarity(listing);
+  const photos = [...(listing.photos ?? [])]
+    .sort((a, b) => Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary)))
+    .map((photo) => photo.url)
+    .filter((url): url is string => Boolean(url));
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true);
@@ -81,48 +101,92 @@ export function ListingPage() {
       await api.bump(listing.id);
     });
 
-  async function submitComment(event: FormEvent) {
-    event.preventDefault();
-    const body = draft.trim();
-    if (!body) return;
-    await run('', async () => {
-      const result = await api.comment(listing.id, body);
-      setData((prev) => (prev ? { ...prev, comments: [...prev.comments, result.comment] } : prev));
-      setDraft('');
-    });
-  }
+  const buyBox = (
+    <div className="buybox rise" style={{ ['--i' as string]: 1 }}>
+      <div className="buybox__top">
+        <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        {isMultiple(listing) || listing.quantityAvailable > 0
+          ? <StockChip listing={listing} />
+          : <span className="badge badge--danger">Sold out</span>}
+      </div>
+      {listing.advancePercent ? (
+        <p className="buybox__adv">
+          <Svg name="coin" size={15} /> Book with{' '}
+          <b>{formatMoney(Math.round(listing.priceMinor * listing.advancePercent / 100), listing.currency)}</b>{' '}
+          ({listing.advancePercent}%) now, the rest later
+        </p>
+      ) : null}
+
+      {action && <p className={`notice ${action.includes('—') || action.includes('Bumped') ? 'notice--ok' : 'notice--error'}`}>{action}</p>}
+
+      {data.isOwn ? (
+        <div className="buybox__acts">
+          <button className="btn buybox__buy" onClick={() => setEditing(true)}>
+            {isExpired(listing) ? 'Make available again' : 'Edit, quantity or delete'}
+          </button>
+          <button className="btn btn--ghost" onClick={() => void bump()} disabled={busy}>Bump</button>
+        </div>
+      ) : isExpired(listing) ? (
+        <p className="notice notice--warn">This item has expired and can no longer be bought.</p>
+      ) : (
+        <div className="buybox__acts">
+          {/* No purchase on an expired item. The server refuses it too. */}
+          <button className="btn btn--lg buybox__buy" onClick={() => void buy()}
+            disabled={busy || !user || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
+            {busy ? <span className="buybox__opening">Opening checkout</span> : listing.preOrder ? 'Book a place' : 'Buy now'}
+          </button>
+          <button className={`btn btn--ghost buybox__save${data.liked ? ' is-on' : ''}`} aria-label={data.liked ? 'Saved' : 'Save'}
+            onClick={() => void toggleLike()} disabled={busy || !user}>
+            <Icon name="heart" size={18} />
+          </button>
+        </div>
+      )}
+      <p className="buybox__fine">
+        {!user && !data.isOwn ? 'Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
+      </p>
+    </div>
+  );
 
   return (
-    <main className="page">
-      <Link to="/" className="btn btn--quiet" style={{ marginBottom: 16 }}>
+    <main className="page lp">
+      <Link to="/" className="btn btn--quiet lp__back">
         <Icon name="back" size={14} /> Back to browse
       </Link>
 
       <div className="detail">
         <div>
-          <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb detail__hero">
-            <div className="thumb__badges">
+          <Gallery photos={photos} title={listing.title}
+            fallback={<Thumb seed={listing.id} label={listing.title} className="thumb gallery__fallback" />}>
+            <span className="gallery__badges">
+              {rarity.tier && <RarityRibbon tier={rarity.tier} />}
               <span className="badge badge--solid">{listing.condition}</span>
               {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
-            </div>
-          </Thumb>
+            </span>
+          </Gallery>
 
-          <div className="detail__section" style={{ marginTop: 22 }}>
-            <h1>{listing.title}</h1>
-            <div className="spread muted">
-              <span>{listing.category}</span>
-              <span>{listing.viewCount} views</span>
-              <span>{listing.likeCount} saved</span>
-              <span>Listed {timeAgo(listing.createdAt)}</span>
-            </div>
-            <p style={{ marginTop: 6, lineHeight: 1.65 }}>{listing.description}</p>
-            {listing.tags.length > 0 && (
-              <div className="chips">
-                {listing.tags.map((tag) => (
-                  <span key={tag} className="chip" style={{ cursor: 'default' }}>#{tag}</span>
-                ))}
-              </div>
+          <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
+            <h1 className="lp__title">{listing.title}</h1>
+            <Urgency listing={listing} />
+            {buyBox}
+            <DetailBlocks listing={listing} />
+            {listing.privateFor && (
+              <div className="badges"><span className="badge badge--pink">🤝 Private deal - {user?.id === listing.privateFor ? 'made just for you' : 'only your buyer can see this'}</span></div>
             )}
+            <div className="lp__about">
+              <span className="dtile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
+              <p>{listing.description}</p>
+              {/* Each tag is a search: tapping one shows everything else tagged
+                  the same. Inside the card, so they get its padding below too. */}
+              {listing.tags.length > 0 && (
+                <div className="hashtags">
+                  {listing.tags.map((tag, n) => (
+                    <Link key={tag} to={`/?q=${encodeURIComponent(tag)}`} className="hashtag" style={{ ['--i' as string]: n }}>
+                      <span className="hashtag__hash">#</span>{tag}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {data.preOrder && (
@@ -137,125 +201,80 @@ export function ListingPage() {
             />
           )}
 
-          <section className="detail__section">
-            <h2>Questions</h2>
-            <p className="muted">Public — anyone browsing this listing can read these.</p>
-            {comments.length === 0 && <p className="muted">No questions yet.</p>}
-            <div>
-              {comments.filter((c) => !c.replyToId).map((comment) => (
-                <div key={comment.id}>
-                  <div className="comment">
-                    <div className="comment__head">
-                      <PersonLink party={comment.author} className="comment__who" />
-                      <span className="faint">{timeAgo(comment.createdAt)}</span>
-                    </div>
-                    <p style={{ fontSize: 'var(--t-sm)' }}>{comment.body}</p>
-                  </div>
-                  {comments.filter((reply) => reply.replyToId === comment.id).map((reply) => (
-                    <div key={reply.id} className="comment comment--reply">
-                      <div className="comment__head">
-                        <PersonLink party={reply.author} className="comment__who" />
-                        <span className="badge badge--accent">Seller</span>
-                        <span className="faint">{timeAgo(reply.createdAt)}</span>
-                      </div>
-                      <p style={{ fontSize: 'var(--t-sm)' }}>{reply.body}</p>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            {user && (
-              <form className="row" onSubmit={submitComment} style={{ marginTop: 10 }}>
-                <input className="search" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', background: 'var(--surface-2)' }}
-                  value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ask the seller a question…" />
-                <button type="submit" className="btn btn--ghost" disabled={busy || !draft.trim()}>Post</button>
-              </form>
-            )}
-          </section>
+          <ListingPosts listingId={listing.id} sellerId={listing.sellerId} posts={comments}
+            onChange={(posts) => setData((prev) => (prev ? { ...prev, comments: posts } : prev))} />
         </div>
 
         {/* ── Purchase rail ── */}
-        <aside className="stack">
-          <div className="card card--pad stack">
-            <span className="detail__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-            <p className="muted">
-              {listing.quantityAvailable > 0
-                ? `${listing.quantityAvailable} available`
-                : 'Sold out'}
-            </p>
-
-            {action && <p className={`notice ${action.includes('—') || action.includes('Bumped') ? 'notice--ok' : 'notice--error'}`}>{action}</p>}
-
-            {data.isOwn ? (
-              <>
-                <p className="notice notice--info">This is your listing.</p>
-                <button className="btn btn--ghost btn--block" onClick={() => void bump()} disabled={busy}>
-                  Bump to top
-                </button>
-              </>
-            ) : (
-              <>
-                <button className="btn btn--lg btn--block" onClick={() => void buy()}
-                  disabled={busy || !user || listing.quantityAvailable === 0}>
-                  {listing.preOrder ? 'Book a place' : 'Buy now'}
-                </button>
-                <button className={`btn btn--ghost btn--block${data.liked ? ' is-on' : ''}`}
-                  onClick={() => void toggleLike()} disabled={busy || !user}
-                  style={data.liked ? { color: 'var(--accent)', borderColor: 'var(--accent-line)' } : undefined}>
-                  <Icon name="heart" size={14} /> {data.liked ? 'Saved' : 'Save'}
-                </button>
-                {!user && <p className="faint">Sign in to buy or save this listing.</p>}
-              </>
-            )}
-
-            <p className="faint">
-              Nothing is charged here. The next screen is where you choose how to pay: directly to the
-              seller, or through an escrow who holds it until you confirm the item arrived.
-            </p>
-          </div>
-
+        <aside className="stack lp__rail">
           {seller && (
-            <div className="card card--pad stack">
-              <div className="row">
-                <Avatar name={seller.storefrontName} />
-                <div style={{ flex: 1, minWidth: 0 }}>
+            <div className={`lp__seller sellercard storefront__cover--${brandHueFor(seller.username ?? seller.storefrontName)} rise`}
+              style={{ ['--i' as string]: 2 }}>
+              {/* The shop's own awning, in the same colour its shop page
+                  hangs out, so a seller looks like themselves everywhere. */}
+              <div className="sellercard__awning"><Canopy stripes={10} /></div>
+              <div className="sellercard__sign">
+                <span className="sellercard__avatar"><Avatar name={seller.storefrontName} size={52} /></span>
+                <div className="sellercard__who">
+                  <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
-                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username }}
-                    className="card__title" />
-                  <span className="faint">{seller.dispatchRegion ?? 'Location not set'}</span>
+                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username }} className="sellercard__name" />
+                  <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
-                <TrustBadge score={seller.trustScore} tier={seller.tier} />
+                <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>
+                  <Svg name="shield" size={13} /> {seller.tier}
+                </span>
               </div>
 
-              <dl style={{ margin: 0 }}>
-                <div className="kv"><dt>Followers</dt><dd>{seller.followerCount}</dd></div>
-                {seller.onTimeDispatchRate !== null && (
-                  <div className="kv">
-                    <dt>On-time dispatch</dt>
-                    <dd>{Math.round(seller.onTimeDispatchRate * 100)}%</dd>
-                  </div>
-                )}
-                <div className="kv"><dt>Tier</dt><dd style={{ textTransform: 'capitalize' }}>{seller.tier}</dd></div>
+              <dl className="sellercard__stats">
+                <div className={`sellercard__stat sellercard__stat--${seller.trustScore >= 80 ? 'ok' : seller.trustScore >= 50 ? 'warn' : 'low'}`}>
+                  <dt><Svg name="star" size={13} /> Trust</dt>
+                  <dd>{seller.trustScore}<small>/100</small></dd>
+                  <span>From buyer reviews</span>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="users" size={13} /> Followers</dt>
+                  <dd>{seller.followerCount}</dd>
+                  <span>Get their new drops</span>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="box" size={13} /> Sales</dt>
+                  <dd>{seller.completedSales}</dd>
+                  <span>Delivered, no lost disputes</span>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="calendar" size={13} /> Here since</dt>
+                  <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>
+                  <span>On Figmark</span>
+                </div>
               </dl>
 
               {user && !data.isOwn && (
-                <button className="btn btn--ghost btn--block" onClick={() => void toggleFollow()} disabled={busy}>
-                  {data.following ? <><Icon name="check" size={14} /> Following</> : 'Follow seller'}
-                </button>
-              )}
-
-              {/* A question about an item is asked of the shop, not of whoever
-                  happens to own it — so the message goes to the shop's handle. */}
-              {user && !data.isOwn && seller.username && (
-                <Link to={`/messages/${encodeURIComponent(seller.username)}`} className="btn btn--quiet btn--block">
-                  {<Icon name="message" size={15} />} Message {seller.storefrontName}
-                </Link>
+                <div className="sellercard__acts">
+                  <button className={`btn btn--sm ${data.following ? 'btn--ghost' : ''}`} onClick={() => void toggleFollow()} disabled={busy}>
+                    {data.following ? <><Icon name="check" size={14} /> Following</> : 'Follow'}
+                  </button>
+                  {/* A question about an item is asked of the shop, not of whoever
+                      happens to own it — so the message goes to the shop's handle. */}
+                  {seller.username && (
+                    <Link to={`/messages/${encodeURIComponent(seller.username)}`} className="btn btn--ghost btn--sm">
+                      <Icon name="message" size={14} /> Message
+                    </Link>
+                  )}
+                </div>
               )}
             </div>
           )}
         </aside>
       </div>
+      {editing && (
+        <EditListingDialog listing={listing} onClose={() => setEditing(false)}
+          onSaved={(saved) => {
+            setEditing(false);
+            if (!saved) navigate('/shop');
+            else setData((prev) => (prev ? { ...prev, listing: { ...prev.listing, ...saved } } : prev));
+          }} />
+      )}
     </main>
   );
 }
@@ -343,15 +362,22 @@ function PreOrderPanel({
   }
 
   return (
-    <section className="detail__section">
-      <div className="row row--between">
-        <h2>Pre-order</h2>
+    <section className="pocard rise" style={{ ['--i' as string]: 2 }}>
+      <div className="pocard__head">
+        <FillRing done={view.committed} of={view.fillThreshold} />
+        <div className="pocard__what">
+          <span className="pocard__eyebrow"><Svg name="users" size={13} /> Group pre-order</span>
+          <b className="pocard__title">{view.committed} of {view.fillThreshold} joined</b>
+          <span className="faint">
+            {view.committed >= view.fillThreshold ? 'Filled' : `${view.fillThreshold - view.committed} more to go`}
+          </span>
+        </div>
         <span className={`badge badge--${badge.tone}`}>{badge.label}</span>
       </div>
 
       <FillBlock view={view} people={roster.people} unlisted={roster.unlisted} />
 
-      <p className="muted">
+      <p className="pocard__note">
         {view.state === 'closed' ? (
           <>
             It closed {view.fillThreshold - view.committed} short, so the seller placed no order.
@@ -418,6 +444,22 @@ function PreOrderPanel({
 
       <Roster roster={roster} />
     </section>
+  );
+}
+
+/** How full the group buy is, as a ring that fills in when it arrives. */
+function FillRing({ done, of }: { done: number; of: number }) {
+  const share = of > 0 ? Math.min(1, done / of) : 0;
+  const c = 2 * Math.PI * 26;
+  return (
+    <span className="fillring" aria-hidden="true">
+      <svg width="64" height="64" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="26" className="fillring__track" />
+        <circle cx="32" cy="32" r="26" className="fillring__bar" strokeDasharray={c}
+          style={{ ['--from' as string]: c, strokeDashoffset: c * (1 - share) }} />
+      </svg>
+      <b>{Math.round(share * 100)}%</b>
+    </span>
   );
 }
 

@@ -1,13 +1,14 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
-import type { TrackingRoute } from '../../../shared/routes.js';
+import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
+import { ROUTE_TEMPLATES, normaliseSteps, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
-import { matchesKind, matchesSearch } from '../../../shared/catalog.js';
+import { matchesKind, matchesSearch, popularity } from '../../../shared/catalog.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import {
@@ -59,6 +60,7 @@ export class MemoryRepository implements Repository {
   private readonly comments = new Map<string, ListingComment>();
   private readonly likes = new Map<string, Like>();
   private readonly follows = new Map<string, Follow>();
+  private readonly siteContent = new Map<string, SiteContent>();
   private readonly posts = new Map<string, Post>();
   private readonly forums = new Map<string, Forum>();
   private readonly messages = new Map<string, Message>();
@@ -77,7 +79,9 @@ export class MemoryRepository implements Repository {
 
   async init(): Promise<void> {
     for (const user of [...seedUsers(), ...seedLotBuyers()]) this.indexUser(user);
-    for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()]) this.lots.set(lot.id, lot);
+    for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()].map((one) => this.withSampleRoute(one))) {
+      this.lots.set(lot.id, lot);
+    }
     for (const listing of seedListings()) this.listings.set(listing.id, listing);
     for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders()]) this.orders.set(order.id, order);
     for (const comment of seedComments()) this.comments.set(comment.id, comment);
@@ -103,6 +107,43 @@ export class MemoryRepository implements Repository {
     if (user.sellerProfile?.username) {
       this.handles.set(handleKey(user.sellerProfile.username), { userId: user.id, isStore: true });
     }
+  }
+
+  /**
+   * One saved route per seller, standing in for the fixtures until each shop
+   * writes its own. Cached per seller so every one of their lots snapshots the
+   * same route rather than each getting its own copy of an identical ladder,
+   * and saved into `this.routes` so `GET /api/routes` shows it as a real
+   * template, not just something baked into a lot.
+   */
+  private sampleRoutes = new Map<string, TrackingRoute>();
+  private sampleRouteFor(sellerId: string): TrackingRoute {
+    const existing = this.sampleRoutes.get(sellerId);
+    if (existing) return existing;
+    const template = ROUTE_TEMPLATES.find((entry) => entry.id === 'supplier_accumulates') ?? ROUTE_TEMPLATES[0]!;
+    const now = new Date().toISOString();
+    const route: TrackingRoute = {
+      id: `rt_${sellerId}_sample`,
+      sellerId,
+      name: `${template.name} (sample)`,
+      steps: normaliseSteps(template.steps),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.sampleRoutes.set(sellerId, route);
+    this.routes.set(route.id, route);
+    return route;
+  }
+
+  /**
+   * Every seeded lot travels the one sample route, so the fixtures show a
+   * real route's ladder working uniformly across lots rather than each
+   * falling back to the built-in seven stages by default.
+   */
+  private withSampleRoute(lot: Lot): Lot {
+    const sample = this.sampleRouteFor(lot.sellerId);
+    const route = { routeId: sample.id, name: sample.name, steps: sample.steps };
+    return { ...lot, route, currentStep: stepForStage(route, lot.stage) };
   }
 
   status(): BackendStatus {
@@ -194,8 +235,9 @@ export class MemoryRepository implements Repository {
     return [...this.orders.values()]
       .filter((order) =>
         order.sellerId === sellerId
+        && isPlaced(order)
         && order.lotId === AWAITING_LOT_ID
-        && order.status !== 'cancelled')
+        && !isCancelledLike(order.status))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
@@ -295,7 +337,7 @@ export class MemoryRepository implements Repository {
         case 'price_desc':
           return b.priceMinor - a.priceMinor;
         case 'popular':
-          return b.likeCount - a.likeCount;
+          return popularity(b) - popularity(a);
         default:
           // Recency, with a bump counting as recency.
           return freshness(b).localeCompare(freshness(a));
@@ -328,12 +370,12 @@ export class MemoryRepository implements Repository {
   }
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
-    return [...this.orders.values()].filter((o) => o.lotId === lotId);
+    return [...this.orders.values()].filter((o) => o.lotId === lotId && isPlaced(o));
   }
 
   async listOrdersHeldBy(escrowAgentId: string): Promise<Order[]> {
     return [...this.orders.values()]
-      .filter((order) => order.protection?.escrowAgentId === escrowAgentId)
+      .filter((order) => order.protection?.escrowAgentId === escrowAgentId && isPlaced(order))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
@@ -345,21 +387,40 @@ export class MemoryRepository implements Repository {
 
   async listOrdersForListing(listingId: string): Promise<Order[]> {
     return [...this.orders.values()]
-      .filter((order) => order.listingId === listingId)
+      .filter((order) => order.listingId === listingId && isPlaced(order))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   async createOrder(order: Order): Promise<Order> {
     this.orders.set(order.id, order);
+    if (isPlaced(order)) await this.takeStock(order);
+    return order;
+  }
+
+  async listCheckoutDrafts(sellerId: string): Promise<Order[]> {
+    return [...this.orders.values()]
+      .filter((order) => order.sellerId === sellerId && !isPlaced(order))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async listLikesForListings(listingIds: readonly string[]): Promise<Like[]> {
+    const wanted = new Set(listingIds);
+    return [...this.likes.values()].filter((like) => wanted.has(like.listingId));
+  }
+
+  async takeStock(order: Order): Promise<void> {
     const listing = this.listings.get(order.listingId);
-    if (listing) {
+    // A "multiple" item has no count to run down, so it never sells out.
+    if (listing && listing.quantityMode !== 'multiple') {
       listing.quantityAvailable = Math.max(0, listing.quantityAvailable - order.quantity);
       if (listing.quantityAvailable === 0) listing.status = 'sold_out';
+    }
+    if (listing) {
       // Pre-order fill is denormalised onto the listing, so it moves with the
       // order rather than being counted at read time.
       if (listing.preOrder) listing.preOrder.filledCount += order.quantity;
+      listing.soldCount = (listing.soldCount ?? 0) + order.quantity;
     }
-    return order;
   }
 
   async getOrder(id: string): Promise<Order | null> {
@@ -414,6 +475,11 @@ export class MemoryRepository implements Repository {
     return comment;
   }
 
+  async updateComment(comment: ListingComment): Promise<ListingComment> {
+    this.comments.set(comment.id, comment);
+    return comment;
+  }
+
   async toggleLike(userId: string, listingId: string): Promise<boolean> {
     const key = likeKey(userId, listingId);
     const listing = this.listings.get(listingId);
@@ -429,6 +495,10 @@ export class MemoryRepository implements Repository {
 
   async listLikedListingIds(userId: string): Promise<string[]> {
     return [...this.likes.values()].filter((l) => l.userId === userId).map((l) => l.listingId);
+  }
+
+  async listLikesBy(userId: string): Promise<Like[]> {
+    return [...this.likes.values()].filter((like) => like.userId === userId);
   }
 
   async toggleFollow(followerId: string, sellerId: string): Promise<boolean> {
@@ -448,6 +518,23 @@ export class MemoryRepository implements Repository {
 
   async listFollowedSellerIds(followerId: string): Promise<string[]> {
     return [...this.follows.values()].filter((f) => f.followerId === followerId).map((f) => f.sellerId);
+  }
+
+  async getSiteContent(id: string): Promise<SiteContent | null> {
+    return this.siteContent.get(id) ?? null;
+  }
+
+  async saveSiteContent(content: SiteContent): Promise<SiteContent> {
+    this.siteContent.set(content.id, content);
+    return content;
+  }
+
+  async deleteSiteContent(id: string): Promise<void> {
+    this.siteContent.delete(id);
+  }
+
+  async listFollowsBy(followerId: string): Promise<Follow[]> {
+    return [...this.follows.values()].filter((follow) => follow.followerId === followerId);
   }
 
   async listFollowerIds(sellerId: string): Promise<string[]> {
@@ -495,6 +582,11 @@ export class MemoryRepository implements Repository {
   }
 
   async sendMessage(message: Message): Promise<Message> {
+    this.messages.set(message.id, message);
+    return message;
+  }
+
+  async updateMessage(message: Message): Promise<Message> {
     this.messages.set(message.id, message);
     return message;
   }
@@ -590,6 +682,11 @@ export class MemoryRepository implements Repository {
     return [...this.powerSales.values()]
       .filter((sale) => sale.sellerId === sellerId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listLivePowerSales(): Promise<PowerSale[]> {
+    return [...this.powerSales.values()]
+      .filter((sale) => sale.status === 'scheduled' || sale.status === 'running');
   }
 
   async getPowerSale(sellerId: string, id: string): Promise<PowerSale | null> {
@@ -725,8 +822,13 @@ export class MemoryRepository implements Repository {
     return [...this.users.values()].filter((user) => user.sellerProfile !== null);
   }
 
+  async listStoresManagedBy(userId: string): Promise<User[]> {
+    return [...this.users.values()].filter((user) =>
+      (user.sellerProfile?.managers ?? []).some((entry) => entry.userId === userId));
+  }
+
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
-    return [...this.orders.values()].filter((order) => order.sellerId === sellerId);
+    return [...this.orders.values()].filter((order) => order.sellerId === sellerId && isPlaced(order));
   }
 
   async listPosts(channelId: string, limit = 50): Promise<Post[]> {
@@ -751,6 +853,24 @@ export class MemoryRepository implements Repository {
     return post;
   }
 
+  async listRecentPosts(limit: number): Promise<Post[]> {
+    return [...this.posts.values()].sort(newestFirst).slice(0, limit);
+  }
+
+  async getPost(channelId: string, id: string): Promise<Post | null> {
+    const post = this.posts.get(id);
+    return post && post.channelId === channelId ? structuredClone(post) : null;
+  }
+
+  async mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null> {
+    const current = await this.getPost(channelId, id);
+    if (!current) return null;
+    const next = change(current);
+    if (!next) return current;
+    this.posts.set(id, next);
+    return structuredClone(next);
+  }
+
   async listForums(): Promise<Forum[]> {
     return [...this.forums.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -760,6 +880,11 @@ export class MemoryRepository implements Repository {
   }
 
   async createForum(forum: Forum): Promise<Forum> {
+    this.forums.set(forum.id, forum);
+    return forum;
+  }
+
+  async saveForum(forum: Forum): Promise<Forum> {
     this.forums.set(forum.id, forum);
     return forum;
   }

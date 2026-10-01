@@ -57,6 +57,24 @@ export type StepSide = 'pre' | 'post';
  */
 export type StepTrigger = OrderCheckpoint;
 
+/**
+ * Which kind of leg a stage box represents, for the icon on it.
+ *
+ * Purely cosmetic - it groups the same steps a route always had, it does not
+ * add a second thing to track. A step with no stage renders as a stage of
+ * one, which is how every route written before stages existed still opens.
+ */
+export const STAGE_ICONS = ['supplier', 'warehouse', 'transit', 'customs', 'delivery'] as const;
+export type StageIcon = (typeof STAGE_ICONS)[number];
+
+export const STAGE_ICON_LABELS: Record<StageIcon, string> = {
+  supplier: 'Supplier / exporter',
+  warehouse: 'Warehouse / forwarder',
+  transit: 'In transit',
+  customs: 'Customs',
+  delivery: 'Delivery',
+};
+
 /** What each trigger button says, and what pressing it means. */
 export const TRIGGER_LABELS: Record<StepTrigger, { button: string; means: string }> = {
   china_received: { button: 'China WH', means: 'the piece arrived at the overseas warehouse' },
@@ -65,6 +83,7 @@ export const TRIGGER_LABELS: Record<StepTrigger, { button: string; means: string
   ready_to_dispatch: { button: 'Ready', means: 'it is checked and ready to go out' },
   packed: { button: 'Packed', means: 'it is boxed for the domestic courier' },
   dispatched: { button: 'Dispatched', means: 'it is on its way to the buyer' },
+  delivered: { button: 'Delivered', means: 'it has reached the buyer' },
 };
 
 /** How many opening steps count as `pre` on a route written before sides. */
@@ -96,6 +115,118 @@ export interface RouteStep {
    * existing tick becomes the thing that writes the buyer's tracking.
    */
   trigger?: StepTrigger;
+  /**
+   * The stage box this step is drawn inside, on the visual builder.
+   *
+   * Consecutive steps sharing a `stageId` render as one box; a step with none
+   * is its own box. Grouping only - it changes nothing about `side`,
+   * `trigger` or how the step is tracked, so a route saved before stages
+   * existed opens exactly as it always did.
+   */
+  stageId?: string;
+  /** The stage's name, carried on every step in it. */
+  stageName?: string;
+  stageIcon?: StageIcon;
+  /**
+   * Always present, never renamed or removed - "Order Placed" on every
+   * template. The builder disables editing on a step carrying this.
+   */
+  locked?: boolean;
+  /**
+   * A hand-over to a carrier: the step where the seller enters the tracking
+   * ID and shipper a `stepLot` call against it is stored with. Not every
+   * "Dispatched" step is one - only where a route names an actual hand-off.
+   */
+  forward?: boolean;
+  /**
+   * What the buyer reads in the gap after this step, while it is the one
+   * reached and the next has not happened yet.
+   *
+   * Optional: unset falls back to `DEFAULT_WAIT_MESSAGES` for this step's
+   * trigger, which is blank for a trigger with no default and for a step
+   * with no trigger at all - the ordinary case, where the gap is just the
+   * line to the next rung and nothing is said in it.
+   */
+  waitMessage?: string;
+  /**
+   * True once the lot has broken back apart and this step is reached one
+   * item at a time again - "Items leave the lot here" and everything from
+   * it on, in the builder that draws that line. Only meaningful on a `post`
+   * step; a `pre` step is already individual, and never needs it.
+   *
+   * Nothing downstream of tracking reads this - an item can already outrun
+   * its lot's own position the moment one of its own checkpoints is ticked
+   * (see `itemStepOn`), whether or not this flag is set. It exists only so
+   * the line the seller drew while writing the route is still where they
+   * left it the next time they open it.
+   */
+  lastMile?: boolean;
+}
+
+/**
+ * The line shown in the gap right after a step, before the next one, when
+ * the step has not been given a `waitMessage` of its own.
+ *
+ * Keyed by trigger rather than by step name, because the name is the
+ * seller's to write and two routes calling the same checkpoint different
+ * things should still read sensibly in the gap that follows it. Only the two
+ * "arrived and waiting to move on" checkpoints get a default - the others
+ * (packed, ready, dispatched) are not places a buyer waits, they are the
+ * hand-off itself.
+ */
+export const DEFAULT_WAIT_MESSAGES: Partial<Record<StepTrigger, string>> = {
+  china_received: 'Prepping for {origin} dispatch',
+  india_received: 'In transit',
+};
+
+/**
+ * The wait messages a seller reaches for most often, offered as a picker the
+ * same way `TRACKING_STATUS_OPTIONS` offers step names - one tap to say a
+ * common wait rather than typing it slightly differently on every route.
+ * `{origin}`/`{destination}` work here exactly as they do in a step's own
+ * name or description. `'Custom'` is the sentinel that opens free text.
+ */
+export const WAIT_MESSAGE_PRESETS = [
+  'Prepping for {origin} dispatch',
+  'In transit',
+  'Being consolidated at the forwarder',
+  'Awaiting customs clearance',
+  'Leaving {origin}',
+  'Arriving in {destination}',
+] as const;
+
+/**
+ * The sentinel a step's `waitMessage` carries to say, explicitly, that the
+ * gap after it says nothing - distinct from an unset `waitMessage`, which
+ * falls back to `DEFAULT_WAIT_MESSAGES`. Without this a step whose trigger
+ * has a default (the two "arrived and waiting" checkpoints) could never be
+ * silenced, only overwritten with different words.
+ */
+export const NO_WAIT_MESSAGE = '__silent__';
+
+/** What the buyer reads in the gap after this step, if anything. */
+export function waitMessageFor(step: RouteStep | undefined): string | null {
+  if (!step) return null;
+  const own = step.waitMessage?.trim();
+  if (own === NO_WAIT_MESSAGE) return null;
+  if (own) return own;
+  return (step.trigger && DEFAULT_WAIT_MESSAGES[step.trigger]) || null;
+}
+
+/**
+ * A step's name or description, with `{origin}`/`{destination}` filled in
+ * from the lot travelling it.
+ *
+ * Route text is written once and reused by every lot on that route, so a
+ * country cannot be baked into it at authoring time - "Received at 'China'
+ * Dispatch Center" only means the same thing for a shop always shipping from
+ * China. Steps hold the token instead and every screen that shows a step runs
+ * it through this before a person reads it.
+ */
+export function renderStepText(text: string, vars: { origin?: string | null; destination?: string | null }): string {
+  return text
+    .replace(/\{origin\}/g, vars.origin?.trim() || 'origin')
+    .replace(/\{destination\}/g, vars.destination?.trim() || 'destination');
 }
 
 /**
@@ -121,11 +252,6 @@ export function preSteps(route: HasSteps): RouteStep[] {
   return route.steps.filter((step, index) => sideOf(step, index) === 'pre');
 }
 
-/** The steps the whole lot travels together. */
-export function postSteps(route: HasSteps): RouteStep[] {
-  return route.steps.filter((step, index) => sideOf(step, index) === 'post');
-}
-
 /**
  * Where the hand-over sits: the index of the first `post` step.
  *
@@ -135,6 +261,53 @@ export function postSteps(route: HasSteps): RouteStep[] {
 export function joinIndexOf(route: HasSteps): number {
   const at = route.steps.findIndex((step, index) => sideOf(step, index) === 'post');
   return at === -1 ? route.steps.length : at;
+}
+
+/**
+ * Where the lot breaks back apart: the index of the first step marked
+ * `lastMile`. Equal to the step count when nothing is - a route that never
+ * hands items back to travelling on their own, which is the ordinary case
+ * for one written before this line existed.
+ */
+export function leaveIndexOf(route: HasSteps): number {
+  const at = route.steps.findIndex((step) => step.lastMile);
+  return at === -1 ? route.steps.length : at;
+}
+
+/**
+ * The furthest step a whole lot may be moved to.
+ *
+ * Once a lot has landed it is unpacked, and each item goes to its own buyer:
+ * dispatched on its own, delivered on its own. So the lot stops one short of
+ * where items leave it - the first `lastMile` step when the seller drew that
+ * line, and otherwise the final step, which is always "Delivered". Everything
+ * from there on is reached one item at a time (a delivered tick, or moving
+ * the item itself), never by moving the crate.
+ */
+export function lotEndIndex(route: HasSteps): number {
+  const last = route.steps.length - 1;
+  const leave = Math.min(leaveIndexOf(route), last);
+  const end = leave - 1;
+  // A route whose items leave the lot before it has taken a step of its own
+  // is a drawing mistake; fall back to the step before "Delivered".
+  return end >= lotOffset(route) ? end : Math.max(0, last - 1);
+}
+
+/**
+ * The first rung an item reaches on its own again, once it is out of its lot.
+ *
+ * The rung after the crate's last one - or earlier, where the route binds a
+ * last-mile tick (ready, packed, dispatched) to a step on the lot's half:
+ * that step is reached by pressing the item's own button, not by moving the
+ * crate, so from the seller's side that is where per-item tracking starts.
+ * For drawing the line only; `lotEndIndex` still decides how far a lot moves.
+ */
+export function itemLeaveIndex(route: HasSteps): number {
+  const afterCrate = lotEndIndex(route) + 1;
+  const offset = lotOffset(route);
+  const ownTick = route.steps.findIndex((step, index) => index > offset
+    && (step.trigger === 'ready_to_dispatch' || step.trigger === 'packed' || step.trigger === 'dispatched'));
+  return ownTick === -1 ? afterCrate : Math.min(afterCrate, ownTick);
 }
 
 /**
@@ -272,7 +445,7 @@ const BUILT_IN_TRIGGERS: Record<string, StepTrigger> = {
 
 export const BUILT_IN_ROUTE: LotRoute = {
   routeId: null,
-  name: 'China → India',
+  name: 'Origin → Destination',
   steps: LOT_STAGES.map((stage, index) => ({
     id: stage,
     name: LOT_STAGE_LABELS[stage],
@@ -296,6 +469,12 @@ interface PresetStep {
   side: StepSide;
   /** The button that advances an item to it, where a button can. */
   trigger?: StepTrigger;
+  /** Which stage box this step opens grouped into, on the visual builder. */
+  stageId?: string;
+  stageName?: string;
+  stageIcon?: StageIcon;
+  locked?: boolean;
+  forward?: boolean;
 }
 
 export interface RoutePreset {
@@ -309,7 +488,7 @@ export interface RoutePreset {
 export const ROUTE_PRESETS: readonly RoutePreset[] = [
   {
     id: 'consolidated',
-    name: 'China → India, consolidated',
+    name: 'Origin → Destination, consolidated',
     blurb: 'Pieces gather at your warehouse, then travel together as one lot.',
     steps: [
       { name: 'Ordering', description: 'The order is placed with you and you are sourcing the piece.', side: 'pre' },
@@ -317,7 +496,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
       { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival. Usually handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received in India.', side: 'post', trigger: 'india_received' },
+      { name: 'Landed', description: 'The lot has been received at the destination.', side: 'post', trigger: 'india_received' },
       { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
@@ -327,7 +506,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     name: 'Chain procurement',
     blurb: 'You order from a supplier who orders from theirs. Longer before it moves.',
     steps: [
-      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Ordered from the supplier', description: 'The shop has placed the order with their supplier.', side: 'pre' },
       { name: 'Supplier sourcing', description: 'The supplier is obtaining the piece.', side: 'pre' },
       { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre', trigger: 'china_received' },
@@ -343,12 +522,12 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     name: 'Supplier → forwarder',
     blurb: 'The supplier ships straight to your freight forwarder. No warehouse of yours.',
     steps: [
-      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The supplier has sent the piece to the freight forwarder.', side: 'pre' },
       { name: 'At the forwarder', description: 'Received and being consolidated into a lot.', side: 'post', trigger: 'china_received' },
-      { name: 'Dispatched', description: 'The lot has left for India.', side: 'post' },
+      { name: 'Dispatched', description: 'The lot has left for the destination.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival. Handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received in India.', side: 'post', trigger: 'india_received' },
+      { name: 'Landed', description: 'The lot has been received at the destination.', side: 'post', trigger: 'india_received' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -357,7 +536,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     name: 'Courier, end to end',
     blurb: 'DHL or similar, one parcel per order. Never joins a lot.',
     steps: [
-      { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
+      { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The piece has been handed to the courier.', side: 'pre' },
       { name: 'Tracking issued', description: 'The courier has given the parcel a tracking number.', side: 'pre' },
       { name: 'In transit', description: 'On its way to India.', side: 'pre' },
@@ -396,30 +575,122 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
  * describe. It is an event now, drawn where it happened.
  */
 export const SUGGESTED_STEPS: readonly PresetStep[] = [
-  { name: 'Order placed', description: 'Your order is confirmed with the shop.', side: 'pre' },
   {
-    name: 'Received at international warehouse',
+    name: 'Order Placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre', locked: true,
+    stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
+  },
+  {
+    name: "Received at '{origin}' Dispatch Center",
     description: 'The piece is counted in and waiting for a lot.',
-    side: 'pre',
-    trigger: 'china_received',
-  },
-  { name: 'Dispatched from China', description: 'The lot has left the warehouse.', side: 'post' },
-  { name: 'International transit', description: 'On its way out of the country.', side: 'post' },
-  { name: 'Indian customs', description: 'Clearing customs on arrival.', side: 'post' },
-  {
-    name: 'Received by seller',
-    description: 'Landed, and with the shop.',
-    side: 'post',
-    trigger: 'india_received',
+    side: 'pre', trigger: 'china_received',
+    stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
   },
   {
-    name: 'Domestic dispatch',
-    description: 'Handed to the courier for the last leg.',
-    side: 'post',
-    trigger: 'dispatched',
+    name: 'Dispatched from origin', description: 'The lot has left the warehouse.', side: 'post',
+    stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse',
   },
-  { name: 'Delivered', description: 'It reached you.', side: 'post' },
+  {
+    name: 'International transit', description: 'On its way out of the country.', side: 'post',
+    stageId: 'transit', stageName: 'International Transit', stageIcon: 'transit',
+  },
+  {
+    name: 'Destination customs', description: 'Clearing customs on arrival.', side: 'post',
+    stageId: 'domestic', stageName: 'Domestic', stageIcon: 'customs',
+  },
+  {
+    name: 'Received by seller', description: 'Landed, and with the shop.', side: 'post', trigger: 'india_received',
+    stageId: 'domestic', stageName: 'Domestic', stageIcon: 'customs',
+  },
+  {
+    name: 'Domestic dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched',
+    stageId: 'domestic', stageName: 'Domestic', stageIcon: 'customs',
+  },
+  {
+    name: 'Delivered', description: 'It reached you.', side: 'post',
+    stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery',
+  },
 ];
+
+/**
+ * A named shape for the two-card "logistics scenario" picker, distinct from
+ * `ROUTE_PRESETS`: those are journey shapes (courier, pre-order); these are
+ * *where an order enters the lot's journey* - the thing this list exists to
+ * make configurable rather than assumed.
+ *
+ * Adding a fourth scenario is adding one entry here, with its own steps
+ * written the same way as the two below.
+ */
+export interface RouteTemplate {
+  id: string;
+  name: string;
+  blurb: string;
+  icon: StageIcon;
+  steps: readonly PresetStep[];
+}
+
+export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
+  {
+    id: 'supplier_accumulates',
+    name: 'Supplier Accumulates',
+    blurb: 'The supplier gathers several customers’ orders into one shipment before it moves.',
+    icon: 'supplier',
+    steps: [
+      { name: 'Order Placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
+      { name: 'Supplier Accumulates Orders', description: "Held at the supplier's until enough orders are ready to ship together.", side: 'pre', trigger: 'china_received', stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
+      { name: 'Dispatched to Freight Forwarder', description: "Handed over from the supplier to the freight forwarder.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Forwards to Destination', description: "On its way to '{destination}'.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: "Received at '{destination}' Warehouse", description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
+    ],
+  },
+  {
+    id: 'direct_to_forwarder',
+    name: 'Direct to Freight Forwarder',
+    blurb: 'The seller buys from the supplier and has it shipped straight to the freight forwarder.',
+    icon: 'warehouse',
+    steps: [
+      { name: 'Order Placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
+      { name: 'Seller Purchases & Ships to Freight Forwarder', description: 'Bought from the supplier and sent straight on, with no stop at the seller.', side: 'pre', forward: true, stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
+      { name: 'Freight Forwarder Receives Goods', description: 'Counted in at the freight forwarder.', side: 'post', trigger: 'china_received', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Forwards to Destination', description: "On its way to '{destination}'.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: "Received at '{destination}' Warehouse", description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
+    ],
+  },
+];
+
+/**
+ * The tracking statuses a seller reaches for most often.
+ *
+ * Offered as a dropdown so a step is one tap to name rather than a blank field
+ * every route repeats slightly differently - "Received at warehouse" typed once
+ * as "warehouse received" is a step nobody's search or preset recognises later.
+ * `'Custom'` is not a status; it is the sentinel that opens the free-text field
+ * for the one in twenty steps that needs its own words.
+ */
+export const TRACKING_STATUS_OPTIONS = [
+  'Order placed',
+  'Payment received',
+  'Supplier accepted',
+  'Preparing order',
+  'Accumulating orders',
+  'Ready for dispatch',
+  'Dispatched',
+  'Received at warehouse',
+  'Consolidating',
+  'Shipment booked',
+  'In transit',
+  'Arrived at destination',
+  'Customs clearance',
+  'Customs cleared',
+  'Received by domestic handler',
+  'Out for delivery',
+  'Delivered',
+] as const;
 
 /** Ids that are stable for a saved step and unique within a route. */
 export function stepId(seed: number): string {
@@ -448,9 +719,53 @@ export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[
       trigger: ORDER_CHECKPOINTS.includes(step.trigger as OrderCheckpoint)
         ? (step.trigger as StepTrigger)
         : undefined,
+      // Carried through like `side` and `trigger`: dropping it here would
+      // silently ungroup every stage box on the next save.
+      stageId: step.stageId?.trim() || undefined,
+      stageName: step.stageName?.trim() || undefined,
+      stageIcon: STAGE_ICONS.includes(step.stageIcon as StageIcon) ? (step.stageIcon as StageIcon) : undefined,
+      locked: step.locked === true || undefined,
+      forward: step.forward === true || undefined,
+      waitMessage: step.waitMessage?.trim() || undefined,
+      lastMile: step.lastMile === true || undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));
+}
+
+/** One stage box: its steps, in order, with the position each one sits at. */
+export interface StageGroup {
+  stageId: string;
+  stageName: string;
+  stageIcon: StageIcon | undefined;
+  steps: { step: RouteStep; index: number }[];
+}
+
+/**
+ * Steps folded into their stage boxes, for the builder and for the buyer's
+ * timeline alike - one grouping, read the same way everywhere it is drawn.
+ *
+ * A step with no `stageId` is a box of one, named after itself: routes
+ * written before stages existed, and the built-in route, still draw
+ * correctly, just as one box per step.
+ */
+export function groupStages(steps: readonly RouteStep[]): StageGroup[] {
+  const groups: StageGroup[] = [];
+  steps.forEach((step, index) => {
+    const id = step.stageId ?? step.id;
+    const last = groups[groups.length - 1];
+    if (last && last.stageId === id) {
+      last.steps.push({ step, index });
+      return;
+    }
+    groups.push({
+      stageId: id,
+      stageName: step.stageName ?? step.name,
+      stageIcon: step.stageIcon,
+      steps: [{ step, index }],
+    });
+  });
+  return groups;
 }
 
 /** The route this lot travels: its own, or the one that has always been here. */
@@ -520,23 +835,15 @@ export function stepForStage(route: HasSteps, stage: LotStage): number {
 
 export type StepState = 'done' | 'current' | 'todo';
 
-export function stepStateAt(index: number, current: number): StepState {
-  if (index < current) return 'done';
-  return index === current ? 'current' : 'todo';
-}
-
 /**
- * The step a lot is on, for a card that has room for one line.
- *
- * A lot below its own first step has not taken one: it is open and filling,
- * and naming the item step it happens to sit above would put "received at the
- * international warehouse" on a card for a crate nobody has touched.
+ * A step is ticked the moment it is reached, not only once it is behind you -
+ * moving to a step is what "done" means here. What used to be drawn as a
+ * separate "current" mark on the rung itself is now the gap after it (see
+ * `waitMessageFor`): the rung is ticked, and the wait, if there is one, is
+ * its own row underneath.
  */
-export function currentStepName(lot: Pick<Lot, 'route' | 'currentStep' | 'stage'>): string {
-  const route = routeOf(lot);
-  const at = currentStepOf(lot);
-  if (at < lotOffset(route)) return 'Filling';
-  return route.steps[at]?.name ?? 'Not started';
+export function stepStateAt(index: number, current: number): StepState {
+  return index <= current ? 'done' : 'todo';
 }
 
 /** Whether the lot has reached the point where items are worked one by one. */
@@ -595,6 +902,18 @@ export const WAITING_FOR_A_LOT = 'Waiting for a shipment to travel in';
  * The month, because that is how consolidation runs are actually talked about,
  * and the origin when there is one.
  */
+/**
+ * Where a lot travels, by country: "China → India".
+ *
+ * A route template says "Origin → Destination" because the same template
+ * serves every lane a shop runs; this is what fills those words in for one
+ * particular lot, falling back to the generic word when the seller has not
+ * picked a country yet.
+ */
+export function laneOf(lot: Pick<Lot, 'originCountry' | 'destinationCountry'>): string {
+  return `${lot.originCountry?.trim() || 'Origin'} → ${lot.destinationCountry?.trim() || 'Destination'}`;
+}
+
 export function suggestLotName(at: Date = new Date(), origin?: string): string {
   const month = at.toLocaleDateString('en-GB', { month: 'long' });
   const place = origin?.split(',')[0]?.trim();

@@ -2,8 +2,14 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { isLotEvent, kindOf } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
-import { stepForStage, stepStateAt, type RouteStep } from '@shared/routes';
+import {
+  groupStages, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep,
+} from '@shared/routes';
+import { trackingSearchUrl } from '@shared/tracking-links';
+import { formatDateOrdinal } from '../format';
 import { Icon } from './Icon';
+import { StepMark, WaveLoader } from './ui';
+import { STAGE_ICON_META } from './RouteBuilder';
 
 /**
  * A route, drawn.
@@ -19,13 +25,22 @@ import { Icon } from './Icon';
  * between two, which is where most of what a seller has to say actually
  * belongs ("still waiting on the airline, booked for Thursday" is not a step).
  */
-export function Ladder({ steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction }: {
+export function Ladder({
+  steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
+  leaveAt, leaveNote, skin = 'classic',
+}: {
   steps: RouteStep[];
   current: number;
   /** Everything recorded against this journey, oldest first. */
   history?: StageEvent[];
+  /**
+   * The lot's own origin/destination, filled into any `{origin}`/
+   * `{destination}` a step's text carries. Absent renders the tokens as the
+   * plain words "origin"/"destination" - readable, if not the exact country.
+   */
+  vars?: { origin?: string | null; destination?: string | null };
   /** Seller-side: move to a step. Absent means the ladder is read-only. */
-  onMove?: (to: number) => void | Promise<void>;
+  onMove?: (to: number, details?: { trackingId?: string; shipper?: string }) => void | Promise<void>;
   /** Seller-side: say something without moving. */
   onNote?: (note: string, at: number) => void | Promise<void>;
   busy?: boolean;
@@ -41,13 +56,63 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
   waitingFor?: string | null;
   /** Rendered inside the lot marker, for whoever may change which lot it is. */
   lotAction?: (event: StageEvent) => ReactNode;
+  /**
+   * Show, on every step handed over to a courier, an illustrative example of
+   * the tracking ID/courier fields that step will ask for - read-only, for a
+   * route being written where no real hand-over has happened yet to show one.
+   */
+  forwardExample?: boolean;
+  /**
+   * Where the item stops riding its lot and is worked one at a time again -
+   * the index of the first rung past the crate's end. A thin line is drawn
+   * above it, and `leaveNote` (the seller's way to where that happens) hangs
+   * on it. Absent, or past the last rung, draws nothing.
+   */
+  leaveAt?: number;
+  leaveNote?: ReactNode;
+  /**
+   * `quest` draws the same rungs as a game board - numbered level nodes,
+   * gold coins for the ones reached, XP on each. `classic` is the plain
+   * ladder, kept so the look can be switched back.
+   */
+  skin?: 'classic' | 'quest';
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
+  /** A hand-over to a carrier: which forward step is being moved to, if any. */
+  const [forwarding, setForwarding] = useState<number | null>(null);
+  const [trackingId, setTrackingId] = useState('');
+  const [shipper, setShipper] = useState('');
 
-  const notes = notesByStep(steps, history ?? []);
+  function moveTo(index: number) {
+    if (!onMove) return;
+    void onMove(index, { trackingId: trackingId.trim() || undefined, shipper: shipper.trim() || undefined });
+    setForwarding(null);
+    setTrackingId('');
+    setShipper('');
+  }
+
+  const notes = notesByStep(steps, history ?? [], current);
+  /* Whether the lot has started carrying this item: until the item reaches a
+     rung on the lot's half of the route, the lot is still a promise. */
+  const stillWaiting = current < 0 || !steps[current] || sideOf(steps[current]!, current) === 'pre';
+  const quest = skin === 'quest';
   const editable = Boolean(onMove || onNote);
+
+  /*
+   * Stage headers, drawn only where the seller actually grouped steps.
+   *
+   * `groupStages` folds every step with no `stageId` into a box of one, which
+   * is right for the builder (nothing to group, nothing missing) and wrong
+   * here: heading every rung with its own name would repeat what is already
+   * on it. So only a step that starts an explicitly-named stage gets one.
+   */
+  const stageStarts = new Map(
+    groupStages(steps)
+      .filter((group) => group.steps[0]!.step.stageId)
+      .map((group) => [group.steps[0]!.index, group] as const),
+  );
 
   async function send(at: number) {
     const text = draft.trim();
@@ -57,23 +122,58 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
     setNoting(null);
   }
 
+  /*
+   * The gap after the current rung, if anything is said in it: the explicit
+   * wait a caller hands in (the pre-lot/lot boundary), or failing that
+   * whatever this route says happens after its current step - a custom
+   * message the seller wrote, or the default for the checkpoint it is bound
+   * to. Nothing, most of the time: only a handful of steps are places a
+   * buyer actually waits.
+   */
+  const gapMessage = waitingFor || (current >= 0 ? waitMessageFor(steps[current]) : null);
+
   return (
-    <ol className={`ladder${editable ? ' ladder--live' : ''}`}>
+    <ol className={`ladder${editable ? ' ladder--live' : ''}${quest ? ' ladder--quest' : ''}`}>
       {steps.map((step, index) => {
-        /* Waiting for the lot means the rung the item is on is finished, not
-           in progress: the present is the wait drawn under it. */
-        const state = waitingFor && index === current ? 'done' : stepStateAt(index, current);
+        // Reaching a step is what ticks it - the present is the gap after
+        // it, drawn as its own row below, not a mark on the rung itself.
+        const state = stepStateAt(index, current);
         const said = notes.get(index) ?? [];
+        const stage = stageStarts.get(index);
         return (
           <Fragment key={step.id}>
+          {stage && (
+            <li className="ladder__stage" aria-hidden="true">
+              <Icon name={STAGE_ICON_META[stage.stageIcon ?? 'warehouse'].icon} size={14} />
+              <span>{renderStepText(stage.stageName, vars ?? {})}</span>
+            </li>
+          )}
+          {/* Where the crate is unpacked and this piece goes on alone. Quiet on
+              purpose: it is a change of who moves the tracking, not a step. */}
+          {leaveAt === index && leaveAt > 0 && (
+            <li className={`ladder__leave${index <= current ? ' is-past' : ''}`}>
+              <span className="ladder__leave-line" aria-hidden="true" />
+              <span className="ladder__leave-body">
+                <span className="ladder__leave-text">
+                  <Icon name="box" size={11} /> Leaves the lot · tracked per item from here
+                </span>
+                {leaveNote}
+              </span>
+            </li>
+          )}
           <li className={`ladder__row is-${state}`}>
             <span className="ladder__dot" aria-hidden="true">
-              {state === 'done' ? '✓' : state === 'current' ? '●' : ''}
+              {quest && state !== 'done'
+                ? <span className="ladder__lvl">{index + 1}</span>
+                : <StepMark state={state} size={11} />}
             </span>
 
             <span className="ladder__body">
-              <span className="ladder__name">{step.name}</span>
-              {step.description && <span className="faint">{step.description}</span>}
+              <span className="ladder__name">
+                {renderStepText(step.name, vars ?? {})}
+                {quest && state === 'done' && <span className="ladder__xp">+{STEP_XP} XP</span>}
+              </span>
+              {step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
 
               {said.map((event, at) => (
                 isLotEvent(event)
@@ -83,17 +183,17 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
                      or halfway down the ladder. */
                   ? (
                     <span key={`${event.enteredAt}-${at}`} className="ladder__lot">
-                      <Icon name="box" size={13} />
+                      <span className="ladder__lot-icon" aria-hidden="true"><Icon name="box" size={13} /></span>
                       <span className="ladder__lot-text">
                         {kindOf(event) === 'moved' && event.from
                           ? <>Moved to <strong>{event.lot?.name}</strong> from {event.from.name}</>
                           /* Tense from where the journey actually is, so an
                              item still waiting reads as a promise and one
                              already moving reads as a fact. */
-                          : index >= current
+                          : stillWaiting
                             ? <>Will be shipped with <strong>{event.lot?.name}</strong></>
                             : <>Travelling with <strong>{event.lot?.name}</strong></>}
-                        {event.lot?.number && <span className="faint"> · LOT {event.lot.number}</span>}
+                        {event.lot?.number && <span className="ladder__lot-no">LOT {event.lot.number}</span>}
                       </span>
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>
                       {lotAction?.(event)}
@@ -101,11 +201,36 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
                   )
                   : (
                     <span key={`${event.enteredAt}-${at}`} className="ladder__note">
-                      <span className="ladder__note-text">{event.note}</span>
+                      <span className="ladder__note-body">
+                        {event.note && <span className="ladder__note-text">{event.note}</span>}
+                        {(event.trackingId || event.shipper) && (
+                          <span className="ladder__note-text">
+                            {event.shipper && <>Shipper: <strong>{event.shipper}</strong></>}
+                            {event.shipper && event.trackingId && ' · '}
+                            {event.trackingId && <>Tracking ID: <strong>{event.trackingId}</strong></>}
+                            {/* No carrier API is connected yet, so this looks
+                                the current status up rather than showing it inline. */}
+                            {event.trackingId && (
+                              <a href={trackingSearchUrl(event.shipper ?? '', event.trackingId)}
+                                target="_blank" rel="noopener noreferrer" className="ladder__track-link">
+                                Check status <Icon name="external" size={11} />
+                              </a>
+                            )}
+                          </span>
+                        )}
+                      </span>
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>
                     </span>
                   )
               ))}
+
+              {forwardExample && step.forward && !said.length && (
+                <span className="ladder__forward-example">
+                  <Icon name="box" size={12} />
+                  <span>Tracking ID / AWB <em>e.g. DHL1234567890</em></span>
+                  <span>Courier <em>e.g. DHL</em></span>
+                </span>
+              )}
 
               {/* The affordance that makes "between the steps" a place you can
                   write: it hangs under the rung the note will be filed at. */}
@@ -117,11 +242,37 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
                       <Icon name="plus" size={11} /> Note
                     </button>
                   )}
-                  {onMove && index !== current && (
+                  {onMove && index !== current && forwarding !== index && (
                     <button type="button" className="ladder__act ladder__act--move" disabled={busy}
-                      onClick={() => void onMove(index)}>
+                      onClick={() => step.forward ? setForwarding(index) : void onMove(index)}>
                       {index < current ? 'Move back here' : 'Move here'}
                     </button>
+                  )}
+                </span>
+              )}
+
+              {/* A hand-over to a carrier gets its two fields here, on the step
+                  it actually happened at - not one global "tracking" field
+                  that a second forward on the same lot would overwrite. The
+                  courier is required: a tracking ID with nobody to ask it of
+                  is not a lookup anybody can make, live or by hand. */}
+              {editable && forwarding === index && (
+                <span className="ladder__write">
+                  <input value={trackingId} onChange={(event) => setTrackingId(event.target.value)}
+                    placeholder="Tracking ID / AWB" aria-label="Tracking ID or AWB number" />
+                  <input value={shipper} onChange={(event) => setShipper(event.target.value)}
+                    placeholder="Courier, e.g. DHL, Bluedart" aria-label="Courier or shipper" required />
+                  <span className="ladder__write-acts">
+                    <button type="button" className="btn btn--sm" disabled={busy || !shipper.trim()}
+                      onClick={() => moveTo(index)}>
+                      Move here
+                    </button>
+                    <button type="button" className="btn btn--quiet btn--sm" onClick={() => setForwarding(null)}>
+                      Cancel
+                    </button>
+                  </span>
+                  {!shipper.trim() && (
+                    <span className="field__hint">The courier's name is required to move here.</span>
                   )}
                 </span>
               )}
@@ -156,17 +307,21 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
             </span>
           </li>
 
-          {/* Between the two ladders, and drawn as its own rung rather than
-              folded into either: the item has finished everything that happens
-              to it alone, and what happens next happens to the whole lot. */}
-          {waitingFor && index === current && (
+          {/* The gap after the current rung, drawn as its own row rather than
+              folded into either neighbour: it is neither done nor todo, it is
+              what is happening right now, between the two. */}
+          {gapMessage && index === current && (
             <li className="ladder__row ladder__row--wait is-current">
-              <span className="ladder__dot" aria-hidden="true">●</span>
+              <span className="ladder__dot" aria-hidden="true">
+                <WaveLoader />
+              </span>
               <span className="ladder__body">
-                <span className="ladder__name">{waitingFor}</span>
-                <span className="faint">
-                  Everything from here happens to the whole lot, not to this piece alone.
-                </span>
+                <span className="ladder__name">{gapMessage}</span>
+                {waitingFor && (
+                  <span className="faint">
+                    Everything from here happens to the whole lot, not to this piece alone.
+                  </span>
+                )}
               </span>
             </li>
           )}
@@ -190,15 +345,39 @@ export function Ladder({ steps, current, history, onMove, onNote, busy, whose, w
  * back to the rung their coarse stage implies, which is roughly where they
  * belong rather than bunched at the top pretending to be the beginning.
  */
-function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, StageEvent[]> {
+function notesByStep(steps: RouteStep[], history: StageEvent[], current: number): Map<number, StageEvent[]> {
   const index = new Map<string, number>();
   steps.forEach((step, at) => { if (!index.has(step.name)) index.set(step.name, at); });
 
+  /*
+   * Walked in the order things happened, not the order they were stored.
+   *
+   * A payment, a claim, a credit - anything the order records without naming
+   * a rung - only knows the order's coarse stage, and that stage does not move
+   * when a checkpoint is ticked. Filed by stage alone, a payment made the day
+   * after the parcel reached the warehouse sat under "Order placed", above the
+   * warehouse rung, reading as if it came first. So an unnamed event goes no
+   * higher than the furthest rung a named one had already reached by then.
+   */
+  const time = (event: StageEvent) => new Date(event.enteredAt).getTime() || 0;
+  const ordered = history.map((event, at) => ({ event, at }))
+    .sort((a, b) => time(a.event) - time(b.event) || a.at - b.at);
+
+  let reached = -1;
   const out = new Map<number, StageEvent[]>();
-  for (const event of history) {
-    if (!event.note && !isLotEvent(event)) continue;
+  for (const { event } of ordered) {
     const named = event.step ? index.get(event.step) : undefined;
-    const at = named ?? stepForStage({ steps }, event.stage as LotStage);
+    if (named !== undefined) reached = Math.max(reached, named);
+    if (!event.note && !event.trackingId && !event.shipper && !isLotEvent(event)) continue;
+    let at = named ?? Math.max(stepForStage({ steps }, event.stage as LotStage), reached);
+    /*
+     * Joining a lot happens to the item where it is, so it can never sit
+     * below the rung the item has reached. Filed by a step name borrowed from
+     * another lot's route, or by a coarse stage that rounds up, it used to
+     * land several rungs ahead - "Will be shipped with…" hanging under
+     * Domestic dispatch while the parcel was still leaving China.
+     */
+    if (isLotEvent(event) && current >= 0 && at > current) at = current;
     const existing = out.get(at);
     if (existing) existing.push(event);
     else out.set(at, [event]);
@@ -206,9 +385,12 @@ function notesByStep(steps: RouteStep[], history: StageEvent[]): Map<number, Sta
   return out;
 }
 
+/** What reaching one rung is worth on the quest skin. Flat, so it reads as a count. */
+export const STEP_XP = 100;
+
 /** A date a person reads at a glance, not a timestamp. */
 function when(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return formatDateOrdinal(iso);
 }

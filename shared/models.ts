@@ -1,4 +1,6 @@
+import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { LotRoute } from './routes.js';
+import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
   ConditionTag,
   FulfilmentStage,
@@ -130,6 +132,15 @@ export interface User extends BaseDocument {
    */
   sellerProfile: SellerProfile | null;
   /**
+   * The shop's profit-calculator cost sheets (Pro). Kept on the account rather
+   * than in a container: a shop has a handful, reads them all at once, and the
+   * database is at its container ceiling. Never sent anywhere but the
+   * calculator's own route.
+   */
+  profitTemplates?: ProfitTemplate[];
+  /** Calculations kept to list later (Pro). Kept beside the calculators, for the same reason. */
+  savedCalcs?: SavedCalc[];
+  /**
    * Freight forwarders share the same account base rather than living in a
    * separate system; this extension is what puts one in the directory.
    */
@@ -159,6 +170,82 @@ export interface User extends BaseDocument {
   tags?: string[];
   /** Last seen, so a page can say whether anybody is home. */
   lastSeenAt?: string | null;
+  /** Where to send this buyer's money back when an order they paid is cancelled. */
+  reversalDetails?: BuyerReversalDetails | null;
+  /**
+   * The collector game: check-ins, claimed tasks and the cards pulled from
+   * packs. Kept on the account for the same reason as the cost sheets - one
+   * person reads their own all at once, and the database is at its container
+   * ceiling. Everything else the game shows (XP from orders, reviews, saves)
+   * is counted from the rows at read time, never stored here.
+   */
+  quest?: QuestState;
+  /**
+   * Delivered purchases the person chose to show off, as cards on their page.
+   * On the account for the same reason as `quest`: it is read whole, by the
+   * person or by whoever opens their page, and there is no container to spare.
+   */
+  collection?: CollectionItem[];
+  /** The shelves a collection is grouped into, in the order the owner likes. */
+  collectionGroups?: CollectionGroup[];
+}
+
+/**
+ * One delivered purchase, kept as a card.
+ *
+ * The photos and the item's name are copied at the moment it is added, so the
+ * card stays what was bought even if the seller later edits or expires the
+ * listing. The name is the owner's to change; the photos are not.
+ */
+export interface CollectionItem {
+  /** The order it came from - one card per order. */
+  orderId: string;
+  listingId: string;
+  /** What the owner calls it, shown under the picture. */
+  name: string;
+  /** The item's name as it was sold, kept so a rename can always be undone. */
+  itemName: string;
+  photos: string[];
+  groupId: string | null;
+  /** When it was delivered: the day it could first be added. */
+  deliveredAt: string;
+  addedAt: string;
+}
+
+/**
+ * A page the operators write, stored whole under a fixed id ("learn").
+ * `data` is validated by whoever owns that page before it is saved.
+ */
+export interface SiteContent extends BaseDocument {
+  data: unknown;
+  /** The operator who last saved it. */
+  updatedBy: string | null;
+}
+
+export interface CollectionGroup {
+  id: string;
+  name: string;
+}
+
+/** What the collector game has to remember, because no other row records it. */
+export interface QuestState {
+  /** Day keys (YYYY-MM-DD, India time) the person checked in on, oldest first. */
+  checkIns: string[];
+  /** `taskId:period` -> when it was claimed. */
+  claimed: Record<string, string>;
+  /** Every card pulled, one per opened pack. */
+  cards: OwnedCard[];
+  /** The last XP and level worked out, so a leaderboard is a scan, not a recount. */
+  xpCache?: number;
+  levelCache?: number;
+  computedAt?: string | null;
+}
+
+export interface OwnedCard {
+  cardId: string;
+  /** The pack it came out of - one card per pack, so this is also the pack's "opened" mark. */
+  packId: string;
+  at: string;
 }
 
 export interface SellerProfile {
@@ -384,6 +471,15 @@ export interface Listing extends BaseDocument {
   currency: string;
   quantityAvailable: number;
   /**
+   * 'multiple' when the seller cannot put a number on the shelf: the item stays
+   * buyable and `quantityAvailable` is not counted down. Absent means 'fixed'.
+   */
+  quantityMode?: 'fixed' | 'multiple';
+  /** When it stops being buyable. Read against the clock; null or absent never expires. */
+  expiresAt?: string | null;
+  /** Buyers may pay this percentage up front instead of the full amount. Null or absent: full only. */
+  advancePercent?: number | null;
+  /**
    * Demand pooling, opt-in per listing.
    *
    * Lives here rather than on the lot because a shipment lot can carry five
@@ -423,6 +519,8 @@ export interface Listing extends BaseDocument {
    * the catalog by definition.
    */
   unlisted?: boolean;
+  /** First dropped in the shop's channel by a power sale; public cards say so. */
+  channelDrop?: boolean;
   /**
    * Sold as one assorted lot rather than as a single item.
    *
@@ -454,12 +552,43 @@ export interface Listing extends BaseDocument {
   tags: string[];
   /** Bookmark count. Cheap signal, feeds the relevance ranking later. */
   likeCount: number;
+  /**
+   * Units sold, moved with stock when an order is placed. Optional because
+   * listings written before it existed never counted; they read as zero.
+   * Feeds the rarity label a card wears.
+   */
+  soldCount?: number;
   viewCount: number;
   /**
    * Last time the seller pushed this back up the feed. Rate-limited server-side
    * so bumping cannot be used to camp the top of the catalog.
    */
   bumpedAt: string | null;
+  /**
+   * What one unit really cost to bring in, step by step, as the seller saved
+   * it from the profit calculator (Pro). Absent until they do.
+   */
+  costSheet?: ItemCostSheet | null;
+  /**
+   * Earlier versions of `costSheet`, oldest first. Removing an item's costs
+   * steps back to the last of these rather than wiping them, so a change the
+   * seller did not mean is one tap from undone.
+   */
+  costSheetPrevious?: ItemCostSheet[];
+  /**
+   * Every price this item has been on sale at, oldest first, appended when the
+   * seller edits the price. Absent for items never repriced.
+   */
+  priceHistory?: { priceMinor: number; at: string }[];
+  /** Last time it went from sold out back on sale. */
+  restockedAt?: string | null;
+  /**
+   * A private deal: made in a chat for one buyer, and only they can see or
+   * buy it. Always `unlisted` too, so it is never in the catalog, the shop's
+   * grid, a channel or the feed - but once bought it is an ordinary order,
+   * in the order book, lots and tracking like any other.
+   */
+  privateFor?: string | null;
 }
 
 /**
@@ -546,8 +675,10 @@ export interface ListingComment extends BaseDocument {
   authorId: string;
   authorName: string;
   body: string;
-  /** Set when the seller answers, so replies can be grouped under a question. */
+  /** Set on a reply, so replies can be grouped under the post they answer. */
   replyToId: string | null;
+  /** Who reacted, and with what: one reaction per person. */
+  reactions?: { userId: string; kind: ReactionKind }[];
 }
 
 /** A viewer's bookmark. Kept separate so listings stay cheap to write. */
@@ -612,6 +743,16 @@ export interface StageEvent {
    */
   lot?: { id: string; name: string; number: string } | null;
   from?: { id: string; name: string; number: string } | null;
+  /**
+   * Set when this event is a forward/shipment hand-over - a step the route
+   * flagged `forward` (e.g. "Freight Forwarder Forwards to Destination").
+   *
+   * Per-event rather than per-lot or per-order: a lot forwarded twice, or
+   * with a change of carrier partway, needs two different answers, not one
+   * field everything after it silently inherits.
+   */
+  trackingId?: string;
+  shipper?: string;
 }
 
 /**
@@ -631,6 +772,18 @@ export interface Lot extends BaseDocument {
   description: string;
   /** Where the lot is coming from, e.g. "Guangzhou, CN". Seller-facing. */
   origin: string;
+  /**
+   * The two countries this lot travels between, as plain names from
+   * `COUNTRIES` (`shared/countries.ts`) - "China", "India".
+   *
+   * Optional on the type so a lot opened before these existed still loads;
+   * the "new lot" form requires both. Route steps read them through
+   * `renderStepText` rather than naming a country themselves, which is what
+   * lets one route template read correctly for a shop running China -> India
+   * and another running Vietnam -> UAE.
+   */
+  originCountry?: string;
+  destinationCountry?: string;
   /** Who the lot is bought from. Null until the seller fills it in. */
   supplier: LotSupplier | null;
   status: LotStatus;
@@ -828,6 +981,24 @@ export interface Order extends BaseDocument {
   /** Set once the order reaches `delivered`; unlocks reviews. */
   completedAt: string | null;
   /**
+   * When this order was counted toward both sides' completed trades.
+   *
+   * An order can reach `delivered` more than once (a tick undone and redone)
+   * and its money can be released after it was delivered, so the count needs
+   * its own marker to be added exactly once. Absent on older orders, which
+   * were counted when their payment released.
+   */
+  trustCountedAt?: string | null;
+  /**
+   * When the buyer confirmed the item is in their hands.
+   *
+   * The same last step for every order, however it was paid: the seller says
+   * it was delivered, the buyer says it arrived. Under buyer protection that
+   * same confirmation also releases the held payment; paid directly there is
+   * no money to release, and it simply closes the delivery.
+   */
+  receivedAt?: string | null;
+  /**
    * When each physical checkpoint was ticked for this one item.
    *
    * A timestamp rather than a boolean, so "is it in the China warehouse" and
@@ -846,6 +1017,211 @@ export interface Order extends BaseDocument {
    * argument and deleting the evidence would leave only one side of it.
    */
   paymentClaim?: PaymentClaim | null;
+  /** Full or advance, as the buyer chose at checkout. */
+  paymentPlan?: 'full' | 'advance';
+  /**
+   * How the first payment was made. Every later payment on the order uses the
+   * same one: switching quietly would move money outside what was agreed.
+   */
+  paymentMethod?: PaymentMethod;
+  /** Copied from the listing at purchase, so editing the listing cannot move it. */
+  advancePercent?: number | null;
+  /** Every payment as its own dated transaction; balances are summed from these. */
+  payments?: PaymentRecord[];
+  /** Money paid over the balance, held for the seller to refund. */
+  credits?: CreditRecord[];
+  /**
+   * The seller asked the buyer to add or check their Payment Reversal Details
+   * before refunding them. Open until the buyer confirms them or saves new ones.
+   */
+  detailsCheck?: { requestedAt: string; requestedBy: string; confirmedAt: string | null } | null;
+  /** Every dispute raised on this order, of any topic; the records themselves live with the disputes. */
+  disputeLinks?: DisputeLink[];
+  /**
+   * Placed as a booking - the buyer's word that they want it, with no payment
+   * yet. Payment is asked for only once the seller has accepted; on any other
+   * order this is simply absent.
+   */
+  bookingOnly?: boolean;
+  /**
+   * The seller has said yes to this order or booking. Drawn separately from
+   * `status` because a booking is accepted before a rupee moves, and because
+   * this is exactly the line the X button's meaning turns on: `reject` before
+   * it, `cancel` after.
+   */
+  accepted?: boolean;
+  acceptedAt?: string | null;
+  /** Why the seller called off an already-accepted order. */
+  cancelReason?: string | null;
+  /** The reversal of a paid, then cancelled, order - one record per order. */
+  reversal?: OrderReversal | null;
+  /**
+   * When the buyer chose how to go ahead - pay, pay an advance, or book.
+   * Null while they have only pressed Buy: the checkout exists so the next
+   * screen can ask how to pay, but it is not an order the seller sees, holds
+   * stock for, or is told about. Absent on orders from before this existed,
+   * which were all placed.
+   */
+  placedAt?: string | null;
+  /** Times the buyer pressed Buy on this item before going ahead (or not). */
+  buyClicks?: number;
+  /** Bought from a private deal made in a chat, not from the catalog. */
+  privateDeal?: boolean;
+  /**
+   * The courier an item went out with, and its AWB, as the seller typed them
+   * when they dispatched it. Mostly for in-hand items, which never ride a lot
+   * and so have no lot tracking reference to borrow.
+   */
+  shipment?: OrderShipment | null;
+}
+
+/** Who is carrying a parcel, and the number to track it by. */
+export interface OrderShipment {
+  courier: string;
+  awb: string;
+  /** When these details were last saved. */
+  at: string;
+}
+
+/**
+ * A cancelled order's payment going back to the buyer.
+ *
+ * Kept as its own record rather than folded into `payments`, because a
+ * reversal is a process with its own steps - waiting on the buyer's details,
+ * waiting on the seller's proof, waiting on the buyer's confirmation - and
+ * `payments` only ever wanted one fact (money moved) rather than several. The
+ * refund itself is still written to `payments` too, via the same `record()`
+ * every other payment goes through, so the ledger never disagrees with this.
+ */
+export interface OrderReversal {
+  reasonForCancel: string;
+  initiatedAt: string;
+  /** What is being reversed - the order's total paid at the moment of cancellation. */
+  amountMinor: number;
+  /** Set once the buyer has said "I've updated my payment details". */
+  buyerConfirmedDetailsAt: string | null;
+  /** The seller's proof that the reversal went out. */
+  reference: string | null;
+  screenshot: string | null;
+  reversedAt: string | null;
+  reversedBy: string | null;
+  /** The buyer's answer once the seller marks it reversed. */
+  buyerResponse: 'received' | 'not_received' | null;
+  buyerRespondedAt: string | null;
+  /** Set once the buyer raises a dispute over a reversal they say never arrived. */
+  disputeRaisedAt: string | null;
+}
+
+/**
+ * Where a buyer wants a cancelled order's payment sent back.
+ *
+ * Free text, like `SellerPaymentDetails` - the platform is not moving this
+ * money and must not pretend to have validated an account it cannot see. One
+ * record per buyer, kept in their own settings rather than typed fresh on
+ * every cancellation.
+ */
+export interface BuyerReversalDetails {
+  /** UPI, bank transfer, whatever they want to say - never hard-coded to one provider. */
+  method: string;
+  /** The UPI handle, account number, or other identifier that money goes to. */
+  identifier: string;
+  accountName: string;
+  notes?: string | null;
+  qrCodeUrl?: string | null;
+  updatedAt: string;
+}
+
+export type PaymentMethod = 'direct' | 'protected';
+
+export interface PaymentRecord {
+  id: string;
+  at: string;
+  /** `credit` is a buyer's extra payment on another order, moved onto this one. */
+  kind: 'full' | 'advance' | 'additional' | 'refund' | 'credit';
+  method: PaymentMethod;
+  /** The part of the payment allocated to this order. */
+  amountMinor: number;
+  /** One buyer payment spread over several orders shares a batch. */
+  batchId: string | null;
+  /** The whole payment the buyer made, when it was split. */
+  batchTotalMinor: number | null;
+  reference: string | null;
+  recordedBy: string;
+}
+
+export interface CreditRecord {
+  id: string;
+  createdAt: string;
+  /** The original excess. */
+  amountMinor: number;
+  batchId: string | null;
+  refundedMinor: number;
+  refundedAt: string | null;
+  refundedBy: string | null;
+  /**
+   * `open` - nobody has decided yet. `held` - the seller is keeping it for
+   * the buyer's future orders. `refund_pending` - the seller says they sent it
+   * back and the buyer has not answered. `refunded` / `applied` - nothing left.
+   */
+  status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
+  /** Moved onto the buyer's other orders from this seller. */
+  appliedMinor?: number;
+  applications?: { orderId: string; itemName: string; amountMinor: number; at: string }[];
+  /** The return the seller says they made, waiting on the buyer's answer. */
+  pendingRefund?: {
+    amountMinor: number; reference: string | null; screenshotUrl?: string | null; sentAt: string; sentBy: string;
+  } | null;
+  /** Every time the buyer said a return did not arrive - kept, not overwritten. */
+  refundDenials?: { at: string; amountMinor: number }[];
+  /**
+   * Why this money is owed back. Absent on records from before refunds had
+   * more than one source, which were all overpayments.
+   */
+  origin?: RefundOrigin;
+  /** The seller's reason, for a cancellation or a refund they started themselves. */
+  reason?: string | null;
+  /** Every return sent against this refund, and what the buyer said about it. */
+  refundLog?: RefundLogEntry[];
+}
+
+export type RefundOrigin = 'overpaid' | 'cancelled' | 'manual';
+
+/**
+ * What a dispute is about. Every dispute on the marketplace is one `Dispute`
+ * record with one of these topics:
+ *
+ * - `escrow` - a protected order whose held money is in question. The only
+ *   kind whose settlement moves money, because it is the only kind where the
+ *   marketplace holds any. Absent on records from before topics existed.
+ * - `payment_rejected` / `refund_rejected` / `reversal_rejected` - one side
+ *   says it paid, the other says the money never came.
+ * - `general` - anything else either side wants settled.
+ */
+export type DisputeTopic = 'escrow' | 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
+
+/** The order's own index of its disputes: enough to list them and never dispute one thing twice. */
+export interface DisputeLink {
+  id: string;
+  topic: DisputeTopic;
+  /** What was disputed - a particular rejected payment, or the dispute's own id. */
+  subject: string;
+  raisedBy: string;
+  raisedSide: 'buyer' | 'seller';
+  raisedAt: string;
+}
+
+/** One return of money to a buyer: how much, when, and whether it arrived. */
+export interface RefundLogEntry {
+  id: string;
+  amountMinor: number;
+  reference: string | null;
+  /** The seller's screenshot of the transfer, from the photo store. */
+  screenshotUrl?: string | null;
+  sentAt: string;
+  sentBy: string;
+  /** `awaiting` until the buyer answers. */
+  status: 'awaiting' | 'received' | 'not_received';
+  answeredAt: string | null;
 }
 
 /** One buyer's assertion that they sent the money, and the seller's answer. */
@@ -867,6 +1243,22 @@ export interface PaymentClaim {
   decidedAt: string | null;
   /** Why they denied it. Read by the buyer, so it has to say something. */
   decidedReason: string | null;
+  /**
+   * What the claim is for: the full amount, the advance, or a further
+   * instalment towards a balance already partly paid. Absent on older claims.
+   */
+  plan?: 'full' | 'advance' | 'additional';
+  amountMinor?: number;
+  /** Part of a payment spread over several items - carried through so the
+   *  seller sees "this is part of a ₹X payment" while it is still pending. */
+  batchId?: string | null;
+  batchTotalMinor?: number | null;
+  /**
+   * Overpaid beyond this order's own balance, waiting to become a credit once
+   * the seller confirms the payment arrived - the same overflow `pay_more`
+   * already turns into a refundable credit, just not banked until it is real.
+   */
+  excessMinor?: number;
 }
 
 /** Buyer protection, as bought: who holds it, and on what terms. */
@@ -1013,6 +1405,12 @@ export interface DisputeResolution {
 export interface Dispute extends BaseDocument {
   /** Partition key. */
   orderId: string;
+  /** What it is about. Absent means `escrow`, the only kind there used to be. */
+  topic?: DisputeTopic;
+  /** What was disputed, for a rejected payment - so it cannot be disputed twice. */
+  subject?: string | null;
+  /** The money in question, where there is a particular amount. */
+  amountMinor?: number | null;
   raisedBy: string;
   againstUserId: string;
   /** Which side opened it. Either may: a seller has grievances too. */
@@ -1107,6 +1505,64 @@ export interface Post extends BaseDocument {
    * reads them as announcements rather than hiding them.
    */
   announcement?: boolean;
+  /**
+   * Every photo on the post, in the order the author put them.
+   *
+   * `photoUrl` stays as the first of these, so anything that only ever read
+   * one picture keeps reading the right one.
+   */
+  photoUrls?: string[];
+  /** Set on a power sale drop: the members' window and what comes after it. */
+  drop?: PostDrop | null;
+  /** Written by a power sale run - its drops and its messages - and tagged as such. */
+  powerSale?: boolean;
+  /**
+   * Who reacted, and how. One per person.
+   *
+   * On the post rather than in a container of its own: a post and its
+   * reactions are always read together, a shared-throughput database has a
+   * ceiling on containers, and the count is then never out of step with the
+   * list it counts. `likeCount` is kept equal to its length.
+   */
+  reactions?: StoredReaction[];
+  /** The conversation under the post, flat, replies pointing at their parent. `replyCount` is its length. */
+  comments?: StoredComment[];
+  /** How many times it was passed on - reposted, or sent out as a link. */
+  shareCount?: number;
+  /** A question with a few answers to pick from. */
+  poll?: StoredPoll | null;
+  /** Set when this post is somebody else's, passed on to the reposter's followers. */
+  repostOf?: RepostRef | null;
+  /** A short line set on one of the brand gradients. */
+  vibe?: Vibe | null;
+  /**
+   * Pinned to the top of its channel by whoever runs the shop.
+   *
+   * The thing a newcomer should read first - opening hours, how the lots work,
+   * the current drop - kept above the conversation rather than buried in it.
+   */
+  pinned?: boolean;
+  /**
+   * The message this one answers, in a channel or a forum.
+   *
+   * A snapshot rather than a pointer alone, so the quote still reads after
+   * the original is edited away or deleted - and so a room can render without
+   * fetching every message it quotes.
+   */
+  replyTo?: { postId: string; authorName: string; body: string } | null;
+  /**
+   * Set on a wall entry: this post is somebody's forum post, put on their own
+   * wall too. The forum post is the one people react to and comment on, so
+   * the conversation is one conversation wherever it is read.
+   */
+  wallOf?: { forumId: string; forumName: string; postId: string } | null;
+  /** Set on a forum post that was also put on its author's wall: that entry's id. */
+  wallPostId?: string | null;
+  /**
+   * The same post, shared into other forums at the same time - up to two more.
+   * Each is a post of its own there; this is so a card can say where else.
+   */
+  alsoIn?: { forumId: string; forumName: string; postId: string }[] | null;
 }
 
 /**
@@ -1137,6 +1593,8 @@ export interface Want extends BaseDocument {
    */
   budgetMinor: number | null;
   currency: string;
+  /** Up to four photos of what they are in search of. */
+  photoUrls?: string[];
   /** Null means any condition will do. */
   condition: ConditionTag | null;
   status: WantStatus;
@@ -1196,6 +1654,12 @@ export interface WantOffer extends BaseDocument {
   /** What they would charge. Null when they have only offered to look. */
   priceMinor: number | null;
   message: string;
+  /**
+   * Who answered: the person, or the shop they run. A shop and its owner are
+   * the same account, so this is what tells the two answers apart. Absent on
+   * older answers, which were all the shop.
+   */
+  voice?: 'person' | 'shop';
 }
 
 /**
@@ -1224,18 +1688,49 @@ export interface Notification extends BaseDocument {
 export type NotificationKind =
   | 'want_answered'
   | 'payment_claimed'
+  | 'payment_received'
+  | 'credit_refunded'
+  | 'credit_refund_sent'
+  | 'credit_refund_answered'
+  | 'credit_applied'
+  | 'refund_started'
+  | 'payment_dispute'
   | 'payment_settled'
   | 'dispute_opened'
   | 'dispute_replied'
   | 'dispute_settled'
   | 'lot_moved'
+  /** One item reached its buyer - the step after a lot is unpacked. */
+  | 'order_delivered'
+  /** A held payment went to the seller: confirmed by the buyer, or on its own. */
+  | 'payment_released'
+  /** The buyer confirmed an item reached them (paid directly, so no money moves). */
+  | 'order_received'
+  /** Somebody disputed a review or comment, or asked for one to be validated, and it was decided. */
+  | 'content_report_settled'
   | 'preorder_nearly'
   | 'preorder_filled'
   | 'preorder_due'
   | 'preorder_closed'
   | 'sale_opened'
   | 'sale_item'
-  | 'order_rejected';
+  | 'order_placed'
+  | 'order_rejected'
+  | 'order_accepted'
+  | 'booking_accepted'
+  | 'order_cancelled'
+  | 'payment_reversal_pending'
+  | 'reversal_details_needed'
+  | 'reversal_details_updated'
+  | 'payment_reversed'
+  | 'reversal_ack'
+  | 'dispute_raised_reversal'
+  /** A shop nudging a buyer: a balance to pay, a checkout left open, a saved item back. */
+  | 'seller_nudge'
+  | 'post_reacted'
+  | 'post_commented'
+  | 'comment_replied'
+  | 'post_shared';
 
 /**
  * A run of channel posts that sells things, on a timer the shop sets.
@@ -1279,6 +1774,11 @@ export interface PowerSale extends BaseDocument {
   openedAt: string | null;
   /** Set when the closing message went out, or when it was cancelled. */
   closedAt: string | null;
+  /**
+   * Where an item is announced when its members' window closes and it goes
+   * public. Absent on older sales, which announced nothing at that point.
+   */
+  afterWindow?: { channel: boolean; feed: boolean };
 }
 
 export type PowerSaleStatus = 'draft' | 'scheduled' | 'running' | 'done' | 'cancelled';
@@ -1295,9 +1795,8 @@ export interface PowerSaleItem {
   /**
    * What it costs once the window closes.
    *
-   * Never below the members' price: the window has to be worth being in the
-   * channel for, and a "discount" that is the same number as the public price
-   * is a lie told to people who trusted the shop enough to follow it.
+   * Never below the members' price. The same number is allowed: there is no
+   * discount then, and the item simply goes public when the window closes.
    */
   listPriceMinor: number;
   quantity: number;
@@ -1311,6 +1810,35 @@ export interface PowerSaleItem {
   liftedAt: string | null;
   /** The listing this became, once posted. */
   listingId: string | null;
+  /** What one unit cost (Pro), carried onto the listing when it posts. */
+  costSheet?: ItemCostSheet | null;
+  /* The same listing options the sell page offers, carried onto the listing
+     when the item posts. All optional: sales scheduled before these existed
+     post exactly as they did. */
+  photos?: ListingPhoto[];
+  tags?: string[];
+  sourcing?: Sourcing;
+  quantityMode?: 'fixed' | 'multiple';
+  expiresAt?: string | null;
+  advancePercent?: number | null;
+  /** The lot it travels in, when the shop picked one. */
+  lotId?: string | null;
+  /**
+   * A limited time deal, in days, counted from when the item goes public -
+   * not from when it drops, because the members' window is not the deal.
+   */
+  limitedDays?: number | null;
+}
+
+/** What a channel drop post shows beside its item: the clock and the price after it. */
+export interface PostDrop {
+  endsAt: string;
+  memberPriceMinor: number;
+  publicPriceMinor: number;
+  /** Its place in the run, 1-based, and how many the run carries. */
+  index: number;
+  total: number;
+  saleName: string;
 }
 
 /**
@@ -1325,6 +1853,12 @@ export interface Forum extends BaseDocument {
   description: string;
   createdBy: string;
   postCount: number;
+  /**
+   * Who has joined. People only: a shop is a storefront, and a forum is
+   * somewhere people talk as themselves. Absent on forums made before
+   * membership existed, which read as empty.
+   */
+  memberIds?: string[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1363,4 +1897,26 @@ export interface Message extends BaseDocument {
   to: MessageParty;
   body: string;
   readAt: string | null;
+  /** A private deal card, when the message carries one. */
+  deal?: MessageDeal | null;
+  /** The message this one answers, as a snapshot so the quote survives. */
+  replyTo?: { id: string; name: string; body: string } | null;
+  /** One reaction per handle; reacting again changes it. */
+  reactions?: { handle: string; kind: ReactionKind }[];
+}
+
+/**
+ * A private deal in a chat, either way round.
+ *
+ * `offer`: the shop made an item for this buyer alone - `listingId` is it, and
+ * the buyer buys it like any other item. `request`: the buyer asked for one -
+ * what, at what price - and the shop answers by making the offer.
+ */
+export interface MessageDeal {
+  kind: 'offer' | 'request';
+  listingId: string | null;
+  title: string;
+  priceMinor: number;
+  quantity: number;
+  photo: string | null;
 }

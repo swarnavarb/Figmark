@@ -97,17 +97,6 @@ export function furthestStage(
   return best;
 }
 
-/** The next stage a seller can advance a lot to, or null at the end. */
-export function nextStage(stage: LotStage): LotStage | null {
-  const index = LOT_STAGES.indexOf(stage);
-  return index >= 0 && index < LOT_STAGES.length - 1 ? LOT_STAGES[index + 1]! : null;
-}
-
-/** Whether a pre-order is still accepting bookings. */
-export function preOrderOpen(preOrder: { cutoffAt: string } | null): boolean {
-  return preOrder !== null && Date.parse(preOrder.cutoffAt) > Date.now();
-}
-
 export type { DirectStage, FulfilmentStage, LotStage };
 
 /**
@@ -140,13 +129,4 @@ export function kindOf(event: Pick<StageEvent, 'kind' | 'note'>): StageEventKind
 export function isLotEvent(event: Pick<StageEvent, 'kind' | 'note'>): boolean {
   const kind = kindOf(event);
   return kind === 'joined' || kind === 'moved';
-}
-
-/** The lot an item is travelling with, as its own history last recorded it. */
-export function lotOf(history: readonly StageEvent[]): StageEvent['lot'] {
-  for (let at = history.length - 1; at >= 0; at -= 1) {
-    const event = history[at]!;
-    if (isLotEvent(event) && event.lot) return event.lot;
-  }
-  return null;
 }

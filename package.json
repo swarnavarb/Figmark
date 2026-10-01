@@ -16,6 +16,7 @@
     "dev": "npm --prefix app run dev",
     "serve": "node scripts/dev-server.mjs",
     "azure:check": "node scripts/azure-check.mjs",
-    "azure:provision": "node scripts/provision-cosmos.mjs"
+    "azure:provision": "node scripts/provision-cosmos.mjs",
+    "routes:reset": "node scripts/reset-lot-routes.mjs"
   }
 }

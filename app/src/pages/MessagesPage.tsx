@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { MessageParty } from '@shared/models';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import type { Message, MessageDeal, MessageParty } from '@shared/models';
+import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
+import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
+import { DealCard, DealForm, useMakeDeal } from '../components/PrivateDeal';
 import { timeAgo } from '../format';
+import { VoicePicker, VoiceScope } from '../components/SocialVoice';
+import { RoomBar, useLongPress } from '../components/SocialChrome';
+import { useGoBack } from '../components/ScrollManager';
 
 /**
  * The inbox.
@@ -19,9 +25,10 @@ export function MessagesView() {
   const [data, setData] = useState<Inbox | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [to, setTo] = useState('');
+  const [composing, setComposing] = useState(false);
   /** Which inbox is showing: a handle, or '' for everything. */
   const [box, setBox] = useState('');
-  const [composing, setComposing] = useState(false);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     void api
@@ -33,117 +40,114 @@ export function MessagesView() {
   }, []);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <SkeletonRows count={4} />;
 
   // Threads addressed to you and threads addressed to your shop are two
   // inboxes, not one list with a label on each row: a shop's messages are work
   // and yours are not, and they get read at different times.
-  const threads = box ? data.threads.filter((row) => row.us.handle === box) : data.threads;
+  const needle = query.trim().toLowerCase();
+  const threads = data.threads
+    .filter((row) => !box || row.us.handle === box)
+    .filter((row) => !needle || row.them.displayName.toLowerCase().includes(needle)
+      || row.them.handle.includes(needle) || row.lastMessage.toLowerCase().includes(needle));
   const unreadIn = (handle: string) =>
     data.threads.reduce((sum, row) => (row.us.handle === handle ? sum + row.unread : sum), 0);
   const voice = data.handles.find((party) => party.handle === box);
+  const totalUnread = data.threads.reduce((sum, row) => sum + row.unread, 0);
+
+  const start = (event: FormEvent) => {
+    event.preventDefault();
+    const handle = to.trim().replace(/^@/, '').toLowerCase();
+    // Opening from inside one inbox writes from that voice.
+    if (handle) navigate(`/messages/${encodeURIComponent(handle)}${box ? `?as=${encodeURIComponent(box)}` : ''}`);
+  };
 
   return (
-    <div className="stack">
-      {/* Only worth showing when there is more than one voice to separate. */}
-      {data.handles.length > 1 && (
-        <div className="pills pills--sm">
-          <button type="button" className={`pill${box === '' ? ' is-on' : ''}`}
-            aria-pressed={box === ''} onClick={() => setBox('')}>
-            <span className="pill__label">All</span>
-          </button>
-          {data.handles.map((party) => {
-            const unread = unreadIn(party.handle);
-            return (
-              <button
-                key={party.handle}
-                type="button"
-                className={`pill${box === party.handle ? ' is-on' : ''}`}
-                aria-pressed={box === party.handle}
-                onClick={() => setBox(party.handle)}
-              >
-                <span className="pill__label">
+    <div className="chlist inbox">
+      {/* The inboxes, and writing to somebody new as a pen at the end of the
+          row - a handle is all it needs, so it opens as one field. */}
+      <div className="inbox__boxes" role="tablist" aria-label="Inbox">
+        {data.handles.length > 1 && (
+          <>
+            <button type="button" role="tab" aria-selected={box === ''} className={`chip${box === '' ? ' is-on' : ''}`}
+              onClick={() => setBox('')}>
+              All{totalUnread > 0 && <span className="chip__count">{totalUnread}</span>}
+            </button>
+            {data.handles.map((party) => {
+              const unread = unreadIn(party.handle);
+              return (
+                <button key={party.handle} type="button" role="tab" aria-selected={box === party.handle}
+                  className={`chip${box === party.handle ? ' is-on' : ''}`} onClick={() => setBox(party.handle)}>
                   {party.isStore ? party.displayName : 'You'}
-                  {unread > 0 && <span className="badge badge--accent" style={{ marginLeft: 6 }}>{unread}</span>}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {/* The inbox is the content here, so the way to start a new conversation
-          is a button until it is wanted: on a phone this form was pushing every
-          thread below the fold. */}
-      {!composing ? (
-        <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }}
-          onClick={() => setComposing(true)}>
-          <Icon name="plus" size={14} /> New message
+                  {unread > 0 && <span className="chip__count">{unread}</span>}
+                </button>
+              );
+            })}
+          </>
+        )}
+        <button type="button" className={`inbox__compose${composing ? ' is-on' : ''}`} aria-label="New message"
+          aria-expanded={composing} title="New message" disabled={data.handles.length === 0}
+          onClick={() => setComposing((now) => !now)}>
+          <Icon name="compose" size={17} />
         </button>
-      ) : (
-        <form
-          className="card card--pad form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const handle = to.trim().replace(/^@/, '').toLowerCase();
-            // Opening from inside one inbox writes from that voice.
-            if (handle) navigate(`/messages/${encodeURIComponent(handle)}${box ? `?as=${encodeURIComponent(box)}` : ''}`);
-          }}
-        >
-          <label className="field">
-            <span>Message someone</span>
-            <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="@username" autoFocus />
-            <span className="field__hint">
-              {data.handles.length === 0 ? (
-                <>Pick a username in <Link to="/me?tab=settings">your settings</Link> before messaging anyone.</>
-              ) : box ? (
-                <>Anyone with a username. This one goes out as <code>@{box}</code>.</>
-              ) : (
-                <>
-                  Anyone with a username — a person or a shop. You speak as{' '}
-                  {data.handles.map((party) => `@${party.handle}`).join(' or ')}.
-                </>
-              )}
-            </span>
-          </label>
-          <div className="row">
-            <button type="submit" className="btn" disabled={!to.trim()}>Open conversation</button>
-            <button type="button" className="btn btn--quiet" onClick={() => setComposing(false)}>Cancel</button>
-          </div>
+      </div>
+      {composing && (
+        <form className="inbox__new" onSubmit={start}>
+          <span className="inbox__newicon" aria-hidden="true">@</span>
+          <input autoFocus value={to} onChange={(e) => setTo(e.target.value)} placeholder="username"
+            aria-label="Message someone by username" />
+          <button type="submit" className="inbox__go" disabled={!to.trim()} aria-label="Open conversation">
+            <Icon name="send" size={15} />
+          </button>
         </form>
+      )}
+      {data.handles.length === 0 && (
+        <p className="faint">Pick a username in <Link to="/me?tab=settings">your settings</Link> before messaging anyone.</p>
+      )}
+
+      {data.threads.length > 3 && (
+        <label className="chlist__search">
+          <Icon name="search" size={16} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search conversations" aria-label="Search conversations" />
+        </label>
       )}
 
       {threads.length === 0 ? (
-        <EmptyState title={voice ? `Nothing for ${voice.isStore ? voice.displayName : 'you'} yet` : 'No messages yet'}>
-          Start one above, or from any shop's page.
+        <EmptyState icon={<Icon name="mail" size={26} />}
+          title={needle ? 'No conversation matches' : voice ? `Nothing for ${voice.isStore ? voice.displayName : 'you'} yet` : 'No messages yet'}>
+          {needle ? 'Try another name.' : 'Tap the pen to write to someone, or message a shop from its page.'}
         </EmptyState>
       ) : (
-        <div className="card">
+        <div className="chrows">
           {threads.map((row) => (
-            <Link
-              key={row.threadId}
+            <Link key={row.threadId}
               to={`/messages/${encodeURIComponent(row.them.handle)}?as=${encodeURIComponent(row.us.handle)}`}
-              className="channel"
-            >
-              <Avatar name={row.them.displayName} size={46} />
-              <div className="channel__body">
-                <div className="channel__top">
-                  <span className="channel__name">
+              className={`chrow${row.unread > 0 ? ' is-unread' : ''}`}>
+              <span className={`chrow__ring${row.unread > 0 ? ' is-lit' : ''}`}>
+                <Avatar name={row.them.displayName} size={48} />
+              </span>
+              <span className="chrow__body">
+                <span className="chrow__top">
+                  <span className="chrow__name">
                     {row.them.displayName}
-                    {row.them.isStore && <span className="badge" style={{ marginLeft: 6 }}>shop</span>}
+                    {row.them.isStore && <span className="chrow__tier">SHOP</span>}
                   </span>
-                  <span className="faint">{timeAgo(row.lastAt)}</span>
-                </div>
-                <span className="channel__last">
-                  {row.lastFromUs && 'You: '}
-                  {row.lastMessage}
+                  <span className="chrow__time">{timeAgo(row.lastAt)}</span>
+                </span>
+                <span className="chrow__bottom">
+                  <span className="chrow__last">
+                    {row.lastFromUs && <strong>You: </strong>}
+                    {row.lastMessage}
+                  </span>
+                  {row.unread > 0 && <span className="chrow__badge">{row.unread > 9 ? '9+' : row.unread}</span>}
                 </span>
                 {/* Which of your voices this thread belongs to - said only in
                     the combined view, where the rows are mixed together. */}
                 {box === '' && data.handles.length > 1 && (
-                  <span className="faint">to @{row.us.handle}</span>
+                  <span className="chrow__to">to @{row.us.handle}</span>
                 )}
-              </div>
-              {row.unread > 0 && <span className="badge badge--accent">{row.unread}</span>}
+              </span>
             </Link>
           ))}
         </div>
@@ -155,8 +159,13 @@ export function MessagesView() {
 /**
  * One conversation.
  *
- * Its own route so a thread can be linked to and the back button behaves. The
- * handle you are speaking as is in the URL, because it is part of which
+ * Laid out like a channel room - the same bar at the top, the same bubbles,
+ * days and runs, the same bar to write from - because a conversation with a
+ * shop and a shop's channel are the same kind of talking, and a gesture
+ * learned in one should work in the other: hold a message to reply to it or
+ * react, double-tap to love it.
+ *
+ * The handle you are speaking as is in the URL, because it is part of which
  * conversation this is rather than a preference.
  */
 export function ThreadPage() {
@@ -164,24 +173,40 @@ export function ThreadPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const as = params.get('as') ?? undefined;
+  const back = useGoBack('/social?view=messages');
 
   const [data, setData] = useState<Thread | null>(null);
-  // Only used by the list pane, which exists from 960px up. Fetched
-  // unconditionally because the breakpoint is a CSS fact, not a React one,
-  // and a resize must not have to trigger a request.
-  const [inbox, setInbox] = useState<Inbox | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
-  const bottom = useRef<HTMLDivElement>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // Arriving from a saved calculation's "Private deal": the form opens with it.
+  // Watched by the navigation's key, because "Private deal" pressed while this
+  // very chat is open lands on the same page rather than a fresh one.
+  const location = useLocation();
+  // The buyer's ask-for-a-deal form. A shop makes its deal on the full listing form instead.
+  const [asking, setAsking] = useState(false);
+  const makeDeal = useMakeDeal();
+  const us = data?.us;
+  const them = data?.them;
+  useEffect(() => {
+    const dealCalc = (location.state as { dealCalc?: SavedCalc } | null)?.dealCalc;
+    if (!dealCalc || !us?.isStore || !them) return;
+    // Spent here, so coming back from the form is the chat rather than the form again.
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    makeDeal(us, them, { calc: dealCalc });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key, us?.handle, them?.handle]);
   const input = useRef<HTMLTextAreaElement>(null);
+  const count = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (quiet = false) => {
     if (!handle) return;
     try {
       setData(await api.thread(handle, as));
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not open this conversation.');
+      if (!quiet) setError(err instanceof ApiRequestError ? err.message : 'Could not open this conversation.');
     }
   }, [handle, as]);
 
@@ -189,22 +214,24 @@ export function ThreadPage() {
     void load();
   }, [load]);
 
+  // Live while it is on screen, like a room.
   useEffect(() => {
-    void api.inbox().then(setInbox).catch(() => setInbox(null));
+    const tick = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true);
+    }, 10_000);
+    return () => window.clearInterval(tick);
+  }, [load]);
+
+  // A conversation is read at the bottom - and taken there again when
+  // something new arrives.
+  useLayoutEffect(() => {
+    const now = data?.messages.length ?? 0;
+    if (now !== count.current) {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: count.current ? 'smooth' : 'auto' });
+      count.current = now;
+    }
   }, [data?.messages.length]);
 
-  // A conversation is read at the bottom.
-  useEffect(() => {
-    bottom.current?.scrollIntoView({ block: 'end' });
-  }, [data?.messages.length]);
-
-  /*
-   * The composer grows with what is in it, up to a point.
-   *
-   * Height is set from scrollHeight rather than animated, because the value
-   * is not known until the text has laid out. The CSS transition on
-   * max-height is what makes the change read as growth rather than a jump.
-   */
   useEffect(() => {
     const field = input.current;
     if (!field) return;
@@ -212,14 +239,19 @@ export function ThreadPage() {
     field.style.height = `${Math.min(field.scrollHeight, 132)}px`;
   }, [body]);
 
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    if (!handle) return;
+  useEffect(() => {
+    if (replyTo) input.current?.focus();
+  }, [replyTo]);
+
+  async function send(event?: FormEvent) {
+    event?.preventDefault();
+    if (!handle || !body.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      await api.sendMessage(handle, body.trim(), data?.us.handle);
+      await api.sendMessage(handle, body.trim(), data?.us.handle, undefined, replyTo?.id);
       setBody('');
+      setReplyTo(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
@@ -228,156 +260,279 @@ export function ThreadPage() {
     }
   }
 
-  if (error && !data) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
+  const patch = (id: string, change: Partial<Message>) =>
+    setData((current) => current && {
+      ...current,
+      messages: current.messages.map((message) => (message.id === id ? { ...message, ...change } : message)),
+    });
+
+  const jump = (id: string) => {
+    const node = document.getElementById(`dm-${id}`);
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    node.classList.remove('is-flash');
+    void node.offsetWidth;
+    node.classList.add('is-flash');
+  };
+
+  if (error && !data) {
+    return (
+      <div className="social">
+        <RoomBar tone="chat" onBack={back} avatar={<Avatar name={handle ?? '?'} size={34} />} title={`@${handle}`} />
+        <main className="page social"><ErrorNotice message={error} /></main>
+      </div>
+    );
+  }
   if (!data) {
     return (
-      <main className="page tab-view">
-        <SkeletonRows count={5} />
-      </main>
+      <div className="social">
+        <RoomBar tone="chat" onBack={back} avatar={<span className="skel" style={{ width: 34, height: 34, borderRadius: '50%' }} />}
+          title={<span className="skel" style={{ width: 110, height: 12 }} />} />
+        <main className="page social"><SkeletonRows count={5} /></main>
+      </div>
     );
   }
 
-  const shownAs = data.us.handle;
+  const blocks: ReactNode[] = [];
+  let lastDay = '';
+  data.messages.forEach((message, index) => {
+    const day = dayOf(message.createdAt);
+    if (day !== lastDay) {
+      blocks.push(<div key={`day-${message.id}`} className="chday"><span>{day}</span></div>);
+      lastDay = day;
+    }
+    const previous = data.messages[index - 1];
+    // A run is consecutive messages from the same voice inside five minutes.
+    const startsRun = !previous || previous.from.handle !== message.from.handle
+      || dayOf(previous.createdAt) !== day || gapTooBig(previous.createdAt, message.createdAt);
+    blocks.push(
+      <DirectMessage key={message.id} message={message} thread={data} startsRun={startsRun}
+        onReply={() => setReplyTo(message)} onJump={jump} onNotice={setNotice}
+        onDeal={(deal) => makeDeal(data.us, data.them, { from: deal })}
+        onReactions={(reactions) => patch(message.id, { reactions })}
+        handle={handle!} />,
+    );
+  });
+
+  const dealable = data.us.isStore !== data.them.isStore;
 
   return (
-    /*
-     * The conversation owns the screen.
-     *
-     * It used to be a 58vh scroll well inside the same centred 1180px page as
-     * every other screen, under a back link, a header and a voice picker, with
-     * the composer loose in the document flow. That is a transcript on a page.
-     * This is three rows on the viewport: a header that stays, a body that
-     * scrolls, and a composer pinned above the keyboard and the home
-     * indicator. dvh rather than vh, because vh is exactly the number that is
-     * wrong while an iOS address bar is on screen.
-     */
-    <main className="chat">
-      {/* The conversation list, on a screen wide enough to hold both. Below
-          960px it is not rendered at all rather than hidden, because the
-          inbox is already its own route there and a duplicate list would be
-          two places showing the same thing. */}
-      <aside className="chat__list" aria-label="Conversations">
-        {(inbox?.threads ?? []).map((row) => (
-          <Link
-            key={`${row.them.handle}-${row.us.handle}`}
-            to={`/messages/${encodeURIComponent(row.them.handle)}?as=${encodeURIComponent(row.us.handle)}`}
-            className={`chat__conv${row.them.handle === data.them.handle ? ' is-on' : ''}`}
-          >
-            <Avatar name={row.them.displayName} size={32} />
-            <span className="chat__conv-body">
-              <span className="chat__conv-name">{row.them.displayName}</span>
-              <span className="chat__conv-last">{row.lastMessage}</span>
-            </span>
-            {row.unread > 0 && <span className="badge badge--hot">{row.unread}</span>}
-          </Link>
-        ))}
-      </aside>
+    <div className="social">
+      <RoomBar tone="chat" onBack={back}
+        avatar={<Avatar name={data.them.displayName} size={34} />}
+        title={<>{data.them.displayName}{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
+        sub={<>@{data.them.handle} · you as @{data.us.handle}</>}
+        action={<Link to={`/${data.them.handle}`} className="roombar__btn">
+          <Icon name={data.them.isStore ? 'tag' : 'users'} size={13} /> {data.them.isStore ? 'Shop' : 'Profile'}
+        </Link>} />
 
-      <header className="chat__head">
-        <Link to="/social" className="chat__back" aria-label="Back to messages">
-          <Icon name="back" size={18} />
-        </Link>
-        <Avatar name={data.them.displayName} size={36} />
-        <div className="chat__who">
-          <span className="chat__name">
-            {data.them.displayName}
-            {data.them.isStore && <span className="badge badge--accent">shop</span>}
-          </span>
-          <Link to={`/${data.them.handle}`} className="chat__handle">@{data.them.handle}</Link>
+      <main className="page social chroom dmroom">
+        <div className="chthread">
+          {data.messages.length === 0 ? (
+            <EmptyState icon={<Icon name="message" size={26} />} title="Say hello">
+              Start the conversation with {data.them.displayName}.
+            </EmptyState>
+          ) : blocks}
         </div>
 
-        {/* Whose voice you are using. It belongs in the header rather than in
-            a field above the transcript: it labels the conversation, it is not
-            a thing you fill in before writing. */}
-        {data.handles.length > 1 ? (
-          <label className="chat__as">
-            <span className="chat__as-label">as</span>
-            <select
-              value={shownAs}
-              aria-label="Writing as"
-              onChange={(event) =>
-                navigate(
-                  `/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(event.target.value)}`,
-                  { replace: true },
-                )
-              }
-            >
-              {data.handles.map((party) => (
-                <option key={party.handle} value={party.handle}>@{party.handle}</option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <span className="chat__as chat__as--fixed">as @{data.us.handle}</span>
+        {notice && <p className="chtoast" role="status" onAnimationEnd={() => setNotice(null)}>{notice}</p>}
+
+        {asking && (
+          <DealForm us={data.us} them={data.them} onClose={() => setAsking(false)}
+            onSent={() => { setAsking(false); void load(); }} />
         )}
-      </header>
 
-      <div className="chat__body">
-        {data.messages.length === 0 ? (
-          <EmptyState icon={<Icon name="message" size={26} />} title="No messages yet">
-            Say something to {data.them.displayName}.
-          </EmptyState>
-        ) : (
-          data.messages.map((message, index) => {
-            const mine = message.from.handle === data.us.handle;
-            const previous = data.messages[index - 1];
-            const next = data.messages[index + 1];
-            // A run is consecutive messages from the same voice inside five
-            // minutes. Only the last of a run carries the timestamp, and only
-            // the first gets the wide corner, so a burst reads as one turn in
-            // the conversation instead of five separate events.
-            const startsRun = !previous || previous.from.handle !== message.from.handle
-              || gapTooBig(previous.createdAt, message.createdAt);
-            const endsRun = !next || next.from.handle !== message.from.handle
-              || gapTooBig(message.createdAt, next.createdAt);
-            return (
-              <div
-                key={message.id}
-                className={[
-                  'bubble',
-                  mine ? 'bubble--mine' : '',
-                  startsRun ? 'is-first' : '',
-                  endsRun ? 'is-last' : '',
-                ].filter(Boolean).join(' ')}
-              >
-                {startsRun && !mine && message.from.isStore && (
-                  <div className="bubble__from">{message.from.displayName}</div>
-                )}
-                <div className="bubble__body">{message.body}</div>
-                {endsRun && <div className="bubble__meta">{timeAgo(message.createdAt)}</div>}
-              </div>
-            );
-          })
-        )}
-        <div ref={bottom} />
-      </div>
-
-      {error && <div className="chat__error"><ErrorNotice message={error} /></div>}
-
-      <form className="composer" onSubmit={send}>
-        <textarea
-          ref={input}
-          value={body}
-          rows={1}
-          onChange={(event) => setBody(event.target.value)}
-          onKeyDown={(event) => {
-            // Enter sends, shift-enter makes a line. The same bargain every
-            // messenger makes, and the reason the control is a textarea at all.
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              if (body.trim()) void send(event);
-            }
-          }}
-          placeholder={`Message ${data.them.displayName}`}
-          aria-label="Message"
-        />
-        <button type="submit" className="composer__send" disabled={busy || body.trim().length === 0}
-          aria-label="Send">
-          <Icon name="send" size={17} />
-        </button>
-      </form>
-    </main>
+        <form className="cbar" onSubmit={(event) => void send(event)}>
+          {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
+          {replyTo && (
+            <div className="cbar__reply">
+              <span className="cbar__replybody">
+                <strong>Replying to {replyTo.from.handle === data.us.handle ? 'yourself' : replyTo.from.displayName}</strong>
+                <span>{replyTo.body}</span>
+              </span>
+              <button type="button" className="iconbtn" aria-label="Cancel reply" onClick={() => setReplyTo(null)}>
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+          )}
+          <div className="cbar__row">
+            {/* Whose voice you are writing in, switched from where you write.
+                Each voice is its own conversation, so switching opens that one. */}
+            {data.handles.length > 1 && (
+              <VoiceScope
+                voice={{ storeId: data.us.isStore ? data.us.handle : null, name: data.us.displayName, handle: data.us.handle }}
+                voices={data.handles.map((party) => ({
+                  storeId: party.isStore ? party.handle : null, name: party.displayName, handle: party.handle,
+                }))}
+                choose={(storeId) => {
+                  const party = data.handles.find((entry) => (storeId ? entry.handle === storeId : !entry.isStore));
+                  if (party && party.handle !== data.us.handle) {
+                    navigate(`/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(party.handle)}`, { replace: true });
+                  }
+                }}>
+                <VoicePicker size={36} title="Write as" />
+              </VoiceScope>
+            )}
+            {dealable && (
+              <button type="button" className="cbar__attach" onClick={() => (data.us.isStore ? makeDeal(data.us, data.them) : setAsking(true))}
+                aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}
+                title={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}>
+                🤝
+              </button>
+            )}
+            <textarea ref={input} className="cbar__input" rows={1} value={body} maxLength={4000}
+              placeholder={replyTo ? 'Write a reply…' : `Message ${data.them.displayName}…`} aria-label="Message"
+              onChange={(event) => setBody(event.target.value)}
+              onKeyDown={(event) => {
+                // Enter sends, shift-enter makes a line: the bargain every messenger makes.
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void send();
+                }
+                if (event.key === 'Escape') setReplyTo(null);
+              }} />
+            <button type="submit" className="cbar__send" disabled={busy || !body.trim()} aria-label="Send">
+              {busy ? <span className="writer__spin cbar__spin" /> : <Icon name="send" size={18} />}
+            </button>
+          </div>
+        </form>
+      </main>
+    </div>
   );
+}
+
+/** One message in a conversation: hold it for the rest. */
+function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, onNotice, onDeal, onReactions }: {
+  message: Message;
+  thread: Thread;
+  handle: string;
+  startsRun: boolean;
+  onReply: () => void;
+  onJump: (id: string) => void;
+  onNotice: (text: string) => void;
+  onDeal: (deal: MessageDeal) => void;
+  onReactions: (reactions: NonNullable<Message['reactions']>) => void;
+}) {
+  const mine = message.from.handle === thread.us.handle;
+  const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const box = useRef<HTMLDivElement | null>(null);
+  const press = useLongPress(() => {
+    setOpen(true);
+    setPicking(false);
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (box.current && !box.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+
+  const reactions = message.reactions ?? [];
+  const minekind = reactions.find((entry) => entry.handle === thread.us.handle)?.kind ?? null;
+  const tally = REACTIONS.map((kind) => ({ kind, count: reactions.filter((entry) => entry.kind === kind).length }))
+    .filter((entry) => entry.count > 0);
+
+  async function react(kind: ReactionKind) {
+    const before = reactions;
+    const others = before.filter((entry) => entry.handle !== thread.us.handle);
+    onReactions(minekind === kind ? others : [...others, { handle: thread.us.handle, kind }]);
+    setOpen(false);
+    setPicking(false);
+    try {
+      onReactions((await api.reactToMessage(handle, message.id, kind, thread.us.handle)).reactions);
+    } catch (err) {
+      onReactions(before);
+      onNotice(err instanceof ApiRequestError ? err.message : 'Could not react.');
+    }
+  }
+
+  async function copy() {
+    setOpen(false);
+    try {
+      await navigator.clipboard.writeText(message.body);
+      onNotice('Copied');
+    } catch {
+      onNotice('Could not copy');
+    }
+  }
+
+  return (
+    <div id={`dm-${message.id}`} ref={box}
+      className={`cmsg cmsg--${mine ? 'mine' : 'visitor'}${startsRun ? ' is-first' : ''}${open ? ' is-open' : ''}`}>
+      {!mine && (
+        <span className="cmsg__avatar">{startsRun ? <Avatar name={message.from.displayName} size={32} /> : null}</span>
+      )}
+      <div className="cmsg__col">
+        {startsRun && !mine && message.from.isStore && (
+          <span className="cmsg__who">{message.from.displayName}<span className="cmsg__role">Shop</span></span>
+        )}
+        <div className="cmsg__bubble" role="button" tabIndex={0} aria-expanded={open}
+          aria-label="Message. Press and hold for actions" {...press}
+          onDoubleClick={() => void react('love')}
+          onKeyDown={(event) => (event.key === 'Enter' || event.key === 'ContextMenu') && setOpen(!open)}>
+          {message.replyTo && (
+            <button type="button" className="cmsg__quote" onClick={() => onJump(message.replyTo!.id)}>
+              <strong>{message.replyTo.name}</strong>
+              <span>{message.replyTo.body}</span>
+            </button>
+          )}
+          {message.deal ? (
+            <DealCard message={message} mine={mine} us={thread.us} onAnswer={onDeal} />
+          ) : (
+            <p className="cmsg__body">{message.body}</p>
+          )}
+          <span className="cmsg__time">
+            {timeAgo(message.createdAt)}
+            {mine && <span className="cmsg__read" aria-label={message.readAt ? 'Read' : 'Sent'}>{message.readAt ? ' ✓✓' : ' ✓'}</span>}
+          </span>
+        </div>
+
+        {tally.length > 0 && (
+          <div className="cmsg__reactions">
+            {tally.map((entry) => (
+              <button key={entry.kind} type="button" className={`cmsg__chip${minekind === entry.kind ? ' is-mine' : ''}`}
+                aria-label={`${REACTION_META[entry.kind].label}, ${entry.count}`} onClick={() => void react(entry.kind)}>
+                {REACTION_META[entry.kind].emoji}{entry.count > 1 ? ` ${entry.count}` : ''}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {open && (
+          <div className="cmsg__actions">
+            {picking ? (
+              <span className="cmsg__picker">
+                {REACTIONS.map((kind, index) => (
+                  <button key={kind} type="button" aria-label={REACTION_META[kind].label}
+                    style={{ animationDelay: `${index * 25}ms` }} onClick={() => void react(kind)}>
+                    {REACTION_META[kind].emoji}
+                  </button>
+                ))}
+              </span>
+            ) : (
+              <>
+                <button type="button" onClick={() => setPicking(true)}><Icon name="smile" size={14} /> React</button>
+                <button type="button" onClick={() => { onReply(); setOpen(false); }}><Icon name="back" size={14} /> Reply</button>
+                <button type="button" onClick={() => void copy()}><Icon name="copy" size={14} /> Copy</button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function dayOf(iso: string): string {
+  const day = new Date(iso);
+  const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (same(day, new Date())) return 'Today';
+  if (same(day, new Date(Date.now() - 86_400_000))) return 'Yesterday';
+  return day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 /** Five minutes. Long enough to be the same thought, short enough to be one. */

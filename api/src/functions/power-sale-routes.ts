@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
+import { cleanCostSheet } from '../../../shared/profit.js';
 import { CATEGORIES } from '../../../shared/catalog.js';
 import type { PowerSale, PowerSaleItem } from '../../../shared/models.js';
 import { can } from '../../../shared/stores.js';
@@ -15,14 +16,16 @@ import {
   advancePowerSale,
   finishesAt,
   releaseItems,
+  tickPowerSales,
   windowLeftMinutes,
 } from './power-sale.js';
 
 /**
  * Power selling: a sale a shop schedules once and does not have to sit through.
  *
- * The console half. The runner is in power-sale.ts, and everything here calls
- * it before answering, because a sale only moves when somebody looks.
+ * The console half, plus the once-a-minute clock at the bottom. The runner is
+ * in power-sale.ts; the console calls it before answering too, so what it
+ * shows is never a minute behind.
  */
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -93,6 +96,7 @@ function card(sale: PowerSale, now = new Date()) {
     closingBody: sale.closingBody,
     openedAt: sale.openedAt,
     closedAt: sale.closedAt,
+    afterWindow: sale.afterWindow ?? { channel: false, feed: false },
     /** When the last item hands over and the whole run is public. */
     finishesAt: finishesAt(sale),
     posted,
@@ -146,12 +150,11 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
   const priceMinor = positive(entry.priceMinor, 0);
   if (priceMinor <= 0) return { why: `${title} needs a members' price.` };
 
-  // The public price is what it moves to when the window shuts, so it cannot be
-  // the same number or lower - a "discount" that is not one is a lie told to
-  // the people who trusted the shop enough to follow it.
-  const listPriceMinor = positive(entry.listPriceMinor, 0);
-  if (listPriceMinor <= priceMinor) {
-    return { why: `${title}: the price after the window has to be above the members' price.` };
+  // The public price is what it moves to when the window shuts. The same
+  // number is fine - no discount, it just goes public - but never lower.
+  const listPriceMinor = positive(entry.listPriceMinor, 0) || priceMinor;
+  if (listPriceMinor < priceMinor) {
+    return { why: `${title}: the price after the window can't be below the members' price.` };
   }
 
   const category = trimmed(entry.category, 40);
@@ -174,7 +177,53 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
       windowEndsAt: null,
       liftedAt: null,
       listingId: null,
+      costSheet: (() => {
+        try {
+          return cleanCostSheet(entry.costSheet, new Date().toISOString());
+        } catch {
+          return null;
+        }
+      })(),
+      ...listingOptions(entry),
     },
+  };
+}
+
+/**
+ * The sell page's own options for one item - photos, tags, where it ships
+ * from, stock, expiry, advance - read the same way the listing route reads
+ * them, so an item from a sale is listed exactly as one listed by hand.
+ */
+function listingOptions(entry: Record<string, unknown>): Partial<PowerSaleItem> {
+  const photos = (Array.isArray(entry.photos) ? entry.photos : [])
+    .slice(0, 6)
+    .map((raw) => (raw ?? {}) as Record<string, unknown>)
+    .map((photo) => ({
+      blobName: typeof photo.blobName === 'string' ? photo.blobName : '',
+      url: typeof photo.url === 'string' ? photo.url : '',
+      imageHash: null,
+      isPrimary: photo.isPrimary === true,
+    }))
+    .filter((photo) => photo.blobName || photo.url);
+  if (photos.length > 0 && !photos.some((photo) => photo.isPrimary)) photos[0]!.isPrimary = true;
+
+  const tags = (Array.isArray(entry.tags) ? entry.tags : [])
+    .filter((tag): tag is string => typeof tag === 'string')
+    .map((tag) => tag.trim().slice(0, 30))
+    .filter(Boolean)
+    .slice(0, 12);
+
+  const expires = typeof entry.expiresAt === 'string' ? new Date(entry.expiresAt) : null;
+  const advance = Math.round(Number(entry.advancePercent) || 0);
+  return {
+    photos,
+    tags,
+    sourcing: entry.sourcing === 'import' ? 'import' : 'in_hand',
+    quantityMode: entry.quantityMode === 'multiple' ? 'multiple' : 'fixed',
+    expiresAt: expires && !Number.isNaN(expires.getTime()) ? expires.toISOString() : null,
+    advancePercent: advance > 0 && advance < 100 ? advance : null,
+    lotId: typeof entry.lotId === 'string' && entry.lotId ? entry.lotId : null,
+    limitedDays: Math.min(365, Math.max(0, Math.round(Number(entry.limitedDays) || 0))) || null,
   };
 }
 
@@ -207,6 +256,10 @@ async function create(request: HttpRequest, _context: InvocationContext) {
   for (const raw of rawItems) {
     const read = readItem(raw);
     if ('why' in read) return error(400, 'invalid_sale', read.why);
+    // A lot has to be one of the shop's own; another shop's id does not resolve.
+    if (read.item.lotId && !(await repository.getLot(shop.sellerId, read.item.lotId))) {
+      return error(404, 'not_found', `${read.item.title}: no such lot of yours.`);
+    }
     items.push(read.item);
   }
 
@@ -232,6 +285,11 @@ async function create(request: HttpRequest, _context: InvocationContext) {
     items,
     openedAt: null,
     closedAt: null,
+    // Announced when each item goes public, unless the shop said not to.
+    afterWindow: {
+      channel: (body.afterWindow as { channel?: unknown } | undefined)?.channel !== false,
+      feed: (body.afterWindow as { feed?: unknown } | undefined)?.feed !== false,
+    },
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
@@ -301,3 +359,17 @@ app.http('power-sales', { ...anon, methods: ['GET'], route: 'power-sales', handl
 app.http('power-sale-create', { ...anon, methods: ['POST'], route: 'power-sales/new', handler: powerSaleCreateRoute });
 app.http('power-sale-read', { ...anon, methods: ['GET'], route: 'power-sales/{id}', handler: powerSaleReadRoute });
 app.http('power-sale-stop', { ...anon, methods: ['POST'], route: 'power-sales/{id}/stop', handler: powerSaleStopRoute });
+
+/**
+ * The clock: every minute, every live sale moves to where it should be.
+ *
+ * The console still advances what it reads, so a seller watching sees the next
+ * item the moment it is due; this is what moves it when nobody is watching.
+ */
+app.timer('power-sale-clock', {
+  schedule: '0 */1 * * * *',
+  handler: async (_timer, context) => {
+    const touched = await tickPowerSales(await getRepository());
+    if (touched > 0) context.log(`power-sale-clock: advanced ${touched} live sale(s)`);
+  },
+});

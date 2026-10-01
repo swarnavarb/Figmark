@@ -1,12 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type RouteStep, type StepSide, type StepTrigger, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
 } from '../../../shared/routes.js';
+import { actionsFor, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
+import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import {
+  afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, settleAll, syncLotDelivery, undeliver,
+} from '../delivery.js';
+import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
@@ -73,6 +79,31 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
       position: index,
       side: step.side,
       trigger: step.trigger,
+      stageId: step.stageId,
+      stageName: step.stageName,
+      stageIcon: step.stageIcon,
+      locked: step.locked,
+      forward: step.forward,
+    })),
+    /**
+     * The logistics-scenario cards: where an order enters the lot's journey.
+     * Same shape as `presets`, sent the same way for the same reason.
+     */
+    routeTemplates: ROUTE_TEMPLATES.map((template) => ({
+      ...template,
+      steps: template.steps.map((step, index) => ({
+        id: `${template.id}_${index}`,
+        name: step.name,
+        description: step.description,
+        position: index,
+        side: step.side,
+        trigger: step.trigger,
+        stageId: step.stageId,
+        stageName: step.stageName,
+        stageIcon: step.stageIcon,
+        locked: step.locked,
+        forward: step.forward,
+      })),
     })),
   });
 }
@@ -80,7 +111,11 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
 interface RouteBody {
   id?: string;
   name?: string;
-  steps?: { id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger }[];
+  steps?: {
+    id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger;
+    stageId?: string; stageName?: string; stageIcon?: string; locked?: boolean; forward?: boolean;
+    waitMessage?: string; lastMile?: boolean;
+  }[];
 }
 
 /** POST /api/routes - write a ladder, or correct one. */
@@ -98,7 +133,11 @@ async function saveRoute(request: HttpRequest, _context: InvocationContext) {
   const name = body.name?.trim();
   if (!name) return error(400, 'invalid_route', 'Give the route a name.');
 
-  const steps = normaliseSteps(body.steps ?? []);
+  // stageIcon arrives as an arbitrary string from the request body;
+  // normaliseSteps is what actually validates it against the known set.
+  const steps = normaliseSteps(
+    (body.steps ?? []).map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
+  );
   // Two, because one step is a state and not a journey - and because a buyer
   // reading a single-step timeline learns nothing a status word would not say.
   if (steps.length < 2) {
@@ -252,7 +291,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
         stage: coarseStage(route, at),
         currentStep: at,
         stageHistory: [...order.stageHistory, event],
-        status: order.status === 'cancelled' ? order.status : 'in_fulfilment',
+        status: isCancelledLike(order.status) ? order.status : 'in_fulfilment',
         updatedAt: now,
       },
       AWAITING_LOT_ID,
@@ -295,7 +334,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   if (!id) return error(400, 'invalid_request', 'A lot id is required.');
   const { lot, userId } = await ownedLot(request, id);
 
-  let body: { to?: number; note?: string };
+  let body: { to?: number; note?: string; trackingId?: string; shipper?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -314,8 +353,23 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'no_such_step', 'That lot is at the end of its route.');
   }
   if (target === from) return json(200, { lot, ordersUpdated: 0 });
+  /* The crate stops where it is unpacked. From there each item goes to its own
+     buyer - dispatched and delivered one at a time - and the lot closes
+     itself once the last of them has arrived. */
+  if (target > lotEndIndex(route)) {
+    return error(
+      409,
+      'deliver_individually',
+      'This lot has been unpacked. Dispatch and mark each item delivered on its own; the lot closes when the last one arrives.',
+    );
+  }
 
   const step = route.steps[target]!;
+  // A hand-over with nobody to ask about it is not a hand-over: the courier
+  // is what a tracking ID actually means anything against, live lookup or not.
+  if (step.forward && !body.shipper?.trim()) {
+    return error(400, 'courier_required', 'Say which courier this is moving with.');
+  }
   const stage = coarseStage(route, target);
   const now = new Date().toISOString();
   const event: StageEvent = {
@@ -324,21 +378,29 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     enteredAt: now,
     note: body.note?.trim() || null,
     recordedBy: userId,
+    // Only kept where the step this move lands on is actually a hand-over -
+    // a stray trackingId sent against a step nobody flagged `forward` would
+    // read as tracking for a leg that never had a carrier.
+    trackingId: step.forward ? body.trackingId?.trim() || undefined : undefined,
+    shipper: step.forward ? body.shipper?.trim() || undefined : undefined,
   };
 
-  const last = target === route.steps.length - 1;
   const repository = await getRepository();
   const updated = await repository.updateLot({
     ...lot,
     currentStep: target,
     stage,
     stageHistory: [...lot.stageHistory, event],
-    status: last ? 'closed' : lot.status === 'closed' ? 'open' : lot.status,
+    status: lot.status === 'closed' ? 'open' : lot.status,
     updatedAt: now,
   });
 
+  // Every item still in the crate moves with it. Called-off and refunded
+  // orders are left where they stopped, and an item already delivered on its
+  // own has left the crate. One already on its way keeps `shipped` (and its
+  // buyer keeps the "It arrived" button); one not yet paid for keeps its Pay.
   const orders = await repository.listOrdersForLot(lot.id);
-  const live = orders.filter((order) => order.status !== 'cancelled');
+  const live = orders.filter((order) => !isStopped(order.status) && order.status !== 'delivered');
   await Promise.all(
     live.map((order) =>
       repository.updateOrder({
@@ -349,8 +411,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
         // rather than staying stuck at a position nobody remembers setting.
         currentStep: target,
         stageHistory: [...order.stageHistory, event],
-        status: last ? 'delivered' : 'in_fulfilment',
-        completedAt: last ? now : order.completedAt,
+        status: travellingStatus(order.status),
         updatedAt: now,
       }),
     ),
@@ -447,7 +508,7 @@ async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
      ladder and a position left pointing at the old one is a buyer reading a
      step that is no longer on their timeline. */
   const orders = (await repository.listOrdersForLot(lot.id))
-    .filter((order) => order.status !== 'cancelled');
+    .filter((order) => !isCancelledLike(order.status));
   await Promise.all(orders.map((order) =>
     repository.updateOrder({
       ...order,
@@ -527,7 +588,7 @@ async function noteOnLot(request: HttpRequest, _context: InvocationContext) {
   });
 
   const orders = (await repository.listOrdersForLot(lot.id))
-    .filter((order) => order.status !== 'cancelled');
+    .filter((order) => !isCancelledLike(order.status));
   await Promise.all(orders.map((order) =>
     repository.updateOrder({
       ...order,
@@ -585,7 +646,7 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   if (!id) return error(400, 'invalid_request', 'An order id is required.');
   const { order, lot, userId, repository } = await ownedOrder(request, id);
 
-  let body: { to?: number; note?: string; at?: number };
+  let body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -615,32 +676,58 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'no_such_step', 'That route has no such step.');
   }
 
+  const targetStep = route?.steps[target];
+  // Same rule as moving the whole lot: a hand-over step needs a courier to
+  // hand over to.
+  if (moving && targetStep?.forward && !body.shipper?.trim()) {
+    return error(400, 'courier_required', 'Say which courier this is moving with.');
+  }
+
   const now = new Date().toISOString();
   const stage = route ? coarseStage(route, target) : order.stage;
   const event: StageEvent = {
     stage,
-    step: route?.steps[target]?.name,
+    step: targetStep?.name,
     enteredAt: now,
     note,
     recordedBy: userId,
+    trackingId: moving && targetStep?.forward ? body.trackingId?.trim() || undefined : undefined,
+    shipper: moving && targetStep?.forward ? body.shipper?.trim() || undefined : undefined,
   };
 
   const last = Boolean(route) && target === route!.steps.length - 1;
-  const updated = await repository.updateOrder({
-    ...order,
-    ...(moving
-      ? {
-          currentStep: target,
-          stage,
-          status: last ? 'delivered' : order.status === 'cancelled' ? order.status : 'in_fulfilment',
-          completedAt: last ? now : order.completedAt,
-        }
-      : {}),
-    stageHistory: [...order.stageHistory, event],
-    updatedAt: now,
-  });
+  if (moving && isStopped(order.status)) {
+    return error(409, 'order_stopped', 'That order was called off or refunded, so it no longer moves along the route.');
+  }
+  if (moving && !last && order.status === 'delivered' && isDeliveryLocked(order)) {
+    return error(409, 'delivery_final', lockedReason(order));
+  }
 
-  await notify(
+  const next: Order = { ...order, stageHistory: [...order.stageHistory, event], updatedAt: now };
+  let delivered = false;
+  if (moving) {
+    next.currentStep = target;
+    next.stage = stage;
+    if (last) {
+      // The last step is this item reaching its buyer: the same delivery a
+      // delivered tick makes, with the same consequences.
+      delivered = next.status !== 'delivered'
+        && deliver(next, { by: userId, now, releaseDays: await autoReleaseDays(repository) });
+    } else if (undeliver(next, { now }) === 'ok') {
+      next.stage = stage;
+      await dropFromCollection(repository, order.buyerId, order.id);
+    } else {
+      next.status = travellingStatus(next.status);
+    }
+  }
+  const wasDelivered = order.status === 'delivered';
+  let updated = await repository.updateOrder(next);
+  if (delivered) updated = await afterDelivered(updated, repository, userId);
+  // Only arriving, or being taken back, can finish or reopen the lot.
+  if (moving && (updated.status === 'delivered') !== wasDelivered) await syncLotDelivery(updated, repository);
+
+  // A delivery already sent its own notice, with what to do next.
+  if (!delivered) await notify(
     repository,
     [order.buyerId],
     {
@@ -663,8 +750,13 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const orders = (await repository.listOrdersForBuyer(user.id))
-    .filter((order) => order.status !== 'cancelled');
+  // Settled first, so an item whose protection window ran out reads as
+  // delivered here too, and not only on its own page.
+  const orders = (await settleAll(await repository.listOrdersForBuyer(user.id), repository))
+    .filter((order) => !isCancelledLike(order.status));
+  const collected = new Set(
+    ((await repository.getUserById(user.id))?.collection ?? []).map((item) => item.orderId),
+  );
 
   // One read per lot rather than one per item: three items in one lot are
   // one journey, and asking three times would be three chances to disagree.
@@ -674,9 +766,19 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
     lots.set(order.lotId, await repository.getLot(order.sellerId, order.lotId));
   }
 
+  // Photos for the purchase cards, one read per item bought.
+  const photoOf = new Map<string, string | null>();
+  for (const listingId of new Set(orders.map((order) => order.listingId))) {
+    const listing = await repository.getListing(listingId);
+    const lead = listing?.photos.find((photo) => photo.isPrimary) ?? listing?.photos[0];
+    photoOf.set(listingId, lead?.url || null);
+  }
+
+  // Store, then lot: two shops' direct sales are two groups, not one.
   const groups = new Map<string, Order[]>();
   for (const order of orders) {
-    const key = inLot(order) ? order.lotId : order.lotId === DIRECT_LOT_ID ? DIRECT_LOT_ID : AWAITING_LOT_ID;
+    const lotKey = inLot(order) ? order.lotId : order.lotId === DIRECT_LOT_ID ? DIRECT_LOT_ID : AWAITING_LOT_ID;
+    const key = `${order.sellerId}:${lotKey}`;
     const existing = groups.get(key);
     if (existing) existing.push(order);
     else groups.set(key, [order]);
@@ -686,7 +788,8 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   const byId = new Map(sellers.map((seller) => [seller.id, seller]));
 
   const rows = [...groups].map(([key, items]) => {
-    const lot = lots.get(key) ?? null;
+    const lotKey = key.slice(key.indexOf(':') + 1);
+    const lot = lots.get(lotKey) ?? null;
     const route = lot ? routeOf(lot) : null;
     /* One ladder for the group, at the furthest of the items sharing it: a
        buyer whose parcel is already counted into the warehouse should not read
@@ -700,7 +803,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
     const seller = byId.get(items[0]!.sellerId);
     return {
       key,
-      kind: lot ? 'lot' : key === DIRECT_LOT_ID ? 'direct' : 'awaiting',
+      kind: lot ? 'lot' : lotKey === DIRECT_LOT_ID ? 'direct' : 'awaiting',
       lot: lot
         ? {
             id: lot.id,
@@ -715,13 +818,45 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         : null,
       sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'Seller',
       sellerHandle: seller?.sellerProfile?.username ?? null,
+      sellerId: items[0]!.sellerId,
       items: items.map((order) => ({
         id: order.id,
+        listingId: order.listingId,
         itemName: order.itemName,
         quantity: order.quantity,
         status: order.status,
+        paymentStatus: order.paymentStatus,
+        currency: order.currency,
+        photo: photoOf.get(order.listingId) ?? null,
+        method: methodOf(order),
+        canPayMore: actionsFor(order, user.id).includes('pay_more'),
+        /** False while the buyer has pressed Buy but not yet paid or booked. */
+        placed: order.placedAt !== null,
+        ...orderMoney(order),
         /** Ticked once the seller has this one in hand and is finishing it. */
         checkpoints: order.checkpoints ?? {},
+        /** When it reached the buyer, or null while it is still on its way. */
+        deliveredAt: order.status === 'delivered'
+          ? order.checkpoints?.delivered ?? order.completedAt ?? order.updatedAt
+          : null,
+        /** Delivered and already on a collection shelf. */
+        inCollection: collected.has(order.id),
+        /** Payment is still held under protection; the buyer can confirm or dispute. */
+        paymentHeld: order.escrow.state === 'held',
+        /** The buyer already confirmed it reached them. */
+        receivedAt: order.receivedAt ?? null,
+        /** Whether this buyer can tap "I received it" / "It arrived" now. */
+        canConfirm: actionsFor(order, user.id).includes('confirm'),
+        /** The status line on the card: booked, accepted, paid, and so on. */
+        bookingOnly: order.bookingOnly ?? false,
+        accepted: order.accepted ?? false,
+        canPay: actionsFor(order, user.id).includes('pay'),
+        claimDenied: order.paymentClaim?.decision === 'denied' && order.paymentStatus !== 'paid',
+        /** Ships from the seller's shelf, never in a lot. */
+        inHand: isDirect(order),
+        shipment: order.shipment ?? null,
+        disputed: order.escrow.state === 'disputed',
+        createdAt: order.createdAt,
       })),
     };
   });
@@ -745,11 +880,6 @@ export const noteOnLotRoute = handler(noteOnLot);
 export const setLotRouteRoute = handler(setLotRoute);
 export const stepItemRoute = handler(stepItem);
 export const myItemsRoute = handler(myItems);
-
-/** Route templates as the create-lot form needs them, for reuse elsewhere. */
-export function templateFrom(name: string, steps: readonly RouteStep[], routeId: string | null): LotRoute {
-  return { routeId, name, steps: normaliseSteps(steps) };
-}
 
 export { stepId, type TrackingRoute };
 

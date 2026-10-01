@@ -3,6 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import type { Want, WantOffer } from '../../../shared/models.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
+import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -33,6 +34,20 @@ function expiryFrom(now = new Date()): string {
 }
 
 /** One hunt, as a card on the board reads it. */
+const MAX_PHOTOS = 4;
+
+/** Photos from the upload route, or an https link - nothing an <img> should not load. */
+function cleanPhotos(value: unknown): string[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return null;
+  const urls = value.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean);
+  if (urls.length > MAX_PHOTOS) return null;
+  const ok = urls.every(
+    (url) => url.length <= 500 && (/^\/api\/photos\/[\w.-]+$/.test(url) || /^https:\/\/[^\s"'<>]+$/.test(url)),
+  );
+  return ok ? urls : null;
+}
+
 function card(want: Want) {
   return {
     id: want.id,
@@ -43,6 +58,7 @@ function card(want: Want) {
     category: want.category,
     budgetMinor: want.budgetMinor,
     currency: want.currency,
+    photoUrls: want.photoUrls ?? [],
     condition: want.condition,
     status: want.status,
     offerCount: want.offerCount,
@@ -103,7 +119,7 @@ async function post(request: HttpRequest, _context: InvocationContext) {
 
   let body: {
     title?: string; details?: string; category?: string;
-    budgetMinor?: number | null; condition?: string | null;
+    budgetMinor?: number | null; condition?: string | null; photoUrls?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -130,6 +146,9 @@ async function post(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_want', 'That is not a condition we recognise.');
   }
 
+  const photoUrls = cleanPhotos(body.photoUrls);
+  if (!photoUrls) return error(400, 'invalid_want', `Up to ${MAX_PHOTOS} photos, uploaded here.`);
+
   const record = await repository.getUserById(user.id);
   const who = personRef(record ?? user);
   const now = new Date().toISOString();
@@ -144,6 +163,7 @@ async function post(request: HttpRequest, _context: InvocationContext) {
     category,
     budgetMinor: budget ?? null,
     currency: 'INR',
+    ...(photoUrls.length ? { photoUrls } : {}),
     condition: condition as ConditionTag | null,
     status: 'open',
     offerCount: 0,
@@ -196,11 +216,16 @@ async function readWant(request: HttpRequest, _context: InvocationContext) {
     seekerCount: found.want.seekerCount ?? seekers.length,
     /** Whether this viewer has already answered, so the form knows its job. */
     yours: viewer ? (offers.find((offer) => offer.sellerId === viewer.id) ?? null) : null,
+    /** Each of this viewer's answers by voice, so the form knows its job whichever voice is picked. */
+    yoursBy: viewer
+      ? Object.fromEntries(offers.filter((offer) => offer.sellerId === viewer.id).map((offer) => [offer.voice ?? 'shop', offer]))
+      : {},
     offers: offers.map((offer, index) => {
       const listing = listings[index];
       return {
         id: offer.id,
         seller: { name: offer.sellerName, handle: offer.sellerHandle },
+        voice: offer.voice ?? 'shop',
         message: offer.message,
         priceMinor: offer.priceMinor,
         createdAt: offer.createdAt,
@@ -244,7 +269,7 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'want_closed', 'That hunt is over.');
   }
 
-  let body: { message?: string; listingId?: string | null; priceMinor?: number | null };
+  let body: { message?: string; listingId?: string | null; priceMinor?: number | null; storeId?: string | null };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -256,12 +281,29 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_offer', 'Say what you have or what you can get.');
   }
 
-  // An offered item has to be one this seller actually sells, or the board
-  // becomes a place to advertise other people's stock.
+  // Anybody may answer - a collector who knows where one is, or a shop that
+  // stocks it. Answering as a shop needs the right to speak for it.
+  const record = await repository.getUserById(user.id);
+  let answerer = user.id;
+  let voice: 'person' | 'shop' = 'person';
+  let who = personRef(record ?? user);
+  if (body.storeId) {
+    const shop = body.storeId === user.id ? record : await repository.getUserById(body.storeId);
+    if (!shop?.sellerProfile || !can(shop, user.id, 'posts')) {
+      return error(403, 'forbidden', 'You cannot answer as that shop.');
+    }
+    answerer = shop.id;
+    voice = 'shop';
+    who = sellerRef(shop);
+  }
+  if (answerer === want.buyerId) return error(400, 'own_want', 'You cannot answer your own want.');
+
+  // An offered item has to be one this shop actually sells, or the board
+  // becomes a place to advertise other people's stock. A person has no stock.
   let listingId: string | null = null;
   if (body.listingId) {
-    const listing = await repository.getListing(body.listingId);
-    if (!listing || listing.sellerId !== user.id) {
+    const listing = voice === 'shop' ? await repository.getListing(body.listingId) : null;
+    if (!listing || listing.sellerId !== answerer) {
       return error(404, 'not_found', 'No such listing of yours.');
     }
     listingId = listing.id;
@@ -272,19 +314,18 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_offer', 'A price is a number above zero, or leave it out.');
   }
 
-  const record = await repository.getUserById(user.id);
-  const who = sellerRef(record ?? { ...user, sellerProfile: null });
   const existing = (await repository.listWantOffers(want.id)).find(
-    (entry) => entry.sellerId === user.id,
+    (entry) => entry.sellerId === answerer && (entry.voice ?? 'shop') === voice,
   );
   const now = new Date().toISOString();
 
   const answer: WantOffer = {
     id: existing?.id ?? `wof_${randomUUID().slice(0, 12)}`,
     wantId: want.id,
-    sellerId: user.id,
+    sellerId: answerer,
     sellerName: who.name,
     sellerHandle: who.handle,
+    voice,
     listingId,
     priceMinor: price ?? null,
     message: message.slice(0, MAX_DETAILS),

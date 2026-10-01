@@ -1,4 +1,5 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
+import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { CosmosClient, type Container, type ContainerRequest, type Database } from '@azure/cosmos';
@@ -6,10 +7,10 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
-  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
-import { matchesSearch } from '../../../shared/catalog.js';
+import { matchesSearch, popularity } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -24,6 +25,7 @@ import {
   seedComments,
   seedFollows,
   seedForums,
+  RETIRED_FIXTURE_POSTS,
   seedLikes,
   seedListings,
   seedLotBuyers,
@@ -452,9 +454,11 @@ export class CosmosRepository implements Repository {
 
     let added = 0;
     const newUsers: User[] = [];
+    let postIds = new Set<string>();
 
     for (const [name, items] of fixtures) {
       const present = await this.existingIds(name);
+      if (name === 'posts') postIds = present;
       const missing = items.filter((item) => !present.has(item.id));
       if (missing.length === 0) continue;
 
@@ -464,6 +468,12 @@ export class CosmosRepository implements Repository {
       added += missing.length;
       if (name === 'users') newUsers.push(...(missing as readonly User[]));
     }
+
+    // Shops do not belong in forums - a forum is people talking as themselves.
+    // The first fixture rooms were seeded with shops speaking in them; take
+    // those out wherever they are still standing.
+    const retired = RETIRED_FIXTURE_POSTS.filter(([, id]) => postIds.has(id));
+    await Promise.all(retired.map(([channelId, id]) => this.deletePost(channelId, id)));
 
     // A new fixture account needs the reservations sign-in and `/<username>`
     // resolve through, or it exists and cannot be reached.
@@ -751,7 +761,7 @@ export class CosmosRepository implements Repository {
         { partitionKey: AWAITING_LOT_ID },
       )
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   async moveOrderToLot(order: Order, fromLotId: string): Promise<Order> {
@@ -847,6 +857,11 @@ export class CosmosRepository implements Repository {
   async sendMessage(message: Message): Promise<Message> {
     const { resource } = await this.container('messages').items.create(message);
     return resource ?? message;
+  }
+
+  async updateMessage(message: Message): Promise<Message> {
+    const { resource } = await this.container('messages').items.upsert(message);
+    return (resource as Message | undefined) ?? message;
   }
 
   /**
@@ -1098,6 +1113,14 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listLivePowerSales(): Promise<PowerSale[]> {
+    // Cross-partition, and bounded by how many sales are live right now.
+    const { resources } = await this.container('powerSales')
+      .items.query<PowerSale>({ query: 'SELECT * FROM c WHERE c.status IN ("scheduled", "running")' })
+      .fetchAll();
+    return resources;
+  }
+
   async getPowerSale(sellerId: string, id: string): Promise<PowerSale | null> {
     try {
       const { resource } = await this.container('powerSales').item(id, sellerId).read<PowerSale>();
@@ -1209,6 +1232,18 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listStoresManagedBy(userId: string): Promise<User[]> {
+    // A partial match on the manager entry: only its userId has to agree.
+    const { resources } = await this.container('users')
+      .items.query<User>({
+        query: 'SELECT * FROM c WHERE IS_DEFINED(c.sellerProfile.managers)'
+          + ' AND ARRAY_CONTAINS(c.sellerProfile.managers, { "userId": @id }, true)',
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async listOrdersHeldBy(escrowAgentId: string): Promise<Order[]> {
     const { resources } = await this.container('orders')
       .items.query<Order>({
@@ -1216,7 +1251,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@id', value: escrowAgentId }],
       })
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
@@ -1229,7 +1264,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@sellerId', value: sellerId }],
       })
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   async listPosts(channelId: string, limit = 50): Promise<Post[]> {
@@ -1272,6 +1307,52 @@ export class CosmosRepository implements Repository {
     return resource ?? post;
   }
 
+  async listRecentPosts(limit: number): Promise<Post[]> {
+    const { resources } = await this.container('posts')
+      .items.query<Post>({
+        query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+        parameters: [{ name: '@limit', value: limit }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async getPost(channelId: string, id: string): Promise<Post | null> {
+    try {
+      const { resource } = await this.container('posts').item(id, channelId).read<Post>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null> {
+    // Optimistic: replace only if nobody else wrote in between, and on losing
+    // that race read again and redo the change against what won. A handful of
+    // attempts is plenty for a reaction; past that something else is wrong.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const { resource, etag } = await this.container('posts').item(id, channelId).read<Post>()
+        .catch((error: unknown) => {
+          if (isNotFound(error)) return { resource: undefined, etag: undefined };
+          throw error;
+        });
+      if (!resource) return null;
+      const next = change(resource);
+      if (!next) return resource;
+      try {
+        const { resource: saved } = await this.container('posts').item(id, channelId).replace<Post>(next, {
+          accessCondition: { type: 'IfMatch', condition: etag ?? '' },
+        });
+        return saved ?? next;
+      } catch (error) {
+        if ((error as { code?: number }).code === 412) continue;
+        throw error;
+      }
+    }
+    throw new Error('That post is too busy to change right now. Try again.');
+  }
+
   async listForums(): Promise<Forum[]> {
     const { resources } = await this.container('forums')
       .items.query<Forum>({ query: 'SELECT * FROM c ORDER BY c.name' })
@@ -1292,6 +1373,11 @@ export class CosmosRepository implements Repository {
   async createForum(forum: Forum): Promise<Forum> {
     const { resource } = await this.container('forums').items.create(forum);
     return resource ?? forum;
+  }
+
+  async saveForum(forum: Forum): Promise<Forum> {
+    const { resource } = await this.container('forums').items.upsert(forum);
+    return (resource as Forum | undefined) ?? forum;
   }
 
   listDemoAccounts(): DemoAccount[] {
@@ -1363,7 +1449,8 @@ export class CosmosRepository implements Repository {
    * all of history, so the window is opened wider when there is a term.
    */
   async listListings(query: CatalogQuery = {}): Promise<Listing[]> {
-    const limit = query.limit ?? (query.search ? 400 : 100);
+    const byPopularity = query.sort === 'popular';
+    const limit = byPopularity ? 400 : query.limit ?? (query.search ? 400 : 100);
     // Followed-first is not expressible in SQL - the ranking is a fact about
     // the reader, not the row - and it is only wanted while the reader has not
     // asked for an order of their own.
@@ -1407,6 +1494,10 @@ export class CosmosRepository implements Repository {
       ? resources.filter((listing) => matchesSearch(listing, query.search!))
       : resources;
 
+    if (byPopularity) {
+      return [...matched].sort((a, b) => popularity(b) - popularity(a)).slice(0, query.limit ?? 100);
+    }
+
     const followed = new Set(query.followedSellerIds ?? []);
     if (!ranked || followed.size === 0) return matched;
     return [...matched].sort(
@@ -1422,7 +1513,7 @@ export class CosmosRepository implements Repository {
         { partitionKey: lotId },
       )
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   async getListing(id: string): Promise<Listing | null> {
@@ -1534,7 +1625,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@listingId', value: listingId }],
       })
       .fetchAll();
-    return resources;
+    return resources.filter(isPlaced);
   }
 
   /**
@@ -1554,28 +1645,55 @@ export class CosmosRepository implements Repository {
   async createOrder(order: Order): Promise<Order> {
     const { resource } = await this.container('orders').items.create(order);
     const saved = resource ?? order;
+    if (isPlaced(order)) await this.takeStock(order);
+    return saved;
+  }
 
+  async listCheckoutDrafts(sellerId: string): Promise<Order[]> {
+    const { resources } = await this.container('orders')
+      .items.query<Order>({
+        query: 'SELECT * FROM c WHERE c.sellerId = @sellerId AND IS_NULL(c.placedAt) ORDER BY c.updatedAt DESC',
+        parameters: [{ name: '@sellerId', value: sellerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listLikesForListings(listingIds: readonly string[]): Promise<Like[]> {
+    if (listingIds.length === 0) return [];
+    const { resources } = await this.container('likes')
+      .items.query<Like>({
+        query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.listingId)',
+        parameters: [{ name: '@ids', value: [...listingIds] }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async takeStock(order: Order): Promise<void> {
     try {
       const listing = await this.getListing(order.listingId);
       if (listing) {
-        const quantityAvailable = Math.max(0, listing.quantityAvailable - order.quantity);
+        // A "multiple" item has no count to run down, so it never sells out.
+        const quantityAvailable = listing.quantityMode === 'multiple'
+          ? listing.quantityAvailable
+          : Math.max(0, listing.quantityAvailable - order.quantity);
         await this.container('listings')
           .item(listing.id, listing.sellerId)
           .replace({
             ...listing,
             quantityAvailable,
-            status: quantityAvailable === 0 ? 'sold_out' : listing.status,
+            status: quantityAvailable === 0 && listing.quantityMode !== 'multiple' ? 'sold_out' : listing.status,
             preOrder: listing.preOrder
               ? { ...listing.preOrder, filledCount: listing.preOrder.filledCount + order.quantity }
               : null,
+            soldCount: (listing.soldCount ?? 0) + order.quantity,
             updatedAt: new Date().toISOString(),
           });
       }
     } catch {
       // See above: the order stands.
     }
-
-    return saved;
   }
 
   async listComments(listingId: string): Promise<ListingComment[]> {
@@ -1594,6 +1712,11 @@ export class CosmosRepository implements Repository {
   async addComment(comment: ListingComment): Promise<ListingComment> {
     const { resource } = await this.container('comments').items.create(comment);
     return resource ?? comment;
+  }
+
+  async updateComment(comment: ListingComment): Promise<ListingComment> {
+    const { resource } = await this.container('comments').items.upsert(comment);
+    return (resource as ListingComment | undefined) ?? comment;
   }
 
   async toggleLike(userId: string, listingId: string): Promise<boolean> {
@@ -1616,6 +1739,13 @@ export class CosmosRepository implements Repository {
     return resources.map((like) => like.listingId);
   }
 
+  async listLikesBy(userId: string): Promise<Like[]> {
+    const { resources } = await this.container('likes')
+      .items.query<Like>({ query: 'SELECT * FROM c' }, { partitionKey: userId })
+      .fetchAll();
+    return resources;
+  }
+
   async toggleFollow(followerId: string, sellerId: string): Promise<boolean> {
     const id = `${followerId}__${sellerId}`;
     try {
@@ -1634,6 +1764,36 @@ export class CosmosRepository implements Repository {
       .items.query<Follow>({ query: 'SELECT * FROM c' }, { partitionKey: followerId })
       .fetchAll();
     return resources.map((follow) => follow.sellerId);
+  }
+
+  async getSiteContent(id: string): Promise<SiteContent | null> {
+    try {
+      const { resource } = await this.container('siteContent').item(id, id).read<SiteContent>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async saveSiteContent(content: SiteContent): Promise<SiteContent> {
+    const { resource } = await this.container('siteContent').items.upsert<SiteContent>(content);
+    return (resource as SiteContent | undefined) ?? content;
+  }
+
+  async deleteSiteContent(id: string): Promise<void> {
+    try {
+      await this.container('siteContent').item(id, id).delete();
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+    }
+  }
+
+  async listFollowsBy(followerId: string): Promise<Follow[]> {
+    const { resources } = await this.container('follows')
+      .items.query<Follow>({ query: 'SELECT * FROM c' }, { partitionKey: followerId })
+      .fetchAll();
+    return resources;
   }
 
   async listFollowerIds(sellerId: string): Promise<string[]> {
@@ -1682,7 +1842,9 @@ const CATALOG_ORDER: Record<string, string> = {
   newest: ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
   price_asc: ' ORDER BY c.priceMinor ASC OFFSET 0 LIMIT @limit',
   price_desc: ' ORDER BY c.priceMinor DESC OFFSET 0 LIMIT @limit',
-  popular: ' ORDER BY c.likeCount DESC OFFSET 0 LIMIT @limit',
+  // Popularity is a sum of two fields, which Cosmos cannot ORDER BY. The newest
+  // window is fetched wide and ranked in JavaScript instead; see listListings.
+  popular: ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
 };
 
 /** The clause for one sort, falling back to newest for anything unrecognised. */

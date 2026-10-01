@@ -115,14 +115,55 @@ export const CATALOG_KIND_LABELS: Record<CatalogKind, string> = {
  * shortfalls against a real cutoff.
  */
 export const CATALOG_SORTS = ['newest', 'price_asc', 'price_desc', 'popular'] as const;
+// "popular" orders by `popularity` below: views and saves, not sales.
 export type CatalogSort = (typeof CATALOG_SORTS)[number];
 
 export const CATALOG_SORT_LABELS: Record<CatalogSort, string> = {
   newest: 'Newest',
   price_asc: 'Cheapest first',
   price_desc: 'Dearest first',
-  popular: 'Most saved',
+  popular: 'Popularity',
 };
+
+/** What popularity reads: attention, never sales. */
+interface PopularityShape {
+  viewCount?: number;
+  likeCount?: number;
+}
+
+/**
+ * How much attention a listing is getting: every view counts once and every
+ * save ten times, because a save is somebody deciding they want it.
+ *
+ * Deliberately not sales. Something can be wanted by a lot of people before
+ * anyone has bought it, and a listing with one unit left would otherwise never
+ * look popular however many people are watching it.
+ */
+export function popularity(listing: PopularityShape): number {
+  return (listing.viewCount ?? 0) + (listing.likeCount ?? 0) * 10;
+}
+
+/** The score a listing has to reach before it is called "in demand". */
+export const IN_DEMAND_SCORE = 300;
+
+export function isInDemand(listing: PopularityShape): boolean {
+  return popularity(listing) >= IN_DEMAND_SCORE;
+}
+
+/** How far ahead a timer has to end for the listing to count as ending soon. */
+export const ENDING_SOON_HOURS = 7 * 24;
+
+/** Hours until a listing's offer ends, or null when it has no timer or it already ended. */
+export function hoursToEnd(listing: { expiresAt?: string | null }, now: number = Date.now()): number | null {
+  if (!listing.expiresAt) return null;
+  const left = (Date.parse(listing.expiresAt) - now) / 3_600_000;
+  return left > 0 ? left : null;
+}
+
+export function isEndingSoon(listing: { expiresAt?: string | null }, now: number = Date.now()): boolean {
+  const left = hoursToEnd(listing, now);
+  return left !== null && left <= ENDING_SOON_HOURS;
+}
 
 /** What a listing needs to carry for a kind to match it. */
 interface KindShape {

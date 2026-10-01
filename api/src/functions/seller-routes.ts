@@ -1,9 +1,11 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { LOT_STAGES, LOT_STAGE_LABELS, STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
-import type { Lot, SellerProfile } from '../../../shared/models.js';
+import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
+import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
 import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
+import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
+import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
@@ -189,89 +191,70 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
 }
 
 /**
- * GET /api/me/dashboard - what is moving, and how the shop is doing.
+ * GET /api/me/dashboard - how the shop is doing.
  *
- * Both dashboards in one call because they are one screen and read the same
- * rows: splitting them would double the work to render them side by side.
+ * Every figure comes out of one pass over the orders: the daily chart and
+ * the best sellers used to re-scan the whole book once per day and once per
+ * listing.
  */
 async function dashboard(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const [orders, listings, lots] = await Promise.all([
+  const [allOrders, listings] = await Promise.all([
     repository.listOrdersForSeller(user.id),
     repository.listListings({ sellerId: user.id }),
-    repository.listLots({ sellerId: user.id }),
   ]);
 
-  /* Tracking: what is in flight, grouped by the stage it is sitting at. */
-  const byStage = LOT_STAGES.map((stage) => ({
-    stage,
-    label: LOT_STAGE_LABELS[stage],
-    lots: lots.filter((lot) => lot.stage === stage).length,
-  }));
-
-  const openLots = lots.filter((lot) => lot.status === 'open');
-  const inFlight = orders.filter((order) => order.status !== 'delivered' && order.status !== 'cancelled');
-
   /* Analytics: the numbers a seller checks, and nothing they cannot act on. */
-  const revenueMinor = orders
-    .filter((order) => order.status !== 'cancelled')
-    .reduce((sum, order) => sum + order.quantity * order.unitPriceMinor, 0);
-  const unitsSold = orders
-    .filter((order) => order.status !== 'cancelled')
-    .reduce((sum, order) => sum + order.quantity, 0);
-  const views = listings.reduce((sum, listing) => sum + listing.viewCount, 0);
-  const saves = listings.reduce((sum, listing) => sum + listing.likeCount, 0);
+  const orders = allOrders.filter((order) => !isCancelledLike(order.status));
 
   // Thirty days of orders, so the shape of the last month is visible rather
   // than just its total.
   const dayMs = 86_400_000;
   const start = Date.now() - 29 * dayMs;
-  const daily = Array.from({ length: 30 }, (_, index) => {
-    const day = new Date(start + index * dayMs);
-    const key = day.toISOString().slice(0, 10);
-    const onDay = orders.filter((order) => order.createdAt.slice(0, 10) === key && order.status !== 'cancelled');
-    return {
-      date: key,
-      orders: onDay.length,
-      revenueMinor: onDay.reduce((sum, order) => sum + order.quantity * order.unitPriceMinor, 0),
-    };
-  });
+  const daily = Array.from({ length: 30 }, (_, index) => ({
+    date: new Date(start + index * dayMs).toISOString().slice(0, 10),
+    orders: 0,
+    revenueMinor: 0,
+  }));
+  const dayOf = new Map(daily.map((day) => [day.date, day]));
+  const unitsByListing = new Map<string, number>();
+
+  let revenueMinor = 0;
+  let unitsSold = 0;
+  for (const order of orders) {
+    const value = order.quantity * order.unitPriceMinor;
+    revenueMinor += value;
+    unitsSold += order.quantity;
+    unitsByListing.set(order.listingId, (unitsByListing.get(order.listingId) ?? 0) + order.quantity);
+    const day = dayOf.get(order.createdAt.slice(0, 10));
+    if (day) {
+      day.orders += 1;
+      day.revenueMinor += value;
+    }
+  }
+  const views = listings.reduce((sum, listing) => sum + listing.viewCount, 0);
+  const saves = listings.reduce((sum, listing) => sum + listing.likeCount, 0);
 
   // The items actually earning their place in the storefront.
-  const topListings = [...listings]
+  const topListings = listings
     .map((listing) => ({
       id: listing.id,
       title: listing.title,
       viewCount: listing.viewCount,
       likeCount: listing.likeCount,
-      unitsSold: orders
-        .filter((order) => order.listingId === listing.id && order.status !== 'cancelled')
-        .reduce((sum, order) => sum + order.quantity, 0),
+      unitsSold: unitsByListing.get(listing.id) ?? 0,
     }))
     .sort((a, b) => b.unitsSold - a.unitsSold || b.viewCount - a.viewCount)
     .slice(0, 5);
 
   return json(200, {
-    tracking: {
-      openLots: openLots.length,
-      inFlightOrders: inFlight.length,
-      byStage: byStage.filter((row) => row.lots > 0),
-      lots: openLots.map((lot) => ({
-        id: lot.id,
-        name: lot.name,
-        stage: lot.stage,
-        origin: lot.origin ?? '',
-        estimatedDispatchAt: lot.estimatedDispatchAt,
-        orderCount: orders.filter((order) => order.lotId === lot.id).length,
-      })),
-    },
     analytics: {
       revenueMinor,
       unitsSold,
-      orderCount: orders.filter((order) => order.status !== 'cancelled').length,
+      orderCount: orders.length,
       activeListings: listings.length,
       views,
       saves,
@@ -309,33 +292,47 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   }
 
   const orders = await repository.listOrdersForSeller(storeId);
-  const buyers = new Map<string, ReturnType<typeof personRef>>();
-  for (const order of orders) {
-    if (buyers.has(order.buyerId)) continue;
-    buyers.set(order.buyerId, personRef(await repository.getUserById(order.buyerId)));
-  }
+  const lotIds = [...new Set(orders.filter(inLot).map((order) => order.lotId))];
 
-  /* Every lot these orders ride in, read once rather than per row: a shop
-     with forty orders in three lots should not make forty lookups to put
-     three numbers on cards. */
-  const lots = new Map<string, Lot | null>();
-  for (const order of orders) {
-    if (!inLot(order) || lots.has(order.lotId)) continue;
-    lots.set(order.lotId, await repository.getLot(storeId, order.lotId));
-  }
-
-  /* The listings behind the orders still waiting for a lot, so the "add to a
-     lot" screen can pre-select the route the Quick Post template set up for
-     them. One query for the shop rather than one per order. */
-  const listings = new Map(
-    (await repository.listListings({ sellerId: storeId, includeHidden: true }))
-      .map((listing) => [listing.id, listing]),
+  /* The buyers, the lots and the listings behind these orders, read side by
+     side and each once: one lookup for every buyer, one per lot rather than
+     per row, and one query for the shop's listings - so the "add to a lot"
+     screen can pre-select the route the Quick Post template set up. */
+  const [people, lotRows, listingRows] = await Promise.all([
+    repository.listUsersByIds([...new Set(orders.map((order) => order.buyerId))]),
+    Promise.all(lotIds.map((id) => repository.getLot(storeId, id))),
+    repository.listListings({ sellerId: storeId, includeHidden: true, limit: 10_000 }),
+  ]);
+  const buyerById = new Map(people.map((person) => [person.id, person]));
+  const buyers = new Map(orders.map((order) => [order.buyerId, personRef(buyerById.get(order.buyerId) ?? null)]));
+  /* Where each buyer's money goes back to - shown only in Refunds, beside a
+     refund this shop owes them, because that is what it is for. */
+  const payouts = new Map<string, BuyerReversalDetails | null>(
+    orders.map((order) => [order.buyerId, buyerById.get(order.buyerId)?.reversalDetails ?? null]),
   );
+  const lots = new Map(lotIds.map((id, index) => [id, lotRows[index] ?? null]));
+  const listings = new Map(listingRows.map((listing) => [listing.id, listing]));
+
+  /* Worked out once per order: the money is read by the card, the credits and
+     the refund picker, and each used to recompute it. */
+  const moneyOf = new Map(orders.map((order) => [order.id, orderMoney(order)]));
+  const money = (order: (typeof orders)[number]) => moneyOf.get(order.id)!;
 
   const row = (order: (typeof orders)[number]) => {
     const lot = inLot(order) ? lots.get(order.lotId) ?? null : null;
+    const listing = listings.get(order.listingId);
+    const photo = listing?.photos.find((entry) => entry.isPrimary) ?? listing?.photos[0] ?? null;
+    const { paidMinor, outstandingMinor, creditMinor } = money(order);
+    const actions = actionsFor(order, storeId);
     return {
+      photoUrl: photo?.url ?? null,
+      /** Bought from a private deal made in a chat. */
+      privateDeal: order.privateDeal === true,
+      paidMinor,
+      outstandingMinor,
+      creditMinor,
       id: order.id,
+      listingId: order.listingId,
       itemName: order.itemName,
       quantity: order.quantity,
       totalMinor: order.unitPriceMinor * order.quantity,
@@ -350,6 +347,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       escrowState: order.escrow.state,
       /** A domestic sale is in hand by definition: there is nothing to import. */
       inHand: isDirect(order),
+      /** The courier and AWB it went out with, once dispatched. */
+      shipment: order.shipment ?? null,
+      dispatchedAt: order.checkpoints?.dispatched ?? null,
       awaitingLot: awaitingLot(order),
       lotId: lot?.id ?? null,
       lotName: lot?.name ?? null,
@@ -357,6 +357,11 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       lotStep: lot ? routeOf(lot).steps[currentStepOf(lot)]?.name ?? null : null,
       /** The one tick a seller makes from this screen. */
       chinaReceivedAt: order.checkpoints?.china_received ?? null,
+      /** Ticked on the lot screen, not this one - read here so this screen's
+       *  own Active/Completed split can tell without asking `order.status`,
+       *  which a seller's tick deliberately never touches (see setCheckpoint
+       *  in fulfilment-routes.ts). */
+      deliveredAt: order.checkpoints?.delivered ?? null,
       /**
        * The route the item's template said a lot carrying it should travel.
        *
@@ -364,37 +369,127 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
        * the last link in the chain a Quick Post template sets up: pick the
        * template once, and the buyer's whole journey is configured.
        */
-      lotRouteId: listings.get(order.listingId)?.lotRouteId ?? null,
+      lotRouteId: listing?.lotRouteId ?? null,
+      /** Whether the buyer chose Book: no charge yet, waiting on acceptance. */
+      bookingOnly: order.bookingOnly ?? false,
+      accepted: order.accepted ?? false,
+      cancelReason: order.cancelReason ?? null,
+      reversal: order.reversal ?? null,
+      /** From the one shared rule, so this card never offers a button the
+       *  server would refuse. */
+      canAccept: actions.includes('accept'),
+      canCancel: actions.includes('cancel'),
     };
   };
 
-  // Three piles, because they need three different things from the seller.
+  // Two piles, because they need two different things from the seller.
   // Somebody who has said they paid is waiting on a yes or no about money.
   // Somebody who has only ordered is waiting to hear whether it can be served
   // at all - that used to be invisible here, so an order the shop could not
   // fill simply sat there and the buyer found out by never receiving anything.
+  // A payment being reversed is waiting on the seller too, for as long as it
+  // takes to record it.
   const waiting = orders
-    .filter((order) => order.paymentStatus === 'claimed' && order.status !== 'cancelled')
-    .sort((a, b) => (a.paymentClaim?.claimedAt ?? '').localeCompare(b.paymentClaim?.claimedAt ?? ''));
+    .filter((order) =>
+      (order.paymentStatus === 'claimed' || order.status === 'payment_reversal_pending')
+      && !isCancelledLike(order.status))
+    .sort((a, b) => (a.paymentClaim?.claimedAt ?? a.updatedAt).localeCompare(b.paymentClaim?.claimedAt ?? b.updatedAt));
 
   const placed = orders
     .filter((order) => order.status === 'pending_payment' && order.paymentStatus === 'unpaid')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-  const answered = orders
-    .filter((order) => order.paymentClaim?.decision || order.status === 'cancelled')
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, 12);
+  /*
+   * Every extra payment a buyer has made in this shop, in one place.
+   *
+   * An overpayment lands on whichever order the payment happened to reach
+   * last, which is no place to manage it from. Collected here with the
+   * buyer's other orders that still owe something, so the seller can decide
+   * in one step: send it back, move it onto one of those, or keep it for
+   * whatever the buyer orders next. Settled ones drop off; one waiting on the
+   * buyer to confirm a return stays, so it is not forgotten either.
+   */
+  const credits = orders.flatMap((order) => (order.credits ?? [])
+    .filter((credit) => creditIsLive(credit) || credit.status === 'refund_pending')
+    .map((credit) => ({
+      orderId: order.id,
+      itemName: order.itemName,
+      currency: order.currency,
+      buyer: buyers.get(order.buyerId) ?? personRef(null),
+      creditId: credit.id,
+      createdAt: credit.createdAt,
+      origin: credit.origin ?? 'overpaid',
+      reason: credit.reason ?? null,
+      amountMinor: credit.amountMinor,
+      refundedMinor: credit.refundedMinor,
+      leftMinor: creditLeft(credit),
+      status: credit.status,
+      pendingRefund: credit.pendingRefund ?? null,
+      refundDenials: credit.refundDenials?.length ?? 0,
+      buyerDetails: payouts.get(order.buyerId) ?? null,
+      detailsCheck: order.detailsCheck ?? null,
+      /** A refund of this the buyer said never came, which the seller may dispute. */
+      disputable: disputeSubjects(order, storeId).filter((entry) =>
+        (credit.refundLog ?? []).some((logged) => entry.subject === `refund:${logged.id}`)),
+      applications: credit.applications ?? [],
+      targets: orders
+        .filter((other) => other.id !== order.id && other.buyerId === order.buyerId
+          && !isCancelledLike(other.status) && other.paymentStatus !== 'claimed'
+          && money(other).outstandingMinor > 0)
+        .map((other) => ({ orderId: other.id, itemName: other.itemName, outstandingMinor: money(other).outstandingMinor })),
+    })))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  /* Every refund this shop has ever sent, and every amount it moved onto
+     another order instead - to whom, for what, and when - newest first. */
+  const refundHistory = orders.flatMap((order) => (order.credits ?? []).flatMap((credit) => {
+    const common = {
+      orderId: order.id, itemName: order.itemName, currency: order.currency,
+      buyer: buyers.get(order.buyerId) ?? personRef(null),
+      origin: credit.origin ?? 'overpaid', reason: credit.reason ?? null,
+    };
+    return [
+      ...(credit.refundLog ?? []).map((entry) => ({
+        ...common, id: entry.id, kind: 'refund' as const, amountMinor: entry.amountMinor, at: entry.sentAt,
+        reference: entry.reference, screenshotUrl: entry.screenshotUrl ?? null,
+        status: entry.status, answeredAt: entry.answeredAt, movedTo: null,
+      })),
+      ...(credit.applications ?? []).map((moved, at) => ({
+        ...common, id: `${credit.id}-mv${at}`, kind: 'moved' as const, amountMinor: moved.amountMinor, at: moved.at,
+        reference: null, screenshotUrl: null, status: 'received' as const, answeredAt: moved.at, movedTo: moved.itemName,
+      })),
+    ];
+  })).sort((a, b) => b.at.localeCompare(a.at));
+
+  /* What a fresh refund could be started against: anything paid for that a
+     cancellation or an earlier refund has not already claimed. */
+  const refundable = orders
+    .map((order) => {
+      const reserved = (order.credits ?? [])
+        .filter((credit) => credit.origin === 'cancelled' || credit.origin === 'manual')
+        .reduce((sum, credit) => sum + credit.amountMinor, 0);
+      return {
+        orderId: order.id, itemName: order.itemName, currency: order.currency, createdAt: order.createdAt,
+        buyer: buyers.get(order.buyerId) ?? personRef(null),
+        buyerDetails: payouts.get(order.buyerId) ?? null,
+        detailsCheck: order.detailsCheck ?? null,
+        refundableMinor: Math.max(0, money(order).paidMinor - reserved),
+      };
+    })
+    .filter((entry) => entry.refundableMinor > 0)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return json(200, {
+    credits,
+    refundHistory,
+    refundable,
     waiting: waiting.map(row),
     placed: placed.map(row),
-    answered: answered.map(row),
-    /* Every purchase, newest first. The three piles above are the ones that
-       need an answer about money; this is the shop's whole book, which is what
-       the seller is actually working from. */
-    orders: orders
-      .filter((order) => order.status !== 'cancelled')
+    /* Every purchase, newest first. The two piles above are the ones that
+       need an answer; this is the shop's whole book, which is what the seller
+       is actually working from - cancelled and turned-down orders included,
+       so there is a record of them. */
+    orders: [...orders]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(row),
   });
@@ -420,10 +515,9 @@ async function myStores(request: HttpRequest, _context: InvocationContext) {
     if (access) stores.push(access);
   }
 
-  // Stores that named this account as a manager. A scan of stores rather than
-  // an index: a person manages a handful, and the alternative is a second
-  // container to keep in step with the membership list itself.
-  for (const owner of await repository.listStoreOwners()) {
+  // Stores that named this account as a manager, found by the database from
+  // the membership list itself rather than by reading every store there is.
+  for (const owner of await repository.listStoresManagedBy(user.id)) {
     if (owner.id === user.id) continue;
     const access = accessFor(owner, user.id);
     if (access) stores.push(access);

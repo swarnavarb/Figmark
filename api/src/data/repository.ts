@@ -3,7 +3,7 @@ import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
-  Dispute, Forum, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
+  Dispute, Follow, Forum, SiteContent, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
 export interface BackendStatus {
@@ -152,7 +152,20 @@ export interface Repository {
    * listing are shown as a group.
    */
   listOrdersForListing(listingId: string): Promise<Order[]>;
+  /**
+   * Writes an order. One already placed moves stock and pre-order fill at
+   * once; a checkout (`placedAt: null`) moves nothing until `takeStock`.
+   *
+   * Every seller-facing list here - by seller, lot, listing, awaiting a lot,
+   * held by an escrow - leaves checkouts out: pressing Buy is not an order.
+   */
   createOrder(order: Order): Promise<Order>;
+  /** Moves stock and pre-order fill for a checkout the buyer has just placed. */
+  takeStock(order: Order): Promise<void>;
+  /** A seller's checkouts nobody went ahead with - for insights, never for the order book. */
+  listCheckoutDrafts(sellerId: string): Promise<Order[]>;
+  /** Every save of any of these items. */
+  listLikesForListings(listingIds: readonly string[]): Promise<Like[]>;
 
   /**
    * Reviews written about one person, newest first.
@@ -221,10 +234,15 @@ export interface Repository {
   /**
    * A shop's scheduled sales, newest first.
    *
-   * One partition. The runner that posts them reads the same list, because
-   * there is no scheduler here: a sale is advanced by somebody looking at it.
+   * One partition. Read by the shop's own console, which advances what it
+   * reads, as well as by the clock below.
    */
   listPowerSales(sellerId: string): Promise<PowerSale[]>;
+  /**
+   * Every sale still to run or running, across all shops, for the clock that
+   * advances them whether or not anybody has the console open.
+   */
+  listLivePowerSales(): Promise<PowerSale[]>;
   getPowerSale(sellerId: string, id: string): Promise<PowerSale | null>;
   savePowerSale(sale: PowerSale): Promise<PowerSale>;
   /** Everything waiting for one person, newest first. */
@@ -267,14 +285,19 @@ export interface Repository {
 
   listComments(listingId: string): Promise<ListingComment[]>;
   addComment(comment: ListingComment): Promise<ListingComment>;
+  updateComment(comment: ListingComment): Promise<ListingComment>;
 
   /** Toggles a bookmark. Returns the resulting state. */
   toggleLike(userId: string, listingId: string): Promise<boolean>;
   listLikedListingIds(userId: string): Promise<string[]>;
+  /** Every save one person has made, with when - one partition. */
+  listLikesBy(userId: string): Promise<Like[]>;
 
   /** Toggles a follow. Returns the resulting state. */
   toggleFollow(followerId: string, sellerId: string): Promise<boolean>;
   listFollowedSellerIds(followerId: string): Promise<string[]>;
+  /** Every follow one person has made, with when - one partition. */
+  listFollowsBy(followerId: string): Promise<Follow[]>;
   /**
    * Who follows one shop.
    *
@@ -285,11 +308,23 @@ export interface Repository {
    */
   listFollowerIds(sellerId: string): Promise<string[]>;
 
+  /** A page the operators write (the Learn guide), or null before anybody has saved one. */
+  getSiteContent(id: string): Promise<SiteContent | null>;
+  saveSiteContent(content: SiteContent): Promise<SiteContent>;
+  deleteSiteContent(id: string): Promise<void>;
+
   /** Saves an edited account - the storefront editor is the only caller. */
   updateUser(user: User): Promise<User>;
 
   /** Every account that has opened a store, for resolving who manages what. */
   listStoreOwners(): Promise<User[]>;
+  /**
+   * The stores that name this account among their managers.
+   *
+   * Filtered by the database rather than by reading every store and checking
+   * each one, which grew with the whole platform on every Sell tab open.
+   */
+  listStoresManagedBy(userId: string): Promise<User[]>;
 
   /** Resolves a username to the account behind it, and whether it is a store. */
   getByHandle(username: string): Promise<{ user: User; isStore: boolean } | null>;
@@ -304,6 +339,8 @@ export interface Repository {
   /** Every message touching any of these handles, for the inbox. */
   listMessagesForHandles(handles: readonly string[], limit?: number): Promise<Message[]>;
   sendMessage(message: Message): Promise<Message>;
+  /** Writes a message back, for reactions. */
+  updateMessage(message: Message): Promise<Message>;
   /** Marks everything addressed to `handle` in this thread as read. */
   markThreadRead(threadId: string, handle: string): Promise<number>;
 
@@ -319,10 +356,30 @@ export interface Repository {
   /** The feed: posts across many channels, newest first. */
   listPostsForChannels(channelIds: readonly string[], limit?: number): Promise<Post[]>;
   createPost(post: Post): Promise<Post>;
+  getPost(channelId: string, id: string): Promise<Post | null>;
+  /**
+   * The newest posts anywhere, for trending.
+   *
+   * Cross-partition by nature and bounded by `limit`: trending ranks a
+   * recent window, it never needs the whole history.
+   */
+  listRecentPosts(limit: number): Promise<Post[]>;
+  /**
+   * Change one post in place: react, comment, vote, count a share.
+   *
+   * A read-change-write rather than a save, because two people reacting in
+   * the same second are both reacting - the store retries the change against
+   * whatever landed first instead of letting the second write erase the first.
+   * `change` returns the new post, or null to leave it alone. Null back when
+   * there is no such post.
+   */
+  mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null>;
 
   listForums(): Promise<Forum[]>;
   getForum(id: string): Promise<Forum | null>;
   createForum(forum: Forum): Promise<Forum>;
+  /** Writes a forum back, for joining and leaving. */
+  saveForum(forum: Forum): Promise<Forum>;
 }
 
 /** How long a seller must wait between bumps on the same listing. */

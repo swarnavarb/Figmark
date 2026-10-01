@@ -1,6 +1,6 @@
 import type { ConditionTag, Sourcing } from './enums.js';
 import type { BaseDocument } from './models.js';
-import { BUILT_IN_ROUTE, type LotRoute, type RouteStep } from './routes.js';
+import type { LotRoute } from './routes.js';
 
 /**
  * A Quick Post template: everything a shop types the same way every time.
@@ -48,6 +48,23 @@ export interface PostTemplate extends BaseDocument {
   /** The template a lot created from one of these items should travel. */
   lotRouteId: string | null;
   lotRouteName: string | null;
+  /**
+   * 'power' is a power sale's quick fill: what every item in a run shares.
+   * Absent on older templates, which are all Quick Post ones.
+   */
+  kind?: 'post' | 'power';
+  /** A power quick fill's stock and payment terms. */
+  terms?: TemplateTerms | null;
+}
+
+/** Stock, payment and timing a quick fill hands to each item it fills. */
+export interface TemplateTerms {
+  quantityMode: 'fixed' | 'multiple';
+  quantity: number;
+  advancePercent: number | null;
+  /** A limited time deal's length in days; null when it is not one. */
+  limitedDays: number | null;
+  allowMultiple: boolean;
 }
 
 /**
@@ -78,22 +95,6 @@ export function preLotRouteOf(source: { preLotRoute?: LotRoute | null } | null |
   return route && route.steps.length > 0 ? route : BUILT_IN_PRE_LOT_ROUTE;
 }
 
-/** A blank template, so the form and the API start from the same shape. */
-export function emptyTemplate(): Omit<PostTemplate, keyof BaseDocument | 'sellerId'> {
-  return {
-    name: '',
-    category: '',
-    tags: [],
-    condition: null,
-    sourcing: 'in_hand',
-    description: '',
-    defaultLotId: null,
-    preLotRoute: null,
-    lotRouteId: null,
-    lotRouteName: null,
-  };
-}
-
 /**
  * The listing fields a template fills in.
  *
@@ -119,19 +120,5 @@ export function fillFrom(template: PostTemplate): TemplateFill {
     description: template.description,
     sourcing: template.sourcing ?? 'in_hand',
     lotId: template.defaultLotId,
-  };
-}
-
-/**
- * How the two ladders read end to end, for the line a template shows about
- * itself. Before the lot, then the lot's own - which is the whole journey
- * a buyer of this item will read.
- */
-export function journeyOf(
-  template: Pick<PostTemplate, 'preLotRoute' | 'lotRouteName'>,
-): { before: RouteStep[]; afterName: string } {
-  return {
-    before: preLotRouteOf(template).steps,
-    afterName: template.lotRouteName ?? BUILT_IN_ROUTE.name,
   };
 }
