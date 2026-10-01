@@ -5565,15 +5565,46 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 .rsgap__editor .btn { justify-self: start; }
 
-.rsjoin { position: relative; display: flex; align-items: center; gap: 8px; margin-left: 28px; padding: 5px 0; }
-.rsjoin__label {
-  display: flex; align-items: center; gap: 5px; font-size: var(--t-2xs); font-weight: var(--w-semi);
-  color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.04em;
+.rsjoin__acts { display: flex; gap: 4px; flex: 0 0 auto; }
+
+/* The three parts of a journey, each its own colour: before the lot (aqua),
+   in it (coral - the crate, moved as one), after it (lime). The line where
+   one becomes the next is a full-width band, so the split is the first thing
+   read on the chain, not a caption between two cards. */
+.rszone {
+  --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 10px 0 6px; padding: 9px 12px; border-radius: var(--r-md);
+  background: var(--zone-soft); box-shadow: inset 4px 0 0 var(--zone), inset 0 0 0 1px var(--zone-line);
 }
-.rsjoin__acts { display: flex; gap: 4px; }
-/* The lot breaking back apart reads as a different colour than it forming -
-   the same blue the transit leg of a card takes elsewhere on this road. */
-.rsjoin--leave .rsjoin__label { color: var(--blue-text); }
+.rszone--pre { --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line); }
+.rszone--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
+.rszone--post { --zone: var(--lime); --zone-soft: var(--lime-soft); --zone-line: var(--lime-line); }
+.rszone__text { display: grid; gap: 1px; min-width: 0; }
+.rszone__text b { font-size: var(--t-sm); color: var(--zone); }
+.rszone__text span { font-size: var(--t-2xs); color: var(--text-dim); }
+.rsnode--pre { --zone: var(--aqua); }
+.rsnode--lot { --zone: var(--coral); }
+.rsnode--post { --zone: var(--lime); }
+.rsnode--pre .rsnode__card, .rsnode--lot .rsnode__card, .rsnode--post .rsnode__card {
+  box-shadow: inset 4px 0 0 var(--zone), 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* Adding a step: every kind, the ones that cannot go here locked with why. */
+.rspick__zone { margin: 0; padding: 9px 12px; border-radius: var(--r-md); font-size: var(--t-xs); background: var(--zone-soft); box-shadow: inset 4px 0 0 var(--zone); }
+.rspick__group { display: grid; gap: 6px; }
+.rspick__title { font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.rspick__row {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; align-items: center; text-align: left;
+  padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+.rspick__row:hover:not(:disabled) { border-color: var(--accent); }
+.rspick__row.is-locked { opacity: 0.55; cursor: not-allowed; border-style: dashed; }
+.rspick__icon { font-size: 18px; text-align: center; }
+.rspick__body { display: grid; gap: 2px; min-width: 0; }
+.rspick__body b { font-size: var(--t-sm); }
+.rspick__body span { font-size: var(--t-2xs); color: var(--text-dim); }
 
 .rsscrub { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }
 /* ── Buy / Purchases / Profile: stock, expiry, money ─────────────────────
@@ -9160,7 +9191,29 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 .rsbtn__note, .rsbtn__wrong { grid-column: 1 / -1; font-size: var(--t-2xs); line-height: 1.4; }
 .rsbtn__note { color: var(--text-dim); }
 .rsbtn__wrong { color: var(--danger); }
-.rsbtn__none { display: block; margin-top: 6px; font-size: var(--t-2xs); color: var(--text-faint); }
+.rsbtn__none { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 6px; font-size: var(--t-2xs); color: var(--text-faint); }
+.rsbtn__add {
+  height: 26px; padding: 0 10px; border: 1px dashed var(--accent-line); border-radius: 999px;
+  background: transparent; color: var(--accent-text); font: inherit; font-size: var(--t-2xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.rsbtn__ship { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.rsbtn__ship input { min-width: 0; padding: 6px 9px; font-size: var(--t-2xs); }
+.rsbtn__who { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rsbtn__who-label { font-size: var(--t-2xs); color: var(--text-dim); margin-right: 2px; }
+.rsbtn__whochip {
+  height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text-dim); font: inherit; font-size: var(--t-2xs); cursor: pointer;
+}
+.rsbtn__whochip.is-on { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: var(--w-semi); }
+.stepact__who { font-size: var(--t-2xs); padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-dim); }
+.stepact__who.is-supplier { background: var(--aqua-soft); color: var(--aqua); }
+.stepact__who.is-handler { background: var(--lime-soft); color: var(--lime); }
+
+/* A seller's own view of a timeline, coloured by part of the journey. */
+.ladder__row--pre, .ladder__row--lot, .ladder__row--post { padding-left: 10px; }
+.ladder__row--pre { box-shadow: inset 3px 0 0 var(--aqua-line); }
+.ladder__row--lot { box-shadow: inset 3px 0 0 var(--coral-line); }
+.ladder__row--post { box-shadow: inset 3px 0 0 var(--lime-line); }
 .rsproblems {
   display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--r-md);
   background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); font-size: var(--t-xs);

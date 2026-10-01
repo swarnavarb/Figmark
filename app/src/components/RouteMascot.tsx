@@ -227,13 +227,15 @@ export function routeFromAnswers(a: PipAnswers): RouteStep[] {
     lot.push(make('With the international courier', 'Handed over to the courier.', { forward: true }), make('Arrived in {destination}', 'In the country.'));
   }
   if (a.customs) lot.push(make('Customs cleared', 'Cleared on arrival.'));
-  if (a.land === 'warehouse') {
-    lot.push(make('Received at {destination} warehouse', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'At India WH' }));
-  } else if (a.land === 'me') {
-    lot.push(make('Received by the seller', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'Got it' }));
-  }
 
+  /* Arriving is the first thing after the lot, not the last thing in it: the
+     lot is unpacked there and each item is counted in on its own button. */
   const last: RouteStep[] = [];
+  if (a.land === 'warehouse') {
+    last.push(make('Received at {destination} warehouse', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'At India WH' }));
+  } else if (a.land === 'me') {
+    last.push(make('Received by the seller', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'Got it' }));
+  }
   if (a.lastPack !== undefined) {
     if (a.lastPack) last.push(make('Packed for you', 'Boxed for the courier.', { trigger: 'packed', button: 'Packed for the buyer' }));
     last.push(make('Dispatched to you', 'Handed to the courier for the last leg.', { trigger: 'dispatched', button: 'Dispatched' }));

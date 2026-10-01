@@ -6074,11 +6074,17 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   assert.equal(await where(), 'Received at international warehouse');
 
   // And the lot moving still carries everyone, buttons or no buttons - as far
-  // as the crate goes. It lands and is unpacked...
-  await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 3 } }), ctx);
+  // as the crate goes, which is not as far as arriving: each item is
+  // received on its own, after the lot.
+  await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 2 } }), ctx);
+  assert.equal(await where(), 'Dispatched from China');
+  const tooFar = await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 3 } }), ctx);
+  assert.equal(tooFar.status, 409, 'arriving is one item at a time');
+  assert.equal((await card()).next.checkpoint, 'india_received', 'the card offers the arrival');
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'india_received', on: true },
+  }), ctx);
   assert.equal(await where(), 'Landed in India');
-  const tooFar = await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 4 } }), ctx);
-  assert.equal(tooFar.status, 409, 'the last leg is one item at a time');
   assert.equal((await card()).next.checkpoint, 'dispatched', 'landed: the card offers the last mile');
 
   // ...and each item goes out on its own, on its own button.
@@ -6086,6 +6092,76 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
     headers: auth, params: { id: order.id }, body: { checkpoint: 'dispatched', on: true },
   }), ctx);
   assert.equal(await where(), 'Out for delivery');
+});
+
+await check('a custom button moves its own item, and never lives inside a lot', async () => {
+  const route = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'With my own buttons',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Photos sent to buyer', side: 'pre', custom: true, button: 'Photos sent', assignee: 'supplier' },
+        { name: 'Received at the warehouse', side: 'pre' },
+        { name: 'Flying', side: 'post', custom: true, forward: true },
+        { name: 'Received at India warehouse', side: 'post' },
+        { name: 'Gift wrapped', side: 'post', custom: true, lastMile: true },
+        { name: 'Delivered', side: 'post', lastMile: true },
+      ],
+    },
+  }), ctx);
+  assert.equal(route.status, 201, JSON.stringify(route.jsonBody));
+  const steps = route.jsonBody.route.steps;
+  assert.equal(steps[1].custom, true);
+  assert.equal(steps[1].assignee, 'supplier', 'handed to the supplier, as asked');
+  assert.equal(steps[3].custom, undefined, 'a lot moves its items together: no button in it');
+  assert.equal(steps[4].trigger, 'india_received', 'arriving is after the lot');
+  assert.equal(steps[4].lastMile, true);
+  assert.equal(steps[5].custom, true);
+
+  const lot = await createLot(req({
+    headers: auth, body: { name: 'Custom run', origin: 'Guangzhou, CN', routeId: route.jsonBody.route.id },
+  }), ctx);
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Has its own button', priceMinor: 5_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('Custom Watcher');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.jsonBody.lot.id } }), ctx);
+
+  const where = async () => {
+    const t = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+    return t.route.steps[t.route.currentStep].name;
+  };
+  const card = async () => (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((row) => row.id === order.id);
+  assert.equal((await card()).next.checkpoint, `custom:${steps[1].id}`, 'the card offers the custom button first');
+  assert.equal((await card()).next.label, 'Photos sent');
+
+  const pressed = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: `custom:${steps[1].id}`, on: true },
+  }), ctx);
+  assert.equal(pressed.status, 200, JSON.stringify(pressed.jsonBody));
+  assert.equal(await where(), 'Photos sent to buyer');
+
+  // A custom key the route does not have is refused, not stored.
+  const ghost = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'custom:nope', on: true },
+  }), ctx);
+  assert.equal(ghost.status, 404);
+
+  // A hand-over moved to with no courier or tracking ID is fine - and stores neither.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  const flown = await stepLot(req({ headers: auth, params: { id: lot.jsonBody.lot.id }, body: { to: 3 } }), ctx);
+  assert.equal(flown.status, 200, JSON.stringify(flown.jsonBody));
+  const history = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody.order.stageHistory;
+  const handover = history.findLast((event) => event.step === 'Flying');
+  assert.ok(handover);
+  assert.equal(handover.shipper, undefined, 'no blank courier for the buyer to read');
+  assert.equal(handover.trackingId, undefined);
 });
 
 await check('a route written with no buttons gets them anyway', async () => {
@@ -8245,6 +8321,46 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
     assert.equal(task.claimable, false, 'and not claimable until it is met again');
     assert.equal(task.progress, 2);
   }
+});
+
+await check('a button handed to the handler is theirs to press', async () => {
+  // Last on purpose: it puts a demo lot on a new route.
+  const handlerAuth = { authorization: `Bearer ${(await login(req({
+    body: { identifier: HANDLER_EMAIL, password: DEMO_PASSWORD },
+  }), ctx)).jsonBody.token}` };
+  const order = (await distributionDetail(req({
+    headers: handlerAuth, params: { id: 'lot_open_24' },
+  }), ctx)).jsonBody.parcels[0].items[0];
+
+  const route = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Handler counts it in',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Received at the warehouse', side: 'pre', trigger: 'china_received', assignee: 'handler' },
+        { name: 'Flown', side: 'post' },
+        { name: 'Received at India warehouse', side: 'post' },
+        { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  assert.equal(route.jsonBody.route.steps[1].assignee, 'handler');
+  const moved = await setLotRoute(req({
+    headers: auth, params: { id: 'lot_open_24' }, body: { routeId: route.jsonBody.route.id },
+  }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+
+  // Not normally theirs - but the seller handed it to them.
+  const ticked = await setCheckpoint(req({
+    headers: handlerAuth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+  // And what was not handed over still is not.
+  const refused = await setCheckpoint(req({
+    headers: handlerAuth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: true },
+  }), ctx);
+  assert.equal(refused.status, 403);
 });
 
 console.log(`\n${passed} checks passed`);

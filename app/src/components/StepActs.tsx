@@ -3,7 +3,7 @@ import { nextButton } from '@shared/buttons';
 import { isDirect } from '@shared/fulfilment';
 import type { OrderCheckpoint } from '@shared/enums';
 import { isStopped } from '@shared/orders';
-import { stepButtonLabel, type RouteStep, type StepTrigger } from '@shared/routes';
+import { stepButtonLabel, stepTickKey, ticksOf, type RouteStep, type StepAssignee } from '@shared/routes';
 import { ApiRequestError, api, type OrderState } from '../api';
 import { formatDate } from '../format';
 import { ErrorNotice, Modal } from './ui';
@@ -25,7 +25,7 @@ type Vars = { origin?: string | null; destination?: string | null };
 export function timelineButtons(
   steps: readonly RouteStep[],
   current: number,
-  pressed: (trigger: StepTrigger) => boolean,
+  pressed: (key: string) => boolean,
 ): { next: number; waitingOnLot: boolean; later: { step: RouteStep; index: number }[] } {
   const found = nextButton(steps, current, pressed);
   const next = found && 'step' in found ? found.index : -1;
@@ -35,7 +35,10 @@ export function timelineButtons(
     waitingOnLot: Boolean(found && found.index < 0),
     later: steps
       .map((step, index) => ({ step, index }))
-      .filter(({ step, index }) => index > from && step.trigger && !pressed(step.trigger)),
+      .filter(({ step, index }) => {
+        const key = stepTickKey(step);
+        return index > from && key !== null && !pressed(key);
+      }),
   };
 }
 
@@ -46,7 +49,7 @@ export function timelineButtons(
  * press here. The next one is big; a pressed one is a small tick that undoes.
  */
 export function StepButton({ step, state, busy = false, vars, onPress, children }: {
-  step: Pick<RouteStep, 'trigger' | 'button' | 'name'>;
+  step: Pick<RouteStep, 'trigger' | 'button' | 'name' | 'custom' | 'assignee'>;
   state: StepButtonState;
   busy?: boolean;
   vars?: Vars;
@@ -64,7 +67,17 @@ export function StepButton({ step, state, busy = false, vars, onPress, children 
         {label}
         {state === 'done' && <span className="stepact__undo">undo</span>}
       </button>
+      {step.assignee && <AssigneeTag who={step.assignee} />}
       {children}
+    </span>
+  );
+}
+
+/** Who else may press a button, said beside it. */
+export function AssigneeTag({ who }: { who: StepAssignee }) {
+  return (
+    <span className={`stepact__who is-${who}`}>
+      {who === 'supplier' ? '🏭 Supplier' : '🧑‍🔧 Handler'} can press this too
     </span>
   );
 }
@@ -141,7 +154,7 @@ export function useStepActs(
   const order = state?.order;
   const live = Boolean(state && order && state.side === 'seller' && order.placedAt !== null && !isStopped(order.status));
 
-  async function tick(checkpoint: OrderCheckpoint, on: boolean, shipment?: { courier: string; awb: string }) {
+  async function tick(checkpoint: string, on: boolean, shipment?: { courier: string; awb: string }) {
     if (!order) return;
     setBusy(true);
     setError(null);
@@ -186,7 +199,7 @@ export function useStepActs(
   }
 
   function press(step: RouteStep, pressed: boolean) {
-    const checkpoint = step.trigger!;
+    const checkpoint = stepTickKey(step)!;
     if (pressed) {
       void tick(checkpoint, false);
       return;
@@ -196,18 +209,18 @@ export function useStepActs(
     void tick(checkpoint, true);
   }
 
-  const pressedNow = (checkpoint: StepTrigger) =>
-    Boolean(order.checkpoints?.[checkpoint]) || (checkpoint === 'delivered' && delivered);
+  const ticks = ticksOf(order);
+  const pressedNow = (key: string) => Boolean(ticks[key]) || (key === 'delivered' && delivered);
 
   function actFor(current: number) {
     return (step: RouteStep, index: number, steps: readonly RouteStep[]): ReactNode => {
       const at = timelineButtons(steps, current, pressedNow);
-      if (!step.trigger) {
+      const checkpoint = stepTickKey(step);
+      if (!checkpoint) {
         return at.waitingOnLot && index === current + 1
           ? <LotMoves onSkip={at.later.length ? () => setPicking(at.later) : undefined} />
           : null;
       }
-      const checkpoint = step.trigger;
       const pressed = pressedNow(checkpoint);
       if (!pressed && index !== at.next) return null;
       /* Undoing is not offered where it would undo something else too: a

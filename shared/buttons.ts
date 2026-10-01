@@ -1,7 +1,7 @@
 import type { OrderCheckpoint } from './enums.js';
 import {
-  itemStepOn, joinIndexOf, leaveIndexOf, normaliseSteps, sideOf, stepButtonLabel, triggeredStep,
-  type LotRoute, type RouteStep, type StepTrigger, type Ticks,
+  itemStepOn, joinIndexOf, leaveIndexOf, normaliseSteps, sideOf, stepButtonLabel, stepTickKey, triggeredStep,
+  type LotRoute, type RouteStep, type StepAssignee, type StepTrigger, type Ticks,
 } from './routes.js';
 import { preLotRouteOf } from './templates.js';
 
@@ -29,13 +29,17 @@ import { preLotRouteOf } from './templates.js';
  * 2. Dispatched is always a step after the lot has landed and before
  *    Delivered - one already called that where there is one, otherwise a
  *    "Dispatched to you" step added right before Delivered.
- * 3. The lot cannot carry an item past dispatch: if the "items leave the
- *    lot" line sits later than that, it is moved up to just after the lot
- *    lands (or to Dispatched itself).
+ * 3. The lot cannot carry an item past dispatch, and it does not receive
+ *    anything: arriving at the destination warehouse happens to each item,
+ *    so that step sits after the lot. If the "items leave the lot" line is
+ *    later than Dispatched, or the lot's last step is an arrival, the line
+ *    moves up to just before the arrival (or to Dispatched itself).
  * 4. The other five checkpoints go to steps by what the steps say, in their
  *    real order, and only where the item is on its own: the two overseas
- *    ticks before the lot, the landing tick on the lot's last step or after
- *    it, ready and packed after the lot. Steps the lot moves get none.
+ *    ticks before the lot, the landing, ready and packed ticks after it.
+ *    Nothing inside a lot gets a button - the lot moves its items together.
+ * 5. A custom button (the seller's own, beyond the seven) stays only where
+ *    an item is on its own, and takes no checkpoint's place.
  */
 
 /** The checkpoints handed out by the matcher, in the order they happen. */
@@ -66,14 +70,15 @@ const FALLBACK: Partial<Record<OrderCheckpoint, number>> = { china_received: 2, 
 /** Where it already sits, so a route does not reshuffle while it is being typed. */
 const KEPT = 3;
 
-type Zone = 'start' | 'pre' | 'lot' | 'landing' | 'item' | 'solo';
+type Zone = 'start' | 'pre' | 'lot' | 'item' | 'solo';
 
 /** One button that moved, for the line that says so. */
 export interface ButtonChange {
   id: string;
   name: string;
-  from: StepTrigger | null;
-  to: StepTrigger | null;
+  /** The button's key before and after, as `stepTickKey` gives it. */
+  from: string | null;
+  to: string | null;
 }
 
 export interface AssignedRoute {
@@ -97,7 +102,7 @@ function markLeave(steps: RouteStep[], leave: number): RouteStep[] {
  * changes nothing.
  */
 export function assignButtons(input: readonly RouteStep[]): AssignedRoute {
-  const before = new Map(input.map((step) => [step.id, step.trigger ?? null]));
+  const before = new Map(input.map((step) => [step.id, stepTickKey(step)]));
   let steps: RouteStep[] = input.map((step, index) => ({ ...step, side: sideOf(step, index) }));
   const added: RouteStep[] = [];
   if (steps.length === 0) return { steps, added, changes: [] };
@@ -146,7 +151,11 @@ export function assignButtons(input: readonly RouteStep[]): AssignedRoute {
   let leave = leaveIndexOf({ steps });
   if (hasLot && join < dispatched) {
     if (leave > dispatched) {
-      leave = landed >= join && landed < dispatched ? landed + 1 : dispatched;
+      leave = landed > join && landed < dispatched ? landed : dispatched;
+    } else if (leave - 1 > join && fits(steps[leave - 1]!, 'india_received')) {
+      // The lot's last step is an arrival: that happens to each item, so it
+      // belongs on the far side of the line.
+      leave -= 1;
     }
     steps = markLeave(steps, leave);
   } else {
@@ -158,9 +167,12 @@ export function assignButtons(input: readonly RouteStep[]): AssignedRoute {
     if (index === 0) return 'start';
     if (!(hasLot && join < dispatched)) return 'solo';
     if (index < join) return 'pre';
-    if (index < leave) return index === leave - 1 ? 'landing' : 'lot';
+    if (index < leave) return 'lot';
     return 'item';
   };
+  /* A custom button keeps its place wherever an item is on its own. */
+  const customHere = (index: number) => Boolean(steps[index]!.custom)
+    && index !== dispatched && index !== delivered && ['pre', 'item', 'solo'].includes(zoneOf(index));
   const score = (index: number, checkpoint: OrderCheckpoint): number => {
     const step = steps[index]!;
     const zone = zoneOf(index);
@@ -168,7 +180,7 @@ export function assignButtons(input: readonly RouteStep[]): AssignedRoute {
       switch (checkpoint) {
         case 'china_received': return zone === 'pre' ? 'any' : zone === 'solo' ? 'said' : null;
         case 'china_packed': return zone === 'pre' ? 'any' : zone === 'solo' ? 'said' : null;
-        case 'india_received': return zone === 'item' || zone === 'landing' ? 'said' : null;
+        case 'india_received': return zone === 'item' ? 'said' : null;
         case 'ready_to_dispatch':
         case 'packed': return zone === 'item' ? 'any' : zone === 'solo' ? 'said' : null;
         default: return null;
@@ -181,19 +193,22 @@ export function assignButtons(input: readonly RouteStep[]): AssignedRoute {
     return base > 0 ? base + (step.trigger === checkpoint ? KEPT : 0) : 0;
   };
 
-  const slots = range(1, dispatched);
+  const slots = range(1, dispatched).filter((index) => !customHere(index));
   const picked = matchInOrder(slots, MATCHED, score);
 
   steps = steps.map((step, index) => {
     const trigger: StepTrigger | undefined = index === delivered ? 'delivered'
       : index === dispatched ? 'dispatched'
         : picked.get(index);
-    return { ...step, trigger, position: index };
+    const custom = !trigger && customHere(index) ? true : undefined;
+    // Who else may press it only means something while there is a button.
+    const assignee = trigger || custom ? step.assignee : undefined;
+    return { ...step, trigger, custom, assignee, position: index };
   });
 
   const changes: ButtonChange[] = steps
-    .filter((step) => before.has(step.id) && (before.get(step.id) ?? null) !== (step.trigger ?? null))
-    .map((step) => ({ id: step.id, name: step.name, from: before.get(step.id) ?? null, to: step.trigger ?? null }));
+    .filter((step) => before.has(step.id) && (before.get(step.id) ?? null) !== stepTickKey(step))
+    .map((step) => ({ id: step.id, name: step.name, from: before.get(step.id) ?? null, to: stepTickKey(step) }));
 
   return { steps, added, changes };
 }
@@ -291,7 +306,7 @@ export function checkButtons(steps: readonly RouteStep[]): RouteProblem[] {
   const problems: RouteProblem[] = [];
   const seen = new Map<string, RouteStep>();
   for (const step of steps) {
-    if (!step.trigger) continue;
+    if (!stepTickKey(step)) continue;
     const label = stepButtonLabel(step).toLowerCase();
     const twin = seen.get(label);
     if (twin) {
@@ -323,7 +338,7 @@ export function checkButtons(steps: readonly RouteStep[]): RouteProblem[] {
   const join = joinIndexOf({ steps: [...steps] });
   const leave = leaveIndexOf({ steps: [...steps] });
   const dispatched = steps.findIndex((step) => step.trigger === 'dispatched');
-  const idle = steps.filter((step, index) => index > 0 && !step.trigger && dispatched >= 0 && index < dispatched
+  const idle = steps.filter((step, index) => index > 0 && !stepTickKey(step) && dispatched >= 0 && index < dispatched
     && (index < join || index >= leave));
   if (idle.length > 0) {
     const names = idle.map((step) => `"${step.name}"`).join(', ');
@@ -346,14 +361,15 @@ export function checkButtons(steps: readonly RouteStep[]): RouteProblem[] {
 export function nextButton(
   steps: readonly RouteStep[],
   current: number,
-  pressed: (trigger: StepTrigger) => boolean,
+  pressed: (key: string) => boolean,
 ): { index: number; step: RouteStep } | { index: -1; waitingOnLot: true } | null {
   const join = joinIndexOf({ steps: [...steps] });
   const leave = leaveIndexOf({ steps: [...steps] });
   for (let index = current + 1; index < steps.length; index += 1) {
     const step = steps[index]!;
-    if (step.trigger && !pressed(step.trigger)) return { index, step };
-    if (!step.trigger && index >= join && index < leave && join < steps.length) return { index: -1, waitingOnLot: true };
+    const key = stepTickKey(step);
+    if (key && !pressed(key)) return { index, step };
+    if (!key && index >= join && index < leave && join < steps.length) return { index: -1, waitingOnLot: true };
   }
   return null;
 }
@@ -420,8 +436,11 @@ export function ladderBeforeLot(
   };
 }
 
-/** One button as an order card draws it. */
-export interface CardButton { checkpoint: StepTrigger; label: string; step: string }
+/**
+ * One button as an order card draws it. `checkpoint` is the key it is
+ * pressed under - one of the seven, or `custom:<step id>`.
+ */
+export interface CardButton { checkpoint: string; label: string; step: string; assignee?: StepAssignee }
 
 /** What an order card needs to offer the seller its next press. */
 export interface CardButtons {
@@ -434,7 +453,8 @@ export interface CardButtons {
 }
 
 const asCard = (step: RouteStep, vars?: { origin?: string | null; destination?: string | null }): CardButton => ({
-  checkpoint: step.trigger!, label: stepButtonLabel(step, vars), step: step.name,
+  checkpoint: stepTickKey(step)!, label: stepButtonLabel(step, vars), step: step.name,
+  ...(step.assignee ? { assignee: step.assignee } : {}),
 });
 
 /**
@@ -453,7 +473,7 @@ export function cardButtons(
   const current = lotStep === null
     ? Math.max(-1, triggeredStep(route, ticks))
     : itemStepOn(route, lotStep, own, ticks);
-  const pressed = (trigger: StepTrigger) => Boolean(ticks?.[trigger]);
+  const pressed = (key: string) => Boolean(ticks?.[key]);
   const found = nextButton(steps, current, pressed);
   const doneAt = triggeredStep(route, ticks);
   return {
@@ -461,4 +481,75 @@ export function cardButtons(
     done: doneAt >= 0 ? asCard(steps[doneAt]!, vars) : null,
     waitingOnLot: Boolean(found && found.index < 0),
   };
+}
+
+/* ── Adding a step: what can go where ───────────────────────────────── */
+
+/** A kind of step offered when one is added, with the button it comes with. */
+export interface StepKind {
+  id: string;
+  /** The step as it is added - its name is what the matcher reads. */
+  name: string;
+  description: string;
+  icon: string;
+  /** The checkpoint it comes with, the seller's own button, or nothing. */
+  trigger?: StepTrigger;
+  custom?: boolean;
+}
+
+export const STEP_KINDS: readonly StepKind[] = [
+  { id: 'china_received', icon: '🏬', name: 'Received at {origin} warehouse', description: 'Counted in overseas and waiting for a lot.', trigger: 'china_received' },
+  { id: 'china_packed', icon: '📦', name: 'Packed at {origin}', description: 'Boxed up and ready for the lot.', trigger: 'china_packed' },
+  { id: 'india_received', icon: '🛬', name: 'Received at {destination} warehouse', description: 'Unpacked from the lot - each item goes on alone from here.', trigger: 'india_received' },
+  { id: 'ready_to_dispatch', icon: '🏷️', name: 'Checked and ready', description: 'Inspected and ready to go out.', trigger: 'ready_to_dispatch' },
+  { id: 'packed', icon: '📦', name: 'Packed for you', description: 'Boxed for the courier.', trigger: 'packed' },
+  { id: 'dispatched', icon: '🚚', name: 'Dispatched to you', description: 'Handed to the courier.', trigger: 'dispatched' },
+  { id: 'delivered', icon: '📬', name: 'Delivered', description: 'It reached you.', trigger: 'delivered' },
+  { id: 'custom', icon: '✨', name: '', description: '', custom: true },
+  { id: 'plain', icon: '📍', name: '', description: '' },
+];
+
+/** One kind on the add-a-step list, and whether it can go here. */
+export interface StepChoice { kind: StepKind; open: boolean; why?: string }
+
+/** Which part of the journey a new step lands in. */
+export type StepZone = 'pre' | 'lot' | 'post';
+
+/**
+ * What can be added at `at` - the index the new step will take - in `zone`.
+ * Every kind is listed, so the seller sees the whole set; the ones that
+ * cannot go here are locked with the reason: used already, before or after
+ * the lot only, out of order, or always last.
+ */
+export function stepChoices(steps: readonly RouteStep[], at: number, zone: StepZone): StepChoice[] {
+  const order = MATCHED as readonly string[];
+  const usedAt = new Map<string, number>();
+  steps.forEach((step, index) => { if (step.trigger) usedAt.set(step.trigger, index); });
+  const dispatchAt = usedAt.get('dispatched') ?? steps.length;
+
+  return STEP_KINDS.map((kind): StepChoice => {
+    if (kind.trigger === 'dispatched' || kind.trigger === 'delivered') {
+      return { kind, open: false, why: 'Always the last two steps' };
+    }
+    if (at === 0) return { kind, open: false, why: 'Order placed is always first' };
+    if (!kind.trigger && !kind.custom) return { kind, open: true };
+    if (zone === 'lot') return { kind, open: false, why: 'Items in a lot move together - no buttons here' };
+    if (at > dispatchAt) return { kind, open: false, why: 'Not after Dispatched' };
+    if (kind.custom) return { kind, open: true };
+    const trigger = kind.trigger!;
+    const used = usedAt.get(trigger);
+    if (used !== undefined) return { kind, open: false, why: `Used on step ${used + 1}` };
+    const overseas = trigger === 'china_received' || trigger === 'china_packed';
+    if (overseas && zone !== 'pre') return { kind, open: false, why: 'Only before the lot' };
+    if (!overseas && zone === 'pre') return { kind, open: false, why: 'Only after the lot' };
+    /* In order: nothing that happens earlier may sit after it, nor later before it. */
+    const rank = order.indexOf(trigger);
+    for (const [other, index] of usedAt) {
+      const otherRank = order.indexOf(other);
+      if (otherRank < 0) continue;
+      if (otherRank > rank && index < at) return { kind, open: false, why: `Must come before "${steps[index]!.name}"` };
+      if (otherRank < rank && index >= at) return { kind, open: false, why: `Must come after "${steps[index]!.name}"` };
+    }
+    return { kind, open: true };
+  });
 }

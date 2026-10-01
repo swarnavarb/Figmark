@@ -2,7 +2,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
-import { currentStepOf, lotNumberFrom, routeOf, type RouteStep } from '../../../shared/routes.js';
+import { currentStepOf, lotNumberFrom, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, ladderBeforeLot, withLastMile } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
@@ -340,16 +340,16 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     lot: Awaited<ReturnType<typeof repository.getLot>>,
     template: Awaited<ReturnType<typeof repository.getRoute>>,
   ) => {
-    if (isDirect(order)) return cardButtons(DIRECT_LADDER, null, undefined, order.checkpoints);
+    if (isDirect(order)) return cardButtons(DIRECT_LADDER, null, undefined, ticksOf(order));
     if (lot) {
       const track = withLastMile(routeOf(lot).steps);
       return cardButtons(
         track.steps, track.at(currentStepOf(lot)),
         typeof order.currentStep === 'number' ? track.at(order.currentStep) : undefined,
-        order.checkpoints, { origin: lot.originCountry, destination: lot.destinationCountry },
+        ticksOf(order), { origin: lot.originCountry, destination: lot.destinationCountry },
       );
     }
-    return cardButtons(ladderBeforeLot(order, template).steps, null, undefined, order.checkpoints);
+    return cardButtons(ladderBeforeLot(order, template).steps, null, undefined, ticksOf(order));
   };
 
   const row = (order: (typeof orders)[number]) => {

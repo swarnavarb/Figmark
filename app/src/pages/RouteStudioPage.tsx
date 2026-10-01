@@ -1,12 +1,13 @@
 import { Fragment, useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { assignButtons, checkButtons, type ButtonChange } from '@shared/buttons';
+import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  renderStepText, sideOf, stepButtonLabel, stepId, waitMessageFor, type RouteStep, type StepTrigger,
+  renderStepText, sideOf, stepButtonLabel, stepId, stepTickKey, waitMessageFor,
+  type RouteStep, type StepAssignee, type StepTrigger,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
-import { ErrorNotice, Icon, WaveLoader } from '../components/ui';
+import { ErrorNotice, Icon, Modal, WaveLoader } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
 import { STAGE_ICON_META } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
@@ -94,6 +95,8 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   const [pipSaid, setPipSaid] = useState('');
   const [tipAt, setTipAt] = useState(0);
   const [previewing, setPreviewing] = useState(false);
+  /** Where a step is being added: the index it will take, and which part of the journey. */
+  const [adding, setAdding] = useState<{ at: number; zone: StepZone } | null>(null);
 
   useEffect(() => {
     void api.routes().then((result) => {
@@ -180,12 +183,24 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, given.length, steps.length]);
 
-  function insertAt(index: number) {
+  /** Which part of the journey a step sits in, by the two lines. */
+  const zoneAt = (index: number): StepZone => (index < joinAt ? 'pre' : index < leaveAt ? 'lot' : 'post');
+
+  /**
+   * Add a step of `kind` at `index`, in `zone` - which decides which side of
+   * a line it lands when it is added right at one.
+   */
+  function insertAt(index: number, zone: StepZone, kind?: StepKind) {
     const next = [...steps];
-    next.splice(index, 0, blankStep(steps.length));
+    const step: RouteStep = {
+      ...blankStep(steps.length),
+      ...(kind ? { name: kind.name, description: kind.description, trigger: kind.trigger, custom: kind.custom } : {}),
+    };
+    next.splice(index, 0, step);
     setSteps(next);
-    if (index < joinAt) setJoinAt(joinAt + 1);
-    if (index < leaveAt) setLeaveAt(leaveAt + 1);
+    if (index < joinAt || (index === joinAt && zone === 'pre')) setJoinAt(joinAt + 1);
+    if (index < leaveAt || (index === leaveAt && zone !== 'post')) setLeaveAt(leaveAt + 1);
+    setAdding(null);
   }
 
   function removeAt(index: number) {
@@ -232,6 +247,8 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             waitMessage: step.waitMessage,
             lastMile: step.lastMile,
             button: step.button,
+            custom: step.custom,
+            assignee: step.assignee,
           })),
       });
       onSaved();
@@ -353,13 +370,17 @@ function RouteStudio({ editing, onSaved, onCancel }: {
       <div className="rschain">
         {/* No shoulder and no on-ramp before the first stop: the road starts
             at Order Placed, it does not lead up to it. */}
-        {!sided[0]?.locked && <GapRow onInsert={() => insertAt(0)} />}
+        <ZoneLine zone="pre" />
+        {!sided[0]?.locked && <GapRow onInsert={() => setAdding({ at: 0, zone: 'pre' })} />}
         {given.map((step, index) => (
           <Fragment key={step.id}>
-            {index === joinAt && <JoinDivider joinAt={joinAt} atEnd={joinAt >= dispatchAt} onMove={setJoinAt} />}
+            {index === joinAt && (
+              <ZoneLine zone="lot" at={joinAt} min={1} atEnd={joinAt >= dispatchAt} onMove={setJoinAt}
+                onAdd={() => setAdding({ at: joinAt, zone: 'lot' })} />
+            )}
             {index === leaveAt && (
-              <LeaveDivider leaveAt={leaveAt} joinAt={joinAt}
-                atEnd={leaveAt >= dispatchAt} onMove={setLeaveAt} />
+              <ZoneLine zone="post" at={leaveAt} min={joinAt} atEnd={leaveAt >= dispatchAt} onMove={setLeaveAt}
+                onAdd={() => setAdding({ at: leaveAt, zone: 'post' })} />
             )}
             {/* The line lives on this wrapper alone, sized to its own content -
                 which is what lets it reach exactly to the next dot however
@@ -369,7 +390,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             <div className={`rschain__row${index === given.length - 1 ? ' rschain__row--last' : ''}`}>
               <StepNode
                 step={step} index={index} count={steps.length}
-                inLot={index >= joinAt && index < leaveAt}
+                zone={zoneAt(index)}
                 problems={problems.filter((problem) => problem.stepId === step.id && problem.level === 'error').map((problem) => problem.text)}
                 lockedAbove={Boolean(given[index - 1]?.locked && index - 1 === 0)}
                 lockedBelow={isFixed(given[index + 1])}
@@ -382,13 +403,17 @@ function RouteStudio({ editing, onSaved, onCancel }: {
                   happen. */}
               {!(step.locked && index === given.length - 1) && (
                 <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
-                  onInsert={() => insertAt(index + 1)} />
+                  onInsert={() => setAdding({ at: index + 1, zone: zoneAt(index) })} />
               )}
             </div>
           </Fragment>
         ))}
-        {joinAt >= steps.length && <JoinDivider joinAt={joinAt} atEnd onMove={setJoinAt} />}
       </div>
+
+      {adding && (
+        <StepPicker at={adding.at} zone={adding.zone} steps={given}
+          onPick={(kind) => insertAt(adding.at, adding.zone, kind)} onClose={() => setAdding(null)} />
+      )}
 
       {named.length < 2 && (
         <span className="field__hint">A route needs at least two named steps.</span>
@@ -424,7 +449,8 @@ function RouteStudio({ editing, onSaved, onCancel }: {
                 <Icon name="right" size={13} />
               </button>
             </div>
-            <Ladder steps={named} current={Math.min(previewAt, named.length - 1)} vars={PREVIEW_VARS} forwardExample />
+            <Ladder steps={named} current={Math.min(previewAt, named.length - 1)} vars={PREVIEW_VARS} forwardExample
+              zones={{ join: namedJoin, leave: namedLeave }} />
           </>
         ) : (
           <p className="muted">Name a node and it appears here.</p>
@@ -462,65 +488,99 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   );
 }
 
-/** The line the whole chain moves the join point along - shown wherever it
- *  currently sits, whether that is between two nodes or past the last one. */
-function JoinDivider({ joinAt, atEnd, onMove }: {
-  joinAt: number;
-  atEnd: boolean;
-  onMove: (next: number) => void;
+const ZONE_TEXT: Record<StepZone, { title: string; note: string }> = {
+  pre: { title: '① Before the lot', note: 'Each item on its own - buttons per item' },
+  lot: { title: '② In the lot', note: 'Everything moves together - no buttons, you move the lot' },
+  post: { title: '③ After the lot', note: 'Each item on its own again - buttons per item' },
+};
+
+/**
+ * Where one part of the journey begins: before the lot, in it, after it -
+ * each in its own colour, with the line between them that the seller moves.
+ * The lot's own line can never pass Dispatched: a lot does not deliver.
+ */
+function ZoneLine({ zone, at, min = 0, atEnd, onMove, onAdd }: {
+  zone: StepZone;
+  /** The index the line sits at; absent for the head of the chain, which does not move. */
+  at?: number;
+  min?: number;
+  atEnd?: boolean;
+  onMove?: (next: number) => void;
+  /** Add a step just this side of the line. */
+  onAdd?: () => void;
 }) {
+  const text = ZONE_TEXT[zone];
   return (
-    <div className="rsjoin">
-      <span className="rsjoin__label">
-        <Icon name="box" size={12} /> Items join the lot here
+    <div className={`rszone rszone--${zone}`}>
+      <span className="rszone__text">
+        <b>{text.title}</b>
+        <span>{text.note}</span>
       </span>
-      <span className="rsjoin__acts">
-        <button type="button" className="iconbtn" aria-label="Move the join line earlier"
-          disabled={joinAt === 0} onClick={() => onMove(joinAt - 1)}>
-          <Icon name="up" size={12} />
-        </button>
-        {!atEnd && (
-          <button type="button" className="iconbtn" aria-label="Move the join line later"
-            onClick={() => onMove(joinAt + 1)}>
+      {at !== undefined && onMove && (
+        <span className="rsjoin__acts">
+          <button type="button" className="iconbtn" aria-label={`Move the ${zone === 'lot' ? 'join' : 'leave'} line earlier`}
+            disabled={at <= min} onClick={() => onMove(at - 1)}>
+            <Icon name="up" size={12} />
+          </button>
+          <button type="button" className="iconbtn" aria-label={`Move the ${zone === 'lot' ? 'join' : 'leave'} line later`}
+            disabled={atEnd} onClick={() => onMove(at + 1)}>
             <Icon name="down" size={12} />
           </button>
-        )}
-      </span>
+          {onAdd && (
+            <button type="button" className="iconbtn" aria-label={`Add a step ${zone === 'lot' ? 'to the start of the lot' : 'just after the lot'}`}
+              onClick={onAdd}>
+              <Icon name="plus" size={12} />
+            </button>
+          )}
+        </span>
+      )}
     </div>
   );
 }
 
 /**
- * The line the lot breaks back apart along: everything from here is tracked
- * one item at a time again, same as before the lot existed - packed,
- * dispatched, delivered, each on its own schedule rather than the whole
- * crate's. Never earlier than the join line; there is nothing to leave
- * before there is a lot to leave.
+ * Adding a step: every kind there is, each with the button it comes with.
+ * The ones that cannot go here are shown locked with why - used already,
+ * the wrong side of the lot, out of order - so the seller sees the whole set
+ * and never builds one that cannot work.
  */
-function LeaveDivider({ leaveAt, joinAt, atEnd, onMove }: {
-  leaveAt: number;
-  joinAt: number;
-  atEnd: boolean;
-  onMove: (next: number) => void;
+function StepPicker({ at, zone, steps, onPick, onClose }: {
+  at: number;
+  zone: StepZone;
+  steps: RouteStep[];
+  onPick: (kind: StepKind) => void;
+  onClose: () => void;
 }) {
-  return (
-    <div className="rsjoin rsjoin--leave">
-      <span className="rsjoin__label">
-        <Icon name="box" size={12} /> Items leave the lot here
-      </span>
-      <span className="rsjoin__acts">
-        <button type="button" className="iconbtn" aria-label="Move the leave line earlier"
-          disabled={leaveAt <= joinAt} onClick={() => onMove(leaveAt - 1)}>
-          <Icon name="up" size={12} />
+  const choices = stepChoices(steps, at, zone);
+  const group = (title: string, rows: typeof choices) => rows.length > 0 && (
+    <div className="rspick__group">
+      <span className="rspick__title">{title}</span>
+      {rows.map(({ kind, open, why }) => (
+        <button key={kind.id} type="button" className={`rspick__row${open ? '' : ' is-locked'}`} disabled={!open}
+          onClick={() => onPick(kind)}>
+          <span className="rspick__icon" aria-hidden="true">{open ? kind.icon : '🔒'}</span>
+          <span className="rspick__body">
+            <b>{kind.custom ? 'A step with your own button' : kind.trigger ? renderStepText(kind.name, PREVIEW_VARS) : 'A plain step'}</b>
+            <span>{open
+              ? kind.custom ? 'You name it and its button - pressed per item.'
+                : kind.trigger ? `⚡ Comes with its button - ${BUTTON_NOTE[kind.trigger].toLowerCase()}`
+                  : zone === 'lot' ? 'Moves when you move the lot.' : 'No button - ticked off with the next one.'
+              : renderStepText(why ?? '', PREVIEW_VARS)}</span>
+          </span>
         </button>
-        {!atEnd && (
-          <button type="button" className="iconbtn" aria-label="Move the leave line later"
-            onClick={() => onMove(leaveAt + 1)}>
-            <Icon name="down" size={12} />
-          </button>
-        )}
-      </span>
+      ))}
     </div>
+  );
+  return (
+    <Modal title="Add a step" onClose={onClose}>
+      <div className="stack">
+        <p className={`rspick__zone rszone--${zone}`}>
+          <b>{ZONE_TEXT[zone].title}</b> · {ZONE_TEXT[zone].note}
+        </p>
+        {group('Steps with a button', choices.filter((choice) => choice.kind.trigger))}
+        {group('Your own', choices.filter((choice) => !choice.kind.trigger))}
+      </div>
+    </Modal>
   );
 }
 
@@ -609,12 +669,12 @@ function WaitMessageEditor({ step, onChange, onDone }: {
  * the button that reaches it - handed out, never chosen, with only its words
  * to change. Reordering and delete are behind the chevron.
  */
-function StepNode({ step, index, count, inLot, problems, lockedAbove, lockedBelow, onChange, onRemove, onMove }: {
+function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow, onChange, onRemove, onMove }: {
   step: RouteStep;
   index: number;
   count: number;
-  /** Moved by the whole lot, so no button of its own. */
-  inLot: boolean;
+  /** Which part of the journey it is in: inside the lot there are no buttons. */
+  zone: StepZone;
   /** What is wrong with this step's button words. */
   problems: string[];
   /** The step right before this one is the locked "Order Placed" - moving up would swap past it. */
@@ -632,7 +692,7 @@ function StepNode({ step, index, count, inLot, problems, lockedAbove, lockedBelo
      status shows without the seller writing a word about it. */
   if (index === 0 && step.locked) {
     return (
-      <div className="rsnode">
+      <div className="rsnode rsnode--pre">
         <span className="rsnode__dot rsnode__dot--locked" aria-hidden="true"><Icon name="lock" size={12} /></span>
         <div className="rsnode__card rsnode__card--locked">
           <div className="rsnode__top">
@@ -656,7 +716,7 @@ function StepNode({ step, index, count, inLot, problems, lockedAbove, lockedBelo
   const fixed = isFixed(step);
 
   return (
-    <div className="rsnode" data-step={step.id}>
+    <div className={`rsnode rsnode--${zone}`} data-step={step.id}>
       <span className="rsnode__dot" aria-hidden="true">{index + 1}</span>
       <div className={`rsnode__card${step.stageIcon ? ` rsnode__card--${step.stageIcon}` : ''}${isDelivered ? ' rsnode__card--delivered' : ''}`}>
         <div className="rsnode__top">
@@ -677,34 +737,69 @@ function StepNode({ step, index, count, inLot, problems, lockedAbove, lockedBelo
           aria-label={`Step ${index + 1} description`}
           onChange={(event) => onChange({ description: event.target.value })} />
 
-        {/* The button: handed out from where the step sits and what it says. */}
-        {step.trigger ? (
+        {/* The button: handed out from where the step sits and what it says,
+            or one of the seller's own. Never inside a lot. */}
+        {stepTickKey(step) ? (
           <div className={`rsbtn${problems.length ? ' is-wrong' : ''}`}>
             <span className="rsbtn__chip">⚡ {stepButtonLabel(step, PREVIEW_VARS) || 'Button'}</span>
             <input className="rsbtn__words" value={step.button ?? ''} maxLength={28}
               placeholder="Your words (optional)"
               aria-label={`Words on the button for step ${index + 1}`}
               onChange={(event) => onChange({ button: event.target.value })} />
-            <span className="rsbtn__note">{BUTTON_NOTE[step.trigger]}</span>
+            <span className="rsbtn__note">
+              {step.trigger ? BUTTON_NOTE[step.trigger] : 'Your own button - pressed for each item, and it moves the timeline here.'}
+            </span>
+            {step.trigger === 'dispatched' && (
+              <span className="rsbtn__ship">
+                <input disabled placeholder="Courier - e.g. Delhivery" aria-label="Example courier name" />
+                <input disabled placeholder="AWB - e.g. 1234567890" aria-label="Example AWB" />
+              </span>
+            )}
+            {step.trigger !== 'delivered' && (
+              <span className="rsbtn__who" role="group" aria-label="Who else can press it">
+                <span className="rsbtn__who-label">Who presses it</span>
+                {WHO.map((who) => (
+                  <button key={who.id} type="button" aria-pressed={(step.assignee ?? 'seller') === who.id}
+                    className={`rsbtn__whochip${(step.assignee ?? 'seller') === who.id ? ' is-on' : ''}`}
+                    onClick={() => onChange({ assignee: who.id === 'seller' ? undefined : who.id })}>
+                    {who.label}
+                  </button>
+                ))}
+              </span>
+            )}
+            {step.custom && (
+              <button type="button" className="stepact__skip" onClick={() => onChange({ custom: undefined, button: undefined, assignee: undefined })}>
+                Take this button off
+              </button>
+            )}
             {problems.map((text) => <span key={text} className="rsbtn__wrong">{text}</span>)}
           </div>
         ) : step.name.trim() && (
           <span className="rsbtn__none">
-            {inLot ? '🚢 The lot moves this step' : '↪ No button - ticked off with the next one'}
+            {zone === 'lot' ? '🚢 The lot moves this step - items in a lot move together' : '↪ No button - ticked off with the next one'}
+            {zone !== 'lot' && !fixed && (
+              <button type="button" className="rsbtn__add" onClick={() => onChange({ custom: true })}>
+                ✨ Give it its own button
+              </button>
+            )}
           </span>
         )}
 
         {open && !fixed && (
           <div className="rsnode__more">
-            <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
-              <input type="checkbox" checked={Boolean(step.forward)}
-                onChange={(event) => onChange({ forward: event.target.checked })} />
-              <span>Hand-over to a courier — ask for a tracking ID and courier name when a lot moves here</span>
-            </label>
+            {zone === 'lot' && (
+              <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
+                <input type="checkbox" checked={Boolean(step.forward)}
+                  onChange={(event) => onChange({ forward: event.target.checked })} />
+                <span>Hand-over to a courier — ask for a tracking ID and courier name when the lot moves here</span>
+              </label>
+            )}
 
-            {step.forward && (
+            {zone === 'lot' && step.forward && (
               <div className="rsnode__forward">
-                <span className="field__hint">Asked for the moment a lot reaches this step:</span>
+                <span className="field__hint">
+                  Asked for when the lot reaches this step. Both optional - if you leave them blank, buyers see nothing extra, not empty fields.
+                </span>
                 <input disabled placeholder="Tracking ID / AWB — e.g. DHL1234567890" aria-label="Example tracking ID or AWB" />
                 <input disabled placeholder="Courier — e.g. DHL" aria-label="Example courier name" />
               </div>
@@ -725,6 +820,13 @@ function StepNode({ step, index, count, inLot, problems, lockedAbove, lockedBelo
   );
 }
 
+/** Who can press a button: the seller always, and one crew member besides if handed it. */
+const WHO: { id: 'seller' | StepAssignee; label: string }[] = [
+  { id: 'seller', label: '🧑‍💼 Only you' },
+  { id: 'supplier', label: '🏭 + Supplier' },
+  { id: 'handler', label: '🧑‍🔧 + Handler' },
+];
+
 /** What pressing each button does, said under it in the Studio. */
 const BUTTON_NOTE: Record<StepTrigger, string> = {
   china_received: 'You press it when the item arrives overseas.',
@@ -732,6 +834,6 @@ const BUTTON_NOTE: Record<StepTrigger, string> = {
   india_received: 'You press it when it lands with you or your warehouse.',
   ready_to_dispatch: 'You press it once it is checked and ready.',
   packed: 'You press it once it is boxed for the courier.',
-  dispatched: 'Always here. Pressing it asks for the courier and AWB, and tells the buyer it is on the way.',
+  dispatched: 'Always here. Pressing it asks for the courier and AWB (both optional), and tells the buyer it is on the way.',
   delivered: 'Always last. Pressing it asks first, then tells the buyer it has arrived.',
 };

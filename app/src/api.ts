@@ -11,7 +11,7 @@ import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePe
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
-import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
+import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CardButton } from '@shared/buttons';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
@@ -1738,7 +1738,7 @@ export const api = {
     steps: {
       id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
       stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
-      waitMessage?: string; lastMile?: boolean; button?: string;
+      waitMessage?: string; lastMile?: boolean; button?: string; custom?: boolean; assignee?: StepAssignee;
     }[];
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),
@@ -1860,7 +1860,8 @@ export const api = {
     request<LotBoard>(
       `/lots/${encodeURIComponent(id)}/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
     ),
-  setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint, on: boolean,
+  /** `checkpoint` is one of the seven, or `custom:<step id>` for a route's own button. */
+  setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
     shipment?: { courier?: string; awb?: string }) =>
     post<{ order: { id: string; checkpoints: BoardOrder['checkpoints'] }; tally: LotTally }>(
       `/orders/${encodeURIComponent(orderId)}/checkpoint`,

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { RouteProblem } from '@shared/buttons';
-import type { OrderCheckpoint } from '@shared/enums';
-import { itemStepOn, renderStepText, stepButtonLabel, type RouteStep, type StepTrigger } from '@shared/routes';
+import { itemStepOn, renderStepText, stepButtonLabel, stepTickKey, type RouteStep } from '@shared/routes';
+import { ShipmentChip } from './OrderStatus';
 import { Ladder } from './Ladder';
 import { TrackHero, boxesFor, stepEmoji } from './OrderTrack';
 import { LotMoves, SkipLink, SkipPicker, StepButton, timelineButtons } from './StepActs';
@@ -29,19 +29,24 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars, problems, onChangeS
   onChangeStep: (index: number, patch: Partial<RouteStep>) => void;
   onClose: () => void;
 }) {
-  const [ticks, setTicks] = useState<Partial<Record<OrderCheckpoint, string>>>({});
+  const [ticks, setTicks] = useState<Record<string, string>>({});
+  /** The sample's courier and AWB, asked for when Dispatched is pressed - as on a real order. */
+  const [shipping, setShipping] = useState<RouteStep | null>(null);
+  const [shipment, setShipment] = useState({ courier: '', awb: '' });
   /** Where the pretend lot has got to; below `joinAt` it has not moved. */
   const [lotStep, setLotStep] = useState(-1);
   const [justPressed, setJustPressed] = useState<RouteStep | null>(null);
   const [picking, setPicking] = useState<{ step: RouteStep; index: number }[] | null>(null);
 
   const current = Math.max(0, itemStepOn({ steps }, lotStep >= joinAt ? lotStep : 0, undefined, ticks));
-  const pressed = (trigger: StepTrigger) => Boolean(ticks[trigger]);
+  const pressed = (key: string) => Boolean(ticks[key]);
   const at = timelineButtons(steps, current, pressed);
   const next = at.next >= 0 ? steps[at.next] : undefined;
 
-  function press(step: RouteStep, on: boolean) {
-    const checkpoint = step.trigger!;
+  function press(step: RouteStep, on: boolean, asked = false) {
+    const checkpoint = stepTickKey(step)!;
+    if (on && step.trigger === 'dispatched' && !asked) { setShipping(step); return; }
+    if (!on && step.trigger === 'dispatched') setShipment({ courier: '', awb: '' });
     setTicks((now) => {
       const out = { ...now };
       if (on) out[checkpoint] = new Date().toISOString();
@@ -57,7 +62,7 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars, problems, onChangeS
 
   const here = steps[current];
   const reached = steps[current + 1] ? `Next: ${renderStepText(steps[current + 1]!.name, vars)}` : 'Delivered - all done! 🎉';
-  const buttons = steps.map((step, index) => ({ step, index })).filter(({ step }) => step.trigger);
+  const buttons = steps.map((step, index) => ({ step, index })).filter(({ step }) => stepTickKey(step));
   const problemFor = (id: string) => problems.filter((problem) => problem.stepId === id && problem.level === 'error');
 
   return (
@@ -115,17 +120,22 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars, problems, onChangeS
           sub={reached}
           boxes={boxesFor(steps, current, vars)}
           done={current + 1} total={steps.length}>
+          {(shipment.courier || shipment.awb) && pressed('dispatched') && (
+            <ShipmentChip shipment={{ ...shipment, at: '' }} linked={false} />
+          )}
           <div className="trk__ladder">
             <Ladder steps={steps} current={current} vars={vars}
               leaveAt={leaveAt < steps.length ? leaveAt : undefined}
               lockFrom={leaveAt}
+              zones={{ join: joinAt, leave: leaveAt }}
               actFor={(step, index) => {
-                if (!step.trigger) {
+                const key = stepTickKey(step);
+                if (!key) {
                   return at.waitingOnLot && index === current + 1
                     ? <LotMoves onSkip={at.later.length ? () => setPicking(at.later) : undefined} />
                     : null;
                 }
-                const done = pressed(step.trigger);
+                const done = pressed(key);
                 if (!done && index !== at.next) return null;
                 return (
                   <StepButton step={step} vars={vars} state={done ? 'done' : 'next'} onPress={() => press(step, !done)}>
@@ -159,6 +169,29 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars, problems, onChangeS
 
         <button type="button" className="btn btn--block" onClick={onClose}>Back to the route</button>
       </div>
+
+      {shipping && (
+        <Modal title="🚚 Dispatch it" onClose={() => setShipping(null)}>
+          <form className="stack" onSubmit={(event) => {
+            event.preventDefault();
+            press(shipping, true, true);
+            setShipping(null);
+          }}>
+            <p style={{ margin: 0 }}>On a real order this is where the courier and AWB go. Both optional - the buyer only sees what is filled in.</p>
+            <label className="field">
+              <span>Courier name</span>
+              <input value={shipment.courier} onChange={(event) => setShipment({ ...shipment, courier: event.target.value })}
+                placeholder="Delhivery, Blue Dart, DTDC…" autoFocus />
+            </label>
+            <label className="field">
+              <span>AWB / tracking number</span>
+              <input value={shipment.awb} onChange={(event) => setShipment({ ...shipment, awb: event.target.value })}
+                placeholder="e.g. 1234567890" className="mono" />
+            </label>
+            <button type="submit" className="btn btn--block">🚚 Mark dispatched</button>
+          </form>
+        </Modal>
+      )}
 
       {picking && (
         <SkipPicker later={picking} vars={vars} onClose={() => setPicking(null)}

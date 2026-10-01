@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type StageIcon, type StepSide, type StepTrigger, type TrackingRoute,
+  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
 } from '../../../shared/routes.js';
 import { actionsFor, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
@@ -115,7 +115,7 @@ interface RouteBody {
   steps?: {
     id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger;
     stageId?: string; stageName?: string; stageIcon?: string; locked?: boolean; forward?: boolean;
-    waitMessage?: string; lastMile?: boolean; button?: string;
+    waitMessage?: string; lastMile?: boolean; button?: string; custom?: boolean; assignee?: StepAssignee;
   }[];
 }
 
@@ -277,7 +277,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
     /* Filed where the item is, not where the lot is. A parcel already counted
        into the warehouse joined its lot there, and recording the lot's own
        step put "travelling with lot" above an arrival that happened first. */
-    const at = itemStepOn(route, index, undefined, order.checkpoints);
+    const at = itemStepOn(route, index, undefined, ticksOf(order));
     // Somebody else's item, a domestic sale, or one already riding in a lot:
     // all three are refusals, and none of them is worth failing the whole
     // request over when the other nine are fine.
@@ -374,11 +374,10 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   }
 
   const step = route.steps[target]!;
-  // A hand-over with nobody to ask about it is not a hand-over: the courier
-  // is what a tracking ID actually means anything against, live lookup or not.
-  if (step.forward && !body.shipper?.trim()) {
-    return error(400, 'courier_required', 'Say which courier this is moving with.');
-  }
+  /* A hand-over's courier and tracking ID are optional: a seller often has
+     them only later. Whatever is left blank is simply not stored, so the
+     buyer never reads an empty "Courier:" line - they read what was given,
+     or nothing. */
   const stage = coarseStage(route, target);
   const now = new Date().toISOString();
   const event: StageEvent = {
@@ -685,12 +684,9 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'no_such_step', 'That route has no such step.');
   }
 
+  // Same rule as moving the whole lot: courier and tracking ID are optional,
+  // and blank ones are not stored.
   const targetStep = route?.steps[target];
-  // Same rule as moving the whole lot: a hand-over step needs a courier to
-  // hand over to.
-  if (moving && targetStep?.forward && !body.shipper?.trim()) {
-    return error(400, 'courier_required', 'Say which courier this is moving with.');
-  }
 
   const now = new Date().toISOString();
   const stage = route ? coarseStage(route, target) : order.stage;
@@ -806,7 +802,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
     const index = lot && route
       ? Math.max(...items.map((order) => itemStepOn(
           route, currentStepOf(lot), order.currentStep,
-          order.checkpoints,
+          ticksOf(order),
         )))
       : 0;
     const seller = byId.get(items[0]!.sellerId);

@@ -27,7 +27,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, actFor, lockFrom,
+  leaveAt, leaveNote, actFor, lockFrom, zones,
 }: {
   steps: RouteStep[];
   current: number;
@@ -82,6 +82,12 @@ export function Ladder({
    * than sitting there as a list of things nobody can do yet.
    */
   lockFrom?: number;
+  /**
+   * Colour the rungs by part of the journey - before the lot, in it, after
+   * it - where a seller is arranging one. Buyers read one journey, so their
+   * timeline leaves this out.
+   */
+  zones?: { join: number; leave: number };
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -169,7 +175,8 @@ export function Ladder({
               </span>
             </li>
           )}
-          <li className={`ladder__row is-${state}${locked ? ' is-locked' : ''}`}>
+          <li className={`ladder__row is-${state}${locked ? ' is-locked' : ''}${zones
+            ? ` ladder__row--${index < zones.join ? 'pre' : index < zones.leave ? 'lot' : 'post'}` : ''}`}>
             <span className="ladder__dot" aria-hidden="true">
               <StepMark state={state} size={11} />
             </span>
@@ -259,17 +266,16 @@ export function Ladder({
 
               {/* A hand-over to a carrier gets its two fields here, on the step
                   it actually happened at - not one global "tracking" field
-                  that a second forward on the same lot would overwrite. The
-                  courier is required: a tracking ID with nobody to ask it of
-                  is not a lookup anybody can make, live or by hand. */}
+                  that a second forward on the same lot would overwrite. Both
+                  are optional, and a blank one is never shown to the buyer. */}
               {editable && forwarding === index && (
                 <span className="ladder__write">
                   <input value={trackingId} onChange={(event) => setTrackingId(event.target.value)}
                     placeholder="Tracking ID / AWB" aria-label="Tracking ID or AWB number" />
                   <input value={shipper} onChange={(event) => setShipper(event.target.value)}
-                    placeholder="Courier, e.g. DHL, Bluedart" aria-label="Courier or shipper" required />
+                    placeholder="Courier, e.g. DHL, Bluedart" aria-label="Courier or shipper" />
                   <span className="ladder__write-acts">
-                    <button type="button" className="btn btn--sm" disabled={busy || !shipper.trim()}
+                    <button type="button" className="btn btn--sm" disabled={busy}
                       onClick={() => moveTo(index)}>
                       Move here
                     </button>
@@ -277,9 +283,9 @@ export function Ladder({
                       Cancel
                     </button>
                   </span>
-                  {!shipper.trim() && (
-                    <span className="field__hint">The courier's name is required to move here.</span>
-                  )}
+                  <span className="field__hint">
+                    Both optional - buyers only see what you fill in, and nothing at all if you leave them blank.
+                  </span>
                 </span>
               )}
 

@@ -168,6 +168,42 @@ export interface RouteStep {
    * button is drawn (see `stepButtonLabel`).
    */
   button?: string;
+  /**
+   * A button of the seller's own, beyond the seven checkpoints: "Photos sent
+   * to buyer", "Gift wrapped". Pressed per item like any other and recorded
+   * on the order under `custom:<step id>` (see `stepTickKey`). Only on a step
+   * an item reaches on its own - never inside a lot, which moves its items
+   * together - and dropped by `assignButtons` anywhere else.
+   */
+  custom?: boolean;
+  /**
+   * Who else may press this step's button besides the seller: the supplier
+   * overseas, or the handler at the destination. The seller always can.
+   */
+  assignee?: StepAssignee;
+}
+
+/** The crew a button can be handed to. */
+export type StepAssignee = 'supplier' | 'handler';
+
+/**
+ * The key a step's button is recorded under on an order: the checkpoint it
+ * is bound to, or `custom:<step id>` for a button of the seller's own. Null
+ * for a step no button reaches.
+ */
+export function stepTickKey(step: Pick<RouteStep, 'id' | 'trigger' | 'custom'>): string | null {
+  if (step.trigger) return step.trigger;
+  return step.custom ? `custom:${step.id}` : null;
+}
+
+/** Every press an order has had, checkpoints and custom buttons together, keyed as `stepTickKey` keys them. */
+export function ticksOf(order: {
+  checkpoints?: Partial<Record<OrderCheckpoint, string | null>>;
+  customTicks?: Record<string, string | null>;
+} | null | undefined): Record<string, string | null> {
+  const out: Record<string, string | null> = { ...(order?.checkpoints ?? {}) };
+  for (const [id, at] of Object.entries(order?.customTicks ?? {})) out[`custom:${id}`] = at;
+  return out;
 }
 
 /**
@@ -179,14 +215,14 @@ export interface RouteStep {
  * the last resort, for a step with no name.
  */
 export function stepButtonLabel(
-  step: Pick<RouteStep, 'trigger' | 'button' | 'name'>,
+  step: Pick<RouteStep, 'trigger' | 'button' | 'name' | 'custom'>,
   vars?: { origin?: string | null; destination?: string | null },
 ): string {
   const own = step.button?.trim();
   if (own) return own;
-  if (!step.trigger) return '';
+  if (!step.trigger && !step.custom) return '';
   const name = (step.name ?? '').trim();
-  if (!name) return TRIGGER_LABELS[step.trigger].button;
+  if (!name) return step.trigger ? TRIGGER_LABELS[step.trigger].button : 'Done';
   const said = vars
     ? renderStepText(name, vars)
     : name.replace(/\{(origin|destination)\}/g, ' ').replace(/\s+/g, ' ').trim();
@@ -359,7 +395,7 @@ export function lotOffset(route: HasSteps): number {
 }
 
 /** What an item has physically done, as the buttons a shop presses record it. */
-export type Ticks = Partial<Record<OrderCheckpoint, string | null>> | undefined;
+export type Ticks = Partial<Record<string, string | null>> | undefined;
 
 /**
  * How far the buttons alone have carried this item.
@@ -373,14 +409,15 @@ export type Ticks = Partial<Record<OrderCheckpoint, string | null>> | undefined;
 export function triggeredStep(route: HasSteps, ticks: Ticks): number {
   let at = -1;
   route.steps.forEach((step, index) => {
-    if (step.trigger && ticks?.[step.trigger]) at = Math.max(at, index);
+    const key = stepTickKey(step);
+    if (key && ticks?.[key]) at = Math.max(at, index);
   });
   return at;
 }
 
 /** True once any step on this route is worked by a button rather than by hand. */
 export function hasTriggers(route: HasSteps): boolean {
-  return route.steps.some((step) => Boolean(step.trigger));
+  return route.steps.some((step) => Boolean(stepTickKey(step)));
 }
 
 /**
@@ -762,7 +799,10 @@ export function normaliseSteps(
       forward: step.forward === true || undefined,
       waitMessage: step.waitMessage?.trim() || undefined,
       lastMile: step.lastMile === true || undefined,
-      button: step.trigger || keepButtons ? step.button?.trim().slice(0, 28) || undefined : undefined,
+      button: step.trigger || step.custom || keepButtons ? step.button?.trim().slice(0, 28) || undefined : undefined,
+      custom: step.custom === true && (keepButtons || !step.trigger) ? true : undefined,
+      assignee: (step.trigger || step.custom || keepButtons) && (step.assignee === 'supplier' || step.assignee === 'handler')
+        ? step.assignee : undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));

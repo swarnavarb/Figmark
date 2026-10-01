@@ -4,7 +4,7 @@ import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import { inLot, isDirect } from '../../../shared/fulfilment.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
-import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf } from '../../../shared/routes.js';
+import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf, ticksOf } from '../../../shared/routes.js';
 import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -272,7 +272,7 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
      put "travelling with lot" above an arrival that happened first. A move
      between lots starts fresh on the new lot's ladder, so only the checkpoint
      floors it. */
-  const index = itemStepOn(route, currentStepOf(lot), undefined, order.checkpoints);
+  const index = itemStepOn(route, currentStepOf(lot), undefined, ticksOf(order));
   const now = new Date().toISOString();
   const event: StageEvent = {
     stage: coarseStage(route, index),

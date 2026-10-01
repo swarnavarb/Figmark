@@ -199,9 +199,11 @@ export function ShipmentChip({ shipment, linked = true }: {
   /** False inside something that is already a link, where a second one cannot go. */
   linked?: boolean;
 }) {
+  // Nothing given, nothing shown: a blank courier line tells a buyer nothing.
+  if (!shipment.courier && !shipment.awb) return null;
   return (
     <span className="shipchip">
-      <span className="shipchip__label">🚚 {shipment.courier || 'Courier'}</span>
+      {shipment.courier && <span className="shipchip__label">🚚 {shipment.courier}</span>}
       {shipment.awb && (
         <>
           <span className="shipchip__awb mono">AWB {shipment.awb}</span>

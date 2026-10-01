@@ -1008,6 +1008,12 @@ export interface Order extends BaseDocument {
    */
   checkpoints?: Partial<Record<OrderCheckpoint, string | null>>;
   /**
+   * Presses of the route's own custom buttons, by step id - "Photos sent",
+   * "Gift wrapped" - kept apart from `checkpoints` because those seven have
+   * meanings the rest of the app relies on and these have none.
+   */
+  customTicks?: Record<string, string | null>;
+  /**
    * The buyer's claim that they have paid, and what the seller made of it.
    *
    * A direct sale is settled outside this app, so nothing here observes the

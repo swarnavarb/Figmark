@@ -8,8 +8,8 @@ import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.j
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
-  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeOf, stepForStage, triggeredStep,
-  type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger,
+  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeOf, stepForStage, stepTickKey, triggeredStep,
+  type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, ticksOf
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
 import { ladderBeforeLot, withButtons } from '../../../shared/buttons.js';
@@ -54,6 +54,21 @@ function stepForCheckpoint(
 ): RouteStep | undefined {
   return steps.find((step) => step.trigger === checkpoint)
     ?? (!inLot(order) && checkpoint === 'china_received' ? steps.at(-1) : undefined);
+}
+
+/**
+ * The route steps an order is worked along: its lot's, or - before it has a
+ * lot - the before-lot half of the route its listing chose.
+ */
+async function routeStepsOf(
+  repository: Awaited<ReturnType<typeof getRepository>>,
+  order: Order,
+  lot: Lot | null,
+): Promise<RouteStep[]> {
+  if (lot) return routeOf(lot).steps;
+  const listing = await repository.getListing(order.listingId);
+  const template = listing?.lotRouteId ? await repository.getRoute(order.sellerId, listing.lotRouteId) : null;
+  return ladderBeforeLot(order, template).steps;
 }
 
 /**
@@ -488,7 +503,7 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
       checkpoints: order.checkpoints ?? {},
       /** Where this item is on the lot's route: the lot's, its own, or what it has done. */
       currentStep: itemStepOn(
-        route, step, order.currentStep, order.checkpoints,
+        route, step, order.currentStep, ticksOf(order),
       ),
       /**
        * True only when the seller really did move this one away from the rest.
@@ -499,10 +514,10 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
        * happens to one item at a time and made every new item look diverted.
        */
       ownStep: typeof order.currentStep === 'number'
-        && order.currentStep !== itemStepOn(route, step, undefined, order.checkpoints),
+        && order.currentStep !== itemStepOn(route, step, undefined, ticksOf(order)),
       /** Done travelling alone, and the lot has not moved: a real place to be. */
       waitingForLot:
-        itemStepOn(route, step, order.currentStep, order.checkpoints) === lotOffset(route) - 1
+        itemStepOn(route, step, order.currentStep, ticksOf(order)) === lotOffset(route) - 1
         && step < lotOffset(route)
         && lotOffset(route) < route.steps.length,
       history: order.stageHistory,
@@ -811,7 +826,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   const beforeDone = Boolean(order.checkpoints?.china_received);
   // The furthest of its own buttons pressed - the warehouse tick, or the
   // packing one after it where the route has one.
-  const beforeReached = Math.max(0, triggeredStep(before, order.checkpoints));
+  const beforeReached = Math.max(0, triggeredStep(before, ticksOf(order)));
 
   /*
    * Where the item is on its lot's ladder: the lot's position, its own when it
@@ -823,7 +838,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   const position = route
     ? itemStepOn(
         route, currentStepOf(lot!), order.currentStep,
-        order.checkpoints,
+        ticksOf(order),
       )
     : 0;
 
@@ -1019,22 +1034,31 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const orderId = request.params.id;
   if (!orderId) return error(400, 'invalid_order', 'An order id is required.');
 
-  let body: { checkpoint?: OrderCheckpoint; on?: boolean; orderIds?: string[]; courier?: string; awb?: string };
+  let body: { checkpoint?: string; on?: boolean; orderIds?: string[]; courier?: string; awb?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const checkpoint = body.checkpoint;
-  if (!checkpoint || !ORDER_CHECKPOINTS.includes(checkpoint)) {
+  /* One of the seven checkpoints, or `custom:<step id>` - a button of the
+     seller's own on this order's route. */
+  const key = typeof body.checkpoint === 'string' ? body.checkpoint : '';
+  const customId = key.startsWith('custom:') ? key.slice('custom:'.length) : null;
+  if (!key || (!customId && !ORDER_CHECKPOINTS.includes(key as OrderCheckpoint))) {
     return error(400, 'invalid_checkpoint', 'Name a checkpoint to tick.');
   }
+  const checkpoint = key as OrderCheckpoint;
 
   const repository = await getRepository();
   const order = await repository.getOrder(orderId);
   if (!order) return error(404, 'not_found', 'No such order.');
   const lot = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
+
+  /* The step this button reaches on the order's own route - for who it is
+     assigned to, and for a custom button, for whether it exists at all. */
+  const button = (await routeStepsOf(repository, order, lot)).find((step) => stepTickKey(step) === key) ?? null;
+  if (customId && !button) return error(404, 'no_such_button', 'That route has no such button.');
 
   const sellerId = await lotsStoreFor(request, user, order.sellerId);
   if (sellerId === order.sellerId) {
@@ -1057,7 +1081,8 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
           : null;
 
     if (!role) return error(403, 'forbidden', 'That order is not yours to work.');
-    if (!mayTick(role, checkpoint)) {
+    // Their own half of the journey, plus any button the seller handed them.
+    if (!(customId ? false : mayTick(role, checkpoint)) && button?.assignee !== role) {
       return error(
         403,
         'forbidden',
@@ -1070,6 +1095,24 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
 
   const on = body.on !== false;
   const now = new Date().toISOString();
+
+  /* A custom button records that it happened, and nothing else: none of the
+     seven's consequences (status, protection window, delivery) hang off it. */
+  if (customId && button) {
+    if (isStopped(order.status)) {
+      return error(409, 'order_stopped', 'That order was called off or refunded, so it no longer moves along the route.');
+    }
+    order.customTicks = { ...(order.customTicks ?? {}), [customId]: on ? now : null };
+    order.updatedAt = now;
+    order.stageHistory = [
+      ...order.stageHistory,
+      { stage: order.stage, step: button.name, enteredAt: now, note: on ? `${button.name}.` : `${button.name} — undone.`, recordedBy: user.id },
+    ];
+    const saved = await repository.updateOrder(order);
+    return json(200, {
+      order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, customTicks: saved.customTicks ?? {}, status: saved.status },
+    });
+  }
 
   /*
    * The courier and AWB a parcel went out with. Given with the dispatched
@@ -1084,8 +1127,9 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   if (withShipment && isStopped(order.status)) {
     return error(409, 'order_stopped', 'That order was called off or refunded, so it is not being shipped.');
   }
+  // Only what was given: a blank courier is left out, never shown as a dash.
   const shipmentNote = withShipment
-    ? `Courier: ${courier || '—'}${awb ? ` · AWB ${awb}` : ''}`
+    ? [courier && `Courier: ${courier}`, awb && `AWB ${awb}`].filter(Boolean).join(' · ')
     : null;
   if (withShipment && order.checkpoints?.dispatched) {
     // Already on its way: only the details change, and the tick keeps its date.
