@@ -8958,170 +8958,182 @@ a.ohead__thumb:hover { transform: scale(1.04); }
   font-size: var(--t-xs); background: rgba(255, 255, 255, 0.03);
 }
 
-/* ── Tracking, as a quest ─────────────────────────────────────────────── */
 
-/*
- * The same steps and facts as the classic card, drawn as a game board: the
- * step it is on is a level, every step reached is worth XP, and the stages of
- * the journey are badges that unlock. Nothing here is decoration over a
- * number that does not exist - the level is the step, the XP is steps x 100.
- * The classic card above is untouched; `trackStyle.ts` picks between them.
- */
-.trk--quest {
-  --q-gold: #F5C542;
-  background:
-    radial-gradient(120% 80% at 100% 0%, rgba(245, 197, 66, 0.10), transparent 55%),
-    radial-gradient(100% 100% at 0% 100%, rgba(124, 58, 237, 0.16), transparent 60%),
-    var(--surface);
-  box-shadow: inset 0 0 0 1px var(--border), 0 10px 28px rgba(0, 0, 0, 0.3);
+/* The milestones as boxes across the top of a timeline - order placed, the
+   warehouse, on to delivered - each ticked once reached and locked until the
+   journey is one step away from it. */
+.trkbox {
+  position: relative; display: flex; gap: 0; margin: 0; padding: 2px 0 4px; list-style: none;
+  overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity;
 }
-.trk--quest.is-complete { box-shadow: inset 0 0 0 1px rgba(245, 197, 66, 0.5), 0 0 28px rgba(245, 197, 66, 0.18); }
-.qtrk__hud { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
-.qtrk__lvl {
-  display: grid; place-items: center; align-content: center; width: 56px; height: 56px; border-radius: 16px;
-  background: var(--grad-blue); box-shadow: 0 8px 22px rgba(124, 58, 237, 0.35), inset 0 -3px 0 rgba(0, 0, 0, 0.25);
-  color: #fff; line-height: 1; font-variant-numeric: tabular-nums;
+.trkbox::-webkit-scrollbar { display: none; }
+.trkbox__item {
+  position: relative; flex: 0 0 88px; display: grid; justify-items: center; align-content: start; gap: 5px;
+  padding: 0 4px; text-align: center; scroll-snap-align: start;
 }
-.qtrk__lvl small { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; opacity: 0.8; }
-.qtrk__lvl b { font-family: var(--display); font-size: 22px; }
-.qtrk__xp {
-  display: inline-flex; align-items: baseline; gap: 4px; padding: 6px 10px; border-radius: 999px;
-  background: rgba(245, 197, 66, 0.12); box-shadow: inset 0 0 0 1px rgba(245, 197, 66, 0.4);
-  color: var(--q-gold); font-variant-numeric: tabular-nums;
+/* The connector to the box before it, drawn from this one's left edge. */
+.trkbox__item + .trkbox__item::before {
+  content: ''; position: absolute; top: 22px; right: calc(50% + 24px); width: calc(100% - 48px);
+  height: 2px; border-radius: 2px; background: var(--border);
 }
-.qtrk__xp b { font-family: var(--mono); font-size: var(--t-md); }
-.qtrk__xp small { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; }
-.qtrk__coin {
-  align-self: center; width: 12px; height: 12px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #FFF3C4, var(--q-gold) 55%, #B7862A);
-  box-shadow: 0 0 8px rgba(245, 197, 66, 0.6);
+.trkbox__item.is-done::before, .trkbox__item.is-here::before { background: var(--ok); }
+.trkbox__icon {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; font-size: 21px;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
 }
-.qtrk__segs { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 4px; }
-.qtrk__segs span { height: 10px; border-radius: 3px; background: rgba(255, 255, 255, 0.07); }
-.qtrk__segs span.is-on {
-  background: var(--grad-play); box-shadow: 0 0 10px rgba(163, 230, 53, 0.45);
-  animation: qtrk-fill 420ms var(--ease) both; animation-delay: calc(var(--i) * 60ms);
+.trkbox__item.is-done .trkbox__icon {
+  background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.4);
 }
-.qtrk__segs span.is-here {
-  background: repeating-linear-gradient(-45deg, rgba(6, 214, 231, 0.55) 0 4px, rgba(6, 214, 231, 0.2) 4px 8px);
-  background-size: 11.3px 11.3px; animation: qtrk-march 900ms linear infinite;
+.trkbox__item.is-here .trkbox__icon {
+  background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent), 0 0 18px rgba(124, 58, 237, 0.35);
+  animation: trkbox-here 2.4s var(--ease) infinite;
 }
-@keyframes qtrk-fill { from { transform: scaleX(0); transform-origin: left; } to { transform: scaleX(1); transform-origin: left; } }
-@keyframes qtrk-march { to { background-position: 11.3px 0; } }
-.qtrk__badges { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-.qtrk__badges::-webkit-scrollbar { display: none; }
-.qtrk__badge {
-  flex: 1 0 58px; max-width: 92px; display: grid; justify-items: center; gap: 4px; padding: 8px 4px 6px;
-  border-radius: 12px; background: rgba(255, 255, 255, 0.03); box-shadow: inset 0 0 0 1px var(--border);
-  text-align: center; opacity: 0.55;
-}
-.qtrk__badge i { font-style: normal; font-size: 18px; line-height: 1; filter: grayscale(1); }
-.qtrk__badge small {
-  font-size: 9.5px; line-height: 1.2; color: var(--text-faint);
+.trkbox__item.is-next .trkbox__icon { opacity: 0.75; box-shadow: inset 0 0 0 1px var(--border-strong); }
+.trkbox__item.is-locked .trkbox__icon { opacity: 0.45; font-size: 15px; box-shadow: inset 0 0 0 1px var(--border); background: transparent; }
+.trkbox__label {
+  font-size: 10.5px; line-height: 1.25; color: var(--text-faint);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.qtrk__badge.is-earned {
-  opacity: 1; background: rgba(245, 197, 66, 0.08); box-shadow: inset 0 0 0 1px rgba(245, 197, 66, 0.45);
-  animation: qtrk-pop 480ms var(--bounce, var(--ease)) both; animation-delay: calc(var(--i) * 70ms);
+.trkbox__item.is-done .trkbox__label, .trkbox__item.is-here .trkbox__label { color: var(--text-dim); }
+.trkbox__item.is-here .trkbox__label { color: var(--text); font-weight: var(--w-semi); }
+.trkbox__tick {
+  position: absolute; top: -3px; left: calc(50% + 14px); display: grid; place-items: center;
+  width: 16px; height: 16px; border-radius: 50%; font-size: 9px; font-weight: var(--w-bold);
+  background: var(--ok); color: var(--ok-ink);
 }
-.qtrk__badge.is-earned i { filter: none; }
-.qtrk__badge.is-earned small { color: var(--text-dim); }
-@keyframes qtrk-pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.qtrk__next {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 11px; border-radius: 10px;
-  background: rgba(6, 214, 231, 0.07); box-shadow: inset 0 0 0 1px var(--aqua-line);
-  font-size: var(--t-xs); color: var(--text-dim);
-}
-.qtrk__next b { color: var(--text); font-weight: var(--w-semi); }
-.qtrk__reward {
-  margin-left: auto; font-family: var(--mono); font-size: 10.5px; font-weight: var(--w-semi); color: var(--q-gold, #F5C542);
+@keyframes trkbox-here {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
 }
 
-/* The ladder on the quest board: numbered level nodes, gold coins for the
-   rungs reached, and the XP each one paid. Same rows, same notes, same lot
-   markers - only the marks change. */
-.ladder--quest .ladder__row { grid-template-columns: 24px 1fr; }
-.ladder--quest .ladder__row::before { left: 11px; width: 2px; background: rgba(255, 255, 255, 0.07); }
-.ladder--quest .ladder__row.is-done::before { background: linear-gradient(#F5C542, rgba(245, 197, 66, 0.35)); }
-.ladder--quest .ladder__dot { width: 23px; height: 23px; font-size: 10px; }
-.ladder--quest .ladder__row.is-todo .ladder__dot {
-  border-style: dashed; border-color: var(--border-strong); background: var(--surface-2); color: var(--text-faint);
-}
-.ladder--quest .ladder__row.is-done .ladder__dot {
-  border-color: #F5C542; color: #3A2A00;
-  background: radial-gradient(circle at 35% 35%, #FFF3C4, #F5C542 55%, #B7862A);
-  box-shadow: 0 0 0 3px rgba(245, 197, 66, 0.16), 0 0 10px rgba(245, 197, 66, 0.35);
-}
-.ladder__lvl { font-family: var(--mono); font-weight: var(--w-bold); font-variant-numeric: tabular-nums; }
-.ladder__xp {
-  display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 999px; vertical-align: 1px;
-  background: rgba(245, 197, 66, 0.12); color: #F5C542;
-  font-family: var(--mono); font-size: 9.5px; font-weight: var(--w-semi); letter-spacing: 0.02em;
-}
-.ladder--quest .ladder__row--wait .ladder__dot { border-radius: 7px; }
-.ladder--quest .ladder__leave { grid-template-columns: 24px 1fr; }
-.ladder--quest .ladder__leave::before { left: 11px; }
+/* A rung the journey has not got near yet, on the last mile. */
+.ladder__row.is-locked { color: var(--text-faint); opacity: 0.7; }
+.ladder__row.is-locked .ladder__dot { border-style: dashed; color: var(--text-faint); }
 
-/* The switch between the two looks. */
-.trkstyle { padding: 3px; }
-.trkstyle button { padding: 5px 10px; font-size: var(--t-xs); white-space: nowrap; }
+/* The seller's button on a rung: the tick that reaches it, pressed from the timeline. */
+.stepact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.stepact__btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2);
+  color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+  transition: transform var(--dur-1) var(--ease), background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.stepact__btn:active:not(:disabled) { transform: scale(0.96); }
+.stepact__btn:disabled { opacity: 0.6; cursor: default; }
+.stepact__btn.is-next {
+  border-color: var(--accent); background: var(--accent-soft); color: var(--text);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.14);
+}
+.stepact__btn.is-done { border-color: rgba(52, 211, 153, 0.4); background: var(--ok-soft); color: var(--ok); }
+.stepact__btn.is-locked { border-style: dashed; color: var(--text-faint); background: transparent; }
 
-/* One last-mile card for every item a seller ships on its own, in hand or
-   out of an unpacked lot. */
-.dispatch__from { font-size: var(--t-xs); color: var(--text-dim); }
-.dispatch__lot {
-  display: block; padding: 7px 9px; border-left: 2px solid var(--aqua); border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  background: var(--aqua-soft); font-size: var(--t-xs); color: var(--text-dim);
+@media (prefers-reduced-motion: reduce) {
+  .trkbox__item.is-here .trkbox__icon { animation: none; }
 }
-.dispatch.is-flash { animation: dispatch-flash 1.4s var(--ease); }
-@keyframes dispatch-flash {
-  0%, 60% { box-shadow: 0 0 0 2px var(--accent), 0 0 24px rgba(124, 58, 237, 0.45); }
-  100% { box-shadow: none; }
-}
-.dispatch--quest {
+
+/* ── Pip, the Route Studio's helper ──────────────────────────────────── */
+
+.pipdock {
+  position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: start;
+  padding: 12px; border-radius: var(--r-lg);
   background:
-    radial-gradient(100% 80% at 100% 0%, rgba(163, 230, 53, 0.08), transparent 55%),
+    radial-gradient(120% 120% at 0% 0%, rgba(247, 196, 108, 0.16), transparent 55%),
+    radial-gradient(100% 100% at 100% 100%, rgba(124, 58, 237, 0.14), transparent 60%),
     var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border), 0 10px 26px rgba(0, 0, 0, 0.25);
 }
-.dispatch__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.dispatch__eyebrow {
-  display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint);
+.pipdock__pip { display: block; animation: pip-hop 520ms var(--ease) both; }
+.pipdock__talk { display: grid; gap: 8px; min-width: 0; padding-right: 18px; }
+.pipdock__bubble {
+  position: relative; padding: 10px 12px; border-radius: 4px 14px 14px 14px;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border-strong);
 }
-.dispatch__title { margin: 2px 0 0; font-size: var(--t-md); }
-.dispatch__xp {
-  flex: none; padding: 4px 9px; border-radius: 999px; background: rgba(245, 197, 66, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(245, 197, 66, 0.4);
-  font-family: var(--mono); font-size: 10.5px; color: #F5C542; font-variant-numeric: tabular-nums;
+.pipdock__count {
+  display: block; margin-bottom: 3px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent-text);
 }
-.dispatch__xp b { font-size: var(--t-sm); }
-.dispatch__track { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
-.dispatch__tile > button, .dispatch__tile-static {
-  width: 100%; height: 100%; display: grid; justify-items: center; gap: 4px; padding: 11px 6px 9px;
-  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: var(--text-dim);
-  font: inherit; text-align: center;
+.pipdock__text { margin: 0; min-height: 2.6em; font-size: var(--t-sm); line-height: 1.45; color: var(--text); }
+.pipdock__sr {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
-.dispatch__tile > button { cursor: pointer; transition: transform 0.12s var(--ease), border-color 0.15s, background 0.15s; }
-.dispatch__tile > button:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
-.dispatch__tile > button:active:not(:disabled) { transform: scale(0.97); }
-.dispatch__tile > button:disabled { cursor: default; opacity: 0.7; }
-.dispatch__tile-icon { font-size: 20px; line-height: 1; }
-.dispatch__tile-label { font-size: var(--t-xs); font-weight: var(--w-semi); }
-.dispatch__tile-xp { font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
-.dispatch__tile.is-current > button {
-  border-color: var(--lime-line); background: var(--lime-soft); color: var(--text);
-  box-shadow: 0 0 16px rgba(163, 230, 53, 0.2); animation: dispatch-glow 2s ease-in-out infinite;
+.pipdock__choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.pipdock__choice {
+  padding: 7px 11px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
+  color: var(--text); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+  opacity: 0; transform: translateY(4px);
+  transition: transform var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
-.dispatch__tile.is-current .dispatch__tile-xp { color: var(--lime); }
-@keyframes dispatch-glow { 50% { box-shadow: 0 0 4px rgba(163, 230, 53, 0.05); } }
-.dispatch__tile.is-done .dispatch__tile-static,
-.dispatch__tile.is-done > button {
-  border-color: rgba(245, 197, 66, 0.45); background: rgba(245, 197, 66, 0.08); color: var(--text);
+.pipdock__choices.is-ready .pipdock__choice {
+  animation: pip-choice 260ms var(--ease) both; animation-delay: calc(var(--i) * 55ms);
 }
-.dispatch__tile.is-done .dispatch__tile-icon { color: #F5C542; }
-.dispatch__tile.is-done .dispatch__tile-xp { color: #F5C542; }
-.dispatch__tile.is-locked .dispatch__tile-static { opacity: 0.55; border-style: dashed; }
-.dispatch__acts { display: flex; flex-wrap: wrap; gap: 6px; }
-.dispatch__acts:empty { display: none; }
+.pipdock__choice:hover { border-color: var(--accent); }
+.pipdock__choice:active { transform: scale(0.95); }
+.pipdock__choice.is-primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+.pipdock__hide {
+  position: absolute; top: 6px; right: 8px; width: 24px; height: 24px; border: 0; border-radius: 50%;
+  background: transparent; color: var(--text-faint); font-size: 18px; line-height: 1; cursor: pointer;
+}
+.pipdock__hide:hover { color: var(--text); background: var(--surface-2); }
+.pipcall {
+  justify-self: start; padding: 7px 12px; border: 1px dashed var(--border-strong); border-radius: 999px;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: var(--t-xs); cursor: pointer;
+}
+.pipcall:hover { color: var(--text); border-color: var(--accent); }
+
+/* The character's own motion: a float, a blink, a glowing antenna. */
+.pip { display: block; overflow: visible; }
+.pip__body, .pip__antenna { animation: pip-float 3.2s ease-in-out infinite; transform-origin: 32px 52px; }
+.pip__eyes { animation: pip-blink 4.6s infinite; transform-origin: 32px 34px; }
+.pip__bulb { animation: pip-glow 1.8s ease-in-out infinite; }
+.pip--cheer .pip__body, .pip--cheer .pip__antenna { animation: pip-cheer 0.9s var(--ease) infinite; }
+.pip--think .pip__antenna { animation: pip-tilt 2.4s ease-in-out infinite; transform-origin: 32px 14px; }
+@keyframes pip-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
+@keyframes pip-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+@keyframes pip-glow { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+@keyframes pip-cheer { 0%, 100% { transform: translateY(0) rotate(0); } 30% { transform: translateY(-5px) rotate(-4deg); } 60% { transform: translateY(-2px) rotate(4deg); } }
+@keyframes pip-tilt { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes pip-hop { 0% { transform: translateY(6px) scale(0.92); } 60% { transform: translateY(-4px) scale(1.03); } 100% { transform: none; } }
+@keyframes pip-choice { to { opacity: 1; transform: none; } }
+
+/* The save row, with Preview beside it. */
+.rsdock { flex-wrap: wrap; }
+
+/* ── The Route Studio's sample order ──────────────────────────────────── */
+
+.rsprev__intro { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: center; }
+.rsprev__intro p { margin: 0; font-size: var(--t-xs); color: var(--text-dim); line-height: 1.45; }
+.rsprev__order {
+  display: grid; gap: 10px; padding: 12px; border-radius: var(--r-md);
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
+}
+.rsprev__head { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.rsprev__photo {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; font-size: 24px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
+}
+.rsprev__who { display: grid; gap: 2px; min-width: 0; font-size: var(--t-sm); }
+.rsprev__who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rsprev__who .faint { font-size: var(--t-2xs); }
+.rsprev__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rsprev__chip.is-next:not(.is-on) { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.rsprev__chip.is-locked { border-style: dashed; color: var(--text-faint); }
+.rsprev__chip.is-pop { animation: rsprev-pop 320ms var(--ease); }
+.rsprev__lot { border-color: var(--aqua); color: var(--text); }
+.rsprev__bar { display: flex; flex-wrap: wrap; gap: 6px; }
+.rsprev__setup { display: grid; gap: 8px; padding-top: 10px; border-top: 1px dashed var(--border-strong); }
+.rsprev__cfg {
+  display: grid; gap: 6px; padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
+}
+.rsprev__cfg.is-bound { box-shadow: inset 0 0 0 1px var(--accent-line); }
+.rsprev__cfg-step { font-size: var(--t-xs); font-weight: var(--w-semi); }
+.rsprev__cfg select, .rsprev__cfg input { width: 100%; min-width: 0; padding: 7px 9px; font-size: var(--t-xs); }
+@keyframes rsprev-pop { 0% { transform: scale(1); } 40% { transform: scale(1.1); } 100% { transform: scale(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pipdock__pip, .pip__body, .pip__antenna, .pip__eyes, .pip__bulb, .rsprev__chip.is-pop { animation: none; }
+  .pipdock__choice, .pipdock__choices.is-ready .pipdock__choice { animation: none; opacity: 1; transform: none; }
+}
 
 /* An item that has left its lot, on the lot's own list. */
 .lotitem__own {
@@ -9131,13 +9143,6 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 
 /* Kept credit, taken off the checkout. */
 .kv--credit dd { color: var(--ok); }
-
-@media (prefers-reduced-motion: reduce) {
-  .qtrk__segs span.is-on, .qtrk__segs span.is-here, .qtrk__badge.is-earned,
-  .ladder--quest .ladder__row.is-done .ladder__dot, .dispatch__tile.is-current > button, .dispatch.is-flash {
-    animation: none;
-  }
-}
 
 /* ── The cart ──────────────────────────────────────────────────────────── */
 

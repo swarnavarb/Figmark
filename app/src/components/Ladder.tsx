@@ -27,7 +27,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, skin = 'classic',
+  leaveAt, leaveNote, actFor, lockFrom,
 }: {
   steps: RouteStep[];
   current: number;
@@ -71,11 +71,17 @@ export function Ladder({
   leaveAt?: number;
   leaveNote?: ReactNode;
   /**
-   * `quest` draws the same rungs as a game board - numbered level nodes,
-   * gold coins for the ones reached, XP on each. `classic` is the plain
-   * ladder, kept so the look can be switched back.
+   * The seller's button for a rung, drawn on the rung itself - the tick that
+   * reaches this step, pressed from the timeline it writes. Absent, or
+   * returning nothing, draws no button.
    */
-  skin?: 'classic' | 'quest';
+  actFor?: (step: RouteStep, index: number) => ReactNode;
+  /**
+   * From this rung on, a step not yet within reach is drawn locked: the last
+   * mile, which opens one step at a time as the journey gets there rather
+   * than sitting there as a list of things nobody can do yet.
+   */
+  lockFrom?: number;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -97,7 +103,6 @@ export function Ladder({
   /* Whether the lot has started carrying this item: until the item reaches a
      rung on the lot's half of the route, the lot is still a promise. */
   const stillWaiting = current < 0 || !steps[current] || sideOf(steps[current]!, current) === 'pre';
-  const quest = skin === 'quest';
   const editable = Boolean(onMove || onNote);
 
   /*
@@ -133,12 +138,15 @@ export function Ladder({
   const gapMessage = waitingFor || (current >= 0 ? waitMessageFor(steps[current]) : null);
 
   return (
-    <ol className={`ladder${editable ? ' ladder--live' : ''}${quest ? ' ladder--quest' : ''}`}>
+    <ol className={`ladder${editable ? ' ladder--live' : ''}`}>
       {steps.map((step, index) => {
         // Reaching a step is what ticks it - the present is the gap after
         // it, drawn as its own row below, not a mark on the rung itself.
         const state = stepStateAt(index, current);
         const said = notes.get(index) ?? [];
+        /* Locked: on the last mile and more than one step ahead of where the
+           item is - it unlocks the moment the step before it is reached. */
+        const locked = lockFrom !== undefined && index >= lockFrom && index > current + 1;
         const stage = stageStarts.get(index);
         return (
           <Fragment key={step.id}>
@@ -161,19 +169,17 @@ export function Ladder({
               </span>
             </li>
           )}
-          <li className={`ladder__row is-${state}`}>
+          <li className={`ladder__row is-${state}${locked ? ' is-locked' : ''}`}>
             <span className="ladder__dot" aria-hidden="true">
-              {quest && state !== 'done'
-                ? <span className="ladder__lvl">{index + 1}</span>
-                : <StepMark state={state} size={11} />}
+              {locked ? <Icon name="lock" size={10} /> : <StepMark state={state} size={11} />}
             </span>
 
             <span className="ladder__body">
               <span className="ladder__name">
                 {renderStepText(step.name, vars ?? {})}
-                {quest && state === 'done' && <span className="ladder__xp">+{STEP_XP} XP</span>}
               </span>
               {step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
+              {actFor?.(step, index)}
 
               {said.map((event, at) => (
                 isLotEvent(event)
@@ -316,7 +322,7 @@ export function Ladder({
                 <WaveLoader />
               </span>
               <span className="ladder__body">
-                <span className="ladder__name">{gapMessage}</span>
+                <span className="ladder__name">{renderStepText(gapMessage, vars ?? {})}</span>
                 {waitingFor && (
                   <span className="faint">
                     Everything from here happens to the whole lot, not to this piece alone.
@@ -384,9 +390,6 @@ function notesByStep(steps: RouteStep[], history: StageEvent[], current: number)
   }
   return out;
 }
-
-/** What reaching one rung is worth on the quest skin. Flat, so it reads as a count. */
-export const STEP_XP = 100;
 
 /** A date a person reads at a glance, not a timestamp. */
 function when(iso: string): string {

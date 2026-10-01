@@ -335,6 +335,7 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
             // dropped - a route opened here after being written in the
             // studio builder should not lose what it said in the gaps.
             waitMessage: step.waitMessage,
+            button: step.button,
           })),
       });
       onSaved();

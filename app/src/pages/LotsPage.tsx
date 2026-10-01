@@ -4,7 +4,7 @@ import {
   ORDER_CHECKPOINTS, type OrderCheckpoint,
 } from '@shared/enums';
 import {
-  TRIGGER_LABELS, WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
+  TRIGGER_LABELS, WAITING_FOR_LOT, stepButtonLabel, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
 } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
@@ -14,7 +14,6 @@ import {
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { Ladder } from '../components/Ladder';
-import { useTrackStyle } from '../components/trackStyle';
 import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { ErrorNotice, Icon, type IconName } from '../components/ui';
@@ -633,7 +632,7 @@ function LotItemRow({ item, lotId, steps, others, busy, onTick, onRequestDeliver
                 ? `${done ? 'Pressed' : 'Press'} when ${TRIGGER_LABELS[checkpoint].means} — moves tracking to “${moves.name}”`
                 : `${TRIGGER_LABELS[checkpoint].button}: recorded, but no step is bound to it`}
               onClick={() => (checkpoint === 'delivered' && !done ? onRequestDeliver() : onTick(checkpoint, !done))}>
-              {TRIGGER_LABELS[checkpoint].button}
+              {moves ? stepButtonLabel(moves) : TRIGGER_LABELS[checkpoint].button}
               {moves && <span className="tickbtn__to">{moves.name}</span>}
             </button>
           );
@@ -836,7 +835,6 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   /* Customers & Orders first: it's where every item's own tracking - and
      the one tick that ends it, "Delivered" - actually happens. */
   const [section, setSection] = useState<LotSection>('people');
-  const [skin] = useTrackStyle();
   const [editing, setEditing] = useState(false);
   const [rerouting, setRerouting] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -1133,7 +1131,6 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               steps={lotSteps}
               current={lotStep}
               history={data.history}
-              skin={skin}
               /* Where the crate is unpacked: from the rung after it, each item
                  is dispatched and delivered on its own, from its own order. */
               leaveAt={itemLeaveIndex(route) - route.offset}

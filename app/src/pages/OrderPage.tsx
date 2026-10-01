@@ -16,10 +16,8 @@ import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
-import { DirectTrack, TrackHero, badgesFor } from '../components/OrderTrack';
-import { ITEM_DISPATCH_ID, ItemDispatch } from '../components/ItemDispatch';
-import { STEP_XP } from '../components/Ladder';
-import { useTrackStyle } from '../components/trackStyle';
+import { DirectTrack, TrackHero, boxesFor, withLastMile } from '../components/OrderTrack';
+import { useStepActs } from '../components/StepActs';
 import { ItemCard, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
@@ -59,19 +57,6 @@ export function OrderPage() {
   const [error, setError] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
   const [tab, setTab] = useState<'tracking' | 'details'>('tracking');
-  const [checkpointBusy, setCheckpointBusy] = useState(false);
-  /* Quest or classic: the viewer's pick, kept on this device. */
-  const [skin, setSkin] = useTrackStyle();
-
-  async function toggleWarehouse(order: Order) {
-    setCheckpointBusy(true);
-    try {
-      await api.setCheckpoint(order.id, 'china_received', !order.checkpoints?.china_received);
-      await load();
-    } finally {
-      setCheckpointBusy(false);
-    }
-  }
 
   // Two calls because they answer different questions - where the parcel is,
   // and what may be done about it - and the second settles the escrow clock on
@@ -89,6 +74,10 @@ export function OrderPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /* The seller's buttons, on the timeline rungs they reach - the last mile
+     included, so there is one place to work an item, not a card and a ladder. */
+  const acts = useStepActs(state, load);
 
   // The listing itself, only while this is still a checkout: its clock and
   // its stock are what say "decide now", and they are the listing's facts.
@@ -123,15 +112,19 @@ export function OrderPage() {
   const leaveAt = data.route ? itemLeaveIndex(data.route) : undefined;
   const leftLot = data.route && leaveAt !== undefined ? data.route.currentStep + 1 >= leaveAt : false;
   const seller = state.side === 'seller';
-  /** To the item's own dispatch card, lit briefly so the eye lands on it. */
-  function toItemDispatch() {
-    const card = document.getElementById(ITEM_DISPATCH_ID);
-    if (!card) return;
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    card.classList.remove('is-flash');
-    void card.offsetWidth;
-    card.classList.add('is-flash');
-  }
+
+  /* The lot's route with the last mile on it, the position carried over. */
+  const lotTrack = data.route ? withLastMile(data.route.steps) : null;
+  const lotAt = data.route && lotTrack ? lotTrack.at(data.route.currentStep) : 0;
+  const lotLock = data.route && lotTrack
+    ? Math.min(leaveAt !== undefined ? lotTrack.at(leaveAt) : lotTrack.steps.length, lotTrack.steps.findIndex((step) => step.trigger === 'dispatched'))
+    : undefined;
+  /* Before a lot: what happens alone, then the last mile, locked until a lot carries it there. */
+  /* The stock before-lot route binds no button, though its last step has always been the warehouse tick. */
+  const preSteps = data.preLot.steps.some((step) => step.trigger) || data.preLot.steps.length < 2
+    ? data.preLot.steps
+    : data.preLot.steps.map((step, index) => (index === data.preLot.steps.length - 1 ? { ...step, trigger: 'china_received' as const } : step));
+  const preTrack = withLastMile(preSteps);
 
   return (
     <main className="page lp">
@@ -182,13 +175,7 @@ export function OrderPage() {
           screen with a payment to make should not have to scroll past a
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
-      <ItemDispatch state={state} onDone={load} skin={skin}
-        withLot={data.route && !leftLot && !order.checkpoints?.dispatched && order.status !== 'delivered' ? (
-          <>
-            Still travelling with <strong>{data.route.lotName}</strong> — its next move is the lot's.{' '}
-            <Link to={`/shop?tab=lots&lot=${encodeURIComponent(data.route.lotId)}`}>Open the lot</Link>
-          </>
-        ) : null} />
+      {acts.dialogs}
       <CollectionPrompt state={state} />
       <DisputePanel state={state} />
 
@@ -207,28 +194,6 @@ export function OrderPage() {
         <div className="stack">
           <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
             <h2 style={{ margin: 0 }}>Tracking</h2>
-            {/* The game board or the plain ladder - same steps, same facts. */}
-            <div className="seg trkstyle" role="radiogroup" aria-label="Tracking look">
-              <button type="button" role="radio" aria-checked={skin === 'quest'}
-                className={skin === 'quest' ? 'is-on' : ''} onClick={() => setSkin('quest')}>
-                🎮 Quest
-              </button>
-              <button type="button" role="radio" aria-checked={skin === 'classic'}
-                className={skin === 'classic' ? 'is-on' : ''} onClick={() => setSkin('classic')}>
-                📋 Classic
-              </button>
-            </div>
-            {/* The same tick the order row offers, so a seller working from
-                this screen never has to go back to the list for it. */}
-            {state.side === 'seller' && !isDirect(order) && (
-              <button type="button" className={`orow__toggle${order.checkpoints?.china_received ? ' is-on' : ''}`}
-                aria-pressed={Boolean(order.checkpoints?.china_received)}
-                onClick={() => void toggleWarehouse(order)}
-                disabled={checkpointBusy}>
-                <Icon name={order.checkpoints?.china_received ? 'check' : 'box'} size={13} />
-                <span>China WH</span>
-              </button>
-            )}
           </div>
 
           {/* The lot's own ladder, in the seller's words, when there is a
@@ -249,31 +214,25 @@ export function OrderPage() {
               /* Which shipment it is in sits under the headline: for an item
                  bought into a lot that is the first thing its buyer wants,
                  and the ladder below is the answer to the second. */
-              <TrackHero icon={data.route.waitingForLot ? '⏳' : '🚢'} skin={skin}
-                now={data.route.waitingForLot ? 'Waiting for the lot to move' : data.route.steps[data.route.currentStep]?.name ?? 'On its way'}
+              <TrackHero icon={data.route.waitingForLot ? '⏳' : '🚢'}
+                now={data.route.waitingForLot ? 'Waiting for the lot to move' : lotTrack!.steps[lotAt]?.name ?? 'On its way'}
                 sub={<>📦 {data.route.lotName} · lot #{data.route.lotNumber}{leftLot ? ' · now travelling on its own' : ''}</>}
-                badges={badgesFor(data.route.steps, data.route.currentStep)}
-                next={data.route.steps[data.route.currentStep + 1]
-                  ? <>Next level: <b>{data.route.steps[data.route.currentStep + 1]!.name}</b> <span className="qtrk__reward">+{STEP_XP} XP</span></>
-                  : null}
-                done={data.route.currentStep + 1} total={data.route.steps.length}>
+                boxes={boxesFor(lotTrack!.steps, lotAt)}
+                done={lotAt + 1} total={lotTrack!.steps.length}>
                 {order.shipment && <ShipmentChip shipment={order.shipment} />}
                 <div className="trk__ladder">
                 {/* With what the seller actually said along the way, hung
                     off the rung it happened at and dated - so a payment made
                     after the parcel reached the warehouse reads under the
                     warehouse tick, not above it. */}
-                <Ladder steps={data.route.steps} current={data.route.currentStep}
+                <Ladder steps={lotTrack!.steps} current={lotAt}
                   history={data.order.stageHistory}
-                  skin={skin}
                   /* Only the seller is told who moves the tracking from here:
                      for the buyer it is one journey, whoever is pushing it. */
-                  leaveAt={seller ? leaveAt : undefined}
-                  leaveNote={seller ? (
-                    <button type="button" className="ladder__leave-go" onClick={toItemDispatch}>
-                      Update this item <Icon name="right" size={11} />
-                    </button>
-                  ) : undefined}
+                  leaveAt={seller && leaveAt !== undefined ? lotTrack!.at(leaveAt) : undefined}
+                  leaveNote={seller ? <span className="faint">Press its buttons below as it goes</span> : undefined}
+                  actFor={acts.actFor(lotAt)}
+                  lockFrom={lotLock !== undefined && lotLock >= 0 ? lotLock : undefined}
                   waitingFor={data.route.waitingForLot ? WAITING_FOR_LOT : null}
                   /* The lot is where a seller's next question leads - change
                      it, or go and move it on - so the answers sit on the lot
@@ -289,11 +248,7 @@ export function OrderPage() {
                           </button>
                           {/* Once the item has left its lot, moving the lot
                               moves nothing for it - the item's own card does. */}
-                          {leftLot ? (
-                            <button type="button" className="ladder__act ladder__act--move" onClick={toItemDispatch}>
-                              Update this item
-                            </button>
-                          ) : (
+                          {!leftLot && (
                             <Link className="ladder__act ladder__act--move"
                               to={`/shop?tab=lots&lot=${encodeURIComponent(data.route!.lotId)}`}>
                               Record progress to the lot
@@ -305,14 +260,16 @@ export function OrderPage() {
                 </div>
               </TrackHero>
             ) : (
-              <TrackHero icon="⏳" skin={skin}
-                badges={badgesFor(data.preLot.steps, data.preLot.currentStep)}
+              <TrackHero icon="⏳"
+                boxes={boxesFor(preTrack.steps, data.preLot.currentStep)}
                 now={data.preLot.steps[data.preLot.currentStep]?.name ?? 'Ordered'}
                 sub="Not in a shipment lot yet — the rest of the journey appears once it is."
-                done={data.preLot.currentStep + 1} total={data.preLot.steps.length + 1}>
+                done={data.preLot.currentStep + 1} total={preTrack.steps.length + 1}>
                 <div className="trk__ladder">
-                  <Ladder steps={data.preLot.steps} current={data.preLot.currentStep}
-                    history={data.order.stageHistory} skin={skin}
+                  <Ladder steps={preTrack.steps} current={data.preLot.currentStep}
+                    history={data.order.stageHistory}
+                    actFor={acts.actFor(data.preLot.currentStep)}
+                    lockFrom={data.preLot.steps.length}
                     waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
                 </div>
               </TrackHero>
@@ -320,7 +277,7 @@ export function OrderPage() {
           ) : (
             /* In hand: no lot and no warehouse - the seller's shelf, a
                courier, and the buyer's door. */
-            <DirectTrack order={order} skin={skin} />
+            <DirectTrack order={order} actFor={acts.actFor(-1)} />
           )}
         </div>
       )}

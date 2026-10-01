@@ -4801,6 +4801,23 @@ await check('a route is a ladder you write once and reuse', async () => {
   }), ctx);
   assert.equal(padded.jsonBody.route.steps.length, 2);
 
+  // A button's own words ride with its step - and only with a step a button reaches.
+  const worded = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Forwarder air',
+      steps: [
+        { name: 'Order placed' },
+        { name: 'Received by the freight forwarder', trigger: 'china_received', button: '  Forwarder got it  ' },
+        { name: 'Flown', button: 'Nothing presses this' },
+        { name: 'Delivered', trigger: 'delivered' },
+      ],
+    },
+  }), ctx);
+  assert.equal(worded.status, 201, JSON.stringify(worded.jsonBody));
+  assert.equal(worded.jsonBody.route.steps[1].button, 'Forwarder got it');
+  assert.equal(worded.jsonBody.route.steps[2].button, undefined);
+
   const after = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(after.routes.some((row) => row.id === route.id));
 

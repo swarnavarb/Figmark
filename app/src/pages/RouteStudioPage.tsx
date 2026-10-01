@@ -10,6 +10,10 @@ import { ErrorNotice, Icon, WaveLoader } from '../components/ui';
 import { SkeletonRows, useToast } from '../components/Feedback';
 import { STAGE_ICON_META } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
+import {
+  PipSays, pipAck, pipQueue, pipTips, pipTotal, routeFromAnswers, type PipAnswers, type PipFix,
+} from '../components/RouteMascot';
+import { RoutePreview } from '../components/RoutePreview';
 
 /** Stands in for the real lot's countries while a route is being written -
  *  nothing is attached to one yet, and the tokens have to show as something
@@ -102,6 +106,12 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   const [previewAt, setPreviewAt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* Pip: asking its questions, suggesting fixes, or tucked away. */
+  const [pip, setPip] = useState<'ask' | 'coach' | 'hidden'>('coach');
+  const [answers, setAnswers] = useState<PipAnswers>({});
+  const [pipSaid, setPipSaid] = useState('');
+  const [tipAt, setTipAt] = useState(0);
+  const [previewing, setPreviewing] = useState(false);
 
   useEffect(() => {
     void api.routes().then((result) => {
@@ -133,6 +143,41 @@ function RouteStudio({ editing, onSaved, onCancel }: {
       : (guessedLeave >= 0 ? guessedLeave : withSides.length - 1));
     setStarted(true);
     setPreviewAt(0);
+  }
+
+  /** Start over with Pip asking: the chain grows one answer at a time. */
+  function startPip() {
+    setAnswers({});
+    setPipSaid('');
+    setPip('ask');
+    open(routeFromAnswers({}), name);
+  }
+
+  function answer(next: PipAnswers) {
+    const before = routeFromAnswers(answers);
+    const after = routeFromAnswers(next);
+    setAnswers(next);
+    setPipSaid(pipAck(before, after));
+    open(after, name);
+    if (pipQueue(next).length === 0) { setPip('coach'); setTipAt(0); }
+  }
+
+  function fix(action: PipFix) {
+    if (action.kind === 'preview') { setPreviewing(true); return; }
+    if (action.kind === 'name') { document.getElementById('rs-name')?.focus(); return; }
+    /* Pip reads the named steps; the chain may also hold blank ones, so go by id. */
+    const real = (namedIndex: number) => {
+      const id = named[namedIndex]?.id;
+      const at = steps.findIndex((step) => step.id === id);
+      return at < 0 ? steps.length : at;
+    };
+    if (action.kind === 'patch') { setAt(real(action.index), action.patch); return; }
+    const at = real(action.at);
+    const next = [...steps];
+    next.splice(at, 0, action.step);
+    setSteps(next);
+    if (at < joinAt) setJoinAt(joinAt + 1);
+    if (at < leaveAt) setLeaveAt(leaveAt + 1);
   }
 
   /** Every step's `side` and `lastMile`, recomputed from the two lines rather
@@ -195,6 +240,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             forward: step.forward,
             waitMessage: step.waitMessage,
             lastMile: step.lastMile,
+            button: step.button,
           })),
       });
       onSaved();
@@ -207,6 +253,37 @@ function RouteStudio({ editing, onSaved, onCancel }: {
 
   const named = sided.filter((step) => step.name.trim());
   const bound = named.filter((step) => step.trigger).length;
+  /* The two lines, counted along the named steps the preview draws. */
+  const namedJoin = (() => { const at = named.findIndex((step) => step.side === 'post'); return at < 0 ? named.length : at; })();
+  const namedLeave = (() => { const at = named.findIndex((step) => step.lastMile); return at < 0 ? named.length : at; })();
+
+  const question = pip === 'ask' ? pipQueue(answers)[0] : undefined;
+  const tips = pip === 'coach' ? pipTips(named, namedJoin, name) : [];
+  const tip = tips.length ? tips[tipAt % tips.length] : undefined;
+  const pipDock = pip === 'hidden' ? (
+    <button type="button" className="pipcall" onClick={() => setPip('coach')}>🤖 Ask Pip</button>
+  ) : question ? (
+    <PipSays mood="think"
+      text={`${pipSaid ? `${pipSaid} ` : ''}${question.ask(answers)}`}
+      step={pipTotal(answers) - pipQueue(answers).length + 1} of={pipTotal(answers)}
+      onHide={() => setPip('hidden')}
+      choices={[
+        ...question.choices.map((choice, index) => ({
+          id: String(index), label: choice.label,
+          onPick: () => answer({ ...answers, [question.key]: choice.value }),
+        })),
+        { id: 'self', label: "✋ I'll take it from here", onPick: () => { setPip('coach'); setPipSaid(''); } },
+      ]} />
+  ) : tip ? (
+    <PipSays mood={tip.mood}
+      text={`${pipSaid && tipAt === 0 ? `${pipSaid} ` : ''}${tip.text}`}
+      onHide={() => setPip('hidden')}
+      choices={[
+        ...(tip.fix ? [{ id: 'fix', label: tip.fix.label, primary: true, onPick: () => { setPipSaid(''); fix(tip.fix!.action); } }] : []),
+        ...(tips.length > 1 ? [{ id: 'next', label: 'Another tip →', onPick: () => { setPipSaid(''); setTipAt((at) => at + 1); } }] : []),
+        { id: 'redo', label: '🔁 Ask me again', onPick: startPip },
+      ]} />
+  ) : null;
 
   if (!started) {
     return (
@@ -226,6 +303,9 @@ function RouteStudio({ editing, onSaved, onCancel }: {
 
         {library && (
           <div className="stack">
+            <PipSays mood="happy"
+              text="Hi, I'm Pip! 📦 I can build your tracking timeline with you - a few quick questions and every answer becomes a step. Or pick a starting point below."
+              choices={[{ id: 'go', label: "🤖 Let's build it together", primary: true, onPick: startPip }]} />
             <button type="button" className="silkcta silkcta--wide"
               onClick={() => open(library.suggested, '')}>
               <span className="silkcta__label">✨ Start a blank chain</span>
@@ -266,9 +346,11 @@ function RouteStudio({ editing, onSaved, onCancel }: {
 
   return (
     <form className="stack" onSubmit={save}>
+      {pipDock}
+
       <label className="field">
         <span>Call it *</span>
-        <input value={name} onChange={(event) => setName(event.target.value)}
+        <input id="rs-name" value={name} onChange={(event) => setName(event.target.value)}
           placeholder="Guangzhou air express" required autoFocus />
         <span className="field__hint">For your own lists. Buyers see the nodes below, not this.</span>
       </label>
@@ -319,7 +401,13 @@ function RouteStudio({ editing, onSaved, onCancel }: {
 
       <div className="preview">
         <div className="preview__head">
-          <h3>What your buyer will see</h3>
+          <div className="row row--between" style={{ gap: 8 }}>
+            <h3 style={{ margin: 0 }}>What your buyer will see</h3>
+            <button type="button" className="ladder__act ladder__act--move" disabled={named.length < 2}
+              onClick={() => setPreviewing(true)}>
+              👀 Try it on a sample order
+            </button>
+          </div>
           <span className="field__hint">
             {bound === 0
               ? 'Nothing here moves on its own yet — bind a button to a node above.'
@@ -352,7 +440,19 @@ function RouteStudio({ editing, onSaved, onCancel }: {
 
       {error && <ErrorNotice message={error} />}
 
-      <div className="row">
+      {previewing && (
+        <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={PREVIEW_VARS}
+          onChangeStep={(index, patch) => {
+            const id = named[index]?.id;
+            setSteps((now) => now.map((step) => (step.id === id ? { ...step, ...patch } : step)));
+          }}
+          onClose={() => setPreviewing(false)} />
+      )}
+
+      <div className="row rsdock">
+        <button type="button" className="btn btn--quiet" disabled={named.length < 2} onClick={() => setPreviewing(true)}>
+          👀 Preview
+        </button>
         <button type="submit" className="btn" disabled={busy || named.length < 2 || !name.trim()}>
           {busy ? 'Saving…' : 'Save route'}
         </button>
@@ -598,17 +698,27 @@ function StepNode({ step, index, count, lockedAbove, lockedBelow, onChange, onRe
               <div className="rstrigs">
                 <button type="button"
                   className={`rstrig${!step.trigger ? ' is-on' : ''}`}
-                  onClick={() => { onChange({ trigger: undefined }); explain(null); }}>
+                  onClick={() => { onChange({ trigger: undefined, button: undefined }); explain(null); }}>
                   ✋ Manual
                 </button>
                 {ORDER_CHECKPOINTS.filter((checkpoint) => checkpoint !== 'delivered').map((checkpoint) => (
                   <button key={checkpoint} type="button"
                     className={`rstrig${step.trigger === checkpoint ? ' is-on' : ''}`}
-                    onClick={() => { onChange({ trigger: checkpoint as StepTrigger }); explain(checkpoint as StepTrigger); }}>
+                    onClick={() => { onChange({ trigger: checkpoint as StepTrigger, button: undefined }); explain(checkpoint as StepTrigger); }}>
                     ⚡ {triggerButtonLabel(checkpoint as StepTrigger)}
                   </button>
                 ))}
               </div>
+            )}
+
+            {step.trigger && !isDelivered && (
+              <label className="field">
+                <span>Words on the button</span>
+                <input value={step.button ?? ''} maxLength={28}
+                  placeholder={TRIGGER_LABELS[step.trigger].button}
+                  onChange={(event) => onChange({ button: event.target.value })} />
+                <span className="field__hint">What you press on the order and the timeline - "Forwarder got it", say.</span>
+              </label>
             )}
 
             {!isDelivered && (

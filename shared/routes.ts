@@ -161,6 +161,18 @@ export interface RouteStep {
    * left it the next time they open it.
    */
   lastMile?: boolean;
+  /**
+   * The words on the button that reaches this step, when the seller wants
+   * their own - "Forwarder got it" rather than "China WH". Only read with a
+   * `trigger`; unset falls back to the trigger's stock label everywhere the
+   * button is drawn (see `stepButtonLabel`).
+   */
+  button?: string;
+}
+
+/** The label on the button that moves an item to this step. */
+export function stepButtonLabel(step: Pick<RouteStep, 'trigger' | 'button'>): string {
+  return step.button?.trim() || (step.trigger ? TRIGGER_LABELS[step.trigger].button : '');
 }
 
 /**
@@ -728,6 +740,7 @@ export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[
       forward: step.forward === true || undefined,
       waitMessage: step.waitMessage?.trim() || undefined,
       lastMile: step.lastMile === true || undefined,
+      button: step.trigger ? step.button?.trim().slice(0, 28) || undefined : undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));
