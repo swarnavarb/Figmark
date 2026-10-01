@@ -15,6 +15,7 @@ import { RarityRibbon, XpBar } from '../components/Quest';
 import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderStatus';
 import { LBox, OptionTiles } from '../components/ListingForm';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
+import type { CardButton } from '@shared/buttons';
 import { Ladder } from '../components/Ladder';
 import { RouteEditor, RoutesList } from './RoutesPage';
 import { phaseOfCounts } from '@shared/insights';
@@ -934,19 +935,26 @@ function Orders({ store }: { store: StoreAccess }) {
     return () => window.clearTimeout(timer);
   }, [data, focusOrder, here, navigate]);
 
-  /** The one tick this screen makes. Everything else opens something. */
-  async function markWarehouse(row: SaleRow, on: boolean) {
+  /** The press this order card offers, and the one just made - kept a moment so a slip can be undone. */
+  const [undoable, setUndoable] = useState<{ rowId: string; button: CardButton } | null>(null);
+  useEffect(() => {
+    if (!undoable) return;
+    const timer = window.setTimeout(() => setUndoable(null), 9000);
+    return () => window.clearTimeout(timer);
+  }, [undoable]);
+
+  /**
+   * The order's next button, pressed from its card - or undone. The card's
+   * next button comes from the server, read off the same route its timeline
+   * draws, so the list is read again rather than guessed at here.
+   */
+  async function press(row: SaleRow, button: CardButton, on: boolean) {
     setBusy(row.id);
     setError(null);
     try {
-      await api.setCheckpoint(row.id, 'china_received', on);
-      // Only this card's tick changed, so only this card is redrawn - rather
-      // than reading the whole book again for one checkmark.
-      const at = on ? new Date().toISOString() : null;
-      setData((current) => current && {
-        ...current,
-        orders: current.orders.map((entry) => (entry.id === row.id ? { ...entry, chinaReceivedAt: at } : entry)),
-      });
+      await api.setCheckpoint(row.id, button.checkpoint, on);
+      setUndoable(on ? { rowId: row.id, button } : null);
+      await load();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {
@@ -1066,7 +1074,8 @@ function Orders({ store }: { store: StoreAccess }) {
             glowing={glowing === row.id}
             busy={busy === row.id}
             needsAnswer={needsAnswer.has(row.id)}
-            onWarehouse={(on) => void markWarehouse(row, on)}
+            undoable={undoable?.rowId === row.id ? undoable.button : null}
+            onPress={(button, on) => void press(row, button, on)}
             onFile={() => setFiling(row)}
             onReject={() => setRejecting(row)}
             onAccept={() => void accept(row)}
@@ -1428,6 +1437,9 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
   return { tone: 'quiet', label: PAYMENT_WORDS[row.paymentStatus] ?? row.paymentStatus };
 }
 
+/** The two presses a buyer is told about, which ask before they happen. */
+const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
+
 /**
  * One purchase, as a card that reads top to bottom: what it is and who
  * bought it, where the money has got to, and then - on a line of its own -
@@ -1440,7 +1452,7 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
  * guess.
  */
 function OrderRow({
-  index, row, store, from, glowing, busy, needsAnswer, onWarehouse, onFile, onReject, onAccept, onCancel,
+  index, row, store, from, glowing, busy, needsAnswer, undoable, onPress, onFile, onReject, onAccept, onCancel,
   onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -1451,7 +1463,9 @@ function OrderRow({
   glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
-  onWarehouse: (on: boolean) => void;
+  /** The press just made on this card, while it can still be taken back. */
+  undoable: CardButton | null;
+  onPress: (button: CardButton, on: boolean) => void;
   onFile: () => void;
   onReject: () => void;
   onAccept: () => void;
@@ -1460,10 +1474,11 @@ function OrderRow({
   onSettleDenied: () => void;
 }) {
   const awaitingClaim = Boolean(row.claim && row.claim.decision === null);
-  const received = Boolean(row.chinaReceivedAt);
   const lotHref = row.lotId
     ? `/lot/${row.lotId}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`
     : null;
+  /* Something to press: not called off, and not a booking still waiting to be taken on. */
+  const working = !isClosed(row) && !(row.bookingOnly && !row.accepted);
   const { tone, label } = orderTone(row, needsAnswer);
   const paidShare = row.totalMinor > 0 ? Math.min(100, Math.round((row.paidMinor / row.totalMinor) * 100)) : 0;
   const orderLink = { pathname: `/order/${row.id}` };
@@ -1536,11 +1551,9 @@ function OrderRow({
           <span className="ocard__chip ocard__chip--ok">🏠 In hand</span>
           {row.shipment
             ? <ShipmentChip shipment={row.shipment} />
-            : row.dispatchedAt
-              ? <Link to={orderLink} state={linkState} className="ocard__chip ocard__chip--none">➕ Add courier & AWB</Link>
-              : !isClosed(row) && row.status !== 'delivered' && (
-                <Link to={orderLink} state={linkState} className="ocard__chip ocard__chip--step">📦 Dispatch & add AWB</Link>
-              )}
+            : row.dispatchedAt && (
+              <Link to={orderLink} state={linkState} className="ocard__chip ocard__chip--none">➕ Add courier & AWB</Link>
+            )}
         </div>
       )}
 
@@ -1552,7 +1565,7 @@ function OrderRow({
             ? <Link to={lotHref} className="ocard__chip ocard__chip--lot">📦 {row.lotName ?? `LOT ${row.lotNumber}`}</Link>
             : <span className="ocard__chip ocard__chip--none">No lot yet</span>}
           {row.lotStep && <span className="ocard__chip ocard__chip--step">🚚 {row.lotStep}</span>}
-          {received && <span className="ocard__chip ocard__chip--ok">✓ At warehouse</span>}
+          {row.done && <span className="ocard__chip ocard__chip--ok">✓ {row.done.label}</span>}
         </div>
       )}
 
@@ -1596,24 +1609,35 @@ function OrderRow({
       <div className="ocard__acts">
         {/* A domestic sale never goes near a warehouse and never joins a lot,
             and one that has been called off is not going anywhere at all. */}
-        {!row.inHand && !isClosed(row) && (
-          <>
-            <button type="button" disabled={busy} aria-pressed={received}
-              className={`orow__toggle${received ? ' is-on' : ''}`}
-              aria-label={received
-                ? 'Received at the China warehouse. Tap to undo.'
-                : 'Mark received at the China warehouse'}
-              onClick={() => onWarehouse(!received)}>
-              <Icon name={received ? 'check' : 'box'} size={13} />
-              <span>China WH</span>
-            </button>
-            {!lotHref && (
-              <button type="button" className="orow__toggle" aria-label="Add this order to a lot" onClick={onFile}>
-                <Icon name="plus" size={13} />
-                <span>Lot</span>
-              </button>
-            )}
-          </>
+        {/* The one press this order is waiting on, in its route's words - the
+            same button its timeline shows. The two that tell the buyer
+            something (dispatched, delivered) open the order, where they ask
+            for the courier or a confirmation first. */}
+        {working && row.next && (LAST_MILE.has(row.next.checkpoint) ? (
+          <Link to={orderLink} state={{ ...linkState, act: row.next.checkpoint }} className="ocard__next"
+            aria-label={`${row.next.label} - opens the order to confirm`}>
+            <span aria-hidden="true">⚡</span> {row.next.label}
+          </Link>
+        ) : (
+          <button type="button" className="ocard__next" disabled={busy}
+            title={`Press when this has happened: ${row.next.step}`}
+            onClick={() => onPress(row.next!, true)}>
+            <span aria-hidden="true">⚡</span> {row.next.label}
+          </button>
+        ))}
+        {working && !row.next && row.waitingOnLot && (
+          <span className="ocard__wait">🚢 Moves with the lot</span>
+        )}
+        {undoable && (
+          <button type="button" className="ocard__undo" disabled={busy} onClick={() => onPress(undoable, false)}>
+            ✓ {undoable.label} · Undo
+          </button>
+        )}
+        {!row.inHand && !isClosed(row) && !lotHref && (
+          <button type="button" className="orow__toggle" aria-label="Add this order to a lot" onClick={onFile}>
+            <Icon name="plus" size={13} />
+            <span>Lot</span>
+          </button>
         )}
         <Link to={`/listing/${row.listingId}`} className="ocard__view" aria-label="See the listing as it was listed">
           <Svg name="open" size={13} /> Listing

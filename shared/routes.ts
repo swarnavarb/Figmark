@@ -170,9 +170,27 @@ export interface RouteStep {
   button?: string;
 }
 
-/** The label on the button that moves an item to this step. */
-export function stepButtonLabel(step: Pick<RouteStep, 'trigger' | 'button'>): string {
-  return step.button?.trim() || (step.trigger ? TRIGGER_LABELS[step.trigger].button : '');
+/**
+ * The label on the button that moves an item to this step.
+ *
+ * The seller's own words when they gave some, and otherwise the step's name:
+ * the button says what happened, in the words the buyer reads for it, so it
+ * can never say one thing and do another. The stock checkpoint word is only
+ * the last resort, for a step with no name.
+ */
+export function stepButtonLabel(
+  step: Pick<RouteStep, 'trigger' | 'button' | 'name'>,
+  vars?: { origin?: string | null; destination?: string | null },
+): string {
+  const own = step.button?.trim();
+  if (own) return own;
+  if (!step.trigger) return '';
+  const name = (step.name ?? '').trim();
+  if (!name) return TRIGGER_LABELS[step.trigger].button;
+  const said = vars
+    ? renderStepText(name, vars)
+    : name.replace(/\{(origin|destination)\}/g, ' ').replace(/\s+/g, ' ').trim();
+  return said.length > 28 ? `${said.slice(0, 27).replace(/\s+\S*$/, '')}…` : said;
 }
 
 /**
@@ -715,7 +733,11 @@ export function stepId(seed: number): string {
  * Called on the way in from every editor, so nothing downstream has to wonder
  * whether positions are contiguous or whether a step has a name.
  */
-export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[] {
+export function normaliseSteps(
+  steps: readonly Partial<RouteStep>[],
+  /** Keep button words on steps with no button yet - for the pass before `assignButtons` hands them out. */
+  { keepButtons = false }: { keepButtons?: boolean } = {},
+): RouteStep[] {
   return steps
     .map((step, index) => ({
       id: step.id?.trim() || stepId(Date.now() + index),
@@ -740,7 +762,7 @@ export function normaliseSteps(steps: readonly Partial<RouteStep>[]): RouteStep[
       forward: step.forward === true || undefined,
       waitMessage: step.waitMessage?.trim() || undefined,
       lastMile: step.lastMile === true || undefined,
-      button: step.trigger ? step.button?.trim().slice(0, 28) || undefined : undefined,
+      button: step.trigger || keepButtons ? step.button?.trim().slice(0, 28) || undefined : undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));

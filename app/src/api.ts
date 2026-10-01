@@ -12,6 +12,7 @@ import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
+import type { CardButton } from '@shared/buttons';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
@@ -492,6 +493,12 @@ export interface SaleRow {
   deliveredAt: string | null;
   /** The route its Quick Post template set up for the lot that will carry it. */
   lotRouteId: string | null;
+  /** The seller's next press on this order, in its route's words - null when there is none to make yet. */
+  next: CardButton | null;
+  /** The furthest press made, for undoing it from the card. */
+  done: CardButton | null;
+  /** Nothing to press because its lot has to move it first. */
+  waitingOnLot: boolean;
   /** True once the buyer chose Book: no charge yet, waiting on acceptance. */
   bookingOnly: boolean;
   accepted: boolean;

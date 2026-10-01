@@ -4788,9 +4788,12 @@ await check('a route is a ladder you write once and reuse', async () => {
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const route = made.jsonBody.route;
-  assert.equal(route.steps.length, 5);
-  assert.deepEqual(route.steps.map((step) => step.position), [0, 1, 2, 3, 4]);
+  // Every route ends on Dispatched and Delivered, so the one it lacked is added.
+  assert.equal(route.steps.length, 6);
+  assert.deepEqual(route.steps.map((step) => step.position), [0, 1, 2, 3, 4, 5]);
   assert.equal(route.steps[1].description, 'Counted and photographed');
+  assert.deepEqual(route.steps.slice(-2).map((step) => [step.name, step.trigger]),
+    [['Dispatched to you', 'dispatched'], ['Delivered', 'delivered']]);
 
   // One step is a status, not a journey.
   const thin = await saveRoute(req({ headers: auth, body: { name: 'Nope', steps: [{ name: 'Sent' }] } }), ctx);
@@ -4799,7 +4802,7 @@ await check('a route is a ladder you write once and reuse', async () => {
   const padded = await saveRoute(req({
     headers: auth, body: { name: 'Padded', steps: [{ name: 'One' }, { name: '  ' }, { name: 'Two' }] },
   }), ctx);
-  assert.equal(padded.jsonBody.route.steps.length, 2);
+  assert.deepEqual(padded.jsonBody.route.steps.slice(0, 2).map((step) => step.name), ['One', 'Two']);
 
   // A button's own words ride with its step - and only with a step a button reaches.
   const worded = await saveRoute(req({
@@ -4817,6 +4820,60 @@ await check('a route is a ladder you write once and reuse', async () => {
   assert.equal(worded.status, 201, JSON.stringify(worded.jsonBody));
   assert.equal(worded.jsonBody.route.steps[1].button, 'Forwarder got it');
   assert.equal(worded.jsonBody.route.steps[2].button, undefined);
+
+  /* Which button moves which step is worked out, never taken from the request:
+     a route sent with them jumbled is stored with them in order. */
+  const jumbled = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Jumbled',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Received at the forwarder', side: 'pre', trigger: 'dispatched' },
+        { name: 'Flying', side: 'post', trigger: 'china_received' },
+        { name: 'Landed', side: 'post' },
+        { name: 'Quality check', side: 'post', trigger: 'delivered' },
+        { name: 'Delivered', side: 'post', trigger: 'packed' },
+      ],
+    },
+  }), ctx);
+  assert.equal(jumbled.status, 201, JSON.stringify(jumbled.jsonBody));
+  assert.deepEqual(jumbled.jsonBody.route.steps.map((step) => step.trigger ?? null), [
+    null, 'china_received', null, 'india_received', 'ready_to_dispatch', 'dispatched', 'delivered',
+  ]);
+  assert.equal(jumbled.jsonBody.route.steps[2].lastMile, undefined, 'the lot carries the flight');
+  assert.equal(jumbled.jsonBody.route.steps[4].lastMile, true, 'and lets go once it has landed');
+
+  // What is left to get wrong is the words - and a button whose words say it
+  // delivers when it does not is refused, as are two buttons saying one thing.
+  const lying = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Lying',
+      steps: [
+        { name: 'Order placed' },
+        { name: 'At the warehouse', trigger: 'china_received', button: 'Delivered!' },
+        { name: 'Delivered' },
+      ],
+    },
+  }), ctx);
+  assert.equal(lying.status, 400);
+  assert.match(lying.jsonBody.message, /does not mark the order delivered/);
+  const twins = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Twins',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'At the warehouse', side: 'pre', button: 'Got it' },
+        { name: 'Flown', side: 'post' },
+        { name: 'Landed', side: 'post', button: 'got it' },
+        { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  assert.equal(twins.status, 400);
+  assert.match(twins.jsonBody.message, /both have a button saying/);
 
   const after = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(after.routes.some((row) => row.id === route.id));
@@ -4840,7 +4897,7 @@ await check('a lot carries a copy of its route, not a pointer to one', async () 
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const lot = made.jsonBody.lot;
   assert.equal(lot.route.name, 'Guangzhou air express');
-  assert.equal(lot.route.steps.length, 5);
+  assert.equal(lot.route.steps.length, routeFixture.steps.length);
   // Not step zero: that is an item step on this route, and a crate nobody has
   // touched has taken none of its own. It opens one short of its first.
   assert.equal(lot.currentStep, 1);
@@ -4859,7 +4916,7 @@ await check('a lot carries a copy of its route, not a pointer to one', async () 
   }), ctx);
   const still = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
   assert.equal(still.route.name, 'Guangzhou air express');
-  assert.equal(still.route.steps.length, 5);
+  assert.equal(still.route.steps.length, routeFixture.steps.length);
 
   // A lot created against a route that does not exist is not created at all.
   const nonsense = await createLot(req({
@@ -4952,7 +5009,7 @@ await check('filling a lot moves the item into it, and tells the buyer', async (
   }), ctx)).jsonBody;
   assert.equal(tracking.awaitingLot, false);
   assert.equal(tracking.route.name, 'Guangzhou air express');
-  assert.equal(tracking.route.steps.length, 5);
+  assert.equal(tracking.route.steps.length, 6);
   // Joining is an event carrying the lot it names, not a sentence to grep and
   // not a rung: the timeline draws it where it happened.
   const join = tracking.order.stageHistory.find((event) => event.kind === 'joined');
@@ -5142,15 +5199,18 @@ await check('a lot walks its own half of the route, and neither end past it', as
     headers: auth, params: { id: routedLot.id }, body: { to: 0 } }), ctx);
   assert.equal(tooFar.status, 409, 'a lot cannot be stepped into an item step');
 
-  // Walk it as far as a crate goes: one short of Delivered, where it is
-  // unpacked and each item goes to its own buyer.
-  const steps = board.route.steps.length - offset - 1;
+  // Walk it as far as a crate goes: one short of where items leave it -
+  // which on every route is no later than Dispatched, so the lot is unpacked
+  // and each item goes to its own buyer on its own button.
+  const leave = board.route.steps.findIndex((step) => step.lastMile);
+  assert.equal(board.route.steps[leave].trigger, 'dispatched');
+  const steps = leave - offset;
   for (let i = 0; i < steps; i += 1) {
     const step = await stepLot(req({ headers: auth, params: { id: routedLot.id } }), ctx);
     assert.equal(step.status, 200, `step ${i} should move`);
   }
   const end = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(end.route.currentStep, end.route.steps.length - 2);
+  assert.equal(end.route.currentStep, leave - 1);
   assert.notEqual(end.lot.status, 'closed', 'an unpacked lot is not finished until its items are');
 
   // The crate itself cannot be "delivered".
@@ -5212,8 +5272,8 @@ await check('the buyer sees one timeline per lot, not one per item', async () =>
   const group = body.groups.find((row) => row.lot?.id === routedLot.id);
   assert.ok(group, 'their item is grouped under the lot it travels in');
   assert.equal(group.kind, 'lot');
-  assert.equal(group.lot.steps.length, 5);
-  assert.equal(group.lot.currentStep, 4);
+  assert.equal(group.lot.steps.length, 6);
+  assert.equal(group.lot.currentStep, 5);
   // One card, one ladder, however many of their items are in it.
   assert.ok(group.items.length >= 1);
   assert.ok(group.sellerName);
@@ -5264,7 +5324,7 @@ await check('a route can be dropped, and the lots on it carry on', async () => {
 
   // The lot carries its own copy, which is the reason it carries one.
   const still = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(still.route.steps.length, 5);
+  assert.equal(still.route.steps.length, 6);
   assert.equal(still.route.name, 'Guangzhou air express');
 });
 
@@ -5799,7 +5859,7 @@ await check('a lot can be put on a different ladder, carrying its place', async 
 
   const board = (await lotContents(req({ headers: auth, params: { id: lotId } }), ctx)).jsonBody;
   assert.equal(board.route.name, 'The long way round');
-  assert.equal(board.route.steps.length, 6);
+  assert.equal(board.route.steps.length, 7, 'its six, and the Dispatched every route ends on');
   assert.ok(board.route.currentStep > 0, 'a lot halfway there does not start again');
 
   // The buyer reads the new ladder, from the equivalent point, and is told why.
@@ -5978,11 +6038,20 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   };
   assert.equal(await where(), 'Order placed', 'nothing pressed, nothing moved');
 
+  /* The order card offers the same button the timeline does - the next one,
+     in the route's words - and nothing while the lot has to move it. */
+  const card = async () => (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((row) => row.id === order.id);
+  assert.equal((await card()).next.checkpoint, 'china_received');
+  assert.match((await card()).next.label, /^Received at international/);
+
   // One press.
   await setCheckpoint(req({
     headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
   }), ctx);
   assert.equal(await where(), 'Received at international warehouse');
+  assert.equal((await card()).next, null, 'the lot flies it, not a button');
+  assert.equal((await card()).waitingOnLot, true);
+  assert.equal((await card()).done.checkpoint, 'china_received', 'and the press just made is there to undo');
 
   // A button bound to a step further along jumps straight there: the lot flew
   // while nobody was ticking, and the tick that lands is the truth.
@@ -6010,6 +6079,7 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   assert.equal(await where(), 'Landed in India');
   const tooFar = await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 4 } }), ctx);
   assert.equal(tooFar.status, 409, 'the last leg is one item at a time');
+  assert.equal((await card()).next.checkpoint, 'dispatched', 'landed: the card offers the last mile');
 
   // ...and each item goes out on its own, on its own button.
   await setCheckpoint(req({
@@ -6018,9 +6088,9 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   assert.equal(await where(), 'Out for delivery');
 });
 
-await check('a route with no buttons bound still works the way it always did', async () => {
-  // Nobody is forced to bind anything: an unbound route falls back to the
-  // hand-over, which is the best a guess can do and what shops had before.
+await check('a route written with no buttons gets them anyway', async () => {
+  // Nobody binds anything by hand any more: the warehouse step is found by
+  // its words and given its button, and the timeline moves as it always did.
   const route = await saveRoute(req({
     headers: auth,
     body: {

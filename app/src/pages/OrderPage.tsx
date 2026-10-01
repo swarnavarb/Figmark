@@ -4,7 +4,7 @@ import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, WAITING_FOR_LOT, itemLeaveIndex } from '@shared/routes';
 import { REVIEW_REVEAL_DAYS, isStopped, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
-import { DISPUTE_REASON_LABELS } from '@shared/enums';
+import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
 import type { Order, SellerPaymentDetails } from '@shared/models';
 import {
   ApiRequestError, api,
@@ -51,7 +51,8 @@ function statusTone(status: Order['status']): string {
 export function OrderPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const cameFrom = (useLocation().state as { from?: string } | null)?.from ?? null;
+  const arrived = useLocation().state as { from?: string; act?: OrderCheckpoint } | null;
+  const cameFrom = arrived?.from ?? null;
   const [data, setData] = useState<OrderTracking | null>(null);
   const [state, setState] = useState<OrderState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +78,8 @@ export function OrderPage() {
 
   /* The seller's buttons, on the timeline rungs they reach - the last mile
      included, so there is one place to work an item, not a card and a ladder. */
-  const acts = useStepActs(state, load);
+  // Opened from an order card's Dispatched or Delivered button: that press asks first, here.
+  const acts = useStepActs(state, load, arrived?.act ?? null);
 
   // The listing itself, only while this is still a checkout: its clock and
   // its stock are what say "decide now", and they are the listing's facts.
@@ -268,7 +270,10 @@ export function OrderPage() {
                 <div className="trk__ladder">
                   <Ladder steps={preTrack.steps} current={data.preLot.currentStep}
                     history={data.order.stageHistory}
-                    actFor={acts.actFor(data.preLot.currentStep)}
+                    /* Only its own steps have buttons before a lot: the last mile
+                       is drawn, locked, and waits for one. */
+                    actFor={(step, index) => (index < preSteps.length
+                      ? acts.actFor(data.preLot.currentStep)?.(step, index, preSteps) : null)}
                     lockFrom={data.preLot.steps.length}
                     waitingFor={data.preLot.waitingForLot ? WAITING_FOR_A_LOT : null} />
                 </div>

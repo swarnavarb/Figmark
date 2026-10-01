@@ -1,13 +1,13 @@
 import { Fragment, useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ORDER_CHECKPOINTS } from '@shared/enums';
+import { assignButtons, checkButtons, type ButtonChange } from '@shared/buttons';
 import {
-  DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, TRIGGER_LABELS, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  renderStepText, sideOf, stepId, waitMessageFor, type RouteStep, type StepTrigger,
+  DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
+  renderStepText, sideOf, stepButtonLabel, stepId, waitMessageFor, type RouteStep, type StepTrigger,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { ErrorNotice, Icon, WaveLoader } from '../components/ui';
-import { SkeletonRows, useToast } from '../components/Feedback';
+import { SkeletonRows } from '../components/Feedback';
 import { STAGE_ICON_META } from '../components/RouteBuilder';
 import { Ladder } from '../components/Ladder';
 import {
@@ -19,27 +19,6 @@ import { RoutePreview } from '../components/RoutePreview';
  *  nothing is attached to one yet, and the tokens have to show as something
  *  rather than the literal word "origin". */
 const PREVIEW_VARS = { origin: 'China', destination: 'India' };
-
-/**
- * The two warehouse checkpoints, renamed for the Studio's own chips and
- * toasts to say "origin"/"destination" rather than hard-coding a country -
- * the button a real seller presses still reads `TRIGGER_LABELS` everywhere
- * else in the app; only how this page talks about it changes.
- */
-const STUDIO_TRIGGER_TEXT: Partial<Record<StepTrigger, { button: string; explain: string }>> = {
-  china_received: {
-    button: '{origin} WH',
-    explain: 'When an item reaches the {origin} warehouse, you mark it from the order list and it moves automatically.',
-  },
-  india_received: {
-    button: '{destination} WH',
-    explain: 'When an item reaches the {destination} warehouse, you mark it from the order list and it moves automatically.',
-  },
-};
-
-function triggerButtonLabel(checkpoint: StepTrigger): string {
-  return renderStepText(STUDIO_TRIGGER_TEXT[checkpoint]?.button ?? TRIGGER_LABELS[checkpoint].button, PREVIEW_VARS);
-}
 
 /**
  * The last stop, guaranteed. Every route opened here ends on a locked
@@ -86,6 +65,9 @@ export function RouteStudioPage() {
   );
 }
 
+/** Dispatched and Delivered: always the last two presses, so never moved or removed. */
+const isFixed = (step: RouteStep | undefined) => step?.trigger === 'dispatched' || step?.trigger === 'delivered';
+
 const blankStep = (seed: number): RouteStep => ({
   id: stepId(seed), name: '', description: '', position: 0,
 });
@@ -119,30 +101,35 @@ function RouteStudio({ editing, onSaved, onCancel }: {
       if (!editing) return;
       const found = result.routes.find((route) => route.id === editing);
       if (!found) { setError('No such route.'); return; }
-      open(found.steps, found.name);
+      const moved = open(found.steps, found.name).filter((change) => change.to || change.from);
+      if (moved.length > 0) {
+        setPipSaid(`I put this route's buttons in order - ${moved.length === 1 ? '1 step changed' : `${moved.length} steps changed`}, so each button now sits on the step it really moves. Have a look, then save.`);
+      }
     }).catch((err) => {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your routes.');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
-  function open(from: readonly RouteStep[], called: string) {
+  /**
+   * Put a route on the page, with its buttons handed out.
+   *
+   * Every way in - a template, a saved route, Pip's answers - goes through
+   * `assignButtons` here, so the chain on screen always has Dispatched and
+   * Delivered last and every button in the order it really happens. What it
+   * had to change on a saved route is returned, for Pip to say.
+   */
+  function open(from: readonly RouteStep[], called: string): ButtonChange[] {
     const withDelivered = ensureDelivered(from);
     const withSides = withDelivered.map((step, index) => ({ ...step, position: index, side: sideOf(step, index) }));
+    const { steps: given, changes } = assignButtons(withSides);
     setName(called);
-    setSteps(withSides);
-    const join = joinIndexOf({ steps: withSides });
-    setJoinAt(join);
-    // An explicit line the seller already drew wins; failing that, the first
-    // last-mile trigger is a reasonable guess at where one belongs, and
-    // failing even that, only the guaranteed Delivered node is last-mile.
-    const explicitLeave = leaveIndexOf({ steps: withSides });
-    const guessedLeave = withSides.findIndex((step) => step.trigger === 'packed' || step.trigger === 'dispatched');
-    setLeaveAt(explicitLeave < withSides.length
-      ? explicitLeave
-      : (guessedLeave >= 0 ? guessedLeave : withSides.length - 1));
+    setSteps(given);
+    setJoinAt(joinIndexOf({ steps: given }));
+    setLeaveAt(Math.min(leaveIndexOf({ steps: given }), given.findIndex((step) => step.trigger === 'dispatched')));
     setStarted(true);
     setPreviewAt(0);
+    return changes;
   }
 
   /** Start over with Pip asking: the chain grows one answer at a time. */
@@ -165,19 +152,9 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   function fix(action: PipFix) {
     if (action.kind === 'preview') { setPreviewing(true); return; }
     if (action.kind === 'name') { document.getElementById('rs-name')?.focus(); return; }
-    /* Pip reads the named steps; the chain may also hold blank ones, so go by id. */
-    const real = (namedIndex: number) => {
-      const id = named[namedIndex]?.id;
-      const at = steps.findIndex((step) => step.id === id);
-      return at < 0 ? steps.length : at;
-    };
-    if (action.kind === 'patch') { setAt(real(action.index), action.patch); return; }
-    const at = real(action.at);
-    const next = [...steps];
-    next.splice(at, 0, action.step);
-    setSteps(next);
-    if (at < joinAt) setJoinAt(joinAt + 1);
-    if (at < leaveAt) setLeaveAt(leaveAt + 1);
+    const input = document.querySelector<HTMLInputElement>(`[data-step="${action.stepId}"] .rsbtn__words`);
+    input?.scrollIntoView({ block: 'center' });
+    input?.focus();
   }
 
   /** Every step's `side` and `lastMile`, recomputed from the two lines rather
@@ -188,6 +165,20 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     side: index < joinAt ? ('pre' as const) : ('post' as const),
     lastMile: index >= leaveAt ? true : undefined,
   }));
+
+  /* The buttons, handed out from the steps as they stand - recomputed on
+     every edit, never picked. Only the words on them are the seller's. */
+  const given = assignButtons(sided).steps;
+  const dispatchAt = given.findIndex((step) => step.trigger === 'dispatched');
+  /* Should a step it had to add (Dispatched, Delivered) ever be missing,
+     it becomes a real one on the page rather than a ghost in the preview. */
+  useEffect(() => {
+    if (!started || given.length === steps.length) return;
+    setSteps(given);
+    setJoinAt(joinIndexOf({ steps: given }));
+    setLeaveAt(Math.min(leaveIndexOf({ steps: given }), given.findIndex((step) => step.trigger === 'dispatched')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, given.length, steps.length]);
 
   function insertAt(index: number) {
     const next = [...steps];
@@ -229,7 +220,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
       await api.saveRoute({
         id: editing ?? undefined,
         name: name.trim(),
-        steps: sided
+        steps: given
           .filter((step) => step.name.trim())
           .map((step) => ({
             id: step.id,
@@ -251,14 +242,16 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     }
   }
 
-  const named = sided.filter((step) => step.name.trim());
+  const named = given.filter((step) => step.name.trim());
   const bound = named.filter((step) => step.trigger).length;
+  const problems = checkButtons(named);
+  const blocking = problems.filter((problem) => problem.level === 'error');
   /* The two lines, counted along the named steps the preview draws. */
   const namedJoin = (() => { const at = named.findIndex((step) => step.side === 'post'); return at < 0 ? named.length : at; })();
   const namedLeave = (() => { const at = named.findIndex((step) => step.lastMile); return at < 0 ? named.length : at; })();
 
   const question = pip === 'ask' ? pipQueue(answers)[0] : undefined;
-  const tips = pip === 'coach' ? pipTips(named, namedJoin, name) : [];
+  const tips = pip === 'coach' ? pipTips(named, name, problems) : [];
   const tip = tips.length ? tips[tipAt % tips.length] : undefined;
   const pipDock = pip === 'hidden' ? (
     <button type="button" className="pipcall" onClick={() => setPip('coach')}>🤖 Ask Pip</button>
@@ -361,23 +354,25 @@ function RouteStudio({ editing, onSaved, onCancel }: {
         {/* No shoulder and no on-ramp before the first stop: the road starts
             at Order Placed, it does not lead up to it. */}
         {!sided[0]?.locked && <GapRow onInsert={() => insertAt(0)} />}
-        {sided.map((step, index) => (
+        {given.map((step, index) => (
           <Fragment key={step.id}>
-            {index === joinAt && <JoinDivider joinAt={joinAt} atEnd={false} onMove={setJoinAt} />}
+            {index === joinAt && <JoinDivider joinAt={joinAt} atEnd={joinAt >= dispatchAt} onMove={setJoinAt} />}
             {index === leaveAt && (
               <LeaveDivider leaveAt={leaveAt} joinAt={joinAt}
-                atEnd={leaveAt >= steps.length - 1} onMove={setLeaveAt} />
+                atEnd={leaveAt >= dispatchAt} onMove={setLeaveAt} />
             )}
             {/* The line lives on this wrapper alone, sized to its own content -
                 which is what lets it reach exactly to the next dot however
                 tall a description or an open wait-editor makes this one, and
                 why the very last wrapper (Delivered) gets none: nothing
                 follows it for a line to reach. */}
-            <div className={`rschain__row${index === sided.length - 1 ? ' rschain__row--last' : ''}`}>
+            <div className={`rschain__row${index === given.length - 1 ? ' rschain__row--last' : ''}`}>
               <StepNode
                 step={step} index={index} count={steps.length}
-                lockedAbove={Boolean(sided[index - 1]?.locked)}
-                lockedBelow={Boolean(sided[index + 1]?.locked)}
+                inLot={index >= joinAt && index < leaveAt}
+                problems={problems.filter((problem) => problem.stepId === step.id && problem.level === 'error').map((problem) => problem.text)}
+                lockedAbove={Boolean(given[index - 1]?.locked && index - 1 === 0)}
+                lockedBelow={isFixed(given[index + 1])}
                 onChange={(patch) => setAt(index, patch)}
                 onRemove={() => removeAt(index)}
                 onMove={(to) => moveAt(index, to)}
@@ -385,7 +380,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
               {/* Nothing follows the locked last stop - no shoulder, no
                   on-ramp, no "what buyers see" gap for a wait that cannot
                   happen. */}
-              {!(step.locked && index === sided.length - 1) && (
+              {!(step.locked && index === given.length - 1) && (
                 <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
                   onInsert={() => insertAt(index + 1)} />
               )}
@@ -409,9 +404,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             </button>
           </div>
           <span className="field__hint">
-            {bound === 0
-              ? 'Nothing here moves on its own yet — bind a button to a node above.'
-              : `${bound} of ${named.length} steps move when you press a button.`}
+            {bound} buttons, handed out in order - the rest move with the lot or along with the next button.
             {' '}Shown with example countries — a real lot fills {'{origin}'}/{'{destination}'} in on its own.
           </span>
         </div>
@@ -441,7 +434,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
       {error && <ErrorNotice message={error} />}
 
       {previewing && (
-        <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={PREVIEW_VARS}
+        <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={PREVIEW_VARS} problems={problems}
           onChangeStep={(index, patch) => {
             const id = named[index]?.id;
             setSteps((now) => now.map((step) => (step.id === id ? { ...step, ...patch } : step)));
@@ -449,11 +442,18 @@ function RouteStudio({ editing, onSaved, onCancel }: {
           onClose={() => setPreviewing(false)} />
       )}
 
+      {blocking.length > 0 && (
+        <div className="rsproblems" role="alert">
+          <b>Fix before saving</b>
+          {blocking.map((problem) => <span key={problem.text}>⚠️ {problem.text}</span>)}
+        </div>
+      )}
+
       <div className="row rsdock">
         <button type="button" className="btn btn--quiet" disabled={named.length < 2} onClick={() => setPreviewing(true)}>
           👀 Preview
         </button>
-        <button type="submit" className="btn" disabled={busy || named.length < 2 || !name.trim()}>
+        <button type="submit" className="btn" disabled={busy || named.length < 2 || !name.trim() || blocking.length > 0}>
           {busy ? 'Saving…' : 'Save route'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
@@ -605,42 +605,32 @@ function WaitMessageEditor({ step, onChange, onDone }: {
 }
 
 /**
- * One node on the road: name and description always showing; what actually
- * moves this step on — the trigger chips, the courier hand-over, reordering
- * and delete — tucked behind the chevron, starting right where "What moves
- * to the next step" says so.
+ * One node on the road: name and description always showing, and under them
+ * the button that reaches it - handed out, never chosen, with only its words
+ * to change. Reordering and delete are behind the chevron.
  */
-function StepNode({ step, index, count, lockedAbove, lockedBelow, onChange, onRemove, onMove }: {
+function StepNode({ step, index, count, inLot, problems, lockedAbove, lockedBelow, onChange, onRemove, onMove }: {
   step: RouteStep;
   index: number;
   count: number;
+  /** Moved by the whole lot, so no button of its own. */
+  inLot: boolean;
+  /** What is wrong with this step's button words. */
+  problems: string[];
   /** The step right before this one is the locked "Order Placed" - moving up would swap past it. */
   lockedAbove: boolean;
-  /** The step right after this one is the locked "Delivered" - moving down would swap past it. */
+  /** The step right after this one is Dispatched or Delivered - moving down would swap past it. */
   lockedBelow: boolean;
   onChange: (patch: Partial<RouteStep>) => void;
   onRemove: () => void;
   onMove: (to: number) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const push = useToast();
-
-  function explain(checkpoint: StepTrigger | null) {
-    if (!checkpoint) {
-      push('Manual — should be moved manually.', 'info');
-      return;
-    }
-    const custom = STUDIO_TRIGGER_TEXT[checkpoint];
-    const said = custom
-      ? renderStepText(custom.explain, PREVIEW_VARS)
-      : `moves this step on its own: ${TRIGGER_LABELS[checkpoint].means}.`;
-    push(`"${triggerButtonLabel(checkpoint)}" — ${said}`, 'info');
-  }
 
   /* Always first, never renamed, moved or removed - "Order Placed" reads as
      a fact about every route, and it is the one place a real order's payment
      status shows without the seller writing a word about it. */
-  if (step.locked && step.trigger !== 'delivered') {
+  if (index === 0 && step.locked) {
     return (
       <div className="rsnode">
         <span className="rsnode__dot rsnode__dot--locked" aria-hidden="true"><Icon name="lock" size={12} /></span>
@@ -659,27 +649,27 @@ function StepNode({ step, index, count, lockedAbove, lockedBelow, onChange, onRe
     );
   }
 
-  /* The last stop, and the only other locked one - but not the same kind of
-     locked. Only its name and its place in the chain are fixed: the text
-     "Delivered", the trigger that is always the "Delivered" button, and
-     that nothing can follow it. Its description is the seller's to write
-     like any other step's, which is why it does not get Order Placed's
-     fully-static treatment. */
-  const isDelivered = step.locked && step.trigger === 'delivered';
+  /* The last two presses. Their place is fixed - every route ends on them -
+     and Delivered's name too; what they say on the button is still the
+     seller's, inside what the checker allows. */
+  const isDelivered = step.trigger === 'delivered';
+  const fixed = isFixed(step);
 
   return (
-    <div className="rsnode">
+    <div className="rsnode" data-step={step.id}>
       <span className="rsnode__dot" aria-hidden="true">{index + 1}</span>
       <div className={`rsnode__card${step.stageIcon ? ` rsnode__card--${step.stageIcon}` : ''}${isDelivered ? ' rsnode__card--delivered' : ''}`}>
         <div className="rsnode__top">
           <input className="rsnode__name" value={step.name} placeholder="What happens here"
             aria-label={`Step ${index + 1} name`} disabled={isDelivered}
             onChange={(event) => onChange({ name: event.target.value })} />
-          {isDelivered && <Icon name="lock" size={13} />}
-          <button type="button" className="iconbtn" aria-label={open ? 'Collapse node' : 'Expand node'}
-            onClick={() => setOpen((value) => !value)}>
-            <Icon name="chevron" size={13} />
-          </button>
+          {fixed && <Icon name="lock" size={13} />}
+          {!fixed && (
+            <button type="button" className="iconbtn" aria-label={open ? 'Collapse node' : 'Expand node'}
+              onClick={() => setOpen((value) => !value)}>
+              <Icon name="chevron" size={13} />
+            </button>
+          )}
         </div>
 
         <input className="rsnode__desc" value={step.description}
@@ -687,71 +677,61 @@ function StepNode({ step, index, count, lockedAbove, lockedBelow, onChange, onRe
           aria-label={`Step ${index + 1} description`}
           onChange={(event) => onChange({ description: event.target.value })} />
 
-        {open && (
+        {/* The button: handed out from where the step sits and what it says. */}
+        {step.trigger ? (
+          <div className={`rsbtn${problems.length ? ' is-wrong' : ''}`}>
+            <span className="rsbtn__chip">⚡ {stepButtonLabel(step, PREVIEW_VARS) || 'Button'}</span>
+            <input className="rsbtn__words" value={step.button ?? ''} maxLength={28}
+              placeholder="Your words (optional)"
+              aria-label={`Words on the button for step ${index + 1}`}
+              onChange={(event) => onChange({ button: event.target.value })} />
+            <span className="rsbtn__note">{BUTTON_NOTE[step.trigger]}</span>
+            {problems.map((text) => <span key={text} className="rsbtn__wrong">{text}</span>)}
+          </div>
+        ) : step.name.trim() && (
+          <span className="rsbtn__none">
+            {inLot ? '🚢 The lot moves this step' : '↪ No button - ticked off with the next one'}
+          </span>
+        )}
+
+        {open && !fixed && (
           <div className="rsnode__more">
-            <span className="rsnode__trigheading">What moves to the next step</span>
-            {isDelivered ? (
-              <div className="rstrigs">
-                <span className="rstrig is-on rstrig--fixed">⚡ {triggerButtonLabel('delivered')}</span>
-              </div>
-            ) : (
-              <div className="rstrigs">
-                <button type="button"
-                  className={`rstrig${!step.trigger ? ' is-on' : ''}`}
-                  onClick={() => { onChange({ trigger: undefined, button: undefined }); explain(null); }}>
-                  ✋ Manual
-                </button>
-                {ORDER_CHECKPOINTS.filter((checkpoint) => checkpoint !== 'delivered').map((checkpoint) => (
-                  <button key={checkpoint} type="button"
-                    className={`rstrig${step.trigger === checkpoint ? ' is-on' : ''}`}
-                    onClick={() => { onChange({ trigger: checkpoint as StepTrigger, button: undefined }); explain(checkpoint as StepTrigger); }}>
-                    ⚡ {triggerButtonLabel(checkpoint as StepTrigger)}
-                  </button>
-                ))}
+            <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
+              <input type="checkbox" checked={Boolean(step.forward)}
+                onChange={(event) => onChange({ forward: event.target.checked })} />
+              <span>Hand-over to a courier — ask for a tracking ID and courier name when a lot moves here</span>
+            </label>
+
+            {step.forward && (
+              <div className="rsnode__forward">
+                <span className="field__hint">Asked for the moment a lot reaches this step:</span>
+                <input disabled placeholder="Tracking ID / AWB — e.g. DHL1234567890" aria-label="Example tracking ID or AWB" />
+                <input disabled placeholder="Courier — e.g. DHL" aria-label="Example courier name" />
               </div>
             )}
 
-            {step.trigger && !isDelivered && (
-              <label className="field">
-                <span>Words on the button</span>
-                <input value={step.button ?? ''} maxLength={28}
-                  placeholder={TRIGGER_LABELS[step.trigger].button}
-                  onChange={(event) => onChange({ button: event.target.value })} />
-                <span className="field__hint">What you press on the order and the timeline - "Forwarder got it", say.</span>
-              </label>
-            )}
-
-            {!isDelivered && (
-              <>
-                <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
-                  <input type="checkbox" checked={Boolean(step.forward)}
-                    onChange={(event) => onChange({ forward: event.target.checked })} />
-                  <span>Hand-over to a courier — ask for a tracking ID and courier name when a lot moves here</span>
-                </label>
-
-                {step.forward && (
-                  <div className="rsnode__forward">
-                    <span className="field__hint">Asked for the moment a lot reaches this step:</span>
-                    <input disabled placeholder="Tracking ID / AWB — e.g. DHL1234567890" aria-label="Example tracking ID or AWB" />
-                    <input disabled placeholder="Courier — e.g. DHL" aria-label="Example courier name" />
-                  </div>
-                )}
-              </>
-            )}
-
-            {!isDelivered && (
-              <div className="rsnode__acts">
-                <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
-                  disabled={index === 0 || lockedAbove} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
-                <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
-                  disabled={index === count - 1 || lockedBelow} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
-                <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${index + 1}`}
-                  onClick={onRemove}><Icon name="trash" size={12} /></button>
-              </div>
-            )}
+            <div className="rsnode__acts">
+              <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
+                disabled={index === 0 || lockedAbove} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
+              <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
+                disabled={index === count - 1 || lockedBelow} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
+              <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${index + 1}`}
+                onClick={onRemove}><Icon name="trash" size={12} /></button>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
 }
+
+/** What pressing each button does, said under it in the Studio. */
+const BUTTON_NOTE: Record<StepTrigger, string> = {
+  china_received: 'You press it when the item arrives overseas.',
+  china_packed: 'You press it once it is packed for the lot.',
+  india_received: 'You press it when it lands with you or your warehouse.',
+  ready_to_dispatch: 'You press it once it is checked and ready.',
+  packed: 'You press it once it is boxed for the courier.',
+  dispatched: 'Always here. Pressing it asks for the courier and AWB, and tells the buyer it is on the way.',
+  delivered: 'Always last. Pressing it asks first, then tells the buyer it has arrived.',
+};

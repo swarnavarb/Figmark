@@ -2,7 +2,8 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
-import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
+import { currentStepOf, lotNumberFrom, routeOf, type RouteStep } from '../../../shared/routes.js';
+import { cardButtons, ladderBeforeLot, withLastMile } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
 import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
@@ -51,6 +52,13 @@ function safeLink(raw: string | undefined): string | null | undefined {
     return undefined;
   }
 }
+
+/** What a shelf sale walks: no lot, no warehouse, only the last mile. */
+const DIRECT_LADDER: RouteStep[] = [
+  { id: 'placed', name: 'Order placed', description: '', position: 0 },
+  { id: 'dispatched', name: 'Dispatched', description: '', position: 1, trigger: 'dispatched' },
+  { id: 'delivered', name: 'Delivered', description: '', position: 2, trigger: 'delivered' },
+];
 
 /** GET /api/me/storefront - the storefront as it stands, blank profile included. */
 async function getStorefront(request: HttpRequest, _context: InvocationContext) {
@@ -298,11 +306,13 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
      side and each once: one lookup for every buyer, one per lot rather than
      per row, and one query for the shop's listings - so the "add to a lot"
      screen can pre-select the route the Quick Post template set up. */
-  const [people, lotRows, listingRows] = await Promise.all([
+  const [people, lotRows, listingRows, routeRows] = await Promise.all([
     repository.listUsersByIds([...new Set(orders.map((order) => order.buyerId))]),
     Promise.all(lotIds.map((id) => repository.getLot(storeId, id))),
     repository.listListings({ sellerId: storeId, includeHidden: true, limit: 10_000 }),
+    repository.listRoutes(storeId),
   ]);
+  const routes = new Map(routeRows.map((route) => [route.id, route]));
   const buyerById = new Map(people.map((person) => [person.id, person]));
   const buyers = new Map(orders.map((order) => [order.buyerId, personRef(buyerById.get(order.buyerId) ?? null)]));
   /* Where each buyer's money goes back to - shown only in Refunds, beside a
@@ -318,6 +328,30 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   const moneyOf = new Map(orders.map((order) => [order.id, orderMoney(order)]));
   const money = (order: (typeof orders)[number]) => moneyOf.get(order.id)!;
 
+  /*
+   * The seller's next press, on the card itself: the same ladder the order's
+   * timeline draws, so the button here and the one on the timeline are one
+   * button in the same words. An item in a lot reads its lot's route; one
+   * still waiting for a lot reads the steps before it; one sold from the
+   * shelf has only the last mile.
+   */
+  const buttonsFor = (
+    order: (typeof orders)[number],
+    lot: Awaited<ReturnType<typeof repository.getLot>>,
+    template: Awaited<ReturnType<typeof repository.getRoute>>,
+  ) => {
+    if (isDirect(order)) return cardButtons(DIRECT_LADDER, null, undefined, order.checkpoints);
+    if (lot) {
+      const track = withLastMile(routeOf(lot).steps);
+      return cardButtons(
+        track.steps, track.at(currentStepOf(lot)),
+        typeof order.currentStep === 'number' ? track.at(order.currentStep) : undefined,
+        order.checkpoints, { origin: lot.originCountry, destination: lot.destinationCountry },
+      );
+    }
+    return cardButtons(ladderBeforeLot(order, template).steps, null, undefined, order.checkpoints);
+  };
+
   const row = (order: (typeof orders)[number]) => {
     const lot = inLot(order) ? lots.get(order.lotId) ?? null : null;
     const listing = listings.get(order.listingId);
@@ -325,6 +359,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     const { paidMinor, outstandingMinor, creditMinor } = money(order);
     const actions = actionsFor(order, storeId);
     return {
+      ...buttonsFor(order, lot, listing?.lotRouteId ? routes.get(listing.lotRouteId) ?? null : null),
       photoUrl: photo?.url ?? null,
       /** Bought from a private deal made in a chat. */
       privateDeal: order.privateDeal === true,

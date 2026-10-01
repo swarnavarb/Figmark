@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Icon, type IconName } from './Icon';
 import { Modal } from './ui';
-import { ORDER_CHECKPOINTS } from '@shared/enums';
 import {
-  STAGE_ICONS, STAGE_ICON_LABELS, TRACKING_STATUS_OPTIONS, TRIGGER_LABELS, groupStages, sideOf, stepId,
+  STAGE_ICONS, STAGE_ICON_LABELS, TRACKING_STATUS_OPTIONS, groupStages, sideOf, stepId,
   type RouteStep, type StageGroup, type StageIcon, type StepSide,
 } from '@shared/routes';
 
@@ -22,10 +21,12 @@ import {
  * screen (see `.routebuilder` in styles.css) rather than becoming a second,
  * denser component.
  */
-export function RouteBuilder({ steps, onChange, split = false }: {
+export function RouteBuilder({ steps, onChange, split = false, buttons }: {
   steps: RouteStep[];
   onChange: (next: RouteStep[]) => void;
   split?: boolean;
+  /** Each step's button, as `assignButtons` hands it out - shown, never picked here. */
+  buttons?: ReadonlyMap<string, string>;
 }) {
   const [editingStage, setEditingStage] = useState<string | null>(null);
   const [joinInfoOpen, setJoinInfoOpen] = useState(false);
@@ -123,6 +124,7 @@ export function RouteBuilder({ steps, onChange, split = false }: {
           )}
           <StageBox
             stage={stage}
+            buttons={buttons}
             stageIndex={stageIndex}
             stageCount={stages.length}
             onEdit={() => setEditingStage(stage.stageId)}
@@ -193,8 +195,9 @@ export const STAGE_ICON_META: Record<StageIcon, { icon: IconName }> = {
 };
 
 /** One box: its icon and name (tap to edit), reorder arrows, and its steps. */
-function StageBox({ stage, stageIndex, stageCount, onEdit, onMoveStage, onAddStep, onStepChange, onStepRemove, onStepMove }: {
+function StageBox({ stage, stageIndex, stageCount, buttons, onEdit, onMoveStage, onAddStep, onStepChange, onStepRemove, onStepMove }: {
   stage: StageGroup;
+  buttons?: ReadonlyMap<string, string>;
   stageIndex: number;
   stageCount: number;
   onEdit: () => void;
@@ -226,6 +229,7 @@ function StageBox({ stage, stageIndex, stageCount, onEdit, onMoveStage, onAddSte
       <div className="stagebox__steps">
         {stage.steps.map(({ step, index }, row) => (
           <StepRow key={step.id} step={step} index={index} row={row} count={stage.steps.length}
+            button={buttons?.get(step.id)}
             onChange={onStepChange} onRemove={onStepRemove} onMove={onStepMove} />
         ))}
       </div>
@@ -238,8 +242,10 @@ function StageBox({ stage, stageIndex, stageCount, onEdit, onMoveStage, onAddSte
 }
 
 /** One step: its name always showing, everything else behind a tap. */
-function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
+function StepRow({ step, index, row, count, button, onChange, onRemove, onMove }: {
   step: RouteStep;
+  /** The button handed to this step, if it has one. */
+  button?: string;
   index: number;
   row: number;
   count: number;
@@ -306,26 +312,13 @@ function StepRow({ step, index, row, count, onChange, onRemove, onMove }: {
             placeholder="Say what happens here, in one line" aria-label={`Step ${row + 1} description`}
             onChange={(event) => onChange(index, { description: event.target.value })} />
 
-          <label className="stagestep__trig">
-            <span>Moved by</span>
-            <select value={step.trigger ?? ''} aria-label={`What advances step ${row + 1}`}
-              onChange={(event) => onChange(index, { trigger: (event.target.value || undefined) as RouteStep['trigger'] })}>
-              <option value="">Me, by hand</option>
-              {ORDER_CHECKPOINTS.map((checkpoint) => (
-                <option key={checkpoint} value={checkpoint}>The "{TRIGGER_LABELS[checkpoint].button}" button</option>
-              ))}
-            </select>
-            {/* Data the trigger has always carried, said plainly: a step bound
-                to a checkpoint moves itself when that checkpoint is ticked,
-                today from this app's own buttons and later, potentially, from
-                a carrier API - the binding does not change, only what presses
-                it. */}
-            {step.trigger ? (
-              <span className="badge badge--accent" style={{ justifySelf: 'start' }}>⚡ Activity Triggered</span>
-            ) : (
-              <span className="badge badge--quiet" style={{ justifySelf: 'start' }}>✋ Manual</span>
-            )}
-          </label>
+          {/* Which button moves it is worked out from the route, in order - so
+              it is said here, not chosen. */}
+          <span className="stagestep__trig">
+            {button
+              ? <span className="badge badge--accent" style={{ justifySelf: 'start' }}>⚡ Button: {button}</span>
+              : <span className="badge badge--quiet" style={{ justifySelf: 'start' }}>No button of its own</span>}
+          </span>
 
           <div className="stagestep__acts">
             <button type="button" className="iconbtn" aria-label={`Move step ${row + 1} up`}

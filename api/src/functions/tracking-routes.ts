@@ -16,6 +16,7 @@ import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
+import { checkButtons, withButtons } from '../../../shared/buttons.js';
 
 /**
  * Routes, the items that ride them, and moving a lot one step.
@@ -135,14 +136,22 @@ async function saveRoute(request: HttpRequest, _context: InvocationContext) {
 
   // stageIcon arrives as an arbitrary string from the request body;
   // normaliseSteps is what actually validates it against the known set.
-  const steps = normaliseSteps(
+  const written = normaliseSteps(
     (body.steps ?? []).map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
+    { keepButtons: true },
   );
   // Two, because one step is a state and not a journey - and because a buyer
   // reading a single-step timeline learns nothing a status word would not say.
-  if (steps.length < 2) {
+  if (written.length < 2) {
     return error(400, 'invalid_route', 'A route needs at least two steps.');
   }
+  /* The buttons are handed out here, whatever the request said: in order,
+     Dispatched and Delivered last, none on a step the lot moves. What is
+     left to get wrong is the words, and a button whose words say something
+     it does not do is refused rather than stored. */
+  const steps = withButtons(written);
+  const wrong = checkButtons(steps).find((problem) => problem.level === 'error');
+  if (wrong) return error(400, 'invalid_route', wrong.text);
 
   const repository = await getRepository();
   const now = new Date().toISOString();
@@ -468,7 +477,7 @@ async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
   if (body.routeId) {
     const template = await repository.getRoute(userId, body.routeId);
     if (!template) return error(404, 'not_found', 'No such route.');
-    next = { routeId: template.id, name: template.name, steps: template.steps };
+    next = { routeId: template.id, name: template.name, steps: withButtons(template.steps) };
   }
 
   const before = routeOf(lot);

@@ -8,10 +8,11 @@ import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.j
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
-  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeOf, stepForStage,
+  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeOf, stepForStage, triggeredStep,
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger,
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
+import { ladderBeforeLot, withButtons } from '../../../shared/buttons.js';
 import { daysFrom, isStopped, travellingStatus } from '../../../shared/orders.js';
 import {
   awaitingLot, furthestStage, inLot, stagesFor,
@@ -301,13 +302,15 @@ export async function buildLot(
     if (!template) return refuse(404, 'not_found', 'No such route.');
     // A copy, so editing the template later cannot rewrite this lot's
     // timeline under a buyer who has been reading it for three weeks.
-    route = { routeId: template.id, name: template.name, steps: template.steps };
+    // Given its buttons on the way in, so a template saved before they were
+    // handed out still travels with them in order.
+    route = { routeId: template.id, name: template.name, steps: withButtons(template.steps) };
   } else if (body.routeSteps && body.routeSteps.length > 0) {
     const steps = normaliseSteps(
       body.routeSteps.map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
     );
     if (steps.length < 2) return refuse(400, 'invalid_route', 'A route needs at least two steps.');
-    route = { routeId: null, name: body.routeName?.trim() || 'Route', steps };
+    route = { routeId: null, name: body.routeName?.trim() || 'Route', steps: withButtons(steps) };
   }
 
   const id = `lot_${randomUUID().slice(0, 12)}`;
@@ -772,7 +775,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
      lot this is not drawn at all: the lot's route already opens with the
      same two events, and drawing both put "at the China warehouse" on the
      screen twice, ticked in one ladder and hollow in the other. */
-  const before = preLotRouteOf(order);
+  const template = !lot && listing?.lotRouteId ? await repository.getRoute(order.sellerId, listing.lotRouteId) : null;
+  const before = ladderBeforeLot(order, template);
 
   /*
    * Older orders ticked a checkpoint before every tick wrote a dated note of
@@ -805,7 +809,9 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
    * and that is what the screen says.
    */
   const beforeDone = Boolean(order.checkpoints?.china_received);
-  const beforeReached = beforeDone ? before.steps.length - 1 : 0;
+  // The furthest of its own buttons pressed - the warehouse tick, or the
+  // packing one after it where the route has one.
+  const beforeReached = Math.max(0, triggeredStep(before, order.checkpoints));
 
   /*
    * Where the item is on its lot's ladder: the lot's position, its own when it

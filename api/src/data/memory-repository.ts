@@ -1,6 +1,7 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
-import { ROUTE_TEMPLATES, normaliseSteps, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
+import { ROUTE_TEMPLATES, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
+import { withButtons } from '../../../shared/buttons.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
@@ -126,7 +127,7 @@ export class MemoryRepository implements Repository {
       id: `rt_${sellerId}_sample`,
       sellerId,
       name: `${template.name} (sample)`,
-      steps: normaliseSteps(template.steps),
+      steps: withButtons(template.steps),
       createdAt: now,
       updatedAt: now,
     };

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ORDER_CHECKPOINTS, type OrderCheckpoint } from '@shared/enums';
-import { TRIGGER_LABELS, itemStepOn, renderStepText, stepButtonLabel, type RouteStep, type StepTrigger } from '@shared/routes';
+import type { RouteProblem } from '@shared/buttons';
+import type { OrderCheckpoint } from '@shared/enums';
+import { itemStepOn, renderStepText, stepButtonLabel, type RouteStep, type StepTrigger } from '@shared/routes';
 import { Ladder } from './Ladder';
 import { TrackHero, boxesFor, stepEmoji } from './OrderTrack';
-import { StepButton, stepButtonState } from './StepActs';
+import { LotMoves, SkipLink, SkipPicker, StepButton, timelineButtons } from './StepActs';
 import { Pip } from './RouteMascot';
 import { Modal } from './ui';
 
@@ -12,46 +13,52 @@ type Vars = { origin?: string | null; destination?: string | null };
 /**
  * A route tried on a pretend order before it is saved.
  *
- * The order card a seller works from under Items, with this route's buttons
- * on it - which can be renamed, re-bound or taken off right there - and the
- * timeline its buyer would read under it, moving as the buttons are pressed.
- * Every edit is the route's own: closing the preview keeps it.
+ * The order card a seller works from under Items, with this route's next
+ * button on it, and the timeline its buyer would read under it, moving as
+ * the button is pressed. Which button moves which step is never set here -
+ * that is worked out from the steps - so the one thing to change is what the
+ * buttons say, and those words are the route's own: closing keeps them.
  */
-export function RoutePreview({ steps, joinAt, leaveAt, vars, onChangeStep, onClose }: {
+export function RoutePreview({ steps, joinAt, leaveAt, vars, problems, onChangeStep, onClose }: {
   steps: RouteStep[];
   joinAt: number;
   leaveAt: number;
   vars: Vars;
+  /** What is wrong with the buttons' words, from `checkButtons`. */
+  problems: RouteProblem[];
   onChangeStep: (index: number, patch: Partial<RouteStep>) => void;
   onClose: () => void;
 }) {
   const [ticks, setTicks] = useState<Partial<Record<OrderCheckpoint, string>>>({});
   /** Where the pretend lot has got to; below `joinAt` it has not moved. */
   const [lotStep, setLotStep] = useState(-1);
-  const [setup, setSetup] = useState(true);
-  const [pressed, setPressed] = useState<string | null>(null);
+  const [justPressed, setJustPressed] = useState<RouteStep | null>(null);
+  const [picking, setPicking] = useState<{ step: RouteStep; index: number }[] | null>(null);
 
-  const hasLot = joinAt < leaveAt && joinAt < steps.length;
-  const current = itemStepOn({ steps }, lotStep >= joinAt ? lotStep : 0, undefined, ticks);
-  const lotNext = Math.max(lotStep, joinAt - 1, current) + 1;
-  const canMoveLot = hasLot && lotNext < leaveAt;
-  const used = new Set(steps.map((step) => step.trigger).filter(Boolean) as StepTrigger[]);
-  const buttons = steps.map((step, index) => ({ step, index })).filter(({ step }) => step.trigger);
+  const current = Math.max(0, itemStepOn({ steps }, lotStep >= joinAt ? lotStep : 0, undefined, ticks));
+  const pressed = (trigger: StepTrigger) => Boolean(ticks[trigger]);
+  const at = timelineButtons(steps, current, pressed);
+  const next = at.next >= 0 ? steps[at.next] : undefined;
 
-  function press(step: RouteStep) {
+  function press(step: RouteStep, on: boolean) {
     const checkpoint = step.trigger!;
-    setPressed(step.id);
     setTicks((now) => {
-      const next = { ...now };
-      if (next[checkpoint]) delete next[checkpoint];
-      else next[checkpoint] = new Date().toISOString();
-      return next;
+      const out = { ...now };
+      if (on) out[checkpoint] = new Date().toISOString();
+      else delete out[checkpoint];
+      return out;
     });
+    setJustPressed(on ? step : null);
   }
 
-  const at = Math.max(0, Math.min(current, steps.length - 1));
-  const here = steps[at];
-  const reached = steps[at + 1] ? `Next: ${renderStepText(steps[at + 1]!.name, vars)}` : 'Delivered - all done! 🎉';
+  function moveLot() {
+    setLotStep(Math.min(leaveAt - 1, Math.max(lotStep, joinAt - 1, current) + 1));
+  }
+
+  const here = steps[current];
+  const reached = steps[current + 1] ? `Next: ${renderStepText(steps[current + 1]!.name, vars)}` : 'Delivered - all done! 🎉';
+  const buttons = steps.map((step, index) => ({ step, index })).filter(({ step }) => step.trigger);
+  const problemFor = (id: string) => problems.filter((problem) => problem.stepId === id && problem.level === 'error');
 
   return (
     <Modal title="👀 Preview" onClose={onClose}>
@@ -59,12 +66,12 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars, onChangeStep, onClo
         <div className="rsprev__intro">
           <Pip mood={current >= steps.length - 1 ? 'cheer' : 'happy'} size={44} />
           <p>
-            This is how a sale on this route shows up under <b>Items → Orders</b>. Press its buttons and watch
-            the buyer's timeline move. Rename or re-bind a button below - it changes the route itself.
+            A sale on this route, the way it shows under <b>Items → Orders</b>. Press its button and watch the
+            timeline move. The buttons are handed out for you, in order - you only choose what they say.
           </p>
         </div>
 
-        {/* The order card, as the seller sees it in their list. */}
+        {/* The order card, as the seller sees it in their list: one button, the next one. */}
         <div className="rsprev__order">
           <div className="rsprev__head">
             <span className="rsprev__photo" aria-hidden="true">🧸</span>
@@ -74,90 +81,89 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars, onChangeStep, onClo
             </span>
             <span className="badge badge--accent">Example</span>
           </div>
-          <div className="rsprev__chips">
-            {buttons.map(({ step, index }) => {
-              const on = Boolean(ticks[step.trigger!]);
-              const state = stepButtonState(index, current, on);
-              return (
-                <button key={step.id} type="button" aria-pressed={on}
-                  className={`orow__toggle rsprev__chip is-${state}${on ? ' is-on' : ''}${pressed === step.id ? ' is-pop' : ''}`}
-                  onAnimationEnd={() => setPressed(null)}
-                  onClick={() => press(step)}>
-                  <span aria-hidden="true">{on ? '✓' : state === 'locked' ? '🔒' : '⚡'}</span>
-                  <span>{stepButtonLabel(step)}</span>
+          <div className="rsprev__acts">
+            {next ? (
+              <button type="button" className="ocard__next" key={next.id} onClick={() => press(next, true)}>
+                <span aria-hidden="true">⚡</span> {stepButtonLabel(next, vars)}
+              </button>
+            ) : at.waitingOnLot ? (
+              <>
+                <span className="ocard__wait">🚢 Moves with the lot</span>
+                <button type="button" className="ocard__undo" onClick={moveLot}
+                  title="On a real lot this is the lot page's button, and it moves every item in it at once.">
+                  Move the lot on →
                 </button>
-              );
-            })}
-            {canMoveLot && (
-              <button type="button" className="orow__toggle rsprev__lot" onClick={() => setLotStep(lotNext)}
-                title="On a real lot this is the lot page's button, and it moves every item in it at once.">
-                🚢 Move the lot on
+              </>
+            ) : (
+              <span className="ocard__wait">🎉 Delivered</span>
+            )}
+            {justPressed && (
+              <button type="button" className="ocard__undo" onClick={() => press(justPressed, false)}>
+                ✓ {stepButtonLabel(justPressed, vars)} · Undo
               </button>
             )}
-          </div>
-          <div className="rsprev__bar">
-            <button type="button" className="ladder__act" onClick={() => setSetup((open) => !open)}>
-              ⚙️ {setup ? 'Hide button setup' : 'Set up buttons'}
-            </button>
-            <button type="button" className="ladder__act" onClick={() => { setTicks({}); setLotStep(-1); }}>
-              ↺ Start the order over
+            <span className="ocard__spacer" />
+            <button type="button" className="ladder__act" onClick={() => { setTicks({}); setLotStep(-1); setJustPressed(null); }}>
+              ↺ Start over
             </button>
           </div>
-
-          {setup && (
-            <div className="rsprev__setup">
-              {steps.map((step, index) => {
-                if (index === 0 || (step.locked && step.trigger === 'delivered')) return null;
-                return (
-                  <div key={step.id} className={`rsprev__cfg${step.trigger ? ' is-bound' : ''}`}>
-                    <span className="rsprev__cfg-step">
-                      <span aria-hidden="true">{stepEmoji(step, index)}</span> {renderStepText(step.name, vars)}
-                    </span>
-                    <select value={step.trigger ?? ''} aria-label={`Button for ${step.name}`}
-                      onChange={(event) => onChangeStep(index, {
-                        trigger: (event.target.value || undefined) as StepTrigger | undefined,
-                        button: undefined,
-                      })}>
-                      <option value="">No button - moved with the lot</option>
-                      {ORDER_CHECKPOINTS.filter((checkpoint) => checkpoint !== 'delivered').map((checkpoint) => (
-                        <option key={checkpoint} value={checkpoint}
-                          disabled={used.has(checkpoint as StepTrigger) && step.trigger !== checkpoint}>
-                          ⚡ {TRIGGER_LABELS[checkpoint as StepTrigger].button} - {TRIGGER_LABELS[checkpoint as StepTrigger].means}
-                        </option>
-                      ))}
-                    </select>
-                    {step.trigger && (
-                      <input value={step.button ?? ''} maxLength={28}
-                        placeholder={`Button text, e.g. ${TRIGGER_LABELS[step.trigger].button}`}
-                        aria-label={`Button text for ${step.name}`}
-                        onChange={(event) => onChangeStep(index, { button: event.target.value })} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
 
-        {/* What the buyer reads - and the seller, with the same buttons on it. */}
-        <TrackHero icon={here ? stepEmoji(here, at) : '🧾'}
+        {/* What the buyer reads - and the seller, with the same button on it. */}
+        <TrackHero icon={here ? stepEmoji(here, current) : '🧾'}
           now={here ? renderStepText(here.name, vars) : 'Order placed'}
           sub={reached}
-          boxes={boxesFor(steps, at, vars)}
-          done={at + 1} total={steps.length}>
+          boxes={boxesFor(steps, current, vars)}
+          done={current + 1} total={steps.length}>
           <div className="trk__ladder">
-            <Ladder steps={steps} current={at} vars={vars}
+            <Ladder steps={steps} current={current} vars={vars}
               leaveAt={leaveAt < steps.length ? leaveAt : undefined}
               lockFrom={leaveAt}
-              actFor={(step, index) => (step.trigger ? (
-                <StepButton step={step} state={stepButtonState(index, at, Boolean(ticks[step.trigger]))}
-                  onPress={() => press(step)} />
-              ) : null)} />
+              actFor={(step, index) => {
+                if (!step.trigger) {
+                  return at.waitingOnLot && index === current + 1
+                    ? <LotMoves onSkip={at.later.length ? () => setPicking(at.later) : undefined} />
+                    : null;
+                }
+                const done = pressed(step.trigger);
+                if (!done && index !== at.next) return null;
+                return (
+                  <StepButton step={step} vars={vars} state={done ? 'done' : 'next'} onPress={() => press(step, !done)}>
+                    {!done && at.later.length > 0 && <SkipLink onClick={() => setPicking(at.later)} />}
+                  </StepButton>
+                );
+              }} />
           </div>
         </TrackHero>
 
+        {/* The words, and only the words. */}
+        <details className="rsprev__words" open={problems.some((problem) => problem.level === 'error')}>
+          <summary>✏️ Change what the buttons say</summary>
+          <div className="rsprev__setup">
+            {buttons.map(({ step, index }) => (
+              <label key={step.id} className={`rsprev__cfg${problemFor(step.id).length ? ' is-wrong' : ''}`}>
+                <span className="rsprev__cfg-step">
+                  <span aria-hidden="true">{stepEmoji(step, index)}</span> {renderStepText(step.name, vars)}
+                </span>
+                <input value={step.button ?? ''} maxLength={28}
+                  placeholder={stepButtonLabel({ ...step, button: undefined }, vars)}
+                  aria-label={`Words on the button for ${step.name}`}
+                  onChange={(event) => onChangeStep(index, { button: event.target.value })} />
+                {problemFor(step.id).map((problem) => (
+                  <span key={problem.text} className="rsprev__wrong">{problem.text}</span>
+                ))}
+              </label>
+            ))}
+          </div>
+        </details>
+
         <button type="button" className="btn btn--block" onClick={onClose}>Back to the route</button>
       </div>
+
+      {picking && (
+        <SkipPicker later={picking} vars={vars} onClose={() => setPicking(null)}
+          onPick={(step) => { setPicking(null); press(step, true); }} />
+      )}
     </Modal>
   );
 }

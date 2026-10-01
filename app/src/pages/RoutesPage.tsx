@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { TRIGGER_LABELS, joinIndexOf, sideOf, type RouteStep } from '@shared/routes';
+import { assignButtons, checkButtons } from '@shared/buttons';
+import { joinIndexOf, sideOf, stepButtonLabel, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
@@ -364,8 +365,12 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
   }
 
   const named = steps.filter((step) => step.name.trim()).length;
-  /** How much of this route works itself, which is the point of binding one. */
-  const bound = steps.filter((step) => step.name.trim() && step.trigger).length;
+  /* The buttons, handed out from the steps as written - the same rules the
+     save applies, so what is shown here is what gets stored. */
+  const given = assignButtons(steps.filter((step) => step.name.trim())).steps;
+  const buttons = new Map(given.filter((step) => step.trigger).map((step) => [step.id, stepButtonLabel(step)]));
+  const bound = buttons.size;
+  const wrong = checkButtons(given).find((problem) => problem.level === 'error');
 
   /* Nothing chosen yet: offer the shapes rather than an empty list. */
   if (!started) {
@@ -448,7 +453,7 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
         <span className="field__hint">For your own lists. Buyers see the steps, not this.</span>
       </label>
 
-      <RouteBuilder steps={steps} onChange={setSteps} split />
+      <RouteBuilder steps={steps} onChange={setSteps} split buttons={buttons} />
 
       {/* What the buyer will actually read, while it is being written. The
           builder is a list of fields; this is the thing the fields produce,
@@ -458,21 +463,19 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
         <div className="preview__head">
           <h3>What your buyer will see</h3>
           <span className="field__hint">
-            {bound === 0
-              ? 'Nothing here moves on its own yet — bind a button to a step above.'
-              : `${bound} of ${named} steps move when you press a button.`}
+            {bound} buttons, handed out in order. Dispatched and Delivered are always the last two.
           </span>
         </div>
-        <Ladder steps={named > 0 ? steps.filter((step) => step.name.trim()) : []} current={-1} />
+        <Ladder steps={named > 0 ? given : []} current={-1} />
         {named === 0 && <p className="muted">Name a step and it appears here.</p>}
 
         {bound > 0 && (
           <div className="preview__keys">
             <span className="field__hint">The buttons this route uses:</span>
             <div className="preview__row">
-              {steps.filter((step) => step.name.trim() && step.trigger).map((step) => (
+              {given.filter((step) => step.trigger).map((step) => (
                 <span key={step.id} className="trigkey">
-                  <span className="trigkey__btn">{TRIGGER_LABELS[step.trigger!].button}</span>
+                  <span className="trigkey__btn">{stepButtonLabel(step)}</span>
                   <Icon name="right" size={11} />
                   <span className="trigkey__to">{step.name}</span>
                 </span>
@@ -485,7 +488,8 @@ export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = '
       {error && <ErrorNotice message={error} />}
 
       <div className="row">
-        <button type="submit" className="btn" disabled={busy || named < 2 || !name.trim()}>
+        {wrong && <span className="field__hint" role="alert">⚠️ {wrong.text}</span>}
+        <button type="submit" className="btn" disabled={busy || named < 2 || !name.trim() || Boolean(wrong)}>
           {busy ? 'Saving…' : 'Save route'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>{cancelLabel}</button>

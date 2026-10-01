@@ -33,40 +33,9 @@ export function stepEmoji(step: Pick<RouteStep, 'name' | 'trigger' | 'stageIcon'
   return '📍';
 }
 
-/**
- * A route with its last mile on it.
- *
- * Every timeline ends with the two presses that matter most - dispatched to
- * the buyer, delivered - so the seller presses them from the timeline and the
- * buyer watches them unlock there. A route written before that was
- * guaranteed (or one that left them to a plain "Delivered" step) gets them
- * added here, for drawing only; `at` carries the server's position over.
- */
-export function withLastMile(steps: readonly RouteStep[]): { steps: RouteStep[]; at: (index: number) => number; added: number } {
-  const out = steps.map((step, index) => (index === steps.length - 1 && !step.trigger && /^delivered$/i.test(step.name.trim())
-    ? { ...step, trigger: 'delivered' as const }
-    : step));
-  let insertedAt = -1;
-  let added = 0;
-  if (!out.some((step) => step.trigger === 'dispatched')) {
-    const before = out.findIndex((step) => step.trigger === 'delivered');
-    insertedAt = before >= 0 ? before : out.length;
-    out.splice(insertedAt, 0, {
-      id: 'lastmile_dispatched', name: 'Dispatched to you', description: 'On its way with the courier.',
-      position: 0, trigger: 'dispatched', lastMile: true,
-    });
-    added += 1;
-  }
-  if (!out.some((step) => step.trigger === 'delivered')) {
-    out.push({ id: 'lastmile_delivered', name: 'Delivered', description: 'It reached you.', position: 0, trigger: 'delivered', lastMile: true });
-    added += 1;
-  }
-  return {
-    steps: out.map((step, index) => ({ ...step, position: index })),
-    at: (index) => (insertedAt >= 0 && index >= insertedAt ? index + 1 : index),
-    added,
-  };
-}
+/* Lives in shared now, beside the rule that made it mostly unnecessary; kept
+   importable from here for the screens that draw it. */
+export { withLastMile } from '@shared/buttons';
 
 /** One box in the row across the top of a timeline: a step, and whether it has been reached. */
 export interface TrackBox { key: string; icon: string; label: string; state: 'done' | 'here' | 'next' | 'locked' }
@@ -101,7 +70,7 @@ export function TrackBoxes({ boxes }: { boxes: TrackBox[] }) {
       {boxes.map((box, index) => (
         <li key={box.key} className={`trkbox__item is-${box.state}`} style={{ ['--i' as string]: index }}
           title={`${box.label}${box.state === 'locked' ? ' — unlocks as the journey gets there' : ''}`}>
-          <span className="trkbox__icon" aria-hidden="true">{box.state === 'done' || box.state === 'here' ? box.icon : box.state === 'locked' ? '🔒' : box.icon}</span>
+          <span className="trkbox__icon" aria-hidden="true">{box.icon}</span>
           <span className="trkbox__label">{box.label}</span>
           {(box.state === 'done' || box.state === 'here') && <span className="trkbox__tick" aria-label="reached">✓</span>}
         </li>
@@ -206,7 +175,7 @@ function directSteps(order: Order): Step[] {
 export function DirectTrack({ order, actFor }: {
   order: Order;
   /** The seller's buttons, on the rungs they reach. */
-  actFor?: (step: RouteStep, index: number) => ReactNode;
+  actFor?: (step: RouteStep, index: number, steps: readonly RouteStep[]) => ReactNode;
 }) {
   const steps = directSteps(order);
   const done = steps.filter((step) => step.done).length;
@@ -219,7 +188,8 @@ export function DirectTrack({ order, actFor }: {
     .slice(-6)
     .reverse();
   const rungs: RouteStep[] = steps.map((step, position) => ({
-    id: step.key, position, name: step.label, trigger: step.trigger,
+    // All the item's own: there is no lot on a shelf sale to carry any of it.
+    id: step.key, position, name: step.label, trigger: step.trigger, side: 'pre',
     description: step.done && step.at ? formatDateOrdinal(step.at) : step.key === 'paid' && order.paymentStatus === 'claimed'
       ? 'Payment sent — the seller is checking it.' : '',
   }));

@@ -75,7 +75,7 @@ export function Ladder({
    * reaches this step, pressed from the timeline it writes. Absent, or
    * returning nothing, draws no button.
    */
-  actFor?: (step: RouteStep, index: number) => ReactNode;
+  actFor?: (step: RouteStep, index: number, steps: readonly RouteStep[]) => ReactNode;
   /**
    * From this rung on, a step not yet within reach is drawn locked: the last
    * mile, which opens one step at a time as the journey gets there rather
@@ -171,7 +171,7 @@ export function Ladder({
           )}
           <li className={`ladder__row is-${state}${locked ? ' is-locked' : ''}`}>
             <span className="ladder__dot" aria-hidden="true">
-              {locked ? <Icon name="lock" size={10} /> : <StepMark state={state} size={11} />}
+              <StepMark state={state} size={11} />
             </span>
 
             <span className="ladder__body">
@@ -179,7 +179,7 @@ export function Ladder({
                 {renderStepText(step.name, vars ?? {})}
               </span>
               {step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
-              {actFor?.(step, index)}
+              {actFor?.(step, index, steps)}
 
               {said.map((event, at) => (
                 isLotEvent(event)

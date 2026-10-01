@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { stepButtonLabel, stepId, type RouteStep, type StepTrigger } from '@shared/routes';
+import type { RouteProblem } from '@shared/buttons';
+import { stepButtonLabel, type RouteStep } from '@shared/routes';
 
 /**
  * Pip, the parcel who helps write a tracking timeline.
@@ -215,7 +216,7 @@ export function routeFromAnswers(a: PipAnswers): RouteStep[] {
   } else if (a.first === 'supplier') {
     pre.push(make('Shipped by the supplier', 'On its way from the factory to the lot.', { trigger: 'china_received', button: 'Supplier sent' }));
   }
-  if (a.packed) pre.push(make('Packed at {origin}', 'Boxed up and ready for the lot.', { trigger: 'china_packed', button: 'Packed' }));
+  if (a.packed) pre.push(make('Packed at {origin}', 'Boxed up and ready for the lot.', { trigger: 'china_packed', button: 'Packed for the lot' }));
 
   const lot: RouteStep[] = [];
   if (a.travel === 'air') {
@@ -234,7 +235,7 @@ export function routeFromAnswers(a: PipAnswers): RouteStep[] {
 
   const last: RouteStep[] = [];
   if (a.lastPack !== undefined) {
-    if (a.lastPack) last.push(make('Packed for you', 'Boxed for the courier.', { trigger: 'packed', button: 'Packed' }));
+    if (a.lastPack) last.push(make('Packed for you', 'Boxed for the courier.', { trigger: 'packed', button: 'Packed for the buyer' }));
     last.push(make('Dispatched to you', 'Handed to the courier for the last leg.', { trigger: 'dispatched', button: 'Dispatched' }));
   }
 
@@ -259,58 +260,42 @@ export function pipAck(before: RouteStep[], after: RouteStep[]): string {
 /* ── Suggestions on a route that already exists ───────────────────────── */
 
 export type PipFix =
-  | { kind: 'insert'; at: number; step: RouteStep }
-  | { kind: 'patch'; index: number; patch: Partial<RouteStep> }
   | { kind: 'preview' }
-  | { kind: 'name' };
+  | { kind: 'name' }
+  | { kind: 'focus'; stepId: string };
 
 export interface PipTip { id: string; mood: PipMood; text: string; fix?: { label: string; action: PipFix } }
-
-const PRE_BUTTONS: StepTrigger[] = ['china_received', 'china_packed'];
 
 /**
  * The one thing most worth doing to this route next, and the ones after it.
  *
- * In order of how much a buyer would notice: a timeline with no dispatch
- * button never says the parcel left; a step that happens to each item with
- * nothing to press never moves; and a route with no name cannot be picked
- * for a lot.
+ * Which button moves which step is never a tip any more - that is handed out
+ * for the seller, in order, on every edit. What Pip reads out is what is
+ * still theirs: button words that would mislead whoever presses them (these
+ * stop a save, so they come first), steps nothing will press, the stock words
+ * on a button, and a route with no name.
  */
-export function pipTips(steps: RouteStep[], joinAt: number, name: string): PipTip[] {
+export function pipTips(steps: RouteStep[], name: string, problems: RouteProblem[]): PipTip[] {
   const tips: PipTip[] = [];
-  const used = new Set(steps.map((step) => step.trigger).filter(Boolean));
-  const deliveredAt = steps.findIndex((step) => step.trigger === 'delivered');
 
-  if (!used.has('dispatched')) {
+  for (const problem of problems.filter((entry) => entry.level === 'error')) {
     tips.push({
-      id: 'dispatch', mood: 'think',
-      text: "There's no Dispatched button yet - buyers love seeing their parcel leave. Add one right before Delivered?",
-      fix: {
-        label: '🚚 Add "Dispatched to you"',
-        action: {
-          kind: 'insert', at: deliveredAt >= 0 ? deliveredAt : steps.length,
-          step: { ...make('Dispatched to you', 'Handed to the courier for the last leg.', { trigger: 'dispatched', button: 'Dispatched', lastMile: true }), id: stepId(Date.now()) },
-        },
-      },
+      id: `wrong-${problem.stepId ?? problem.text}`, mood: 'think',
+      text: `Hold on - ${problem.text}`,
+      fix: problem.stepId ? { label: '✏️ Show me', action: { kind: 'focus', stepId: problem.stepId } } : undefined,
     });
   }
 
-  const free = PRE_BUTTONS.find((trigger) => !used.has(trigger));
-  const idle = steps.findIndex((step, index) => index > 0 && index < joinAt && !step.trigger && !step.locked && step.name.trim());
-  if (idle >= 0 && free) {
-    tips.push({
-      id: `bind-${steps[idle]!.id}`, mood: 'think',
-      text: `"${steps[idle]!.name}" happens to each item on its own, but no button moves it. Give it one?`,
-      fix: { label: `⚡ Give it a button`, action: { kind: 'patch', index: idle, patch: { trigger: free } } },
-    });
+  for (const problem of problems.filter((entry) => entry.level === 'warning')) {
+    tips.push({ id: `idle-${problem.stepId ?? problem.text}`, mood: 'happy', text: problem.text });
   }
 
-  const bound = steps.filter((step) => step.trigger && step.trigger !== 'delivered');
-  const stock = bound.find((step) => !step.button);
+  const bound = steps.filter((step) => step.trigger);
+  const stock = bound.find((step) => !step.button && step.trigger !== 'delivered');
   if (stock) {
     tips.push({
       id: `words-${stock.id}`, mood: 'happy',
-      text: `The button for "${stock.name}" just says "${stepButtonLabel(stock)}". Want to try it on a sample order and put it in your own words?`,
+      text: `I gave "${stock.name}" its button - it says "${stepButtonLabel(stock)}". Want to try it on a sample order and put it in your own words?`,
       fix: { label: '👀 Open the preview', action: { kind: 'preview' } },
     });
   }
@@ -325,7 +310,7 @@ export function pipTips(steps: RouteStep[], joinAt: number, name: string): PipTi
 
   tips.push({
     id: 'done', mood: 'cheer',
-    text: `Looking good! ${steps.length} steps, ${bound.length + 1} buttons. Try it on a sample order before you save.`,
+    text: `Looking good! ${steps.length} steps and ${bound.length} buttons, all in order - Dispatched and Delivered always come last. Try it on a sample order before you save.`,
     fix: { label: '👀 Preview it', action: { kind: 'preview' } },
   });
   return tips;
