@@ -10,7 +10,7 @@ import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { ErrorNotice, Icon, Modal, WaveLoader } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
 import { STAGE_ICON_META } from '../components/RouteBuilder';
-import { Ladder } from '../components/Ladder';
+import { stepEmoji } from '../components/OrderTrack';
 import {
   PipSays, pipAck, pipQueue, pipTips, pipTotal, routeFromAnswers, type PipAnswers, type PipFix,
 } from '../components/RouteMascot';
@@ -86,7 +86,6 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   /** Index of the first step reached one item at a time again, after the lot. */
   const [leaveAt, setLeaveAt] = useState(0);
   const [started, setStarted] = useState(false);
-  const [previewAt, setPreviewAt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /* Pip: asking its questions, suggesting fixes, or tucked away. */
@@ -131,7 +130,6 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     setJoinAt(joinIndexOf({ steps: given }));
     setLeaveAt(Math.min(leaveIndexOf({ steps: given }), given.findIndex((step) => step.trigger === 'dispatched')));
     setStarted(true);
-    setPreviewAt(0);
     return changes;
   }
 
@@ -267,6 +265,12 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   const namedJoin = (() => { const at = named.findIndex((step) => step.side === 'post'); return at < 0 ? named.length : at; })();
   const namedLeave = (() => { const at = named.findIndex((step) => step.lastMile); return at < 0 ? named.length : at; })();
 
+  /* The three lanes, by the two lines. */
+  const lanes: { zone: StepZone; indexes: number[] }[] = (['pre', 'lot', 'post'] as const).map((zone) => ({
+    zone,
+    indexes: given.map((_, index) => index).filter((index) => zoneAt(index) === zone),
+  }));
+
   const question = pip === 'ask' ? pipQueue(answers)[0] : undefined;
   const tips = pip === 'coach' ? pipTips(named, name, problems) : [];
   const tip = tips.length ? tips[tipAt % tips.length] : undefined;
@@ -355,58 +359,75 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   }
 
   return (
-    <form className="stack" onSubmit={save}>
+    <form className="rsstudio" onSubmit={save}>
       {pipDock}
 
-      <label className="field">
-        <span>Call it *</span>
-        <input id="rs-name" value={name} onChange={(event) => setName(event.target.value)}
-          placeholder="Guangzhou air express" required autoFocus />
-        <span className="field__hint">For your own lists. Buyers see the nodes below, not this.</span>
-      </label>
+      {/* The route itself: its name, and a map of its three parts at a glance. */}
+      <header className="rshead">
+        <input id="rs-name" className="rshead__name" value={name} onChange={(event) => setName(event.target.value)}
+          placeholder="Name this route - e.g. Guangzhou air" aria-label="Route name" required autoFocus />
+        <span className="rshead__hint">For your own lists - buyers see the steps, not this name.</span>
+        <div className="rsmap" aria-label="The route's three parts">
+          {lanes.map((lane) => (
+            <a key={lane.zone} href={`#rs-lane-${lane.zone}`} className={`rsmap__seg rsmap__seg--${lane.zone}`}
+              style={{ flexGrow: Math.max(1, lane.indexes.length) }}>
+              <b>{lane.indexes.length}</b> {ZONE_TEXT[lane.zone].short}
+            </a>
+          ))}
+        </div>
+        <span className="rshead__stats">
+          ⚡ {bound} buttons · {named.length} steps · Dispatched and Delivered always last
+        </span>
+      </header>
 
-      {/* The road: every node a green stop along it, every gap a place the
-          journey itself can say something while nothing else has happened. */}
-      <div className="rschain">
-        {/* No shoulder and no on-ramp before the first stop: the road starts
-            at Order Placed, it does not lead up to it. */}
-        <ZoneLine zone="pre" />
-        {!sided[0]?.locked && <GapRow onInsert={() => setAdding({ at: 0, zone: 'pre' })} />}
-        {given.map((step, index) => (
-          <Fragment key={step.id}>
-            {index === joinAt && (
-              <ZoneLine zone="lot" at={joinAt} min={1} atEnd={joinAt >= dispatchAt} onMove={setJoinAt}
-                onAdd={() => setAdding({ at: joinAt, zone: 'lot' })} />
+      {/* The journey, in its three parts: each a lane in its own colour, the
+          steps in it joined by a track the next step's icon travels down. */}
+      <div className="rslanes">
+        {lanes.map((lane) => (
+          <section key={lane.zone} id={`rs-lane-${lane.zone}`} className={`rslane rslane--${lane.zone}`}>
+            <ZoneLine zone={lane.zone}
+              at={lane.zone === 'lot' ? joinAt : lane.zone === 'post' ? leaveAt : undefined}
+              min={lane.zone === 'lot' ? 1 : joinAt}
+              atEnd={lane.zone === 'lot' ? joinAt >= dispatchAt : leaveAt >= dispatchAt}
+              onMove={lane.zone === 'lot' ? setJoinAt : lane.zone === 'post' ? setLeaveAt : undefined}
+              onAdd={() => setAdding({ at: lane.zone === 'pre' ? joinAt : lane.zone === 'lot' ? leaveAt : dispatchAt, zone: lane.zone })} />
+            {lane.indexes.length === 0 && (
+              <p className="rslane__empty">
+                {lane.zone === 'lot' ? 'No lot on this route - items go straight to the last mile.' : 'Nothing here yet.'}
+              </p>
             )}
-            {index === leaveAt && (
-              <ZoneLine zone="post" at={leaveAt} min={joinAt} atEnd={leaveAt >= dispatchAt} onMove={setLeaveAt}
-                onAdd={() => setAdding({ at: leaveAt, zone: 'post' })} />
-            )}
-            {/* The line lives on this wrapper alone, sized to its own content -
-                which is what lets it reach exactly to the next dot however
-                tall a description or an open wait-editor makes this one, and
-                why the very last wrapper (Delivered) gets none: nothing
-                follows it for a line to reach. */}
-            <div className={`rschain__row${index === given.length - 1 ? ' rschain__row--last' : ''}`}>
-              <StepNode
-                step={step} index={index} count={steps.length}
-                zone={zoneAt(index)}
-                problems={problems.filter((problem) => problem.stepId === step.id && problem.level === 'error').map((problem) => problem.text)}
-                lockedAbove={Boolean(given[index - 1]?.locked && index - 1 === 0)}
-                lockedBelow={isFixed(given[index + 1])}
-                onChange={(patch) => setAt(index, patch)}
-                onRemove={() => removeAt(index)}
-                onMove={(to) => moveAt(index, to)}
-              />
-              {/* Nothing follows the locked last stop - no shoulder, no
-                  on-ramp, no "what buyers see" gap for a wait that cannot
-                  happen. */}
-              {!(step.locked && index === given.length - 1) && (
-                <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
-                  onInsert={() => setAdding({ at: index + 1, zone: zoneAt(index) })} />
-              )}
+            <div className="rschain">
+              {lane.indexes.map((index) => {
+                const step = given[index]!;
+                const following = given[index + 1];
+                const last = index === given.length - 1;
+                return (
+                  <div key={step.id} className={`rschain__row${last ? ' rschain__row--last' : ''}`}>
+                    {/* What happens next, travelling down the track to it. */}
+                    {following && !last && (
+                      <span className={`rslink__token rslink__token--${sceneOf(following, index + 1)}`} aria-hidden="true">
+                        {stepEmoji(following, index + 1)}
+                      </span>
+                    )}
+                    <StepNode
+                      step={step} index={index} count={steps.length}
+                      zone={zoneAt(index)}
+                      problems={problems.filter((problem) => problem.stepId === step.id && problem.level === 'error').map((problem) => problem.text)}
+                      lockedAbove={Boolean(given[index - 1]?.locked && index - 1 === 0)}
+                      lockedBelow={isFixed(given[index + 1])}
+                      onChange={(patch) => setAt(index, patch)}
+                      onRemove={() => removeAt(index)}
+                      onMove={(to) => moveAt(index, to)}
+                    />
+                    {!last && (
+                      <GapRow afterStep={step} onChangeWait={(patch) => setAt(index, patch)}
+                        onInsert={() => setAdding({ at: index + 1, zone: zoneAt(index) })} />
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          </Fragment>
+          </section>
         ))}
       </div>
 
@@ -418,44 +439,6 @@ function RouteStudio({ editing, onSaved, onCancel }: {
       {named.length < 2 && (
         <span className="field__hint">A route needs at least two named steps.</span>
       )}
-
-      <div className="preview">
-        <div className="preview__head">
-          <div className="row row--between" style={{ gap: 8 }}>
-            <h3 style={{ margin: 0 }}>What your buyer will see</h3>
-            <button type="button" className="ladder__act ladder__act--move" disabled={named.length < 2}
-              onClick={() => setPreviewing(true)}>
-              👀 Try it on a sample order
-            </button>
-          </div>
-          <span className="field__hint">
-            {bound} buttons, handed out in order - the rest move with the lot or along with the next button.
-            {' '}Shown with example countries — a real lot fills {'{origin}'}/{'{destination}'} in on its own.
-          </span>
-        </div>
-
-        {named.length > 0 ? (
-          <>
-            <div className="rsscrub">
-              <button type="button" className="iconbtn" aria-label="Preview the step before"
-                disabled={previewAt <= 0} onClick={() => setPreviewAt((at) => at - 1)}>
-                <Icon name="left" size={13} />
-              </button>
-              <span className="faint">
-                Previewing step {Math.min(previewAt, named.length - 1) + 1} of {named.length}
-              </span>
-              <button type="button" className="iconbtn" aria-label="Preview the step after"
-                disabled={previewAt >= named.length - 1} onClick={() => setPreviewAt((at) => at + 1)}>
-                <Icon name="right" size={13} />
-              </button>
-            </div>
-            <Ladder steps={named} current={Math.min(previewAt, named.length - 1)} vars={PREVIEW_VARS} forwardExample
-              zones={{ join: namedJoin, leave: namedLeave }} />
-          </>
-        ) : (
-          <p className="muted">Name a node and it appears here.</p>
-        )}
-      </div>
 
       {error && <ErrorNotice message={error} />}
 
@@ -475,24 +458,62 @@ function RouteStudio({ editing, onSaved, onCancel }: {
         </div>
       )}
 
-      <div className="row rsdock">
-        <button type="button" className="btn btn--quiet" disabled={named.length < 2} onClick={() => setPreviewing(true)}>
-          👀 Preview
+      {/* Always in reach, however long the chain: try it, save it. */}
+      <div className="rsbar">
+        <button type="button" className="rsbar__preview" disabled={named.length < 2} onClick={() => setPreviewing(true)}>
+          <span aria-hidden="true">👀</span> Preview on a sample order
         </button>
-        <button type="submit" className="btn" disabled={busy || named.length < 2 || !name.trim() || blocking.length > 0}>
-          {busy ? 'Saving…' : 'Save route'}
+        <button type="submit" className="btn rsbar__save" disabled={busy || named.length < 2 || !name.trim() || blocking.length > 0}
+          title={blocking.length > 0 ? 'Fix the button words above first' : !name.trim() ? 'Give the route a name first' : undefined}>
+          {busy ? 'Saving…' : blocking.length > 0 ? `⚠️ ${blocking.length} to fix` : 'Save'}
         </button>
-        <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+        <button type="button" className="iconbtn" aria-label="Cancel" onClick={onCancel}>
+          <Icon name="close" size={14} />
+        </button>
       </div>
     </form>
   );
 }
 
-const ZONE_TEXT: Record<StepZone, { title: string; note: string }> = {
-  pre: { title: '① Before the lot', note: 'Each item on its own - buttons per item' },
-  lot: { title: '② In the lot', note: 'Everything moves together - no buttons, you move the lot' },
-  post: { title: '③ After the lot', note: 'Each item on its own again - buttons per item' },
+const ZONE_TEXT: Record<StepZone, { title: string; note: string; short: string }> = {
+  pre: { title: '① Before the lot', note: 'Each item on its own - buttons per item', short: 'before the lot' },
+  lot: { title: '② In the lot', note: 'Everything moves together - no buttons, you move the lot', short: 'in the lot' },
+  post: { title: '③ After the lot', note: 'Each item on its own again - buttons per item', short: 'after the lot' },
 };
+
+/** The kind of scene behind a step - what it looks like happening - read off its words, then its button. */
+type Scene = 'order' | 'warehouse' | 'pack' | 'fly' | 'sail' | 'road' | 'customs' | 'check' | 'land' | 'home' | 'spark';
+
+function sceneOf(step: Pick<RouteStep, 'name' | 'trigger' | 'custom'>, index: number): Scene {
+  const name = step.name.toLowerCase();
+  if (index === 0 || /order placed|ordered|booked/.test(name)) return 'order';
+  if (step.trigger === 'delivered' || /deliver/.test(name)) return 'home';
+  if (step.trigger === 'dispatched' || /dispatch|courier|out for|truck/.test(name)) return 'road';
+  if (/custom/.test(name)) return 'customs';
+  if (/pack|box|wrap|consolidat/.test(name)) return 'pack';
+  if (/air|flight|fly|plane/.test(name)) return 'fly';
+  if (/sea|sail|ship|vessel|port|container/.test(name)) return 'sail';
+  if (/land|arriv/.test(name)) return 'land';
+  if (/ready|check|qc|inspect/.test(name)) return 'check';
+  if (/warehouse|\bwh\b|receiv|forward|supplier/.test(name)) return 'warehouse';
+  return 'spark';
+}
+
+/**
+ * What a step looks like happening, drawn behind its card: a plane crossing,
+ * a ship on the swell, a parcel being boxed, a truck on the road. Purely
+ * decoration - it reads off the step's words, says nothing a reader needs,
+ * and stands still for anyone who asks for less motion.
+ */
+function Scene({ step, index }: { step: Pick<RouteStep, 'name' | 'trigger' | 'custom' | 'stageIcon' | 'locked'>; index: number }) {
+  const scene = sceneOf(step, index);
+  return (
+    <span className={`rsscene rsscene--${scene}`} aria-hidden="true">
+      <span className="rsscene__lines" />
+      <span className="rsscene__art">{stepEmoji(step, index)}</span>
+    </span>
+  );
+}
 
 /**
  * Where one part of the journey begins: before the lot, in it, after it -
@@ -516,24 +537,27 @@ function ZoneLine({ zone, at, min = 0, atEnd, onMove, onAdd }: {
         <b>{text.title}</b>
         <span>{text.note}</span>
       </span>
-      {at !== undefined && onMove && (
-        <span className="rsjoin__acts">
-          <button type="button" className="iconbtn" aria-label={`Move the ${zone === 'lot' ? 'join' : 'leave'} line earlier`}
-            disabled={at <= min} onClick={() => onMove(at - 1)}>
-            <Icon name="up" size={12} />
-          </button>
-          <button type="button" className="iconbtn" aria-label={`Move the ${zone === 'lot' ? 'join' : 'leave'} line later`}
-            disabled={atEnd} onClick={() => onMove(at + 1)}>
-            <Icon name="down" size={12} />
-          </button>
-          {onAdd && (
-            <button type="button" className="iconbtn" aria-label={`Add a step ${zone === 'lot' ? 'to the start of the lot' : 'just after the lot'}`}
-              onClick={onAdd}>
-              <Icon name="plus" size={12} />
+      <span className="rsjoin__acts">
+        {at !== undefined && onMove && (
+          <>
+            <button type="button" className="iconbtn" aria-label={`Move the ${zone === 'lot' ? 'join' : 'leave'} line earlier`}
+              title={zone === 'lot' ? 'Start the lot a step earlier' : 'Items leave the lot a step earlier'}
+              disabled={at <= min} onClick={() => onMove(at - 1)}>
+              <Icon name="up" size={12} />
             </button>
-          )}
-        </span>
-      )}
+            <button type="button" className="iconbtn" aria-label={`Move the ${zone === 'lot' ? 'join' : 'leave'} line later`}
+              title={zone === 'lot' ? 'Start the lot a step later' : 'Items leave the lot a step later'}
+              disabled={atEnd} onClick={() => onMove(at + 1)}>
+              <Icon name="down" size={12} />
+            </button>
+          </>
+        )}
+        {onAdd && (
+          <button type="button" className="rszone__add" aria-label={`Add a step ${ZONE_TEXT[zone].short}`} onClick={onAdd}>
+            <Icon name="plus" size={12} /> Step
+          </button>
+        )}
+      </span>
     </div>
   );
 }
@@ -693,10 +717,15 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
   if (index === 0 && step.locked) {
     return (
       <div className="rsnode rsnode--pre">
-        <span className="rsnode__dot rsnode__dot--locked" aria-hidden="true"><Icon name="lock" size={12} /></span>
+        <span className="rsnode__dot rsnode__dot--locked" aria-hidden="true">🧾</span>
         <div className="rsnode__card rsnode__card--locked">
+          <Scene step={step} index={index} />
+          <div className="rsnode__top">
+            <span className="rsnode__no">Step 1 · always first</span>
+          </div>
           <div className="rsnode__top">
             <span className="rsnode__name rsnode__name--static">{step.name}</span>
+            <Icon name="lock" size={13} />
           </div>
           {step.description && <span className="rsnode__desc rsnode__desc--static">{step.description}</span>}
           <span className="rsnode__paymenthint">
@@ -717,8 +746,10 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
 
   return (
     <div className={`rsnode rsnode--${zone}`} data-step={step.id}>
-      <span className="rsnode__dot" aria-hidden="true">{index + 1}</span>
-      <div className={`rsnode__card${step.stageIcon ? ` rsnode__card--${step.stageIcon}` : ''}${isDelivered ? ' rsnode__card--delivered' : ''}`}>
+      <span className="rsnode__dot" aria-hidden="true">{stepEmoji(step, index)}</span>
+      <div className={`rsnode__card${isDelivered ? ' rsnode__card--delivered' : ''}`}>
+        <Scene step={step} index={index} />
+        <span className="rsnode__no">Step {index + 1}{fixed ? (isDelivered ? ' · always last' : ' · always before Delivered') : ''}</span>
         <div className="rsnode__top">
           <input className="rsnode__name" value={step.name} placeholder="What happens here"
             aria-label={`Step ${index + 1} name`} disabled={isDelivered}
