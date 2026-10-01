@@ -16,6 +16,7 @@ import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderSta
 import { LBox, OptionTiles } from '../components/ListingForm';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import type { CardButton } from '@shared/buttons';
+import { ReceivedDialog } from '../components/ReceivedDialog';
 import { Ladder } from '../components/Ladder';
 import { RouteEditor, RoutesList } from './RoutesPage';
 import { phaseOfCounts } from '@shared/insights';
@@ -948,11 +949,20 @@ function Orders({ store }: { store: StoreAccess }) {
    * next button comes from the server, read off the same route its timeline
    * draws, so the list is read again rather than guessed at here.
    */
-  async function press(row: SaleRow, button: CardButton, on: boolean) {
+  /** The order whose warehouse button was pressed with no lot to say what that means. */
+  const [receiving, setReceiving] = useState<{ row: SaleRow; button: CardButton } | null>(null);
+
+  async function press(row: SaleRow, button: CardButton, on: boolean, label?: string) {
+    /* No lot yet: ask where it was received, or offer to put it in a lot. */
+    if (on && button.checkpoint === 'china_received' && !row.lotId && !row.inHand && label === undefined) {
+      setReceiving({ row, button });
+      return;
+    }
     setBusy(row.id);
     setError(null);
     try {
-      await api.setCheckpoint(row.id, button.checkpoint, on);
+      await api.setCheckpoint(row.id, button.checkpoint, on, label ? { label } : undefined);
+      setReceiving(null);
       setUndoable(on ? { rowId: row.id, button } : null);
       await load();
     } catch (err) {
@@ -1109,6 +1119,13 @@ function Orders({ store }: { store: StoreAccess }) {
           onClose={() => setCancelling(null)}
           onDone={() => { setCancelling(null); void load(); }}
         />
+      )}
+
+      {receiving && (
+        <ReceivedDialog itemName={receiving.row.itemName} busy={busy === receiving.row.id}
+          onLot={() => { setFiling(receiving.row); setReceiving(null); }}
+          onPick={(label) => void press(receiving.row, { ...receiving.button, label }, true, label)}
+          onClose={() => setReceiving(null)} />
       )}
 
       {filing && (

@@ -9329,6 +9329,27 @@ a.ohead__thumb:hover { transform: scale(1.04); }
   .pipdock__choice, .pipdock__choices.is-ready .pipdock__choice { animation: none; opacity: 1; transform: none; }
 }
 
+/* The warehouse button for an item with no lot: put it in one, or say where it was received. */
+.rcvd__intro { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.45; }
+.rcvd__lot {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: center; text-align: left;
+  padding: 12px; border: 1px solid var(--coral-line); border-radius: var(--r-md); cursor: pointer;
+  background: var(--coral-soft); color: var(--text); font: inherit; font-size: 22px;
+}
+.rcvd__text { display: grid; gap: 2px; font-size: var(--t-sm); }
+.rcvd__text span { font-size: var(--t-2xs); color: var(--text-dim); }
+.rcvd__or { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; text-align: center; }
+.rcvd__options { display: grid; gap: 6px; }
+.rcvd__option {
+  display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 12px; text-align: left;
+  border: 1px solid var(--aqua-line); border-radius: var(--r-md); background: var(--aqua-soft);
+  color: var(--text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
+}
+.rcvd__option:hover:not(:disabled), .rcvd__lot:hover:not(:disabled) { transform: translateY(-1px); }
+.rcvd__option--own { background: transparent; border-style: dashed; font-weight: var(--w-normal); color: var(--text-dim); }
+.rcvd__own { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.rcvd__own input { min-width: 0; padding: 9px 10px; font-size: var(--t-sm); }
+
 /* An item that has left its lot, on the lot's own list. */
 .lotitem__own {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;

@@ -226,7 +226,7 @@ export function stepButtonLabel(
   const said = vars
     ? renderStepText(name, vars)
     : name.replace(/\{(origin|destination)\}/g, ' ').replace(/\s+/g, ' ').trim();
-  return said.length > 28 ? `${said.slice(0, 27).replace(/\s+\S*$/, '')}…` : said;
+  return said.length > 44 ? `${said.slice(0, 43).replace(/\s+\S*$/, '')}…` : said;
 }
 
 /**

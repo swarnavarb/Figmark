@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { nextButton } from '@shared/buttons';
-import { isDirect } from '@shared/fulfilment';
+import { inLot, isDirect } from '@shared/fulfilment';
+import { useNavigate } from 'react-router-dom';
+import { ReceivedDialog } from './ReceivedDialog';
 import type { OrderCheckpoint } from '@shared/enums';
 import { isStopped } from '@shared/orders';
 import { stepButtonLabel, stepTickKey, ticksOf, type RouteStep, type StepAssignee } from '@shared/routes';
@@ -147,6 +149,9 @@ export function useStepActs(
   const [shipping, setShipping] = useState(false);
   const [asking, setAsking] = useState(false);
   const [picking, setPicking] = useState<{ step: RouteStep; index: number }[] | null>(null);
+  /** The warehouse button pressed with no lot yet: asking where, or to put it in one. */
+  const [receiving, setReceiving] = useState(false);
+  const navigate = useNavigate();
   const opened = useRef(false);
   const [courier, setCourier] = useState('');
   const [awb, setAwb] = useState('');
@@ -154,7 +159,7 @@ export function useStepActs(
   const order = state?.order;
   const live = Boolean(state && order && state.side === 'seller' && order.placedAt !== null && !isStopped(order.status));
 
-  async function tick(checkpoint: string, on: boolean, shipment?: { courier: string; awb: string }) {
+  async function tick(checkpoint: string, on: boolean, shipment?: { courier?: string; awb?: string; label?: string }) {
     if (!order) return;
     setBusy(true);
     setError(null);
@@ -162,6 +167,7 @@ export function useStepActs(
       await api.setCheckpoint(order.id, checkpoint, on, shipment);
       setShipping(false);
       setAsking(false);
+      setReceiving(false);
       await onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
@@ -205,6 +211,7 @@ export function useStepActs(
       return;
     }
     if (checkpoint === 'dispatched') { openShipping(); return; }
+    if (checkpoint === 'china_received' && !inLot(order!) && !isDirect(order!)) { setReceiving(true); return; }
     if (checkpoint === 'delivered') { setAsking(true); return; }
     void tick(checkpoint, true);
   }
@@ -306,6 +313,13 @@ export function useStepActs(
             <button type="button" className="btn btn--quiet btn--block" onClick={() => setAsking(false)}>Cancel</button>
           </div>
         </Modal>
+      )}
+
+      {receiving && (
+        <ReceivedDialog itemName={order.itemName} busy={busy}
+          onLot={() => navigate(`/shop?tab=lots&spotlight=new&file=${encodeURIComponent(order.id)}`)}
+          onPick={(label) => void tick('china_received', true, { label })}
+          onClose={() => setReceiving(false)} />
       )}
 
       {picking && (

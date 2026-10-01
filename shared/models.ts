@@ -1014,6 +1014,13 @@ export interface Order extends BaseDocument {
    */
   customTicks?: Record<string, string | null>;
   /**
+   * Where this item was received before it had a lot, in the seller's words
+   * - "Received at freight forwarder's warehouse" - chosen when the warehouse
+   * button was pressed. Only the label: the tick is still `china_received`,
+   * and it means what it always meant. Cleared when that tick is undone.
+   */
+  receivedAs?: string | null;
+  /**
    * The buyer's claim that they have paid, and what the seller made of it.
    *
    * A direct sale is settled outside this app, so nothing here observes the

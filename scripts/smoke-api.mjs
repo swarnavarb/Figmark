@@ -6164,6 +6164,33 @@ await check('a custom button moves its own item, and never lives inside a lot', 
   assert.equal(handover.trackingId, undefined);
 });
 
+await check('an item with no lot is received where the seller says, under the same tick', async () => {
+  const listing = await waitingItem('Received at the forwarder');
+  const buyer = await newBuyer('Forwarder Watcher');
+  const order = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing } }), ctx)).jsonBody.order;
+  assert.equal(order.lotId, 'awaiting_lot');
+
+  const said = "Received at freight forwarder's warehouse";
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true, label: said },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+
+  const tracking = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(tracking.preLot.steps[tracking.preLot.currentStep].name, said, 'the buyer reads where it really is');
+  assert.equal(tracking.order.checkpoints.china_received != null, true, 'and it is the same warehouse tick');
+  assert.ok(tracking.order.stageHistory.some((event) => event.note === `${said}.`));
+  const row = (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((entry) => entry.id === order.id);
+  assert.equal(row.done.label, said);
+
+  // Undone, the label goes with it.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: false },
+  }), ctx);
+  const after = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(after.order.receivedAs, null);
+});
+
 await check('a route written with no buttons gets them anyway', async () => {
   // Nobody binds anything by hand any more: the warehouse step is found by
   // its words and given its button, and the timeline moves as it always did.

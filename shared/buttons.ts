@@ -553,3 +553,26 @@ export function stepChoices(steps: readonly RouteStep[], at: number, zone: StepZ
     return { kind, open: true };
   });
 }
+
+/* ── Where an item was received, before it had a lot ────────────────── */
+
+/** The places offered when the warehouse button is pressed for an item not yet in a lot. */
+export const RECEIVED_AS_OPTIONS = [
+  'Received at international warehouse',
+  "Received at freight forwarder's warehouse",
+  "Received at supplier's warehouse",
+] as const;
+
+/** The longest label a seller may type for it. */
+export const RECEIVED_AS_MAX = 60;
+
+/**
+ * An order's steps with its own words for where it was received: the step
+ * the warehouse button reaches takes the label chosen for this order. The
+ * route is untouched - this is one order's reading of it.
+ */
+export function withReceivedAs<T extends Pick<RouteStep, 'trigger' | 'name'>>(steps: readonly T[], label: string | null | undefined): T[] {
+  const said = label?.trim();
+  if (!said) return [...steps];
+  return steps.map((step) => (step.trigger === 'china_received' ? { ...step, name: said } : step));
+}

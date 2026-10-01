@@ -1862,7 +1862,8 @@ export const api = {
     ),
   /** `checkpoint` is one of the seven, or `custom:<step id>` for a route's own button. */
   setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
-    shipment?: { courier?: string; awb?: string }) =>
+    /** The courier and AWB with a dispatch; `label`, where an item with no lot was received. */
+    shipment?: { courier?: string; awb?: string; label?: string }) =>
     post<{ order: { id: string; checkpoints: BoardOrder['checkpoints'] }; tally: LotTally }>(
       `/orders/${encodeURIComponent(orderId)}/checkpoint`,
       { checkpoint, on, ...shipment },

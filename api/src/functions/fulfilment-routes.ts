@@ -12,7 +12,7 @@ import {
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, ticksOf
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
-import { ladderBeforeLot, withButtons } from '../../../shared/buttons.js';
+import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
 import { daysFrom, isStopped, travellingStatus } from '../../../shared/orders.js';
 import {
   awaitingLot, furthestStage, inLot, stagesFor,
@@ -791,7 +791,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
      same two events, and drawing both put "at the China warehouse" on the
      screen twice, ticked in one ladder and hollow in the other. */
   const template = !lot && listing?.lotRouteId ? await repository.getRoute(order.sellerId, listing.lotRouteId) : null;
-  const before = ladderBeforeLot(order, template);
+  const ladder = ladderBeforeLot(order, template);
+  const before = { ...ladder, steps: withReceivedAs(ladder.steps, order.receivedAs) };
 
   /*
    * Older orders ticked a checkpoint before every tick wrote a dated note of
@@ -804,7 +805,9 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   const notedTexts = new Set(order.stageHistory.map((event) => event.note));
   const healedHistory = [
     ...order.stageHistory,
-    ...ORDER_CHECKPOINTS.filter((checkpoint) => order.checkpoints?.[checkpoint] && !notedTexts.has(CHECKPOINT_EVENT_TEXT[checkpoint]))
+    ...ORDER_CHECKPOINTS.filter((checkpoint) => order.checkpoints?.[checkpoint] && !notedTexts.has(CHECKPOINT_EVENT_TEXT[checkpoint])
+      // Received in the seller's own words is a recorded tick too.
+      && !(checkpoint === 'china_received' && order.receivedAs && notedTexts.has(`${order.receivedAs}.`)))
       .map((checkpoint) => ({
         stage: order.stage,
         step: stepForCheckpoint(stepsForNotes, checkpoint, order)?.name,
@@ -870,7 +873,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
     route: route
       ? {
           name: route.name,
-          steps: route.steps,
+          // Its own words for where it was received, carried into the lot.
+          steps: withReceivedAs(route.steps, order.receivedAs),
           currentStep: position,
           /** True while the item is done travelling alone and the lot has not moved. */
           waitingForLot: waiting,
@@ -1034,7 +1038,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const orderId = request.params.id;
   if (!orderId) return error(400, 'invalid_order', 'An order id is required.');
 
-  let body: { checkpoint?: string; on?: boolean; orderIds?: string[]; courier?: string; awb?: string };
+  let body: { checkpoint?: string; on?: boolean; orderIds?: string[]; courier?: string; awb?: string; label?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -1173,20 +1177,32 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   order.checkpoints = { ...(order.checkpoints ?? {}), [checkpoint]: on ? now : null };
   order.updatedAt = now;
 
+  /* Where it was received, in the seller's words, for an item with no lot
+     yet: the same tick, only labelled. Undoing the tick drops the label. */
+  let receivedNote: string | null = null;
+  if (checkpoint === 'china_received') {
+    const label = typeof body.label === 'string' ? body.label.trim().slice(0, RECEIVED_AS_MAX) : '';
+    if (!on) order.receivedAs = null;
+    else if (label) order.receivedAs = label;
+    if (order.receivedAs) receivedNote = `${order.receivedAs}.`;
+  }
+
   // Every tick is a real, dated thing that happened, and belongs on the
   // ladder's own timeline. Filed under the rung it actually is - not the
   // order's coarse stage, which does not move when a checkpoint is ticked
   // and would otherwise leave the note stranded under whatever rung the
   // order happened to be at, however much later the tick came.
   const stepsForTick = lot ? routeOf(lot).steps : preLotRouteOf(order).steps;
-  const tickedStep = stepForCheckpoint(stepsForTick, checkpoint, order);
+  const found = stepForCheckpoint(stepsForTick, checkpoint, order);
+  // Filed under the step as this order reads it - in its own words when it has some.
+  const tickedStep = found && checkpoint === 'china_received' && order.receivedAs ? { ...found, name: order.receivedAs } : found;
   order.stageHistory = [
     ...order.stageHistory,
     {
       stage: order.stage,
       step: tickedStep?.name,
       enteredAt: now,
-      note: on ? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
+      note: on ? receivedNote ?? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
       recordedBy: user.id,
     },
     // Its own line rather than folded into the tick's, which reading an order

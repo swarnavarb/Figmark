@@ -3,7 +3,7 @@ import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.j
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
 import { currentStepOf, lotNumberFrom, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
-import { cardButtons, ladderBeforeLot, withLastMile } from '../../../shared/buttons.js';
+import { cardButtons, ladderBeforeLot, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
 import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
@@ -342,14 +342,14 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   ) => {
     if (isDirect(order)) return cardButtons(DIRECT_LADDER, null, undefined, ticksOf(order));
     if (lot) {
-      const track = withLastMile(routeOf(lot).steps);
+      const track = withLastMile(withReceivedAs(routeOf(lot).steps, order.receivedAs));
       return cardButtons(
         track.steps, track.at(currentStepOf(lot)),
         typeof order.currentStep === 'number' ? track.at(order.currentStep) : undefined,
         ticksOf(order), { origin: lot.originCountry, destination: lot.destinationCountry },
       );
     }
-    return cardButtons(ladderBeforeLot(order, template).steps, null, undefined, ticksOf(order));
+    return cardButtons(withReceivedAs(ladderBeforeLot(order, template).steps, order.receivedAs), null, undefined, ticksOf(order));
   };
 
   const row = (order: (typeof orders)[number]) => {
