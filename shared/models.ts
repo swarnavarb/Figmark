@@ -188,6 +188,21 @@ export interface User extends BaseDocument {
   collection?: CollectionItem[];
   /** The shelves a collection is grouped into, in the order the owner likes. */
   collectionGroups?: CollectionGroup[];
+  /**
+   * Affiliate links this person arrived through, newest per item. Kept on the
+   * account so the credit survives signing up, signing out and coming back
+   * days later to buy: whoever sent them still gets it.
+   */
+  referrals?: ReferralRecord[];
+  /** Orders this person earns a commission on, as the affiliate. */
+  affiliateOrderIds?: string[];
+}
+
+/** One affiliate link somebody arrived through. */
+export interface ReferralRecord {
+  listingId: string;
+  referrerId: string;
+  at: string;
 }
 
 /**
@@ -589,6 +604,11 @@ export interface Listing extends BaseDocument {
    * in the order book, lots and tracking like any other.
    */
   privateFor?: string | null;
+  /**
+   * Affiliate selling: the shop pays this percentage of the sale to whoever
+   * brought the buyer through their own link. Absent or null means off.
+   */
+  affiliate?: { percent: number } | null;
 }
 
 /**
@@ -971,6 +991,12 @@ export interface Order extends BaseDocument {
    */
   broughtBy?: string | null;
   /**
+   * The affiliate who brought this buyer, with the rate the shop offered when
+   * the checkout opened. Copied so editing the item cannot move a commission
+   * somebody has already earned. The name is a snapshot for the same reason.
+   */
+  affiliate?: OrderAffiliate | null;
+  /**
    * The ladder this item read before it joined a lot.
    *
    * Copied from the listing at purchase. Once the item is in a lot the
@@ -1086,6 +1112,17 @@ export interface Order extends BaseDocument {
    * and so have no lot tracking reference to borrow.
    */
   shipment?: OrderShipment | null;
+}
+
+/** Who earns a commission on an order, and on what terms. */
+export interface OrderAffiliate {
+  referrerId: string;
+  referrerName: string;
+  referrerHandle: string | null;
+  percent: number;
+  /** When the shop says it paid the commission out. */
+  paidAt?: string | null;
+  paidReference?: string | null;
 }
 
 /** Who is carrying a parcel, and the number to track it by. */

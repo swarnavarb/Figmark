@@ -3,6 +3,7 @@ import { hoursToEnd, isEndingSoon, isInDemand, popularity } from '@shared/catalo
 import type { FeedListing } from '../api';
 import { Fire, Rush, Svg } from './ListingBlocks';
 import { Thumb, leadPhoto } from './ui';
+import { AffiliateBadge } from './Affiliate';
 
 /**
  * The two shelves dropped in between the feed's cards: what people are
@@ -89,8 +90,9 @@ function RailHead({ icon, title, sub, view }: { icon: 'flame' | 'bolt'; title: s
 /** The whole photo and the name, nothing else. */
 function RailItem({ listing, n, children }: { listing: FeedListing; n: number; children?: React.ReactNode }) {
   return (
-    <Link to={`/listing/${listing.id}`} className="railitem" style={{ ['--i' as string]: n }}>
+    <Link to={`/listing/${listing.id}`} className={`railitem${listing.affiliate ? ' is-affiliate' : ''}`} style={{ ['--i' as string]: n }}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb railitem__photo">
+        {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
         {children}
         <span className="railitem__name"><span>{listing.title}</span></span>
       </Thumb>

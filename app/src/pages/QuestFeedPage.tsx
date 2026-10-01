@@ -11,6 +11,7 @@ import { preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing } from '../api';
 import { CategoryIcon } from '../components/CategoryIcon';
+import { AffiliateBadge } from '../components/Affiliate';
 import {
   DemandRail, EndingRail, FEED_VIEW_TITLES, demandPicks, endingPicks, isFeedView,
 } from '../components/FeedRails';
@@ -678,9 +679,10 @@ function LootCard({ listing }: { listing: Rated }) {
   }
 
   return (
-    <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}`}>
+    <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}${listing.affiliate ? ' is-affiliate' : ''}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
         {tier && <RarityRibbon tier={tier} />}
+        {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
         <span className="qgrade" title="Condition">{listing.condition}</span>
         <button type="button" className={`qheart${liked ? ' is-on' : ''}`} onClick={(event) => void toggleSave(event)}
           aria-label={liked ? 'Remove from your saves' : 'Save'} aria-pressed={liked}>

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Order } from '../../../shared/models.js';
 import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
+import { affiliateCommissionMinor } from '../../../shared/affiliate.js';
+import { affiliateFor, creditAffiliate } from '../affiliate.js';
 import type { getRepository } from '../data/index.js';
 import { notify } from './notify.js';
 import { reconcilePreOrder } from './preorder.js';
@@ -47,6 +49,10 @@ export async function placeOrder(
   if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
   if (listing.privateFor) order.privateDeal = true;
 
+  // Whoever's link brought the buyer, if the checkout opened before they
+  // followed it - the account remembers, so the credit is not lost.
+  if (!order.affiliate) order.affiliate = await affiliateFor(repository, order.buyerId, listing);
+
   const now = new Date().toISOString();
   order.placedAt = now;
   order.createdAt = now;
@@ -79,6 +85,17 @@ export async function placeOrder(
     // Re-read: taking stock moved the fill counter.
     const fresh = await repository.getListing(listing.id);
     if (fresh) await reconcilePreOrder(repository, fresh, { actorId });
+  }
+
+  // The affiliate who brought the buyer hears it the moment it is a sale.
+  if (order.affiliate) {
+    await creditAffiliate(repository, order);
+    await notify(repository, [order.affiliate.referrerId], {
+      kind: 'order_placed',
+      title: `Your link made a sale — ${rupees(affiliateCommissionMinor(order))} commission`,
+      body: `${order.itemName}. It is yours once the item is delivered.`,
+      link: '/wallet?tab=earnings',
+    });
   }
 
   if (options.tellSeller !== false) {

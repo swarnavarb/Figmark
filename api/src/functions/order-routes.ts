@@ -1093,12 +1093,12 @@ async function tellBuyerRefunded(
     kind: 'credit_refund_sent',
     title: `The seller says they refunded ${rupees(amountMinor)} to you`,
     body: `${order.itemName} — tell them whether it arrived.`,
-    link: '/refunds',
+    link: '/wallet',
   });
   const [seller, buyer] = await Promise.all([repository.getUserById(order.sellerId), repository.getUserById(order.buyerId)]);
   if (seller && buyer) {
     await systemMessage(repository, seller, buyer, message?.trim()
-      || `I have refunded ${rupees(amountMinor)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm under My refunds once it reaches you.`, order.sellerId);
+      || `I have refunded ${rupees(amountMinor)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm under My wallet once it reaches you.`, order.sellerId);
   }
 }
 
@@ -1843,7 +1843,7 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
       kind: 'reversal_details_needed',
       title: 'Add your payment reversal details',
       body: `${order.itemName} was cancelled and needs somewhere to send your ${rupees(money.paidMinor)} back.`,
-      link: '/refunds?tab=details',
+      link: '/wallet?tab=details',
     });
     if (seller) {
       const text = (body.message ?? '').trim()
@@ -1887,9 +1887,9 @@ async function requestReversalDetails(request: HttpRequest, _context: Invocation
   const text = body.message?.trim()
     || (has
       ? `Before I refund you for "${order.itemName}", please check your Payment Reversal Details are up to date `
-        + '(My refunds → Payment reversal details) and confirm them, or update them if anything has changed.'
+        + '(My wallet → Payment reversal details) and confirm them, or update them if anything has changed.'
       : `I need to refund you for "${order.itemName}". Please add your Payment Reversal Details `
-        + '(My refunds → Payment reversal details) so I know where to send it.');
+        + '(My wallet → Payment reversal details) so I know where to send it.');
   await systemMessage(repository, seller, buyer, text, order.sellerId);
 
   const now = new Date().toISOString();
@@ -1903,7 +1903,7 @@ async function requestReversalDetails(request: HttpRequest, _context: Invocation
     kind: 'reversal_details_needed',
     title: has ? 'Please confirm your payment reversal details' : 'Add your payment reversal details',
     body: `${seller.sellerProfile?.storefrontName ?? seller.displayName} needs them to refund you for ${order.itemName}.`,
-    link: '/refunds?tab=details',
+    link: '/wallet?tab=details',
   });
 
   return json(200, { sent: true, order: saved });

@@ -5,7 +5,7 @@ import { ErrorNotice } from './ui';
 /**
  * Payment Reversal Details - where a seller sends this buyer's money back.
  *
- * Lives under My refunds, beside the refunds it is used for. Free text
+ * Lives under My wallet, beside the refunds it is used for. Free text
  * throughout and no provider hard-coded: the platform is not moving this
  * money and must not pretend to have validated an account it cannot see.
  */

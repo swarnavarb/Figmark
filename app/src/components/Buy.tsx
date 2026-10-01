@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import type { CreditRecord, Listing, Order } from '@shared/models';
+import { AFFILIATE_MAX_PERCENT, AFFILIATE_MIN_PERCENT } from '@shared/affiliate';
 import {
   PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, REFUND_ORIGIN_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
   isMultiple, methodOf, orderMoney, timeLeft,
@@ -164,9 +165,12 @@ export interface TermsDraft {
   was: { at: string; days: string } | null;
   advance: boolean;
   advancePercent: string;
+  /** Pay a commission to whoever brings the buyer through their own link. */
+  affiliate: boolean;
+  affiliatePercent: string;
 }
 
-export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePercent'>>): TermsDraft {
+export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePercent' | 'affiliate'>>): TermsDraft {
   return {
     quantityMode: listing?.quantityMode === 'multiple' ? 'multiple' : 'fixed',
     quantity: String(listing?.quantityAvailable ?? 1),
@@ -175,6 +179,8 @@ export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePerce
     was: listing?.expiresAt ? { at: listing.expiresAt, days: String(daysUntil(listing.expiresAt)) } : null,
     advance: Boolean(listing?.advancePercent),
     advancePercent: String(listing?.advancePercent ?? 20),
+    affiliate: Boolean(listing?.affiliate?.percent),
+    affiliatePercent: String(listing?.affiliate?.percent ?? 5),
   };
 }
 
@@ -185,6 +191,9 @@ export function termsBody(draft: TermsDraft) {
     quantityAvailable: Math.max(draft.quantityMode === 'multiple' ? 1 : 0, Number(draft.quantity) || 0),
     expiresAt: !draft.limited ? null : draft.was && draft.was.days === draft.days ? draft.was.at : isoInDays(draft.days),
     advancePercent: draft.advance ? Math.min(99, Math.max(1, Number(draft.advancePercent) || 20)) : null,
+    affiliatePercent: draft.affiliate
+      ? Math.min(AFFILIATE_MAX_PERCENT, Math.max(AFFILIATE_MIN_PERCENT, Math.round(Number(draft.affiliatePercent) || 5)))
+      : null,
   };
 }
 
@@ -232,6 +241,24 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
           </label>
         )}
       </LBox>
+
+      {/* Not on a power sale: its items are made by the sale, which sets its own terms. */}
+      {!publicLater && <LBox icon="🤝" title="Affiliate commission"
+        hint={value.affiliate
+          ? `Anyone can share their own link to this item and earns ${value.affiliatePercent || '—'}% of every sale it brings.`
+          : 'Off: nobody earns for sharing this item.'}
+        right={<Switch checked={value.affiliate} onChange={(affiliate) => set({ affiliate })} label="Affiliate commission" />}>
+        {value.affiliate && (
+          <label className="field">
+            <span>Commission (% of the sale)</span>
+            <input type="number" min={AFFILIATE_MIN_PERCENT} max={AFFILIATE_MAX_PERCENT} value={value.affiliatePercent}
+              onChange={(e) => set({ affiliatePercent: e.target.value })} />
+            <span className="field__hint">
+              Owed once the item is delivered. You pay it to the affiliate and mark it paid on the order.
+            </span>
+          </label>
+        )}
+      </LBox>}
 
       {!preOrder && (
         <LBox icon="⏳" title="Limited time deal" hint={publicLater

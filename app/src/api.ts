@@ -26,6 +26,7 @@ import type { Allocation, OrderMoney } from '@shared/payments';
 import type { CardDef, QuestView, StickerView } from '@shared/quest';
 import type { CollectionGroup, CollectionItem } from '@shared/models';
 import type { LearnDoc } from '@shared/learn';
+import type { AffiliateEarningStatus } from '@shared/affiliate';
 
 /** Somebody named on a screen, and the page their name opens. */
 export interface PartyRef {
@@ -154,6 +155,8 @@ export interface SellerCard {
   /** Orders delivered without being lost in a dispute. */
   completedSales: number;
   memberSince: string;
+  photoUrl?: string | null;
+  coverUrl?: string | null;
 }
 
 export interface FeedListing extends Listing {
@@ -287,6 +290,32 @@ export interface ListingDetail {
   isOwn: boolean;
   /** Null on anything that is not being pre-ordered. */
   preOrder: PreOrderRoster | null;
+  /** Null unless the shop pays a commission on this item. */
+  affiliate: ListingAffiliate | null;
+}
+
+export interface ListingAffiliate {
+  percent: number;
+  /** The reader's own link parameter; null for the shop and anyone signed out. */
+  ref: string | null;
+  /** Whose link brought the reader here, if anybody's. */
+  referredBy: PartyRef | null;
+}
+
+/** One commission in the affiliate's wallet. */
+export interface AffiliateEarning {
+  orderId: string;
+  listingId: string;
+  itemName: string;
+  sellerName: string;
+  percent: number;
+  saleMinor: number;
+  commissionMinor: number;
+  currency: string;
+  status: AffiliateEarningStatus;
+  placedAt: string | null;
+  paidAt: string | null;
+  paidReference: string | null;
 }
 
 export interface ActivityResponse {
@@ -766,6 +795,8 @@ export interface NewListing {
   quantityMode?: 'fixed' | 'multiple';
   expiresAt?: string | null;
   advancePercent?: number | null;
+  /** Commission offered to affiliates, in percent; null turns it off. */
+  affiliatePercent?: number | null;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
@@ -1561,6 +1592,7 @@ export interface PublicProfile {
   listings: {
     id: string; title: string; priceMinor: number; currency: string; condition: string;
     lotId: string | null; sourcing?: string; quantityAvailable: number; likeCount: number;
+    affiliate?: { percent: number } | null;
     photos?: { url?: string; isPrimary?: boolean }[];
   }[];
 }
@@ -1610,7 +1642,12 @@ export const api = {
     return request<FeedResponse>(`/feed${suffix ? `?${suffix}` : ''}`);
   },
 
-  listing: (id: string) => request<ListingDetail>(`/listings/${encodeURIComponent(id)}`),
+  listing: (id: string, ref?: string | null) =>
+    request<ListingDetail>(`/listings/${encodeURIComponent(id)}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
+  similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
+  myAffiliate: () => request<{ earnings: AffiliateEarning[] }>('/me/affiliate'),
+  markAffiliatePaid: (orderId: string, reference?: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
   editListing: (id: string, body: Partial<NewListing>) =>
@@ -1672,8 +1709,8 @@ export const api = {
     ),
   follow: (sellerId: string) =>
     post<{ following: boolean }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
-  order: (listingId: string, quantity = 1, via?: string | null) =>
-    post<{ order: Order }>('/orders', { listingId, quantity, via: via ?? undefined }),
+  order: (listingId: string, quantity = 1, via?: string | null, ref?: string | null) =>
+    post<{ order: Order }>('/orders', { listingId, quantity, via: via ?? undefined, ref: ref ?? undefined }),
 
   /**
    * Join a pre-order, or leave it.

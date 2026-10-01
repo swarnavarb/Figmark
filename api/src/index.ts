@@ -30,3 +30,4 @@ import './functions/collection-routes.js';
 import './functions/learn-routes.js';
 import './functions/settings-routes.js';
 import './functions/report-routes.js';
+import './functions/affiliate-routes.js';

@@ -22,8 +22,9 @@ const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, reactToCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
-  editListingRoute, deleteListingRoute,
+  editListingRoute, deleteListingRoute, similarListingsRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
+const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affiliate-routes.js', apiRoot));
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
@@ -120,6 +121,9 @@ const routes = [
   ['POST', '/api/orders', createOrderRoute],
   ['POST', '/api/listings', createListingRoute],
   ['GET', '/api/listings/:id', listingDetailRoute],
+  ['GET', '/api/listings/:id/similar', similarListingsRoute],
+  ['GET', '/api/me/affiliate', myAffiliateRoute],
+  ['POST', '/api/orders/:id/affiliate-paid', markAffiliatePaidRoute],
   ['POST', '/api/listings/:id/like', toggleLikeRoute],
   ['POST', '/api/listings/:id/edit', editListingRoute],
   ['POST', '/api/listings/:id/delete', deleteListingRoute],

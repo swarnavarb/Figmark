@@ -9,6 +9,7 @@ import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { AffiliateBadge } from '../components/Affiliate';
 
 type Tab = 'collection' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
 
@@ -205,8 +206,9 @@ export function ProfilePage() {
         ) : (
           <div className="grid">
             {data.listings.map((listing) => (
-              <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
+              <Link key={listing.id} to={`/listing/${listing.id}`} className={`card card--link${listing.affiliate ? ' is-affiliate' : ''}`}>
                 <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
+                  {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
                   <div className="thumb__badges">
                     <span className="badge badge--solid">{listing.condition}</span>
                     <span className={`badge badge--${listing.status === 'active' ? 'ok' : 'warn'}`}>{listing.status}</span>

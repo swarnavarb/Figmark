@@ -1,8 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useLocation } from 'react-router-dom';
+import { AFFILIATE_PARAM } from '@shared/affiliate';
 import type { DemoAccount } from '@shared/contracts';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api } from '../api';
-import { ErrorNotice } from '../components/ui';
+import { ApiRequestError, api, type ListingDetail } from '../api';
+import { ErrorNotice, Thumb, leadPhoto } from '../components/ui';
+import { formatMoney } from '../format';
 import { useSession } from '../session';
 
 type Mode = 'signin' | 'signup';
@@ -16,7 +19,15 @@ type Mode = 'signin' | 'signup';
  */
 export function AuthPage() {
   const { signIn, signUp } = useSession();
-  const [mode, setMode] = useState<Mode>('signin');
+  const location = useLocation();
+  // Somebody who followed a link to an item - an affiliate's above all - sees
+  // what they were sent before being asked to sign up. The address is left as
+  // it is, so once they are in they land on that same item, with the same
+  // link, and whoever sent them is credited.
+  const sharedId = /^\/listing\/([^/]+)\/?$/.exec(location.pathname)?.[1] ?? null;
+  const sharedRef = new URLSearchParams(location.search).get(AFFILIATE_PARAM);
+  const [shared, setShared] = useState<ListingDetail | null>(null);
+  const [mode, setMode] = useState<Mode>(sharedRef ? 'signup' : 'signin');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demo, setDemo] = useState<DemoAccount[]>([]);
@@ -31,6 +42,17 @@ export function AuthPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    if (!sharedId) return;
+    let cancelled = false;
+    void api.listing(decodeURIComponent(sharedId), sharedRef)
+      .then((result) => !cancelled && setShared(result))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedId, sharedRef]);
 
   // The seeded sign-in hint, shown only while the mock provider is active.
   useEffect(() => {
@@ -109,6 +131,29 @@ export function AuthPage() {
         </div>
 
         <div className="card auth__card">
+          {shared && (
+            <section className="afflanding" aria-label="The item you were sent">
+              <div className="afflanding__item">
+                <Thumb seed={shared.listing.id} label={shared.listing.title} photo={leadPhoto(shared.listing)} />
+                <div className="afflanding__what">
+                  {shared.affiliate?.referredBy && (
+                    <span>🎁 <b>{shared.affiliate.referredBy.name}</b> sent you this</span>
+                  )}
+                  <b>{shared.listing.title}</b>
+                  <span>
+                    {formatMoney(shared.listing.priceMinor, shared.listing.currency)}
+                    {shared.seller ? ` · from ${shared.seller.storefrontName}` : ''}
+                  </span>
+                </div>
+              </div>
+              <span className="afflanding__link">{window.location.href}</span>
+              <p className="afflanding__gate">
+                {mode === 'signup' ? 'Create a free account' : 'Sign in'} to see the full listing, ask the shop a
+                question or buy it. You come straight back here afterwards
+                {shared.affiliate?.referredBy ? `, and ${shared.affiliate.referredBy.name} is credited for sending you` : ''}.
+              </p>
+            </section>
+          )}
           <div className="auth__switch" role="tablist">
             <button type="button" role="tab" aria-selected={mode === 'signin'}
               className={mode === 'signin' ? 'is-on' : ''} onClick={() => { setMode('signin'); setError(null); }}>

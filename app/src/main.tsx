@@ -119,8 +119,10 @@ function App() {
         <Route path="/me" element={<ProfilePage />} />
         <Route path="/purchases" element={<PurchasesPage />} />
         <Route path="/cart" element={<CartPage />} />
-        {/* Old notifications still link here; the details live under My refunds now. */}
-        <Route path="/buyer-settings" element={<Navigate to="/refunds?tab=details" replace />} />
+        {/* Old notifications still link here; the details live under My wallet now. */}
+        <Route path="/buyer-settings" element={<Navigate to="/wallet?tab=details" replace />} />
+        <Route path="/wallet" element={<MyRefundsPage />} />
+        {/* My refunds became My wallet; older links and notifications still land. */}
         <Route path="/refunds" element={<MyRefundsPage />} />
         <Route path="/disputes" element={<MyDisputesPage />} />
         <Route path="/quests" element={<QuestsPage />} />

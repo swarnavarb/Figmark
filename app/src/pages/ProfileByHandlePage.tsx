@@ -9,6 +9,7 @@ import {
 import { Avatar, EmptyState, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from '../components/ui';
 import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { AffiliateBadge } from '../components/Affiliate';
 import { MessageButton } from './MessagesPage';
 import { Stars } from './OrderPage';
 import { Canopy, StarRow } from '../components/ListingBlocks';
@@ -274,8 +275,9 @@ export function ProfileByHandlePage() {
               ) : (
                 <div className="grid">
                   {shown.map((listing) => (
-                    <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
+                    <Link key={listing.id} to={`/listing/${listing.id}`} className={`card card--link${listing.affiliate ? ' is-affiliate' : ''}`}>
                       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
+                        {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
                         <div className="thumb__badges">
                           <span className="badge badge--solid">{listing.condition}</span>
                         </div>

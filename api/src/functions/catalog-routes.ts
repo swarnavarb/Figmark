@@ -15,6 +15,8 @@ import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { placeOrder } from './placement.js';
+import { affiliateFor, affiliateToken, offersAffiliate, recordReferral, verifyAffiliateToken } from '../affiliate.js';
+import { AFFILIATE_PARAM, cleanAffiliatePercent } from '../../../shared/affiliate.js';
 import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -34,6 +36,9 @@ function toSellerCard(user: User) {
     // Orders delivered and not lost in a dispute, counted as each one lands.
     completedSales: user.sellerTrust.completedTransactions,
     memberSince: user.createdAt,
+    // The shop's own picture and banner, so its card looks like its page.
+    photoUrl: user.sellerProfile?.photoUrl ?? null,
+    coverUrl: user.sellerProfile?.coverUrl ?? null,
   };
 }
 
@@ -152,7 +157,26 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     ? await rosterOf(repository, settled.listing, settled.pledges, settled.orders, viewer?.id ?? null)
     : null;
 
+  // Affiliate links. Whoever is reading gets their own link to share; whoever
+  // arrived through somebody else's is remembered against their account, so
+  // the credit holds when they sign up first or come back days later to buy.
+  const affiliateOn = offersAffiliate(listing);
+  const linkFrom = affiliateOn ? verifyAffiliateToken(listing.id, request.query.get(AFFILIATE_PARAM)) : null;
+  let referrerId = linkFrom && linkFrom !== viewer?.id && linkFrom !== listing.sellerId ? linkFrom : null;
+  if (viewer && affiliateOn) {
+    const account = await repository.getUserById(viewer.id);
+    if (account && referrerId) await recordReferral(repository, account, listing, referrerId);
+    referrerId ??= account?.referrals?.find((entry) => entry.listingId === listing.id)?.referrerId ?? null;
+  }
+  const referredBy = referrerId ? await repository.getUserById(referrerId) : null;
+
   return json(200, {
+    affiliate: affiliateOn && listing.affiliate ? {
+      percent: listing.affiliate.percent,
+      /** The reader's own `ref`, or null for the shop and for anyone signed out. */
+      ref: viewer && viewer.id !== listing.sellerId ? affiliateToken(listing.id, viewer.id) : null,
+      referredBy: referredBy && !referredBy.suspended ? personRef(referredBy) : null,
+    } : null,
     // What the item cost the shop is the shop's own business.
     listing: (await mayManage(repository, listing, viewer?.id)) ? settled.listing : withoutCosts(settled.listing),
     /** The group behind the meter: counts, roster, and the reader's own place. */
@@ -163,6 +187,47 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     liked: likedIds.includes(id),
     following: followed.includes(listing.sellerId),
     isOwn: viewer?.id === listing.sellerId,
+  });
+}
+
+/**
+ * GET /api/listings/{id}/similar - other things somebody looking at this
+ * might want: the same category first, then whatever shares its tags, then
+ * more from the same shop. Never the item itself, and never anything hidden.
+ */
+async function similarListings(request: HttpRequest, _context: InvocationContext) {
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A listing id is required.');
+  const repository = await getRepository();
+  const listing = await repository.getListing(id);
+  if (!listing) return error(404, 'not_found', 'No such listing.');
+
+  const tags = new Set(listing.tags.map((tag) => tag.toLowerCase()));
+  const pool = (await repository.listListings({})).filter((entry) =>
+    entry.id !== listing.id && !isExpired(entry) && !entry.privateFor);
+  const score = (entry: Listing) =>
+    (entry.category === listing.category ? 10 : 0)
+    + entry.tags.filter((tag) => tags.has(tag.toLowerCase())).length * 4
+    + (entry.sellerId === listing.sellerId ? 2 : 0)
+    + (entry.condition === listing.condition ? 1 : 0)
+    // Close in price is closer in kind than the same price twice as far off.
+    + Math.max(0, 2 - Math.abs(Math.log2(Math.max(1, entry.priceMinor) / Math.max(1, listing.priceMinor))));
+  const picks = pool
+    .map((entry) => ({ entry, score: score(entry) }))
+    .filter((pick) => pick.score >= 2)
+    .sort((a, b) => b.score - a.score || b.entry.createdAt.localeCompare(a.entry.createdAt))
+    .slice(0, 12)
+    .map((pick) => pick.entry);
+
+  const sellers = await repository.listUsersByIds([...new Set(picks.map((entry) => entry.sellerId))]);
+  const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
+  return json(200, {
+    listings: picks.map((entry) => ({
+      ...withoutCosts(entry),
+      liked: false,
+      seller: sellerById.get(entry.sellerId) ?? null,
+      estimatedDispatchAt: null,
+    })),
   });
 }
 
@@ -187,6 +252,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     quantityMode?: 'fixed' | 'multiple';
     expiresAt?: string | null;
     advancePercent?: number | null;
+    affiliatePercent?: number | null;
     /** Announce it in the shop's channel, to its followers. */
     shareToChannel?: boolean;
     /** Announce it in the feed, to everyone. */
@@ -510,7 +576,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
-  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book' };
+  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book'; ref?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -535,12 +601,23 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'insufficient_stock', `Only ${listing.quantityAvailable} left.`);
   }
 
+  // A link followed straight into Buy is remembered like one opened first.
+  // The credit itself is read back from the account, never from the request,
+  // so a client cannot name its own affiliate.
+  const referredBy = verifyAffiliateToken(listing.id, body.ref);
+  if (referredBy) {
+    const buyer = await repository.getUserById(user.id);
+    if (buyer) await recordReferral(repository, buyer, listing, referredBy);
+  }
+  const affiliate = await affiliateFor(repository, user.id, listing);
+
   // Pressing Buy again on an item already at the checkout goes back to that
   // checkout rather than opening a second one nobody asked for.
   if (body.plan !== 'book') {
     const open = (await repository.listOrdersForBuyer(user.id)).find((entry) =>
       entry.listingId === listing.id && entry.placedAt === null && entry.status === 'pending_payment');
     if (open) {
+      if (affiliate && open.affiliate?.referrerId !== affiliate.referrerId) open.affiliate = affiliate;
       open.quantity = quantity;
       open.buyClicks = (open.buyClicks ?? 1) + 1;
       open.updatedAt = new Date().toISOString();
@@ -624,6 +701,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // whoever brought them in when they first pledged, because the credit
     // belongs to that moment rather than to the click that finally paid.
     broughtBy: referrer(body.via, user.id, listing.sellerId),
+    affiliate,
     completedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -704,8 +782,14 @@ function listingTerms(body: {
   quantityMode?: 'fixed' | 'multiple';
   expiresAt?: string | null;
   advancePercent?: number | null;
-}): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent'>> {
-  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent'>> = {};
+  /** Commission offered to affiliates, in percent; null or 0 turns it off. */
+  affiliatePercent?: number | null;
+}): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> {
+  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> = {};
+  if (body.affiliatePercent !== undefined) {
+    const percent = cleanAffiliatePercent(body.affiliatePercent);
+    terms.affiliate = percent ? { percent } : null;
+  }
   if (body.quantityMode !== undefined) {
     terms.quantityMode = body.quantityMode === 'multiple' ? 'multiple' : 'fixed';
   }
@@ -756,6 +840,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   let body: {
     title?: string; description?: string; priceMinor?: number; quantityAvailable?: number;
     quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
+    affiliatePercent?: number | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -859,6 +944,8 @@ export const forwardersRoute = handler(forwarders);
 const anon = { authLevel: 'anonymous' } as const;
 app.http('feed', { ...anon, methods: ['GET'], route: 'feed', handler: feedRoute });
 app.http('listing-detail', { ...anon, methods: ['GET'], route: 'listings/{id}', handler: listingDetailRoute });
+export const similarListingsRoute = handler(similarListings);
+app.http('listing-similar', { ...anon, methods: ['GET'], route: 'listings/{id}/similar', handler: similarListingsRoute });
 app.http('listing-create', { ...anon, methods: ['POST'], route: 'listings', handler: createListingRoute });
 app.http('listing-like', { ...anon, methods: ['POST'], route: 'listings/{id}/like', handler: toggleLikeRoute });
 app.http('listing-bump', { ...anon, methods: ['POST'], route: 'listings/{id}/bump', handler: bumpListingRoute });

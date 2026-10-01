@@ -12,6 +12,8 @@ import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
+import { AffiliateCard, ReferredBy, SimilarItems } from '../components/Affiliate';
+import { AFFILIATE_PARAM } from '@shared/affiliate';
 
 /** What each verification tier means, in a line. */
 const TIER_NOTES: Record<string, string> = {
@@ -29,6 +31,9 @@ export function ListingPage() {
   // sharing a group-buy worth a person's own reputation.
   const [params] = useSearchParams();
   const via = params.get('via');
+  // An affiliate's signed link. The server checks it and remembers it against
+  // this account, so it is passed through rather than trusted here.
+  const ref = params.get(AFFILIATE_PARAM);
 
   const [data, setData] = useState<ListingDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,14 +43,15 @@ export function ListingPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setData(null);
     void api
-      .listing(id)
+      .listing(id, ref)
       .then((result) => !cancelled && setData(result))
       .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, ref]);
 
   if (error) return <main className="page"><ErrorNotice message={error} /></main>;
   if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
@@ -79,7 +85,7 @@ export function ListingPage() {
   // looking like a completed one.
   const buy = () =>
     run('', async () => {
-      const placed = await api.order(listing.id, 1, via);
+      const placed = await api.order(listing.id, 1, via, ref);
       navigate(`/order/${placed.order.id}`);
     });
 
@@ -144,6 +150,7 @@ export function ListingPage() {
       <p className="buybox__fine">
         {!user && !data.isOwn ? 'Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
       </p>
+      {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy} />}
     </div>
   );
 
@@ -168,6 +175,10 @@ export function ListingPage() {
             <h1 className="lp__title">{listing.title}</h1>
             <Urgency listing={listing} />
             {buyBox}
+            {data.affiliate && (
+              <AffiliateCard listingId={listing.id} percent={data.affiliate.percent} refToken={data.affiliate.ref}
+                priceMinor={listing.priceMinor} currency={listing.currency} isOwn={data.isOwn} />
+            )}
             <DetailBlocks listing={listing} />
             {listing.privateFor && (
               <div className="badges"><span className="badge badge--pink">🤝 Private deal - {user?.id === listing.privateFor ? 'made just for you' : 'only your buyer can see this'}</span></div>
@@ -210,11 +221,16 @@ export function ListingPage() {
           {seller && (
             <div className={`lp__seller sellercard storefront__cover--${brandHueFor(seller.username ?? seller.storefrontName)} rise`}
               style={{ ['--i' as string]: 2 }}>
-              {/* The shop's own awning, in the same colour its shop page
+              {/* The shop's own cover runs from the top of the card down to the
+                  bottom edge of its photo, under the same awning its shop page
                   hangs out, so a seller looks like themselves everywhere. */}
+              <div className={`sellercard__hero${seller.coverUrl ? ' has-cover' : ''}`}
+                style={seller.coverUrl ? { ['--cover' as string]: `url("${seller.coverUrl.replace(/"/g, '%22')}")` } : undefined}>
               <div className="sellercard__awning"><Canopy stripes={10} /></div>
               <div className="sellercard__sign">
-                <span className="sellercard__avatar"><Avatar name={seller.storefrontName} size={52} /></span>
+                <span className="sellercard__avatar">
+                  {seller.photoUrl ? <img src={seller.photoUrl} alt="" /> : <Avatar name={seller.storefrontName} size={64} />}
+                </span>
                 <div className="sellercard__who">
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
@@ -224,6 +240,7 @@ export function ListingPage() {
                 <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>
                   <Svg name="shield" size={13} /> {seller.tier}
                 </span>
+              </div>
               </div>
 
               <dl className="sellercard__stats">
@@ -267,6 +284,7 @@ export function ListingPage() {
           )}
         </aside>
       </div>
+      <SimilarItems listingId={listing.id} />
       {editing && (
         <EditListingDialog listing={listing} onClose={() => setEditing(false)}
           onSaved={(saved) => {

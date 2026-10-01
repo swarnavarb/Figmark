@@ -21,6 +21,7 @@ import { useStepActs } from '../components/StepActs';
 import { ItemCard, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
+import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
 
 /**
  * One order, as the buyer sees it.
@@ -162,6 +163,9 @@ export function OrderPage() {
             <b>Not placed yet.</b> The seller only gets your order once you choose how to buy below.
           </p>
         )}
+        {order.affiliate && (seller
+          ? <AffiliateOwed order={order} onDone={load} />
+          : <ReferredBy party={{ name: order.affiliate.referrerName, handle: order.affiliate.referrerHandle }} />)}
         {data.listing && (
           <Link to={`/listing/${data.listing.id}`} className="icard__open">
             View listing <Svg name="open" size={14} />

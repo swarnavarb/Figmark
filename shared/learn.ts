@@ -229,7 +229,7 @@ const BUY: LearnTab = {
       body: 'Reviews are two-sided and blind: you rate the seller, the seller rates you, and neither sees the other\'s until both are written (or the window closes). Your rating as a buyer shows on your profile, so paying on time and being easy to deal with matters.',
       steps: [
         step('Review the seller', 'After the order completes, the order page asks for a rating and a few words. Mention how the item compared with the listing, the packing and the speed.'),
-        step('Refunds', 'If an order is cancelled after you paid, the seller refunds you and asks for your refund details once. Keep them current in **My refunds** → details.'),
+        step('Refunds', 'If an order is cancelled after you paid, the seller refunds you and asks for your refund details once. Keep them current in **My wallet** → details.'),
         step('Open a dispute', 'If something is wrong - not as described, damaged, never arrived - open a dispute from the order before the protection window closes. Explain what happened and attach photos.'),
         step('Dispute a review or comment', 'Every review and comment has a **Dispute** button: tell Figmark if it is untrue, abusive or not about a real trade, and an operator decides whether it stays. On your own review or comment the same button reads **Ask to validate** - an operator checks it, and if it holds up it shows a ✓ Validated mark.'),
         step('Settle it', 'The seller can reply and either side can offer a refund amount the other accepts in one tap. If you cannot agree, escalate it and Figmark decides.'),

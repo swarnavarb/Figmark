@@ -2006,8 +2006,8 @@ function PayoutDetails({ orderId, buyerName, details, check, onChanged }: {
 
   function open() {
     setMessage(details
-      ? 'Before I refund you, please check your payment reversal details are up to date (My refunds → Payment reversal details) and confirm them, or update them if anything has changed.'
-      : 'I need to refund you. Please add your payment reversal details (My refunds → Payment reversal details) so I know where to send it.');
+      ? 'Before I refund you, please check your payment reversal details are up to date (My wallet → Payment reversal details) and confirm them, or update them if anything has changed.'
+      : 'I need to refund you. Please add your payment reversal details (My wallet → Payment reversal details) so I know where to send it.');
     setAsking(true);
     setError(null);
   }

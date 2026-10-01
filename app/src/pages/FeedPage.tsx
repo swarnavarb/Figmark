@@ -12,6 +12,7 @@ import { CategoryIcon } from '../components/CategoryIcon';
 import { FillGap, FillKey, FillMeter } from '../components/FillMeter';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { AffiliateBadge } from '../components/Affiliate';
 import { ExpiryChip, StockChip } from '../components/Buy';
 import { DesignSwitch, useDesign } from '../components/Quest';
 import { QuestFeedPage } from './QuestFeedPage';
@@ -316,8 +317,9 @@ function ListingCard({ listing }: { listing: FeedListing }) {
   }
 
   return (
-    <Link to={`/listing/${listing.id}`} className="card card--link">
+    <Link to={`/listing/${listing.id}`} className={`card card--link${listing.affiliate ? ' is-affiliate' : ''}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
+        {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
         {user && (
           <button type="button" className={`thumb__like${liked ? ' is-on' : ''}`} onClick={toggleLike}
             aria-label={liked ? 'Remove bookmark' : 'Bookmark'} aria-pressed={liked}>
