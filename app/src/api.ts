@@ -14,6 +14,7 @@ import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
+import type { ButtonKit, KitButton, KitSnapshot, KitStage, RouteFlow, SampleFlow } from '@shared/flows';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
@@ -327,7 +328,17 @@ export interface LotContents {
   items: LotItem[];
   /** Every step the lot took and every note written on it, oldest first. */
   history: StageEvent[];
+  /** The buttons its items show once it is unpacked. */
+  afterKit?: KitSnapshot;
   totals: { lines: number; units: number; weightGrams: number; valueMinor: number };
+}
+
+export interface FlowsResponse {
+  kits: ButtonKit[];
+  flows: RouteFlow[];
+  builtInKits: ButtonKit[];
+  samples: SampleFlow[];
+  defaults: Record<KitStage, string>;
 }
 
 export interface OrderTracking {
@@ -488,6 +499,9 @@ export interface SaleRow {
   lotStep: string | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
+  checkpoints?: Partial<Record<OrderCheckpoint, string | null>>;
+  /** Its before-the-lot buttons; null for the built-in ones. */
+  itemKit?: KitSnapshot | null;
   /** When the seller ticked it delivered, on the lot's own item list. */
   deliveredAt: string | null;
   /** The route its Quick Post template set up for the lot that will carry it. */
@@ -777,6 +791,8 @@ export interface NewListing {
   photos?: { blobName: string; url: string; isPrimary: boolean }[];
   /** The before-lot ladder a Quick Post template gave it. */
   preLotSteps?: { name: string; description?: string }[];
+  /** The before-the-lot button kit; the shop's default when absent. */
+  itemKitId?: string | null;
   preLotName?: string;
   /** The route template a lot made from this item should travel. */
   lotRouteId?: string | null;
@@ -1353,6 +1369,8 @@ export interface LotItem {
   buyerName: string;
   buyerHandle: string | null;
   checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+  /** Its before-the-lot buttons; null for the built-in ones. */
+  itemKit?: KitSnapshot | null;
   /** Where this item is on the lot's route. The lot's position unless moved alone. */
   currentStep: number;
   /** True when the seller moved this one item away from the rest of the lot. */
@@ -1736,6 +1754,14 @@ export const api = {
   }) =>
     post<{ route: TrackingRoute }>('/routes/new', body),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),
+  flows: () => request<FlowsResponse>('/flows'),
+  saveKit: (body: { id?: string; stage: KitStage; name: string; buttons: KitButton[]; isDefault?: boolean }) =>
+    post<{ kit: ButtonKit }>('/flows/kits/new', body),
+  saveFlow: (body: {
+    id?: string; name: string; beforeKitId: string | null; routeId: string | null; afterKitId: string | null;
+    isDefault?: boolean;
+  }) => post<{ flow: RouteFlow }>('/flows/new', body),
+  deleteFlowDoc: (id: string) => post<{ deleted: string }>(`/flows/${encodeURIComponent(id)}/delete`, {}),
   lotCandidates: (id: string, q?: string) =>
     request<{ items: CandidateItem[] }>(
       `/lots/${encodeURIComponent(id)}/candidates${q ? `?q=${encodeURIComponent(q)}` : ''}`,

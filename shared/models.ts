@@ -1,5 +1,6 @@
 import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { LotRoute } from './routes.js';
+import type { KitSnapshot } from './flows.js';
 import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
   ConditionTag,
@@ -541,6 +542,12 @@ export interface Listing extends BaseDocument {
    */
   preLotRoute?: LotRoute | null;
   /**
+   * The buttons this item shows before it is in a lot - "Forwarder got it",
+   * "China WH" - picked while listing it, from the shop's kits. Copied, like
+   * the ladder above, which is built from it.
+   */
+  itemKit?: KitSnapshot | null;
+  /**
    * The route template a lot made from this item should travel.
    *
    * A pointer rather than a copy, because nothing is travelling it yet - it is
@@ -729,6 +736,8 @@ export interface StageEvent {
    * it. Absent on every event recorded before routes, which read the stage.
    */
   step?: string;
+  /** The tick this event records, when it records one. */
+  checkpoint?: OrderCheckpoint;
   /**
    * Absent on everything recorded before this existed, which is why nothing
    * reads it directly: `kindOf` answers for those too.
@@ -978,6 +987,8 @@ export interface Order extends BaseDocument {
    * which is what the buyer's timeline shows above the join.
    */
   preLotRoute?: LotRoute | null;
+  /** The before-the-lot buttons, copied from the listing at purchase. */
+  itemKit?: KitSnapshot | null;
   /** Set once the order reaches `delivered`; unlocks reviews. */
   completedAt: string | null;
   /**

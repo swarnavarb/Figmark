@@ -1,5 +1,6 @@
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
+import type { FlowDoc } from '../../../shared/flows.js';
 import { ROUTE_TEMPLATES, normaliseSteps, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
@@ -54,6 +55,7 @@ export class MemoryRepository implements Repository {
   private readonly identifiers = new Map<string, string>();
   private readonly lots = new Map<string, Lot>();
   private readonly routes = new Map<string, TrackingRoute>();
+  private readonly flowDocs = new Map<string, FlowDoc>();
   private readonly templates = new Map<string, PostTemplate>();
   private readonly listings = new Map<string, Listing>();
   private readonly orders = new Map<string, Order>();
@@ -230,6 +232,24 @@ export class MemoryRepository implements Repository {
     this.routes.delete(routeId);
     return true;
   }
+  async listFlowDocs(sellerId: string): Promise<FlowDoc[]> {
+    return [...this.flowDocs.values()]
+      .filter((doc) => doc.sellerId === sellerId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async saveFlowDoc(doc: FlowDoc): Promise<FlowDoc> {
+    this.flowDocs.set(doc.id, doc);
+    return doc;
+  }
+
+  async deleteFlowDoc(sellerId: string, id: string): Promise<boolean> {
+    const doc = this.flowDocs.get(id);
+    if (!doc || doc.sellerId !== sellerId) return false;
+    this.flowDocs.delete(id);
+    return true;
+  }
+
 
   async listOrdersAwaitingLot(sellerId: string): Promise<Order[]> {
     return [...this.orders.values()]

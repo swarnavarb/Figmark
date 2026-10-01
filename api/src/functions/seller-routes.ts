@@ -357,6 +357,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       lotStep: lot ? routeOf(lot).steps[currentStepOf(lot)]?.name ?? null : null,
       /** The one tick a seller makes from this screen. */
       chinaReceivedAt: order.checkpoints?.china_received ?? null,
+      /** Every tick, for the before-the-lot buttons the item's kit puts on its card. */
+      checkpoints: order.checkpoints ?? {},
+      itemKit: order.itemKit ?? null,
       /** Ticked on the lot screen, not this one - read here so this screen's
        *  own Active/Completed split can tell without asking `order.status`,
        *  which a seller's tick deliberately never touches (see setCheckpoint

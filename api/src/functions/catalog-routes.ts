@@ -5,6 +5,7 @@ import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulfilment.js';
 import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
+import { DEFAULT_KIT_IDS, kitToPreLotRoute, snapshotOf } from '../../../shared/flows.js';
 import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, isReaction, type ReactionKind } from '../../../shared/social.js';
@@ -15,6 +16,7 @@ import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { placeOrder } from './placement.js';
+import { beforeKitFor } from './flow-routes.js';
 import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -193,6 +195,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     shareToFeed?: boolean;
     /** The before-lot ladder from the Quick Post template, if it had one. */
     preLotSteps?: { id?: string; name?: string; description?: string }[];
+    /** The before-the-lot button kit picked while listing; the shop's default when absent. */
+    itemKitId?: string | null;
     preLotName?: string;
   };
   try {
@@ -274,9 +278,17 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
      template later cannot rewrite what a buyer of this item reads. Two steps or
      none: one step before the wall says nothing. */
   const preLotSteps = normaliseSteps(body.preLotSteps ?? []);
+  /* The item's before-the-lot buttons. An import always gets a kit - the one
+     picked, or the shop's default - and its ladder is built from that kit
+     unless a template wrote one of its own. An in-hand item never goes near
+     a lot and has no use for either. */
+  const found = sourcing === 'import' ? await beforeKitFor(repository, sellerId, body.itemKitId) : null;
+  /* Nothing picked and nothing but the stock default: the built-in two steps
+     and buttons, exactly as every item had before kits existed. */
+  const kit = found && (body.itemKitId || found.id !== DEFAULT_KIT_IDS.before) ? found : null;
   const preLot = preLotSteps.length >= 2
     ? { routeId: null, name: body.preLotName?.trim() || 'Before the lot', steps: preLotSteps }
-    : null;
+    : kit ? kitToPreLotRoute(kit) : null;
 
   const now = new Date().toISOString();
   const listing: Listing = {
@@ -327,6 +339,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
        The before-lot one is copied because a buyer will read it; the after-lot
        one is a pointer, because nothing is travelling it yet. */
     preLotRoute: preLot,
+    itemKit: kit ? snapshotOf(kit) : null,
     lotRouteId: body.lotRouteId ?? null,
     tags: body.tags ?? [],
     likeCount: 0,
@@ -602,6 +615,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // the template is a template, and editing it must not rewrite a timeline
     // somebody is already reading.
     preLotRoute: listing.preLotRoute ?? null,
+    itemKit: listing.itemKit ?? null,
     stageHistory: [
       ...joined,
       {

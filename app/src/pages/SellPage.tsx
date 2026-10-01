@@ -6,7 +6,7 @@ import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
-import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
+import { ApiRequestError, api, type FlowsResponse, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
@@ -77,6 +77,8 @@ type SellDraft = {
   shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; preOrderDays: string;
   tags: string; calc: SavedCalc | null; quickPost: boolean; templateId: string; photos: PhotoDraft[];
   preLot: RouteStep[] | null; shape: Shape; lotId: string;
+  /** The before-the-lot button kit picked for this item. */
+  itemKitId?: string | null;
   /** The listing already made from this form, when only the step after it failed. */
   createdListingId?: string | null;
   /** When it was last written, so old visits' drafts can be let go. */
@@ -187,12 +189,24 @@ export function SellPage() {
   const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
   const [lots, setLots] = useState<LotSummary[]>([]);
   const [lotId, setLotId] = useState(restored?.lotId ?? '');
+  /* The buttons this item shows before it is in a lot. Asked here, with the
+     shop's default kit already picked, so the common case is no tap at all. */
+  const [flows, setFlows] = useState<FlowsResponse | null>(null);
+  const [itemKitId, setItemKitId] = useState<string | null>(restored?.itemKitId ?? null);
   /* The listing this form already made, when publishing got that far and the
      private-deal message after it did not. Publishing again then only retries
      the message, rather than making a second copy of the item. */
   const [createdListingId, setCreatedListingId] = useState<string | null>(restored?.createdListingId ?? null);
 
   useEffect(() => { pruneDrafts(draftKey); }, [draftKey]);
+
+  useEffect(() => {
+    void api.flows().then(setFlows).catch(() => undefined);
+  }, []);
+  const beforeKits = flows
+    ? [...flows.kits, ...flows.builtInKits].filter((kit) => kit.stage === 'before')
+    : [];
+  const pickedKit = beforeKits.find((kit) => kit.id === (itemKitId ?? flows?.defaults.before));
 
   /* Written a moment after typing stops rather than on every keystroke: the
      draft carries the photos too, and serialising all of it per character
@@ -204,7 +218,7 @@ export function SellPage() {
   latest.current = {
     title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
     preOrderMode, fillThreshold, preOrderDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
-    createdListingId,
+    itemKitId, createdListingId,
   };
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -213,7 +227,7 @@ export function SellPage() {
     return () => window.clearTimeout(timer);
   }, [draftKey, title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
     preOrderMode, fillThreshold, preOrderDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
-    createdListingId]);
+    itemKitId, createdListingId]);
   useEffect(() => () => {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
   }, [draftKey]);
@@ -357,6 +371,8 @@ export function SellPage() {
           : null,
         sourcing: effectiveSourcing,
         lotId: shape === 'lot' ? lotId : null,
+        // Only once the seller changed it: the default is the server's to apply.
+        ...(effectiveSourcing === 'import' && itemKitId ? { itemKitId } : {}),
         ...(storeId ? { storeId } : {}),
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
         photos: photos.map((photo) => ({
@@ -544,6 +560,28 @@ export function SellPage() {
                 <Link to="/shop?tab=lots&spotlight=new" className="lotpick__new">
                   + New lot <span aria-hidden="true">→</span> <small>opens Lots, draft kept</small>
                 </Link>
+              </div>
+            )}
+            {/* An import's before-the-lot buttons: who gets it first, and what
+                the buyer reads when they do. The shop's default is picked. */}
+            {shape !== 'single' && beforeKits.length > 0 && (
+              <div className="kitpick">
+                <span className="kitpick__label">📍 Before-lot buttons on this item</span>
+                <div className="kitpick__row" role="radiogroup" aria-label="Before-lot buttons">
+                  {beforeKits.map((kit) => (
+                    <button key={kit.id} type="button" role="radio" aria-checked={pickedKit?.id === kit.id}
+                      className={`kitpick__kit${pickedKit?.id === kit.id ? ' is-on' : ''}`}
+                      onClick={() => setItemKitId(kit.id)}>
+                      {kit.name}{kit.id === flows?.defaults.before ? ' ⭐' : ''}
+                    </button>
+                  ))}
+                </div>
+                {pickedKit && (
+                  <span className="kitpick__shows">
+                    Shows {pickedKit.buttons.map((entry) => `${entry.icon} ${entry.label}`).join(' → ')}
+                  </span>
+                )}
+                <Link to="/routes/flow/new" className="kitpick__more">Build your own in Flows →</Link>
               </div>
             )}
           </LBox>

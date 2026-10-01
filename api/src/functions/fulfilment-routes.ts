@@ -6,6 +6,8 @@ import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
 import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
+import { KIT_CHECKPOINTS, buttonFor } from '../../../shared/flows.js';
+import { afterKitFor } from './flow-routes.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
   itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeOf, stepForStage,
@@ -473,6 +475,8 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
     },
     /** The lot's own history: every step it took and every note written on it. */
     history: lot.stageHistory,
+    /** The buttons its items show once it is unpacked, from the flow wired to its route. */
+    afterKit: await afterKitFor(repository, lot.sellerId, route.routeId),
     items: orders.map((order) => ({
       id: order.id,
       itemName: order.itemName,
@@ -483,6 +487,8 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
       buyerName: byId.get(order.buyerId)?.displayName ?? 'Unknown',
       buyerHandle: byId.get(order.buyerId)?.username ?? null,
       checkpoints: order.checkpoints ?? {},
+      /** Its before-the-lot buttons, as picked when it was listed. */
+      itemKit: order.itemKit ?? null,
       /** Where this item is on the lot's route: the lot's, its own, or what it has done. */
       currentStep: itemStepOn(
         route, step, order.currentStep, order.checkpoints,
@@ -785,7 +791,9 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   const notedTexts = new Set(order.stageHistory.map((event) => event.note));
   const healedHistory = [
     ...order.stageHistory,
-    ...ORDER_CHECKPOINTS.filter((checkpoint) => order.checkpoints?.[checkpoint] && !notedTexts.has(CHECKPOINT_EVENT_TEXT[checkpoint]))
+    ...ORDER_CHECKPOINTS.filter((checkpoint) => order.checkpoints?.[checkpoint]
+      && !notedTexts.has(CHECKPOINT_EVENT_TEXT[checkpoint])
+      && !order.stageHistory.some((event) => event.checkpoint === checkpoint))
       .map((checkpoint) => ({
         stage: order.stage,
         step: stepForCheckpoint(stepsForNotes, checkpoint, order)?.name,
@@ -804,8 +812,17 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
    * The arrival is done; what is actually in progress is the wait for a lot,
    * and that is what the screen says.
    */
-  const beforeDone = Boolean(order.checkpoints?.china_received);
-  const beforeReached = beforeDone ? before.steps.length - 1 : 0;
+  /* A ladder built from a button kit binds each rung to its button, so the
+     furthest pressed one is where the item is. The built-in two steps bind
+     nothing and read the warehouse tick, as they always did. */
+  const boundBefore = before.steps.some((entry) => entry.trigger);
+  const pressedBefore = before.steps.reduce(
+    (at, entry, index) => (entry.trigger && order.checkpoints?.[entry.trigger] ? index : at), 0,
+  );
+  const beforeDone = boundBefore
+    ? pressedBefore === before.steps.length - 1
+    : Boolean(order.checkpoints?.china_received);
+  const beforeReached = boundBefore ? pressedBefore : beforeDone ? before.steps.length - 1 : 0;
 
   /*
    * Where the item is on its lot's ladder: the lot's position, its own when it
@@ -1130,13 +1147,25 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   // order happened to be at, however much later the tick came.
   const stepsForTick = lot ? routeOf(lot).steps : preLotRouteOf(order).steps;
   const tickedStep = stepForCheckpoint(stepsForTick, checkpoint, order);
+  /* In the words of the button that was pressed - "Received by the freight
+     forwarder" rather than the shop-wide default - when the item's kit, or
+     its lot's last-mile kit, names it. */
+  const pressed = buttonFor(
+    checkpoint,
+    order.itemKit,
+    KIT_CHECKPOINTS.after.includes(checkpoint) && lot
+      ? await afterKitFor(repository, order.sellerId, routeOf(lot).routeId)
+      : null,
+  );
+  const tickText = pressed ? `${pressed.step}.` : CHECKPOINT_EVENT_TEXT[checkpoint];
   order.stageHistory = [
     ...order.stageHistory,
     {
       stage: order.stage,
       step: tickedStep?.name,
       enteredAt: now,
-      note: on ? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
+      note: on ? tickText : `${tickText} — undone.`,
+      checkpoint,
       recordedBy: user.id,
     },
     // Its own line rather than folded into the tick's, which reading an order

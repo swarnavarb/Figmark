@@ -128,6 +128,9 @@ const {
 } = await import(new URL('service-routes.js', fns));
 const { setCrewRoute: setCrew } = await import(new URL('fulfilment-routes.js', fns));
 const {
+  listFlowsRoute: listFlows, saveKitRoute: saveKit, saveFlowRoute: saveFlow, deleteFlowDocRoute: deleteFlowDoc,
+} = await import(new URL('flow-routes.js', fns));
+const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
   lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
   noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
@@ -8158,6 +8161,89 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
     assert.equal(task.claimable, false, 'and not claimable until it is met again');
     assert.equal(task.progress, 2);
   }
+});
+
+await check('a before-lot kit is snapped onto an item, and its buttons speak in its own words', async () => {
+  const made = await saveKit(req({ headers: auth, body: {
+    stage: 'before', name: 'Forwarder, my way',
+    buttons: [
+      { checkpoint: 'china_received', label: 'Forwarder got it', who: 'forwarder', icon: '🚢', step: 'Received by the freight forwarder' },
+      // Not a before-the-lot button at all: dropped rather than stored.
+      { checkpoint: 'india_received', label: 'Nope' },
+    ],
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const kit = made.jsonBody.kit;
+  assert.deepEqual(kit.buttons.map((entry) => entry.checkpoint), ['china_received']);
+
+  const item = await list({ title: 'Kit-built import', priceMinor: 6_000, sourcing: 'import', itemKitId: kit.id });
+  assert.equal(item.itemKit.kitId, kit.id, 'the listing carries a copy of its kit');
+  assert.deepEqual(item.preLotRoute.steps.map((step) => step.trigger ?? null), [null, 'china_received'],
+    'and a before-lot ladder built from it, each rung bound to its button');
+
+  const order = (await buy(item.id)).jsonBody.order;
+  assert.equal(order.itemKit.kitId, kit.id, 'copied onto the order at purchase');
+  await paidBy(order.id, 'full');
+
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+  const tracking = (await orderTracking(req({ headers: payAuth, params: { id: order.id } }), ctx)).jsonBody;
+  const note = tracking.order.stageHistory.find((event) => event.checkpoint === 'china_received');
+  assert.equal(note?.note, 'Received by the freight forwarder.', 'the buyer reads the kit\'s words');
+  assert.equal(note.step, 'Received by the freight forwarder', 'filed under its own rung');
+  assert.equal(tracking.preLot.currentStep, 1);
+  assert.equal(tracking.preLot.waitingForLot, true, 'every before-lot button pressed: waiting for a lot');
+  assert.equal(tracking.order.stageHistory.filter((event) => event.note === 'Received at the international warehouse.').length, 0,
+    'and no generic note is healed in beside it');
+});
+
+await check('a flow wires a last-mile kit to a route, and every lot on that route shows its buttons', async () => {
+  const last = await saveKit(req({ headers: auth, body: {
+    stage: 'after', name: 'Handler finishes', buttons: [{ checkpoint: 'packed', label: 'Boxed', who: 'handler' }],
+  } }), ctx);
+  assert.equal(last.status, 201);
+  assert.deepEqual(last.jsonBody.kit.buttons.map((entry) => entry.checkpoint), ['packed', 'dispatched', 'delivered'],
+    'dispatch and delivery are put back: a last mile cannot drop them');
+
+  const route = (await saveRoute(req({ headers: auth, body: {
+    name: 'Flow test lane',
+    steps: [{ name: 'Placed', side: 'pre' }, { name: 'Flown', side: 'post' }, { name: 'Out for delivery', side: 'post', trigger: 'dispatched' }],
+  } }), ctx)).jsonBody.route;
+
+  const wrong = await saveFlow(req({ headers: auth, body: { name: 'Crossed', beforeKitId: last.jsonBody.kit.id } }), ctx);
+  assert.equal(wrong.status, 400, 'an after-lot kit cannot sit at the front');
+
+  const flow = await saveFlow(req({ headers: auth, body: {
+    name: 'Handler run', beforeKitId: 'kit_bi_forwarder', routeId: route.id, afterKitId: last.jsonBody.kit.id, isDefault: true,
+  } }), ctx);
+  assert.equal(flow.status, 201, JSON.stringify(flow.jsonBody));
+
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Flow lot', routeId: route.id } }), ctx)).jsonBody.lot;
+  const contents = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.equal(contents.afterKit.kitId, last.jsonBody.kit.id, 'the lot shows the flow\'s last-mile buttons');
+
+  const plain = (await createLot(req({ headers: auth, body: { name: 'No flow lot' } }), ctx)).jsonBody.lot;
+  const plainContents = (await lotContents(req({ headers: auth, params: { id: plain.id } }), ctx)).jsonBody;
+  assert.equal(plainContents.afterKit.kitId, last.jsonBody.kit.id,
+    'a route no flow uses falls back to the default flow\'s last mile');
+
+  const shelf = (await listFlows(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(shelf.defaults.before, 'kit_bi_forwarder', 'a built-in kit in the default flow is the default');
+  assert.equal(shelf.defaults.after, last.jsonBody.kit.id);
+  assert.ok(shelf.samples.length >= 3, 'with samples to start from');
+
+  // New imports now get the default flow's before-lot buttons without asking.
+  const item = await list({ title: 'Defaulted import', priceMinor: 4_000, sourcing: 'import' });
+  assert.equal(item.itemKit?.kitId, 'kit_bi_forwarder');
+
+  const builtIn = await deleteFlowDoc(req({ headers: auth, params: { id: 'kit_bi_forwarder' } }), ctx);
+  assert.equal(builtIn.status, 400, 'the built-in kits stay');
+  const gone = await deleteFlowDoc(req({ headers: auth, params: { id: flow.jsonBody.flow.id } }), ctx);
+  assert.equal(gone.status, 200);
+  const routes = (await listRoutes(req({ headers: auth }), ctx)).jsonBody.routes;
+  assert.ok(routes.every((entry) => !entry.kind), 'kits and flows never show up as routes');
 });
 
 console.log(`\n${passed} checks passed`);

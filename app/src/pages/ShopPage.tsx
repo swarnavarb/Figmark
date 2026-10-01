@@ -7,7 +7,8 @@ import {
 import { countOf } from '@shared/board';
 import { CATEGORIES } from '@shared/catalog';
 import { countryFlag } from '@shared/countries';
-import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import { CONDITION_TAGS, SOURCING_LABELS, type OrderCheckpoint, type Sourcing } from '@shared/enums';
+import { buttonFor, kitButtons } from '@shared/flows';
 import { sourcingOf } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
@@ -16,6 +17,7 @@ import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderSta
 import { LBox, OptionTiles } from '../components/ListingForm';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
+import { KitButtons } from '../components/KitButtons';
 import { RouteEditor, RoutesList } from './RoutesPage';
 import { phaseOfCounts } from '@shared/insights';
 import {
@@ -934,18 +936,24 @@ function Orders({ store }: { store: StoreAccess }) {
     return () => window.clearTimeout(timer);
   }, [data, focusOrder, here, navigate]);
 
-  /** The one tick this screen makes. Everything else opens something. */
-  async function markWarehouse(row: SaleRow, on: boolean) {
+  /** The before-the-lot ticks this screen makes, from the item's kit. Everything else opens something. */
+  async function markTick(row: SaleRow, checkpoint: OrderCheckpoint, on: boolean) {
     setBusy(row.id);
     setError(null);
     try {
-      await api.setCheckpoint(row.id, 'china_received', on);
+      await api.setCheckpoint(row.id, checkpoint, on);
       // Only this card's tick changed, so only this card is redrawn - rather
       // than reading the whole book again for one checkmark.
       const at = on ? new Date().toISOString() : null;
       setData((current) => current && {
         ...current,
-        orders: current.orders.map((entry) => (entry.id === row.id ? { ...entry, chinaReceivedAt: at } : entry)),
+        orders: current.orders.map((entry) => (entry.id === row.id
+          ? {
+              ...entry,
+              checkpoints: { ...entry.checkpoints, [checkpoint]: at },
+              ...(checkpoint === 'china_received' ? { chinaReceivedAt: at } : {}),
+            }
+          : entry)),
       });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
@@ -1066,7 +1074,7 @@ function Orders({ store }: { store: StoreAccess }) {
             glowing={glowing === row.id}
             busy={busy === row.id}
             needsAnswer={needsAnswer.has(row.id)}
-            onWarehouse={(on) => void markWarehouse(row, on)}
+            onTick={(checkpoint, on) => void markTick(row, checkpoint, on)}
             onFile={() => setFiling(row)}
             onReject={() => setRejecting(row)}
             onAccept={() => void accept(row)}
@@ -1440,7 +1448,7 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
  * guess.
  */
 function OrderRow({
-  index, row, store, from, glowing, busy, needsAnswer, onWarehouse, onFile, onReject, onAccept, onCancel,
+  index, row, store, from, glowing, busy, needsAnswer, onTick, onFile, onReject, onAccept, onCancel,
   onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -1451,7 +1459,7 @@ function OrderRow({
   glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
-  onWarehouse: (on: boolean) => void;
+  onTick: (checkpoint: OrderCheckpoint, on: boolean) => void;
   onFile: () => void;
   onReject: () => void;
   onAccept: () => void;
@@ -1552,7 +1560,9 @@ function OrderRow({
             ? <Link to={lotHref} className="ocard__chip ocard__chip--lot">📦 {row.lotName ?? `LOT ${row.lotNumber}`}</Link>
             : <span className="ocard__chip ocard__chip--none">No lot yet</span>}
           {row.lotStep && <span className="ocard__chip ocard__chip--step">🚚 {row.lotStep}</span>}
-          {received && <span className="ocard__chip ocard__chip--ok">✓ At warehouse</span>}
+          {received && (
+            <span className="ocard__chip ocard__chip--ok">✓ {buttonFor('china_received', row.itemKit)?.label ?? 'At warehouse'}</span>
+          )}
         </div>
       )}
 
@@ -1598,15 +1608,11 @@ function OrderRow({
             and one that has been called off is not going anywhere at all. */}
         {!row.inHand && !isClosed(row) && (
           <>
-            <button type="button" disabled={busy} aria-pressed={received}
-              className={`orow__toggle${received ? ' is-on' : ''}`}
-              aria-label={received
-                ? 'Received at the China warehouse. Tap to undo.'
-                : 'Mark received at the China warehouse'}
-              onClick={() => onWarehouse(!received)}>
-              <Icon name={received ? 'check' : 'box'} size={13} />
-              <span>China WH</span>
-            </button>
+            {/* Its before-the-lot buttons, from the kit it was listed with:
+                "Forwarder got it" for one item, "China WH" for another. */}
+            <KitButtons look="chip" busy={busy} buttons={kitButtons(row.itemKit, 'before')}
+              checkpoints={{ china_received: row.chinaReceivedAt, ...row.checkpoints }}
+              onPress={onTick} />
             {!lotHref && (
               <button type="button" className="orow__toggle" aria-label="Add this order to a lot" onClick={onFile}>
                 <Icon name="plus" size={13} />
