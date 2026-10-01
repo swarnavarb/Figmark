@@ -13,7 +13,7 @@ import {
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
-import { daysFrom, isStopped, travellingStatus } from '../../../shared/orders.js';
+import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isStopped, travellingStatus } from '../../../shared/orders.js';
 import {
   awaitingLot, furthestStage, inLot, stagesFor,
 } from '../../../shared/fulfilment.js';
@@ -1099,6 +1099,12 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
 
   const on = body.on !== false;
   const now = new Date().toISOString();
+
+  // Shipping or handing over a booking is serving it, and the seller has not
+  // yet said they will. Undoing a tick is always allowed.
+  if (on && (checkpoint === 'dispatched' || checkpoint === 'delivered') && awaitingAcceptance(order)) {
+    return error(409, 'not_accepted', NOT_ACCEPTED_MESSAGE);
+  }
 
   /* A custom button records that it happened, and nothing else: none of the
      seven's consequences (status, protection window, delivery) hang off it. */

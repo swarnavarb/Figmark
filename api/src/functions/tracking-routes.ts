@@ -5,7 +5,7 @@ import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
   BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
 } from '../../../shared/routes.js';
-import { actionsFor, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
+import { NOT_ACCEPTED_MESSAGE, actionsFor, awaitingAcceptance, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -701,6 +701,9 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   };
 
   const last = Boolean(route) && target === route!.steps.length - 1;
+  if (moving && last && awaitingAcceptance(order)) {
+    return error(409, 'not_accepted', NOT_ACCEPTED_MESSAGE);
+  }
   if (moving && isStopped(order.status)) {
     return error(409, 'order_stopped', 'That order was called off or refunded, so it no longer moves along the route.');
   }

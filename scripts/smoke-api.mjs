@@ -6657,6 +6657,26 @@ await check('a booking stuck part-paid by kept credit can still be accepted or r
   await repository.updateOrder({ ...tidy, credits: tidy.credits.filter((c) => c.id !== 'cr_book') });
 });
 
+await check('a booking cannot be dispatched or delivered until the seller accepts it', async () => {
+  const listing = await list({ title: 'Item L', priceMinor: 25_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const booked = (await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx)).jsonBody.order;
+  const tick = (checkpoint) => setCheckpoint(req({ headers: auth, params: { id: booked.id }, body: { checkpoint, on: true } }), ctx);
+
+  for (const checkpoint of ['dispatched', 'delivered']) {
+    const refused = await tick(checkpoint);
+    assert.equal(refused.status, 409, `${checkpoint}: ${JSON.stringify(refused.jsonBody)}`);
+    assert.equal(refused.jsonBody.error, 'not_accepted');
+  }
+  const still = (await orderState(req({ headers: auth, params: { id: booked.id } }), ctx)).jsonBody;
+  assert.equal(still.order.status, 'pending_payment', 'nothing moved');
+  assert.ok(still.actions.includes('accept') && still.actions.includes('reject'), 'and the decision is still there');
+
+  await acceptOrder(req({ headers: auth, params: { id: booked.id }, body: {} }), ctx);
+  const shipped = await tick('dispatched');
+  assert.equal(shipped.status, 200, JSON.stringify(shipped.jsonBody));
+});
+
 await check('a group paid two different ways is refused rather than switched', async () => {
   const lD = await list({ title: 'Item D', priceMinor: 200_000, advancePercent: 50 });
   const lE = await list({ title: 'Item E', priceMinor: 200_000, advancePercent: 50 });

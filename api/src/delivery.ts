@@ -1,6 +1,6 @@
 import { inLot } from '../../shared/fulfilment.js';
 import type { Order, StageEvent } from '../../shared/models.js';
-import { autoReleaseDue, daysFrom, isStopped } from '../../shared/orders.js';
+import { autoReleaseDue, awaitingAcceptance, daysFrom, isStopped } from '../../shared/orders.js';
 import { coarseStage, lotEndIndex, routeOf } from '../../shared/routes.js';
 import type { getRepository } from './data/index.js';
 import { notify } from './functions/notify.js';
@@ -50,6 +50,8 @@ export interface DeliverOptions {
  */
 export function deliver(order: Order, options: DeliverOptions): boolean {
   if (isStopped(order.status)) return false;
+  // Backstop for every way in: a booking nobody accepted is not delivered.
+  if (awaitingAcceptance(order)) return false;
   const now = options.now ?? new Date().toISOString();
   order.status = 'delivered';
   order.stage = 'delivered';

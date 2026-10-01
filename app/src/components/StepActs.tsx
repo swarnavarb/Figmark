@@ -4,7 +4,7 @@ import { inLot, isDirect } from '@shared/fulfilment';
 import { useNavigate } from 'react-router-dom';
 import { ReceivedDialog } from './ReceivedDialog';
 import type { OrderCheckpoint } from '@shared/enums';
-import { isStopped } from '@shared/orders';
+import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, isStopped } from '@shared/orders';
 import { stepButtonLabel, stepTickKey, ticksOf, type RouteStep, type StepAssignee } from '@shared/routes';
 import { ApiRequestError, api, type OrderState } from '../api';
 import { formatDate } from '../format';
@@ -230,6 +230,11 @@ export function useStepActs(
       }
       const pressed = pressedNow(checkpoint);
       if (!pressed && index !== at.next) return null;
+      // A booking the seller has not accepted cannot be shipped or handed
+      // over; the Accept button above is the way forward.
+      if (!pressed && (checkpoint === 'dispatched' || checkpoint === 'delivered') && awaitingAcceptance(order!)) {
+        return <span className="field__hint">{NOT_ACCEPTED_MESSAGE}</span>;
+      }
       /* Undoing is not offered where it would undo something else too: a
          dispatch once delivered, a delivery the buyer has already confirmed. */
       const frozen = pressed && ((checkpoint === 'dispatched' && delivered) || (checkpoint === 'delivered' && (received || released)));

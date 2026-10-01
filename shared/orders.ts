@@ -282,6 +282,20 @@ export function isStopped(status: OrderStatus): boolean {
 }
 
 /**
+ * A booking the seller has not yet said yes to.
+ *
+ * It is a pledge, not a sale: nothing may ship it or mark it delivered until
+ * the seller accepts it. Otherwise it walks past the one place Accept and
+ * Reject are offered, and a buyer who was never told yes ends up with a
+ * delivered order they may not even have paid for.
+ */
+export function awaitingAcceptance(order: Pick<Order, 'status'> & Partial<Pick<Order, 'bookingOnly' | 'accepted'>>): boolean {
+  return order.bookingOnly === true && order.accepted !== true && !isStopped(order.status);
+}
+
+export const NOT_ACCEPTED_MESSAGE = 'Accept this booking before you dispatch or deliver it.';
+
+/**
  * The status an order takes when its lot (or the seller) moves it along the
  * route short of delivery.
  *
