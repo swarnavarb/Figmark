@@ -10945,3 +10945,63 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
   display: flex; align-items: center; gap: 6px; margin: 0;
   font-size: var(--t-sm); letter-spacing: 0.04em; text-transform: uppercase; color: #34D399;
 }
+
+/*
+ * One customer in a lot's Customers & Orders: a head with who they are and
+ * what their orders come to - paid and still pending - over the same order
+ * cards the Orders screen draws, so the two screens read as one.
+ */
+.ocusts { display: grid; gap: 22px; }
+.ocust {
+  --tone: 148 163 184;
+  --tone-2: 99 102 241;
+  display: grid; gap: 12px;
+  padding: 14px;
+  border-radius: 24px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgb(var(--tone) / 0.10), transparent 60%),
+    rgba(255, 255, 255, 0.025);
+  box-shadow: inset 0 0 0 1px rgb(var(--tone) / 0.22);
+}
+.ocust--ok { --tone: 52 211 153; --tone-2: 6 214 231; }
+.ocust--warn { --tone: 251 191 36; --tone-2: 249 115 22; }
+.ocust--purple { --tone: 147 51 234; --tone-2: 217 70 239; }
+.ocust__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.ocust__who { min-width: 0; display: grid; gap: 2px; }
+.ocust__name {
+  font-size: var(--t-md); font-weight: var(--w-bold); color: var(--text); text-decoration: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+a.ocust__name:hover { color: var(--accent-text); }
+.ocust__meta { font-size: var(--t-xs); color: var(--text-faint); }
+.ocust__total { display: grid; justify-items: end; gap: 6px; }
+.ocust__total b { font-family: var(--mono); font-size: var(--t-md); font-variant-numeric: tabular-nums; color: var(--text); }
+.ocust__total .badge { white-space: nowrap; }
+.ocust__money { display: grid; gap: 8px; }
+.ocust__money .ocard__bar span { background: linear-gradient(90deg, rgb(var(--tone)), rgb(var(--tone-2))); }
+.ocust__sums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ocust__sums > span {
+  display: grid; gap: 2px; padding: 8px 10px; border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.ocust__sums small { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.ocust__sums b {
+  font-family: var(--mono); font-size: var(--t-sm); font-variant-numeric: tabular-nums; color: var(--text);
+  overflow-wrap: anywhere;
+}
+.ocust__sums > .is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
+.ocust__sums > .is-due b { color: #FBBF24; }
+.ocust__sums > .is-clear b { color: var(--ok); }
+
+/* The lot's own next move, on an order riding in it: the same move the lot's Tracking makes. */
+.ocard__lotmove {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
+  border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--aqua-soft); color: var(--aqua);
+  box-shadow: inset 0 0 0 1px var(--aqua-line);
+  font: inherit; font-size: var(--t-xs); font-weight: var(--w-bold); white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  transition: transform var(--dur-1) var(--ease);
+}
+.ocard__lotmove:active:not(:disabled) { transform: scale(0.96); }
+.ocard__lotmove:disabled { opacity: 0.55; cursor: default; }

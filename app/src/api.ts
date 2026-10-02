@@ -523,6 +523,13 @@ export interface SaleRow {
   lotName: string | null;
   lotNumber: string | null;
   lotStep: string | null;
+  /**
+   * The lot's own next move, the same one its Tracking section offers: `to` is
+   * the step index, `unchecked` how many of its items the move would carry past
+   * the warehouse check-in unticked. Null when not in a lot, or the lot has
+   * gone as far as a lot goes.
+   */
+  lotNext: { to: number; label: string; unchecked: number } | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
   /** When the seller ticked it delivered, on the lot's own item list. */

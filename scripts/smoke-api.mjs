@@ -6043,6 +6043,10 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   const card = async () => (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((row) => row.id === order.id);
   assert.equal((await card()).next.checkpoint, 'china_received');
   assert.match((await card()).next.label, /^Received at international/);
+  /* The lot's own next move rides on the card too - and says it would carry
+     an item past the warehouse check-in that was never ticked in there. */
+  assert.equal((await card()).lotNext.label, 'Dispatched from China');
+  assert.equal((await card()).lotNext.unchecked, 1);
 
   // One press.
   await setCheckpoint(req({
@@ -6051,6 +6055,7 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   assert.equal(await where(), 'Received at international warehouse');
   assert.equal((await card()).next, null, 'the lot flies it, not a button');
   assert.equal((await card()).waitingOnLot, true);
+  assert.equal((await card()).lotNext.unchecked, 0, 'checked in, so the lot can move from the card');
   assert.equal((await card()).done.checkpoint, 'china_received', 'and the press just made is there to undo');
 
   // A button bound to a step further along jumps straight there: the lot flew

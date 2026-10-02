@@ -882,7 +882,19 @@ const ORDER_STATE_ICONS: Record<OrderState, string> = {
  * Nothing that answered a payment has been taken away. It is on the card now,
  * next to the rest of what the order needs.
  */
-function Orders({ store }: { store: StoreAccess }) {
+export function Orders({ store, lotId, onChanged, onTracking }: {
+  store: StoreAccess;
+  /**
+   * One lot's orders only, worked customer by customer - the lot's own
+   * Customers & Orders section. The cards are these same cards, so the two
+   * screens can never disagree about what an order needs.
+   */
+  lotId?: string;
+  /** Something here moved the lot or an item in it: the lot screen re-reads its header. */
+  onChanged?: () => void;
+  /** Where "check the items in" goes when this is drawn inside the lot. */
+  onTracking?: () => void;
+}) {
   const [data, setData] = useState<SalesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<SaleRow | null>(null);
@@ -955,6 +967,29 @@ function Orders({ store }: { store: StoreAccess }) {
    */
   /** The order whose warehouse button was pressed with no lot to say what that means. */
   const [receiving, setReceiving] = useState<{ row: SaleRow; button: CardButton } | null>(null);
+  /** The order whose lot button was pressed: moving a lot moves every buyer in it, so it asks first. */
+  const [movingLot, setMovingLot] = useState<SaleRow | null>(null);
+
+  async function refresh() {
+    await load();
+    onChanged?.();
+  }
+
+  /** The lot's own next move, made from an order riding in it - the same move its Tracking makes. */
+  async function moveLot(row: SaleRow) {
+    if (!row.lotId || !row.lotNext) return;
+    setBusy(row.id);
+    setError(null);
+    try {
+      await api.stepLot(row.lotId, { to: row.lotNext.to });
+      setMovingLot(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'The lot did not move.');
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function press(row: SaleRow, button: CardButton, on: boolean, label?: string) {
     /* No lot yet: ask where it was received, or offer to put it in a lot. */
@@ -968,7 +1003,7 @@ function Orders({ store }: { store: StoreAccess }) {
       await api.setCheckpoint(row.id, button.checkpoint, on, label ? { label } : undefined);
       setReceiving(null);
       setUndoable(on ? { rowId: row.id, button } : null);
-      await load();
+      await refresh();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {
@@ -1010,18 +1045,55 @@ function Orders({ store }: { store: StoreAccess }) {
   if (!data) return <p className="muted">Loading…</p>;
 
   const needsAnswer = new Set([...data.waiting, ...data.placed].map((row) => row.id));
-  const scoped = data.orders.filter((row) => stateOf(row) === statusFilter);
+  /* Inside a lot, the book is that lot's orders and nothing else. */
+  const book = lotId ? data.orders.filter((row) => row.lotId === lotId) : data.orders;
+  const scoped = book.filter((row) => stateOf(row) === statusFilter);
   /* The "All / To answer / No lot" split only means anything for active
      orders - a completed or cancelled one needs nothing answered and rides
      no lot search. */
   const toAnswer = scoped.filter((row) => needsAnswer.has(row.id));
   const withoutLot = scoped.filter((row) => row.awaitingLot);
-  const shown = statusFilter !== 'active' || filter === 'all'
+  /* "No lot" means nothing inside a lot, where every order has one. */
+  const chip = lotId && filter === 'nolot' ? 'all' : filter;
+  const shown = statusFilter !== 'active' || chip === 'all'
     ? scoped
-    : filter === 'answer' ? toAnswer : withoutLot;
-  const countOfState = (state: OrderState) => data.orders.filter((row) => stateOf(row) === state).length;
+    : chip === 'answer' ? toAnswer : withoutLot;
+  const countOfState = (state: OrderState) => book.filter((row) => stateOf(row) === state).length;
+  /* One customer at a time, inside a lot: a parcel goes to a person, not to a
+     line item, so that is how a lot is worked. */
+  const customers = lotId ? byCustomer(shown) : null;
 
-  if (data.orders.length === 0) {
+  const card = (row: SaleRow, index: number) => (
+    <OrderRow
+      key={row.id}
+      index={index}
+      row={row}
+      store={store}
+      from={here}
+      glowing={glowing === row.id}
+      busy={busy === row.id}
+      needsAnswer={needsAnswer.has(row.id)}
+      undoable={undoable?.rowId === row.id ? undoable.button : null}
+      onPress={(button, on) => void press(row, button, on)}
+      onMoveLot={() => setMovingLot(row)}
+      onFile={() => setFiling(row)}
+      onReject={() => setRejecting(row)}
+      onAccept={() => void accept(row)}
+      onCancel={() => setCancelling(row)}
+      onSettleReceived={() => void settleReceived(row)}
+      onSettleDenied={() => setDenyingClaim(row)}
+    />
+  );
+
+  if (lotId && book.length === 0) {
+    return (
+      <EmptyState title="Nobody in this lot yet">
+        Customers and their orders appear here as items are added to this lot.
+      </EmptyState>
+    );
+  }
+
+  if (book.length === 0) {
     return (
       <EmptyState title="No orders yet">
         Every purchase lands here — the money, the warehouse, the lot it travels in, and the one
@@ -1043,10 +1115,10 @@ function Orders({ store }: { store: StoreAccess }) {
             id: entry, label: <><span className="segtab__icon">{ORDER_STATE_ICONS[entry]}</span> {ORDER_STATE_LABELS[entry]}</>, count: countOfState(entry),
           }))} />
         {statusFilter === 'active' && (
-          <SegTabs ext label="Which orders" value={filter} onChange={setFilter} tabs={[
+          <SegTabs ext label="Which orders" value={chip} onChange={setFilter} tabs={[
             { id: 'all', label: 'All', count: scoped.length },
             { id: 'answer', label: 'To answer', count: toAnswer.length, hot: toAnswer.length > 0 },
-            { id: 'nolot', label: 'No lot', count: withoutLot.length },
+            ...(lotId ? [] : [{ id: 'nolot' as const, label: 'No lot', count: withoutLot.length }]),
           ]} />
         )}
       </div>
@@ -1055,49 +1127,38 @@ function Orders({ store }: { store: StoreAccess }) {
         <div className="oempty">
           <span className="oempty__icon" aria-hidden="true">
             {statusFilter === 'completed' ? '📬' : statusFilter === 'closed' ? '🕊️'
-              : filter === 'answer' ? '🎉' : filter === 'nolot' ? '✅' : '🛍️'}
+              : chip === 'answer' ? '🎉' : chip === 'nolot' ? '✅' : '🛍️'}
           </span>
           <b className="oempty__title">
             {statusFilter === 'completed'
               ? 'Nothing delivered yet'
               : statusFilter === 'closed'
                 ? 'Nothing cancelled or turned down'
-                : filter === 'answer'
+                : chip === 'answer'
                   ? 'All caught up!'
-                  : filter === 'nolot' ? 'Every order is in a lot' : 'No active orders right now'}
+                  : chip === 'nolot' ? 'Every order is in a lot' : 'No active orders right now'}
           </b>
           <span className="faint">
             {statusFilter === 'completed'
               ? 'Orders land here once they reach the buyer.'
               : statusFilter === 'closed'
                 ? 'Good news — every order is still going.'
-                : filter === 'answer'
+                : chip === 'answer'
                   ? 'Nothing is waiting on you.'
-                  : filter === 'nolot' ? 'Nothing is waiting to be filed.' : 'New orders show up here the moment someone buys.'}
+                  : chip === 'nolot' ? 'Nothing is waiting to be filed.' : 'New orders show up here the moment someone buys.'}
           </span>
+        </div>
+      ) : customers ? (
+        <div className="ocusts">
+          {customers.map((customer) => (
+            <CustomerOrders key={customer.key} customer={customer}>
+              {customer.rows.map((row, index) => card(row, customer.start + index))}
+            </CustomerOrders>
+          ))}
         </div>
       ) : (
         <div className="orows">
-          {shown.map((row, index) => (
-          <OrderRow
-            key={row.id}
-            index={index}
-            row={row}
-            store={store}
-            from={here}
-            glowing={glowing === row.id}
-            busy={busy === row.id}
-            needsAnswer={needsAnswer.has(row.id)}
-            undoable={undoable?.rowId === row.id ? undoable.button : null}
-            onPress={(button, on) => void press(row, button, on)}
-            onFile={() => setFiling(row)}
-            onReject={() => setRejecting(row)}
-            onAccept={() => void accept(row)}
-            onCancel={() => setCancelling(row)}
-            onSettleReceived={() => void settleReceived(row)}
-            onSettleDenied={() => setDenyingClaim(row)}
-          />
-          ))}
+          {shown.map((row, index) => card(row, index))}
         </div>
       )}
 
@@ -1132,15 +1193,158 @@ function Orders({ store }: { store: StoreAccess }) {
           onClose={() => setReceiving(null)} />
       )}
 
+      {movingLot?.lotNext && (
+        <MoveLotDialog row={movingLot} busy={busy === movingLot.id}
+          onMove={() => void moveLot(movingLot)}
+          onTracking={onTracking}
+          onClose={() => setMovingLot(null)} />
+      )}
+
       {filing && (
         <FileIntoLot
           row={filing}
           store={store}
           onClose={() => setFiling(null)}
-          onDone={() => { setFiling(null); void load(); }}
+          onDone={() => { setFiling(null); void refresh(); }}
         />
       )}
     </div>
+  );
+}
+
+/** One customer's orders in a lot, and what they come to between them. */
+interface CustomerGroup {
+  key: string;
+  buyer: PartyRef;
+  rows: SaleRow[];
+  /** Where this customer's first card sits in the whole list, for the stagger. */
+  start: number;
+}
+
+/** Orders grouped by who bought them, in the order each customer first appears. */
+function byCustomer(rows: readonly SaleRow[]): CustomerGroup[] {
+  const groups = new Map<string, CustomerGroup>();
+  for (const row of rows) {
+    /* A buyer with no handle is still one person: their name keeps them together. */
+    const key = row.buyer.handle ?? `name:${row.buyer.name}`;
+    const group = groups.get(key);
+    if (group) group.rows.push(row);
+    else groups.set(key, { key, buyer: row.buyer, rows: [row], start: 0 });
+  }
+  let start = 0;
+  return [...groups.values()].map((group) => {
+    const placed = { ...group, start };
+    start += group.rows.length;
+    return placed;
+  });
+}
+
+/**
+ * One customer, as the head of their own little stack of order cards: who they
+ * are, how many orders, and the money across all of them - what they come to,
+ * what has landed, and what is still pending - so a seller packing their parcel
+ * knows whether to chase before it goes out.
+ */
+function CustomerOrders({ customer, children }: { customer: CustomerGroup; children: ReactNode }) {
+  const { buyer, rows } = customer;
+  /* Called-off orders owe nothing; they are listed but not counted. */
+  const live = rows.filter((row) => !isClosed(row));
+  const sum = (pick: (row: SaleRow) => number) =>
+    live.map((row) => ({ amountMinor: pick(row), currency: row.currency }));
+  const total = live.reduce((acc, row) => acc + row.totalMinor, 0);
+  const paid = live.reduce((acc, row) => acc + Math.min(row.paidMinor, row.totalMinor), 0);
+  const pending = live.reduce((acc, row) => acc + row.outstandingMinor, 0);
+  const share = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const currency = rows[0]?.currency;
+  const tone = live.length === 0 ? 'quiet' : pending > 0 ? (paid > 0 ? 'purple' : 'warn') : 'ok';
+
+  return (
+    <section className={`ocust ocust--${tone}`}>
+      <header className="ocust__head">
+        <Avatar name={buyer.name} size={42} />
+        <div className="ocust__who">
+          {buyer.handle
+            ? <Link to={`/${buyer.handle}`} className="ocust__name">{buyer.name}</Link>
+            : <span className="ocust__name">{buyer.name}</span>}
+          <span className="ocust__meta">
+            {rows.length} {rows.length === 1 ? 'order' : 'orders'}
+            {rows.length !== live.length && ` · ${rows.length - live.length} called off`}
+          </span>
+        </div>
+        <div className="ocust__total">
+          <b>{formatTotals(sum((row) => row.totalMinor), currency)}</b>
+          <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>
+            {live.length === 0 ? 'Nothing owed' : pending > 0 ? 'Pending' : 'All paid'}
+          </span>
+        </div>
+      </header>
+      {live.length > 0 && (
+        <div className="ocust__money">
+          <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
+          <div className="ocust__sums">
+            <span><small>Orders</small><b>{formatTotals(sum((row) => row.totalMinor), currency)}</b></span>
+            <span><small>Paid</small><b>{formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}</b></span>
+            <span className={pending > 0 ? 'is-due' : 'is-clear'}>
+              <small>Pending</small>
+              <b>{formatTotals(sum((row) => row.outstandingMinor), currency)}</b>
+            </span>
+          </div>
+        </div>
+      )}
+      <div className="orows">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * Moving the lot from one of its orders. The move is the lot's - every item in
+ * it goes, and every buyer in it reads the new step - so it says so first, and
+ * stops where the lot screen would: before carrying items past the warehouse
+ * check-in that were never ticked in there.
+ */
+function MoveLotDialog({ row, busy, onMove, onTracking, onClose }: {
+  row: SaleRow;
+  busy: boolean;
+  onMove: () => void;
+  onTracking?: () => void;
+  onClose: () => void;
+}) {
+  const next = row.lotNext!;
+  const lotName = row.lotName ?? `LOT ${row.lotNumber}`;
+  const lotHref = `/shop?tab=lots&lot=${encodeURIComponent(row.lotId!)}`;
+  return (
+    <Modal title={next.unchecked > 0 ? 'Not all items are checked in' : `Move ${lotName}?`} onClose={onClose}>
+      <div className="stack">
+        {next.unchecked > 0 ? (
+          <>
+            <p>
+              {next.unchecked} {next.unchecked === 1 ? 'item in this lot has' : 'items in this lot have'} not been
+              marked as received at the international warehouse. Moving the lot to{' '}
+              <strong>{next.label}</strong> would carry {next.unchecked === 1 ? 'it' : 'them'} past a checkpoint{' '}
+              {next.unchecked === 1 ? "it hasn't" : "they haven't"} reached.
+            </p>
+            {onTracking ? (
+              <button type="button" className="btn btn--block" onClick={() => { onClose(); onTracking(); }}>
+                Check the items in
+              </button>
+            ) : (
+              <Link to={lotHref} className="btn btn--block" onClick={onClose}>Open the lot to check them in</Link>
+            )}
+          </>
+        ) : (
+          <>
+            <p>
+              <strong>{lotName}</strong> moves to <strong>{next.label}</strong>. Every item in it moves
+              with it, and every buyer in it reads the new step.
+            </p>
+            <button type="button" className="btn btn--block" disabled={busy} onClick={onMove}>
+              {busy ? 'Moving…' : `🚢 Move lot to ${next.label}`}
+            </button>
+          </>
+        )}
+        <button type="button" className="btn btn--quiet btn--block" onClick={onClose}>Cancel</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -1473,8 +1677,8 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, glowing, busy, needsAnswer, undoable, onPress, onFile, onReject, onAccept, onCancel,
-  onSettleReceived, onSettleDenied,
+  index, row, store, from, glowing, busy, needsAnswer, undoable, onPress, onMoveLot, onFile, onReject, onAccept,
+  onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
   row: SaleRow;
@@ -1487,6 +1691,8 @@ function OrderRow({
   /** The press just made on this card, while it can still be taken back. */
   undoable: CardButton | null;
   onPress: (button: CardButton, on: boolean) => void;
+  /** The lot's own next move, pressed from this card. */
+  onMoveLot: () => void;
   onFile: () => void;
   onReject: () => void;
   onAccept: () => void;
@@ -1646,7 +1852,16 @@ function OrderRow({
             <span aria-hidden="true">⚡</span> {row.next.label}
           </button>
         ))}
-        {working && !row.next && row.waitingOnLot && (
+        {/* The lot's buttons, on every order riding in it: the move its
+            Tracking section makes, pressed from here. */}
+        {working && row.lotNext && !row.deliveredAt && (
+          <button type="button" className="ocard__lotmove" disabled={busy}
+            title={`Moves the whole lot, and every item in it, to: ${row.lotNext.label}`}
+            onClick={onMoveLot}>
+            <span aria-hidden="true">🚢</span> Lot → {row.lotNext.label}
+          </button>
+        )}
+        {working && !row.next && row.waitingOnLot && !row.lotNext && (
           <span className="ocard__wait">🚢 Moves with the lot</span>
         )}
         {undoable && (
@@ -2610,7 +2825,12 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
   }, [load]);
 
   if (openId) {
-    return <LotDetail lotId={openId} onBack={() => { setOpenId(null); void load(); }} />;
+    return (
+      <LotDetail lotId={openId} onBack={() => { setOpenId(null); void load(); }}
+        customers={({ onChanged, onTracking }) => (
+          <Orders store={store} lotId={openId} onChanged={onChanged} onTracking={onTracking} />
+        )} />
+    );
   }
 
   if (error && !data) return <ErrorNotice message={error} />;

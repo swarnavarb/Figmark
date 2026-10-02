@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ORDER_CHECKPOINTS, type OrderCheckpoint,
@@ -790,8 +790,8 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
 type LotSection = 'people' | 'tracking' | 'crew' | 'settings';
 
 const LOT_SECTIONS: { id: LotSection; label: string; icon: IconName; hint: string }[] = [
-  { id: 'people', label: 'Customers & Orders', icon: 'users', hint: 'Who is waiting for what, and every item of theirs' },
-  { id: 'tracking', label: 'Tracking', icon: 'truck', hint: 'Where the whole lot is' },
+  { id: 'people', label: 'Customers & Orders', icon: 'users', hint: 'Every order, customer by customer, and what each still owes' },
+  { id: 'tracking', label: 'Tracking', icon: 'truck', hint: 'Where the whole lot is, and every item in it' },
   { id: 'crew', label: 'Crew', icon: 'plane', hint: 'Who moves it' },
   { id: 'settings', label: 'Settings', icon: 'tag', hint: 'Its name and its route' },
 ];
@@ -804,7 +804,17 @@ const LOT_SECTIONS: { id: LotSection; label: string; icon: IconName; hint: strin
  * page nobody could find anything on. They are four questions with four
  * answers, and a lot is worked one question at a time.
  */
-export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void }) {
+export function LotDetail({ lotId, onBack, customers }: {
+  lotId: string;
+  onBack: () => void;
+  /**
+   * The Customers & Orders section: the shop's own order cards, scoped to this
+   * lot and grouped by customer. Handed in by the Sell tab, which owns those
+   * cards, so the two screens draw one card and not two. Without it the
+   * section falls back to the packing board.
+   */
+  customers?: (ctx: { onChanged: () => void; onTracking: () => void }) => ReactNode;
+}) {
   const [data, setData] = useState<LotContents | null>(null);
   const [unassigned, setUnassigned] = useState<LotsResponse['unassigned']>([]);
   const [siblings, setSiblings] = useState<LotsResponse['lots']>([]);
@@ -841,6 +851,8 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   /* The customer board, fetched the first time somebody asks for it: a seller
      opening a lot to move it on should not pay for a manifest of names. */
   const [people, setPeople] = useState<LotBoard | null>(null);
+  /** Bumped when items join from below, so the order cards above read the lot again. */
+  const [joined, setJoined] = useState(0);
 
   /*
    * The lot itself, and - only when asked - the shop's other lots and loose
@@ -867,12 +879,12 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    if (section !== 'people' || people) return;
+    if (section !== 'people' || people || customers) return;
     void api.lotBoard(lotId)
       .then(setPeople)
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load who is in this lot.'));
-  }, [section, people, lotId]);
+  }, [section, people, lotId, customers]);
 
   // A <div>, not a <main>: this is drawn inside the Sell tab's own <main>.
   if (error && !data) return <div className="page"><ErrorNotice message={error} /></div>;
@@ -1020,74 +1032,13 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
 
       {section === 'people' && (
         <div className="stack">
-          {people
-            ? <LotPeople board={people} onChanged={setPeople} onError={setError} />
-            : <p className="muted">Loading…</p>}
-
-          {confirmDeliver && (
-            <Modal title="Mark delivered?" onClose={() => setConfirmDeliver(null)}>
-              <div className="stack">
-                <p>
-                  This marks <strong>{confirmDeliver.itemName}</strong> for{' '}
-                  <strong>{confirmDeliver.buyerName}</strong> as delivered. Their order shows delivered,
-                  they are told, and they can add it to their collection and review it. A payment held
-                  under buyer protection is not released by this: the buyer confirms it, or it releases on
-                  its own if they raise no dispute in time. Once every item in this lot is delivered, the
-                  lot closes itself.
-                </p>
-                <button type="button" className="btn btn--block" disabled={busy}
-                  onClick={() => {
-                    const item = confirmDeliver;
-                    setConfirmDeliver(null);
-                    void run('Marked delivered.', () => api.setCheckpoint(item.id, 'delivered', true).then(() => {}));
-                  }}>
-                  {busy ? 'Marking…' : 'Mark delivered'}
-                </button>
-                <button type="button" className="btn btn--quiet btn--block" onClick={() => setConfirmDeliver(null)}>
-                  Cancel
-                </button>
-              </div>
-            </Modal>
-          )}
-
-          <div className="card card--pad stack">
-            <div className="row row--between">
-              <h2>In this lot ({items.length})</h2>
-              <span className="faint">{totals.units} units</span>
-            </div>
-            <span className="field__hint">
-              Every item here travels the lot's route. Move the lot and all {items.length} move
-              with it.
-            </span>
-
-            {items.length === 0 ? (
-              <p className="muted">
-                Nothing in this lot yet. Add the items your customers have already bought.
-              </p>
-            ) : (
-              items.map((item) => (
-                <LotItemRow
-                  key={item.id}
-                  item={item}
-                  lotId={lot.id}
-                  steps={route.steps}
-                  others={others}
-                  busy={busy}
-                  onTick={(checkpoint, on) =>
-                    run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
-                  onRequestDeliver={() => setConfirmDeliver(item)}
-                  onMove={(to, details) =>
-                    run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
-                      api.stepItem(item.id, { to, ...details }).then(() => {}))}
-                  onNote={(text, at) =>
-                    run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
-                  onRelot={(to) =>
-                    run('Item moved to another lot.', () =>
-                      api.assignOrderToLot(item.id, { lotId: to }).then(() => {}), true)}
-                />
-              ))
-            )}
-          </div>
+          {customers
+            ? <Fragment key={joined}>
+                {customers({ onChanged: () => void load(), onTracking: () => setSection('tracking') })}
+              </Fragment>
+            : people
+              ? <LotPeople board={people} onChanged={setPeople} onError={setError} />
+              : <p className="muted">Loading…</p>}
 
           {/* Sold, bound for a lot, in none - which before this screen existed
               was a list nobody could see. Shut, because most of the time there
@@ -1103,7 +1054,7 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               <AddItemsPanel
                 lotId={lot.id}
                 onClose={() => setAdding(false)}
-                onAdded={() => { setAdding(false); void load(); }}
+                onAdded={() => { setAdding(false); setJoined((count) => count + 1); void load(); }}
               />
             )}
           </div>
@@ -1151,9 +1102,10 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
             />
 
             {nextStep ? (
+              /* The same lot button every order riding in this lot carries on its card. */
               <button className="btn btn--block" disabled={busy}
                 onClick={() => requestMove(route.currentStep + 1, undefined, `Now: ${nextStep.name}.`)}>
-                Move to {nextStep.name}
+                🚢 Move lot to {nextStep.name}
               </button>
             ) : done ? (
               <p className="notice notice--ok">{status}. Every item has reached its buyer.</p>
@@ -1164,6 +1116,71 @@ export function LotDetail({ lotId, onBack }: { lotId: string; onBack: () => void
               </p>
             ) : (
               <p className="notice notice--ok">{status}. Nothing further to do.</p>
+            )}
+          </div>
+
+          {confirmDeliver && (
+            <Modal title="Mark delivered?" onClose={() => setConfirmDeliver(null)}>
+              <div className="stack">
+                <p>
+                  This marks <strong>{confirmDeliver.itemName}</strong> for{' '}
+                  <strong>{confirmDeliver.buyerName}</strong> as delivered. Their order shows delivered,
+                  they are told, and they can add it to their collection and review it. A payment held
+                  under buyer protection is not released by this: the buyer confirms it, or it releases on
+                  its own if they raise no dispute in time. Once every item in this lot is delivered, the
+                  lot closes itself.
+                </p>
+                <button type="button" className="btn btn--block" disabled={busy}
+                  onClick={() => {
+                    const item = confirmDeliver;
+                    setConfirmDeliver(null);
+                    void run('Marked delivered.', () => api.setCheckpoint(item.id, 'delivered', true).then(() => {}));
+                  }}>
+                  {busy ? 'Marking…' : 'Mark delivered'}
+                </button>
+                <button type="button" className="btn btn--quiet btn--block" onClick={() => setConfirmDeliver(null)}>
+                  Cancel
+                </button>
+              </div>
+            </Modal>
+          )}
+
+          <div className="card card--pad stack">
+            <div className="row row--between">
+              <h2>Every item, step by step ({items.length})</h2>
+              <span className="faint">{totals.units} units</span>
+            </div>
+            <span className="field__hint">
+              The same buttons each order card has, item by item. Move the lot and all{' '}
+              {items.length} move with it.
+            </span>
+
+            {items.length === 0 ? (
+              <p className="muted">
+                Nothing in this lot yet. Add the items your customers have already bought.
+              </p>
+            ) : (
+              items.map((item) => (
+                <LotItemRow
+                  key={item.id}
+                  item={item}
+                  lotId={lot.id}
+                  steps={route.steps}
+                  others={others}
+                  busy={busy}
+                  onTick={(checkpoint, on) =>
+                    run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
+                  onRequestDeliver={() => setConfirmDeliver(item)}
+                  onMove={(to, details) =>
+                    run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
+                      api.stepItem(item.id, { to, ...details }).then(() => {}))}
+                  onNote={(text, at) =>
+                    run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
+                  onRelot={(to) =>
+                    run('Item moved to another lot.', () =>
+                      api.assignOrderToLot(item.id, { lotId: to }).then(() => {}), true)}
+                />
+              ))
             )}
           </div>
 

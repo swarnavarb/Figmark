@@ -2,7 +2,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
-import { currentStepOf, lotNumberFrom, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
+import { currentStepOf, lotEndIndex, lotNumberFrom, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, ladderBeforeLot, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
@@ -352,6 +352,31 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     return cardButtons(withReceivedAs(ladderBeforeLot(order, template).steps, order.receivedAs), null, undefined, ticksOf(order));
   };
 
+  /*
+   * The lot's own next move, offered on every order riding in it - the same
+   * "Move to" the lot's Tracking section has, so a seller working down their
+   * orders can move the crate without leaving the card. `unchecked` counts the
+   * items the move would carry past the warehouse check-in without having been
+   * ticked in there, so the card can stop and say so as the lot screen does.
+   */
+  const lotNextFor = (lot: Awaited<ReturnType<typeof repository.getLot>>) => {
+    if (!lot || lot.status === 'closed') return null;
+    const route = routeOf(lot);
+    const to = currentStepOf(lot) + 1;
+    const step = route.steps[to];
+    if (!step || to > lotEndIndex(route)) return null;
+    const gateAt = route.steps.findIndex((entry) => entry.trigger === 'china_received');
+    const unchecked = gateAt >= 0 && to >= gateAt
+      ? orders.filter((order) => order.lotId === lot.id && !isCancelledLike(order.status)
+        && order.status !== 'delivered' && !order.checkpoints?.china_received).length
+      : 0;
+    return {
+      to,
+      label: renderStepText(step.name, { origin: lot.originCountry, destination: lot.destinationCountry }),
+      unchecked,
+    };
+  };
+
   const row = (order: (typeof orders)[number]) => {
     const lot = inLot(order) ? lots.get(order.lotId) ?? null : null;
     const listing = listings.get(order.listingId);
@@ -390,6 +415,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       lotName: lot?.name ?? null,
       lotNumber: lot ? lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt) : null,
       lotStep: lot ? routeOf(lot).steps[currentStepOf(lot)]?.name ?? null : null,
+      /** The lot's next move, pressed from the order card - null once it cannot move further. */
+      lotNext: lotNextFor(lot),
       /** The one tick a seller makes from this screen. */
       chinaReceivedAt: order.checkpoints?.china_received ?? null,
       /** Ticked on the lot screen, not this one - read here so this screen's
