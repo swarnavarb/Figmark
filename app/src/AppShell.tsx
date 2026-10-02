@@ -8,6 +8,7 @@ import { TabBar } from './components/TabBar';
 import { Avatar, Icon } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
+import { AuthModal } from './pages/AuthPage';
 
 /**
  * Persistent chrome: brand, search, and the Sell action.
@@ -16,7 +17,7 @@ import { useSession } from './session';
  * where listing something is never more than one tap away.
  */
 export function AppShell() {
-  const { user, warning, sessionsInsecure, missingContainers, signOut } = useSession();
+  const { user, warning, sessionsInsecure, missingContainers, signOut, authPrompt, closeAuth, promptAuth } = useSession();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [term, setTerm] = useState(params.get('q') ?? '');
@@ -73,10 +74,19 @@ export function AppShell() {
           {/* Before the avatar, because it is about you rather than about the
               app, and because that is where a thumb already goes. */}
           {user && <Notifications />}
+          {/* A guest sees the same bell, locked, and a way in where the avatar goes. */}
+          {!user && (
+            <div className="bell">
+              <button type="button" className="bell__button" aria-label="Notifications - sign in to see them"
+                onClick={() => promptAuth('Sign in to see your notifications.')}>
+                <Icon name="bell" size={18} />
+              </button>
+            </div>
+          )}
           {user ? (
             <ProfileMenu name={user.displayName} onSignOut={() => void signOut()} />
           ) : (
-            <NavLink to="/me" className={({ isActive }) => `nav__link${isActive ? ' is-active' : ''}`}>Profile</NavLink>
+            <button type="button" className="btn btn--sm navlogin" onClick={() => promptAuth()}>Log in</button>
           )}
         </nav>
       </header>
@@ -118,6 +128,7 @@ export function AppShell() {
       {user && <FloatingCalc />}
 
       <TabBar />
+      {authPrompt && <AuthModal reason={authPrompt.reason} onClose={closeAuth} />}
     </div>
   );
 }

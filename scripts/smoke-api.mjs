@@ -8484,74 +8484,108 @@ await check('a button handed to the handler is theirs to press', async () => {
 
 /* ── affiliate links ───────────────────────────────────────────────────── */
 console.log('\naffiliate links');
-const { similarListingsRoute: similarListings } = await import(new URL('catalog-routes.js', fns));
+const {
+  similarListingsRoute: similarListings, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,
+} = await import(new URL('catalog-routes.js', fns));
 const { myAffiliateRoute: myAffiliate, markAffiliatePaidRoute: markAffiliatePaid } = await import(new URL('affiliate-routes.js', fns));
 
 const affListed = (await createListing(req({
   headers: auth,
-  body: { title: 'Affiliate Figure', priceMinor: 20_000, quantityAvailable: 5, affiliatePercent: 10, category: 'Figures', tags: ['figure'] },
+  body: { title: 'Affiliate Figure', priceMinor: 20_000, quantityAvailable: 5, affiliateMinor: 2_000, category: 'Figures', tags: ['figure'] },
 }), ctx)).jsonBody.listing;
 const affiliatePerson = await newBuyer('Affi Liate');
 const referredBuyer = await newBuyer('Referred Buyer');
-const affDetail = (headers, ref) => listingDetail(req({ headers, params: { id: affListed.id }, query: ref ? { ref } : {} }), ctx);
+const affDetail = (headers) => listingDetail(req({ headers, params: { id: affListed.id } }), ctx);
+const linkOf = async (who) => (await affiliateLink(req({ headers: who.headers, params: { id: affListed.id }, body: {} }), ctx)).jsonBody;
+/** What a browser holding these cookies would send back. */
+const withCookies = (headers, setCookies) => ({
+  ...headers,
+  cookie: setCookies.map((line) => line.split(';')[0]).join('; '),
+});
+const cookiesOf = (response) => [...(response.headers?.entries?.() ?? [])]
+  .filter(([name]) => name.toLowerCase() === 'set-cookie').map(([, value]) => value);
 
-await check('an item marked affiliate gives every reader but the shop their own signed link', async () => {
-  assert.deepEqual(affListed.affiliate, { percent: 10 });
-  const mine = (await affDetail(affiliatePerson.headers)).jsonBody.affiliate;
-  assert.equal(mine.percent, 10);
-  assert.ok(mine.ref?.startsWith(`${affiliatePerson.id}.`), 'a link that names its owner');
-  assert.equal((await affDetail(auth)).jsonBody.affiliate.ref, null, 'the shop earns nothing on its own item');
-  assert.equal((await affDetail({})).jsonBody.affiliate.ref, null, 'nor does somebody signed out');
+await check('an item on affiliate pays a fixed amount, and anyone but the shop gets a short link', async () => {
+  assert.deepEqual(affListed.affiliate, { amountMinor: 2_000 });
+  const detail = (await affDetail(affiliatePerson.headers)).jsonBody.affiliate;
+  assert.equal(detail.amountMinor, 2_000);
+  assert.equal(detail.canShare, true);
+  assert.equal((await affDetail(auth)).jsonBody.affiliate.canShare, false, 'the shop earns nothing on its own item');
+  assert.equal((await affDetail({})).jsonBody.affiliate.canShare, false, 'nor does somebody signed out');
+
+  const link = await linkOf(affiliatePerson);
+  assert.match(link.path, /^\/r\/[A-Za-z0-9]{7}$/, 'seven characters, nothing to trim');
+  assert.equal((await linkOf(affiliatePerson)).code, link.code, 'the same link every time');
+  const own = await affiliateLink(req({ headers: auth, params: { id: affListed.id }, body: {} }), ctx);
+  assert.equal(own.status, 409);
 });
 
-await check('an edited affiliate link credits nobody', async () => {
-  const { ref } = (await affDetail(affiliatePerson.headers)).jsonBody.affiliate;
-  const forged = `${referredBuyer.id}.${ref.split('.').pop()}`;
-  const other = await newBuyer('Forger');
-  assert.equal((await affDetail(other.headers, forged)).jsonBody.affiliate.referredBy, null);
-  assert.equal((await affDetail(other.headers, `${ref}x`)).jsonBody.affiliate.referredBy, null);
-  // Nor does a link for one item work on another.
-  const plain = (await createListing(req({ headers: auth, body: { title: 'Plain Figure', priceMinor: 9_000, affiliatePercent: 5 } }), ctx)).jsonBody.listing;
-  const moved = (await listingDetail(req({ headers: other.headers, params: { id: plain.id }, query: { ref } }), ctx)).jsonBody;
-  assert.equal(moved.affiliate.referredBy, null);
+await check('a commission can never be as much as the price', async () => {
+  const greedy = (await createListing(req({ headers: auth, body: { title: 'Greedy', priceMinor: 5_000, affiliateMinor: 9_000 } }), ctx)).jsonBody.listing;
+  assert.ok(greedy.affiliate.amountMinor < 5_000);
 });
 
-await check('somebody signed out sees who sent them before signing up', async () => {
-  const { ref } = (await affDetail(affiliatePerson.headers)).jsonBody.affiliate;
-  const landing = (await affDetail({}, ref)).jsonBody;
-  assert.equal(landing.affiliate.referredBy.name, 'Affi Liate');
-  assert.equal(landing.listing.id, affListed.id);
+await check('an edited short link leads nowhere and credits nobody', async () => {
+  const { code } = await linkOf(affiliatePerson);
+  const edited = code.slice(0, -1) + (code.endsWith('a') ? 'b' : 'a');
+  const opened = await openShortLink(req({ params: { code: edited } }), ctx);
+  assert.equal(opened.status, 404);
 });
 
-await check('once signed up, the account remembers the link and the checkout credits it', async () => {
-  const { ref } = (await affDetail(affiliatePerson.headers)).jsonBody.affiliate;
-  // Opened with the link once, right after signing up...
-  assert.equal((await affDetail(referredBuyer.headers, ref)).jsonBody.affiliate.referredBy.name, 'Affi Liate');
-  // ...and remembered when they come back without it.
+await check('a short link opened signed out is remembered through sign-up, with nothing in the address', async () => {
+  const { code } = await linkOf(affiliatePerson);
+  const opened = await openShortLink(req({ params: { code } }), ctx);
+  assert.equal(opened.status, 200);
+  assert.equal(opened.jsonBody.listingId, affListed.id);
+  const cookies = cookiesOf(opened);
+  assert.ok(cookies.some((line) => line.startsWith('fm_ref=')), 'held in a cookie');
+
+  // The guest reads the plain item page - no code, no parameter - and is told who sent them.
+  const guestView = (await affDetail(withCookies({}, cookies))).jsonBody;
+  assert.equal(guestView.affiliate.referredBy.name, 'Affi Liate');
+
+  // They sign up; the account takes the referral over from the cookie.
+  buyerSeq += 1;
+  const made = await signup(req({
+    headers: withCookies({}, cookies),
+    body: { displayName: 'Cookie Buyer', email: `cookie${buyerSeq}@figmark.example`, phone: `+91900008${String(1000 + buyerSeq).slice(-4)}`, password: 'longenough1' },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const headers = { authorization: `Bearer ${made.jsonBody.token}` };
+  // Days later, a different browser with no cookie and a bare address: still credited.
+  const opened2 = (await openCheckout(req({ headers, body: { listingId: affListed.id } }), ctx)).jsonBody.order;
+  assert.equal(opened2.affiliate.referrerId, affiliatePerson.id);
+  assert.equal(opened2.affiliate.amountMinor, 2_000);
+});
+
+await check('a short link opened signed in credits the checkout straight away', async () => {
+  const { code } = await linkOf(affiliatePerson);
+  await openShortLink(req({ headers: referredBuyer.headers, params: { code } }), ctx);
   assert.equal((await affDetail(referredBuyer.headers)).jsonBody.affiliate.referredBy.name, 'Affi Liate');
   const opened = (await openCheckout(req({ headers: referredBuyer.headers, body: { listingId: affListed.id } }), ctx)).jsonBody.order;
   assert.equal(opened.affiliate.referrerId, affiliatePerson.id);
-  assert.equal(opened.affiliate.percent, 10);
   // A checkout is not a sale: nothing in the wallet yet.
-  assert.equal((await myAffiliate(req({ headers: affiliatePerson.headers }), ctx)).jsonBody.earnings.length, 0);
+  assert.ok(!(await myAffiliate(req({ headers: affiliatePerson.headers }), ctx)).jsonBody.earnings.some((e) => e.orderId === opened.id));
 });
 
 await check('a person cannot refer themselves', async () => {
-  const { ref } = (await affDetail(affiliatePerson.headers)).jsonBody.affiliate;
-  assert.equal((await affDetail(affiliatePerson.headers, ref)).jsonBody.affiliate.referredBy, null);
-  const own = (await openCheckout(req({ headers: affiliatePerson.headers, body: { listingId: affListed.id, ref } }), ctx)).jsonBody.order;
+  const { code } = await linkOf(affiliatePerson);
+  const self = await openShortLink(req({ headers: affiliatePerson.headers, params: { code } }), ctx);
+  assert.equal(cookiesOf(self).length, 0);
+  assert.equal((await affDetail(affiliatePerson.headers)).jsonBody.affiliate.referredBy, null);
+  const own = (await openCheckout(req({ headers: affiliatePerson.headers, body: { listingId: affListed.id } }), ctx)).jsonBody.order;
   assert.equal(own.affiliate ?? null, null);
 });
 
 await check('the commission is pending until delivery, then earned, then paid by the shop', async () => {
-  const open = (await openCheckout(req({ headers: referredBuyer.headers, body: { listingId: affListed.id } }), ctx)).jsonBody.order;
+  const open = (await openCheckout(req({ headers: referredBuyer.headers, body: { listingId: affListed.id, quantity: 2 } }), ctx)).jsonBody.order;
   const booked = (await bookOrder(req({ headers: referredBuyer.headers, params: { id: open.id }, body: {} }), ctx)).jsonBody.order;
   const wallet = async () => (await myAffiliate(req({ headers: affiliatePerson.headers }), ctx)).jsonBody.earnings
     .find((entry) => entry.orderId === booked.id);
 
   const pending = await wallet();
   assert.equal(pending.status, 'pending');
-  assert.equal(pending.commissionMinor, 2_000);
+  assert.equal(pending.commissionMinor, 4_000, '₹20 a unit, two units');
 
   const early = await markAffiliatePaid(req({ headers: auth, params: { id: booked.id }, body: {} }), ctx);
   assert.equal(early.status, 409);
@@ -8583,6 +8617,7 @@ await check('a cancelled referred sale owes nothing', async () => {
 await check('turning the commission off stops the links and the highlight', async () => {
   const plain = (await createListing(req({ headers: auth, body: { title: 'No Commission', priceMinor: 9_000 } }), ctx)).jsonBody.listing;
   const detail = (await listingDetail(req({ headers: referredBuyer.headers, params: { id: plain.id } }), ctx)).jsonBody;
+  assert.equal((await affiliateLink(req({ headers: referredBuyer.headers, params: { id: plain.id }, body: {} }), ctx)).status, 409);
   assert.equal(detail.affiliate, null);
   const { feedListings } = { feedListings: (await feed(req({ headers: referredBuyer.headers }), ctx)).jsonBody.listings };
   assert.ok(feedListings.find((l) => l.id === affListed.id)?.affiliate, 'the feed card knows to highlight it');

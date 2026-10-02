@@ -196,6 +196,8 @@ export interface User extends BaseDocument {
   referrals?: ReferralRecord[];
   /** Orders this person earns a commission on, as the affiliate. */
   affiliateOrderIds?: string[];
+  /** This person's short link code for each item, so sharing twice gives the same link. */
+  affiliateLinks?: Record<string, string>;
 }
 
 /** One affiliate link somebody arrived through. */
@@ -605,10 +607,11 @@ export interface Listing extends BaseDocument {
    */
   privateFor?: string | null;
   /**
-   * Affiliate selling: the shop pays this percentage of the sale to whoever
+   * Affiliate selling: the shop pays this much per unit sold to whoever
    * brought the buyer through their own link. Absent or null means off.
+   * `percent` is only on items set up before the amount was in rupees.
    */
-  affiliate?: { percent: number } | null;
+  affiliate?: { amountMinor?: number; percent?: number } | null;
 }
 
 /**
@@ -1119,7 +1122,10 @@ export interface OrderAffiliate {
   referrerId: string;
   referrerName: string;
   referrerHandle: string | null;
-  percent: number;
+  /** Per unit, in paise, as the shop offered it when the checkout opened. */
+  amountMinor?: number;
+  /** Orders from before the amount was in rupees carry a percentage instead. */
+  percent?: number;
   /** When the shop says it paid the commission out. */
   paidAt?: string | null;
   paidReference?: string | null;

@@ -1,5 +1,6 @@
 import type React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useSession } from '../session';
 
 /**
  * The four things this app is.
@@ -93,7 +94,14 @@ export const TABS = [
  */
 export function TabBar() {
   const { pathname } = useLocation();
+  const { user, promptAuth } = useSession();
   const activeIndex = Math.max(0, TABS.findIndex((tab) => tab.match(pathname)));
+  // Selling and the social side are for members; a guest is asked to sign in
+  // and stays where they are.
+  const membersOnly: Record<string, string> = {
+    '/shop': 'Sign in to open your shop and sell.',
+    '/social': 'Sign in to join the conversation.',
+  };
 
   return (
     // The active index is published to CSS so the bar can carry that section's
@@ -115,6 +123,11 @@ export function TabBar() {
           to={tab.to}
           className={`tab-item${index === activeIndex ? ' is-on' : ''}`}
           aria-current={index === activeIndex ? 'page' : undefined}
+          onClick={(event) => {
+            if (user || !membersOnly[tab.to]) return;
+            event.preventDefault();
+            promptAuth(membersOnly[tab.to]);
+          }}
         >
           <svg className="tab-item__glyph" viewBox="0 0 24 24" width="23" height="23" fill="none"
             stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"

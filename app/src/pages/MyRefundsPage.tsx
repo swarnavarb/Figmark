@@ -292,7 +292,7 @@ function EarningsTab() {
 
       {earnings.length === 0 ? (
         <EmptyState title="No affiliate earnings yet">
-          Items marked 💸 pay a commission. Open one, tap “Share &amp; earn” and send your link: when somebody
+          Items with a 💸 Earn tag pay a commission. Open one, tap “Share &amp; earn” and send your link: when somebody
           buys through it, your share shows here.
         </EmptyState>
       ) : earnings.map((entry) => (
@@ -300,7 +300,7 @@ function EarningsTab() {
           <span className="earnrow__what">
             <b><Link to={`/listing/${entry.listingId}`}>{entry.itemName}</Link></b>
             <small>
-              {entry.percent}% of {formatMoney(entry.saleMinor, entry.currency)} · from {entry.sellerName}
+              {formatMoney(entry.unitMinor, entry.currency)}{entry.quantity > 1 ? ` × ${entry.quantity}` : ''} on a {formatMoney(entry.saleMinor, entry.currency)} sale · from {entry.sellerName}
               {entry.placedAt ? ` · ${formatDateOrdinal(entry.placedAt)}` : ''}
               {entry.paidAt ? ` · paid ${formatDateOrdinal(entry.paidAt)}${entry.paidReference ? ` (ref ${entry.paidReference})` : ''}` : ''}
             </small>

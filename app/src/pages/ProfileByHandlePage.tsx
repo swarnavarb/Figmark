@@ -9,7 +9,7 @@ import {
 import { Avatar, EmptyState, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from '../components/ui';
 import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
-import { AffiliateBadge } from '../components/Affiliate';
+import { EarnPill, earnOf } from '../components/Affiliate';
 import { MessageButton } from './MessagesPage';
 import { Stars } from './OrderPage';
 import { Canopy, StarRow } from '../components/ListingBlocks';
@@ -111,7 +111,7 @@ export function ProfileByHandlePage() {
         listed={listed}
         page={pageReviews}
         isMe={isMe}
-        canWrite={Boolean(user) && !isMe}
+        canWrite={!isMe}
         onWritten={() => void loadReviews(data.sellerId)}
       />
     );
@@ -277,14 +277,16 @@ export function ProfileByHandlePage() {
                   {shown.map((listing) => (
                     <Link key={listing.id} to={`/listing/${listing.id}`} className={`card card--link${listing.affiliate ? ' is-affiliate' : ''}`}>
                       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
-                        {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
                         <div className="thumb__badges">
                           <span className="badge badge--solid">{listing.condition}</span>
                         </div>
                       </Thumb>
                       <div className="listing__body">
                         <span className="listing__title">{listing.title}</span>
-                        <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                        <span className="pricerow">
+                          <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                          <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
+                        </span>
                         <div className="listing__meta">
                           <span className="faint">♥ {listing.likeCount}</span>
                           <span className="faint">
@@ -304,7 +306,7 @@ export function ProfileByHandlePage() {
             trade={reviews}
             listed={listed}
             page={pageReviews}
-            canWrite={Boolean(user) && !isMe}
+            canWrite={!isMe}
             onWritten={() => void loadReviews(data.sellerId)}
           />
         )}
@@ -569,6 +571,7 @@ function PageReviewForm({ subjectId, existing, onWritten }: {
   existing: number | null;
   onWritten: () => void;
 }) {
+  const { user, gate } = useSession();
   const [open, setOpen] = useState(false);
   const [rating, setRating] = useState(existing ?? 5);
   const [body, setBody] = useState('');
@@ -592,7 +595,9 @@ function PageReviewForm({ subjectId, existing, onWritten }: {
 
   if (!open) {
     return (
-      <button className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }} onClick={() => setOpen(true)}>
+      <button className={`btn btn--quiet btn--sm${user ? '' : ' is-locked'}`} style={{ justifySelf: 'start' }}
+        onClick={gate(() => setOpen(true), 'Sign in to leave a review.')}>
+        {!user && <span className="lockmark" aria-hidden="true">🔒</span>}
         {existing === null ? 'Leave a review' : 'Change your review'}
       </button>
     );

@@ -1,11 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useLocation } from 'react-router-dom';
-import { AFFILIATE_PARAM } from '@shared/affiliate';
 import type { DemoAccount } from '@shared/contracts';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type ListingDetail } from '../api';
-import { ErrorNotice, Thumb, leadPhoto } from '../components/ui';
-import { formatMoney } from '../format';
+import { ApiRequestError, api } from '../api';
+import { ErrorNotice } from '../components/ui';
 import { useSession } from '../session';
 
 type Mode = 'signin' | 'signup';
@@ -18,16 +15,63 @@ type Mode = 'signin' | 'signup';
  * bank verification are deferred to the point they actually matter.
  */
 export function AuthPage() {
+  return (
+    <div className="auth">
+      <div className="auth__panel">
+        <AuthBrand />
+        <AuthCard />
+      </div>
+    </div>
+  );
+}
+
+function AuthBrand() {
+  return (
+    <div className="auth__brand">
+      <span className="brand__mark" style={{ width: 44, height: 44, borderRadius: 13 }} aria-hidden="true" />
+      <div>
+        <h1>Figmark</h1>
+        <p className="auth__tag">Group-buy lots, verified sellers, escrow-held payments.</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sign in or sign up, over whatever page the guest is on.
+ *
+ * Opened by anything that needs an account. It closes itself once they are
+ * in (see session.tsx), and since the address never changed they are still
+ * on the page they were reading, now able to do the thing they pressed.
+ */
+export function AuthModal({ reason, onClose }: { reason: string | null; onClose: () => void }) {
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    document.addEventListener('keydown', escape);
+    const was = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', escape);
+      document.body.style.overflow = was;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="authpop" role="dialog" aria-modal="true" aria-label="Sign in or create an account"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="authpop__panel">
+        <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
+        <AuthBrand />
+        <p className="authpop__why">🔒 {reason ?? 'Sign in or create a free account to do that.'} You stay on this page.</p>
+        <AuthCard initialMode="signup" />
+      </div>
+    </div>
+  );
+}
+
+function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const { signIn, signUp } = useSession();
-  const location = useLocation();
-  // Somebody who followed a link to an item - an affiliate's above all - sees
-  // what they were sent before being asked to sign up. The address is left as
-  // it is, so once they are in they land on that same item, with the same
-  // link, and whoever sent them is credited.
-  const sharedId = /^\/listing\/([^/]+)\/?$/.exec(location.pathname)?.[1] ?? null;
-  const sharedRef = new URLSearchParams(location.search).get(AFFILIATE_PARAM);
-  const [shared, setShared] = useState<ListingDetail | null>(null);
-  const [mode, setMode] = useState<Mode>(sharedRef ? 'signup' : 'signin');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demo, setDemo] = useState<DemoAccount[]>([]);
@@ -42,17 +86,6 @@ export function AuthPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-
-  useEffect(() => {
-    if (!sharedId) return;
-    let cancelled = false;
-    void api.listing(decodeURIComponent(sharedId), sharedRef)
-      .then((result) => !cancelled && setShared(result))
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [sharedId, sharedRef]);
 
   // The seeded sign-in hint, shown only while the mock provider is active.
   useEffect(() => {
@@ -120,41 +153,8 @@ export function AuthPage() {
   }
 
   return (
-    <div className="auth">
-      <div className="auth__panel">
-        <div className="auth__brand">
-          <span className="brand__mark" style={{ width: 44, height: 44, borderRadius: 13 }} aria-hidden="true" />
-          <div>
-            <h1>Figmark</h1>
-            <p className="auth__tag">Group-buy lots, verified sellers, escrow-held payments.</p>
-          </div>
-        </div>
-
         <div className="card auth__card">
-          {shared && (
-            <section className="afflanding" aria-label="The item you were sent">
-              <div className="afflanding__item">
-                <Thumb seed={shared.listing.id} label={shared.listing.title} photo={leadPhoto(shared.listing)} />
-                <div className="afflanding__what">
-                  {shared.affiliate?.referredBy && (
-                    <span>🎁 <b>{shared.affiliate.referredBy.name}</b> sent you this</span>
-                  )}
-                  <b>{shared.listing.title}</b>
-                  <span>
-                    {formatMoney(shared.listing.priceMinor, shared.listing.currency)}
-                    {shared.seller ? ` · from ${shared.seller.storefrontName}` : ''}
-                  </span>
-                </div>
-              </div>
-              <span className="afflanding__link">{window.location.href}</span>
-              <p className="afflanding__gate">
-                {mode === 'signup' ? 'Create a free account' : 'Sign in'} to see the full listing, ask the shop a
-                question or buy it. You come straight back here afterwards
-                {shared.affiliate?.referredBy ? `, and ${shared.affiliate.referredBy.name} is credited for sending you` : ''}.
-              </p>
-            </section>
-          )}
-          <div className="auth__switch" role="tablist">
+                  <div className="auth__switch" role="tablist">
             <button type="button" role="tab" aria-selected={mode === 'signin'}
               className={mode === 'signin' ? 'is-on' : ''} onClick={() => { setMode('signin'); setError(null); }}>
               Sign in
@@ -260,7 +260,5 @@ export function AuthPage() {
             </div>
           )}
         </div>
-      </div>
-    </div>
   );
 }

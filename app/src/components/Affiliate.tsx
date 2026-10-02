@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AFFILIATE_PARAM, AFFILIATE_STATUS_LABELS, affiliateCommissionMinor, affiliateStatus } from '@shared/affiliate';
+import { AFFILIATE_STATUS_LABELS, affiliateCommissionMinor, affiliateStatus, affiliateUnitMinor } from '@shared/affiliate';
 import type { Order } from '@shared/models';
 import { ApiRequestError, api, type FeedListing, type PartyRef } from '../api';
 import { formatMoney } from '../format';
+import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
 import { Thumb, leadPhoto } from './ui';
 
-/** The full link to an item that credits whoever shares it. */
-export function affiliateUrl(listingId: string, ref: string): string {
-  return `${window.location.origin}/listing/${encodeURIComponent(listingId)}?${AFFILIATE_PARAM}=${encodeURIComponent(ref)}`;
+/** What sharing a listing pays per sale, in paise; zero when it pays nothing. */
+export function earnOf(listing: { affiliate?: { amountMinor?: number; percent?: number } | null; priceMinor: number }): number {
+  return affiliateUnitMinor(listing.affiliate, listing.priceMinor);
 }
 
 /**
@@ -29,39 +30,51 @@ export function ReferredBy({ party, className = '' }: { party: PartyRef; classNa
 }
 
 /**
- * Share and earn: the reader's own link to this item, and what it pays.
+ * Share and earn: the reader's own short link to this item, and what it pays.
  *
- * The shop sees that the item is on affiliate and at what rate; everybody
- * else gets the link itself. The link is made by the server and signed, so
- * there is nothing here to edit.
+ * The link is a seven-character code made by the server the first time they
+ * share, so there is nothing in it to edit or trim. A guest sees the offer and
+ * is asked to sign in when they reach for it.
  */
-export function AffiliateCard({ listingId, percent, refToken, priceMinor, currency, isOwn }: {
+export function AffiliateCard({ listingId, amountMinor, currency, canShare, isOwn }: {
   listingId: string;
-  percent: number;
-  refToken: string | null;
-  priceMinor: number;
+  amountMinor: number;
   currency: string;
+  canShare: boolean;
   isOwn: boolean;
 }) {
+  const { gate } = useSession();
+  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [shown, setShown] = useState<string | null>(null);
-  const earn = formatMoney(Math.round((priceMinor * percent) / 100), currency);
+  const [problem, setProblem] = useState<string | null>(null);
+  const earn = formatMoney(amountMinor, currency);
 
   if (isOwn) {
     return (
       <section className="affcard affcard--own rise">
         <span className="affcard__icon" aria-hidden="true">🤝</span>
         <div className="affcard__text">
-          <b>Affiliate on · {percent}% commission</b>
-          <span>Anyone who shares this item earns {earn} per sale their link brings. You pay it once the item is delivered.</span>
+          <b>Affiliate on · {earn} per sale</b>
+          <span>Anyone who shares this item earns {earn} for every unit their link sells. You pay it once the item is delivered.</span>
         </div>
       </section>
     );
   }
-  if (!refToken) return null;
-  const url = affiliateUrl(listingId, refToken);
 
   async function share() {
+    setBusy(true);
+    setProblem(null);
+    let url: string;
+    try {
+      url = `${window.location.origin}${(await api.affiliateLink(listingId)).path}`;
+    } catch (err) {
+      setProblem(err instanceof ApiRequestError ? err.message : 'Could not make your link.');
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    setShown(url);
     // The phone's own share sheet where there is one; the clipboard otherwise.
     const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void> };
     if (nav.share) {
@@ -77,7 +90,7 @@ export function AffiliateCard({ listingId, percent, refToken, priceMinor, curren
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2500);
     } catch {
-      setShown(url);
+      /* the link is on screen to copy by hand */
     }
   }
 
@@ -86,21 +99,29 @@ export function AffiliateCard({ listingId, percent, refToken, priceMinor, curren
       <span className="affcard__icon" aria-hidden="true">💸</span>
       <div className="affcard__text">
         <b>Earn {earn} per sale</b>
-        <span>Share your own link. Whenever somebody buys through it, {percent}% goes to your wallet once it is delivered.</span>
+        <span>Share your own link. Whenever somebody buys through it, {earn} goes to your wallet once it is delivered.</span>
         {shown && <code className="affcard__url">{shown}</code>}
+        {problem && <span className="affcard__problem">{problem}</span>}
       </div>
-      <button type="button" className="btn btn--sm affcard__btn" onClick={() => void share()}>
-        {copied ? '✓ Link copied' : '🔗 Share & earn'}
+      <button type="button" className={`btn btn--sm affcard__btn${canShare ? '' : ' is-locked'}`} disabled={busy}
+        onClick={gate(() => share(), 'Sign in to get your own link and earn from sharing it.')}>
+        {!canShare && <span className="lockmark" aria-hidden="true">🔒</span>}
+        {busy ? 'Making your link…' : copied ? '✓ Link copied' : '🔗 Share & earn'}
       </button>
     </section>
   );
 }
 
-/** A small mark on a thumbnail: buying or sharing this pays a commission. */
-export function AffiliateBadge({ percent }: { percent: number }) {
+/**
+ * "Earn ₹50", beside the price on a thumbnail: buying through somebody's link
+ * pays them, and sharing it pays you. Its border runs round it, so it reads
+ * as an offer rather than another fact about the item.
+ */
+export function EarnPill({ amountMinor, currency = 'INR' }: { amountMinor: number; currency?: string }) {
+  if (amountMinor <= 0) return null;
   return (
-    <span className="affbadge" title={`Share it and earn ${percent}% of each sale`}>
-      💸 Earn {percent}%
+    <span className="earnpill" title={`Share it and earn ${formatMoney(amountMinor, currency)} per sale`}>
+      <span className="earnpill__text">💸 Earn {formatMoney(amountMinor, currency)}</span>
     </span>
   );
 }
@@ -141,12 +162,13 @@ export function SimilarItems({ listingId }: { listingId: string }) {
           : items.map((item, n) => (
             <Link key={item.id} to={`/listing/${item.id}`} className={`simcard${item.affiliate ? ' is-affiliate' : ''}`}
               style={{ ['--i' as string]: n }}>
-              <Thumb seed={item.id} label={item.title} photo={leadPhoto(item)} className="thumb simcard__photo">
-                {item.affiliate && <AffiliateBadge percent={item.affiliate.percent} />}
-              </Thumb>
+              <Thumb seed={item.id} label={item.title} photo={leadPhoto(item)} className="thumb simcard__photo" />
               <span className="simcard__body">
                 <span className="simcard__title">{item.title}</span>
-                <b className="simcard__price">{formatMoney(item.priceMinor, item.currency)}</b>
+                <span className="pricerow">
+                  <b className="simcard__price">{formatMoney(item.priceMinor, item.currency)}</b>
+                  <EarnPill amountMinor={earnOf(item)} currency={item.currency} />
+                </span>
                 <small className="simcard__shop">{item.seller?.storefrontName ?? item.category}</small>
               </span>
             </Link>
@@ -185,7 +207,7 @@ export function AffiliateOwed({ order, onDone }: { order: Order; onDone: () => v
   return (
     <div className="affowed">
       <span>
-        🤝 <b>{who}</b> referred this buyer · {order.affiliate.percent}% commission{' '}
+        🤝 <b>{who}</b> referred this buyer · commission{' '}
         <b>{formatMoney(affiliateCommissionMinor(order), order.currency)}</b>
         {' '}<span className={`badge ${status === 'earned' ? 'badge--lime' : status === 'paid' ? 'badge--ok' : status === 'void' ? 'badge--danger' : 'badge--warn'}`}>
           {status === 'earned' ? 'Owed now' : AFFILIATE_STATUS_LABELS[status]}

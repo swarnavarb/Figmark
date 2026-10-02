@@ -15,8 +15,11 @@ import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { placeOrder } from './placement.js';
-import { affiliateFor, affiliateToken, offersAffiliate, recordReferral, verifyAffiliateToken } from '../affiliate.js';
-import { AFFILIATE_PARAM, cleanAffiliatePercent } from '../../../shared/affiliate.js';
+import {
+  affiliateFor, claimCookieReferrals, offersAffiliate, recordReferral, referralCookie, referralsInCookie,
+  resolveShortCode, shortCodeFor, verifyAffiliateToken,
+} from '../affiliate.js';
+import { AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor } from '../../../shared/affiliate.js';
 import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -164,17 +167,23 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   const linkFrom = affiliateOn ? verifyAffiliateToken(listing.id, request.query.get(AFFILIATE_PARAM)) : null;
   let referrerId = linkFrom && linkFrom !== viewer?.id && linkFrom !== listing.sellerId ? linkFrom : null;
   if (viewer && affiliateOn) {
+    // A short link opened before signing in is held in a cookie until now.
+    await claimCookieReferrals(repository, request, viewer.id);
     const account = await repository.getUserById(viewer.id);
     if (account && referrerId) await recordReferral(repository, account, listing, referrerId);
     referrerId ??= account?.referrals?.find((entry) => entry.listingId === listing.id)?.referrerId ?? null;
   }
+  if (!viewer && affiliateOn) {
+    referrerId ??= referralsInCookie(request).find((entry) => entry.listingId === listing.id)?.referrerId ?? null;
+  }
   const referredBy = referrerId ? await repository.getUserById(referrerId) : null;
 
   return json(200, {
-    affiliate: affiliateOn && listing.affiliate ? {
-      percent: listing.affiliate.percent,
-      /** The reader's own `ref`, or null for the shop and for anyone signed out. */
-      ref: viewer && viewer.id !== listing.sellerId ? affiliateToken(listing.id, viewer.id) : null,
+    affiliate: affiliateOn ? {
+      /** What one sale through a link pays, in paise. */
+      amountMinor: affiliateUnitMinor(listing.affiliate, listing.priceMinor),
+      /** Whether the reader may have a link of their own: anybody signed in but the shop. */
+      canShare: Boolean(viewer && viewer.id !== listing.sellerId),
       referredBy: referredBy && !referredBy.suspended ? personRef(referredBy) : null,
     } : null,
     // What the item cost the shop is the shop's own business.
@@ -231,6 +240,49 @@ async function similarListings(request: HttpRequest, _context: InvocationContext
   });
 }
 
+/**
+ * POST /api/listings/{id}/affiliate-link - the reader's own short link to it.
+ *
+ * Made the first time they ask and the same ever after. Only for signed-in
+ * people other than the shop, on items that pay a commission.
+ */
+async function affiliateLink(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const listing = request.params.id ? await repository.getListing(request.params.id) : null;
+  if (!listing) return error(404, 'not_found', 'No such listing.');
+  if (!offersAffiliate(listing)) return error(409, 'not_affiliate', 'This item does not pay a commission.');
+  if (listing.sellerId === user.id) return error(409, 'own_item', 'You cannot earn a commission on your own item.');
+  const account = await repository.getUserById(user.id);
+  if (!account) return error(404, 'not_found', 'No such account.');
+  const code = await shortCodeFor(repository, account, listing);
+  return json(200, { code, path: `${SHORT_LINK_PREFIX}${code}` });
+}
+
+/**
+ * GET /api/r/{code} - where a short link goes.
+ *
+ * Remembers the referral on the account of whoever opened it if they are
+ * signed in, and in a cookie either way, then says which item to show.
+ */
+async function openShortLink(request: HttpRequest, _context: InvocationContext) {
+  const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
+  const target = await resolveShortCode(repository, request.params.code ?? '');
+  if (!target) return error(404, 'not_found', 'That link does not lead anywhere.');
+  const listing = await repository.getListing(target.listingId);
+  if (!listing) return error(404, 'not_found', 'That item is no longer here.');
+
+  const viewer = await auth.getCurrentUser(request);
+  const self = viewer?.id === target.referrerId;
+  if (viewer && !self) {
+    const account = await repository.getUserById(viewer.id);
+    if (account) await recordReferral(repository, account, listing, target.referrerId);
+  }
+  const cookies = self || !offersAffiliate(listing) ? [] : [referralCookie(request, listing.id, target.referrerId)];
+  return json(200, { listingId: listing.id }, cookies);
+}
+
 /** Whether this person may manage the shop a listing belongs to. */
 async function mayManage(repository: Awaited<ReturnType<typeof getRepository>>, listing: Listing, userId: string | undefined) {
   if (!userId) return false;
@@ -252,7 +304,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     quantityMode?: 'fixed' | 'multiple';
     expiresAt?: string | null;
     advancePercent?: number | null;
-    affiliatePercent?: number | null;
+    affiliateMinor?: number | null;
     /** Announce it in the shop's channel, to its followers. */
     shareToChannel?: boolean;
     /** Announce it in the feed, to everyone. */
@@ -360,7 +412,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     priceMinor: Math.round(body.priceMinor),
     currency: 'INR',
     quantityAvailable: Math.max(1, Math.round(body.quantityAvailable ?? 1)),
-    ...listingTerms(body),
+    ...listingTerms(body, Math.round(body.priceMinor)),
     // Pre-order and shipment lot are independent: a listing opts into demand
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
@@ -604,6 +656,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   // A link followed straight into Buy is remembered like one opened first.
   // The credit itself is read back from the account, never from the request,
   // so a client cannot name its own affiliate.
+  await claimCookieReferrals(repository, request, user.id);
   const referredBy = verifyAffiliateToken(listing.id, body.ref);
   if (referredBy) {
     const buyer = await repository.getUserById(user.id);
@@ -782,13 +835,13 @@ function listingTerms(body: {
   quantityMode?: 'fixed' | 'multiple';
   expiresAt?: string | null;
   advancePercent?: number | null;
-  /** Commission offered to affiliates, in percent; null or 0 turns it off. */
-  affiliatePercent?: number | null;
-}): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> {
+  /** Commission per unit sold, in paise; null or 0 turns it off. */
+  affiliateMinor?: number | null;
+}, priceMinor: number): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> {
   const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> = {};
-  if (body.affiliatePercent !== undefined) {
-    const percent = cleanAffiliatePercent(body.affiliatePercent);
-    terms.affiliate = percent ? { percent } : null;
+  if (body.affiliateMinor !== undefined) {
+    const amountMinor = cleanAffiliateMinor(body.affiliateMinor, priceMinor);
+    terms.affiliate = amountMinor ? { amountMinor } : null;
   }
   if (body.quantityMode !== undefined) {
     terms.quantityMode = body.quantityMode === 'multiple' ? 'multiple' : 'fixed';
@@ -840,7 +893,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   let body: {
     title?: string; description?: string; priceMinor?: number; quantityAvailable?: number;
     quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
-    affiliatePercent?: number | null;
+    affiliateMinor?: number | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -848,7 +901,14 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const next: Listing = { ...listing, ...listingTerms(body), updatedAt: new Date().toISOString() };
+  const price = body.priceMinor !== undefined && body.priceMinor > 0 ? Math.round(body.priceMinor) : listing.priceMinor;
+  const next: Listing = { ...listing, ...listingTerms(body, price), updatedAt: new Date().toISOString() };
+  // A cheaper price can leave an old commission bigger than the item; it is
+  // brought back under the new price rather than left owing more than it took.
+  if (next.affiliate?.amountMinor && body.affiliateMinor === undefined) {
+    const kept = cleanAffiliateMinor(next.affiliate.amountMinor, price);
+    next.affiliate = kept ? { amountMinor: kept } : null;
+  }
   if (body.title !== undefined) {
     if (!body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
     next.title = body.title.trim();
@@ -945,6 +1005,10 @@ const anon = { authLevel: 'anonymous' } as const;
 app.http('feed', { ...anon, methods: ['GET'], route: 'feed', handler: feedRoute });
 app.http('listing-detail', { ...anon, methods: ['GET'], route: 'listings/{id}', handler: listingDetailRoute });
 export const similarListingsRoute = handler(similarListings);
+export const affiliateLinkRoute = handler(affiliateLink);
+export const openShortLinkRoute = handler(openShortLink);
+app.http('listing-affiliate-link', { ...anon, methods: ['POST'], route: 'listings/{id}/affiliate-link', handler: affiliateLinkRoute });
+app.http('short-link', { ...anon, methods: ['GET'], route: 'r/{code}', handler: openShortLinkRoute });
 app.http('listing-similar', { ...anon, methods: ['GET'], route: 'listings/{id}/similar', handler: similarListingsRoute });
 app.http('listing-create', { ...anon, methods: ['POST'], route: 'listings', handler: createListingRoute });
 app.http('listing-like', { ...anon, methods: ['POST'], route: 'listings/{id}/like', handler: toggleLikeRoute });

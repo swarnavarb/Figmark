@@ -1,4 +1,6 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+import type { HttpRequest } from '@azure/functions';
+import { affiliateUnitMinor } from '../../shared/affiliate.js';
 import type { Listing, Order, OrderAffiliate, User } from '../../shared/models.js';
 import { config } from './config.js';
 import type { getRepository } from './data/index.js';
@@ -39,8 +41,8 @@ export function verifyAffiliateToken(listingId: string, token: string | null | u
 }
 
 /** Whether this item pays a commission, and so whether links to it mean anything. */
-export function offersAffiliate(listing: Pick<Listing, 'affiliate' | 'privateFor'>): boolean {
-  return Boolean(listing.affiliate && listing.affiliate.percent > 0 && !listing.privateFor);
+export function offersAffiliate(listing: Pick<Listing, 'affiliate' | 'privateFor' | 'priceMinor'>): boolean {
+  return affiliateUnitMinor(listing.affiliate, listing.priceMinor) > 0 && !listing.privateFor;
 }
 
 /**
@@ -76,7 +78,7 @@ export async function affiliateFor(repository: Repo, buyerId: string, listing: L
     referrerId: referrer.id,
     referrerName: referrer.displayName,
     referrerHandle: referrer.username ?? null,
-    percent: listing.affiliate.percent,
+    amountMinor: affiliateUnitMinor(listing.affiliate, listing.priceMinor),
     paidAt: null,
     paidReference: null,
   };
@@ -96,4 +98,98 @@ export async function creditAffiliate(repository: Repo, order: Order): Promise<v
   if (ids.includes(order.id)) return;
   referrer.affiliateOrderIds = [...ids, order.id];
   await repository.updateUser(referrer);
+}
+
+/* ── Short links ──────────────────────────────────────────────────────────
+ *
+ * `/r/<code>`: seven characters, nothing to trim off. The code is a pointer
+ * kept in the site-content store (`ref:<code>`), so the link itself carries
+ * no item, person or signature for anybody to edit - an edited code simply
+ * points nowhere. Opening one remembers the referral twice over: on the
+ * account if they are signed in, and in a cookie the server reads back when
+ * they sign up or sign in, so deleting the address afterwards loses nothing.
+ */
+
+const CODE_ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_LENGTH = 7;
+export const REFERRAL_COOKIE = 'fm_ref';
+const REFERRAL_COOKIE_DAYS = 30;
+
+function newCode(): string {
+  return Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+}
+
+/** This person's short code for this item, made the first time they share it. */
+export async function shortCodeFor(repository: Repo, user: User, listing: Listing): Promise<string> {
+  const existing = user.affiliateLinks?.[listing.id];
+  if (existing) return existing;
+  let code = newCode();
+  // A clash is a one-in-trillions event; checking costs one point read.
+  for (let tries = 0; tries < 5 && (await repository.getSiteContent(`ref:${code}`)); tries += 1) code = newCode();
+  const now = new Date().toISOString();
+  await repository.saveSiteContent({
+    id: `ref:${code}`,
+    data: { listingId: listing.id, referrerId: user.id },
+    updatedBy: user.id,
+    createdAt: now,
+    updatedAt: now,
+  });
+  user.affiliateLinks = { ...(user.affiliateLinks ?? {}), [listing.id]: code };
+  await repository.updateUser(user);
+  return code;
+}
+
+/** Where a short code points, or null for one that was never issued. */
+export async function resolveShortCode(repository: Repo, code: string): Promise<{ listingId: string; referrerId: string } | null> {
+  if (!/^[A-Za-z0-9]{4,16}$/.test(code)) return null;
+  const row = await repository.getSiteContent(`ref:${code}`);
+  const data = row?.data as { listingId?: string; referrerId?: string } | undefined;
+  return data?.listingId && data.referrerId ? { listingId: data.listingId, referrerId: data.referrerId } : null;
+}
+
+/** The signed referrals a browser is carrying, newest last. */
+export function referralsInCookie(request: HttpRequest): { listingId: string; referrerId: string }[] {
+  const header = request.headers.get('cookie');
+  if (!header) return [];
+  const raw = header.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${REFERRAL_COOKIE}=`));
+  if (!raw) return [];
+  return decodeURIComponent(raw.slice(REFERRAL_COOKIE.length + 1)).split(',').flatMap((entry) => {
+    const [listingId, token] = entry.split('~');
+    const referrerId = listingId && token ? verifyAffiliateToken(listingId, token) : null;
+    return listingId && referrerId ? [{ listingId, referrerId }] : [];
+  });
+}
+
+/** The cookie that remembers this referral, alongside any others already held. */
+export function referralCookie(request: HttpRequest, listingId: string, referrerId: string): string {
+  const kept = referralsInCookie(request).filter((entry) => entry.listingId !== listingId).slice(-9);
+  const value = [...kept, { listingId, referrerId }]
+    .map((entry) => `${entry.listingId}~${affiliateToken(entry.listingId, entry.referrerId)}`)
+    .join(',');
+  return [
+    `${REFERRAL_COOKIE}=${encodeURIComponent(value)}`,
+    'Path=/',
+    'HttpOnly',
+    'Secure',
+    'SameSite=Lax',
+    `Max-Age=${REFERRAL_COOKIE_DAYS * 24 * 60 * 60}`,
+  ].join('; ');
+}
+
+/**
+ * Moves the referrals a browser carries onto the account now using it.
+ *
+ * Called when somebody signs up or signs in, and whenever they open an item or
+ * a checkout, so a referral made while signed out is never lost.
+ */
+export async function claimCookieReferrals(repository: Repo, request: HttpRequest, userId: string): Promise<void> {
+  const held = referralsInCookie(request);
+  if (held.length === 0) return;
+  const user = await repository.getUserById(userId);
+  if (!user) return;
+  for (const entry of held) {
+    if (user.referrals?.some((known) => known.listingId === entry.listingId && known.referrerId === entry.referrerId)) continue;
+    const listing = await repository.getListing(entry.listingId);
+    if (listing) await recordReferral(repository, user, listing, entry.referrerId);
+  }
 }

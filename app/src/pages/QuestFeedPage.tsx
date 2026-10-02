@@ -11,7 +11,7 @@ import { preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing } from '../api';
 import { CategoryIcon } from '../components/CategoryIcon';
-import { AffiliateBadge } from '../components/Affiliate';
+import { EarnPill, earnOf } from '../components/Affiliate';
 import {
   DemandRail, EndingRail, FEED_VIEW_TITLES, demandPicks, endingPicks, isFeedView,
 } from '../components/FeedRails';
@@ -21,6 +21,7 @@ import {
 } from '../components/Quest';
 import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
+import { useSession } from '../session';
 import { PRICE_BANDS, Picker, useCatalog } from './FeedPage';
 
 /**
@@ -652,6 +653,7 @@ function PixelHeart({ full }: { full: boolean }) {
  */
 function LootCard({ listing }: { listing: Rated }) {
   const { refresh } = useQuest();
+  const { user, promptAuth } = useSession();
   const [liked, setLiked] = useState(listing.liked);
   const [pop, setPop] = useState<{ id: number; gain: boolean } | null>(null);
   const { rarity } = listing;
@@ -666,6 +668,10 @@ function LootCard({ listing }: { listing: Rated }) {
     // The card is a link; the chest must not navigate.
     event.preventDefault();
     event.stopPropagation();
+    if (!user) {
+      promptAuth('Sign in to save items and earn XP.');
+      return;
+    }
     const next = !liked;
     setLiked(next);
     setPop({ id: Date.now(), gain: next });
@@ -682,7 +688,6 @@ function LootCard({ listing }: { listing: Rated }) {
     <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}${listing.affiliate ? ' is-affiliate' : ''}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
         {tier && <RarityRibbon tier={tier} />}
-        {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
         <span className="qgrade" title="Condition">{listing.condition}</span>
         <button type="button" className={`qheart${liked ? ' is-on' : ''}`} onClick={(event) => void toggleSave(event)}
           aria-label={liked ? 'Remove from your saves' : 'Save'} aria-pressed={liked}>
@@ -697,9 +702,12 @@ function LootCard({ listing }: { listing: Rated }) {
 
       <div className="qloot__body">
         <span className="qloot__title">{listing.title}</span>
-        <span className="qloot__price">
-          {formatMoney(listing.priceMinor, listing.currency)}
-          {wasPrice && <s>{formatMoney(wasPrice, listing.currency)}</s>}
+        <span className="pricerow">
+          <span className="qloot__price">
+            {formatMoney(listing.priceMinor, listing.currency)}
+            {wasPrice && <s>{formatMoney(wasPrice, listing.currency)}</s>}
+          </span>
+          <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
         </span>
         <span className="qloot__meta">
           <b className={sourcingOf(listing) === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[sourcingOf(listing)]}</b>

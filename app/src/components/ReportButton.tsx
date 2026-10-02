@@ -21,7 +21,7 @@ export function ReportButton({ targetType, targetId, parentId, mine, moderation 
   mine: boolean;
   moderation?: ModerationMark;
 }) {
-  const { user } = useSession();
+  const { user, gate } = useSession();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -51,11 +51,12 @@ export function ReportButton({ targetType, targetId, parentId, mine, moderation 
       {/* Your own validated words need nothing more; everything else gets the button. */}
       {!(validated && mine) && (sent ? (
         <span className="faint reportbtn__sent">{kind === 'validate' ? 'Validation requested' : 'Disputed · under review'}</span>
-      ) : user ? (
-        <button type="button" className="btn btn--quiet btn--sm reportbtn__go" onClick={() => setOpen(true)}>
+      ) : (
+        <button type="button" className={`btn btn--quiet btn--sm reportbtn__go${user ? '' : ' is-locked'}`}
+          onClick={gate(() => setOpen(true), 'Sign in to report or validate this.')}>
           {kind === 'validate' ? '✅ Ask to validate' : '⚠️ Dispute'}
         </button>
-      ) : null)}
+      ))}
 
       {open && (
         <Modal title={kind === 'validate' ? 'Ask Figmark to validate this' : 'Dispute this'} onClose={() => setOpen(false)}>

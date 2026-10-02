@@ -12,7 +12,7 @@ import { CategoryIcon } from '../components/CategoryIcon';
 import { FillGap, FillKey, FillMeter } from '../components/FillMeter';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
-import { AffiliateBadge } from '../components/Affiliate';
+import { EarnPill, earnOf } from '../components/Affiliate';
 import { ExpiryChip, StockChip } from '../components/Buy';
 import { DesignSwitch, useDesign } from '../components/Quest';
 import { QuestFeedPage } from './QuestFeedPage';
@@ -293,7 +293,7 @@ export function Picker({ label, value, onChange, options, empty }: {
 }
 
 function ListingCard({ listing }: { listing: FeedListing }) {
-  const { user } = useSession();
+  const { user, promptAuth } = useSession();
   const [liked, setLiked] = useState(listing.liked);
   const [likes, setLikes] = useState(listing.likeCount);
   const view = listing.preOrder ? preOrderView(listing.preOrder) : null;
@@ -302,7 +302,10 @@ function ListingCard({ listing }: { listing: FeedListing }) {
     // The card is a link; the heart must not navigate.
     event.preventDefault();
     event.stopPropagation();
-    if (!user) return;
+    if (!user) {
+      promptAuth('Sign in to save items.');
+      return;
+    }
     const next = !liked;
     setLiked(next);
     setLikes((count) => count + (next ? 1 : -1));
@@ -319,13 +322,10 @@ function ListingCard({ listing }: { listing: FeedListing }) {
   return (
     <Link to={`/listing/${listing.id}`} className={`card card--link${listing.affiliate ? ' is-affiliate' : ''}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
-        {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
-        {user && (
-          <button type="button" className={`thumb__like${liked ? ' is-on' : ''}`} onClick={toggleLike}
-            aria-label={liked ? 'Remove bookmark' : 'Bookmark'} aria-pressed={liked}>
-            <Icon name="heart" size={15} />
-          </button>
-        )}
+        <button type="button" className={`thumb__like${liked ? ' is-on' : ''}`} onClick={toggleLike}
+          aria-label={liked ? 'Remove bookmark' : 'Bookmark'} aria-pressed={liked}>
+          <Icon name="heart" size={15} />
+        </button>
         <div className="thumb__badges">
           <span className="badge badge--solid">{listing.condition}</span>
           {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
@@ -335,7 +335,10 @@ function ListingCard({ listing }: { listing: FeedListing }) {
 
       <div className="listing__body">
         <span className="listing__title">{listing.title}</span>
-        <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        <span className="pricerow">
+          <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+          <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
+        </span>
 
         {/* The quick read: is it here or coming, what kind of thing, how many
             left. Two cards fit across a phone, so this has to answer the

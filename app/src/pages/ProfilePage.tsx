@@ -9,7 +9,7 @@ import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
-import { AffiliateBadge } from '../components/Affiliate';
+import { EarnPill, earnOf } from '../components/Affiliate';
 
 type Tab = 'collection' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
 
@@ -208,7 +208,6 @@ export function ProfilePage() {
             {data.listings.map((listing) => (
               <Link key={listing.id} to={`/listing/${listing.id}`} className={`card card--link${listing.affiliate ? ' is-affiliate' : ''}`}>
                 <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
-                  {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
                   <div className="thumb__badges">
                     <span className="badge badge--solid">{listing.condition}</span>
                     <span className={`badge badge--${listing.status === 'active' ? 'ok' : 'warn'}`}>{listing.status}</span>
@@ -216,7 +215,10 @@ export function ProfilePage() {
                 </Thumb>
                 <div className="listing__body">
                   <span className="listing__title">{listing.title}</span>
-                  <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                  <span className="pricerow">
+                    <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                    <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
+                  </span>
                   <span className="faint">{listing.viewCount} views · {listing.likeCount} saved</span>
                 </div>
               </Link>

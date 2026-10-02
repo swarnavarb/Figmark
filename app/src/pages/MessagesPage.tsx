@@ -11,6 +11,7 @@ import { timeAgo } from '../format';
 import { VoicePicker, VoiceScope } from '../components/SocialVoice';
 import { RoomBar, useLongPress } from '../components/SocialChrome';
 import { useGoBack } from '../components/ScrollManager';
+import { useSession } from '../session';
 
 /**
  * The inbox.
@@ -544,9 +545,11 @@ function gapTooBig(earlier: string, later: string): boolean {
 
 /** Shown on a shop or person's page: the way into a conversation with them. */
 export function MessageButton({ handle, party }: { handle: string; party?: MessageParty }) {
+  const { user, gate } = useSession();
   return (
-    <Link to={`/messages/${encodeURIComponent(handle)}`} className="btn btn--ghost">
-      <Icon name="message" size={15} /> Message {party?.displayName ?? `@${handle}`}
+    <Link to={`/messages/${encodeURIComponent(handle)}`} className={`btn btn--ghost${user ? '' : ' is-locked'}`}
+      onClick={gate(() => undefined, 'Sign in to send a message.')}>
+      {user ? <Icon name="message" size={15} /> : <span className="lockmark" aria-hidden="true">🔒</span>} Message {party?.displayName ?? `@${handle}`}
     </Link>
   );
 }

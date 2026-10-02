@@ -21,7 +21,7 @@ export function ListingPosts({ listingId, sellerId, posts, onChange }: {
   posts: ListingPost[];
   onChange: (posts: ListingPost[]) => void;
 }) {
-  const { user } = useSession();
+  const { user, promptAuth } = useSession();
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<ListingPost | null>(null);
   const [busy, setBusy] = useState(false);
@@ -98,6 +98,13 @@ export function ListingPosts({ listingId, sellerId, posts, onChange }: {
 
       {problem && <p className="posts__problem" role="alert">{problem}</p>}
 
+      {/* A guest sees where to write, locked: tapping it asks them to sign in. */}
+      {!user && (
+        <button type="button" className="posts__compose posts__compose--locked is-locked"
+          onClick={() => promptAuth('Sign in to post, ask the shop or react.')}>
+          <span className="lockmark" aria-hidden="true">🔒</span> Sign in to post or ask something…
+        </button>
+      )}
       {user && (
         <form className="posts__compose" onSubmit={submit}>
           {replyTo && (
@@ -135,8 +142,12 @@ function Post({ post, listingId, sellerId, canAct, mine, reply, onReact, onReply
   const [open, setOpen] = useState(false);
   const [picking, setPicking] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
+  const { promptAuth } = useSession();
   const press = useLongPress(() => {
-    if (!canAct) return;
+    if (!canAct) {
+      promptAuth('Sign in to react or reply.');
+      return;
+    }
     setOpen(true);
     setPicking(false);
   });

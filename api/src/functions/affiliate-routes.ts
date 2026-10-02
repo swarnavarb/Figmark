@@ -1,5 +1,5 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { affiliateCommissionMinor, affiliateStatus } from '../../../shared/affiliate.js';
+import { affiliateCommissionMinor, affiliateStatus, affiliateUnitMinor } from '../../../shared/affiliate.js';
 import type { Order } from '../../../shared/models.js';
 import { rupees } from '../../../shared/payments.js';
 import { getAuthService } from '../auth/index.js';
@@ -32,7 +32,8 @@ async function myAffiliate(request: HttpRequest, _context: InvocationContext) {
       listingId: order.listingId,
       itemName: order.itemName,
       sellerName: shopName.get(order.sellerId) ?? 'A shop',
-      percent: order.affiliate?.percent ?? 0,
+      unitMinor: affiliateUnitMinor(order.affiliate, order.unitPriceMinor),
+      quantity: order.quantity,
       saleMinor: order.unitPriceMinor * order.quantity,
       commissionMinor: affiliateCommissionMinor(order),
       currency: order.currency,

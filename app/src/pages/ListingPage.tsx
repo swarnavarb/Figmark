@@ -24,8 +24,11 @@ const TIER_NOTES: Record<string, string> = {
 
 export function ListingPage() {
   const { id = '' } = useParams();
-  const { user } = useSession();
+  const { user, gate } = useSession();
   const navigate = useNavigate();
+  // Anything here a guest reaches for opens the sign-in popup; they stay on this item.
+  const lock = user ? '' : ' is-locked';
+  const lockMark = user ? null : <span className="lockmark" aria-hidden="true">🔒</span>;
   // Who sent them here, if anybody. Carried into the pledge and the order so
   // whoever recruited them is credited for it - the only thing that makes
   // sharing a group-buy worth a person's own reputation.
@@ -137,18 +140,18 @@ export function ListingPage() {
       ) : (
         <div className="buybox__acts">
           {/* No purchase on an expired item. The server refuses it too. */}
-          <button className="btn btn--lg buybox__buy" onClick={() => void buy()}
-            disabled={busy || !user || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
-            {busy ? <span className="buybox__opening">Opening checkout</span> : listing.preOrder ? 'Book a place' : 'Buy now'}
+          <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
+            disabled={busy || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
+            {busy ? <span className="buybox__opening">Opening checkout</span> : <>{lockMark}{listing.preOrder ? 'Book a place' : 'Buy now'}</>}
           </button>
-          <button className={`btn btn--ghost buybox__save${data.liked ? ' is-on' : ''}`} aria-label={data.liked ? 'Saved' : 'Save'}
-            onClick={() => void toggleLike()} disabled={busy || !user}>
+          <button className={`btn btn--ghost buybox__save${data.liked ? ' is-on' : ''}${lock}`} aria-label={data.liked ? 'Saved' : 'Save'}
+            onClick={gate(() => toggleLike(), 'Sign in to save items.')} disabled={busy}>
             <Icon name="heart" size={18} />
           </button>
         </div>
       )}
       <p className="buybox__fine">
-        {!user && !data.isOwn ? 'Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
+        {!user && !data.isOwn ? '🔒 Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
       </p>
       {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy} />}
     </div>
@@ -176,8 +179,8 @@ export function ListingPage() {
             <Urgency listing={listing} />
             {buyBox}
             {data.affiliate && (
-              <AffiliateCard listingId={listing.id} percent={data.affiliate.percent} refToken={data.affiliate.ref}
-                priceMinor={listing.priceMinor} currency={listing.currency} isOwn={data.isOwn} />
+              <AffiliateCard listingId={listing.id} amountMinor={data.affiliate.amountMinor}
+                canShare={data.affiliate.canShare} currency={listing.currency} isOwn={data.isOwn} />
             )}
             <DetailBlocks listing={listing} />
             {listing.privateFor && (
@@ -205,7 +208,7 @@ export function ListingPage() {
               listingId={listing.id}
               roster={data.preOrder}
               estimatedDispatchAt={data.estimatedDispatchAt}
-              canJoin={Boolean(user) && !data.isOwn}
+              canJoin={!data.isOwn}
               meId={user?.id ?? null}
               via={via}
               onChange={(roster) => setData((prev) => (prev ? { ...prev, preOrder: roster } : prev))}
@@ -266,16 +269,18 @@ export function ListingPage() {
                 </div>
               </dl>
 
-              {user && !data.isOwn && (
+              {!data.isOwn && (
                 <div className="sellercard__acts">
-                  <button className={`btn btn--sm ${data.following ? 'btn--ghost' : ''}`} onClick={() => void toggleFollow()} disabled={busy}>
-                    {data.following ? <><Icon name="check" size={14} /> Following</> : 'Follow'}
+                  <button className={`btn btn--sm ${data.following ? 'btn--ghost' : ''}${lock}`}
+                    onClick={gate(() => toggleFollow(), 'Sign in to follow shops.')} disabled={busy}>
+                    {data.following ? <><Icon name="check" size={14} /> Following</> : <>{lockMark}Follow</>}
                   </button>
                   {/* A question about an item is asked of the shop, not of whoever
                       happens to own it — so the message goes to the shop's handle. */}
                   {seller.username && (
-                    <Link to={`/messages/${encodeURIComponent(seller.username)}`} className="btn btn--ghost btn--sm">
-                      <Icon name="message" size={14} /> Message
+                    <Link to={`/messages/${encodeURIComponent(seller.username)}`} className={`btn btn--ghost btn--sm${lock}`}
+                      onClick={gate(() => undefined, 'Sign in to message the shop.')}>
+                      {lockMark ?? <Icon name="message" size={14} />} Message
                     </Link>
                   )}
                 </div>
@@ -331,6 +336,7 @@ function PreOrderPanel({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const { user, gate } = useSession();
 
   const view = roster.preOrder;
   const mine = roster.mine;
@@ -421,8 +427,9 @@ function PreOrderPanel({
       {canJoin && open && (
         <div className="stack" style={{ gap: 10 }}>
           <div className="row">
-            <button className={`btn${mine?.pledged ? ' btn--ghost' : ''}`} style={{ flex: 1 }}
-              onClick={() => void change()} disabled={busy}>
+            <button className={`btn${mine?.pledged ? ' btn--ghost' : ''}${user ? '' : ' is-locked'}`} style={{ flex: 1 }}
+              onClick={gate(() => change(), 'Sign in to join this group buy.')} disabled={busy}>
+              {!user && <span className="lockmark" aria-hidden="true">🔒</span>}
               {mine?.pledged ? (
                 <><Icon name="check" size={14} /> You&rsquo;re in</>
               ) : mine?.booked ? (

@@ -7,6 +7,7 @@ import { isReaction } from '../../../shared/social.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 
 /**
  * The handle namespace, and the messages addressed through it.
@@ -379,7 +380,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
       quantityAvailable: listing.quantityAvailable,
       likeCount: listing.likeCount,
       // Highlighted on the card when sharing it pays a commission.
-      affiliate: listing.affiliate && !listing.privateFor ? listing.affiliate : null,
+      affiliate: listing.affiliate && !listing.privateFor
+        ? { amountMinor: affiliateUnitMinor(listing.affiliate, listing.priceMinor) } : null,
       // The picture, so a shop's grid looks like its shop rather than like a
       // wall of generated squares.
       photos: listing.photos ?? [],

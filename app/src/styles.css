@@ -10402,12 +10402,6 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .refby b { color: var(--text-dim); font-weight: var(--w-semi); }
 .refby__lock { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; background: rgba(255, 255, 255, 0.06); }
 
-.affbadge {
-  position: absolute; top: 8px; left: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 3px;
-  padding: 3px 8px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-bold);
-  color: var(--lime-ink); background: var(--grad-play); box-shadow: 0 4px 12px rgba(163, 230, 53, 0.35);
-  text-shadow: none; letter-spacing: 0;
-}
 .card.is-affiliate { box-shadow: 0 0 0 1px var(--lime-line), 0 6px 22px rgba(163, 230, 53, 0.14); }
 .card.is-affiliate .thumb::after {
   content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
@@ -10445,17 +10439,6 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .simcard--ghost { height: 260px; background: linear-gradient(90deg, var(--surface-2), rgba(255, 255, 255, 0.05), var(--surface-2)); background-size: 200% 100%; animation: sim-shimmer 1.2s linear infinite; }
 @keyframes sim-shimmer { to { background-position: -200% 0; } }
 
-/* ── Affiliate landing, for a visitor who is not signed in yet ──────────── */
-.afflanding { display: grid; gap: 12px; margin-bottom: 16px; padding: 14px; border-radius: 18px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--lime-line); }
-.afflanding__item { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; align-items: center; }
-.afflanding__item .thumb { width: 84px; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden; font-size: var(--t-md); }
-.afflanding__item .thumb__img { width: 100%; height: 100%; object-fit: cover; }
-.afflanding__what { display: grid; gap: 2px; min-width: 0; }
-.afflanding__what b { font-size: var(--t-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.afflanding__what span { font-size: var(--t-sm); color: var(--text-dim); }
-.afflanding__link { font-size: var(--t-2xs); color: var(--text-faint); overflow-wrap: anywhere; }
-.afflanding__gate { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
-
 /* ── Wallet: affiliate earnings ─────────────────────────────────────────── */
 .earnrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); }
 .earnrow__what { display: grid; gap: 2px; min-width: 0; }
@@ -10471,8 +10454,66 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 }
 .affowed { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; font-size: var(--t-sm); background: rgba(163, 230, 53, 0.08); box-shadow: inset 0 0 0 1px var(--lime-line); }
 .affowed .notice { flex-basis: 100%; margin: 0; }
-/* On a loot card the ribbon owns the top-left corner, so the mark sits under it. */
-.qloot .affbadge { top: 38px; }
-.qloot--plain .affbadge { top: 8px; }
 .qloot.is-affiliate .qloot__art { box-shadow: inset 0 0 0 2px rgba(163, 230, 53, 0.6); }
 .qloot.is-affiliate { box-shadow: 0 0 0 1px var(--lime-line), 0 8px 24px rgba(163, 230, 53, 0.16); }
+
+/* ── Sign-in popup, over the page a guest is reading ─────────────────────── */
+.authpop {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; overflow-y: auto;
+  background: rgba(4, 6, 12, 0.72); backdrop-filter: blur(6px); animation: authpop-in 200ms ease both;
+}
+.authpop__panel {
+  position: relative; width: min(100%, 440px); display: grid; gap: 12px; padding: 20px 16px 16px; border-radius: 22px;
+  background: var(--surface); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: authpop-rise 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.authpop__panel .auth__card { margin: 0; }
+.authpop__close {
+  position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border: 0; border-radius: 50%;
+  color: var(--text-dim); background: var(--surface-2); cursor: pointer;
+}
+.authpop__why { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+@keyframes authpop-in { from { opacity: 0; } }
+@keyframes authpop-rise { from { opacity: 0; transform: translateY(18px) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) { .authpop, .authpop__panel { animation: none; } }
+
+/* What a guest can see but not use: shown, marked with a lock, and a tap away from signing in. */
+.guestwall { display: grid; justify-items: center; gap: 10px; padding: 60px 16px; text-align: center; }
+.guestwall__lock { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; font-size: 28px; background: var(--surface-2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.guestwall h1 { margin: 0; font-size: var(--t-xl); }
+.guestwall p { margin: 0; max-width: 360px; color: var(--text-dim); }
+.navlogin { white-space: nowrap; }
+.navbell--guest { position: relative; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: var(--text-dim); background: var(--surface-2); cursor: pointer; }
+.is-locked { position: relative; }
+.lockmark { font-size: 0.85em; opacity: 0.85; margin-right: 4px; }
+
+/* ── Earn pill: beside the price, one line, shrinking with the card ─────── */
+@property --earn-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.pricerow {
+  display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: nowrap;
+  /* The pill's text is sized off this row's width, so a narrow card gets a smaller pill, never a second line. */
+  container-type: inline-size;
+}
+.pricerow > :first-child { flex: none; }
+.earnpill {
+  position: relative; isolation: isolate; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center;
+  padding: 0.22em 0.7em; border-radius: var(--r-pill); overflow: hidden; white-space: nowrap;
+  font-size: clamp(8px, 6.4cqi, 12px); font-weight: var(--w-bold); line-height: 1.2; letter-spacing: 0; color: var(--lime);
+}
+/* The border: a bright arc running round the pill, under a dark fill inset by the border's width. */
+.earnpill::before {
+  content: ''; position: absolute; inset: 0; z-index: -2; border-radius: inherit;
+  background: conic-gradient(from var(--earn-angle), var(--lime), #06D6E7 25%, rgba(163, 230, 53, 0.15) 45%, rgba(163, 230, 53, 0.15) 70%, var(--lime));
+  animation: earn-spin 2.6s linear infinite;
+}
+.earnpill::after { content: ''; position: absolute; inset: 1.5px; z-index: -1; border-radius: inherit; background: #10180B; }
+.earnpill__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@keyframes earn-spin { to { --earn-angle: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .earnpill::before { animation: none; } }
+.railitem__earn { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 2; display: flex; container-type: inline-size; }
+.affcard__problem { font-size: var(--t-xs); color: var(--coral); }
+.posts__compose--locked {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 12px 16px; border: 0; border-radius: var(--r-pill);
+  font: inherit; font-size: var(--t-sm); text-align: left; color: var(--text-faint); background: var(--surface-2); cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}

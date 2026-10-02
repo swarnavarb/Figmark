@@ -3,7 +3,7 @@ import { hoursToEnd, isEndingSoon, isInDemand, popularity } from '@shared/catalo
 import type { FeedListing } from '../api';
 import { Fire, Rush, Svg } from './ListingBlocks';
 import { Thumb, leadPhoto } from './ui';
-import { AffiliateBadge } from './Affiliate';
+import { EarnPill, earnOf } from './Affiliate';
 
 /**
  * The two shelves dropped in between the feed's cards: what people are
@@ -92,7 +92,7 @@ function RailItem({ listing, n, children }: { listing: FeedListing; n: number; c
   return (
     <Link to={`/listing/${listing.id}`} className={`railitem${listing.affiliate ? ' is-affiliate' : ''}`} style={{ ['--i' as string]: n }}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb railitem__photo">
-        {listing.affiliate && <AffiliateBadge percent={listing.affiliate.percent} />}
+        {earnOf(listing) > 0 && <span className="railitem__earn"><EarnPill amountMinor={earnOf(listing)} currency={listing.currency} /></span>}
         {children}
         <span className="railitem__name"><span>{listing.title}</span></span>
       </Thumb>

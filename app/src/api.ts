@@ -68,9 +68,10 @@ export class ApiRequestError extends Error {
  * it means we are not signed in and did not notice. Left unhandled it strands
  * the user on a screen repeating "Authentication required" with no way out.
  */
-let onSessionRejected: (() => void) | null = null;
+let onSessionRejected: ((method: string) => void) | null = null;
 
-export function setSessionRejectedHandler(handler: (() => void) | null): void {
+/** The handler is told the method, so a guest's refused write can ask them to sign in. */
+export function setSessionRejectedHandler(handler: ((method: string) => void) | null): void {
   onSessionRejected = handler;
 }
 
@@ -126,7 +127,7 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as ApiError | null;
     if (response.status === 401 && !EXPECTS_401.some((prefix) => path.startsWith(prefix))) {
-      onSessionRejected?.();
+      onSessionRejected?.((init?.method ?? 'GET').toUpperCase());
     }
     throw new ApiRequestError(
       response.status,
@@ -295,9 +296,10 @@ export interface ListingDetail {
 }
 
 export interface ListingAffiliate {
-  percent: number;
-  /** The reader's own link parameter; null for the shop and anyone signed out. */
-  ref: string | null;
+  /** What one sale through a link pays, in paise. */
+  amountMinor: number;
+  /** Whether the reader may have a link of their own: anybody signed in but the shop. */
+  canShare: boolean;
   /** Whose link brought the reader here, if anybody's. */
   referredBy: PartyRef | null;
 }
@@ -308,7 +310,9 @@ export interface AffiliateEarning {
   listingId: string;
   itemName: string;
   sellerName: string;
-  percent: number;
+  /** Commission per unit, in paise, and how many units the order was for. */
+  unitMinor: number;
+  quantity: number;
   saleMinor: number;
   commissionMinor: number;
   currency: string;
@@ -795,8 +799,8 @@ export interface NewListing {
   quantityMode?: 'fixed' | 'multiple';
   expiresAt?: string | null;
   advancePercent?: number | null;
-  /** Commission offered to affiliates, in percent; null turns it off. */
-  affiliatePercent?: number | null;
+  /** Commission per unit sold, in paise; null turns it off. */
+  affiliateMinor?: number | null;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
@@ -1592,7 +1596,7 @@ export interface PublicProfile {
   listings: {
     id: string; title: string; priceMinor: number; currency: string; condition: string;
     lotId: string | null; sourcing?: string; quantityAvailable: number; likeCount: number;
-    affiliate?: { percent: number } | null;
+    affiliate?: { amountMinor?: number; percent?: number } | null;
     photos?: { url?: string; isPrimary?: boolean }[];
   }[];
 }
@@ -1645,6 +1649,9 @@ export const api = {
   listing: (id: string, ref?: string | null) =>
     request<ListingDetail>(`/listings/${encodeURIComponent(id)}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
   similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
+  affiliateLink: (listingId: string) =>
+    post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),
+  openShortLink: (code: string) => request<{ listingId: string }>(`/r/${encodeURIComponent(code)}`),
   myAffiliate: () => request<{ earnings: AffiliateEarning[] }>('/me/affiliate'),
   markAffiliatePaid: (orderId: string, reference?: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),

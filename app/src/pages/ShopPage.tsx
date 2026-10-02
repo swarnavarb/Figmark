@@ -58,6 +58,7 @@ import {
 import { useSession } from '../session';
 import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
+import { EarnPill, earnOf } from '../components/Affiliate';
 
 type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
 
@@ -800,7 +801,10 @@ function ShelfCard({ listing, onEdit }: { listing: Listing; onEdit: () => void }
 
       <div className="qloot__body">
         <span className="qloot__title">{listing.title}</span>
-        <span className="qloot__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        <span className="pricerow">
+          <span className="qloot__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+          <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
+        </span>
         <span className="qloot__meta">
           <b className={sourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[sourcing]}</b>
           {' · '}{listing.category}
