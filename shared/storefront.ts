@@ -1,5 +1,5 @@
 import {
-  ACTION_CAP, ACTION_XP, MAX_LEVEL, actionXp, levelFor, tierXp, titleFor, xpForLevel,
+  ACTION_CAP, ACTION_XP, MAX_LEVEL, actionXp, levelFor, tierXp, titleFor, titleIn, xpForLevel,
   type StickerTier, type StickerView,
 } from './quest.js';
 
@@ -65,8 +65,9 @@ const STORE_TITLES = [
   'New stall', 'Corner shop', 'Local favourite', 'Busy counter', 'Known name',
   'Trusted house', 'Flagship', 'Landmark', 'Emporium', 'Legend',
 ];
+const STORE_HIGH_TITLES = ['Eternal', 'Empire', 'Dynasty', 'Heritage house'];
 export function storeTitleFor(level: number): string {
-  return STORE_TITLES[Math.min(level, STORE_TITLES.length) - 1] ?? 'Legend';
+  return titleIn(level, STORE_TITLES, STORE_HIGH_TITLES);
 }
 
 /** The level and title shown beside a name, for a buyer or for a shop. */

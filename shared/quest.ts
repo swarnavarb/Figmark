@@ -204,8 +204,18 @@ export function levelFor(xp: number): number {
   return level;
 }
 
+/** Past level 10 a new title lands at 15, 20, 30 and 50. */
+const HIGH_LEVELS = [50, 30, 20, 15];
+const HIGH_TITLES = ['Immortal', 'Titan', 'Icon', 'Mythic'];
+
+/** The title for a level: one per level up to ten, then one per band. */
+export function titleIn(level: number, low: readonly string[], high: readonly string[]): string {
+  const band = HIGH_LEVELS.findIndex((floor) => level >= floor);
+  return (band >= 0 ? high[band] : low[Math.min(Math.max(level, 1), low.length) - 1]) ?? 'Legend';
+}
+
 export function titleFor(level: number): string {
-  return TITLES[Math.min(level, TITLES.length) - 1] ?? 'Legend';
+  return titleIn(level, TITLES, HIGH_TITLES);
 }
 
 /* -------------------------------------------------------------------------- */

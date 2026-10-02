@@ -7820,7 +7820,11 @@ await check('levels climb on a widening curve and every level has a title', () =
   assert.equal(quest.levelFor(300), 2);
   assert.equal(quest.levelFor(900), 3);
   assert.equal(quest.titleFor(1), 'Rookie');
-  assert.equal(quest.titleFor(40), 'Legend');
+  assert.equal(quest.titleFor(14), 'Legend');
+  assert.equal(quest.titleFor(15), 'Mythic');
+  assert.equal(quest.titleFor(20), 'Icon');
+  assert.equal(quest.titleFor(40), 'Titan');
+  assert.equal(quest.titleFor(50), 'Immortal');
 });
 
 await check('buyers and shops level on one scale, at the same rate per action', async () => {
