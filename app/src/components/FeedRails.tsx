@@ -98,9 +98,11 @@ export function EndingRail({ listings, now }: { listings: readonly FeedListing[]
  * a spinning coin for an icon and a glint running over each photo.
  */
 const RUPEES = [
-  [3, 0.9, 0], [11, 1.3, 2.1], [18, 0.8, 4.4], [26, 1.1, 1.2], [33, 1.5, 3.3], [41, 0.9, 0.6],
-  [49, 1.2, 2.7], [56, 0.8, 4.9], [63, 1.4, 1.7], [71, 1, 3.8], [78, 1.2, 0.3], [86, 0.9, 2.4], [94, 1.3, 4.1],
+  [2, 0.9, 0], [7, 1.3, 1.1], [12, 0.8, 2.2], [17, 1.1, 0.6], [22, 1.5, 1.7], [27, 0.9, 0.3],
+  [32, 1.2, 1.4], [37, 0.8, 2.5], [42, 1.4, 0.9], [47, 1, 1.9], [52, 1.2, 0.2], [57, 0.9, 1.2],
+  [62, 1.3, 2.1], [67, 1, 0.5], [72, 1.4, 1.6], [77, 0.8, 2.4], [82, 1.2, 0.8], [87, 1, 1.8], [92, 1.3, 0.4], [97, 0.9, 1.5],
 ] as const;
+const SPARKS = [[6, 30], [19, 70], [31, 20], [44, 58], [58, 26], [69, 74], [81, 38], [93, 64]] as const;
 
 function RupeeRain({ front }: { front?: boolean }) {
   const drops = front ? RUPEES.filter((_, n) => n % 3 === 1) : RUPEES;
@@ -108,7 +110,7 @@ function RupeeRain({ front }: { front?: boolean }) {
     <span className={`honey__rain${front ? ' honey__rain--front' : ''}`} aria-hidden="true">
       {drops.map(([left, scale, delay], n) => (
         <i key={n} className="honey__rupee"
-          style={{ left: `${left}%`, ['--s' as string]: scale, animationDelay: `${-delay}s`, animationDuration: `${4.2 + (n % 4) * 0.7}s` }}>₹</i>
+          style={{ left: `${left}%`, ['--s' as string]: scale, animationDelay: `${-delay}s`, animationDuration: `${2.2 + (n % 4) * 0.45}s` }}>₹</i>
       ))}
     </span>
   );
@@ -118,9 +120,14 @@ export function EarnRail({ listings }: { listings: readonly FeedListing[] }) {
   if (listings.length === 0) return null;
   return (
     <section className="rail rail--honey" aria-label="Money Honey">
-      <span className="honey__comb" aria-hidden="true" />
+      <span className="honey__lux" aria-hidden="true">
+        <span className="honey__rays" />
+        {SPARKS.map(([left, top], n) => (
+          <i key={n} className="honey__spark" style={{ left: `${left}%`, top: `${top}%`, animationDelay: `${-(n * 0.41) % 1.8}s` }} />
+        ))}
+      </span>
       <RupeeRain />
-      <RailHead icon="coin" title="Money Honey" sub="Copy your affiliate link, share it, earn on every sale" view="earn" />
+      <RailHead icon="rupee" title="Money Honey" sub="Copy your affiliate link, share it, earn on every sale" view="earn" />
       <div className="rail__track">
         {listings.slice(0, SHELF).map((listing, n) => (
           <RailItem key={listing.id} listing={listing} n={n}>
@@ -141,6 +148,8 @@ const STARS = [
   [4, 18], [9, 62], [15, 34], [22, 80], [27, 12], [34, 48], [40, 70], [46, 24], [53, 56], [59, 8],
   [65, 40], [71, 76], [77, 20], [83, 52], [89, 30], [95, 66],
 ] as const;
+/** Bookings drifting up: tickets, boxes and calendars, the stuff a pre-order is made of. */
+const TICKETS = [[8, 'tag', 0], [24, 'box', 2.4], [41, 'calendar', 1.1], [57, 'users', 3.3], [73, 'box', 0.6], [90, 'tag', 2]] as const;
 
 export function PreOrderRail({ listings, now }: { listings: readonly FeedListing[]; now: number }) {
   if (listings.length === 0) return null;
@@ -150,7 +159,15 @@ export function PreOrderRail({ listings, now }: { listings: readonly FeedListing
         {STARS.map(([left, top], n) => (
           <i key={n} className="launch__star" style={{ left: `${left}%`, top: `${top}%`, animationDelay: `${-(n * 0.53) % 3}s` }} />
         ))}
-        <span className="launch__rocket"><Svg name="rocket" size={26} /></span>
+        <span className="launch__planet" />
+        <i className="launch__shoot" />
+        <i className="launch__shoot" />
+        {TICKETS.map(([left, glyph, delay], n) => (
+          <span key={n} className="launch__ticket" style={{ left: `${left}%`, animationDelay: `${-delay}s` }}>
+            <Svg name={glyph} size={14} />
+          </span>
+        ))}
+        <span className="launch__pad">{[0, 1, 2, 3, 4].map((n) => <i key={n} style={{ ['--n' as string]: n }} />)}</span>
       </span>
       <RailHead icon="rocket" title="Pre-orders" sub="Get in early. It ships once enough people join" view="preorder" />
       <div className="rail__track">
@@ -174,14 +191,17 @@ export function PreOrderRail({ listings, now }: { listings: readonly FeedListing
           );
         })}
       </div>
+      <span className="launch__front" aria-hidden="true">
+        <span className="launch__rocket"><Svg name="rocket" size={26} /></span>
+      </span>
     </section>
   );
 }
 
-function RailHead({ icon, title, sub, view }: { icon: 'flame' | 'bolt' | 'coin' | 'rocket'; title: string; sub: string; view: FeedView }) {
+function RailHead({ icon, title, sub, view }: { icon: 'flame' | 'bolt' | 'rupee' | 'rocket'; title: string; sub: string; view: FeedView }) {
   return (
     <header className="rail__head">
-      <span className="rail__icon"><Svg name={icon} size={18} /></span>
+      <span className="rail__icon">{icon === 'rupee' ? <b className="rail__rupee">₹</b> : <Svg name={icon} size={18} />}</span>
       <span className="rail__titles">
         <h2>{title}</h2>
         <small>{sub}</small>
