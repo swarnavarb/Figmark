@@ -974,21 +974,6 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     onChanged?.();
   }
 
-  /** A lot move, made from an order riding in it - the same move its Tracking makes. Already confirmed. */
-  async function moveLot(row: SaleRow, to: number) {
-    if (!row.lotId) return;
-    setBusy(row.id);
-    setError(null);
-    try {
-      await api.stepLot(row.lotId, { to });
-      await refresh();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'The lot did not move.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function press(row: SaleRow, button: CardButton, on: boolean, label?: string) {
     /* No lot yet: ask where it was received, or offer to put it in a lot. */
     if (on && button.checkpoint === 'china_received' && !row.lotId && !row.inHand && label === undefined) {
@@ -1073,10 +1058,9 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       needsAnswer={needsAnswer.has(row.id)}
       undoable={undoable?.rowId === row.id ? undoable.button : null}
       onPress={(button, on) => void press(row, button, on)}
-      onMoveLot={(to) => void moveLot(row, to)}
-      onGated={() => (onTracking
+      onLotTracking={() => (onTracking
         ? onTracking()
-        : navigate(`/shop?tab=lots&lot=${encodeURIComponent(row.lotId ?? '')}`))}
+        : navigate(`/shop?tab=lots&lot=${encodeURIComponent(row.lotId ?? '')}&view=tracking`))}
       onFile={() => setFiling(row)}
       onReject={() => setRejecting(row)}
       onAccept={() => void accept(row)}
@@ -1696,7 +1680,7 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, glowing, busy, needsAnswer, undoable, onPress, onMoveLot, onGated, onFile, onReject,
+  index, row, store, from, glowing, busy, needsAnswer, undoable, onPress, onLotTracking, onFile, onReject,
   onAccept, onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -1710,10 +1694,8 @@ function OrderRow({
   /** The press just made on this card, while it can still be taken back. */
   undoable: CardButton | null;
   onPress: (button: CardButton, on: boolean) => void;
-  /** A lot move pressed from this card's serial buttons, already confirmed. */
-  onMoveLot: (to: number) => void;
-  /** A lot move that would carry items past the warehouse unticked. */
-  onGated: () => void;
+  /** The Lot stop on this card's buttons: opens the lot's Tracking, where the crate is moved. */
+  onLotTracking: () => void;
   onFile: () => void;
   onReject: () => void;
   onAccept: () => void;
@@ -1859,13 +1841,12 @@ function OrderRow({
         <SerialButtons
           buttons={row.serial}
           busy={busy}
-          who={{ itemName: row.itemName, buyerName: row.buyer.name, lotName: row.lotName ?? `LOT ${row.lotNumber}` }}
+          who={{ itemName: row.itemName, buyerName: row.buyer.name }}
           onItem={(key, on) => {
             const button = row.serial!.find((entry) => entry.kind === 'item' && entry.key === key);
             onPress({ checkpoint: key, label: button?.label ?? key, step: button?.step ?? key }, on);
           }}
-          onLot={(button) => onMoveLot(button.to)}
-          onGated={onGated}
+          onLot={onLotTracking}
           orderLink={{ to: `/order/${row.id}`, state: linkState }}
         />
       )}
@@ -2833,6 +2814,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
       const copy = new URLSearchParams(current);
       if (next) copy.set('lot', next);
       else copy.delete('lot');
+      copy.delete('view');
       return copy;
     }, { replace: true });
 

@@ -3,62 +3,100 @@ import { Link } from 'react-router-dom';
 import type { SerialButton } from '@shared/buttons';
 import { Modal } from './ui';
 
-type LotButton = Extract<SerialButton, { kind: 'lot' }>;
+type ItemButton = Extract<SerialButton, { kind: 'item' }>;
+
+/** What the line draws: one of the item's own buttons, or the single stop for the lot's moves. */
+type Entry =
+  | { kind: 'item'; button: ItemButton }
+  | { kind: 'lot'; done: boolean; step: string };
 
 /**
- * Every button an item in a lot has, one after another.
+ * An item's buttons in a lot, one after another with arrows between them.
  *
- * The route's own presses (received, packed, ready, dispatched, delivered and
- * the shop's custom ones) and the lot's moves sit on one numbered line in the
- * order they happen, so the next thing to do is the first one not yet lit.
- * Drawn the same on the order card and in the lot's Tracking, and every press
- * asks first - each one changes what a buyer reads.
+ * Only the item's own presses are buttons here (received, packed, ready,
+ * dispatched, delivered and the shop's custom ones). The lot's moves happen
+ * to the whole crate, so they are one stop on the line - "Lot" - at the point
+ * in the route where the crate takes over, and it opens the lot's Tracking,
+ * where the crate is moved. Every press of the item's own asks first: each
+ * one changes what a buyer reads.
  */
-export function SerialButtons({ buttons, busy, who, onItem, onLot, onGated, orderLink }: {
+export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink }: {
   buttons: readonly SerialButton[];
   busy: boolean;
   /** Named in every confirmation, so nobody confirms the wrong parcel. */
-  who: { itemName: string; buyerName: string; lotName: string };
+  who: { itemName: string; buyerName: string };
   onItem: (key: string, on: boolean) => void | Promise<void>;
-  onLot: (button: LotButton) => void | Promise<void>;
-  /** A lot move that would carry items past the warehouse unticked: go and check them in. */
-  onGated?: (button: LotButton) => void;
+  /** The Lot stop: takes the seller to the lot's Tracking. */
+  onLot: () => void;
   /** Dispatched asks for the courier and AWB, which the order page takes. */
   orderLink?: { to: string; state?: unknown };
 }) {
-  const [asking, setAsking] = useState<{ button: SerialButton; on: boolean } | null>(null);
-  const nextAt = buttons.findIndex((button) => !button.done);
-  const doneCount = buttons.filter((button) => button.done).length;
+  const [asking, setAsking] = useState<{ button: ItemButton; on: boolean } | null>(null);
+
+  /* The lot's moves fold into one stop, where the first of them falls. */
+  const entries: Entry[] = [];
+  const lotSteps = buttons.filter((button) => button.kind === 'lot');
+  for (const button of buttons) {
+    if (button.kind === 'item') entries.push({ kind: 'item', button });
+    else if (!entries.some((entry) => entry.kind === 'lot')) {
+      const ahead = lotSteps.find((step) => !step.done);
+      entries.push({
+        kind: 'lot',
+        done: !ahead,
+        step: (ahead ?? lotSteps[lotSteps.length - 1])?.step ?? '',
+      });
+    }
+  }
+  const doneOf = (entry: Entry) => (entry.kind === 'lot' ? entry.done : entry.button.done);
+  const nextAt = entries.findIndex((entry) => !doneOf(entry));
+  const doneCount = entries.filter(doneOf).length;
 
   function confirm() {
     if (!asking) return;
     const { button, on } = asking;
     setAsking(null);
-    if (button.kind === 'item') void onItem(button.key, on);
-    else void onLot(button);
+    void onItem(button.key, on);
   }
 
   return (
     <div className="serial">
       <div className="serial__head">
         <span>Route</span>
-        <span className="serial__count">{doneCount}/{buttons.length}</span>
+        <span className="serial__count">{doneCount}/{entries.length}</span>
       </div>
       <ol className="serial__list">
-        {buttons.map((button, index) => {
-          const state = button.done ? 'done' : index === nextAt ? 'next' : 'later';
-          const className = `serial__btn serial__btn--${state} serial__btn--${button.kind}`;
+        {entries.map((entry, index) => {
+          const done = doneOf(entry);
+          const state = done ? 'done' : index === nextAt ? 'next' : 'later';
+          const className = `serial__btn serial__btn--${state} serial__btn--${entry.kind}`;
+          const arrow = index > 0 && <span className="serial__arrow" aria-hidden="true">→</span>;
+
+          if (entry.kind === 'lot') {
+            return (
+              <li key="lot">
+                {arrow}
+                <button type="button" className={className}
+                  title={done ? 'The lot has done its part — open its Tracking' : `Open the lot's Tracking to move it — next: ${entry.step}`}
+                  onClick={onLot}>
+                  <span className="serial__n" aria-hidden="true">{done ? '✓' : '🚢'}</span>
+                  <span className="serial__label">Lot</span>
+                </button>
+              </li>
+            );
+          }
+
+          const { button } = entry;
           const body = (
             <>
-              <span className="serial__n" aria-hidden="true">{button.done ? '✓' : index + 1}</span>
+              <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
               <span className="serial__label">{button.label}</span>
-              {button.kind === 'lot' && <span className="serial__tag">🚢 Lot</span>}
             </>
           );
           /* Dispatched is pressed on the order, where the courier and AWB go in. */
-          if (button.kind === 'item' && button.lastMile === 'dispatched' && !button.done && orderLink) {
+          if (button.lastMile === 'dispatched' && !done && orderLink) {
             return (
-              <li key={`${button.kind}:${index}`}>
+              <li key={button.key}>
+                {arrow}
                 <Link to={orderLink.to} state={{ ...(orderLink.state as object | undefined), act: 'dispatched' }}
                   className={className} title="Opens the order for the courier and AWB">
                   {body}
@@ -66,15 +104,12 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, onGated, orde
               </li>
             );
           }
-          /* A lot already past a step cannot be moved back from an item. */
-          const inert = button.kind === 'lot' && button.done;
           return (
-            <li key={`${button.kind}:${index}`}>
-              <button type="button" className={className} disabled={busy || inert}
-                title={button.kind === 'lot'
-                  ? button.done ? 'The lot is past this step' : `Moves the whole lot to: ${button.step}`
-                  : button.done ? `Done — press to undo: ${button.step}` : `Moves this item to: ${button.step}`}
-                onClick={() => setAsking({ button, on: !button.done })}>
+            <li key={button.key}>
+              {arrow}
+              <button type="button" className={className} disabled={busy}
+                title={done ? `Done — press to undo: ${button.step}` : `Moves this item to: ${button.step}`}
+                onClick={() => setAsking({ button, on: !done })}>
                 {body}
               </button>
             </li>
@@ -83,26 +118,9 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, onGated, orde
       </ol>
 
       {asking && (
-        <Modal
-          title={asking.button.kind === 'lot'
-            ? asking.button.gated ? 'Not all items are checked in' : 'Move the whole lot?'
-            : asking.on ? 'Confirm this step' : 'Undo this step?'}
-          onClose={() => setAsking(null)}>
+        <Modal title={asking.on ? 'Confirm this step' : 'Undo this step?'} onClose={() => setAsking(null)}>
           <div className="stack">
-            {asking.button.kind === 'lot' ? (
-              asking.button.gated ? (
-                <p>
-                  Some items in <strong>{who.lotName}</strong> have not been marked received at the
-                  international warehouse. Moving the lot to <strong>{asking.button.label}</strong> would
-                  carry them past a checkpoint they have not reached.
-                </p>
-              ) : (
-                <p>
-                  <strong>{who.lotName}</strong> moves to <strong>{asking.button.label}</strong>. Every
-                  item in it moves with it, and every buyer in it reads the new step.
-                </p>
-              )
-            ) : asking.on ? (
+            {asking.on ? (
               <p>
                 <strong>{asking.button.label}</strong> for <strong>{who.itemName}</strong>
                 {' '}({who.buyerName}). Their tracking moves to “{asking.button.step}”.
@@ -117,22 +135,10 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, onGated, orde
                 {' '}({who.buyerName})? Their tracking goes back to the step before.
               </p>
             )}
-
-            {asking.button.kind === 'lot' && asking.button.gated ? (
-              onGated && (
-                <button type="button" className="btn btn--block"
-                  onClick={() => { const button = asking.button as LotButton; setAsking(null); onGated(button); }}>
-                  Check the items in
-                </button>
-              )
-            ) : (
-              <button type="button" className={`btn btn--block${asking.on ? '' : ' btn--danger'}`}
-                disabled={busy} onClick={confirm}>
-                {asking.button.kind === 'lot'
-                  ? `🚢 Move lot to ${asking.button.label}`
-                  : asking.on ? `Yes — ${asking.button.label}` : 'Undo it'}
-              </button>
-            )}
+            <button type="button" className={`btn btn--block${asking.on ? '' : ' btn--danger'}`}
+              disabled={busy} onClick={confirm}>
+              {asking.on ? `Yes — ${asking.button.label}` : 'Undo it'}
+            </button>
             <button type="button" className="btn btn--quiet btn--block" onClick={() => setAsking(null)}>
               Cancel
             </button>

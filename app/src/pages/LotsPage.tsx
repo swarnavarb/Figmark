@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
 } from '@shared/routes';
@@ -568,7 +568,7 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
  * own. Before that the ticks would be a lie - nothing can be packed while it is
  * over the Bay of Bengal - so they are not offered.
  */
-function LotItemRow({ item, lotId, lotName, lotStep, vars, gated, steps, others, busy, onTick, onLot, onGated, onMove, onNote, onRelot }: {
+function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, onLot, onMove, onNote, onRelot }: {
   item: LotItem;
   lotId: string;
   /** The lot's route, which is the ladder this item rides. */
@@ -576,17 +576,13 @@ function LotItemRow({ item, lotId, lotName, lotStep, vars, gated, steps, others,
   /** The shop's other open lots, for an item that has to ride a different one. */
   others: { id: string; name: string; lotNumber?: string | null }[];
   busy: boolean;
-  lotName: string;
   /** Where the lot is on its route. */
   lotStep: number;
   vars: { origin?: string | null; destination?: string | null };
-  /** From this index on, a lot move would carry unchecked items past the warehouse. */
-  gated: number | null;
   /** A press of the item's own, already confirmed. */
   onTick: (key: string, on: boolean) => void;
-  /** A lot move from the item's line of buttons, already confirmed. */
-  onLot: (to: number, label: string) => void;
-  onGated: (to: number, label: string) => void;
+  /** The Lot stop on the item's line: up to where the lot itself is moved. */
+  onLot: () => void;
   onMove: (to: number, details?: { trackingId?: string; shipper?: string }) => void | Promise<void>;
   onNote: (note: string, at: number) => void | Promise<void>;
   onRelot: (lotId: string) => void | Promise<void>;
@@ -627,14 +623,11 @@ function LotItemRow({ item, lotId, lotName, lotStep, vars, gated, steps, others,
           the lot's moves, one after another, exactly as its order card has
           them. Every one asks first. */}
       <SerialButtons
-        buttons={serialButtons(withReceivedAs(steps, item.receivedAs), lotStep, item.ticks, vars)
-          .map((button) => (button.kind === 'lot' && !button.done && gated !== null && button.to >= gated
-            ? { ...button, gated: true } : button))}
+        buttons={serialButtons(withReceivedAs(steps, item.receivedAs), lotStep, item.ticks, vars)}
         busy={busy}
-        who={{ itemName: item.itemName, buyerName: item.buyerName, lotName }}
+        who={{ itemName: item.itemName, buyerName: item.buyerName }}
         onItem={(key, on) => onTick(key, on)}
-        onLot={(button) => onLot(button.to, button.label)}
-        onGated={(button) => onGated(button.to, button.label)}
+        onLot={onLot}
         orderLink={{ to: `/order/${item.id}`, state: { from: `/shop?tab=lots&lot=${encodeURIComponent(lotId)}` } }}
       />
 
@@ -843,7 +836,9 @@ export function LotDetail({ lotId, onBack, customers }: {
   const [flash, setFlash] = useState<{ text: string; ok: boolean } | null>(null);
   /* Customers & Orders first: it's where every item's own tracking - and
      the one tick that ends it, "Delivered" - actually happens. */
-  const [section, setSection] = useState<LotSection>('people');
+  /* `view=tracking` opens straight onto Tracking: the Lot button on an order card lands here. */
+  const [params] = useSearchParams();
+  const [section, setSection] = useState<LotSection>(params.get('view') === 'tracking' ? 'tracking' : 'people');
   const [editing, setEditing] = useState(false);
   const [rerouting, setRerouting] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -909,9 +904,6 @@ export function LotDetail({ lotId, onBack, customers }: {
   const nextStep = route.currentStep + 1 <= crateEnd ? lotSteps[lotStep + 1] ?? null : null;
   const status = lotStep < 0 ? 'Filling' : lotSteps[lotStep]?.name ?? 'Not started';
   const done = lotStep >= lotSteps.length - 1;
-  /* From this index on, moving the lot would carry items past the warehouse check-in unticked. */
-  const gateAt = route.steps.findIndex((step) => step.trigger === 'china_received');
-  const gateFrom = gateAt >= 0 && items.some((item) => !item.checkpoints.china_received) ? gateAt : null;
 
   /** `membership` for anything that moves an item or listing in or out of this lot. */
   async function run(label: string, fn: () => Promise<void>, membership = false) {
@@ -1077,7 +1069,7 @@ export function LotDetail({ lotId, onBack, customers }: {
 
       {section === 'tracking' && (
         <div className="stack">
-          <div className="card card--pad stack">
+          <div id="lot-tracking" className="card card--pad stack">
             <div>
               <span className="faint">Where the lot is</span>
               <div className="card__title">
@@ -1168,17 +1160,15 @@ export function LotDetail({ lotId, onBack, customers }: {
                   key={item.id}
                   item={item}
                   lotId={lot.id}
-                  lotName={lot.name}
                   lotStep={route.currentStep}
                   vars={{ origin: lot.originCountry, destination: lot.destinationCountry }}
-                  gated={gateFrom}
                   steps={route.steps}
                   others={others}
                   busy={busy}
                   onTick={(key, on) =>
                     run('Item updated.', () => api.setCheckpoint(item.id, key, on).then(() => {}))}
-                  onLot={(to, label) => requestMove(to, undefined, `Now: ${label}.`, true)}
-                  onGated={(to, label) => requestMove(to, undefined, `Now: ${label}.`, true)}
+                  onLot={() => document.getElementById('lot-tracking')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                   onMove={(to, details) => setAsking({
                     title: 'Move this one item?',
                     text: <>Only <strong>{item.itemName}</strong> moves, to <strong>{route.steps[to]?.name ?? 'that step'}</strong>.
