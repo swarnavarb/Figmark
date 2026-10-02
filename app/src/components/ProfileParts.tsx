@@ -12,7 +12,7 @@ import { EarnPill, earnOf } from './Affiliate';
 import { SkeletonText, useToast } from './Feedback';
 import { Icon } from './Icon';
 import { StarRow } from './ListingBlocks';
-import { LevelRing, Sticker, StickerSheet, XpBar, along } from './Quest';
+import { LevelRing, Sticker, StickerSheet, XpBar } from './Quest';
 import { ReportButton } from './ReportButton';
 import { Avatar, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from './ui';
 
@@ -151,13 +151,7 @@ const stars = (average: number | null) => (average === null ? null : average / 2
  * Ratings after a trade and ratings left on the page, as one figure. A shop's
  * is as a seller and a person's as a buyer; tapping it shows what it is made of.
  */
-export function RatingSlab({ rating, side, onOpen, children }: {
-  rating: MergedRating;
-  side: PageSide;
-  onOpen: () => void;
-  /** The record that sits with the rating: a buyer's orders, disputes and the rest. */
-  children?: ReactNode;
-}) {
+export function RatingSlab({ rating, side, onOpen }: { rating: MergedRating; side: PageSide; onOpen: () => void }) {
   const score = stars(rating.average);
   const most = Math.max(1, ...rating.stars);
   return (
@@ -179,17 +173,18 @@ export function RatingSlab({ rating, side, onOpen, children }: {
         </span>
         <span className="rslab__open" aria-hidden="true"><Icon name="right" size={16} /></span>
       </button>
-      {children && <div className="rslab__stats">{children}</div>}
     </section>
   );
 }
 
 /** What the one figure is made of, and the record behind it. */
-export function RatingSheet({ profile, rating, onClose, onReviews }: {
+export function RatingSheet({ profile, rating, onClose, onReviews, record: given }: {
   profile: Pick<PublicProfile, 'sellerId' | 'isStore' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince'>;
   rating: MergedRating;
   onClose: () => void;
   onReviews: () => void;
+  /** A record of their own to show in place of the counted one: a buyer's six boxes. */
+  record?: ReactNode;
 }) {
   const side: PageSide = profile.isStore ? 'store' : 'person';
   const [credit, setCredit] = useState<Credit | null>(null);
@@ -245,13 +240,15 @@ export function RatingSheet({ profile, rating, onClose, onReviews }: {
         <section className="rsheet__block">
           <h4>Record</h4>
           {error && <ErrorNotice message={error} />}
-          <div className="rsheet__record">
-            {(record ?? [['', 0], ['', 0], ['', 0], ['', 0]] as [string, number][]).map(([label, value], i) => (
-              <span key={i} className={`rsheet__stat${record ? '' : ' is-loading'}${label === 'Disputes lost' && value > 0 ? ' is-bad' : ''}`}>
-                <b>{record ? value : ' '}</b><small>{label || ' '}</small>
-              </span>
-            ))}
-          </div>
+          {given ?? (
+            <div className="rsheet__record">
+              {(record ?? [['', 0], ['', 0], ['', 0], ['', 0]] as [string, number][]).map(([label, value], i) => (
+                <span key={i} className={`rsheet__stat${record ? '' : ' is-loading'}${label === 'Disputes lost' && value > 0 ? ' is-bad' : ''}`}>
+                  <b>{record ? value : ' '}</b><small>{label || ' '}</small>
+                </span>
+              ))}
+            </div>
+          )}
           {profile.isStore && profile.trustScore !== null && (
             <p className="rsheet__trust">
               Trust <b>{profile.trustScore}</b>/100 <span className="faint">· from completed, undisputed orders</span>
@@ -260,8 +257,8 @@ export function RatingSheet({ profile, rating, onClose, onReviews }: {
         </section>
 
         {credit && (
-          <section className="rsheet__block">
-            <h4>Checked</h4>
+          <section className="rsheet__verified">
+            <h4><Icon name="check" size={14} /> Verified</h4>
             <div className="rsheet__checks">
               {([['Phone', credit.verification.phone], ['Email', credit.verification.email], ['Government ID', credit.verification.governmentId]] as const)
                 .map(([label, state]) => (
@@ -340,8 +337,7 @@ export function StoreLevelCard({ level, stickers }: { level: StoreLevel; sticker
           ))}
         </ul>
       </details>
-      {open && <StickerSheet sticker={open} whose="theirs" onClose={() => setOpen(null)}
-        onSwipe={(dir) => setOpen(along(sorted, open, dir, (a, b) => a.id === b.id))} />}
+      {open && <StickerSheet sticker={open} whose="theirs" onClose={() => setOpen(null)} />}
     </section>
   );
 }

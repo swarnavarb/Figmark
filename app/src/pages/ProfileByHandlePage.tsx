@@ -116,10 +116,10 @@ function Storefront({ data, isMe, onFollow, reload }: {
           </div>
           <div className="storefront__who">
             <h1>{data.displayName}</h1>
+            <LevelChip tag={data.levelTag} />
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
               <span className="faint">@{data.handle}</span>
-              <span className="badge badge--accent">shop</span>
-              <LevelChip tag={data.levelTag} />
+
               {data.tier && <span className="badge">{data.tier}</span>}
             </div>
             <p className="faint" style={{ margin: 0 }}>

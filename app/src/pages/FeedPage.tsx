@@ -368,7 +368,7 @@ function ListingCard({ listing }: { listing: FeedListing }) {
         <div className="listing__foot">
           <span className="faint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {listing.seller?.storefrontName ?? 'Unknown seller'}
-            <LevelChip tag={listing.seller?.level} />
+            <LevelChip tag={listing.seller?.level} inline />
           </span>
           {listing.seller && <TrustBadge score={listing.seller.trustScore} tier={listing.seller.tier} />}
         </div>

@@ -8059,8 +8059,8 @@ await check('a delivered purchase can go in the collection, once, and be renamed
 
   const shelf = (await collectionGroups(req({ headers: player.headers, body: { action: 'create', name: 'Skincare' } }), ctx)).jsonBody.group;
   const moved = (await editCollection(req({ headers: player.headers,
-    body: { orderId: order.id, name: '  My Seoul haul  ', groupId: shelf.id } }), ctx)).jsonBody.item;
-  assert.equal(moved.name, 'My Seoul haul');
+    body: { orderId: order.id, name: 'Renamed', groupId: shelf.id } }), ctx)).jsonBody.item;
+  assert.equal(moved.name, order.itemName, 'a card keeps the name it was sold under');
   assert.equal(moved.groupId, shelf.id);
 
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;

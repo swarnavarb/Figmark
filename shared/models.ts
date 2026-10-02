@@ -220,11 +220,14 @@ export interface CollectionItem {
   /** The order it came from - one card per order. */
   orderId: string;
   listingId: string;
-  /** What the owner calls it, shown under the picture. */
+  /** The item's name as it was sold. */
   name: string;
   /** The item's name as it was sold, kept so a rename can always be undone. */
   itemName: string;
+  /** The first is the one the card leads with; the owner picks it. */
   photos: string[];
+  /** Photos the owner keeps to themselves. Never the lead photo. */
+  hiddenPhotos?: string[];
   groupId: string | null;
   /** When it was delivered: the day it could first be added. */
   deliveredAt: string;
@@ -1945,7 +1948,7 @@ export interface MessageParty {
   /** Snapshot of the name shown, so a thread renders without a lookup. */
   displayName: string;
   /** Their level beside the name, read fresh when the party is looked up. */
-  level?: { level: number; title: string };
+  level?: { level: number; title: string; shop?: boolean };
 }
 
 export interface Message extends BaseDocument {

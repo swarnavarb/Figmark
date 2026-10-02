@@ -70,9 +70,9 @@ export function storeTitleFor(level: number): string {
 }
 
 /** The level and title shown beside a name, for a buyer or for a shop. */
-export interface LevelTag { level: number; title: string }
+export interface LevelTag { level: number; title: string; shop?: boolean }
 export const buyerTag = (level: number | undefined): LevelTag => ({ level: level ?? 1, title: titleFor(level ?? 1) });
-export const storeTag = (level: number | undefined): LevelTag => ({ level: level ?? 1, title: storeTitleFor(level ?? 1) });
+export const storeTag = (level: number | undefined): LevelTag => ({ level: level ?? 1, title: storeTitleFor(level ?? 1), shop: true });
 
 /**
  * A shop's XP, on the buyers' scale and at the buyers' rates: one unit per

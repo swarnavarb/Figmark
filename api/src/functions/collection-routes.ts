@@ -19,7 +19,6 @@ import { error, handler, json } from './http.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
-const NAME_MAX = 60;
 const GROUP_MAX = 30;
 const GROUPS_MAX = 20;
 
@@ -59,10 +58,14 @@ function deliveredAt(order: Order): string {
     ?? order.updatedAt;
 }
 
-function shelf(user: User) {
+function shelf(user: User, visitor = false) {
+  const items = [...(user.collection ?? [])].sort((a, b) => b.deliveredAt.localeCompare(a.deliveredAt));
   return {
     groups: user.collectionGroups ?? [],
-    items: [...(user.collection ?? [])].sort((a, b) => b.deliveredAt.localeCompare(a.deliveredAt)),
+    // Photos the owner hid are theirs to see and nobody else's.
+    items: visitor
+      ? items.map(({ hiddenPhotos, ...item }) => ({ ...item, photos: item.photos.filter((url) => !hiddenPhotos?.includes(url)) }))
+      : items,
   };
 }
 
@@ -94,7 +97,7 @@ async function publicCollection(request: HttpRequest, _context: InvocationContex
   const repository = await getRepository();
   const user = await repository.getUserById(id);
   if (!user || user.suspended) return error(404, 'not_found', 'No such account.');
-  return json(200, shelf(user));
+  return json(200, shelf(user, true));
 }
 
 /** GET /api/me/collection - your shelves, and the deliveries waiting to go on them. */
@@ -108,7 +111,7 @@ async function myCollection(request: HttpRequest, _context: InvocationContext) {
 async function add(request: HttpRequest, _context: InvocationContext) {
   const { repository, user } = await me(request);
   if (!user) return error(404, 'not_found', 'This account no longer exists.');
-  const input = await body<{ orderId?: string; name?: string; groupId?: string | null }>(request);
+  const input = await body<{ orderId?: string; groupId?: string | null }>(request);
   if (!input?.orderId) return error(400, 'invalid_request', 'Say which order to add.');
 
   const order = await repository.getOrder(input.orderId);
@@ -124,7 +127,8 @@ async function add(request: HttpRequest, _context: InvocationContext) {
   const item: CollectionItem = {
     orderId: order.id,
     listingId: order.listingId,
-    name: (input.name?.trim() || order.itemName).slice(0, NAME_MAX),
+    // Named as it was sold, and kept that way.
+    name: order.itemName,
     itemName: order.itemName,
     photos: photosOf(listing),
     groupId,
@@ -136,24 +140,29 @@ async function add(request: HttpRequest, _context: InvocationContext) {
   return json(201, { item, ...shelf(user) });
 }
 
-/** POST /api/me/collection/edit - rename a card, or move it to another shelf. */
+/**
+ * POST /api/me/collection/edit - move a card to another shelf, pick the photo
+ * it leads with, or hide photos from everybody else. The name is the item's.
+ */
 async function edit(request: HttpRequest, _context: InvocationContext) {
   const { repository, user } = await me(request);
   if (!user) return error(404, 'not_found', 'This account no longer exists.');
-  const input = await body<{ orderId?: string; name?: string; groupId?: string | null }>(request);
+  const input = await body<{ orderId?: string; groupId?: string | null; cover?: string; hidden?: string[] }>(request);
   const item = (user.collection ?? []).find((entry) => entry.orderId === input?.orderId);
   if (!input || !item) return error(404, 'not_found', 'That item is not in your collection.');
 
-  if (input.name !== undefined) {
-    const name = input.name.trim();
-    if (!name) return error(400, 'invalid_name', 'Give it a name.');
-    item.name = name.slice(0, NAME_MAX);
-  }
   if (input.groupId !== undefined) {
     if (input.groupId !== null && !(user.collectionGroups ?? []).some((group) => group.id === input.groupId)) {
       return error(404, 'not_found', 'No such shelf.');
     }
     item.groupId = input.groupId;
+  }
+  if (input.cover !== undefined) {
+    if (!item.photos.includes(input.cover)) return error(404, 'not_found', 'That photo is not on this card.');
+    item.photos = [input.cover, ...item.photos.filter((url) => url !== input.cover)];
+  }
+  if (input.hidden !== undefined) {
+    item.hiddenPhotos = item.photos.filter((url) => input.hidden!.includes(url) && url !== item.photos[0]);
   }
   await save(repository, user);
   return json(200, { item, ...shelf(user) });

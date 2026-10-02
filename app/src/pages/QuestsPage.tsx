@@ -6,7 +6,7 @@ import {
 import { api, type LeaderRow } from '../api';
 import { SkeletonText } from '../components/Feedback';
 import {
-  CardFace, CardSheet, CardSlot, along, DesignSwitch, Glyph, LevelRing, Sticker, StickerSheet, XpBar, useQuest,
+  CardFace, CardSheet, CardSlot, DesignSwitch, Glyph, LevelRing, Sticker, StickerSheet, XpBar, useQuest,
 } from '../components/Quest';
 import { Avatar } from '../components/ui';
 import { useSession } from '../session';
@@ -206,11 +206,9 @@ export function QuestsPage() {
       </section>
       {openCard && (
         <CardSheet card={openCard} copies={view.cards.filter((mine) => mine.id === openCard.id).length}
-          setOwned={view.sets.find((set) => set.id === openCard.set)?.owned ?? 0} onClose={() => setOpenCard(null)}
-          onSwipe={(dir) => setOpenCard(along(CARDS.filter((card) => view.cards.some((mine) => mine.id === card.id)), openCard, dir, (a, b) => a.id === b.id))} />
+          setOwned={view.sets.find((set) => set.id === openCard.set)?.owned ?? 0} onClose={() => setOpenCard(null)} />
       )}
-      {openSticker && <StickerSheet sticker={openSticker} whose="mine" onClose={() => setOpenSticker(null)}
-        onSwipe={(dir) => setOpenSticker(along([...view.stickers].sort((a, b) => b.tier - a.tier), openSticker, dir, (a, b) => a.id === b.id))} />}
+      {openSticker && <StickerSheet sticker={openSticker} whose="mine" onClose={() => setOpenSticker(null)} />}
     </main>
   );
 }

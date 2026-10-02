@@ -131,7 +131,7 @@ export function MessagesView() {
                 <span className="chrow__top">
                   <span className="chrow__name">
                     {row.them.displayName}
-                    <LevelChip tag={row.them.level} />
+                    <LevelChip tag={row.them.level} inline />
                     {row.them.isStore && <span className="chrow__tier">SHOP</span>}
                   </span>
                   <span className="chrow__time">{timeAgo(row.lastAt)}</span>
@@ -321,7 +321,7 @@ export function ThreadPage() {
     <div className="social">
       <RoomBar tone="chat" onBack={back}
         avatar={<Avatar name={data.them.displayName} size={34} />}
-        title={<>{data.them.displayName}<LevelChip tag={data.them.level} />{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
+        title={<>{data.them.displayName}<LevelChip tag={data.them.level} inline />{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
         sub={<>@{data.them.handle} · you as @{data.us.handle}</>}
         action={<Link to={`/${data.them.handle}`} className="roombar__btn">
           <Icon name={data.them.isStore ? 'tag' : 'users'} size={13} /> {data.them.isStore ? 'Shop' : 'Profile'}

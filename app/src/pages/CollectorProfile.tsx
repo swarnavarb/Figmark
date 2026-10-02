@@ -8,10 +8,10 @@ import {
 } from '../api';
 import { SkeletonText, useToast } from '../components/Feedback';
 import {
-  CardFace, Glyph, LevelRing, ShowcaseModal, Sticker, XpBar,
+  CardFace, Glyph, LevelRing, ShowcaseModal, Spin, Sticker, XpBar,
 } from '../components/Quest';
-import { Lightbox, SocialPostCard } from '../components/SocialPost';
-import { Avatar, EmptyState, ErrorNotice, Modal, Thumb } from '../components/ui';
+import { SocialPostCard } from '../components/SocialPost';
+import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
 import { Bio, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
 
@@ -88,9 +88,10 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           </div>
           <div className="qprofile__who">
             <h1>{person.displayName}</h1>
+            {collector && <LevelChip tag={{ level: collector.level, title: collector.title }} />}
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
               {person.handle && <span className="faint">@{person.handle}</span>}
-              {collector && <span className="qtitle">{collector.title}</span>}
+
               {collector && collector.streak.current > 1 && (
                 <span className="qchip__streak"><Glyph name="flame" size={12} />{collector.streak.current}</span>
               )}
@@ -125,21 +126,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
 
         {error && <ErrorNotice message={error} />}
 
-        {page && (
-          <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)}>
-            {stats ? (
-              <>
-              <Stat label="Orders completed" value={String(stats.completed)} sub={`of ${stats.orders} placed`} />
-              <Stat label="Disputes won" tone="ok" value={String(stats.disputesWon)}
-                sub={stats.disputesOpen ? `${stats.disputesOpen} open` : stats.disputesSettled ? `${stats.disputesSettled} settled` : 'none open'} />
-              <Stat label="Disputes lost" tone={stats.disputesLost ? 'hot' : undefined} value={String(stats.disputesLost)} sub="as decided" />
-              <Stat label="Reviews written" value={String(stats.reviewsWritten)} sub="after orders" />
-              <Stat label="Pre-orders" value={String(stats.preOrders)} sub="joined" />
-              <Stat label="Following" value={String(stats.following)} sub="shops" />
-              </>
-            ) : <SkeletonText lines={2} />}
-          </RatingSlab>
-        )}
+        {page && <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} />}
 
         {!collector ? (
           <SkeletonText lines={3} />
@@ -173,7 +160,18 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
       </div>
 
       {ratingOpen && page && (
-        <RatingSheet profile={page} rating={page.rating} onClose={() => setRatingOpen(false)} onReviews={onReviews} />
+        <RatingSheet profile={page} rating={page.rating} onClose={() => setRatingOpen(false)} onReviews={onReviews}
+          record={stats ? (
+            <div className="qstats rsheet__qstats">
+                <Stat label="Orders completed" value={String(stats.completed)} sub={`of ${stats.orders} placed`} />
+                <Stat label="Disputes won" tone="ok" value={String(stats.disputesWon)}
+                  sub={stats.disputesOpen ? `${stats.disputesOpen} open` : stats.disputesSettled ? `${stats.disputesSettled} settled` : 'none open'} />
+                <Stat label="Disputes lost" tone={stats.disputesLost ? 'hot' : undefined} value={String(stats.disputesLost)} sub="as decided" />
+                <Stat label="Reviews written" value={String(stats.reviewsWritten)} sub="after orders" />
+                <Stat label="Pre-orders" value={String(stats.preOrders)} sub="joined" />
+                <Stat label="Following" value={String(stats.following)} sub="shops" />
+            </div>
+          ) : <SkeletonText lines={2} />} />
       )}
       {showcase && collector && (
         <ShowcaseModal cards={collector.cards} stickers={collector.stickers} whose="theirs" start={showcase}
@@ -207,7 +205,7 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
   const [shelf, setShelf] = useState<CollectionShelf | null>(null);
   const [candidates, setCandidates] = useState<CollectionCandidate[]>([]);
   const [filter, setFilter] = useState<string>('all');
-  const [viewing, setViewing] = useState<CollectionItem | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const [newShelf, setNewShelf] = useState('');
   const [managing, setManaging] = useState(false);
 
@@ -242,27 +240,33 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
   }
 
   async function add(candidate: CollectionCandidate) {
-    const ok = await run(() => api.collectionAdd(candidate.orderId, undefined, filter !== 'all' && filter !== 'none' ? filter : null), 'Added to your collection · +20 XP');
+    const ok = await run(() => api.collectionAdd(candidate.orderId, filter !== 'all' && filter !== 'none' ? filter : null), 'Added to your collection · +20 XP');
     if (ok) setCandidates((list) => list.filter((entry) => entry.orderId !== candidate.orderId));
   }
 
   async function remove(item: CollectionItem) {
+    setViewing(null);
     const ok = await run(() => api.collectionRemove(item.orderId), 'Taken off your page');
     if (ok) void load();
   }
 
   if (!shelf) return <SkeletonText lines={3} />;
 
-  const shown = shelf.items.filter((item) =>
-    filter === 'all' ? true : filter === 'none' ? item.groupId === null : item.groupId === filter,
-  );
-  const hasUnsorted = shelf.items.some((item) => item.groupId === null);
+  const unsorted = shelf.items.filter((item) => item.groupId === null);
+  // "All" reads shelf by shelf, each under its own name, with the unsorted last.
+  const sections = filter === 'all'
+    ? [
+      ...shelf.groups.map((group) => ({ id: group.id, name: group.name, items: shelf.items.filter((item) => item.groupId === group.id) })),
+      { id: 'none', name: shelf.groups.length ? 'Unsorted' : '', items: unsorted },
+    ].filter((section) => section.items.length > 0)
+    : [{ id: filter, name: '', items: filter === 'none' ? unsorted : shelf.items.filter((item) => item.groupId === filter) }];
+  const open = shelf.items.find((item) => item.orderId === viewing) ?? null;
 
   return (
     <div className="stack qcollection">
       <p className="faint" style={{ margin: 0 }}>
         {isMe
-          ? 'Things delivered to you, as cards. Add one when it arrives, give it a name, and sort your cards onto shelves.'
+          ? 'Things delivered to you, as cards. Add one when it arrives, then open it to put it on a shelf or pick its photo.'
           : 'Things delivered to them through Figmark, as cards.'}
       </p>
 
@@ -295,9 +299,9 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
               {group.name} {shelf.items.filter((item) => item.groupId === group.id).length}
             </button>
           ))}
-          {shelf.groups.length > 0 && hasUnsorted && (
+          {shelf.groups.length > 0 && unsorted.length > 0 && (
             <button type="button" className={`chip${filter === 'none' ? ' is-on' : ''}`} onClick={() => setFilter('none')}>
-              Unsorted
+              Unsorted {unsorted.length}
             </button>
           )}
           {isMe && (
@@ -306,36 +310,31 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
         </div>
       )}
 
-      {shown.length === 0 ? (
+      {sections.length === 0 || sections.every((section) => section.items.length === 0) ? (
         <EmptyState title={shelf.items.length === 0 ? 'No collection yet' : 'Nothing on this shelf'}>
           {shelf.items.length === 0
             ? (isMe ? 'When an order is delivered it shows up above, ready to add.' : 'Nothing added yet.')
-            : 'Move cards here from the menu under each one.'}
+            : 'Open a card to move it here.'}
         </EmptyState>
-      ) : (
-        <div className="qitems">
-          {shown.map((item) => (
-            <ItemCard key={item.orderId} item={item} isMe={isMe} groups={shelf.groups}
-              onOpen={() => setViewing(item)}
-              onRename={(name) => run(() => api.collectionEdit(item.orderId, { name }))}
-              onMove={(groupId) => run(() => api.collectionEdit(item.orderId, { groupId }), 'Moved')}
-              onRemove={() => void remove(item)} />
-          ))}
-        </div>
-      )}
-
-      {viewing && (viewing.photos.length > 0 ? (
-        <Lightbox photos={viewing.photos} start={0} onClose={() => setViewing(null)}
-          title={viewing.name} caption={`Delivered ${formatDate(viewing.deliveredAt)} · added ${formatDate(viewing.addedAt)}`} />
-      ) : (
-        <Modal title={viewing.name} onClose={() => setViewing(null)}>
-          <div className="qsheet">
-            <Thumb seed={viewing.listingId} label={viewing.name} className="thumb qitem__big" />
-            <p className="faint">Delivered {formatDate(viewing.deliveredAt)} · added to collection {formatDate(viewing.addedAt)}</p>
-            <p className="faint" style={{ margin: 0 }}>This item had no photos when it was added.</p>
+      ) : sections.map((section) => (
+        <section key={section.id} className="qshelf">
+          {section.name && <h3 className="shelfhead"><span>{section.name}</span></h3>}
+          <div className="qitems">
+            {section.items.map((item, i) => (
+              <button key={item.orderId} type="button" className="qitem" style={{ ['--i' as string]: i }}
+                onClick={() => setViewing(item.orderId)} aria-label={`Open ${item.name}`}>
+                <RoyalCard item={item} />
+              </button>
+            ))}
           </div>
-        </Modal>
+        </section>
       ))}
+
+      {open && (
+        <CardViewer item={open} isMe={isMe} groups={shelf.groups} onClose={() => setViewing(null)}
+          onEdit={(changes, done) => run(() => api.collectionEdit(open.orderId, changes), done)}
+          onRemove={() => void remove(open)} />
+      )}
 
       {managing && (
         <Modal title="Shelves" onClose={() => setManaging(false)}>
@@ -365,86 +364,105 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
   );
 }
 
+/** One royal card: the item in a gilded frame, its name engraved on a crested back. */
+function RoyalCard({ item, photo = item.photos[0], flipped = false, big = false }: {
+  item: CollectionItem;
+  photo?: string;
+  flipped?: boolean;
+  big?: boolean;
+}) {
+  return (
+    <span className={`royal${flipped ? ' is-flipped' : ''}${big ? ' royal--big' : ''}`}>
+      <span className="royal__card">
+        <span className="royal__face royal__front">
+          <span className="royal__frame">
+            <Thumb seed={item.listingId} label={item.name} photo={photo ? { url: photo } : null} className="thumb royal__thumb" />
+          </span>
+          <span className="royal__plate">{item.name}</span>
+        </span>
+        <span className="royal__face royal__back">
+          <span className="royal__crest" aria-hidden="true">♛</span>
+          <span className="royal__name">{item.name}</span>
+          <span className="royal__date">Delivered {formatDate(item.deliveredAt)}</span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
 /**
- * One card: the item's picture, and its name underneath.
- *
- * The owner types straight into the name. The field never grows - a long
- * name is cut with an ellipsis once you leave it - so every card in the grid
- * stays the same size.
+ * A card opened: the same card, larger, on a turntable. Arrows walk its photos.
+ * The owner can shelve it, choose the photo it leads with, and hide the rest.
  */
-function ItemCard({ item, isMe, groups, onOpen, onRename, onMove, onRemove }: {
+function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
   item: CollectionItem;
   isMe: boolean;
   groups: CollectionShelf['groups'];
-  onOpen: () => void;
-  onRename: (name: string) => Promise<boolean>;
-  onMove: (groupId: string | null) => Promise<boolean>;
+  onClose: () => void;
+  onEdit: (changes: { groupId?: string | null; cover?: string; hidden?: string[] }, done?: string) => Promise<boolean>;
   onRemove: () => void;
 }) {
-  const [name, setName] = useState(item.name);
-  const [menu, setMenu] = useState(false);
+  const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  useEffect(() => setName(item.name), [item.name]);
-
-  async function commit() {
-    const next = name.trim();
-    if (!next) {
-      setName(item.name);
-      return;
-    }
-    if (next !== item.name && !(await onRename(next))) setName(item.name);
-  }
+  const photos = item.photos;
+  const photo = photos[Math.min(index, photos.length - 1)];
+  const hidden = item.hiddenPhotos ?? [];
+  const isHidden = photo !== undefined && hidden.includes(photo);
+  const step = (by: number) => setIndex((at) => (at + by + photos.length) % photos.length);
 
   return (
-    <div className="qitem">
-      {/* A royal card: the item in a gilded frame, its name engraved on the back. Tap to turn it over. */}
-      <div className={`royal${flipped ? ' is-flipped' : ''}`}>
-        <button type="button" className="royal__card" onClick={() => setFlipped(!flipped)}
-          aria-label={`Turn over ${item.name}`} aria-pressed={flipped}>
-          <span className="royal__face royal__front">
-            <span className="royal__frame">
-              <Thumb seed={item.listingId} label={item.name} photo={item.photos[0] ? { url: item.photos[0] } : null} className="thumb royal__thumb" />
-            </span>
-            <span className="royal__plate">{item.name}</span>
-          </span>
-          <span className="royal__face royal__back">
-            <span className="royal__crest" aria-hidden="true">♛</span>
-            <span className="royal__name">{item.name}</span>
-            <span className="royal__date">Delivered {formatDate(item.deliveredAt)}</span>
-          </span>
-        </button>
-        <button type="button" className="royal__zoom" onClick={onOpen} aria-label={`Open photos of ${item.name}`}>
-          <Glyph name="card" size={12} />{item.photos.length > 1 && <small>{item.photos.length}</small>}
-        </button>
-      </div>
-      {isMe ? (
-        <input className="qitem__name" value={name} maxLength={60} aria-label="Card name"
-          onChange={(event) => setName(event.target.value)}
-          onBlur={() => void commit()}
-          onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); }} />
-      ) : (
-        <span className="qitem__label" title={item.name}>{item.name}</span>
-      )}
-      {isMe && (
-        <div className="qitem__tools">
-          <button type="button" className="qitem__more" aria-label="Card options" aria-expanded={menu} onClick={() => setMenu(!menu)}>⋯</button>
-          {menu && (
-            <div className="qitem__menu" role="menu">
-              <label className="qitem__menurow">
-                <span>Shelf</span>
-                <select value={item.groupId ?? ''} onChange={(event) => { setMenu(false); void onMove(event.target.value || null); }}>
-                  <option value="">Unsorted</option>
-                  {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-                </select>
-              </label>
-              <button type="button" className="qitem__menurow qitem__remove" onClick={() => { setMenu(false); onRemove(); }}>
-                Take off my page
-              </button>
-            </div>
+    <Modal title={item.name} onClose={onClose}>
+      <div className="qviewer">
+        <div className="qviewer__stage">
+          {photos.length > 1 && (
+            <button type="button" className="qviewer__arrow" aria-label="Previous photo" onClick={() => step(-1)}>‹</button>
+          )}
+          <Spin spinKey={`${item.orderId}-${index}`}>
+            <RoyalCard item={item} photo={photo} flipped={flipped} big />
+          </Spin>
+          {photos.length > 1 && (
+            <button type="button" className="qviewer__arrow" aria-label="Next photo" onClick={() => step(1)}>›</button>
           )}
         </div>
-      )}
-    </div>
+        {photos.length > 1 && (
+          <div className="qviewer__dots" aria-hidden="true">
+            {photos.map((url, i) => <i key={url} className={`${i === index ? 'is-on' : ''}${hidden.includes(url) ? ' is-hidden' : ''}`} />)}
+          </div>
+        )}
+        <button type="button" className="btn btn--quiet btn--sm" onClick={() => setFlipped(!flipped)}>
+          {flipped ? 'Show the front' : 'Turn it over'}
+        </button>
+        <p className="faint" style={{ margin: 0 }}>
+          Delivered {formatDate(item.deliveredAt)} · added {formatDate(item.addedAt)}
+          {isHidden && ' · this photo is hidden from others'}
+        </p>
+
+        {isMe && (
+          <div className="qviewer__tools">
+            <label className="field">
+              <span>Shelf</span>
+              <select value={item.groupId ?? ''} onChange={(event) => void onEdit({ groupId: event.target.value || null }, 'Moved')}>
+                <option value="">Unsorted</option>
+                {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+              </select>
+            </label>
+            {photo && index > 0 && (
+              <div className="row">
+                <button type="button" className="btn btn--sm qbtn-gold"
+                  onClick={() => void onEdit({ cover: photo, hidden: hidden.filter((url) => url !== photo) }, 'Now the cover photo').then((ok) => ok && setIndex(0))}>
+                  Make this the cover
+                </button>
+                <button type="button" className="btn btn--sm btn--quiet"
+                  onClick={() => void onEdit({ hidden: isHidden ? hidden.filter((url) => url !== photo) : [...hidden, photo] }, isHidden ? 'Shown to others' : 'Hidden from others')}>
+                  {isHidden ? 'Show to others' : 'Hide from others'}
+                </button>
+              </div>
+            )}
+            <button type="button" className="btn btn--sm btn--quiet qitem__remove" onClick={onRemove}>Take off my page</button>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

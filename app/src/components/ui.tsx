@@ -224,34 +224,37 @@ export function Modal({ title, onClose, children }: {
  * Which page it opens is decided by whoever built the reference, not here: a
  * seller's name carries the shop's handle, a buyer's carries the person's.
  */
+type Tag = { level: number; title: string; shop?: boolean };
+
 export function PersonLink({ party, className, children, bare }: {
-  party: { name: string; handle: string | null; level?: { level: number; title: string } } | null | undefined;
+  party: { name: string; handle: string | null; level?: Tag } | null | undefined;
   className?: string;
   children?: ReactNode;
-  /** Leave the level chip off, where the name sits inside something that already shows it. */
+  /** Leave the level tagline off, where the name sits inside something that already shows it. */
   bare?: boolean;
 }) {
   if (!party) return null;
   const label = children ?? party.name;
-  const chip = !bare && party.level ? <LevelChip tag={party.level} /> : null;
-  if (!party.handle) return <span className={className}>{label}{chip}</span>;
-  return (
-    <>
-      <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>
-        {label}
-      </Link>
-      {chip}
-    </>
-  );
+  const name = party.handle
+    ? <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>{label}</Link>
+    : <span className={className}>{label}</span>;
+  if (bare || !party.level) return name;
+  // The level reads as a tagline under the name.
+  return <span className="pname">{name}<LevelChip tag={party.level} /></span>;
 }
 
-/** A level and its title, beside a name: a shop's own, or the person's as a buyer. */
-export function LevelChip({ tag }: { tag: { level: number; title: string } | null | undefined }) {
+/**
+ * A level as a tagline: "LV 5 · Collector", the same for buyers and shops,
+ * with a Shop mark on a shop. `inline` sits it beside a name on one line.
+ */
+export function LevelChip({ tag, inline = false }: { tag: Tag | null | undefined; inline?: boolean }) {
   if (!tag) return null;
   const tone = tag.level >= 8 ? 'gold' : tag.level >= 4 ? 'violet' : 'plain';
   return (
-    <span className={`lvchip lvchip--${tone}`} title={`Level ${tag.level} · ${tag.title}`}>
-      <b>{tag.level}</b>{tag.title}
+    <span className={`lvtag lvtag--${tone}${inline ? ' lvtag--inline' : ''}`} title={`Level ${tag.level} · ${tag.title}`}>
+      <span className="lvtag__lv">Lv {tag.level}</span>
+      <span className="lvtag__title">{tag.title}</span>
+      {tag.shop && <span className="lvtag__shop">Shop</span>}
     </span>
   );
 }

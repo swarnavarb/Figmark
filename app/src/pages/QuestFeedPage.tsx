@@ -746,7 +746,7 @@ function LootCard({ listing }: { listing: Rated }) {
             <span className="qcrest" title={`Trust ${listing.seller.trustScore} of 100`}>
               <span className={`qcrest__mark qcrest__mark--${crestFor(listing.seller.trustScore)}`}><Glyph name="crest" size={11} /></span>
               {listing.seller.storefrontName}
-              <LevelChip tag={listing.seller.level} />
+              <LevelChip tag={listing.seller.level} inline />
             </span>
           )}
         </span>

@@ -8442,7 +8442,11 @@ body.is-locked { overflow: hidden; }
   border: 1px solid color-mix(in srgb, var(--qc) 55%, transparent);
 }
 .qcardface--md { width: 170px; aspect-ratio: 5 / 7; }
-.qcardface--sm { width: 100%; aspect-ratio: 5 / 7; padding: 6px 4px; }
+.qcardface--sm { width: 100%; aspect-ratio: 5 / 7; padding: 7px 4px 6px; gap: 2px; grid-template-rows: auto minmax(0, 1fr) auto; }
+.qcardface--sm::before { inset: 3px; border-radius: 9px; }
+.qcardface--sm .qcardface__rarity { max-width: 100%; overflow: hidden; text-overflow: clip; font-size: 6.5px; letter-spacing: 0.02em; }
+.qcardface--sm .qcardface__art { width: 64%; }
+.qcardface--sm .qcardface__copies { top: auto; bottom: 20px; right: 3px; }
 .qcardface--rare { --qc: var(--blue); --qc-glow: rgba(59, 130, 246, 0.45); }
 .qcardface--epic { --qc: var(--q-epic); --qc-glow: rgba(168, 85, 247, 0.55); }
 .qcardface--legendary { --qc: var(--q-gold); --qc-glow: rgba(245, 197, 66, 0.6); }
@@ -8466,7 +8470,7 @@ body.is-locked { overflow: hidden; }
   max-width: 100%; padding: 2px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.35);
   font-size: var(--t-xs); font-weight: var(--w-bold); line-height: 1.15;
 }
-.qcardface--sm .qcardface__name { font-size: 10px; }
+.qcardface--sm .qcardface__name { max-width: 100%; padding: 1px 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8.5px; }
 .qcardface__set { font-size: 9px; color: var(--text-faint); }
 .qcardface--sm .qcardface__set { display: none; }
 
@@ -8597,10 +8601,6 @@ body.is-locked { overflow: hidden; }
 .qprofile__who { display: grid; gap: 4px; min-width: 0; padding-top: 48px; }
 .qprofile__who h1 { font-size: var(--t-lg); }
 .qprofile__xp { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10.5px; }
-.qtitle {
-  padding: 1px 8px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-semi);
-  color: var(--q-gold); background: var(--q-gold-soft); border: 1px solid var(--q-gold-line);
-}
 
 .qstats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
 .qstat {
@@ -8713,34 +8713,7 @@ body.is-locked { overflow: hidden; }
 .qshelves__manage { border-style: dashed; }
 .qitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 10px; }
 .qitem { position: relative; display: grid; gap: 6px; min-width: 0; }
-/* The name never makes the card grow: one line, a fixed height, and an
-   ellipsis for whatever does not fit. */
-.qitem__name, .qitem__label {
-  display: block; width: 100%; height: 30px; box-sizing: border-box; padding: 0 30px 0 8px;
-  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 30px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-}
-.qitem__label { padding-right: 8px; }
-.qitem__name:focus { outline: none; border-color: var(--violet); }
-.qitem__tools { position: absolute; right: 2px; bottom: 2px; }
-.qitem__more {
-  width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--text-dim);
-  font-size: 16px; line-height: 1; cursor: pointer;
-}
-.qitem__more:hover { background: var(--surface-hover); color: var(--text); }
-.qitem__menu {
-  position: absolute; right: 0; bottom: 30px; z-index: 5; min-width: 190px; display: grid; gap: 2px; padding: 6px;
-  border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
-}
-.qitem__menurow {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border-radius: 8px;
-  font: inherit; font-size: var(--t-xs); color: var(--text); background: none; border: 0; text-align: left; cursor: pointer;
-}
-.qitem__menurow select { max-width: 110px; font: inherit; }
 .qitem__remove { color: var(--coral); }
-.qitem__menurow:hover { background: var(--surface-hover); }
-.thumb.qitem__big { width: min(280px, 70vw); aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden; }
 .qshelf__row input, .qshelf__new input { flex: 1; min-width: 0; }
 
 /* Quests page additions. */
@@ -10689,13 +10662,6 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   transition: transform 180ms var(--ease);
 }
 .rslab__top:active { transform: scale(0.99); }
-/* The record that belongs with the rating, under it in the same slab. */
-.rslab__stats {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 12px;
-  border-top: 1px solid rgba(var(--rs), 0.18); background: rgba(0, 0, 0, 0.12);
-}
-.rslab__stats .qstat { padding: 8px 4px; background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.06); }
-.rslab__stats .qstat__value { font-size: var(--t-md); }
 .rslab--person { --rs: 52, 211, 153; }
 .rslab:hover { border-color: rgba(var(--rs), 0.6); }
 .rslab::after {
@@ -10824,20 +10790,30 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 
 /* ── Level chips, spinning sheets and the royal collection ─────────────── */
 
-/* A level beside a name: a shop's own, or the person's as a buyer. */
-.lvchip {
-  display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 1px 7px 1px 2px; vertical-align: 1px;
-  border-radius: var(--r-pill); font-family: var(--ui); font-size: 10px; font-weight: var(--w-semi); line-height: 16px; white-space: nowrap;
-  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+/* A level as a tagline under a name: "LV 5 · Collector", a Shop mark on a shop. */
+.pname { display: inline-grid; justify-items: start; gap: 3px; min-width: 0; vertical-align: top; }
+.lvtag {
+  display: inline-flex; align-items: center; gap: 5px; width: fit-content; max-width: 100%; justify-self: start;
+  font-family: var(--ui); font-size: 10.5px; font-weight: var(--w-bold); line-height: 1; letter-spacing: 0.02em; white-space: nowrap;
 }
-.lvchip b {
-  display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px;
-  font-size: 9.5px; font-variant-numeric: tabular-nums; color: #fff; background: #56637A;
+.lvtag--inline { margin-left: 6px; vertical-align: 1px; }
+.lvtag__lv {
+  padding: 2px 5px; border-radius: 4px; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #fff;
+  background: #56637A; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
-.lvchip--violet { color: var(--violet-text); border-color: rgba(139, 92, 246, 0.35); }
-.lvchip--violet b { background: var(--grad-blue); }
-.lvchip--gold { color: var(--q-gold); border-color: var(--q-gold-line); background: var(--q-gold-soft); }
-.lvchip--gold b { color: var(--q-gold-ink); background: linear-gradient(135deg, #FDE68A, #F5C542 50%, #B8860B); }
+.lvtag__title { overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); }
+.lvtag--violet .lvtag__lv { background: var(--grad-hero); }
+.lvtag--violet .lvtag__title {
+  background: linear-gradient(90deg, #C4B5FD, #F9A8D4); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.lvtag--gold .lvtag__lv { color: var(--q-gold-ink); background: linear-gradient(135deg, #FDE68A, #F5C542 50%, #B8860B); }
+.lvtag--gold .lvtag__title {
+  background: linear-gradient(90deg, #FDE68A, #F5C542); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.lvtag__shop {
+  padding: 1px 5px; border-radius: 4px; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--aqua); border: 1px solid rgba(6, 214, 231, 0.5); background: rgba(6, 214, 231, 0.08);
+}
 
 /* A card or sticker on a turntable: spins in, spins on a tap or a swipe. */
 .spin { display: grid; justify-items: center; gap: 8px; perspective: 900px; touch-action: pan-y; user-select: none; cursor: grab; }
@@ -10848,7 +10824,7 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .spin__hint { font-size: 10.5px; color: var(--text-faint); }
 
 /* The collection: each delivered item as a royal card, gilded in front, crested behind. */
-.royal { position: relative; perspective: 800px; animation: royal-in 800ms var(--ease) both; }
+.royal { position: relative; display: block; perspective: 800px; animation: royal-in 800ms var(--ease) both; }
 @keyframes royal-in { from { transform: rotateY(-120deg) scale(0.85); opacity: 0; } }
 .royal__card {
   position: relative; display: block; width: 100%; aspect-ratio: 5 / 7; padding: 0; border: 0; background: none; cursor: pointer;
@@ -10900,6 +10876,60 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .royal.is-flipped .royal__zoom { opacity: 0; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .spin__turn, .royal, .royal__front::after { animation: none; }
+  .spin__turn, .royal, .royal__front::after, button.qitem { animation: none; }
   .royal__card { transition: none; }
+}
+
+/* ── The collection, shelf by shelf, and a card opened ─────────────────── */
+
+/* Clear of the tab bar at the bottom of the screen. */
+.storefront.qprofile { padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+.qshelf { display: grid; gap: 12px; }
+/* A shelf's name, engraved, with gilded rules running to both edges. */
+.shelfhead { display: flex; align-items: center; gap: 12px; margin: 8px 0 0; }
+.shelfhead::before, .shelfhead::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(245, 197, 66, 0.75));
+  box-shadow: 0 0 6px rgba(245, 197, 66, 0.35);
+}
+.shelfhead::after { background: linear-gradient(90deg, rgba(245, 197, 66, 0.75), transparent); }
+.shelfhead span {
+  position: relative; padding: 0 14px;
+  font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: var(--t-md); letter-spacing: 0.04em;
+  background: linear-gradient(180deg, #FEF3C7, #F5C542 55%, #B8860B); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.shelfhead span::before, .shelfhead span::after {
+  content: '◆'; position: absolute; top: 50%; transform: translateY(-50%); font-size: 7px; font-style: normal; color: #F5C542;
+}
+.shelfhead span::before { left: 0; }
+.shelfhead span::after { right: 0; }
+button.qitem { padding: 0; border: 0; background: none; cursor: pointer; animation: lp-rise 500ms calc(var(--i) * 40ms) var(--ease) both; }
+button.qitem:hover .royal__front { filter: brightness(1.08); }
+.royal--big { width: min(230px, 62vw); }
+
+.qviewer { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.qviewer__stage { display: grid; grid-template-columns: 34px auto 34px; align-items: center; gap: 6px; }
+.qviewer__arrow {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  font-size: 22px; line-height: 1; color: #FDE68A; background: rgba(20, 14, 0, 0.6); border: 1px solid rgba(255, 236, 170, 0.5);
+}
+.qviewer__stage > .spin { grid-column: 2; }
+.qviewer__dots { display: flex; gap: 5px; }
+.qviewer__dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--q-track); }
+.qviewer__dots i.is-on { background: var(--q-gold); }
+.qviewer__dots i.is-hidden { outline: 1px dashed var(--text-faint); }
+.qviewer__tools { display: grid; gap: 10px; justify-items: center; width: 100%; padding-top: 10px; border-top: 1px solid var(--border); }
+.qviewer__tools .field { width: 100%; text-align: left; }
+
+/* The buyer's six boxes, inside the rating sheet. */
+.rsheet__qstats { margin: 0; }
+/* Verified: what has been checked, lit so it is the first thing read. */
+.rsheet__verified {
+  display: grid; gap: 8px; padding: 12px; border-radius: var(--r-md);
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.14), rgba(6, 214, 231, 0.06));
+  border: 1px solid rgba(52, 211, 153, 0.45); box-shadow: 0 0 18px -4px rgba(52, 211, 153, 0.45);
+}
+.rsheet__verified h4 {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  font-size: var(--t-sm); letter-spacing: 0.04em; text-transform: uppercase; color: #34D399;
 }

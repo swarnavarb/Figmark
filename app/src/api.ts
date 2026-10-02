@@ -147,7 +147,7 @@ export interface SellerCard {
   displayName: string;
   storefrontName: string;
   /** The shop's level and title, shown beside its name. */
-  level?: { level: number; title: string };
+  level?: { level: number; title: string; shop?: boolean };
   storefrontSlug: string | null;
   /** The shop's handle: its page at `/username`, and where a message lands. */
   username: string | null;
@@ -1606,7 +1606,7 @@ export interface PublicProfile {
   level: StoreLevel | null;
   stickers: StickerView[];
   /** The level and title shown beside the name. */
-  levelTag: { level: number; title: string };
+  levelTag: { level: number; title: string; shop?: boolean };
   memberSince: string;
   lastSeenAt: string | null;
   counts: { listings: number; onSale: number; sold: number; expired: number };
@@ -1718,9 +1718,9 @@ export const api = {
   learn: () => request<LearnDoc & { customised: boolean }>('/learn'),
   collection: (userId: string) => request<CollectionShelf>(`/users/${encodeURIComponent(userId)}/collection`),
   myCollection: () => request<CollectionShelf & { candidates: CollectionCandidate[] }>('/me/collection'),
-  collectionAdd: (orderId: string, name?: string, groupId?: string | null) =>
-    post<CollectionShelf & { item: CollectionItem }>('/me/collection/add', { orderId, name, groupId }),
-  collectionEdit: (orderId: string, changes: { name?: string; groupId?: string | null }) =>
+  collectionAdd: (orderId: string, groupId?: string | null) =>
+    post<CollectionShelf & { item: CollectionItem }>('/me/collection/add', { orderId, groupId }),
+  collectionEdit: (orderId: string, changes: { groupId?: string | null; cover?: string; hidden?: string[] }) =>
     post<CollectionShelf & { item: CollectionItem }>('/me/collection/edit', { orderId, ...changes }),
   collectionRemove: (orderId: string) => post<CollectionShelf>('/me/collection/remove', { orderId }),
   collectionGroups: (action: 'create' | 'rename' | 'delete', body: { id?: string; name?: string }) =>

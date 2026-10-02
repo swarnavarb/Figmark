@@ -277,7 +277,8 @@ export function ProfilePage() {
             <article key={seller.id} className="card card--pad row">
               <Avatar name={seller.storefrontName} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="card__title">{seller.storefrontName}<LevelChip tag={seller.level} /></div>
+                <div className="card__title">{seller.storefrontName}</div>
+                <LevelChip tag={seller.level} />
                 <span className="faint">{seller.dispatchRegion} · {seller.followerCount} followers</span>
               </div>
               <TrustBadge score={seller.trustScore} tier={seller.tier} />

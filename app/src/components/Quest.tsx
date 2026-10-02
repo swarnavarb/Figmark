@@ -420,14 +420,12 @@ export function Sticker({ sticker, onOpen }: { sticker: StickerView; onOpen?: ()
 }
 
 /**
- * A card or sticker on a turntable. It spins in when opened, spins again when
- * tapped, and a swipe spins it the way the finger went - moving to the next
- * one along when there is a list to move through.
+ * A card or sticker on a turntable. It spins in when opened, and spins again
+ * on a tap or a swipe - the way the finger went.
  */
-export function Spin({ spinKey, onSwipe, children }: {
+export function Spin({ spinKey, children }: {
   /** Changes when the thing shown changes, which spins it again. */
   spinKey: string;
-  onSwipe?: (direction: 1 | -1) => void;
   children: ReactNode;
 }) {
   const [turn, setTurn] = useState(0);
@@ -444,38 +442,29 @@ export function Spin({ spinKey, onSwipe, children }: {
     if (startX.current === null) return;
     const moved = x - startX.current;
     startX.current = null;
-    direction.current = moved < -30 ? 1 : moved > 30 ? -1 : direction.current;
-    // A swipe moves along when it can; the new key spins it. Otherwise spin here.
-    if (Math.abs(moved) > 30 && onSwipe) onSwipe(direction.current);
-    else setTurn((n) => n + 1);
+    if (Math.abs(moved) > 30) direction.current = moved < 0 ? 1 : -1;
+    setTurn((n) => n + 1);
   }
 
   return (
     <div className="spin" onPointerDown={(e) => { startX.current = e.clientX; }}
       onPointerUp={(e) => release(e.clientX)} onPointerCancel={() => { startX.current = null; }}>
       <div key={turn} className={`spin__turn spin__turn--${direction.current > 0 ? 'right' : 'left'}`}>{children}</div>
-      <span className="spin__hint">{onSwipe ? 'Swipe for the next one · tap to spin' : 'Tap or swipe to spin'}</span>
+      <span className="spin__hint">Tap or swipe to spin</span>
     </div>
   );
 }
 
-/** The next item along a list, either way, wrapping at the ends. */
-export function along<T>(list: readonly T[], current: T, direction: 1 | -1, same: (a: T, b: T) => boolean): T {
-  const index = list.findIndex((item) => same(item, current));
-  return list[(index + direction + list.length) % list.length] ?? current;
-}
-
 /** What a sticker means, how to earn it, and how far along its tiers somebody is. */
-export function StickerSheet({ sticker, whose, onClose, onSwipe }: {
+export function StickerSheet({ sticker, whose, onClose }: {
   sticker: StickerView;
   whose: 'mine' | 'theirs';
   onClose: () => void;
-  onSwipe?: (direction: 1 | -1) => void;
 }) {
   return (
     <Modal title={sticker.name} onClose={onClose}>
       <div className="qsheet">
-        <Spin spinKey={sticker.id} onSwipe={onSwipe}>
+        <Spin spinKey={sticker.id}>
           <span className={`qsticker__hex qsticker__hex--big qhue--${sticker.hue} qtier--${sticker.tier}`}>
             <Glyph name={sticker.glyph} size={40} />
           </span>
@@ -516,19 +505,18 @@ export function StickerSheet({ sticker, whose, onClose, onSwipe }: {
 }
 
 /** What a card is, how rare, and what collecting its set is worth. */
-export function CardSheet({ card, copies, setOwned, onClose, onSwipe }: {
+export function CardSheet({ card, copies, setOwned, onClose }: {
   card: CardDef;
   copies: number;
   /** How many of the six in its set are owned. */
   setOwned: number;
   onClose: () => void;
-  onSwipe?: (direction: 1 | -1) => void;
 }) {
   const total = Object.values(CARD_ODDS).reduce((sum, weight) => sum + weight, 0);
   return (
     <Modal title={card.name} onClose={onClose}>
       <div className="qsheet">
-        <Spin spinKey={card.id} onSwipe={onSwipe}><CardFace card={card} /></Spin>
+        <Spin spinKey={card.id}><CardFace card={card} /></Spin>
         <p className="qsheet__lore">&ldquo;{card.lore}&rdquo;</p>
         <p className="qsheet__state">
           <span className={`qrarity qrarity--${card.rarity}`}>{card.rarity}</span>{' '}
@@ -571,18 +559,15 @@ export function ShowcaseModal({ cards, stickers, whose, onClose, start = 'cards'
   const copiesOf = (id: string) => cards.filter((card) => card.id === id).reduce((sum, card) => sum + (card.copies ?? 1), 0);
   const ownedIn = (setId: string) => new Set(cards.filter((card) => card.set === setId).map((card) => card.id)).size;
 
-  const ownedCards = CARDS.filter((card) => copiesOf(card.id) > 0);
   const sortedStickers = [...stickers].sort((a, b) => b.tier - a.tier);
 
   if (opened?.kind === 'card') {
     const card = opened.card;
-    return <CardSheet card={card} copies={copiesOf(card.id)} setOwned={ownedIn(card.set)} onClose={() => setOpened(null)}
-      onSwipe={ownedCards.length > 1 ? (dir) => setOpened({ kind: 'card', card: along(ownedCards, card, dir, (a, b) => a.id === b.id) }) : undefined} />;
+    return <CardSheet card={card} copies={copiesOf(card.id)} setOwned={ownedIn(card.set)} onClose={() => setOpened(null)} />;
   }
   if (opened?.kind === 'sticker') {
     const sticker = opened.sticker;
-    return <StickerSheet sticker={sticker} whose={whose} onClose={() => setOpened(null)}
-      onSwipe={(dir) => setOpened({ kind: 'sticker', sticker: along(sortedStickers, sticker, dir, (a, b) => a.id === b.id) })} />;
+    return <StickerSheet sticker={sticker} whose={whose} onClose={() => setOpened(null)} />;
   }
 
   return (
