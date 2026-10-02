@@ -10368,6 +10368,7 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 /* Money Honey: deep green and honey gold, rupees raining through it. */
 .rail--honey { background: radial-gradient(70% 90% at 50% 30%, #7A5410 0%, #3B2A06 35%, #0E2A1B 70%, #050D08 100%); }
 .honey__lux { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.honey__lux--front { z-index: 2; }
 /* Slow gold light rays turning behind everything, like a vault door catching the light. */
 .honey__rays {
   position: absolute; left: 50%; top: 40%; width: 180vmax; height: 180vmax; margin: -90vmax 0 0 -90vmax; opacity: 0.22;
@@ -10469,18 +10470,13 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   animation: launch-fill 1.4s var(--spring) both, launch-stripes 0.45s linear infinite;
 }
 @keyframes launch-fill { from { width: 0; } }
-/* A ringed planet slowly turning in the corner. */
-.launch__planet {
-  position: absolute; right: 5%; top: 55%; width: 40px; height: 40px; border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #F9A8D4, #A855F7 55%, #3B0764);
-  box-shadow: 0 0 24px rgba(168, 85, 247, 0.6); animation: launch-bob 4s ease-in-out infinite;
+/* A crescent moon beside the title, glowing and rocking gently. */
+.launch__moon {
+  display: inline-block; width: 18px; height: 18px; margin-left: 10px; vertical-align: -1px; border-radius: 50%;
+  box-shadow: inset -5px 3px 0 0 #FEF3C7; filter: drop-shadow(0 0 6px rgba(254, 243, 199, 0.9));
+  animation: launch-moon 3s ease-in-out infinite;
 }
-.launch__planet::after {
-  content: ''; position: absolute; left: -16px; right: -16px; top: 50%; height: 14px; margin-top: -7px; border-radius: 50%;
-  border: 2px solid rgba(253, 230, 138, 0.7); transform: rotate(-18deg); animation: launch-ring 3s linear infinite;
-}
-@keyframes launch-bob { 50% { transform: translateY(-6px); } }
-@keyframes launch-ring { 50% { border-color: rgba(244, 114, 182, 0.8); } }
+@keyframes launch-moon { 50% { transform: rotate(-14deg) translateY(-2px); filter: drop-shadow(0 0 12px rgba(254, 243, 199, 1)); } }
 /* Shooting stars streaking down and across. */
 .launch__shoot {
   position: absolute; top: 5%; left: 30%; width: 80px; height: 2px; border-radius: 2px; opacity: 0;
@@ -10511,7 +10507,7 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 @keyframes launch-stripes { to { background-position: 17px 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .honey__rays, .honey__glint, .launch__star, .launch__gauge > span, .launch__planet, .launch__planet::after, .rail--honey::after { animation: none; }
+  .honey__rays, .honey__glint, .launch__star, .launch__gauge > span, .launch__moon, .rail--honey::after { animation: none; }
   .rail--honey .rail__titles h2 { animation: none; background-position: 30% 0; }
   .honey__rain, .launch__rocket, .honey__spark, .launch__shoot, .launch__ticket, .launch__pad { display: none; }
 }
@@ -10662,7 +10658,8 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 @keyframes earn-spin { to { --earn-angle: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .earnpill::before { animation: none; } }
 .railitem__earn { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 2; display: flex; container-type: inline-size; }
-.railitem__photo:has(.railitem__left) .railitem__earn { top: 36px; }
+.railitem__earn--right { top: 11px; left: 58%; right: 6px; justify-content: flex-end; }
+.railitem__earn--right .earnpill { font-size: 9px; padding: 0.2em 0.5em; }
 .affcard__problem { font-size: var(--t-xs); color: var(--coral); }
 .posts__compose--locked {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 12px 16px; border: 0; border-radius: var(--r-pill);

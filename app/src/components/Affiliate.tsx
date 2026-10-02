@@ -117,11 +117,11 @@ export function AffiliateCard({ listingId, amountMinor, currency, canShare, isOw
  * pays them, and sharing it pays you. Its border runs round it, so it reads
  * as an offer rather than another fact about the item.
  */
-export function EarnPill({ amountMinor, currency = 'INR' }: { amountMinor: number; currency?: string }) {
+export function EarnPill({ amountMinor, currency = 'INR', bare }: { amountMinor: number; currency?: string; bare?: boolean }) {
   if (amountMinor <= 0) return null;
   return (
     <span className="earnpill" title={`Share it and earn ${formatMoney(amountMinor, currency)} per sale`}>
-      <span className="earnpill__text">💸 Earn {formatMoney(amountMinor, currency)}</span>
+      <span className="earnpill__text">{bare ? '' : '💸 '}Earn {formatMoney(amountMinor, currency)}</span>
     </span>
   );
 }

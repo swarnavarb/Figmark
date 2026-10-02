@@ -80,7 +80,7 @@ export function EndingRail({ listings, now }: { listings: readonly FeedListing[]
         {listings.slice(0, SHELF).map((listing, n) => {
           const hours = hoursToEnd(listing, now) ?? 0;
           return (
-            <RailItem key={listing.id} listing={listing} n={n}>
+            <RailItem key={listing.id} listing={listing} n={n} earnRight>
               <span className={`railitem__left${hours < 24 ? ' is-hot' : ''}`}>
                 <Svg name="clock" size={12} /> {timeLeft(hours)}
               </span>
@@ -120,12 +120,7 @@ export function EarnRail({ listings }: { listings: readonly FeedListing[] }) {
   if (listings.length === 0) return null;
   return (
     <section className="rail rail--honey" aria-label="Money Honey">
-      <span className="honey__lux" aria-hidden="true">
-        <span className="honey__rays" />
-        {SPARKS.map(([left, top], n) => (
-          <i key={n} className="honey__spark" style={{ left: `${left}%`, top: `${top}%`, animationDelay: `${-(n * 0.41) % 1.8}s` }} />
-        ))}
-      </span>
+      <span className="honey__lux" aria-hidden="true"><span className="honey__rays" /></span>
       <RupeeRain />
       <RailHead icon="rupee" title="Money Honey" sub="Copy your affiliate link, share it, earn on every sale" view="earn" />
       <div className="rail__track">
@@ -136,6 +131,11 @@ export function EarnRail({ listings }: { listings: readonly FeedListing[] }) {
         ))}
       </div>
       <RupeeRain front />
+      <span className="honey__lux honey__lux--front" aria-hidden="true">
+        {SPARKS.map(([left, top], n) => (
+          <i key={n} className="honey__spark" style={{ left: `${left}%`, top: `${top}%`, animationDelay: `${-(n * 0.41) % 1.8}s` }} />
+        ))}
+      </span>
     </section>
   );
 }
@@ -159,17 +159,9 @@ export function PreOrderRail({ listings, now }: { listings: readonly FeedListing
         {STARS.map(([left, top], n) => (
           <i key={n} className="launch__star" style={{ left: `${left}%`, top: `${top}%`, animationDelay: `${-(n * 0.53) % 3}s` }} />
         ))}
-        <span className="launch__planet" />
-        <i className="launch__shoot" />
-        <i className="launch__shoot" />
-        {TICKETS.map(([left, glyph, delay], n) => (
-          <span key={n} className="launch__ticket" style={{ left: `${left}%`, animationDelay: `${-delay}s` }}>
-            <Svg name={glyph} size={14} />
-          </span>
-        ))}
         <span className="launch__pad">{[0, 1, 2, 3, 4].map((n) => <i key={n} style={{ ['--n' as string]: n }} />)}</span>
       </span>
-      <RailHead icon="rocket" title="Pre-orders" sub="Get in early. It ships once enough people join" view="preorder" />
+      <RailHead icon="rocket" title="Pre-orders" sub="Get in early. It ships once enough people join" view="preorder" moon />
       <div className="rail__track">
         {listings.slice(0, SHELF).map((listing, n) => {
           const view = preOrderView(listing.preOrder!);
@@ -193,17 +185,24 @@ export function PreOrderRail({ listings, now }: { listings: readonly FeedListing
       </div>
       <span className="launch__front" aria-hidden="true">
         <span className="launch__rocket"><Svg name="rocket" size={26} /></span>
+        <i className="launch__shoot" />
+        <i className="launch__shoot" />
+        {TICKETS.map(([left, glyph, delay], n) => (
+          <span key={n} className="launch__ticket" style={{ left: `${left}%`, animationDelay: `${-delay}s` }}>
+            <Svg name={glyph} size={14} />
+          </span>
+        ))}
       </span>
     </section>
   );
 }
 
-function RailHead({ icon, title, sub, view }: { icon: 'flame' | 'bolt' | 'rupee' | 'rocket'; title: string; sub: string; view: FeedView }) {
+function RailHead({ icon, title, sub, view, moon }: { icon: 'flame' | 'bolt' | 'rupee' | 'rocket'; title: string; sub: string; view: FeedView; moon?: boolean }) {
   return (
     <header className="rail__head">
       <span className="rail__icon">{icon === 'rupee' ? <b className="rail__rupee">₹</b> : <Svg name={icon} size={18} />}</span>
       <span className="rail__titles">
-        <h2>{title}</h2>
+        <h2>{title}{moon && <span className="launch__moon" aria-hidden="true" />}</h2>
         <small>{sub}</small>
       </span>
       <Link className="rail__all" to={`/?view=${view}`}>View all</Link>
@@ -212,11 +211,19 @@ function RailHead({ icon, title, sub, view }: { icon: 'flame' | 'bolt' | 'rupee'
 }
 
 /** The whole photo and the name, nothing else. */
-function RailItem({ listing, n, children, foot }: { listing: FeedListing; n: number; children?: React.ReactNode; foot?: React.ReactNode }) {
+function RailItem({ listing, n, children, foot, earnRight }: {
+  listing: FeedListing; n: number; children?: React.ReactNode; foot?: React.ReactNode;
+  /** The top left is taken (by a timer), so the earn pill goes small in the top right. */
+  earnRight?: boolean;
+}) {
   return (
     <Link to={`/listing/${listing.id}`} className={`railitem${listing.affiliate ? ' is-affiliate' : ''}`} style={{ ['--i' as string]: n }}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb railitem__photo">
-        {earnOf(listing) > 0 && <span className="railitem__earn"><EarnPill amountMinor={earnOf(listing)} currency={listing.currency} /></span>}
+        {earnOf(listing) > 0 && (
+          <span className={`railitem__earn${earnRight ? ' railitem__earn--right' : ''}`}>
+            <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} bare={earnRight} />
+          </span>
+        )}
         {children}
         <span className="railitem__name">{foot}<span>{listing.title}</span></span>
       </Thumb>
