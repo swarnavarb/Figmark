@@ -6,7 +6,7 @@ import { ApiRequestError, api, type FeedListing, type PartyRef } from '../api';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
-import { Thumb, leadPhoto } from './ui';
+import { LevelChip, Thumb, leadPhoto } from './ui';
 
 /** What sharing a listing pays per sale, in paise; zero when it pays nothing. */
 export function earnOf(listing: { affiliate?: { amountMinor?: number; percent?: number } | null; priceMinor: number }): number {
@@ -169,7 +169,7 @@ export function SimilarItems({ listingId }: { listingId: string }) {
                   <b className="simcard__price">{formatMoney(item.priceMinor, item.currency)}</b>
                   <EarnPill amountMinor={earnOf(item)} currency={item.currency} />
                 </span>
-                <small className="simcard__shop">{item.seller?.storefrontName ?? item.category}</small>
+                <small className="simcard__shop">{item.seller?.storefrontName ?? item.category}<LevelChip tag={item.seller?.level} /></small>
               </span>
             </Link>
           ))}

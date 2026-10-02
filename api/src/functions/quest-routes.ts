@@ -73,6 +73,8 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
     disputesLost: user.buyerTrust?.disputesLost ?? 0,
     collection: (user.collection ?? []).map((item) => ({ addedAt: item.addedAt })),
     hasBio: Boolean(user.bio?.trim()),
+    shares: Object.keys(user.affiliateLinks ?? {}).length,
+    referredSales: (user.affiliateOrderIds ?? []).length,
     hasTags: (user.tags ?? []).length > 0,
   };
 }
@@ -287,6 +289,12 @@ async function collector(request: HttpRequest, _context: InvocationContext) {
     repository.listFollowedSellerIds(id),
   ]);
   const view = questView(user.id, facts, user.quest);
+  // Whoever opens the page refreshes the level their name wears elsewhere.
+  const state = user.quest ?? emptyQuestState();
+  if (state.xpCache !== view.xp || state.levelCache !== view.level) {
+    user.quest = tidyQuestState({ ...state, xpCache: view.xp, levelCache: view.level, computedAt: new Date().toISOString() });
+    await repository.updateUser(user);
+  }
 
   const visible = reviews.filter((review) => reviewRevealed(review, false));
   const asBuyer = visible.filter((review) => review.direction === 'seller_to_buyer').map((review) => review.rating);

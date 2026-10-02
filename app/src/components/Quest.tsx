@@ -419,14 +419,67 @@ export function Sticker({ sticker, onOpen }: { sticker: StickerView; onOpen?: ()
   );
 }
 
+/**
+ * A card or sticker on a turntable. It spins in when opened, spins again when
+ * tapped, and a swipe spins it the way the finger went - moving to the next
+ * one along when there is a list to move through.
+ */
+export function Spin({ spinKey, onSwipe, children }: {
+  /** Changes when the thing shown changes, which spins it again. */
+  spinKey: string;
+  onSwipe?: (direction: 1 | -1) => void;
+  children: ReactNode;
+}) {
+  const [turn, setTurn] = useState(0);
+  const direction = useRef<1 | -1>(1);
+  const startX = useRef<number | null>(null);
+  const first = useRef(true);
+
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    setTurn((n) => n + 1);
+  }, [spinKey]);
+
+  function release(x: number) {
+    if (startX.current === null) return;
+    const moved = x - startX.current;
+    startX.current = null;
+    direction.current = moved < -30 ? 1 : moved > 30 ? -1 : direction.current;
+    // A swipe moves along when it can; the new key spins it. Otherwise spin here.
+    if (Math.abs(moved) > 30 && onSwipe) onSwipe(direction.current);
+    else setTurn((n) => n + 1);
+  }
+
+  return (
+    <div className="spin" onPointerDown={(e) => { startX.current = e.clientX; }}
+      onPointerUp={(e) => release(e.clientX)} onPointerCancel={() => { startX.current = null; }}>
+      <div key={turn} className={`spin__turn spin__turn--${direction.current > 0 ? 'right' : 'left'}`}>{children}</div>
+      <span className="spin__hint">{onSwipe ? 'Swipe for the next one · tap to spin' : 'Tap or swipe to spin'}</span>
+    </div>
+  );
+}
+
+/** The next item along a list, either way, wrapping at the ends. */
+export function along<T>(list: readonly T[], current: T, direction: 1 | -1, same: (a: T, b: T) => boolean): T {
+  const index = list.findIndex((item) => same(item, current));
+  return list[(index + direction + list.length) % list.length] ?? current;
+}
+
 /** What a sticker means, how to earn it, and how far along its tiers somebody is. */
-export function StickerSheet({ sticker, whose, onClose }: { sticker: StickerView; whose: 'mine' | 'theirs'; onClose: () => void }) {
+export function StickerSheet({ sticker, whose, onClose, onSwipe }: {
+  sticker: StickerView;
+  whose: 'mine' | 'theirs';
+  onClose: () => void;
+  onSwipe?: (direction: 1 | -1) => void;
+}) {
   return (
     <Modal title={sticker.name} onClose={onClose}>
       <div className="qsheet">
-        <span className={`qsticker__hex qsticker__hex--big qhue--${sticker.hue} qtier--${sticker.tier}`}>
-          <Glyph name={sticker.glyph} size={40} />
-        </span>
+        <Spin spinKey={sticker.id} onSwipe={onSwipe}>
+          <span className={`qsticker__hex qsticker__hex--big qhue--${sticker.hue} qtier--${sticker.tier}`}>
+            <Glyph name={sticker.glyph} size={40} />
+          </span>
+        </Spin>
         <p className="qsheet__state">
           {sticker.earned
             ? <><b className={`qtiertext--${sticker.tier}`}>{sticker.tiers.length > 1 ? STICKER_TIER_NAMES[sticker.tier] : 'Earned'}</b>{whose === 'mine' ? ' · yours' : ''}</>
@@ -456,25 +509,26 @@ export function StickerSheet({ sticker, whose, onClose }: { sticker: StickerView
             : `${Math.min(sticker.have, sticker.next)} of ${sticker.next} towards ${sticker.tiers.length > 1 ? STICKER_TIER_NAMES[Math.min(3, sticker.tier + 1)] : 'this sticker'}.`}
         </p>
         <XpBar progress={sticker.next === null ? 1 : sticker.have / sticker.next} tone="gold" />
-        <p className="faint qsheet__note">Stickers show on the profile, so anybody deciding whether to deal with this person can see them.</p>
+        <p className="faint qsheet__note">Stickers show on the page, so anybody deciding whether to deal with them can see them.</p>
       </div>
     </Modal>
   );
 }
 
 /** What a card is, how rare, and what collecting its set is worth. */
-export function CardSheet({ card, copies, setOwned, onClose }: {
+export function CardSheet({ card, copies, setOwned, onClose, onSwipe }: {
   card: CardDef;
   copies: number;
   /** How many of the six in its set are owned. */
   setOwned: number;
   onClose: () => void;
+  onSwipe?: (direction: 1 | -1) => void;
 }) {
   const total = Object.values(CARD_ODDS).reduce((sum, weight) => sum + weight, 0);
   return (
     <Modal title={card.name} onClose={onClose}>
       <div className="qsheet">
-        <CardFace card={card} />
+        <Spin spinKey={card.id} onSwipe={onSwipe}><CardFace card={card} /></Spin>
         <p className="qsheet__lore">&ldquo;{card.lore}&rdquo;</p>
         <p className="qsheet__state">
           <span className={`qrarity qrarity--${card.rarity}`}>{card.rarity}</span>{' '}
@@ -517,11 +571,18 @@ export function ShowcaseModal({ cards, stickers, whose, onClose, start = 'cards'
   const copiesOf = (id: string) => cards.filter((card) => card.id === id).reduce((sum, card) => sum + (card.copies ?? 1), 0);
   const ownedIn = (setId: string) => new Set(cards.filter((card) => card.set === setId).map((card) => card.id)).size;
 
+  const ownedCards = CARDS.filter((card) => copiesOf(card.id) > 0);
+  const sortedStickers = [...stickers].sort((a, b) => b.tier - a.tier);
+
   if (opened?.kind === 'card') {
-    return <CardSheet card={opened.card} copies={copiesOf(opened.card.id)} setOwned={ownedIn(opened.card.set)} onClose={() => setOpened(null)} />;
+    const card = opened.card;
+    return <CardSheet card={card} copies={copiesOf(card.id)} setOwned={ownedIn(card.set)} onClose={() => setOpened(null)}
+      onSwipe={ownedCards.length > 1 ? (dir) => setOpened({ kind: 'card', card: along(ownedCards, card, dir, (a, b) => a.id === b.id) }) : undefined} />;
   }
   if (opened?.kind === 'sticker') {
-    return <StickerSheet sticker={opened.sticker} whose={whose} onClose={() => setOpened(null)} />;
+    const sticker = opened.sticker;
+    return <StickerSheet sticker={sticker} whose={whose} onClose={() => setOpened(null)}
+      onSwipe={(dir) => setOpened({ kind: 'sticker', sticker: along(sortedStickers, sticker, dir, (a, b) => a.id === b.id) })} />;
   }
 
   return (
@@ -561,7 +622,7 @@ export function ShowcaseModal({ cards, stickers, whose, onClose, start = 'cards'
             Stickers are earned by what somebody actually does - buying, reviewing, backing pre-orders, trading cleanly. Bronze, silver and gold show how far. Tap one to see what it means.
           </p>
           <div className="qstickers">
-            {[...stickers].sort((a, b) => b.tier - a.tier).map((sticker) => (
+            {sortedStickers.map((sticker) => (
               <Sticker key={sticker.id} sticker={sticker} onOpen={() => setOpened({ kind: 'sticker', sticker })} />
             ))}
           </div>

@@ -7816,11 +7816,29 @@ await check('rarity reads sales and saves, and a timer turns the heat up', () =>
 
 await check('levels climb on a widening curve and every level has a title', () => {
   assert.equal(quest.levelFor(0), 1);
-  assert.equal(quest.levelFor(99), 1);
-  assert.equal(quest.levelFor(100), 2);
-  assert.equal(quest.levelFor(300), 3);
+  assert.equal(quest.levelFor(299), 1);
+  assert.equal(quest.levelFor(300), 2);
+  assert.equal(quest.levelFor(900), 3);
   assert.equal(quest.titleFor(1), 'Rookie');
   assert.equal(quest.titleFor(40), 'Legend');
+});
+
+await check('buyers and shops level on one scale, at the same rate per action', async () => {
+  const shop = await import(new URL('../api/dist/shared/storefront.js', import.meta.url));
+  const facts = {
+    completedSales: 10, affiliateSales: 10, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], listings: 0, soldOut: 0, trust: 0,
+    preOrders: 0, disputesLost: 0, ageDays: 0,
+  };
+  const level = shop.storeLevel(facts);
+  const sales = level.breakdown.find((line) => line.label === 'Orders delivered');
+  const referred = level.breakdown.find((line) => line.label === 'Sales through affiliate links');
+  assert.equal(sales.xp, 10 * quest.ACTION_XP);
+  assert.equal(referred.xp, sales.xp, 'every way of earning pays the same per action');
+  assert.equal(level.level, quest.levelFor(level.points), 'the buyer curve');
+  assert.equal(quest.actionXp(500), quest.ACTION_CAP * quest.ACTION_XP, 'capped alike');
+  const stickers = shop.storeStickers({ ...facts, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
+  assert.deepEqual(stickers.slice(0, 2).map((s) => s.id), ['s-trust', 's-rated'], 'Trusted and Top rated lead once earned');
 });
 
 await check('a pack always holds the same card, never below its floor', () => {
@@ -7846,7 +7864,7 @@ await check('the game needs a session, and a new account starts at level one', a
 await check('checking in pays once a day and starts a streak', async () => {
   const player = await newBuyer('Quest Checker');
   const first = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
-  assert.equal(first.gained, 10);
+  assert.equal(first.gained, quest.ACTION_XP);
   assert.equal(first.view.streak.current, 1);
   assert.ok(first.view.tasks.find((task) => task.id === 'daily-checkin').claimed);
   const again = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
@@ -7860,7 +7878,7 @@ await check('the daily reveal gives one card, the same one however often it is a
   assert.ok(first.card.id);
   assert.equal(first.view.dailyRevealed, true);
   assert.equal(first.view.cards.length, 1);
-  assert.equal(first.gained, 15 + quest.CARD_XP[first.card.rarity]);
+  assert.equal(first.gained, quest.ACTION_XP + quest.CARD_XP[first.card.rarity]);
   const again = (await questReveal(req({ headers: player.headers }), ctx)).jsonBody;
   assert.equal(again.card.id, first.card.id);
   assert.equal(again.gained, 0);
@@ -7882,7 +7900,7 @@ await check('a task pays only once it is done, and only once', async () => {
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(before.tasks.find((task) => task.id === 'ms-saves-10').claimable, true);
   const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'ms-saves-10' } }), ctx)).jsonBody;
-  assert.equal(claimed.gained, 50);
+  assert.equal(claimed.gained, quest.TIER_XP[0], 'a first milestone step pays the same on every ladder');
   const twice = await questClaim(req({ headers: player.headers, body: { taskId: 'ms-saves-10' } }), ctx);
   assert.equal(twice.status, 409);
   const next = claimed.view.tasks.find((task) => task.id.startsWith('ms-saves-'));
@@ -7918,22 +7936,22 @@ await check('an order earns XP, a milestone, and a pack that opens exactly once'
   const player = await newBuyer('Quest Buyer');
   await createOrder(req({ headers: player.headers, body: { listingId: 'lst_kbeauty', quantity: 1 } }), ctx);
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(view.xp, 40, 'an order placed is forty');
+  assert.equal(view.xp, quest.ACTION_XP, 'an order placed is one action');
   const haul = view.stickers.find((sticker) => sticker.id === 'haul');
   assert.equal(haul.tier, 1, 'bronze after one order');
   assert.equal(haul.next, 10);
   assert.equal(view.tasks.find((task) => task.id === 'ms-orders-1').claimable, true);
 
   const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx)).jsonBody;
-  assert.equal(claimed.levelAfter, 2, '40 + 100 crosses into level two');
+  assert.equal(claimed.levelAfter, 1, 'one order and its milestone are not a level yet');
   const packIds = claimed.view.packs.map((pack) => pack.id).sort();
-  assert.deepEqual(packIds, ['level-2', 'task-ms-orders-1']);
+  assert.deepEqual(packIds, ['task-ms-orders-1']);
 
   const opened = await questOpen(req({ headers: player.headers, body: { packId: 'task-ms-orders-1' } }), ctx);
   assert.equal(opened.status, 200);
   assert.notEqual(opened.jsonBody.card.rarity, 'common');
   assert.ok(opened.jsonBody.card.lore, 'every card has a line of its own');
-  assert.equal(opened.jsonBody.view.packs.length, 1);
+  assert.equal(opened.jsonBody.view.packs.length, 0, 'the one pack is open; no level pack yet');
   assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'task-ms-orders-1' } }), ctx)).status, 404);
   assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'level-9' } }), ctx)).status, 404,
     'a pack for a level not reached is not there to open');
@@ -7979,11 +7997,16 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
   const player = await newBuyer('Quest Rated');
   const order = await deliveredOrderFor(player, 'lst_kbeauty');
   await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx);
+  const repository = await getRepository();
+  // Fifteen days checked in, so there is a level to lose.
+  const days = Array.from({ length: 15 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
+  const seeded = await repository.getUserById(player.id);
+  await repository.updateUser({ ...seeded, quest: { ...seeded.quest, checkIns: days } });
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(before.xp, 180, '40 placed + 40 received + 100 milestone');
+  const unit = quest.ACTION_XP;
+  assert.equal(before.xp, unit + quest.TIER_XP[0] + 15 * unit, 'an order, its first milestone, fifteen check-ins');
   assert.equal(before.level, 2);
 
-  const repository = await getRepository();
   const now = new Date().toISOString();
   await repository.createReview({
     id: 'rev_quest_bad', subjectId: player.id, authorId: 'usr_gadgetgrid', orderId: order.id,
@@ -7991,15 +8014,15 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
     createdAt: now, updatedAt: now,
   });
   const after = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(after.xp, 120, 'a one-star rating costs 60');
-  assert.equal(after.penalty, 60);
+  assert.equal(after.xp, before.xp - 2 * unit, 'a one-star rating costs two actions');
+  assert.equal(after.penalty, 2 * unit);
   const line = after.breakdown.find((entry) => entry.label === 'Low ratings from sellers');
-  assert.equal(line.xp, -60, 'and the breakdown says so');
+  assert.equal(line.xp, -2 * unit, 'and the breakdown says so');
 
   const user = await repository.getUserById(player.id);
   await repository.updateUser({ ...user, buyerTrust: { ...user.buyerTrust, disputesLost: 1 } });
   const lower = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(lower.xp, 40);
+  assert.equal(lower.xp, after.xp - 4 * unit, 'a lost dispute costs four');
   assert.equal(lower.level, 1, 'ranked back down');
   assert.equal(lower.packs.some((pack) => pack.id === 'level-2'), false, 'and the unopened level pack goes with it');
   assert.equal(lower.stickers.find((sticker) => sticker.id === 'clean-record').tier, 0);
@@ -8042,7 +8065,7 @@ await check('a delivered purchase can go in the collection, once, and be renamed
 
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(view.stickers.find((sticker) => sticker.id === 'curator').tier, 1);
-  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === 10));
+  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === quest.ACTION_XP));
 
   const seen = (await publicCollection(req({ params: { id: player.id } }), ctx)).jsonBody;
   assert.equal(seen.items.length, 1);
@@ -8415,12 +8438,12 @@ await check('direct and protected buyers in one lot go through the same unpack-a
 });
 
 await check('a quest claimed on saves opens again, and pays nothing, once the saves are taken back', async () => {
-  const { questView, claimKey } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
+  const { questView, claimKey, TASK_XP, ACTION_XP } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
   const now = Date.now();
   const at = new Date(now).toISOString();
   const facts = (saves) => ({
     orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], follows: [], posts: [], wants: [],
-    pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false,
+    pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false, shares: 0, referredSales: 0,
     likes: Array.from({ length: saves }, () => ({ createdAt: at })),
   });
   const key = claimKey('daily-save3', now);
@@ -8429,10 +8452,10 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
   const met = questView('usr_x', facts(3), state, now);
   const undone = questView('usr_x', facts(2), state, now);
   const redone = questView('usr_x', facts(3), state, now);
-  assert.equal(quests(met), 30, 'three saves: the claimed reward counts');
+  assert.equal(quests(met), TASK_XP.daily, 'three saves: the claimed reward counts');
   assert.equal(quests(undone), 0, 'one save taken back: the reward goes with it');
-  assert.equal(met.xp - undone.xp, 30 + 3, 'the quest reward and the save itself both come off');
-  assert.equal(quests(redone), 30, 'saving again brings the same claim back, not a second one');
+  assert.equal(met.xp - undone.xp, TASK_XP.daily + ACTION_XP, 'the quest reward and the save itself both come off');
+  assert.equal(quests(redone), TASK_XP.daily, 'saving again brings the same claim back, not a second one');
   const task = undone.tasks.find((entry) => entry.id === 'daily-save3');
   if (task) {
     assert.equal(task.claimed, false, 'the quest is open again');

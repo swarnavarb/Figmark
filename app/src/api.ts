@@ -146,6 +146,8 @@ export interface SellerCard {
   id: string;
   displayName: string;
   storefrontName: string;
+  /** The shop's level and title, shown beside its name. */
+  level?: { level: number; title: string };
   storefrontSlug: string | null;
   /** The shop's handle: its page at `/username`, and where a message lands. */
   username: string | null;
@@ -1603,6 +1605,8 @@ export interface PublicProfile {
   /** A shop's level and milestone stickers; null and empty on a person's page. */
   level: StoreLevel | null;
   stickers: StickerView[];
+  /** The level and title shown beside the name. */
+  levelTag: { level: number; title: string };
   memberSince: string;
   lastSeenAt: string | null;
   counts: { listings: number; onSale: number; sold: number; expired: number };

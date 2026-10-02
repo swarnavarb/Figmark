@@ -20,7 +20,7 @@ import { SkeletonGrid } from '../components/Feedback';
 import {
   CardFace, CollectorChip, DesignSwitch, Glyph, RarityRibbon, XpBar, useQuest, type GlyphName,
 } from '../components/Quest';
-import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
+import { EmptyState, ErrorNotice, LevelChip, Thumb, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { PRICE_BANDS, Picker, useCatalog } from './FeedPage';
@@ -746,6 +746,7 @@ function LootCard({ listing }: { listing: Rated }) {
             <span className="qcrest" title={`Trust ${listing.seller.trustScore} of 100`}>
               <span className={`qcrest__mark qcrest__mark--${crestFor(listing.seller.trustScore)}`}><Glyph name="crest" size={11} /></span>
               {listing.seller.storefrontName}
+              <LevelChip tag={listing.seller.level} />
             </span>
           )}
         </span>

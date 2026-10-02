@@ -6,7 +6,7 @@ import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handl
 import { ApiRequestError, api, type ActivityResponse, type PostCard, type PublicProfile } from '../api';
 import { CollectorHeader, PurchasedCollection } from './CollectorProfile';
 import { SocialPostCard } from '../components/SocialPost';
-import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, LevelChip, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { EarnPill, earnOf } from '../components/Affiliate';
@@ -277,7 +277,7 @@ export function ProfilePage() {
             <article key={seller.id} className="card card--pad row">
               <Avatar name={seller.storefrontName} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="card__title">{seller.storefrontName}</div>
+                <div className="card__title">{seller.storefrontName}<LevelChip tag={seller.level} /></div>
                 <span className="faint">{seller.dispatchRegion} · {seller.followerCount} followers</span>
               </div>
               <TrustBadge score={seller.trustScore} tier={seller.tier} />

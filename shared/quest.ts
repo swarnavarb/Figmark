@@ -169,9 +169,33 @@ const TITLES = [
 
 export const MAX_LEVEL = 50;
 
-/** Total XP needed to reach a level: 0, 100, 300, 600, 1000, … */
+/**
+ * One scale for buyers and shops, so a level 6 buyer and a level 6 shop did
+ * about the same amount: 0, 300, 900, 1800, 3000, …
+ */
 export function xpForLevel(level: number): number {
-  return 50 * level * (level - 1);
+  return 150 * level * (level - 1);
+}
+
+/*
+ * What anything is worth, on either side. Every way of earning pays the same
+ * at the same size, so no one action is the way to level - doing a bit of
+ * everything is. A counted action is worth one unit, up to a hundred of each
+ * kind; a task pays by how long it runs; a milestone step pays by which step.
+ */
+export const ACTION_XP = 20;
+export const ACTION_CAP = 100;
+export const TASK_XP = { daily: 20, weekly: 60, monthly: 180 } as const;
+export const TIER_XP = [60, 150, 300, 500, 800, 1200] as const;
+
+/** One kind of counted action, capped like every other. */
+export function actionXp(count: number, each = ACTION_XP): number {
+  return Math.min(Math.max(count, 0), ACTION_CAP) * each;
+}
+
+/** A milestone ladder's worth for the steps reached. */
+export function tierXp(reached: number): number {
+  return TIER_XP.slice(0, reached).reduce((sum, xp) => sum + xp, 0);
 }
 
 export function levelFor(xp: number): number {
@@ -247,7 +271,7 @@ export const CARDS: readonly CardDef[] = [
 export const CARD_BY_ID = new Map(CARDS.map((card) => [card.id, card]));
 
 /** XP a pulled card is worth, so a lucky pull is a small boost and not a free level. */
-export const CARD_XP: Record<CardRarity, number> = { common: 5, rare: 15, epic: 40, legendary: 100 };
+export const CARD_XP: Record<CardRarity, number> = { common: ACTION_XP, rare: ACTION_XP, epic: ACTION_XP, legendary: ACTION_XP };
 
 const CARD_WEIGHTS: Record<CardRarity, number> = { common: 55, rare: 28, epic: 13, legendary: 4 };
 
@@ -313,10 +337,14 @@ export interface QuestFacts {
   collection: { addedAt: string }[];
   hasBio: boolean;
   hasTags: boolean;
+  /** Items this person made an affiliate link for: sharing is marketing. */
+  shares: number;
+  /** Orders other people placed through their links. */
+  referredSales: number;
 }
 
 /** XP for finishing a card set - the reward that gives a set its point. */
-export const SET_BONUS_XP = 200;
+export const SET_BONUS_XP = TIER_XP[2];
 
 export function emptyQuestState(): QuestState {
   return { checkIns: [], claimed: {}, cards: [] };
@@ -386,10 +414,6 @@ export function streakOf(checkIns: readonly string[], now: number = Date.now()):
   return { current, best: Math.max(best, current), checkedInToday, week };
 }
 
-/** XP for checking in: ten a day, plus up to thirty-five more for keeping it going. */
-export function checkInXp(streakDay: number): number {
-  return 10 + 5 * Math.min(Math.max(streakDay - 1, 0), 7);
-}
 
 /* -------------------------------------------------------------------------- */
 /* Tasks                                                                      */
@@ -462,78 +486,81 @@ interface Template {
   blurb: string;
   metric: Metric;
   goal: number;
-  xp: number;
   href: string | null;
 }
 
 /* Daily: checking in and the reveal every day, plus two from this pool. */
 const DAILY_POOL: readonly Template[] = [
-  { key: 'save1', title: 'Save something you like', blurb: 'Tap the heart on any listing.', metric: 'save', goal: 1, xp: 15, href: '/' },
-  { key: 'save3', title: 'Save three finds', blurb: 'Build a wishlist: save three listings today.', metric: 'save', goal: 3, xp: 30, href: '/' },
-  { key: 'follow1', title: 'Follow a new shop', blurb: 'Follow a shop to see its drops first.', metric: 'follow', goal: 1, xp: 20, href: '/' },
-  { key: 'post1', title: 'Say something in Social', blurb: 'Post a haul, a question or a tip.', metric: 'post', goal: 1, xp: 25, href: '/social' },
-  { key: 'order1', title: 'Buy something today', blurb: 'Any order from the catalogue counts.', metric: 'order', goal: 1, xp: 40, href: '/' },
-  { key: 'review1', title: 'Rate a seller', blurb: 'Review an order that has arrived.', metric: 'review', goal: 1, xp: 30, href: '/purchases' },
-  { key: 'collect1', title: 'Add to your collection', blurb: 'Put a delivered item in your collection.', metric: 'collect', goal: 1, xp: 25, href: '/me?tab=collection' },
+  { key: 'save1', title: 'Save something you like', blurb: 'Tap the heart on any listing.', metric: 'save', goal: 1, href: '/' },
+  { key: 'save3', title: 'Save three finds', blurb: 'Build a wishlist: save three listings today.', metric: 'save', goal: 3, href: '/' },
+  { key: 'follow1', title: 'Follow a new shop', blurb: 'Follow a shop to see its drops first.', metric: 'follow', goal: 1, href: '/' },
+  { key: 'post1', title: 'Say something in Social', blurb: 'Post a haul, a question or a tip.', metric: 'post', goal: 1, href: '/social' },
+  { key: 'order1', title: 'Buy something today', blurb: 'Any order from the catalogue counts.', metric: 'order', goal: 1, href: '/' },
+  { key: 'review1', title: 'Rate a seller', blurb: 'Review an order that has arrived.', metric: 'review', goal: 1, href: '/purchases' },
+  { key: 'collect1', title: 'Add to your collection', blurb: 'Put a delivered item in your collection.', metric: 'collect', goal: 1, href: '/me?tab=collection' },
 ];
 
 /* Weekly: five check-ins every week, plus three from this pool. */
 const WEEKLY_POOL: readonly Template[] = [
-  { key: 'order1', title: 'Place an order', blurb: 'Buy anything from the catalogue this week.', metric: 'order', goal: 1, xp: 60, href: '/' },
-  { key: 'order3', title: 'Three orders', blurb: 'Place three orders this week.', metric: 'order', goal: 3, xp: 150, href: '/' },
-  { key: 'preorder1', title: 'Join a pre-order', blurb: 'Get into a pre-order before it fills.', metric: 'preorder', goal: 1, xp: 50, href: '/?kind=pre_order' },
-  { key: 'review2', title: 'Review two sellers', blurb: 'Rate two orders that arrived.', metric: 'review', goal: 2, xp: 60, href: '/purchases' },
-  { key: 'save10', title: 'Save ten finds', blurb: 'Save ten listings this week.', metric: 'save', goal: 10, xp: 40, href: '/' },
-  { key: 'follow3', title: 'Follow three shops', blurb: 'Find three new shops to follow.', metric: 'follow', goal: 3, xp: 40, href: '/' },
-  { key: 'post3', title: 'Three posts', blurb: 'Post three times in Social.', metric: 'post', goal: 3, xp: 50, href: '/social' },
-  { key: 'collect2', title: 'Grow your collection', blurb: 'Add two delivered items to your collection.', metric: 'collect', goal: 2, xp: 50, href: '/me?tab=collection' },
+  { key: 'order1', title: 'Place an order', blurb: 'Buy anything from the catalogue this week.', metric: 'order', goal: 1, href: '/' },
+  { key: 'order3', title: 'Three orders', blurb: 'Place three orders this week.', metric: 'order', goal: 3, href: '/' },
+  { key: 'preorder1', title: 'Join a pre-order', blurb: 'Get into a pre-order before it fills.', metric: 'preorder', goal: 1, href: '/?kind=pre_order' },
+  { key: 'review2', title: 'Review two sellers', blurb: 'Rate two orders that arrived.', metric: 'review', goal: 2, href: '/purchases' },
+  { key: 'save10', title: 'Save ten finds', blurb: 'Save ten listings this week.', metric: 'save', goal: 10, href: '/' },
+  { key: 'follow3', title: 'Follow three shops', blurb: 'Find three new shops to follow.', metric: 'follow', goal: 3, href: '/' },
+  { key: 'post3', title: 'Three posts', blurb: 'Post three times in Social.', metric: 'post', goal: 3, href: '/social' },
+  { key: 'collect2', title: 'Grow your collection', blurb: 'Add two delivered items to your collection.', metric: 'collect', goal: 2, href: '/me?tab=collection' },
 ];
 
 /* Monthly: three of these, bigger goals and bigger rewards. */
 const MONTHLY_POOL: readonly Template[] = [
-  { key: 'order5', title: 'Five orders this month', blurb: 'Place five orders before the month ends.', metric: 'order', goal: 5, xp: 300, href: '/' },
-  { key: 'checkin20', title: 'Twenty check-ins', blurb: 'Check in on twenty days this month.', metric: 'checkin', goal: 20, xp: 250, href: null },
-  { key: 'review3', title: 'Three reviews', blurb: 'Review three orders this month.', metric: 'review', goal: 3, xp: 150, href: '/purchases' },
-  { key: 'preorder2', title: 'Back two pre-orders', blurb: 'Join two pre-orders this month.', metric: 'preorder', goal: 2, xp: 200, href: '/?kind=pre_order' },
-  { key: 'collect5', title: 'Curate five', blurb: 'Add five delivered items to your collection.', metric: 'collect', goal: 5, xp: 200, href: '/me?tab=collection' },
+  { key: 'order5', title: 'Five orders this month', blurb: 'Place five orders before the month ends.', metric: 'order', goal: 5, href: '/' },
+  { key: 'checkin20', title: 'Twenty check-ins', blurb: 'Check in on twenty days this month.', metric: 'checkin', goal: 20, href: null },
+  { key: 'review3', title: 'Three reviews', blurb: 'Review three orders this month.', metric: 'review', goal: 3, href: '/purchases' },
+  { key: 'preorder2', title: 'Back two pre-orders', blurb: 'Join two pre-orders this month.', metric: 'preorder', goal: 2, href: '/?kind=pre_order' },
+  { key: 'collect5', title: 'Curate five', blurb: 'Add five delivered items to your collection.', metric: 'collect', goal: 5, href: '/me?tab=collection' },
 ];
 
 const CHECKIN5: Template = {
   key: 'checkin5', title: 'Check in five days', blurb: 'Five check-ins this week, any five days.',
-  metric: 'checkin', goal: 5, xp: 50, href: null,
+  metric: 'checkin', goal: 5, href: null,
 };
 
 interface Ladder {
   key: string;
   name: string;
-  metric: Metric | 'streak' | 'profile';
+  metric: Metric | 'streak' | 'profile' | 'share' | 'refer';
   steps: number[];
-  xp: number[];
   blurb: (goal: number) => string;
   href: string | null;
 }
 
 /* Milestones repeat with bigger numbers: finish one step and the next appears. */
 const LADDERS: readonly Ladder[] = [
-  { key: 'orders', name: 'Haul Hunter', metric: 'order', steps: [1, 5, 10, 25, 50, 100], xp: [100, 250, 400, 700, 1000, 1500],
+  // Marketing first: bringing other people in is what a marketplace runs on.
+  { key: 'shares', name: 'Promoter', metric: 'share', steps: [1, 5, 15, 40],
+    blurb: (n) => (n === 1 ? 'Copy an affiliate link for an item and share it.' : `Share ${n} items with your affiliate link.`), href: '/?view=earn' },
+  { key: 'referrals', name: 'Rainmaker', metric: 'refer', steps: [1, 5, 15, 40],
+    blurb: (n) => (n === 1 ? 'Get someone to buy through your link.' : `${n} sales through your links.`), href: '/?view=earn' },
+  { key: 'orders', name: 'Haul Hunter', metric: 'order', steps: [1, 5, 10, 25, 50, 100],
     blurb: (n) => (n === 1 ? 'Place your first order.' : `Place ${n} orders in total.`), href: '/' },
-  { key: 'preorders', name: 'Backer', metric: 'preorder', steps: [1, 5, 10, 25], xp: [80, 250, 400, 700],
+  { key: 'preorders', name: 'Backer', metric: 'preorder', steps: [1, 5, 10, 25],
     blurb: (n) => (n === 1 ? 'Join your first pre-order.' : `Join ${n} pre-orders in total.`), href: '/?kind=pre_order' },
-  { key: 'reviews', name: 'Critic', metric: 'review', steps: [1, 5, 10, 25, 50], xp: [80, 200, 350, 600, 900],
+  { key: 'reviews', name: 'Critic', metric: 'review', steps: [1, 5, 10, 25, 50],
     blurb: (n) => (n === 1 ? 'Review a seller after an order arrives.' : `Write ${n} reviews in total.`), href: '/purchases' },
-  { key: 'collection', name: 'Curator', metric: 'collect', steps: [1, 10, 25, 50], xp: [50, 150, 300, 500],
+  { key: 'collection', name: 'Curator', metric: 'collect', steps: [1, 10, 25, 50],
     blurb: (n) => (n === 1 ? 'Add your first delivered item to your collection.' : `Have ${n} items in your collection.`), href: '/me?tab=collection' },
-  { key: 'saves', name: 'Wishlist', metric: 'save', steps: [10, 25, 50, 100], xp: [50, 100, 150, 250],
+  { key: 'saves', name: 'Wishlist', metric: 'save', steps: [10, 25, 50, 100],
     blurb: (n) => `Save ${n} items in total.`, href: '/' },
-  { key: 'follows', name: 'Fan Club', metric: 'follow', steps: [3, 10, 25], xp: [60, 120, 200],
+  { key: 'follows', name: 'Fan Club', metric: 'follow', steps: [3, 10, 25],
     blurb: (n) => `Follow ${n} shops.`, href: '/' },
-  { key: 'posts', name: 'Town Crier', metric: 'post', steps: [1, 10, 50], xp: [40, 150, 400],
+  { key: 'posts', name: 'Town Crier', metric: 'post', steps: [1, 10, 50],
     blurb: (n) => (n === 1 ? 'Make your first post in Social.' : `Make ${n} posts in Social.`), href: '/social' },
-  { key: 'wants', name: 'Bounty Hunter', metric: 'want', steps: [1, 5], xp: [40, 120],
+  { key: 'wants', name: 'Bounty Hunter', metric: 'want', steps: [1, 5],
     blurb: (n) => (n === 1 ? 'Post something you are hunting for.' : `Post ${n} Wanted requests.`), href: '/wanted' },
-  { key: 'streak', name: 'On Fire', metric: 'streak', steps: [7, 30, 100], xp: [150, 500, 1500],
+  { key: 'streak', name: 'On Fire', metric: 'streak', steps: [7, 30, 100],
     blurb: (n) => `Check in ${n} days in a row.`, href: null },
-  { key: 'profile', name: 'Show Yourself', metric: 'profile', steps: [2], xp: [50],
+  { key: 'profile', name: 'Show Yourself', metric: 'profile', steps: [2],
     blurb: () => 'Add a bio and a tag to your page.', href: '/me?tab=settings' },
 ];
 
@@ -546,12 +573,12 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 interface KnownTask { kind: TaskKind; xp: number; title: string; pack: boolean }
 const KNOWN = new Map<string, KnownTask>();
 for (const [kind, pool] of [['daily', DAILY_POOL], ['weekly', [...WEEKLY_POOL, CHECKIN5]], ['monthly', MONTHLY_POOL]] as const) {
-  for (const template of pool) KNOWN.set(`${kind}-${template.key}`, { kind, xp: template.xp, title: template.title, pack: false });
+  for (const template of pool) KNOWN.set(`${kind}-${template.key}`, { kind, xp: TASK_XP[kind], title: template.title, pack: false });
 }
 for (const ladder of LADDERS) {
   ladder.steps.forEach((goal, index) => {
     KNOWN.set(`ms-${ladder.key}-${goal}`, {
-      kind: 'milestone', xp: ladder.xp[index] ?? 0, title: `${ladder.name} ${ROMAN[index] ?? index + 1}`, pack: true,
+      kind: 'milestone', xp: TIER_XP[index] ?? 0, title: `${ladder.name} ${ROMAN[index] ?? index + 1}`, pack: true,
     });
   });
 }
@@ -587,7 +614,7 @@ function known(taskId: string): KnownTask | null {
  * the saves and the quest opens again and its claimed XP goes with it; redo
  * them and the same claim counts again, without claiming twice.
  */
-const UNDOABLE: ReadonlySet<Metric | 'streak' | 'profile'> = new Set(['save', 'follow']);
+const UNDOABLE: ReadonlySet<Ladder['metric']> = new Set(['save', 'follow']);
 
 const TEMPLATE_BY_ID = new Map<string, { kind: TaskKind; template: Template }>();
 for (const [kind, pool] of [['daily', DAILY_POOL], ['weekly', [...WEEKLY_POOL, CHECKIN5]], ['monthly', MONTHLY_POOL]] as const) {
@@ -639,7 +666,7 @@ function view(
   const key = `${id}:${periodOf(kind, context.now)}`;
   const claimed = auto ? done : Boolean(context.state.claimed[key]) && claimStands(key, context);
   return {
-    id, kind, title: template.title, blurb: template.blurb, xp: template.xp, progress, goal: template.goal,
+    id, kind, title: template.title, blurb: template.blurb, xp: kind === 'milestone' ? 0 : TASK_XP[kind], progress, goal: template.goal,
     done, claimed, claimable: done && !claimed, href: template.href, pack: false,
   };
 }
@@ -647,6 +674,8 @@ function view(
 function ladderProgress(ladder: Ladder, context: MeasureContext): number {
   if (ladder.metric === 'streak') return context.streak.best;
   if (ladder.metric === 'profile') return Number(context.facts.hasBio) + Number(context.facts.hasTags);
+  if (ladder.metric === 'share') return context.facts.shares;
+  if (ladder.metric === 'refer') return context.facts.referredSales;
   return countIn(ladder.metric, 'milestone', context);
 }
 
@@ -656,7 +685,7 @@ function tasksFor(context: MeasureContext): TaskView[] {
 
   // Daily: the two that are always there, then today's two.
   tasks.push({
-    ...view(context, 'daily', { key: 'checkin', title: 'Check in', blurb: 'Open the vault and keep your streak alive.', metric: 'checkin', goal: 1, xp: 10, href: null }, true),
+    ...view(context, 'daily', { key: 'checkin', title: 'Check in', blurb: 'Open the vault and keep your streak alive.', metric: 'checkin', goal: 1, href: null }, true),
     id: 'daily-checkin',
   });
   const revealed = state.cards.some((card) => card.packId === `daily-${dayKey(now)}`);
@@ -687,7 +716,7 @@ function tasksFor(context: MeasureContext): TaskView[] {
       kind: 'milestone',
       title: `${ladder.name} ${ladder.steps.length > 1 ? ROMAN[index] ?? '' : ''}`.trim(),
       blurb: ladder.blurb(goal),
-      xp: ladder.xp[index] ?? 0,
+      xp: TIER_XP[index] ?? 0,
       progress: Math.min(goal, progress),
       goal,
       done,
@@ -886,27 +915,26 @@ export interface QuestView {
  * trades, not only how much.
  */
 function recordXp(facts: QuestFacts): XpLine[] {
-  const placed = facts.orders.length;
-  const delivered = facts.orders.filter((order) => order.status === 'delivered').length;
   const preOrders = facts.orders.filter((order) => order.preOrder).length;
   const stars = (value: number) => facts.ratingsReceived.filter((rating) => rating === value).length;
   const pageStars = (value: number) => facts.pageRatings.filter((rating) => rating === value).length;
-  const pagePenalty = Math.max(-100, pageStars(1) * -20 + pageStars(2) * -10);
+  const line = (label: string, count: number) => ({ label, xp: actionXp(count), detail: `${count} × ${ACTION_XP}, up to ${ACTION_CAP}` });
 
   return [
-    { label: 'Orders placed', xp: placed * 40, detail: `${placed} × 40` },
-    { label: 'Orders received', xp: delivered * 40, detail: `${delivered} × 40` },
-    { label: 'Pre-orders joined', xp: preOrders * 20 + Math.min(facts.pledges, 20) * 10, detail: `${preOrders} × 20 + ${Math.min(facts.pledges, 20)} pledges × 10` },
-    { label: 'Reviews written', xp: facts.reviewsWritten.length * 25, detail: `${facts.reviewsWritten.length} × 25` },
-    { label: 'Good ratings from sellers', xp: stars(5) * 20 + stars(4) * 10, detail: `${stars(5)} five-star × 20 + ${stars(4)} four-star × 10` },
-    { label: 'Collection items', xp: Math.min(facts.collection.length, 100) * 10, detail: `${facts.collection.length} × 10` },
-    { label: 'Items saved', xp: Math.min(facts.likes.length, 100) * 3, detail: `${facts.likes.length} × 3, up to 100` },
-    { label: 'Shops followed', xp: Math.min(facts.follows.length, 10) * 5, detail: `${facts.follows.length} × 5, up to 10` },
-    { label: 'Social posts', xp: Math.min(facts.posts.length, 50) * 10, detail: `${facts.posts.length} × 10, up to 50` },
-    { label: 'Wanted posts', xp: Math.min(facts.wants.length, 10) * 10, detail: `${facts.wants.length} × 10, up to 10` },
-    { label: 'Low ratings from sellers', xp: stars(2) * -30 + stars(1) * -60, detail: `${stars(2)} two-star × −30, ${stars(1)} one-star × −60` },
-    { label: 'Low page reviews', xp: pagePenalty, detail: `${pageStars(2)} two-star × −10, ${pageStars(1)} one-star × −20, at most −100` },
-    { label: 'Disputes lost', xp: facts.disputesLost * -80, detail: `${facts.disputesLost} × −80` },
+    line('Items shared with your link', facts.shares),
+    line('Sales through your links', facts.referredSales),
+    line('Orders placed', facts.orders.length),
+    line('Pre-orders joined', preOrders),
+    line('Reviews written', facts.reviewsWritten.length),
+    line('Good ratings from sellers', stars(5) + stars(4)),
+    line('Collection items', facts.collection.length),
+    line('Social posts', facts.posts.length),
+    line('Wanted posts', facts.wants.length),
+    line('Shops followed', facts.follows.length),
+    line('Items saved', facts.likes.length),
+    { label: 'Low ratings from sellers', xp: -(actionXp(stars(2)) + actionXp(stars(1), ACTION_XP * 2)), detail: `${stars(2)} two-star × −${ACTION_XP}, ${stars(1)} one-star × −${ACTION_XP * 2}` },
+    { label: 'Low page reviews', xp: -Math.min(5 * ACTION_XP, actionXp(pageStars(2), ACTION_XP / 2) + actionXp(pageStars(1))), detail: `${pageStars(2)} two-star × −${ACTION_XP / 2}, ${pageStars(1)} one-star × −${ACTION_XP}, at most −${5 * ACTION_XP}` },
+    { label: 'Disputes lost', xp: -actionXp(facts.disputesLost, ACTION_XP * 4), detail: `${facts.disputesLost} × −${ACTION_XP * 4}` },
   ];
 }
 
@@ -921,17 +949,9 @@ export function questView(
   const streak = streakOf(state.checkIns, now);
   const context: MeasureContext = { facts, state, streak, now };
 
-  // Check-in XP is counted per day with the streak it was part of, so a long
-  // streak keeps paying even after it breaks.
-  let checkIn = 0;
-  let run = 0;
-  let last: string | null = null;
-  const checkInDays = [...new Set(state.checkIns)].sort();
-  for (const day of checkInDays) {
-    run = last && previousDay(day) === last ? run + 1 : 1;
-    checkIn += checkInXp(run);
-    last = day;
-  }
+  // Every day checked in is one action; keeping a streak pays through On Fire.
+  const checkInDays = [...new Set(state.checkIns)];
+  const checkIn = checkInDays.length * ACTION_XP;
 
   // A claim whose quest has since been undone (the saves taken back) pays nothing.
   const standing = Object.keys(state.claimed).filter((key) => claimStands(key, context));
@@ -957,7 +977,7 @@ export function questView(
   const breakdown = [
     ...recordXp(facts),
     { label: 'Check-ins', xp: checkIn, detail: `${checkInDays.length} days, more for streaks` },
-    { label: 'Quests completed', xp: claimedXp + reveals * 15, detail: `${standing.length} claimed + ${reveals} reveals × 15` },
+    { label: 'Quests completed', xp: claimedXp + reveals * ACTION_XP, detail: `${standing.length} claimed + ${reveals} reveals × ${ACTION_XP}` },
     { label: 'Cards collected', xp: cardXp, detail: `${owned.length} cards by rarity` },
     { label: 'Card sets completed', xp: setsDone * SET_BONUS_XP, detail: `${setsDone} × ${SET_BONUS_XP}` },
   ].filter((line) => line.xp !== 0);

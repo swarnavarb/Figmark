@@ -8426,14 +8426,22 @@ body.is-locked { overflow: hidden; }
 
 .qcardface {
   --qc: #56637A; --qc-glow: transparent;
-  position: relative; display: grid; grid-template-rows: auto 1fr auto auto; justify-items: center;
-  text-align: center; overflow: hidden; border-radius: 12px; padding: 8px 6px;
-  border: 2px solid var(--qc); box-shadow: 0 0 16px -2px var(--qc-glow);
-  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--qh, var(--violet)) 28%, transparent), transparent 70%),
-    linear-gradient(170deg, #1A2134, #0E1320);
+  position: relative; display: grid; grid-template-rows: auto 1fr auto auto; justify-items: center; gap: 4px;
+  text-align: center; overflow: hidden; border-radius: 14px; padding: 10px 8px;
+  border: 2px solid var(--qc);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), 0 0 18px -2px var(--qc-glow), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--qh, var(--violet)) 34%, transparent), transparent 62%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px),
+    linear-gradient(170deg, #1C2440, #0B1020);
   color: var(--text);
 }
-.qcardface--md { width: 150px; aspect-ratio: 5 / 7; }
+/* An inner rule, like the printed border on a real trading card. */
+.qcardface::before {
+  content: ''; position: absolute; inset: 4px; border-radius: 10px; pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--qc) 55%, transparent);
+}
+.qcardface--md { width: 170px; aspect-ratio: 5 / 7; }
 .qcardface--sm { width: 100%; aspect-ratio: 5 / 7; padding: 6px 4px; }
 .qcardface--rare { --qc: var(--blue); --qc-glow: rgba(59, 130, 246, 0.45); }
 .qcardface--epic { --qc: var(--q-epic); --qc-glow: rgba(168, 85, 247, 0.55); }
@@ -8448,8 +8456,16 @@ body.is-locked { overflow: hidden; }
   color: var(--qc);
 }
 .qcardface--common .qcardface__rarity { color: var(--text-faint); }
-.qcardface__art { display: grid; place-items: center; color: var(--qh, var(--text)); align-self: center; }
-.qcardface__name { font-size: var(--t-xs); font-weight: var(--w-bold); line-height: 1.15; }
+.qcardface__art {
+  display: grid; place-items: center; align-self: center; width: 76%; aspect-ratio: 1; border-radius: 50%;
+  color: var(--qh, var(--text)); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--qh, var(--violet)) 60%, transparent));
+  background: radial-gradient(circle, color-mix(in srgb, var(--qh, var(--violet)) 22%, transparent), transparent 70%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--qh, var(--violet)) 35%, transparent);
+}
+.qcardface__name {
+  max-width: 100%; padding: 2px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.35);
+  font-size: var(--t-xs); font-weight: var(--w-bold); line-height: 1.15;
+}
 .qcardface--sm .qcardface__name { font-size: 10px; }
 .qcardface__set { font-size: 9px; color: var(--text-faint); }
 .qcardface--sm .qcardface__set { display: none; }
@@ -8620,7 +8636,7 @@ body.is-locked { overflow: hidden; }
 /* ── Collector game, part two: sheets, tiers, ratings, collection ──────── */
 
 /* Anything tappable in the game resets the button look it is built on. */
-.qcardface--tap, .qsticker--tap, .qshowcase, .qitem__open {
+.qcardface--tap, .qsticker--tap, .qshowcase {
   font: inherit; color: inherit; cursor: pointer; margin: 0;
 }
 .qcardface--tap { transition: transform var(--dur-1) var(--ease); }
@@ -8695,15 +8711,8 @@ body.is-locked { overflow: hidden; }
 .qready__name { width: 100%; font-weight: var(--w-semi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qshelves { margin-top: 2px; }
 .qshelves__manage { border-style: dashed; }
-.qitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.qitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 10px; }
 .qitem { position: relative; display: grid; gap: 6px; min-width: 0; }
-.qitem__open { display: block; padding: 0; border: 0; background: none; border-radius: 14px; overflow: hidden; }
-.thumb.qitem__thumb { aspect-ratio: 3 / 4; border-radius: 14px; overflow: hidden; border: 1.5px solid var(--border-strong); font-size: 20px; }
-.qitem__open:hover .qitem__thumb { border-color: var(--q-gold-line); }
-.qitem__count {
-  position: absolute; right: 6px; bottom: 6px; padding: 1px 6px; border-radius: 6px;
-  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; background: rgba(0, 0, 0, 0.6); color: #fff; text-shadow: none;
-}
 /* The name never makes the card grow: one line, a fixed height, and an
    ellipsis for whatever does not fit. */
 .qitem__name, .qitem__label {
@@ -10668,16 +10677,27 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 /* The one rating: a gold slab for a shop (as a seller), green for a person (as a buyer). */
 .rslab {
   --rs: 251, 191, 36;
-  position: relative; overflow: hidden; width: 100%; margin: 0 0 14px; padding: 14px 12px 14px 16px;
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 14px; align-items: center;
-  border-radius: var(--r-lg); border: 1px solid rgba(var(--rs), 0.3); color: inherit; font: inherit; text-align: left; cursor: pointer;
+  position: relative; overflow: hidden; margin: 0 0 14px; border-radius: var(--r-lg);
+  border: 1px solid rgba(var(--rs), 0.3);
   background: radial-gradient(120% 140% at 0% 0%, rgba(var(--rs), 0.16), transparent 55%), var(--surface);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
-  transition: transform 180ms var(--ease), border-color 180ms var(--ease);
+  transition: border-color 180ms var(--ease);
 }
+.rslab__top {
+  width: 100%; padding: 14px 12px 14px 16px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 14px; align-items: center;
+  transition: transform 180ms var(--ease);
+}
+.rslab__top:active { transform: scale(0.99); }
+/* The record that belongs with the rating, under it in the same slab. */
+.rslab__stats {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 12px;
+  border-top: 1px solid rgba(var(--rs), 0.18); background: rgba(0, 0, 0, 0.12);
+}
+.rslab__stats .qstat { padding: 8px 4px; background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.06); }
+.rslab__stats .qstat__value { font-size: var(--t-md); }
 .rslab--person { --rs: 52, 211, 153; }
 .rslab:hover { border-color: rgba(var(--rs), 0.6); }
-.rslab:active { transform: scale(0.99); }
 .rslab::after {
   content: ''; position: absolute; inset: 0; pointer-events: none; transform: translateX(-100%);
   background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.09) 50%, transparent 60%);
@@ -10767,7 +10787,13 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .slevel__count b { font-family: var(--ui); font-size: var(--t-xl); color: var(--q-gold); }
 .slevel__count small { font-size: 10px; color: var(--text-faint); }
 .slevel__stickers { margin-top: 0; padding-bottom: 2px; }
-.slevel__how { margin: 0; font-size: var(--t-2xs); }
+.slevel__how { font-size: var(--t-xs); }
+.slevel__how summary { cursor: pointer; color: var(--accent-text); font-weight: var(--w-semi); }
+.slevel__how p { margin: 8px 0; }
+.slevel__how ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.slevel__how li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); }
+.slevel__how li b { font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--q-gold); white-space: nowrap; }
+.slevel__how li.is-minus b { color: var(--coral); }
 
 /* The shelf: live first; sold out and expired wear a stamp. */
 .shelfcard { animation: lp-rise 500ms calc(var(--i) * 40ms) var(--ease) both; }
@@ -10794,4 +10820,86 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 @media (prefers-reduced-motion: reduce) {
   .rslab::after, .rslab__bars i, .rsheet__ring, .rsheet__track span, .slevel__ring, .shelfcard, .stamp > span,
   .pbtn--follow.is-on svg, .pskel__slab, .storefront__cover.pskel__cover, .rsheet__stat.is-loading { animation: none; }
+}
+
+/* ── Level chips, spinning sheets and the royal collection ─────────────── */
+
+/* A level beside a name: a shop's own, or the person's as a buyer. */
+.lvchip {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 1px 7px 1px 2px; vertical-align: 1px;
+  border-radius: var(--r-pill); font-family: var(--ui); font-size: 10px; font-weight: var(--w-semi); line-height: 16px; white-space: nowrap;
+  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+}
+.lvchip b {
+  display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px;
+  font-size: 9.5px; font-variant-numeric: tabular-nums; color: #fff; background: #56637A;
+}
+.lvchip--violet { color: var(--violet-text); border-color: rgba(139, 92, 246, 0.35); }
+.lvchip--violet b { background: var(--grad-blue); }
+.lvchip--gold { color: var(--q-gold); border-color: var(--q-gold-line); background: var(--q-gold-soft); }
+.lvchip--gold b { color: var(--q-gold-ink); background: linear-gradient(135deg, #FDE68A, #F5C542 50%, #B8860B); }
+
+/* A card or sticker on a turntable: spins in, spins on a tap or a swipe. */
+.spin { display: grid; justify-items: center; gap: 8px; perspective: 900px; touch-action: pan-y; user-select: none; cursor: grab; }
+.spin__turn { transform-style: preserve-3d; animation: spin-right 1000ms cubic-bezier(0.15, 0.75, 0.25, 1) both; }
+.spin__turn--left { animation-name: spin-left; }
+@keyframes spin-right { from { transform: rotateY(-720deg) scale(0.55); opacity: 0; } 25% { opacity: 1; } }
+@keyframes spin-left { from { transform: rotateY(720deg) scale(0.55); opacity: 0; } 25% { opacity: 1; } }
+.spin__hint { font-size: 10.5px; color: var(--text-faint); }
+
+/* The collection: each delivered item as a royal card, gilded in front, crested behind. */
+.royal { position: relative; perspective: 800px; animation: royal-in 800ms var(--ease) both; }
+@keyframes royal-in { from { transform: rotateY(-120deg) scale(0.85); opacity: 0; } }
+.royal__card {
+  position: relative; display: block; width: 100%; aspect-ratio: 5 / 7; padding: 0; border: 0; background: none; cursor: pointer;
+  transform-style: preserve-3d; transition: transform 700ms cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+.royal.is-flipped .royal__card { transform: rotateY(180deg); }
+.royal__face { position: absolute; inset: 0; border-radius: 12px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.royal__front {
+  display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 4px; padding: 5px;
+  background: linear-gradient(135deg, #7A5A12, #F7E08A 22%, #B8860B 48%, #FFF3B0 70%, #8A6A1F);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 244, 200, 0.6);
+}
+.royal__front::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%);
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.4) 45%, transparent 60%);
+  animation: royal-sheen 5s 1s ease-in-out infinite;
+}
+@keyframes royal-sheen { 35%, 100% { transform: translateX(120%); } }
+.royal__frame { position: relative; overflow: hidden; border-radius: 8px; box-shadow: inset 0 0 0 1.5px #3B2A05; }
+.royal__frame::after {
+  content: ''; position: absolute; inset: 3px; border-radius: 6px; pointer-events: none;
+  border: 1px solid rgba(255, 230, 150, 0.75); box-shadow: inset 0 0 14px rgba(59, 42, 5, 0.6);
+}
+.thumb.royal__thumb { width: 100%; height: 100%; border-radius: 0; font-size: 16px; }
+.royal__plate {
+  padding: 1px 4px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
+  font-family: Georgia, 'Times New Roman', serif; font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #2A1D00;
+}
+.royal__back {
+  transform: rotateY(180deg); display: grid; place-content: center; justify-items: center; gap: 6px; padding: 10px; text-align: center;
+  border: 2px solid #D4AF37;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(245, 197, 66, 0.28), transparent 58%),
+    repeating-conic-gradient(from 0deg at 50% 38%, rgba(245, 197, 66, 0.07) 0 9deg, transparent 9deg 18deg),
+    linear-gradient(160deg, #3B0764, #1E1B4B 60%, #0B0F1E);
+  box-shadow: inset 0 0 0 4px #1E1B4B, inset 0 0 0 5px rgba(212, 175, 55, 0.7), 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+.royal__crest { font-size: 26px; line-height: 1; color: #F5C542; text-shadow: 0 0 12px rgba(245, 197, 66, 0.7); }
+.royal__name {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+  font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: 13px; line-height: 1.25; color: #FDE68A;
+}
+.royal__date { font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(253, 230, 138, 0.7); }
+.royal__zoom {
+  position: absolute; top: 9px; right: 9px; z-index: 2; display: inline-flex; align-items: center; gap: 2px; height: 22px; padding: 0 6px;
+  border-radius: var(--r-pill); border: 1px solid rgba(255, 236, 170, 0.6); background: rgba(20, 14, 0, 0.62); color: #FDE68A; cursor: pointer;
+  font-family: var(--ui); font-size: 9.5px; transition: opacity 200ms var(--ease);
+}
+.royal.is-flipped .royal__zoom { opacity: 0; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spin__turn, .royal, .royal__front::after { animation: none; }
+  .royal__card { transition: none; }
 }

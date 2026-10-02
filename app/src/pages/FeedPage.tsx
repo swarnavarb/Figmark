@@ -7,7 +7,7 @@ import {
 import { preOrderView } from '@shared/preorder';
 import { sourcingOf } from '@shared/fulfilment';
 import { api, type FeedListing, type FeedResponse } from '../api';
-import { EmptyState, ErrorNotice, Icon, Thumb, TrustBadge, leadPhoto } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { FillGap, FillKey, FillMeter } from '../components/FillMeter';
 import { formatMoney, timeAgo } from '../format';
@@ -368,6 +368,7 @@ function ListingCard({ listing }: { listing: FeedListing }) {
         <div className="listing__foot">
           <span className="faint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {listing.seller?.storefrontName ?? 'Unknown seller'}
+            <LevelChip tag={listing.seller?.level} />
           </span>
           {listing.seller && <TrustBadge score={listing.seller.trustScore} tier={listing.seller.tier} />}
         </div>

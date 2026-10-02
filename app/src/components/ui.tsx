@@ -224,17 +224,34 @@ export function Modal({ title, onClose, children }: {
  * Which page it opens is decided by whoever built the reference, not here: a
  * seller's name carries the shop's handle, a buyer's carries the person's.
  */
-export function PersonLink({ party, className, children }: {
-  party: { name: string; handle: string | null } | null | undefined;
+export function PersonLink({ party, className, children, bare }: {
+  party: { name: string; handle: string | null; level?: { level: number; title: string } } | null | undefined;
   className?: string;
   children?: ReactNode;
+  /** Leave the level chip off, where the name sits inside something that already shows it. */
+  bare?: boolean;
 }) {
   if (!party) return null;
   const label = children ?? party.name;
-  if (!party.handle) return <span className={className}>{label}</span>;
+  const chip = !bare && party.level ? <LevelChip tag={party.level} /> : null;
+  if (!party.handle) return <span className={className}>{label}{chip}</span>;
   return (
-    <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>
-      {label}
-    </Link>
+    <>
+      <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>
+        {label}
+      </Link>
+      {chip}
+    </>
+  );
+}
+
+/** A level and its title, beside a name: a shop's own, or the person's as a buyer. */
+export function LevelChip({ tag }: { tag: { level: number; title: string } | null | undefined }) {
+  if (!tag) return null;
+  const tone = tag.level >= 8 ? 'gold' : tag.level >= 4 ? 'violet' : 'plain';
+  return (
+    <span className={`lvchip lvchip--${tone}`} title={`Level ${tag.level} · ${tag.title}`}>
+      <b>{tag.level}</b>{tag.title}
+    </span>
   );
 }

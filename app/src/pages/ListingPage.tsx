@@ -237,7 +237,7 @@ export function ListingPage() {
                 <div className="sellercard__who">
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
-                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username }} className="sellercard__name" />
+                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" />
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
                 <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>

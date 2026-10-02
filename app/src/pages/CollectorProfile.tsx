@@ -123,15 +123,12 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
 
         {person.bio && <Bio text={person.bio} />}
 
-        {page && <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} />}
-
         {error && <ErrorNotice message={error} />}
 
-        {!stats || !collector ? (
-          <SkeletonText lines={3} />
-        ) : (
-          <>
-            <div className="qstats">
+        {page && (
+          <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)}>
+            {stats ? (
+              <>
               <Stat label="Orders completed" value={String(stats.completed)} sub={`of ${stats.orders} placed`} />
               <Stat label="Disputes won" tone="ok" value={String(stats.disputesWon)}
                 sub={stats.disputesOpen ? `${stats.disputesOpen} open` : stats.disputesSettled ? `${stats.disputesSettled} settled` : 'none open'} />
@@ -139,8 +136,15 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
               <Stat label="Reviews written" value={String(stats.reviewsWritten)} sub="after orders" />
               <Stat label="Pre-orders" value={String(stats.preOrders)} sub="joined" />
               <Stat label="Following" value={String(stats.following)} sub="shops" />
-            </div>
+              </>
+            ) : <SkeletonText lines={2} />}
+          </RatingSlab>
+        )}
 
+        {!collector ? (
+          <SkeletonText lines={3} />
+        ) : (
+          <>
             <button type="button" className="qshowcase" onClick={() => setShowcase('cards')}
               aria-label="Open the showcase: every card and sticker">
               <span className="qpanel__head">
@@ -238,7 +242,7 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
   }
 
   async function add(candidate: CollectionCandidate) {
-    const ok = await run(() => api.collectionAdd(candidate.orderId, undefined, filter !== 'all' && filter !== 'none' ? filter : null), 'Added to your collection · +10 XP');
+    const ok = await run(() => api.collectionAdd(candidate.orderId, undefined, filter !== 'all' && filter !== 'none' ? filter : null), 'Added to your collection · +20 XP');
     if (ok) setCandidates((list) => list.filter((entry) => entry.orderId !== candidate.orderId));
   }
 
@@ -379,6 +383,7 @@ function ItemCard({ item, isMe, groups, onOpen, onRename, onMove, onRemove }: {
 }) {
   const [name, setName] = useState(item.name);
   const [menu, setMenu] = useState(false);
+  const [flipped, setFlipped] = useState(false);
   useEffect(() => setName(item.name), [item.name]);
 
   async function commit() {
@@ -392,11 +397,26 @@ function ItemCard({ item, isMe, groups, onOpen, onRename, onMove, onRemove }: {
 
   return (
     <div className="qitem">
-      <button type="button" className="qitem__open" onClick={onOpen} aria-label={`Open photos of ${item.name}`}>
-        <Thumb seed={item.listingId} label={item.name} photo={item.photos[0] ? { url: item.photos[0] } : null} className="thumb qitem__thumb">
-          {item.photos.length > 1 && <span className="qitem__count">{item.photos.length}</span>}
-        </Thumb>
-      </button>
+      {/* A royal card: the item in a gilded frame, its name engraved on the back. Tap to turn it over. */}
+      <div className={`royal${flipped ? ' is-flipped' : ''}`}>
+        <button type="button" className="royal__card" onClick={() => setFlipped(!flipped)}
+          aria-label={`Turn over ${item.name}`} aria-pressed={flipped}>
+          <span className="royal__face royal__front">
+            <span className="royal__frame">
+              <Thumb seed={item.listingId} label={item.name} photo={item.photos[0] ? { url: item.photos[0] } : null} className="thumb royal__thumb" />
+            </span>
+            <span className="royal__plate">{item.name}</span>
+          </span>
+          <span className="royal__face royal__back">
+            <span className="royal__crest" aria-hidden="true">♛</span>
+            <span className="royal__name">{item.name}</span>
+            <span className="royal__date">Delivered {formatDate(item.deliveredAt)}</span>
+          </span>
+        </button>
+        <button type="button" className="royal__zoom" onClick={onOpen} aria-label={`Open photos of ${item.name}`}>
+          <Glyph name="card" size={12} />{item.photos.length > 1 && <small>{item.photos.length}</small>}
+        </button>
+      </div>
       {isMe ? (
         <input className="qitem__name" value={name} maxLength={60} aria-label="Card name"
           onChange={(event) => setName(event.target.value)}

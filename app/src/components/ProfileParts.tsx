@@ -12,7 +12,7 @@ import { EarnPill, earnOf } from './Affiliate';
 import { SkeletonText, useToast } from './Feedback';
 import { Icon } from './Icon';
 import { StarRow } from './ListingBlocks';
-import { LevelRing, Sticker, StickerSheet, XpBar } from './Quest';
+import { LevelRing, Sticker, StickerSheet, XpBar, along } from './Quest';
 import { ReportButton } from './ReportButton';
 import { Avatar, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from './ui';
 
@@ -151,27 +151,36 @@ const stars = (average: number | null) => (average === null ? null : average / 2
  * Ratings after a trade and ratings left on the page, as one figure. A shop's
  * is as a seller and a person's as a buyer; tapping it shows what it is made of.
  */
-export function RatingSlab({ rating, side, onOpen }: { rating: MergedRating; side: PageSide; onOpen: () => void }) {
+export function RatingSlab({ rating, side, onOpen, children }: {
+  rating: MergedRating;
+  side: PageSide;
+  onOpen: () => void;
+  /** The record that sits with the rating: a buyer's orders, disputes and the rest. */
+  children?: ReactNode;
+}) {
   const score = stars(rating.average);
   const most = Math.max(1, ...rating.stars);
   return (
-    <button type="button" className={`rslab rslab--${side}`} onClick={onOpen}
-      aria-label={`${side === 'store' ? 'Seller' : 'Buyer'} rating ${score?.toFixed(1) ?? 'unrated'}. Show details`}>
-      <span className="rslab__score">
-        <b>{score?.toFixed(1) ?? '—'}</b>
-        <StarRow value={score ?? 0} size={13} />
-      </span>
-      <span className="rslab__mid">
-        <b>{gradeFor(rating.average)} <span>{side === 'store' ? 'seller' : 'buyer'}</span></b>
-        <small>{rating.count ? `${rating.count} ${rating.count === 1 ? 'rating' : 'ratings'} · orders and page` : 'No ratings yet'}</small>
-      </span>
-      <span className="rslab__bars" aria-hidden="true">
-        {rating.stars.map((count, i) => (
-          <i key={i} style={{ ['--h' as string]: `${(count / most) * 100}%`, ['--i' as string]: i }} />
-        ))}
-      </span>
-      <span className="rslab__open" aria-hidden="true"><Icon name="right" size={16} /></span>
-    </button>
+    <section className={`rslab rslab--${side}`}>
+      <button type="button" className="rslab__top" onClick={onOpen}
+        aria-label={`${side === 'store' ? 'Seller' : 'Buyer'} rating ${score?.toFixed(1) ?? 'unrated'}. Show details`}>
+        <span className="rslab__score">
+          <b>{score?.toFixed(1) ?? '—'}</b>
+          <StarRow value={score ?? 0} size={13} />
+        </span>
+        <span className="rslab__mid">
+          <b>{gradeFor(rating.average)} <span>{side === 'store' ? 'seller' : 'buyer'}</span></b>
+          <small>{rating.count ? `${rating.count} ${rating.count === 1 ? 'rating' : 'ratings'} · orders and page` : 'No ratings yet'}</small>
+        </span>
+        <span className="rslab__bars" aria-hidden="true">
+          {rating.stars.map((count, i) => (
+            <i key={i} style={{ ['--h' as string]: `${(count / most) * 100}%`, ['--i' as string]: i }} />
+          ))}
+        </span>
+        <span className="rslab__open" aria-hidden="true"><Icon name="right" size={16} /></span>
+      </button>
+      {children && <div className="rslab__stats">{children}</div>}
+    </section>
   );
 }
 
@@ -297,7 +306,8 @@ function RatingPart({ icon, title, sub, part }: {
 export function StoreLevelCard({ level, stickers }: { level: StoreLevel; stickers: StickerView[] }) {
   const [open, setOpen] = useState<StickerView | null>(null);
   const earned = stickers.filter((sticker) => sticker.earned).length;
-  const sorted = [...stickers].sort((a, b) => Number(b.earned) - Number(a.earned) || b.tier - a.tier);
+  // In the order the server gave: earned first, Trusted and Top rated leading.
+  const sorted = stickers;
   return (
     <section className="slevel">
       <div className="slevel__head">
@@ -314,8 +324,24 @@ export function StoreLevelCard({ level, stickers }: { level: StoreLevel; sticker
       <div className="qstickers qstickers--row slevel__stickers">
         {sorted.map((sticker) => <Sticker key={sticker.id} sticker={sticker} onOpen={() => setOpen(sticker)} />)}
       </div>
-      <p className="faint slevel__how">Levels and stickers come from sales, ratings, followers and time open, never from anything a shop can post.</p>
-      {open && <StickerSheet sticker={open} whose="theirs" onClose={() => setOpen(null)} />}
+      <details className="slevel__how">
+        <summary>How levels work</summary>
+        <p className="faint">
+          Shops and buyers level on the same scale, and every way of earning pays the same: 20 XP per action
+          (up to 100 of each kind) and the same amount per sticker step. Marketing - affiliate sales, followers,
+          channel posts - counts first.
+        </p>
+        <ul>
+          {level.breakdown.map((line) => (
+            <li key={line.label} className={line.xp < 0 ? 'is-minus' : ''}>
+              <span>{line.label}<small className="faint"> · {line.detail}</small></span>
+              <b>{line.xp > 0 ? '+' : ''}{line.xp}</b>
+            </li>
+          ))}
+        </ul>
+      </details>
+      {open && <StickerSheet sticker={open} whose="theirs" onClose={() => setOpen(null)}
+        onSwipe={(dir) => setOpen(along(sorted, open, dir, (a, b) => a.id === b.id))} />}
     </section>
   );
 }

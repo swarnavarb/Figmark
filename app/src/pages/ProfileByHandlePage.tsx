@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type PublicProfile, type ShelfState } from '../api';
+import { ApiRequestError, api, type ChannelThread, type PublicProfile, type ShelfState } from '../api';
+import { SocialPostCard } from '../components/SocialPost';
 import { SkeletonText } from '../components/Feedback';
-import { Avatar, EmptyState, ErrorNotice } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, LevelChip } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
 import { useSession } from '../session';
 import { Canopy } from '../components/ListingBlocks';
 import {
-  Bio, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
+  Bio, FollowButton, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
 } from '../components/ProfileParts';
 import { CollectorProfile } from './CollectorProfile';
 
@@ -20,7 +21,7 @@ import { CollectorProfile } from './CollectorProfile';
  * - a banner, who they are, one rating, its level and milestones, then the
  * shelf, live items first. Everything comes back in one request.
  */
-type Tab = 'items' | 'reviews';
+type Tab = 'items' | 'feed' | 'reviews';
 type Shelf = 'all' | ShelfState;
 
 export function ProfileByHandlePage() {
@@ -118,6 +119,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
               <span className="faint">@{data.handle}</span>
               <span className="badge badge--accent">shop</span>
+              <LevelChip tag={data.levelTag} />
               {data.tier && <span className="badge">{data.tier}</span>}
             </div>
             <p className="faint" style={{ margin: 0 }}>
@@ -161,12 +163,17 @@ function Storefront({ data, isMe, onFollow, reload }: {
           <button type="button" className={`tab${tab === 'items' ? ' is-on' : ''}`} onClick={() => setTab('items')}>
             Items {data.counts.listings}
           </button>
+          <button type="button" className={`tab${tab === 'feed' ? ' is-on' : ''}`} onClick={() => setTab('feed')}>
+            Feed
+          </button>
           <button type="button" className={`tab${tab === 'reviews' ? ' is-on' : ''}`} onClick={() => setTab('reviews')}>
             Reviews {data.rating.count}
           </button>
         </div>
 
-        {tab === 'reviews' ? (
+        {tab === 'feed' ? (
+          <ShopFeed shopId={data.sellerId} following={data.following} onFollow={onFollow} />
+        ) : tab === 'reviews' ? (
           <ReviewsTab profile={data} canWrite={!isMe} onWritten={reload} />
         ) : data.listings.length === 0 ? (
           <EmptyState title="Nothing listed yet">
@@ -194,6 +201,42 @@ function Storefront({ data, isMe, onFollow, reload }: {
         <RatingSheet profile={data} rating={data.rating} onClose={() => setRatingOpen(false)} onReviews={() => setTab('reviews')} />
       )}
     </main>
+  );
+}
+
+/**
+ * What the shop posts to its channel. A channel is for its followers, so
+ * anybody else sees how much is behind the door and a way in.
+ */
+function ShopFeed({ shopId, following, onFollow }: {
+  shopId: string;
+  following: boolean;
+  onFollow: (following: boolean, followers?: number) => void;
+}) {
+  const { user, gate } = useSession();
+  const [thread, setThread] = useState<ChannelThread | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    setThread(null);
+    void api.channelThread(shopId).then(setThread).catch(() => setThread(null));
+  }, [shopId, user, following]);
+
+  if (!user || thread?.locked) {
+    return (
+      <EmptyState title={thread ? `${thread.channel.postCount ?? 0} posts for followers` : 'Posts for followers'}>
+        Drops, restocks and news go to the shop's followers first.{' '}
+        {user
+          ? <FollowButton id={shopId} following={following} onChange={onFollow} />
+          : <button type="button" className="pbtn pbtn--follow" onClick={gate(() => undefined, 'Sign in to see the shop feed.')}>Sign in</button>}
+      </EmptyState>
+    );
+  }
+  if (!thread) return <SkeletonText lines={3} />;
+  if (thread.posts.length === 0) return <EmptyState title="Nothing posted yet">When the shop posts, it shows up here.</EmptyState>;
+  return (
+    <div className="stack">
+      {thread.posts.map((card) => <SocialPostCard key={card.post.id} card={card} />)}
+    </div>
   );
 }
 

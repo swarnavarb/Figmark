@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
 import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
-import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
+import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefront.js';
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulfilment.js';
 import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
@@ -29,6 +29,7 @@ function toSellerCard(user: User) {
     id: user.id,
     displayName: user.displayName,
     storefrontName: user.sellerProfile?.storefrontName ?? user.displayName,
+    level: storeTag(user.sellerProfile?.levelCache),
     storefrontSlug: user.sellerProfile?.storefrontSlug ?? null,
     // The shop's own handle: where its page is, and where a message to it goes.
     username: user.sellerProfile?.username ?? null,

@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
 import type { Listing, Message, MessageDeal, MessageParty, User } from '../../../shared/models.js';
-import { reviewRevealed } from '../../../shared/orders.js';
-import { mergedRating, personFollowId, reviewSide, storeLevel, storeStickers } from '../../../shared/storefront.js';
+import { isCancelledLike, isPlaced, reviewRevealed } from '../../../shared/orders.js';
+import {
+  buyerTag, mergedRating, personFollowId, reviewSide, storeLevel, storeStickers, storeTag, type StoreFacts,
+} from '../../../shared/storefront.js';
 import { moderation } from '../moderation.js';
 import { accessFor } from '../../../shared/stores.js';
 import { isReaction } from '../../../shared/social.js';
@@ -100,6 +102,7 @@ async function partyFor(username: string, repository: Repo): Promise<MessagePart
     userId: user.id,
     isStore,
     displayName: isStore ? (user.sellerProfile?.storefrontName ?? user.displayName) : user.displayName,
+    level: isStore ? storeTag(user.sellerProfile?.levelCache) : buyerTag(user.quest?.levelCache),
   };
 }
 
@@ -147,6 +150,18 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
   });
 
   rows.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  // The names are snapshots; their levels are read fresh, in one batch.
+  const people = new Map((await repository.listUsersByIds([...new Set(rows.map((row) => row.them.userId))]))
+    .map((person: User) => [person.id, person]));
+  for (const row of rows) {
+    const person = people.get(row.them.userId);
+    if (person) {
+      row.them = {
+        ...row.them,
+        level: row.them.isStore ? storeTag(person.sellerProfile?.levelCache) : buyerTag(person.quest?.levelCache),
+      };
+    }
+  }
   return json(200, { handles: mine, threads: rows });
 }
 
@@ -340,7 +355,7 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
   const auth = await getAuthService();
   // Everything the page needs in one round trip: the shelf, the rating the
   // slab shows, and whether this viewer follows it.
-  const [viewer, all, tradeReviews, pageReviews, moderated] = await Promise.all([
+  const [viewer, all, tradeReviews, pageReviews, moderated, sales, posts] = await Promise.all([
     auth.getCurrentUser(request),
     // Every item they have put up, not one page of it, including what sold
     // out or ran out of time: the shelf shows those too, stamped.
@@ -348,6 +363,10 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     repository.listReviewsAbout(user.id),
     repository.listStoreReviews(user.id),
     moderation(repository),
+    // A shop's level counts what it did to bring people in: sales through
+    // affiliate links and what it posted to its followers.
+    isStore ? repository.listOrdersForSeller(user.id) : Promise.resolve([]),
+    isStore ? repository.listPosts(user.id, 200) : Promise.resolve([]),
   ]);
   const following = viewer
     ? (await repository.listFollowsBy(viewer.id)).some((follow) => follow.sellerId === followId)
@@ -382,17 +401,29 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
   const count = (state: string) => listings.filter((entry) => entry.state === state).length;
   const followerCount = isStore ? (shop?.followerCount ?? 0) : (user.followerCount ?? 0);
 
-  const facts = {
+  const facts: StoreFacts = {
     completedSales: user.sellerTrust.completedTransactions,
+    affiliateSales: sales.filter((order) => order.affiliate && isPlaced(order) && !isCancelledLike(order.status)).length,
+    affiliateItems: listings.filter(({ listing, state }) => state === 'active' && listing.affiliate).length,
+    posts: posts.length,
     followers: followerCount,
+    likes: listings.reduce((sum, { listing }) => sum + listing.likeCount, 0),
     ratingAverage: rating.average,
     ratingCount: rating.count,
+    stars: rating.stars,
     listings: listings.length,
     soldOut: count('sold'),
     trust: user.sellerTrust.score,
     preOrders: all.filter((listing) => listing.preOrder).length,
+    disputesLost: user.sellerTrust.disputesLost,
     ageDays: Math.floor((now - Date.parse(user.createdAt)) / 86_400_000),
   };
+  const level = isStore ? storeLevel(facts) : null;
+  // Kept on the account so every name elsewhere can wear it without a recount.
+  if (level && shop && shop.levelCache !== level.level) {
+    shop.levelCache = level.level;
+    await repository.updateUser(user);
+  }
 
   return json(200, {
     handle: handle.toLowerCase(),
@@ -413,8 +444,10 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     sellerId: user.id,
     // The same Trust a listing's "Posted by" card shows, so the two never disagree.
     trustScore: isStore ? user.sellerTrust.score : null,
-    level: isStore ? storeLevel(facts) : null,
+    level,
     stickers: isStore ? storeStickers(facts) : [],
+    // The level and title shown beside the name: a shop's own, or the buyer's.
+    levelTag: isStore ? storeTag(level?.level) : buyerTag(user.quest?.levelCache),
     memberSince: user.createdAt,
     lastSeenAt: user.lastSeenAt ?? null,
     /** What the tabs and chips count, so neither has to guess. */

@@ -1,4 +1,5 @@
 import type { User } from './models.js';
+import { buyerTag, storeTag, type LevelTag } from './storefront.js';
 
 /**
  * Somebody named on a screen, and the page that name opens.
@@ -18,6 +19,8 @@ import type { User } from './models.js';
 export interface PartyRef {
   name: string;
   handle: string | null;
+  /** Their level and its title - a shop's own, or the person's as a buyer. */
+  level?: LevelTag;
 }
 
 /** How they are named and addressed as a seller: the shop, not the person. */
@@ -27,6 +30,7 @@ export function sellerRef(
 ): PartyRef {
   if (!user) return { name: fallback, handle: null };
   return {
+    level: storeTag(user.sellerProfile?.levelCache),
     name: user.sellerProfile?.storefrontName ?? user.displayName,
     // A shop without its own handle is still reachable through its owner's,
     // which is a worse address but a real one.
@@ -42,9 +46,9 @@ export function sellerRef(
  * one of them pushes that disagreement out to every call site.
  */
 export function personRef(
-  user: { displayName: string; username?: string | null } | null | undefined,
+  user: { displayName: string; username?: string | null; quest?: User['quest'] } | null | undefined,
   fallback = 'Someone',
 ): PartyRef {
   if (!user) return { name: fallback, handle: null };
-  return { name: user.displayName, handle: user.username ?? null };
+  return { name: user.displayName, handle: user.username ?? null, level: buyerTag(user.quest?.levelCache) };
 }

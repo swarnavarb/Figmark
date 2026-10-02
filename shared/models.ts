@@ -333,6 +333,8 @@ export interface SellerProfile {
    * because they are scanned, not read, and a paragraph gets skipped.
    */
   tags?: string[];
+  /** The shop's level as last worked out, so names elsewhere can show it without a recount. */
+  levelCache?: number;
 }
 
 /**
@@ -1942,6 +1944,8 @@ export interface MessageParty {
   isStore: boolean;
   /** Snapshot of the name shown, so a thread renders without a lookup. */
   displayName: string;
+  /** Their level beside the name, read fresh when the party is looked up. */
+  level?: { level: number; title: string };
 }
 
 export interface Message extends BaseDocument {
