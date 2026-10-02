@@ -13,7 +13,8 @@ import { api, type FeedListing } from '../api';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import {
-  DemandRail, EndingRail, FEED_VIEW_TITLES, demandPicks, endingPicks, isFeedView,
+  DemandRail, EarnRail, EndingRail, FEED_VIEW_TITLES, PreOrderRail, demandPicks, earnPicks, endingPicks, isFeedView,
+  preOrderPicks,
 } from '../components/FeedRails';
 import { SkeletonGrid } from '../components/Feedback';
 import {
@@ -63,12 +64,16 @@ export function QuestFeedPage() {
   const feedView = isFeedView(viewParam) ? viewParam : null;
   const demand = useMemo(() => demandPicks(rated), [rated]);
   const endingSoon = useMemo(() => endingPicks(rated, now), [rated, now]);
-  const base = feedView === 'demand' ? demand : feedView === 'ending' ? endingSoon : rated;
+  const earn = useMemo(() => earnPicks(rated), [rated]);
+  const preOrders = useMemo(() => preOrderPicks(rated), [rated]);
+  const base = feedView ? { demand, ending: endingSoon, earn, preorder: preOrders }[feedView] : rated;
   const shown = rarityFilter ? base.filter((listing) => listing.rarity.tier === rarityFilter) : base;
-  // The shelves sit in the grid after the 4th and the 8th card, or after the
-  // last one when there are fewer.
+  // The shelves sit in the grid after every 4th card, or after the last one
+  // when there are fewer.
   const demandAt = Math.min(3, shown.length - 1);
   const endingAt = Math.min(7, shown.length - 1);
+  const earnAt = Math.min(11, shown.length - 1);
+  const preOrderAt = Math.min(15, shown.length - 1);
 
   const filling = rated
     .filter((listing) => listing.preOrder && !listing.preOrder.closedAt)
@@ -195,6 +200,8 @@ export function QuestFeedPage() {
               <LootCard listing={listing} />
               {browsing && n === demandAt && <DemandRail listings={demand} />}
               {browsing && n === endingAt && <EndingRail listings={endingSoon} now={now} />}
+              {browsing && n === earnAt && <EarnRail listings={earn} />}
+              {browsing && n === preOrderAt && <PreOrderRail listings={preOrders} now={now} />}
             </Fragment>
           ))}
         </div>
