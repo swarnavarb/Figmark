@@ -2,7 +2,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
-import { currentStepOf, lotEndIndex, lotNumberFrom, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
+import { currentStepOf, lotEndIndex, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
@@ -366,7 +366,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   const lotNextFor = (lot: Awaited<ReturnType<typeof repository.getLot>>) => {
     if (!lot || lot.status === 'closed') return null;
     const route = routeOf(lot);
-    const to = currentStepOf(lot) + 1;
+    /* Never into the half before the lot's own: a lot sitting further back
+       than "filling" moves onto its own first step. */
+    const to = Math.max(currentStepOf(lot) + 1, lotOffset(route));
     const step = route.steps[to];
     if (!step || to > lotEndIndex(route)) return null;
     const gateAt = route.steps.findIndex((entry) => entry.trigger === 'china_received');

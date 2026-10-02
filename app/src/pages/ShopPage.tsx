@@ -1053,6 +1053,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       row={row}
       store={store}
       from={here}
+      inLot={Boolean(lotId)}
       glowing={glowing === row.id}
       busy={busy === row.id}
       needsAnswer={needsAnswer.has(row.id)}
@@ -1091,7 +1092,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     <div className="stack">
       {error && <ErrorNotice message={error} />}
 
-      {lotId && <LotPulse rows={book} toAnswer={book.filter((row) => needsAnswer.has(row.id)).length} />}
+      {lotId && <LotPulse rows={book} />}
 
       {/* Three big tiles for where orders are, each in its own colour, then
           chips for what an active order needs - the one that needs the
@@ -1197,7 +1198,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
  * money still out, how far along the route the orders have got step by step,
  * and which couriers took the ones already sent.
  */
-function LotPulse({ rows, toAnswer }: { rows: readonly SaleRow[]; toAnswer: number }) {
+function LotPulse({ rows }: { rows: readonly SaleRow[] }) {
   const live = rows.filter((row) => !isClosed(row));
   const people = new Set(live.map((row) => row.buyer.handle ?? `name:${row.buyer.name}`)).size;
   const units = live.reduce((sum, row) => sum + row.quantity, 0);
@@ -1226,19 +1227,20 @@ function LotPulse({ rows, toAnswer }: { rows: readonly SaleRow[]; toAnswer: numb
         <div className="lpulse__stat"><b>{people}</b><small>{people === 1 ? 'Customer' : 'Customers'}</small></div>
         <div className="lpulse__stat"><b>{live.length}</b><small>{live.length === 1 ? 'Order' : 'Orders'}</small></div>
         <div className="lpulse__stat"><b>{units}</b><small>Units</small></div>
-        <div className={`lpulse__stat${toAnswer > 0 ? ' is-hot' : ''}`}><b>{toAnswer}</b><small>To answer</small></div>
       </div>
 
       <div className="lpulse__money">
         <div><small>Order value</small><b>{money((row) => row.totalMinor)}</b></div>
         <div><small>Paid</small><b>{money((row) => Math.min(row.paidMinor, row.totalMinor))}</b></div>
         <div className={pendingCount > 0 ? 'is-due' : 'is-clear'}>
-          <small>Pending · {pendingCount} {pendingCount === 1 ? 'order' : 'orders'}</small>
+          <small>Pending{pendingCount > 0 ? ` · ${pendingCount}` : ''}</small>
           <b>{money((row) => row.outstandingMinor)}</b>
         </div>
       </div>
 
       {steps.length > 0 && live.length > 0 && (
+        <>
+        <h3 className="lpulse__title">Orders at each step</h3>
         <ol className="lpulse__route">
           {steps.map((step, index) => {
             const share = Math.round((step.done / live.length) * 100);
@@ -1253,6 +1255,7 @@ function LotPulse({ rows, toAnswer }: { rows: readonly SaleRow[]; toAnswer: numb
             );
           })}
         </ol>
+        </>
       )}
 
       {couriers.size > 0 && (
@@ -1333,7 +1336,8 @@ function CustomerOrders({ customer, children }: { customer: CustomerGroup; child
           </span>
         </div>
       </header>
-      {live.length > 0 && (
+      {/* All paid says itself in the badge; the breakdown is for when money is still out. */}
+      {live.length > 0 && pending > 0 && (
         <div className="ocust__money">
           <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
           <div className="ocust__sums">
@@ -1680,7 +1684,7 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, glowing, busy, needsAnswer, undoable, onPress, onLotTracking, onFile, onReject,
+  index, row, store, from, inLot = false, glowing, busy, needsAnswer, undoable, onPress, onLotTracking, onFile, onReject,
   onAccept, onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -1688,6 +1692,11 @@ function OrderRow({
   store: StoreAccess;
   /** Where this list is, so the order page can come back to exactly here. */
   from: string;
+  /**
+   * Drawn inside its own lot, under its customer's head: the buyer and the
+   * lot are already said above it, so the card does not say them again.
+   */
+  inLot?: boolean;
   glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
@@ -1704,12 +1713,13 @@ function OrderRow({
   onSettleDenied: () => void;
 }) {
   const awaitingClaim = Boolean(row.claim && row.claim.decision === null);
-  const lotHref = row.lotId
-    ? `/lot/${row.lotId}${store.isOwner ? '' : `?store=${encodeURIComponent(store.ownerId)}`}`
-    : null;
+  /* The lot's own page, the same place its Lot button on the route line opens. */
+  const lotHref = row.lotId ? `/shop?tab=lots&lot=${encodeURIComponent(row.lotId)}` : null;
   /* Something to press: not called off, and not a booking still waiting to be taken on. */
   const working = !isClosed(row) && !(row.bookingOnly && !row.accepted);
   const { tone, label } = orderTone(row, needsAnswer);
+  /* Fully paid and nothing extra: the badge says it, the bar would only repeat it. */
+  const settled = row.outstandingMinor <= 0 && row.paidMinor > 0 && row.creditMinor <= 0;
   const paidShare = row.totalMinor > 0 ? Math.min(100, Math.round((row.paidMinor / row.totalMinor) * 100)) : 0;
   const orderLink = { pathname: `/order/${row.id}` };
   const linkState = { from };
@@ -1744,10 +1754,10 @@ function OrderRow({
           <Link to={orderLink} state={linkState} className="ocard__name">{row.itemName}</Link>
           {row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
           <div className="ocard__meta">
-            {row.buyer.handle
+            {!inLot && (row.buyer.handle
               ? <Link to={`/${row.buyer.handle}`} className="ocard__buyer">{row.buyer.name}</Link>
-              : <span className="ocard__buyer">{row.buyer.name}</span>}
-            <span aria-hidden="true">·</span>
+              : <span className="ocard__buyer">{row.buyer.name}</span>)}
+            {!inLot && <span aria-hidden="true">·</span>}
             <span>{timeAgo(row.createdAt)}</span>
             {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
           </div>
@@ -1759,8 +1769,8 @@ function OrderRow({
       </div>
 
       {/* The money, as a bar rather than a sentence: how much of this has
-          actually landed is the first thing a seller wants to know. */}
-      <div className="ocard__money">
+          actually landed. Once it is all in, the Paid badge already says so. */}
+      {!settled && <div className="ocard__money">
         <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${paidShare}%` }} /></div>
         <div className="ocard__moneytext">
           <span><b>{formatMoney(row.paidMinor, row.currency)}</b> paid</span>
@@ -1769,11 +1779,13 @@ function OrderRow({
             : row.paidMinor > 0 && <span className="ocard__done">✨ Fully paid</span>}
           {row.creditMinor > 0 && <span className="ocard__extra">💰 {formatMoney(row.creditMinor, row.currency)} extra</span>}
         </div>
-      </div>
+      </div>}
 
       {/* The one line on where it stands. A claimed payment already has its
           own line below, with the amount and the reference. */}
-      {statusLine && !awaitingClaim && <StatusBanner line={statusLine} compact />}
+      {statusLine && !awaitingClaim && !(row.serial && statusLine.tone === 'ok') && (
+        <StatusBanner line={statusLine} compact />
+      )}
 
       {/* In hand: no lot and no warehouse, so what it needs is a courier. */}
       {row.inHand && (
@@ -1787,15 +1799,19 @@ function OrderRow({
         </div>
       )}
 
-      {!row.inHand && (lotHref || !isClosed(row)) && (
+      {/* Which lot it rides and where that lot is - one chip. Inside the lot
+          it is said above, and the route line below says what is done. */}
+      {!row.inHand && !inLot && (lotHref || !isClosed(row)) && (
         <div className="ocard__chips">
           {lotHref
-            /* The lot by the name the seller gave it, which is what the lot
-               page is headed with. */
-            ? <Link to={lotHref} className="ocard__chip ocard__chip--lot">📦 {row.lotName ?? `LOT ${row.lotNumber}`}</Link>
+            ? (
+              <Link to={lotHref} className="ocard__chip ocard__chip--lot">
+                📦 {row.lotName ?? `LOT ${row.lotNumber}`}
+                {row.lotStep && <span className="ocard__chipstep"> · {row.lotStep}</span>}
+              </Link>
+            )
             : <span className="ocard__chip ocard__chip--none">No lot yet</span>}
-          {row.lotStep && <span className="ocard__chip ocard__chip--step">🚚 {row.lotStep}</span>}
-          {row.done && <span className="ocard__chip ocard__chip--ok">✓ {row.done.label}</span>}
+          {!row.serial && row.done && <span className="ocard__chip ocard__chip--ok">✓ {row.done.label}</span>}
         </div>
       )}
 

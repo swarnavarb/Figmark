@@ -2246,30 +2246,28 @@ code, kbd, samp, pre {
  * "Crew" alone is a word a seller has to guess at once.
  */
 .lotnav {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
-  margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+  margin-bottom: 16px; padding: 4px;
+  border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
 }
 .lotnav__tab {
-  display: grid; gap: 2px; min-width: 0;
-  padding: 11px 12px;
-  border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--surface); color: var(--text-dim);
-  font: inherit; text-align: left; cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  display: grid; justify-items: center; align-content: center; gap: 3px; min-width: 0;
+  padding: 9px 4px;
+  border: 0; border-radius: 14px;
+  background: transparent; color: var(--text-faint);
+  font: inherit; text-align: center; cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
-.lotnav__tab:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.lotnav__tab:hover { background: var(--surface-2); color: var(--text-dim); }
 .lotnav__tab.is-on {
-  border-color: var(--accent-line); background: var(--accent-soft); color: var(--text);
+  background: var(--accent-soft); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
 }
-.lotnav__tab svg { color: var(--text-faint); }
+.lotnav__tab svg { color: inherit; }
 .lotnav__tab.is-on svg { color: var(--accent-text); }
-.lotnav__label { font-size: var(--t-sm); font-weight: var(--w-semi); }
-.lotnav__hint {
-  font-size: var(--t-2xs); color: var(--text-faint);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-@media (min-width: 720px) {
-  .lotnav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.lotnav__label {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-xs); font-weight: var(--w-semi);
 }
 
 /* Facts about a lot, as a list rather than as sentences. */
@@ -11057,7 +11055,7 @@ a.ocust__name:hover { color: var(--accent-text); }
     linear-gradient(160deg, var(--surface-2), var(--surface));
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
-.lpulse__stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.lpulse__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .lpulse__stat {
   display: grid; justify-items: center; gap: 2px; padding: 10px 4px;
   border-radius: 16px; background: rgba(255, 255, 255, 0.04);
@@ -11099,6 +11097,35 @@ a.ocust__name:hover { color: var(--accent-text); }
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 .lpulse__courier b { font-family: var(--mono); color: var(--text); }
-@media (max-width: 420px) {
-  .lpulse__stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* The lot chip on an order card: which lot, and - quieter - where that lot is. */
+.ocard__chipstep { font-weight: 400; opacity: 0.8; }
+
+.lpulse__title {
+  margin: 0; font-size: var(--t-2xs); font-weight: var(--w-semi);
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint);
 }
+
+/*
+ * The lot's Tracking item list, one customer at a time: a slim head with the
+ * name and count, then that customer's items as soft rows under it.
+ */
+.lotcust { display: grid; gap: 8px; padding-top: 6px; }
+.lotcust + .lotcust { border-top: 1px solid var(--border); padding-top: 14px; }
+.lotcust__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.lotcust__name { font-size: var(--t-sm); font-weight: var(--w-bold); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lotcust__name a { color: inherit; text-decoration: none; }
+.lotcust__name a:hover { color: var(--accent-text); }
+.lotcust__count { flex: none; font-size: var(--t-2xs); color: var(--text-faint); }
+.lotcust .lotitem {
+  gap: 8px; padding: 12px; border: 0; border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+/* The way into one item's own timeline: quiet, because it is the exception. */
+.lotitem__more {
+  justify-self: start; display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 2px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--t-2xs); color: var(--text-faint);
+}
+.lotitem__more:hover { color: var(--accent-text); }

@@ -607,10 +607,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
         {item.ownStep && <span className="badge badge--warn">Own timeline</span>}
         <span className="badge">{item.condition}</span>
       </div>
-      <span className="faint">
-        {item.buyerHandle ? <Link to={`/${item.buyerHandle}`}>{item.buyerName}</Link> : item.buyerName}
-        {item.quantity > 1 && ` · ×${item.quantity}`}
-      </span>
+      {item.quantity > 1 && <span className="faint">× {item.quantity}</span>}
 
       {onItsOwn && (
         <div className="lotitem__own">
@@ -635,11 +632,10 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
           closed: it is opened for the exception - the piece pulled at customs
           while the rest of the crate cleared - and that exception is exactly
           what nobody could tell its buyer before. */}
-      <button type="button" className="disclose disclose--sm" aria-expanded={open}
+      <button type="button" className="lotitem__more" aria-expanded={open}
         onClick={() => setOpen(!open)}>
-        <Icon name={open ? 'down' : 'right'} size={13} />
-        {steps[item.currentStep]?.name ?? 'Tracking'}
-        <span className="faint">{open ? 'hide' : 'note, or move this one alone'}</span>
+        <Icon name={open ? 'down' : 'right'} size={12} />
+        {open ? 'Hide' : 'Note, or move this item alone'}
       </button>
 
       {open && (
@@ -681,6 +677,17 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
       )}
     </div>
   );
+}
+
+/** A lot's items under the customer who bought them, in the order each first appears. */
+function itemsByCustomer(items: readonly LotItem[]) {
+  const groups = new Map<string, { key: string; name: string; handle: string | null; rows: LotItem[] }>();
+  for (const item of items) {
+    const group = groups.get(item.buyerId);
+    if (group) group.rows.push(item);
+    else groups.set(item.buyerId, { key: item.buyerId, name: item.buyerName, handle: item.buyerHandle, rows: [item] });
+  }
+  return [...groups.values()];
 }
 
 /**
@@ -782,7 +789,7 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
 type LotSection = 'people' | 'tracking' | 'crew' | 'settings';
 
 const LOT_SECTIONS: { id: LotSection; label: string; icon: IconName; hint: string }[] = [
-  { id: 'people', label: 'Customers & Orders', icon: 'users', hint: 'Every order, customer by customer, and what each still owes' },
+  { id: 'people', label: 'Customers', icon: 'users', hint: 'Customers & Orders: every order, customer by customer, and what each still owes' },
   { id: 'tracking', label: 'Tracking', icon: 'truck', hint: 'Where the whole lot is, and every item in it' },
   { id: 'crew', label: 'Crew', icon: 'plane', hint: 'Who moves it' },
   { id: 'settings', label: 'Settings', icon: 'tag', hint: 'Its name and its route' },
@@ -901,7 +908,11 @@ export function LotDetail({ lotId, onBack, customers }: {
   // delivered on its own (the Items list below), and the lot closes itself.
   const crateEnd = lotEndIndex(route);
   const unpacked = route.currentStep >= crateEnd;
-  const nextStep = route.currentStep + 1 <= crateEnd ? lotSteps[lotStep + 1] ?? null : null;
+  /* The next step the crate can move to - never one in the half before it, so
+     a lot that is still sitting further back than "filling" moves onto its own
+     first step rather than offering nothing. */
+  const nextAt = Math.max(route.currentStep + 1, route.offset);
+  const nextStep = nextAt <= crateEnd ? route.steps[nextAt] ?? null : null;
   const status = lotStep < 0 ? 'Filling' : lotSteps[lotStep]?.name ?? 'Not started';
   const done = lotStep >= lotSteps.length - 1;
 
@@ -1025,10 +1036,10 @@ export function LotDetail({ lotId, onBack, customers }: {
           <button key={entry.id} type="button"
             className={`lotnav__tab${section === entry.id ? ' is-on' : ''}`}
             aria-current={section === entry.id}
+            title={entry.hint}
             onClick={() => setSection(entry.id)}>
             <Icon name={entry.icon} size={16} />
             <span className="lotnav__label">{entry.label}</span>
-            <span className="lotnav__hint">{entry.hint}</span>
           </button>
         ))}
       </nav>
@@ -1092,8 +1103,9 @@ export function LotDetail({ lotId, onBack, customers }: {
                  is dispatched and delivered on its own, from its own order. */
               leaveAt={itemLeaveIndex(route) - route.offset}
               leaveNote={
-                <button type="button" className="ladder__leave-go" onClick={() => setSection('people')}>
-                  Update items one by one <Icon name="right" size={11} />
+                <button type="button" className="ladder__leave-go"
+                  onClick={() => document.getElementById('lot-items')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  Update items one by one <Icon name="down" size={11} />
                 </button>
               }
               busy={busy}
@@ -1110,7 +1122,7 @@ export function LotDetail({ lotId, onBack, customers }: {
             {nextStep ? (
               /* The same lot button every order riding in this lot carries on its card. */
               <button className="btn btn--block" disabled={busy}
-                onClick={() => requestMove(route.currentStep + 1, undefined, `Now: ${nextStep.name}.`)}>
+                onClick={() => requestMove(nextAt, undefined, `Now: ${nextStep.name}.`)}>
                 🚢 Move lot to {nextStep.name}
               </button>
             ) : done ? (
@@ -1140,14 +1152,14 @@ export function LotDetail({ lotId, onBack, customers }: {
             </Modal>
           )}
 
-          <div className="card card--pad stack">
+          <div id="lot-items" className="card card--pad stack">
             <div className="row row--between">
-              <h2>Every item, step by step ({items.length})</h2>
-              <span className="faint">{totals.units} units</span>
+              <h2>Items, by customer</h2>
+              <span className="faint">{items.length} items · {totals.units} units</span>
             </div>
             <span className="field__hint">
-              The same buttons each order card has, item by item. Move the lot and all{' '}
-              {items.length} move with it.
+              Each item's own buttons, in route order. 🚢 Lot is the part the whole lot moves
+              together — that is done with the route above.
             </span>
 
             {items.length === 0 ? (
@@ -1155,7 +1167,15 @@ export function LotDetail({ lotId, onBack, customers }: {
                 Nothing in this lot yet. Add the items your customers have already bought.
               </p>
             ) : (
-              items.map((item) => (
+              itemsByCustomer(items).map(({ key, name, handle, rows }) => (
+                <section key={key} className="lotcust">
+                  <header className="lotcust__head">
+                    <span className="lotcust__name">
+                      {handle ? <Link to={`/${handle}`}>{name}</Link> : name}
+                    </span>
+                    <span className="lotcust__count">{rows.length} {rows.length === 1 ? 'item' : 'items'}</span>
+                  </header>
+                  {rows.map((item) => (
                 <LotItemRow
                   key={item.id}
                   item={item}
@@ -1183,6 +1203,8 @@ export function LotDetail({ lotId, onBack, customers }: {
                     run('Item moved to another lot.', () =>
                       api.assignOrderToLot(item.id, { lotId: to }).then(() => {}), true)}
                 />
+                  ))}
+                </section>
               ))
             )}
           </div>
