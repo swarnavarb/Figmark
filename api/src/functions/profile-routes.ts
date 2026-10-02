@@ -8,6 +8,12 @@ import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { confirmDetailsOn } from './order-routes.js';
+import { reviewSide } from '../../../shared/storefront.js';
+
+/** The page a page-review request is about: `?side=store` or the person's own. */
+function sideOf(request: HttpRequest): 'store' | 'person' {
+  return request.query?.get('side') === 'store' ? 'store' : 'person';
+}
 
 /**
  * A page about somebody, and what other people have said about them.
@@ -96,8 +102,10 @@ async function credit(request: HttpRequest, _context: InvocationContext) {
 
   // A page review an operator took down after a dispute no longer counts.
   const moderated = await moderation(repository);
+  const side = sideOf(request);
   const opinions = storeReviews
     .filter((entry) => !moderated.isRemoved('store_review', entry.id))
+    .filter((entry) => reviewSide(entry, Boolean(user.sellerProfile)) === side)
     .map((entry) => entry.rating);
 
   return json(200, {
@@ -128,9 +136,13 @@ async function pageReviews(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A user id is required.');
 
-  const moderated = await moderation(repository);
-  const reviews = (await repository.listStoreReviews(id))
-    .filter((entry) => !moderated.isRemoved('store_review', entry.id));
+  const side = sideOf(request);
+  const [moderated, all, subject] = await Promise.all([
+    moderation(repository), repository.listStoreReviews(id), repository.getUserById(id),
+  ]);
+  const reviews = all
+    .filter((entry) => !moderated.isRemoved('store_review', entry.id))
+    .filter((entry) => reviewSide(entry, Boolean(subject?.sellerProfile)) === side);
   const auth = await getAuthService();
   const viewer = await auth.getCurrentUser(request);
 
@@ -172,7 +184,7 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
   const subject = await repository.getUserById(id);
   if (!subject) return error(404, 'not_found', 'No such account.');
 
-  let body: { rating?: number; body?: string };
+  let body: { rating?: number; body?: string; side?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -189,7 +201,10 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
   }
 
   const author = await repository.getUserById(user.id);
-  const existing = (await repository.listStoreReviews(id)).find((entry) => entry.authorId === user.id);
+  // One per person per page: the shop and the person behind it are rated apart.
+  const side = body.side === 'store' && subject.sellerProfile ? 'store' : 'person';
+  const existing = (await repository.listStoreReviews(id))
+    .find((entry) => entry.authorId === user.id && reviewSide(entry, Boolean(subject.sellerProfile)) === side);
   const now = new Date().toISOString();
 
   const review: StoreReview = {
@@ -200,6 +215,7 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
     authorHandle: author?.username ?? null,
     rating,
     body: text.slice(0, 600),
+    side,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
@@ -48,6 +48,7 @@ function waitingOn(data: ActivityResponse, userId: string) {
  */
 export function ProfilePage() {
   const { user } = useSession();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,8 +103,12 @@ export function ProfilePage() {
           memberSince: publicPage?.memberSince,
           lastSeenAt: null,
         }}
-        action={
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setTab('settings')}>✏️ Edit</button>
+        page={publicPage}
+        onReviews={() => user.username && navigate(`/${user.username}`)}
+        actions={
+          <div className="pacts">
+            <button type="button" className="pbtn pbtn--follow" onClick={() => setTab('settings')}>Edit profile</button>
+          </div>
         } />
 
       <div className="storefront__body">

@@ -1,3 +1,4 @@
+import { isPersonFollow } from '../../../shared/storefront.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { ROUTE_TEMPLATES, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
@@ -504,21 +505,15 @@ export class MemoryRepository implements Repository {
 
   async toggleFollow(followerId: string, sellerId: string): Promise<boolean> {
     const key = followKey(followerId, sellerId);
-    const seller = this.users.get(sellerId);
-    if (this.follows.delete(key)) {
-      if (seller?.sellerProfile) {
-        seller.sellerProfile.followerCount = Math.max(0, seller.sellerProfile.followerCount - 1);
-      }
-      return false;
-    }
+    if (this.follows.delete(key)) return false;
     const now = new Date().toISOString();
     this.follows.set(key, { id: randomUUID(), followerId, sellerId, createdAt: now, updatedAt: now });
-    if (seller?.sellerProfile) seller.sellerProfile.followerCount += 1;
     return true;
   }
 
   async listFollowedSellerIds(followerId: string): Promise<string[]> {
-    return [...this.follows.values()].filter((f) => f.followerId === followerId).map((f) => f.sellerId);
+    return [...this.follows.values()]
+      .filter((f) => f.followerId === followerId && !isPersonFollow(f.sellerId)).map((f) => f.sellerId);
   }
 
   async getSiteContent(id: string): Promise<SiteContent | null> {

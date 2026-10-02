@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, WAITING_FOR_LOT, itemLeaveIndex } from '@shared/routes';
-import { REVIEW_REVEAL_DAYS, isStopped, type OrderSide } from '@shared/orders';
+import { REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
 import type { Order, SellerPaymentDetails } from '@shared/models';
@@ -1712,7 +1712,7 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
 }
 
 /** A rating, as the shape everyone already reads without a legend. */
-export function Stars({ value }: { value: number }) {
+function Stars({ value }: { value: number }) {
   return (
     <span className="stars" aria-label={`${value} out of 5`}>
       {'★'.repeat(value)}

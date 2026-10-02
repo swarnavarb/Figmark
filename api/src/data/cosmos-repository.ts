@@ -1,3 +1,4 @@
+import { isPersonFollow } from '../../../shared/storefront.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
@@ -1763,7 +1764,7 @@ export class CosmosRepository implements Repository {
     const { resources } = await this.container('follows')
       .items.query<Follow>({ query: 'SELECT * FROM c' }, { partitionKey: followerId })
       .fetchAll();
-    return resources.map((follow) => follow.sellerId);
+    return resources.map((follow) => follow.sellerId).filter((id) => !isPersonFollow(id));
   }
 
   async getSiteContent(id: string): Promise<SiteContent | null> {

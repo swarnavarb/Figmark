@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Message, MessageDeal, MessageParty } from '@shared/models';
+import type { Message, MessageDeal } from '@shared/models';
 import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
@@ -11,7 +11,6 @@ import { timeAgo } from '../format';
 import { VoicePicker, VoiceScope } from '../components/SocialVoice';
 import { RoomBar, useLongPress } from '../components/SocialChrome';
 import { useGoBack } from '../components/ScrollManager';
-import { useSession } from '../session';
 
 /**
  * The inbox.
@@ -541,15 +540,4 @@ const RUN_GAP_MS = 5 * 60 * 1000;
 
 function gapTooBig(earlier: string, later: string): boolean {
   return new Date(later).getTime() - new Date(earlier).getTime() > RUN_GAP_MS;
-}
-
-/** Shown on a shop or person's page: the way into a conversation with them. */
-export function MessageButton({ handle, party }: { handle: string; party?: MessageParty }) {
-  const { user, gate } = useSession();
-  return (
-    <Link to={`/messages/${encodeURIComponent(handle)}`} className={`btn btn--ghost${user ? '' : ' is-locked'}`}
-      onClick={gate(() => undefined, 'Sign in to send a message.')}>
-      {user ? <Icon name="message" size={15} /> : <span className="lockmark" aria-hidden="true">🔒</span>} Message {party?.displayName ?? `@${handle}`}
-    </Link>
-  );
 }

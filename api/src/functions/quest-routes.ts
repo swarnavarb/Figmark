@@ -1,4 +1,5 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
+import { isPersonFollow, reviewSide } from '../../../shared/storefront.js';
 import type { Dispute, QuestState, User } from '../../../shared/models.js';
 import { isCancelledLike, isPlaced, reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import {
@@ -60,9 +61,12 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
     ratingsReceived: reviewsAbout
       .filter((review) => review.direction === 'seller_to_buyer' && reviewRevealed(review, false))
       .map((review) => review.rating),
-    pageRatings: pageReviews.map((review) => review.rating),
+    // The person's page only: what people said about their shop is the shop's.
+    pageRatings: pageReviews
+      .filter((review) => reviewSide(review, Boolean(user.sellerProfile)) === 'person')
+      .map((review) => review.rating),
     likes: likes.map((like) => ({ createdAt: like.createdAt })),
-    follows: follows.map((follow) => ({ createdAt: follow.createdAt })),
+    follows: follows.filter((follow) => !isPersonFollow(follow.sellerId)).map((follow) => ({ createdAt: follow.createdAt })),
     posts: posts.map((post) => ({ createdAt: post.createdAt })),
     wants: wants.map((want) => ({ createdAt: want.createdAt })),
     pledges: pledged.length,

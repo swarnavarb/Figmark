@@ -13,6 +13,7 @@ import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CardButton } from '@shared/buttons';
+import type { MergedRating, StoreLevel } from '@shared/storefront';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { PreOrderView } from '@shared/preorder';
@@ -1574,6 +1575,11 @@ export interface Thread {
   messages: Message[];
 }
 
+/** Which of an account's two pages: its shop, or the person behind it. */
+export type PageSide = 'store' | 'person';
+
+export type ShelfState = 'active' | 'sold' | 'expired';
+
 export interface PublicProfile {
   handle: string;
   isStore: boolean;
@@ -1585,17 +1591,25 @@ export interface PublicProfile {
   link: string | null;
   dispatchRegion: string;
   followerCount: number;
+  /** Whether this viewer follows this page (the shop and the person apart). */
+  following: boolean;
+  /** Ratings after trades and ratings left on this page, as one figure. */
+  rating: MergedRating;
   tier: string | null;
   ownerHandle: string | null;
   sellerId: string;
   /** A shop's seller trust, 0-100; null on a person's page. */
   trustScore: number | null;
+  /** A shop's level and milestone stickers; null and empty on a person's page. */
+  level: StoreLevel | null;
+  stickers: StickerView[];
   memberSince: string;
   lastSeenAt: string | null;
-  counts: { listings: number; onSale: number; sold: number };
+  counts: { listings: number; onSale: number; sold: number; expired: number };
+  /** Active first, then sold out, then expired. */
   listings: {
     id: string; title: string; priceMinor: number; currency: string; condition: string;
-    lotId: string | null; sourcing?: string; quantityAvailable: number; likeCount: number;
+    quantityAvailable: number; likeCount: number; state: ShelfState;
     affiliate?: { amountMinor?: number; percent?: number } | null;
     photos?: { url?: string; isPrimary?: boolean }[];
   }[];
@@ -1715,7 +1729,7 @@ export const api = {
       `/listings/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}/react`, { kind },
     ),
   follow: (sellerId: string) =>
-    post<{ following: boolean }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
+    post<{ following: boolean; followerCount?: number }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
   order: (listingId: string, quantity = 1, via?: string | null, ref?: string | null) =>
     post<{ order: Order }>('/orders', { listingId, quantity, via: via ?? undefined, ref: ref ?? undefined }),
 
@@ -1925,13 +1939,15 @@ export const api = {
       `/messages/${encodeURIComponent(handle)}/react`, { messageId, kind, as },
     ),
   profile: (handle: string) => request<PublicProfile>(`/u/${encodeURIComponent(handle)}`),
-  credit: (userId: string) => request<Credit>(`/users/${encodeURIComponent(userId)}/credit`),
-  pageReviews: (userId: string) => request<PageReviews>(`/users/${encodeURIComponent(userId)}/page-reviews`),
+  credit: (userId: string, side: PageSide) =>
+    request<Credit>(`/users/${encodeURIComponent(userId)}/credit?side=${side}`),
+  pageReviews: (userId: string, side: PageSide) =>
+    request<PageReviews>(`/users/${encodeURIComponent(userId)}/page-reviews?side=${side}`),
   /** Dispute somebody else's review or comment, or ask Figmark to validate your own. */
   report: (body: { targetType: ReportTarget; targetId: string; parentId: string; reason: string }) =>
     post<{ report: ContentReport }>('/reports', body),
   /** The shop-wide rules, such as how long protected payments are held. */
-  writePageReview: (userId: string, body: { rating: number; body: string }) =>
+  writePageReview: (userId: string, body: { rating: number; body: string; side: PageSide }) =>
     post<{ review: PageReview }>(`/users/${encodeURIComponent(userId)}/page-reviews/new`, body),
   saveProfile: (body: { bio?: string; coverUrl?: string; tags?: string[] }) =>
     post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),

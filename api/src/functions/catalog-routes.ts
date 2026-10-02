@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
 import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
+import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulfilment.js';
 import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
@@ -612,14 +613,27 @@ async function toggleFollow(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const sellerId = request.params.id;
   if (!sellerId) return error(400, 'invalid_request', 'A seller id is required.');
-  if (sellerId === user.id) return error(400, 'invalid_request', 'You cannot follow yourself.');
   // People follow; shops do not. A shop has customers, not a reading list.
   if (request.query?.get('as')) {
     return error(403, 'people_only', 'Shops cannot follow. Switch to your profile to follow.');
   }
 
+  // `person:<id>` follows the person's own page; a plain id follows their shop.
+  const person = isPersonFollow(sellerId);
+  const targetId = person ? sellerId.slice(PERSON_FOLLOW.length) : sellerId;
+  if (targetId === user.id) return error(400, 'invalid_request', 'You cannot follow yourself.');
+
   const repository = await getRepository();
-  return json(200, { following: await repository.toggleFollow(user.id, sellerId) });
+  const target = await repository.getUserById(targetId);
+  if (!target || (!person && !target.sellerProfile)) return error(404, 'not_found', 'Nobody to follow there.');
+  const following = await repository.toggleFollow(user.id, sellerId);
+  // The count is kept here, once, for both kinds, so every store agrees on it.
+  const step = following ? 1 : -1;
+  if (person) target.followerCount = Math.max(0, (target.followerCount ?? 0) + step);
+  else target.sellerProfile!.followerCount = Math.max(0, target.sellerProfile!.followerCount + step);
+  target.updatedAt = new Date().toISOString();
+  await repository.updateUser(target);
+  return json(200, { following, followerCount: person ? target.followerCount : target.sellerProfile!.followerCount });
 }
 
 /** POST /api/orders - buy an in-stock item, or join a group-buy lot. */

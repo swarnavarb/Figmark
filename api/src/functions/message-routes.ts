@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
-import type { Message, MessageDeal, MessageParty, User } from '../../../shared/models.js';
+import type { Listing, Message, MessageDeal, MessageParty, User } from '../../../shared/models.js';
+import { reviewRevealed } from '../../../shared/orders.js';
+import { mergedRating, personFollowId, reviewSide, storeLevel, storeStickers } from '../../../shared/storefront.js';
+import { moderation } from '../moderation.js';
 import { accessFor } from '../../../shared/stores.js';
 import { isReaction } from '../../../shared/social.js';
 import { getAuthService } from '../auth/index.js';
@@ -332,17 +335,64 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
   if (!found) return error(404, 'not_found', `Nobody holds @${handle}.`);
 
   const { user, isStore }: { user: User; isStore: boolean } = found;
-  // Everything they have listed, not one page of it: the shelf is filtered on
-  // the page - all, in stock, on sale, sold - and a filter that only searches
-  // the first two dozen is a filter that lies about the counts beside it.
-  const listings = isStore ? await repository.listListings({ sellerId: user.id, limit: 200 }) : [];
+  const side = isStore ? 'store' : 'person';
+  const followId = isStore ? user.id : personFollowId(user.id);
+  const auth = await getAuthService();
+  // Everything the page needs in one round trip: the shelf, the rating the
+  // slab shows, and whether this viewer follows it.
+  const [viewer, all, tradeReviews, pageReviews, moderated] = await Promise.all([
+    auth.getCurrentUser(request),
+    // Every item they have put up, not one page of it, including what sold
+    // out or ran out of time: the shelf shows those too, stamped.
+    isStore ? repository.listListings({ sellerId: user.id, limit: 200, includeHidden: true }) : Promise.resolve([]),
+    repository.listReviewsAbout(user.id),
+    repository.listStoreReviews(user.id),
+    moderation(repository),
+  ]);
+  const following = viewer
+    ? (await repository.listFollowsBy(viewer.id)).some((follow) => follow.sellerId === followId)
+    : false;
+
+  // A shop is rated as a seller and a person as a buyer, each with the page
+  // ratings left on that page, merged into the one figure the slab shows.
+  const direction = isStore ? 'buyer_to_seller' : 'seller_to_buyer';
+  const rating = mergedRating(
+    tradeReviews.filter((review) => review.direction === direction && reviewRevealed(review, false)).map((review) => review.rating),
+    pageReviews
+      .filter((review) => !moderated.isRemoved('store_review', review.id))
+      .filter((review) => reviewSide(review, Boolean(user.sellerProfile)) === side)
+      .map((review) => review.rating),
+  );
 
   // A person's page is about them; a shop's is about the shop. The two carry
   // different names, pictures and words, and reading the wrong set is how a
   // storefront ends up with somebody's personal bio on it.
   const shop = isStore ? user.sellerProfile : null;
 
-  const sold = listings.filter((listing) => listing.quantityAvailable === 0).length;
+  const now = Date.now();
+  const stateOf = (listing: Listing): 'active' | 'sold' | 'expired' =>
+    listing.status === 'sold_out' || listing.quantityAvailable === 0 ? 'sold'
+      : listing.expiresAt && Date.parse(listing.expiresAt) <= now ? 'expired' : 'active';
+  const ORDER = { active: 0, sold: 1, expired: 2 } as const;
+  // Drafts, private deals and members-only drops are nobody else's business.
+  const listings = all
+    .filter((listing) => (listing.status === 'active' || listing.status === 'sold_out') && !listing.unlisted && !listing.privateFor)
+    .map((listing) => ({ listing, state: stateOf(listing) }))
+    .sort((a, b) => ORDER[a.state] - ORDER[b.state]);
+  const count = (state: string) => listings.filter((entry) => entry.state === state).length;
+  const followerCount = isStore ? (shop?.followerCount ?? 0) : (user.followerCount ?? 0);
+
+  const facts = {
+    completedSales: user.sellerTrust.completedTransactions,
+    followers: followerCount,
+    ratingAverage: rating.average,
+    ratingCount: rating.count,
+    listings: listings.length,
+    soldOut: count('sold'),
+    trust: user.sellerTrust.score,
+    preOrders: all.filter((listing) => listing.preOrder).length,
+    ageDays: Math.floor((now - Date.parse(user.createdAt)) / 86_400_000),
+  };
 
   return json(200, {
     handle: handle.toLowerCase(),
@@ -354,37 +404,36 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     tags: (isStore ? shop?.tags : user.tags) ?? [],
     link: shop?.link ?? null,
     dispatchRegion: shop?.dispatchRegion ?? '',
-    followerCount: shop?.followerCount ?? 0,
+    followerCount,
+    following,
+    rating,
     tier: shop?.tier ?? null,
     // The owner's own handle, so a shop page can point at the person behind it.
     ownerHandle: isStore ? (user.username ?? null) : null,
     sellerId: user.id,
     // The same Trust a listing's "Posted by" card shows, so the two never disagree.
     trustScore: isStore ? user.sellerTrust.score : null,
+    level: isStore ? storeLevel(facts) : null,
+    stickers: isStore ? storeStickers(facts) : [],
     memberSince: user.createdAt,
     lastSeenAt: user.lastSeenAt ?? null,
     /** What the tabs and chips count, so neither has to guess. */
-    counts: {
-      listings: listings.length,
-      onSale: listings.length - sold,
-      sold,
-    },
-    listings: listings.map((listing) => ({
+    counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },
+    // Active first, then sold out, then expired.
+    listings: listings.map(({ listing, state }) => ({
       id: listing.id,
       title: listing.title,
       priceMinor: listing.priceMinor,
       currency: listing.currency,
       condition: listing.condition,
-      lotId: listing.lotId,
-      sourcing: listing.sourcing,
       quantityAvailable: listing.quantityAvailable,
       likeCount: listing.likeCount,
+      state,
       // Highlighted on the card when sharing it pays a commission.
-      affiliate: listing.affiliate && !listing.privateFor
+      affiliate: listing.affiliate && state === 'active'
         ? { amountMinor: affiliateUnitMinor(listing.affiliate, listing.priceMinor) } : null,
-      // The picture, so a shop's grid looks like its shop rather than like a
-      // wall of generated squares.
-      photos: listing.photos ?? [],
+      // The lead picture only: the grid shows one, and the rest is weight.
+      photos: (listing.photos ?? []).filter((photo, i, list) => photo.isPrimary || (i === 0 && !list.some((p) => p.isPrimary))).slice(0, 1),
     })),
   });
 }

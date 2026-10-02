@@ -4,8 +4,7 @@ import { CARDS } from '@shared/quest';
 import type { CollectionItem } from '@shared/models';
 import {
   ApiRequestError, api,
-  type CollectionCandidate, type CollectionShelf, type CollectorPage, type PageReviews, type PostCard,
-  type PublicProfile, type RatingSummary, type ReviewsAbout,
+  type CollectionCandidate, type CollectionShelf, type CollectorPage, type PostCard, type PublicProfile,
 } from '../api';
 import { SkeletonText, useToast } from '../components/Feedback';
 import {
@@ -14,8 +13,7 @@ import {
 import { Lightbox, SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
-import { MessageButton } from './MessagesPage';
-import { ReviewsTab } from './ProfileByHandlePage';
+import { Bio, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
 
 /**
  * A person's page, as a collector's.
@@ -39,18 +37,27 @@ export interface Person {
   lastSeenAt?: string | null;
 }
 
+export type ProfilePart = Pick<PublicProfile,
+  'sellerId' | 'isStore' | 'handle' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince' | 'rating' | 'followerCount'>;
+
 /* ── The header every person page shares ──────────────────────────────── */
 
 /**
- * Banner, level ring, name, stats, ratings and showcase.
+ * Banner, level ring, name, the buttons, bio, rating, stats and showcase.
  *
  * Used on anybody's page and on your own hub at /me, so the two always look
- * the same - the only difference is the button in the corner.
+ * the same - the only difference is the buttons under the name.
  */
-export function CollectorHeader({ person, action }: { person: Person; action: ReactNode }) {
+export function CollectorHeader({ person, actions, page, onReviews }: {
+  person: Person;
+  actions: ReactNode;
+  /** The public page: its one rating and follower count. Absent until loaded. */
+  page: ProfilePart | null;
+  onReviews: () => void;
+}) {
   const [collector, setCollector] = useState<CollectorPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [ratingOpen, setRatingOpen] = useState(false);
   const [showcase, setShowcase] = useState<'cards' | 'stickers' | null>(null);
 
   useEffect(() => {
@@ -88,14 +95,13 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
                 <span className="qchip__streak"><Glyph name="flame" size={12} />{collector.streak.current}</span>
               )}
             </div>
-            {person.memberSince && (
-              <p className="faint" style={{ margin: 0 }}>
-                here since {formatDate(person.memberSince)}
-                {person.lastSeenAt && ` · seen ${timeAgo(person.lastSeenAt)}`}
-              </p>
-            )}
+            <p className="faint" style={{ margin: 0 }}>
+              {page && <><b className="qprofile__fans">{page.followerCount}</b> {page.followerCount === 1 ? 'follower' : 'followers'}</>}
+              {page && person.memberSince && ' · '}
+              {person.memberSince && `here since ${formatDate(person.memberSince)}`}
+              {person.lastSeenAt && ` · seen ${timeAgo(person.lastSeenAt)}`}
+            </p>
           </div>
-          <div className="storefront__act">{action}</div>
         </header>
 
         {collector && (
@@ -107,6 +113,7 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
         {collector && collector.penalty > 0 && (
           <p className="qprofile__penalty">−{collector.penalty} XP from low ratings and lost disputes</p>
         )}
+        {actions}
 
         {person.tags && person.tags.length > 0 && (
           <div className="chips chips--tight">
@@ -114,16 +121,9 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
           </div>
         )}
 
-        {person.bio && (
-          <p className={`storefront__bio${expanded ? ' is-open' : ''}`}>
-            {person.bio}
-            {person.bio.length > 120 && (
-              <button type="button" className="storefront__more" onClick={() => setExpanded(!expanded)}>
-                {expanded ? 'Less' : 'More'}
-              </button>
-            )}
-          </p>
-        )}
+        {person.bio && <Bio text={person.bio} />}
+
+        {page && <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} />}
 
         {error && <ErrorNotice message={error} />}
 
@@ -140,8 +140,6 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
               <Stat label="Pre-orders" value={String(stats.preOrders)} sub="joined" />
               <Stat label="Following" value={String(stats.following)} sub="shops" />
             </div>
-
-            <RatingsPanel ratings={collector.ratings} />
 
             <button type="button" className="qshowcase" onClick={() => setShowcase('cards')}
               aria-label="Open the showcase: every card and sticker">
@@ -170,6 +168,9 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
         )}
       </div>
 
+      {ratingOpen && page && (
+        <RatingSheet profile={page} rating={page.rating} onClose={() => setRatingOpen(false)} onReviews={onReviews} />
+      )}
       {showcase && collector && (
         <ShowcaseModal cards={collector.cards} stickers={collector.stickers} whose="theirs" start={showcase}
           onClose={() => setShowcase(null)} />
@@ -184,57 +185,6 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub: 
       <b className={tone ? `qstat__value qtone--${tone}` : 'qstat__value'}>{value}</b>
       <span className="qstat__label">{label}</span>
       <small className="faint">{sub}</small>
-    </div>
-  );
-}
-
-/* ── Ratings ───────────────────────────────────────────────────────────── */
-
-/**
- * The three kinds of rating, side by side and never added together.
- *
- * From sellers is the one that matters most for a buyer, so it leads with its
- * star breakdown; from buyers only appears for somebody who sells; page notes
- * are anybody's opinion and say so.
- */
-export function RatingsPanel({ ratings }: { ratings: CollectorPage['ratings'] }) {
-  return (
-    <section className="qratings" aria-label="Ratings">
-      <RatingBlock title="As a buyer" sub="from sellers, after completed orders" summary={ratings.buyer} lead />
-      {ratings.seller.count > 0 && <RatingBlock title="As a seller" sub="from buyers, after completed orders" summary={ratings.seller} />}
-      <RatingBlock title="Page reviews" sub="anyone can leave one; counted apart" summary={ratings.page} />
-    </section>
-  );
-}
-
-function RatingBlock({ title, sub, summary, lead = false }: { title: string; sub: string; summary: RatingSummary; lead?: boolean }) {
-  const most = Math.max(1, ...summary.stars);
-  const average = summary.average === null ? null : summary.average / 20;
-  return (
-    <div className={`qrating${lead ? ' qrating--lead' : ''}`}>
-      <div className="qrating__head">
-        <span className="qrating__score">{average === null ? '—' : average.toFixed(1)}</span>
-        <span className="qrating__stars" aria-label={average === null ? 'Unrated' : `${average.toFixed(1)} out of 5`}>
-          {[1, 2, 3, 4, 5].map((value) => (
-            <span key={value} className={average !== null && value <= Math.round(average) ? 'is-on' : ''}>★</span>
-          ))}
-        </span>
-        <span className="qrating__title">
-          <b>{title}</b>
-          <small className="faint">{summary.count ? `${summary.count} ${summary.count === 1 ? 'rating' : 'ratings'} · ` : 'No ratings yet · '}{sub}</small>
-        </span>
-      </div>
-      {lead && summary.count > 0 && (
-        <div className="qrating__bars">
-          {summary.stars.map((count, index) => (
-            <span key={index} className="qrating__bar">
-              <small>{5 - index}★</small>
-              <span className="qrating__track"><span style={{ width: `${(count / most) * 100}%` }} className={index >= 3 ? 'is-low' : ''} /></span>
-              <small>{count}</small>
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -493,22 +443,21 @@ function ShelfRow({ name, onRename, onDelete }: { name: string; onRename: (name:
 
 type Tab = 'feed' | 'reviews' | 'collection';
 
-export function CollectorProfile({ profile, trade, listed, page, isMe, canWrite, onWritten }: {
+export function CollectorProfile({ profile, isMe, onFollow, reload }: {
   profile: PublicProfile;
-  trade: ReviewsAbout | null;
-  listed: ReviewsAbout['reviews'];
-  page: PageReviews | null;
   isMe: boolean;
-  canWrite: boolean;
-  onWritten: () => void;
+  onFollow: (following: boolean, followers?: number) => void;
+  reload: () => void;
 }) {
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [tab, setTab] = useState<Tab>('collection');
 
+  // Posts are read when the tab is first opened: most visits are not for them.
+  useEffect(() => setPosts(null), [profile.sellerId]);
   useEffect(() => {
-    setPosts(null);
+    if (tab !== 'feed' || posts !== null) return;
     void api.personPosts(profile.sellerId).then((result) => setPosts(result.posts)).catch(() => setPosts([]));
-  }, [profile.sellerId]);
+  }, [tab, posts, profile.sellerId]);
 
   const person: Person = {
     userId: profile.sellerId,
@@ -524,9 +473,9 @@ export function CollectorProfile({ profile, trade, listed, page, isMe, canWrite,
 
   return (
     <main className="storefront qprofile">
-      <CollectorHeader person={person} action={isMe
-        ? <Link to="/me?tab=settings" className="btn btn--ghost btn--sm">Edit</Link>
-        : <MessageButton handle={profile.handle} />} />
+      <CollectorHeader person={person} page={profile} onReviews={() => setTab('reviews')}
+        actions={<PageActions profile={profile} isMe={isMe} onFollow={onFollow}
+          edit={<Link to="/me?tab=settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
 
       <div className="storefront__body">
         <div className="tabs" style={{ marginTop: 16 }}>
@@ -537,7 +486,7 @@ export function CollectorProfile({ profile, trade, listed, page, isMe, canWrite,
             Feed {posts ? posts.length : ''}
           </button>
           <button type="button" className={`tab${tab === 'reviews' ? ' is-on' : ''}`} onClick={() => setTab('reviews')}>
-            Reviews {(trade?.count ?? 0) + (page?.count ?? 0)}
+            Reviews {profile.rating.count}
           </button>
         </div>
 
@@ -561,7 +510,7 @@ export function CollectorProfile({ profile, trade, listed, page, isMe, canWrite,
             </div>
           )
         ) : (
-          <ReviewsTab profile={profile} trade={trade} listed={listed} page={page} canWrite={canWrite} onWritten={onWritten} />
+          <ReviewsTab profile={profile} canWrite={!isMe} onWritten={reload} />
         )}
       </div>
     </main>

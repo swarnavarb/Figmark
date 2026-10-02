@@ -168,6 +168,8 @@ export interface User extends BaseDocument {
   bio?: string;
   coverUrl?: string | null;
   tags?: string[];
+  /** People following the person's page (a shop's count is on its profile). */
+  followerCount?: number;
   /** Last seen, so a page can say whether anybody is home. */
   lastSeenAt?: string | null;
   /** Where to send this buyer's money back when an order they paid is cancelled. */
@@ -1391,6 +1393,8 @@ export interface StoreReview extends BaseDocument {
   authorHandle: string | null;
   rating: number;
   body: string;
+  /** Which of the account's two pages it was left on. Absent on older rows. */
+  side?: 'store' | 'person';
 }
 
 /* -------------------------------------------------------------------------- */
