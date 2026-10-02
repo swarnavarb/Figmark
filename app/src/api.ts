@@ -1720,7 +1720,7 @@ export const api = {
   myCollection: () => request<CollectionShelf & { candidates: CollectionCandidate[] }>('/me/collection'),
   collectionAdd: (orderId: string, groupId?: string | null) =>
     post<CollectionShelf & { item: CollectionItem }>('/me/collection/add', { orderId, groupId }),
-  collectionEdit: (orderId: string, changes: { groupId?: string | null; cover?: string; hidden?: string[] }) =>
+  collectionEdit: (orderId: string, changes: { groupId?: string | null; cover?: string; hidden?: string[]; own?: string }) =>
     post<CollectionShelf & { item: CollectionItem }>('/me/collection/edit', { orderId, ...changes }),
   collectionRemove: (orderId: string) => post<CollectionShelf>('/me/collection/remove', { orderId }),
   collectionGroups: (action: 'create' | 'rename' | 'delete', body: { id?: string; name?: string }) =>

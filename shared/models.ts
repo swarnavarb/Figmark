@@ -228,6 +228,8 @@ export interface CollectionItem {
   photos: string[];
   /** Photos the owner keeps to themselves. Never the lead photo. */
   hiddenPhotos?: string[];
+  /** The one photo the owner added themselves, if any. */
+  ownPhoto?: string | null;
   groupId: string | null;
   /** When it was delivered: the day it could first be added. */
   deliveredAt: string;

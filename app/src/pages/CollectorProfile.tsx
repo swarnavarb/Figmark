@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CARDS } from '@shared/quest';
 import type { CollectionItem } from '@shared/models';
@@ -8,9 +8,10 @@ import {
 } from '../api';
 import { SkeletonText, useToast } from '../components/Feedback';
 import {
-  CardFace, Glyph, LevelRing, ShowcaseModal, Spin, Sticker, XpBar,
+  CardFace, Glyph, LevelRing, ShowcaseModal, Sticker, XpBar,
 } from '../components/Quest';
 import { SocialPostCard } from '../components/SocialPost';
+import { shrink } from '../components/PhotoManager';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
 import { Bio, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
@@ -399,16 +400,31 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
   isMe: boolean;
   groups: CollectionShelf['groups'];
   onClose: () => void;
-  onEdit: (changes: { groupId?: string | null; cover?: string; hidden?: string[] }, done?: string) => Promise<boolean>;
+  onEdit: (changes: { groupId?: string | null; cover?: string; hidden?: string[]; own?: string }, done?: string) => Promise<boolean>;
   onRemove: () => void;
 }) {
+  const toast = useToast();
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const photos = item.photos;
   const photo = photos[Math.min(index, photos.length - 1)];
   const hidden = item.hiddenPhotos ?? [];
   const isHidden = photo !== undefined && hidden.includes(photo);
-  const step = (by: number) => setIndex((at) => (at + by + photos.length) % photos.length);
+  const step = (by: number) => { setFlipped(false); setIndex((at) => (at + by + photos.length) % photos.length); };
+
+  async function upload(file: File) {
+    setUploading(true);
+    try {
+      const stored = await api.uploadPhoto(await shrink(file));
+      if (await onEdit({ own: stored.url }, 'Your photo is the cover now')) setIndex(0);
+    } catch (err) {
+      toast(err instanceof ApiRequestError ? err.message : 'That photo did not upload.', 'error');
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <Modal title={item.name} onClose={onClose}>
@@ -417,9 +433,11 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
           {photos.length > 1 && (
             <button type="button" className="qviewer__arrow" aria-label="Previous photo" onClick={() => step(-1)}>‹</button>
           )}
-          <Spin spinKey={`${item.orderId}-${index}`}>
+          {/* A tap turns it over, front to back and back again. */}
+          <button type="button" className="qviewer__card" onClick={() => setFlipped(!flipped)}
+            aria-label={flipped ? 'Show the front' : 'Turn it over'} aria-pressed={flipped}>
             <RoyalCard item={item} photo={photo} flipped={flipped} big />
-          </Spin>
+          </button>
           {photos.length > 1 && (
             <button type="button" className="qviewer__arrow" aria-label="Next photo" onClick={() => step(1)}>›</button>
           )}
@@ -429,16 +447,18 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
             {photos.map((url, i) => <i key={url} className={`${i === index ? 'is-on' : ''}${hidden.includes(url) ? ' is-hidden' : ''}`} />)}
           </div>
         )}
-        <button type="button" className="btn btn--quiet btn--sm" onClick={() => setFlipped(!flipped)}>
-          {flipped ? 'Show the front' : 'Turn it over'}
-        </button>
         <p className="faint" style={{ margin: 0 }}>
-          Delivered {formatDate(item.deliveredAt)} · added {formatDate(item.addedAt)}
+          Tap the card to turn it over · delivered {formatDate(item.deliveredAt)}
           {isHidden && ' · this photo is hidden from others'}
         </p>
 
         {isMe && (
           <div className="qviewer__tools">
+            <input ref={fileInput} type="file" accept="image/*" hidden
+              onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void upload(file); }} />
+            <button type="button" className="btn btn--sm qbtn-gold" disabled={uploading} onClick={() => fileInput.current?.click()}>
+              {uploading ? 'Uploading…' : item.ownPhoto ? 'Change your cover photo' : 'Add your own cover photo'}
+            </button>
             <label className="field">
               <span>Shelf</span>
               <select value={item.groupId ?? ''} onChange={(event) => void onEdit({ groupId: event.target.value || null }, 'Moved')}>
@@ -448,7 +468,7 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
             </label>
             {photo && index > 0 && (
               <div className="row">
-                <button type="button" className="btn btn--sm qbtn-gold"
+                <button type="button" className="btn btn--sm btn--quiet"
                   onClick={() => void onEdit({ cover: photo, hidden: hidden.filter((url) => url !== photo) }, 'Now the cover photo').then((ok) => ok && setIndex(0))}>
                   Make this the cover
                 </button>

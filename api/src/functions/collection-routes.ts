@@ -141,13 +141,14 @@ async function add(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * POST /api/me/collection/edit - move a card to another shelf, pick the photo
- * it leads with, or hide photos from everybody else. The name is the item's.
+ * POST /api/me/collection/edit - move a card to another shelf, add a photo of
+ * your own, pick the photo it leads with, or hide photos from everybody else.
+ * The name is the item's.
  */
 async function edit(request: HttpRequest, _context: InvocationContext) {
   const { repository, user } = await me(request);
   if (!user) return error(404, 'not_found', 'This account no longer exists.');
-  const input = await body<{ orderId?: string; groupId?: string | null; cover?: string; hidden?: string[] }>(request);
+  const input = await body<{ orderId?: string; groupId?: string | null; cover?: string; hidden?: string[]; own?: string }>(request);
   const item = (user.collection ?? []).find((entry) => entry.orderId === input?.orderId);
   if (!input || !item) return error(404, 'not_found', 'That item is not in your collection.');
 
@@ -156,6 +157,16 @@ async function edit(request: HttpRequest, _context: InvocationContext) {
       return error(404, 'not_found', 'No such shelf.');
     }
     item.groupId = input.groupId;
+  }
+  // One photo of their own, uploaded first: it leads the card and replaces the last one they added.
+  if (input.own !== undefined) {
+    const url = input.own.trim();
+    if (!/^(https?:\/\/|\/|data:image\/)/.test(url) || url.length > 4096) {
+      return error(400, 'invalid_photo', 'That photo did not upload properly.');
+    }
+    item.photos = [url, ...item.photos.filter((photo) => photo !== item.ownPhoto && photo !== url)];
+    item.hiddenPhotos = (item.hiddenPhotos ?? []).filter((photo) => photo !== item.ownPhoto);
+    item.ownPhoto = url;
   }
   if (input.cover !== undefined) {
     if (!item.photos.includes(input.cover)) return error(404, 'not_found', 'That photo is not on this card.');

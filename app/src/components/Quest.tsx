@@ -420,37 +420,84 @@ export function Sticker({ sticker, onOpen }: { sticker: StickerView; onOpen?: ()
 }
 
 /**
- * A card or sticker on a turntable. It spins in when opened, and spins again
- * on a tap or a swipe - the way the finger went.
+ * A card or sticker on a turntable. It spins in when opened; a tap spins it
+ * once more; a drag turns it under the finger and lets go into a spin that
+ * comes to rest face up. One element throughout, so it never blinks.
  */
-export function Spin({ spinKey, children }: {
-  /** Changes when the thing shown changes, which spins it again. */
+export function Spin({ spinKey, children, back }: {
+  /** Changes when the thing shown changes, which spins it in again. */
   spinKey: string;
   children: ReactNode;
+  /** What shows when it is turned away: a card's back. Without one it shows through. */
+  back?: ReactNode;
 }) {
-  const [turn, setTurn] = useState(0);
-  const direction = useRef<1 | -1>(1);
-  const startX = useRef<number | null>(null);
-  const first = useRef(true);
+  const node = useRef<HTMLDivElement>(null);
+  const angle = useRef(0);
+  const drag = useRef<{ x: number; from: number; moved: boolean } | null>(null);
+  const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  const turnTo = useCallback((to: number, from: number, ms: number) => {
+    const el = node.current;
+    if (!el) return;
+    el.getAnimations().forEach((animation) => animation.cancel());
+    angle.current = to;
+    el.style.transform = `rotateY(${to}deg)`;
+    if (still) return;
+    el.animate(
+      [{ transform: `rotateY(${from}deg)` }, { transform: `rotateY(${to}deg)` }],
+      { duration: ms, easing: 'cubic-bezier(0.17, 0.84, 0.28, 1)' },
+    );
+  }, [still]);
 
   useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    setTurn((n) => n + 1);
-  }, [spinKey]);
+    turnTo(0, -720, 1200);
+  }, [spinKey, turnTo]);
 
-  function release(x: number) {
-    if (startX.current === null) return;
-    const moved = x - startX.current;
-    startX.current = null;
-    if (Math.abs(moved) > 30) direction.current = moved < 0 ? 1 : -1;
-    setTurn((n) => n + 1);
+  function down(event: React.PointerEvent<HTMLDivElement>) {
+    const el = node.current;
+    if (!el) return;
+    // Pick it up where it is, even mid-spin: the angle it is showing right now.
+    const shown = getComputedStyle(el).transform;
+    const matrix = shown && shown !== 'none' ? new DOMMatrixReadOnly(shown) : null;
+    const live = matrix ? (Math.atan2(-matrix.m13, matrix.m11) * 180) / Math.PI : angle.current;
+    el.getAnimations().forEach((animation) => animation.cancel());
+    drag.current = { x: event.clientX, from: live, moved: false };
+    el.style.transform = `rotateY(${live}deg)`;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function move(event: React.PointerEvent<HTMLDivElement>) {
+    const held = drag.current;
+    const el = node.current;
+    if (!held || !el) return;
+    const dx = event.clientX - held.x;
+    if (Math.abs(dx) > 4) held.moved = true;
+    angle.current = held.from + dx * 0.9;
+    el.style.transform = `rotateY(${angle.current}deg)`;
+  }
+
+  function up() {
+    const held = drag.current;
+    drag.current = null;
+    if (!held) return;
+    const at = angle.current;
+    if (!held.moved) {
+      turnTo(Math.round(at / 360) * 360 + 360, at, 1000);
+      return;
+    }
+    // Carry on the way it was flicked, one more full turn, landing face up.
+    const way = at >= held.from ? 1 : -1;
+    const rest = way > 0 ? (Math.floor(at / 360) + 2) * 360 : (Math.ceil(at / 360) - 2) * 360;
+    turnTo(rest, at, 1100);
   }
 
   return (
-    <div className="spin" onPointerDown={(e) => { startX.current = e.clientX; }}
-      onPointerUp={(e) => release(e.clientX)} onPointerCancel={() => { startX.current = null; }}>
-      <div key={turn} className={`spin__turn spin__turn--${direction.current > 0 ? 'right' : 'left'}`}>{children}</div>
-      <span className="spin__hint">Tap or swipe to spin</span>
+    <div className="spin" onPointerDown={down} onPointerMove={move} onPointerUp={up}
+      onPointerCancel={() => { drag.current = null; turnTo(Math.round(angle.current / 360) * 360, angle.current, 500); }}>
+      <div ref={node} className={`spin__turn${back ? ' spin__turn--sided' : ''}`}>
+        {back ? <><div className="spin__face">{children}</div><div className="spin__face spin__back">{back}</div></> : children}
+      </div>
+      <span className="spin__hint">Tap to spin · drag to turn it</span>
     </div>
   );
 }
@@ -516,7 +563,9 @@ export function CardSheet({ card, copies, setOwned, onClose }: {
   return (
     <Modal title={card.name} onClose={onClose}>
       <div className="qsheet">
-        <Spin spinKey={card.id}><CardFace card={card} /></Spin>
+        <Spin spinKey={card.id} back={<span className={`qcardback qcardface--${card.rarity}`}><Glyph name="crest" size={44} /></span>}>
+          <CardFace card={card} />
+        </Spin>
         <p className="qsheet__lore">&ldquo;{card.lore}&rdquo;</p>
         <p className="qsheet__state">
           <span className={`qrarity qrarity--${card.rarity}`}>{card.rarity}</span>{' '}
