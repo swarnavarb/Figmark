@@ -1,10 +1,7 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ORDER_CHECKPOINTS, type OrderCheckpoint,
-} from '@shared/enums';
-import {
-  TRIGGER_LABELS, WAITING_FOR_LOT, stepButtonLabel, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
+  WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
 } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
@@ -14,6 +11,8 @@ import {
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { Ladder } from '../components/Ladder';
+import { SerialButtons } from '../components/SerialButtons';
+import { serialButtons, withReceivedAs } from '@shared/buttons';
 import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { ErrorNotice, Icon, type IconName } from '../components/ui';
@@ -569,7 +568,7 @@ function EditLotDialog({ lot, onSaved, onCancel }: {
  * own. Before that the ticks would be a lie - nothing can be packed while it is
  * over the Bay of Bengal - so they are not offered.
  */
-function LotItemRow({ item, lotId, steps, others, busy, onTick, onRequestDeliver, onMove, onNote, onRelot }: {
+function LotItemRow({ item, lotId, lotName, lotStep, vars, gated, steps, others, busy, onTick, onLot, onGated, onMove, onNote, onRelot }: {
   item: LotItem;
   lotId: string;
   /** The lot's route, which is the ladder this item rides. */
@@ -577,9 +576,17 @@ function LotItemRow({ item, lotId, steps, others, busy, onTick, onRequestDeliver
   /** The shop's other open lots, for an item that has to ride a different one. */
   others: { id: string; name: string; lotNumber?: string | null }[];
   busy: boolean;
-  onTick: (checkpoint: OrderCheckpoint, on: boolean) => void;
-  /** Marking delivered is the one tick that asks first - this opens that ask. */
-  onRequestDeliver: () => void;
+  lotName: string;
+  /** Where the lot is on its route. */
+  lotStep: number;
+  vars: { origin?: string | null; destination?: string | null };
+  /** From this index on, a lot move would carry unchecked items past the warehouse. */
+  gated: number | null;
+  /** A press of the item's own, already confirmed. */
+  onTick: (key: string, on: boolean) => void;
+  /** A lot move from the item's line of buttons, already confirmed. */
+  onLot: (to: number, label: string) => void;
+  onGated: (to: number, label: string) => void;
   onMove: (to: number, details?: { trackingId?: string; shipper?: string }) => void | Promise<void>;
   onNote: (note: string, at: number) => void | Promise<void>;
   onRelot: (lotId: string) => void | Promise<void>;
@@ -616,28 +623,20 @@ function LotItemRow({ item, lotId, steps, others, busy, onTick, onRequestDeliver
         </div>
       )}
 
-      {/* The buttons that move this item's tracking.
-          One press, and its buyer's timeline says the step the shop bound to
-          it - which is the whole point of binding one. A button with nothing
-          bound still records the fact; it simply moves no timeline, and says
-          so rather than looking broken. */}
-      <div className="lotitem__acts">
-        {ORDER_CHECKPOINTS.map((checkpoint) => {
-          const done = Boolean(item.checkpoints[checkpoint]);
-          const moves = steps.find((step) => step.trigger === checkpoint);
-          return (
-            <button key={checkpoint} type="button" disabled={busy} aria-pressed={done}
-              className={`tickbtn${done ? ' is-on' : ''}${checkpoint === 'delivered' ? ' tickbtn--delivered' : ''}`}
-              title={moves
-                ? `${done ? 'Pressed' : 'Press'} when ${TRIGGER_LABELS[checkpoint].means} — moves tracking to “${moves.name}”`
-                : `${TRIGGER_LABELS[checkpoint].button}: recorded, but no step is bound to it`}
-              onClick={() => (checkpoint === 'delivered' && !done ? onRequestDeliver() : onTick(checkpoint, !done))}>
-              {moves ? stepButtonLabel(moves) : TRIGGER_LABELS[checkpoint].button}
-              {moves && <span className="tickbtn__to">{moves.name}</span>}
-            </button>
-          );
-        })}
-      </div>
+      {/* The buttons that move this item's tracking - its own presses and
+          the lot's moves, one after another, exactly as its order card has
+          them. Every one asks first. */}
+      <SerialButtons
+        buttons={serialButtons(withReceivedAs(steps, item.receivedAs), lotStep, item.ticks, vars)
+          .map((button) => (button.kind === 'lot' && !button.done && gated !== null && button.to >= gated
+            ? { ...button, gated: true } : button))}
+        busy={busy}
+        who={{ itemName: item.itemName, buyerName: item.buyerName, lotName }}
+        onItem={(key, on) => onTick(key, on)}
+        onLot={(button) => onLot(button.to, button.label)}
+        onGated={(button) => onGated(button.to, button.label)}
+        orderLink={{ to: `/order/${item.id}`, state: { from: `/shop?tab=lots&lot=${encodeURIComponent(lotId)}` } }}
+      />
 
       {/* One item's own timeline. Almost always the lot's, which is why it is
           closed: it is opened for the exception - the piece pulled at customs
@@ -833,10 +832,10 @@ export function LotDetail({ lotId, onBack, customers }: {
     missing: LotItem[];
   } | null>(null);
   const [confirmingBypass, setConfirmingBypass] = useState(false);
-  /* Delivered is asked for separately from the gate above: that one guards
-     against moving too far ahead of the facts, this one guards against the
-     one tick that can't be quietly undone once a buyer has read it. */
-  const [confirmDeliver, setConfirmDeliver] = useState<LotItem | null>(null);
+  /* Every move made from Tracking asks first - the lot's and one item's
+     alike - because each one changes what a buyer reads. The gate above is a
+     second question, asked only where items would pass the warehouse unticked. */
+  const [asking, setAsking] = useState<{ title: string; text: ReactNode; yes: string; go: () => void } | null>(null);
   const [busy, setBusy] = useState(false);
   /* Whether it worked is decided where it happened, not guessed from the
      wording afterwards - which is what a growing regular expression over
@@ -910,6 +909,9 @@ export function LotDetail({ lotId, onBack, customers }: {
   const nextStep = route.currentStep + 1 <= crateEnd ? lotSteps[lotStep + 1] ?? null : null;
   const status = lotStep < 0 ? 'Filling' : lotSteps[lotStep]?.name ?? 'Not started';
   const done = lotStep >= lotSteps.length - 1;
+  /* From this index on, moving the lot would carry items past the warehouse check-in unticked. */
+  const gateAt = route.steps.findIndex((step) => step.trigger === 'china_received');
+  const gateFrom = gateAt >= 0 && items.some((item) => !item.checkpoints.china_received) ? gateAt : null;
 
   /** `membership` for anything that moves an item or listing in or out of this lot. */
   async function run(label: string, fn: () => Promise<void>, membership = false) {
@@ -946,7 +948,19 @@ export function LotDetail({ lotId, onBack, customers }: {
     targetAbsolute: number,
     details: { trackingId?: string; shipper?: string } | undefined,
     label: string,
+    confirmed = false,
   ) {
+    if (!confirmed && targetAbsolute <= crateEnd) {
+      const name = route.steps[targetAbsolute]?.name ?? 'that step';
+      setAsking({
+        title: 'Move the whole lot?',
+        text: <><strong>{lot.name}</strong> moves to <strong>{name}</strong>. Every item in it moves with it, and
+          every buyer in it reads the new step.</>,
+        yes: `🚢 Move lot to ${name}`,
+        go: () => requestMove(targetAbsolute, details, label, true),
+      });
+      return;
+    }
     if (targetAbsolute > crateEnd) {
       setFlash({
         text: 'This lot is unpacked. Mark each item dispatched and delivered on its own; the lot closes when the last one arrives.',
@@ -1119,26 +1133,15 @@ export function LotDetail({ lotId, onBack, customers }: {
             )}
           </div>
 
-          {confirmDeliver && (
-            <Modal title="Mark delivered?" onClose={() => setConfirmDeliver(null)}>
+          {asking && (
+            <Modal title={asking.title} onClose={() => setAsking(null)}>
               <div className="stack">
-                <p>
-                  This marks <strong>{confirmDeliver.itemName}</strong> for{' '}
-                  <strong>{confirmDeliver.buyerName}</strong> as delivered. Their order shows delivered,
-                  they are told, and they can add it to their collection and review it. A payment held
-                  under buyer protection is not released by this: the buyer confirms it, or it releases on
-                  its own if they raise no dispute in time. Once every item in this lot is delivered, the
-                  lot closes itself.
-                </p>
+                <p>{asking.text}</p>
                 <button type="button" className="btn btn--block" disabled={busy}
-                  onClick={() => {
-                    const item = confirmDeliver;
-                    setConfirmDeliver(null);
-                    void run('Marked delivered.', () => api.setCheckpoint(item.id, 'delivered', true).then(() => {}));
-                  }}>
-                  {busy ? 'Marking…' : 'Mark delivered'}
+                  onClick={() => { const go = asking.go; setAsking(null); go(); }}>
+                  {asking.yes}
                 </button>
-                <button type="button" className="btn btn--quiet btn--block" onClick={() => setConfirmDeliver(null)}>
+                <button type="button" className="btn btn--quiet btn--block" onClick={() => setAsking(null)}>
                   Cancel
                 </button>
               </div>
@@ -1165,15 +1168,25 @@ export function LotDetail({ lotId, onBack, customers }: {
                   key={item.id}
                   item={item}
                   lotId={lot.id}
+                  lotName={lot.name}
+                  lotStep={route.currentStep}
+                  vars={{ origin: lot.originCountry, destination: lot.destinationCountry }}
+                  gated={gateFrom}
                   steps={route.steps}
                   others={others}
                   busy={busy}
-                  onTick={(checkpoint, on) =>
-                    run('Item updated.', () => api.setCheckpoint(item.id, checkpoint, on).then(() => {}))}
-                  onRequestDeliver={() => setConfirmDeliver(item)}
-                  onMove={(to, details) =>
-                    run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
-                      api.stepItem(item.id, { to, ...details }).then(() => {}))}
+                  onTick={(key, on) =>
+                    run('Item updated.', () => api.setCheckpoint(item.id, key, on).then(() => {}))}
+                  onLot={(to, label) => requestMove(to, undefined, `Now: ${label}.`, true)}
+                  onGated={(to, label) => requestMove(to, undefined, `Now: ${label}.`, true)}
+                  onMove={(to, details) => setAsking({
+                    title: 'Move this one item?',
+                    text: <>Only <strong>{item.itemName}</strong> moves, to <strong>{route.steps[to]?.name ?? 'that step'}</strong>.
+                      {' '}{item.buyerName} reads it; the rest of the lot stays where it is.</>,
+                    yes: 'Move this item',
+                    go: () => void run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
+                      api.stepItem(item.id, { to, ...details }).then(() => {})),
+                  })}
                   onNote={(text, at) =>
                     run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}
                   onRelot={(to) =>

@@ -12,7 +12,7 @@ import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
-import type { CardButton } from '@shared/buttons';
+import type { CardButton, SerialButton } from '@shared/buttons';
 import type { MergedRating, StoreLevel } from '@shared/storefront';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
@@ -530,6 +530,8 @@ export interface SaleRow {
    * gone as far as a lot goes.
    */
   lotNext: { to: number; label: string; unchecked: number } | null;
+  /** The route's buttons and the lot's moves, one after another, while it rides in a lot. */
+  serial: SerialButton[] | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
   /** When the seller ticked it delivered, on the lot's own item list. */
@@ -1405,6 +1407,9 @@ export interface LotItem {
   buyerName: string;
   buyerHandle: string | null;
   checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+  /** Every press, custom buttons included, keyed as the route's buttons are. */
+  ticks: Record<string, string | null>;
+  receivedAs: string | null;
   /** Where this item is on the lot's route. The lot's position unless moved alone. */
   currentStep: number;
   /** True when the seller moved this one item away from the rest of the lot. */

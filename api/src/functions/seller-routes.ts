@@ -3,7 +3,7 @@ import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.j
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
 import { currentStepOf, lotEndIndex, lotNumberFrom, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
-import { cardButtons, ladderBeforeLot, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
+import { cardButtons, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
 import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
@@ -359,6 +359,10 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
    * items the move would carry past the warehouse check-in without having been
    * ticked in there, so the card can stop and say so as the lot screen does.
    */
+  /** Items riding in a lot that were never ticked in at the warehouse. */
+  const uncheckedIn = (lotId: string) => orders.filter((order) => order.lotId === lotId
+    && !isCancelledLike(order.status) && order.status !== 'delivered' && !order.checkpoints?.china_received).length;
+
   const lotNextFor = (lot: Awaited<ReturnType<typeof repository.getLot>>) => {
     if (!lot || lot.status === 'closed') return null;
     const route = routeOf(lot);
@@ -366,15 +370,32 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     const step = route.steps[to];
     if (!step || to > lotEndIndex(route)) return null;
     const gateAt = route.steps.findIndex((entry) => entry.trigger === 'china_received');
-    const unchecked = gateAt >= 0 && to >= gateAt
-      ? orders.filter((order) => order.lotId === lot.id && !isCancelledLike(order.status)
-        && order.status !== 'delivered' && !order.checkpoints?.china_received).length
-      : 0;
+    const unchecked = gateAt >= 0 && to >= gateAt ? uncheckedIn(lot.id) : 0;
     return {
       to,
       label: renderStepText(step.name, { origin: lot.originCountry, destination: lot.destinationCountry }),
       unchecked,
     };
+  };
+
+  /*
+   * Every button an item in a lot has - its own presses and the lot's moves -
+   * in the order they happen, so the card lays them out one after another.
+   */
+  const serialFor = (
+    order: (typeof orders)[number],
+    lot: Awaited<ReturnType<typeof repository.getLot>>,
+  ) => {
+    if (!lot || isDirect(order)) return null;
+    const route = routeOf(lot);
+    const unchecked = uncheckedIn(lot.id);
+    const gateAt = route.steps.findIndex((entry) => entry.trigger === 'china_received');
+    return serialButtons(
+      withReceivedAs(route.steps, order.receivedAs), currentStepOf(lot), ticksOf(order),
+      { origin: lot.originCountry, destination: lot.destinationCountry },
+    ).map((button) => (button.kind === 'lot' && !button.done && gateAt >= 0 && button.to >= gateAt
+      ? { ...button, gated: unchecked > 0 }
+      : button));
   };
 
   const row = (order: (typeof orders)[number]) => {
@@ -417,6 +438,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       lotStep: lot ? routeOf(lot).steps[currentStepOf(lot)]?.name ?? null : null,
       /** The lot's next move, pressed from the order card - null once it cannot move further. */
       lotNext: lotNextFor(lot),
+      /** The route's buttons and the lot's moves, in order - null when not in a lot. */
+      serial: serialFor(order, lot),
       /** The one tick a seller makes from this screen. */
       chinaReceivedAt: order.checkpoints?.china_received ?? null,
       /** Ticked on the lot screen, not this one - read here so this screen's

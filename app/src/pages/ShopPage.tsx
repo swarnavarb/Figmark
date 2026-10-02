@@ -17,6 +17,7 @@ import { LBox, OptionTiles } from '../components/ListingForm';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import type { CardButton } from '@shared/buttons';
 import { ReceivedDialog } from '../components/ReceivedDialog';
+import { SerialButtons } from '../components/SerialButtons';
 import { Ladder } from '../components/Ladder';
 import { RouteEditor, RoutesList } from './RoutesPage';
 import { phaseOfCounts } from '@shared/insights';
@@ -967,22 +968,19 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
    */
   /** The order whose warehouse button was pressed with no lot to say what that means. */
   const [receiving, setReceiving] = useState<{ row: SaleRow; button: CardButton } | null>(null);
-  /** The order whose lot button was pressed: moving a lot moves every buyer in it, so it asks first. */
-  const [movingLot, setMovingLot] = useState<SaleRow | null>(null);
 
   async function refresh() {
     await load();
     onChanged?.();
   }
 
-  /** The lot's own next move, made from an order riding in it - the same move its Tracking makes. */
-  async function moveLot(row: SaleRow) {
-    if (!row.lotId || !row.lotNext) return;
+  /** A lot move, made from an order riding in it - the same move its Tracking makes. Already confirmed. */
+  async function moveLot(row: SaleRow, to: number) {
+    if (!row.lotId) return;
     setBusy(row.id);
     setError(null);
     try {
-      await api.stepLot(row.lotId, { to: row.lotNext.to });
-      setMovingLot(null);
+      await api.stepLot(row.lotId, { to });
       await refresh();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'The lot did not move.');
@@ -1075,7 +1073,10 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       needsAnswer={needsAnswer.has(row.id)}
       undoable={undoable?.rowId === row.id ? undoable.button : null}
       onPress={(button, on) => void press(row, button, on)}
-      onMoveLot={() => setMovingLot(row)}
+      onMoveLot={(to) => void moveLot(row, to)}
+      onGated={() => (onTracking
+        ? onTracking()
+        : navigate(`/shop?tab=lots&lot=${encodeURIComponent(row.lotId ?? '')}`))}
       onFile={() => setFiling(row)}
       onReject={() => setRejecting(row)}
       onAccept={() => void accept(row)}
@@ -1105,6 +1106,8 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   return (
     <div className="stack">
       {error && <ErrorNotice message={error} />}
+
+      {lotId && <LotPulse rows={book} toAnswer={book.filter((row) => needsAnswer.has(row.id)).length} />}
 
       {/* Three big tiles for where orders are, each in its own colour, then
           chips for what an active order needs - the one that needs the
@@ -1193,13 +1196,6 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           onClose={() => setReceiving(null)} />
       )}
 
-      {movingLot?.lotNext && (
-        <MoveLotDialog row={movingLot} busy={busy === movingLot.id}
-          onMove={() => void moveLot(movingLot)}
-          onTracking={onTracking}
-          onClose={() => setMovingLot(null)} />
-      )}
-
       {filing && (
         <FileIntoLot
           row={filing}
@@ -1209,6 +1205,81 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A lot at a glance, above its customers: how many people and orders, the
+ * money still out, how far along the route the orders have got step by step,
+ * and which couriers took the ones already sent.
+ */
+function LotPulse({ rows, toAnswer }: { rows: readonly SaleRow[]; toAnswer: number }) {
+  const live = rows.filter((row) => !isClosed(row));
+  const people = new Set(live.map((row) => row.buyer.handle ?? `name:${row.buyer.name}`)).size;
+  const units = live.reduce((sum, row) => sum + row.quantity, 0);
+  const money = (pick: (row: SaleRow) => number) =>
+    formatTotals(live.map((row) => ({ amountMinor: pick(row), currency: row.currency })), live[0]?.currency);
+  const pendingCount = live.filter((row) => row.outstandingMinor > 0).length;
+
+  /* Every order in a lot rides the same route, so one order's line of
+     buttons names the steps and each order's own line says which are done. */
+  const template = live.find((row) => row.serial && row.serial.length > 0)?.serial ?? [];
+  const steps = template.map((button, index) => ({
+    label: button.label,
+    lot: button.kind === 'lot',
+    done: live.filter((row) => row.serial?.[index]?.done).length,
+  }));
+
+  const couriers = new Map<string, number>();
+  for (const row of live) {
+    const name = row.shipment?.courier?.trim();
+    if (name) couriers.set(name, (couriers.get(name) ?? 0) + 1);
+  }
+
+  return (
+    <section className="lpulse" aria-label="This lot at a glance">
+      <div className="lpulse__stats">
+        <div className="lpulse__stat"><b>{people}</b><small>{people === 1 ? 'Customer' : 'Customers'}</small></div>
+        <div className="lpulse__stat"><b>{live.length}</b><small>{live.length === 1 ? 'Order' : 'Orders'}</small></div>
+        <div className="lpulse__stat"><b>{units}</b><small>Units</small></div>
+        <div className={`lpulse__stat${toAnswer > 0 ? ' is-hot' : ''}`}><b>{toAnswer}</b><small>To answer</small></div>
+      </div>
+
+      <div className="lpulse__money">
+        <div><small>Order value</small><b>{money((row) => row.totalMinor)}</b></div>
+        <div><small>Paid</small><b>{money((row) => Math.min(row.paidMinor, row.totalMinor))}</b></div>
+        <div className={pendingCount > 0 ? 'is-due' : 'is-clear'}>
+          <small>Pending · {pendingCount} {pendingCount === 1 ? 'order' : 'orders'}</small>
+          <b>{money((row) => row.outstandingMinor)}</b>
+        </div>
+      </div>
+
+      {steps.length > 0 && live.length > 0 && (
+        <ol className="lpulse__route">
+          {steps.map((step, index) => {
+            const share = Math.round((step.done / live.length) * 100);
+            const state = step.done === live.length ? 'all' : step.done > 0 ? 'some' : 'none';
+            return (
+              <li key={index} className={`lpulse__step lpulse__step--${state}`}>
+                <span className="lpulse__stepn">{step.lot ? '🚢' : index + 1}</span>
+                <span className="lpulse__stepname">{step.label}</span>
+                <span className="lpulse__stepcount"><b>{step.done}</b>/{live.length}</span>
+                <span className="lpulse__stepbar" aria-hidden="true"><span style={{ width: `${share}%` }} /></span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      {couriers.size > 0 && (
+        <div className="lpulse__couriers">
+          <small>Sent with</small>
+          {[...couriers].sort((a, b) => b[1] - a[1]).map(([name, count]) => (
+            <span key={name} className="lpulse__courier">🚚 {name} <b>{count}</b></span>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1293,58 +1364,6 @@ function CustomerOrders({ customer, children }: { customer: CustomerGroup; child
       )}
       <div className="orows">{children}</div>
     </section>
-  );
-}
-
-/**
- * Moving the lot from one of its orders. The move is the lot's - every item in
- * it goes, and every buyer in it reads the new step - so it says so first, and
- * stops where the lot screen would: before carrying items past the warehouse
- * check-in that were never ticked in there.
- */
-function MoveLotDialog({ row, busy, onMove, onTracking, onClose }: {
-  row: SaleRow;
-  busy: boolean;
-  onMove: () => void;
-  onTracking?: () => void;
-  onClose: () => void;
-}) {
-  const next = row.lotNext!;
-  const lotName = row.lotName ?? `LOT ${row.lotNumber}`;
-  const lotHref = `/shop?tab=lots&lot=${encodeURIComponent(row.lotId!)}`;
-  return (
-    <Modal title={next.unchecked > 0 ? 'Not all items are checked in' : `Move ${lotName}?`} onClose={onClose}>
-      <div className="stack">
-        {next.unchecked > 0 ? (
-          <>
-            <p>
-              {next.unchecked} {next.unchecked === 1 ? 'item in this lot has' : 'items in this lot have'} not been
-              marked as received at the international warehouse. Moving the lot to{' '}
-              <strong>{next.label}</strong> would carry {next.unchecked === 1 ? 'it' : 'them'} past a checkpoint{' '}
-              {next.unchecked === 1 ? "it hasn't" : "they haven't"} reached.
-            </p>
-            {onTracking ? (
-              <button type="button" className="btn btn--block" onClick={() => { onClose(); onTracking(); }}>
-                Check the items in
-              </button>
-            ) : (
-              <Link to={lotHref} className="btn btn--block" onClick={onClose}>Open the lot to check them in</Link>
-            )}
-          </>
-        ) : (
-          <>
-            <p>
-              <strong>{lotName}</strong> moves to <strong>{next.label}</strong>. Every item in it moves
-              with it, and every buyer in it reads the new step.
-            </p>
-            <button type="button" className="btn btn--block" disabled={busy} onClick={onMove}>
-              {busy ? 'Moving…' : `🚢 Move lot to ${next.label}`}
-            </button>
-          </>
-        )}
-        <button type="button" className="btn btn--quiet btn--block" onClick={onClose}>Cancel</button>
-      </div>
-    </Modal>
   );
 }
 
@@ -1677,8 +1696,8 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, glowing, busy, needsAnswer, undoable, onPress, onMoveLot, onFile, onReject, onAccept,
-  onCancel, onSettleReceived, onSettleDenied,
+  index, row, store, from, glowing, busy, needsAnswer, undoable, onPress, onMoveLot, onGated, onFile, onReject,
+  onAccept, onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
   row: SaleRow;
@@ -1691,8 +1710,10 @@ function OrderRow({
   /** The press just made on this card, while it can still be taken back. */
   undoable: CardButton | null;
   onPress: (button: CardButton, on: boolean) => void;
-  /** The lot's own next move, pressed from this card. */
-  onMoveLot: () => void;
+  /** A lot move pressed from this card's serial buttons, already confirmed. */
+  onMoveLot: (to: number) => void;
+  /** A lot move that would carry items past the warehouse unticked. */
+  onGated: () => void;
   onFile: () => void;
   onReject: () => void;
   onAccept: () => void;
@@ -1833,6 +1854,22 @@ function OrderRow({
         </div>
       )}
 
+      {/* In a lot: the route's buttons and the lot's moves, one after another. */}
+      {working && row.serial && row.serial.length > 0 && (
+        <SerialButtons
+          buttons={row.serial}
+          busy={busy}
+          who={{ itemName: row.itemName, buyerName: row.buyer.name, lotName: row.lotName ?? `LOT ${row.lotNumber}` }}
+          onItem={(key, on) => {
+            const button = row.serial!.find((entry) => entry.kind === 'item' && entry.key === key);
+            onPress({ checkpoint: key, label: button?.label ?? key, step: button?.step ?? key }, on);
+          }}
+          onLot={(button) => onMoveLot(button.to)}
+          onGated={onGated}
+          orderLink={{ to: `/order/${row.id}`, state: linkState }}
+        />
+      )}
+
       <div className="ocard__acts">
         {/* A domestic sale never goes near a warehouse and never joins a lot,
             and one that has been called off is not going anywhere at all. */}
@@ -1840,7 +1877,7 @@ function OrderRow({
             same button its timeline shows. The two that tell the buyer
             something (dispatched, delivered) open the order, where they ask
             for the courier or a confirmation first. */}
-        {working && row.next && (LAST_MILE.has(row.next.checkpoint) ? (
+        {working && !row.serial && row.next && (LAST_MILE.has(row.next.checkpoint) ? (
           <Link to={orderLink} state={{ ...linkState, act: row.next.checkpoint }} className="ocard__next"
             aria-label={`${row.next.label} - opens the order to confirm`}>
             <span aria-hidden="true">⚡</span> {row.next.label}
@@ -1852,19 +1889,10 @@ function OrderRow({
             <span aria-hidden="true">⚡</span> {row.next.label}
           </button>
         ))}
-        {/* The lot's buttons, on every order riding in it: the move its
-            Tracking section makes, pressed from here. */}
-        {working && row.lotNext && !row.deliveredAt && (
-          <button type="button" className="ocard__lotmove" disabled={busy}
-            title={`Moves the whole lot, and every item in it, to: ${row.lotNext.label}`}
-            onClick={onMoveLot}>
-            <span aria-hidden="true">🚢</span> Lot → {row.lotNext.label}
-          </button>
-        )}
-        {working && !row.next && row.waitingOnLot && !row.lotNext && (
+        {working && !row.serial && !row.next && row.waitingOnLot && (
           <span className="ocard__wait">🚢 Moves with the lot</span>
         )}
-        {undoable && (
+        {undoable && !row.serial && (
           <button type="button" className="ocard__undo" disabled={busy} onClick={() => onPress(undoable, false)}>
             ✓ {undoable.label} · Undo
           </button>

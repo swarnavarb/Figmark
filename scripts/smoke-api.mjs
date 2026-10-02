@@ -6047,6 +6047,12 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
      an item past the warehouse check-in that was never ticked in there. */
   assert.equal((await card()).lotNext.label, 'Dispatched from China');
   assert.equal((await card()).lotNext.unchecked, 1);
+  /* And every button the item has - its own and the lot's - on one line, in route order. */
+  const serial = (await card()).serial;
+  assert.deepEqual(serial.slice(0, 2).map((button) => [button.kind, button.label]),
+    [['item', 'Received at international warehouse'], ['lot', 'Dispatched from China']]);
+  assert.equal(serial[1].gated, true, 'the lot move warns while the item is not checked in');
+  assert.ok(serial.some((button) => button.kind === 'item' && button.key === 'delivered'), 'the last mile is on the line');
 
   // One press.
   await setCheckpoint(req({
@@ -6056,6 +6062,8 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   assert.equal((await card()).next, null, 'the lot flies it, not a button');
   assert.equal((await card()).waitingOnLot, true);
   assert.equal((await card()).lotNext.unchecked, 0, 'checked in, so the lot can move from the card');
+  assert.equal((await card()).serial[0].done, true);
+  assert.equal((await card()).serial[1].gated, false);
   assert.equal((await card()).done.checkpoint, 'china_received', 'and the press just made is there to undo');
 
   // A button bound to a step further along jumps straight there: the lot flew

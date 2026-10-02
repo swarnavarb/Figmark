@@ -501,6 +501,10 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
       buyerName: byId.get(order.buyerId)?.displayName ?? 'Unknown',
       buyerHandle: byId.get(order.buyerId)?.username ?? null,
       checkpoints: order.checkpoints ?? {},
+      /** Every press, custom buttons included, keyed as the route's buttons are. */
+      ticks: ticksOf(order),
+      /** Its own word for where it was received, which renames that button. */
+      receivedAs: order.receivedAs ?? null,
       /** Where this item is on the lot's route: the lot's, its own, or what it has done. */
       currentStep: itemStepOn(
         route, step, order.currentStep, ticksOf(order),
