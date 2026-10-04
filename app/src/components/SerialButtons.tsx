@@ -20,7 +20,7 @@ type Entry =
  * where the crate is moved. Every press of the item's own asks first: each
  * one changes what a buyer reads.
  */
-export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink }: {
+export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, stepOf }: {
   buttons: readonly SerialButton[];
   busy: boolean;
   /** Named in every confirmation, so nobody confirms the wrong parcel. */
@@ -30,6 +30,12 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink }: 
   onLot: () => void;
   /** Dispatched asks for the courier and AWB, which the order page takes. */
   orderLink?: { to: string; state?: unknown };
+  /**
+   * Where it is on the route, counted over every step - the one count every
+   * screen uses. The buttons below are fewer than the steps (the lot's moves
+   * fold into one stop), so their own tally is never the headline.
+   */
+  stepOf?: { at: number; of: number } | null;
 }) {
   const [asking, setAsking] = useState<{ button: ItemButton; on: boolean } | null>(null);
 
@@ -61,8 +67,10 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink }: 
   return (
     <div className="serial">
       <div className="serial__head">
-        <span>Route</span>
-        <span className="serial__count">{doneCount}/{entries.length}</span>
+        <span>{stepOf ? `Step ${Math.min(stepOf.at + 1, stepOf.of)} of ${stepOf.of}` : 'Route'}</span>
+        <span className="serial__count" title="Buttons pressed">
+          {doneCount} of {entries.length} {entries.length === 1 ? 'button' : 'buttons'} done
+        </span>
       </div>
       <ol className="serial__list">
         {entries.map((entry, index) => {
@@ -88,7 +96,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink }: 
           const { button } = entry;
           const body = (
             <>
-              <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
+              <span className="serial__n" aria-hidden="true">{done ? '✓' : '⚡'}</span>
               <span className="serial__label">{button.label}</span>
             </>
           );

@@ -2,7 +2,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
-import { currentStepOf, lotEndIndex, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
+import { currentStepOf, itemStepOn, lotEndIndex, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
@@ -437,7 +437,18 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       lotId: lot?.id ?? null,
       lotName: lot?.name ?? null,
       lotNumber: lot ? lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt) : null,
-      lotStep: lot ? routeOf(lot).steps[currentStepOf(lot)]?.name ?? null : null,
+      lotStep: lot
+        ? renderStepText(routeOf(lot).steps[currentStepOf(lot)]?.name ?? '', { origin: lot.originCountry, destination: lot.destinationCountry }) || null
+        : null,
+      /**
+       * Where this order is on its lot's route, counted over every step of
+       * it - the same "step 3 of 6" the Studio, the lot and the buyer's
+       * timeline count, so no two screens number one route differently.
+       */
+      routeStep: lot ? {
+        at: itemStepOn(routeOf(lot), currentStepOf(lot), order.currentStep, ticksOf(order)),
+        of: routeOf(lot).steps.length,
+      } : null,
       /** The lot's next move, pressed from the order card - null once it cannot move further. */
       lotNext: lotNextFor(lot),
       /** The route's buttons and the lot's moves, in order - null when not in a lot. */

@@ -8,7 +8,15 @@ import {
   type LotStage,
   type Sourcing,
 } from './enums.js';
-import type { Order, StageEvent, StageEventKind } from './models.js';
+import type { Lot, Order, StageEvent, StageEventKind } from './models.js';
+
+/**
+ * A lot that is finished: closed, or every item in it delivered. Nothing more
+ * is filed into it or moved along it, and it lists under Completed.
+ */
+export function lotIsDone(lot: Pick<Lot, 'status' | 'stage'>): boolean {
+  return lot.status === 'closed' || lot.status === 'cancelled' || lot.stage === 'delivered';
+}
 
 /**
  * Partition key for an order with no shipment lot behind it.

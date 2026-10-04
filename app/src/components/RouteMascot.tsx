@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { RouteProblem } from '@shared/buttons';
-import { stepButtonLabel, type RouteStep } from '@shared/routes';
+import { renderStepText, stepButtonLabel, type RouteStep } from '@shared/routes';
 
 /**
  * Pip, the parcel who helps write a tracking timeline.
@@ -136,7 +136,7 @@ const QUESTIONS: Question[] = [
     key: 'first',
     ask: () => "Hi, I'm Pip! 📦 Step 1, 🧾 Order placed, is already in - every timeline starts there. So who gets the item first after a buyer orders?",
     choices: [
-      { value: 'warehouse', label: '🏬 My China warehouse' },
+      { value: 'warehouse', label: '🏬 My warehouse abroad' },
       { value: 'forwarder', label: '🤝 A freight forwarder' },
       { value: 'supplier', label: '🏭 The supplier ships it' },
       { value: 'inhand', label: '🏠 I already have it' },
@@ -144,7 +144,7 @@ const QUESTIONS: Question[] = [
   },
   {
     key: 'packed',
-    ask: (a) => `Got it - step 2 is "${firstStepName(a.first)}", and its button is yours to press. Does it get packed or consolidated before it leaves?`,
+    ask: () => 'Its button is yours to press. Does it get packed or consolidated before it leaves?',
     choices: [{ value: true, label: '📦 Yes, packed first' }, { value: false, label: '➡️ No, it goes as is' }],
     skip: (a) => a.first === 'inhand',
   },
@@ -167,7 +167,7 @@ const QUESTIONS: Question[] = [
   {
     key: 'land',
     ask: () => 'Where does the lot land? That is where it gets unpacked, and each item goes on alone.',
-    choices: [{ value: 'warehouse', label: '🏬 My India warehouse' }, { value: 'me', label: '🏠 Straight to me' }],
+    choices: [{ value: 'warehouse', label: '🏬 My warehouse at home' }, { value: 'me', label: '🏠 Straight to me' }],
     skip: (a) => a.first === 'inhand',
   },
   {
@@ -178,12 +178,6 @@ const QUESTIONS: Question[] = [
     choices: [{ value: true, label: '📦 Yes, I pack each' }, { value: false, label: '🚚 Straight to the courier' }],
   },
 ];
-
-function firstStepName(first: PipAnswers['first']): string {
-  if (first === 'forwarder') return 'Received by the freight forwarder';
-  if (first === 'supplier') return 'Shipped by the supplier';
-  return 'Received at the China warehouse';
-}
 
 /** The questions still to be asked, in order. */
 export function pipQueue(answers: PipAnswers): Question[] {
@@ -232,7 +226,7 @@ export function routeFromAnswers(a: PipAnswers): RouteStep[] {
      lot is unpacked there and each item is counted in on its own button. */
   const last: RouteStep[] = [];
   if (a.land === 'warehouse') {
-    last.push(make('Received at {destination} warehouse', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'At India WH' }));
+    last.push(make('Received at {destination} warehouse', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'At home WH' }));
   } else if (a.land === 'me') {
     last.push(make('Received by the seller', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'Got it' }));
   }
@@ -249,11 +243,16 @@ export function routeFromAnswers(a: PipAnswers): RouteStep[] {
 }
 
 /** What Pip says once a question is answered: the step it just laid down. */
-export function pipAck(before: RouteStep[], after: RouteStep[]): string {
+export function pipAck(
+  before: RouteStep[],
+  after: RouteStep[],
+  vars: { origin?: string | null; destination?: string | null } = {},
+): string {
   const added = after.filter((step) => !before.some((old) => old.name === step.name));
   if (added.length === 0) return 'Okay, nothing to add there.';
   const first = before.length + 1;
-  const names = added.map((step) => `"${step.name.replace(/\{(origin|destination)\}/g, (_, key) => (key === 'origin' ? 'China' : 'India'))}"`);
+  // In the shop's own countries where it has a lot to read them from.
+  const names = added.map((step) => `"${renderStepText(step.name, vars)}"`);
   return added.length === 1
     ? `Step ${first} is ${names[0]}.`
     : `Steps ${first}-${first + added.length - 1}: ${names.join(', ')}.`;
@@ -297,7 +296,9 @@ export function pipTips(steps: RouteStep[], name: string, problems: RouteProblem
   if (stock) {
     tips.push({
       id: `words-${stock.id}`, mood: 'happy',
-      text: `I gave "${stock.name}" its button - it says "${stepButtonLabel(stock)}". Want to try it on a sample order and put it in your own words?`,
+      text: stepButtonLabel(stock) === stock.name.trim()
+        ? `"${stepButtonLabel(stock)}" has a button with the same words as the step. Want to try it on a sample order and give the button your own words?`
+        : `"${stock.name}" has a button that says "${stepButtonLabel(stock)}". Want to try it on a sample order and put it in your own words?`,
       fix: { label: '👀 Open the preview', action: { kind: 'preview' } },
     });
   }

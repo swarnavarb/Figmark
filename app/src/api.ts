@@ -350,8 +350,10 @@ export interface LotSummary {
 
 export interface LotsResponse {
   lots: LotSummary[];
-  /** Listings not yet tagged into any lot. */
+  /** Import listings not yet tagged into any lot. */
   unassigned: Listing[];
+  /** Orders sold, bound for a lot, and in none yet. */
+  awaitingOrders: number;
 }
 
 export interface LotContents {
@@ -532,6 +534,8 @@ export interface SaleRow {
   lotNext: { to: number; label: string; unchecked: number } | null;
   /** The route's buttons and the lot's moves, one after another, while it rides in a lot. */
   serial: SerialButton[] | null;
+  /** Where it is on its lot's route, counted over every step: index and total. */
+  routeStep: { at: number; of: number } | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
   /** When the seller ticked it delivered, on the lot's own item list. */
@@ -1373,6 +1377,8 @@ export interface RoutePreset {
 
 export interface RoutesResponse {
   routes: TrackingRoute[];
+  /** Per route: how many unfinished lots ride it, and how many carry an older copy. */
+  usage: Record<string, { lots: number; behind: number }>;
   /** The seven stages this app has always had, as a route you can pick. */
   builtIn: { routeId: string | null; name: string; steps: RouteStep[] };
   /** The shapes a shop can start from, described. */
@@ -1386,6 +1392,8 @@ export interface RoutesResponse {
 /** An item that could go in a lot: sold, bound for one, not in one. */
 export interface CandidateItem {
   id: string;
+  /** The listing it was bought from. */
+  listingId: string;
   itemName: string;
   condition: string;
   quantity: number;
@@ -1815,7 +1823,10 @@ export const api = {
       waitMessage?: string; lastMile?: boolean; button?: string; custom?: boolean; assignee?: StepAssignee;
     }[];
   }) =>
-    post<{ route: TrackingRoute }>('/routes/new', body),
+    post<{ route: TrackingRoute; lotsBehind?: number }>('/routes/new', body),
+  /** Give every unfinished lot on this route its latest steps. */
+  applyRoute: (id: string) =>
+    post<{ lotsUpdated: number; ordersUpdated: number }>(`/routes/${encodeURIComponent(id)}/apply`, {}),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),
   lotCandidates: (id: string, q?: string) =>
     request<{ items: CandidateItem[] }>(

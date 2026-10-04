@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeOf, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
+  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeJoinsLot, routeOf, sameSteps, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
 } from '../../../shared/routes.js';
 import { NOT_ACCEPTED_MESSAGE, actionsFor, awaitingAcceptance, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
@@ -46,9 +46,22 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
+  const [routes, lots] = await Promise.all([repository.listRoutes(user.id), repository.listLots({ sellerId: user.id })]);
+
+  /* How many unfinished lots ride each route, and how many of those carry an
+     older copy of it - so a list can say "on 3 lots" and offer the update. */
+  const usage: Record<string, { lots: number; behind: number }> = {};
+  for (const route of routes) {
+    const on = lots.filter((lot) => !lotIsDone(lot) && lot.route?.routeId === route.id);
+    usage[route.id] = {
+      lots: on.length,
+      behind: on.filter((lot) => !sameSteps(routeOf(lot).steps, withButtons(route.steps))).length,
+    };
+  }
 
   return json(200, {
-    routes: await repository.listRoutes(user.id),
+    routes,
+    usage,
     builtIn: BUILT_IN_ROUTE,
     /*
      * The shapes a shop can start from.
@@ -159,9 +172,11 @@ async function saveRoute(request: HttpRequest, _context: InvocationContext) {
   if (body.id) {
     const existing = await repository.getRoute(user.id, body.id);
     if (!existing) return error(404, 'not_found', 'No such route.');
-    return json(200, {
-      route: await repository.saveRoute({ ...existing, name, steps, updatedAt: now }),
-    });
+    const route = await repository.saveRoute({ ...existing, name, steps, updatedAt: now });
+    /* The lots already on it keep their own copy; say how many now read an
+       older one, so the seller can choose to bring them up to date. */
+    const lotsBehind = routeJoinsLot(route) ? (await lotsBehindOf(repository, user.id, route)).length : 0;
+    return json(200, { route, lotsBehind });
   }
 
   return json(201, {
@@ -201,6 +216,7 @@ function itemCard(order: Order, buyers: Map<string, User>) {
   const buyer = buyers.get(order.buyerId);
   return {
     id: order.id,
+    listingId: order.listingId,
     itemName: order.itemName,
     condition: order.condition,
     quantity: order.quantity,
@@ -264,6 +280,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
 
   const wanted = [...new Set(body.orderIds ?? [])].filter(Boolean);
   if (wanted.length === 0) return error(400, 'invalid_request', 'Pick at least one item.');
+  if (lotIsDone(lot)) return error(409, 'lot_done', 'That lot is finished. Add these to an open lot instead.');
 
   const repository = await getRepository();
   const route = routeOf(lot);
@@ -358,8 +375,16 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
      item at a time. The floor is one short of its own first step, which is
      where a lot sits while it is still filling. */
   const floor = Math.max(0, lotOffset(route) - 1);
-  if (target < floor || target >= route.steps.length) {
+  if (target < floor) {
+    return error(409, 'no_such_step', 'That lot is already at the start of its own steps; the ones before it happen to each item.');
+  }
+  if (target >= route.steps.length) {
     return error(409, 'no_such_step', 'That lot is at the end of its route.');
+  }
+  /* A finished lot stays finished. Moving it back re-opened it with every
+     item already delivered, and nothing would ever close it again. */
+  if (lotIsDone(lot)) {
+    return error(409, 'lot_done', 'Every item in this lot has been delivered, so the lot no longer moves. Move a single item from its order instead.');
   }
   if (target === from) return json(200, { lot, ordersUpdated: 0 });
   /* The crate stops where it is unpacked. From there each item goes to its own
@@ -469,6 +494,9 @@ async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
   }
 
   const repository = await getRepository();
+  if (lotIsDone(lot)) {
+    return error(409, 'lot_done', 'This lot is finished, so its route can no longer change.');
+  }
 
   /* A copy, like every route a lot carries: editing the template later must
      not rewrite a timeline somebody has been reading for three weeks. */
@@ -476,30 +504,56 @@ async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
   if (body.routeId) {
     const template = await repository.getRoute(userId, body.routeId);
     if (!template) return error(404, 'not_found', 'No such route.');
+    if (!routeJoinsLot(template)) return error(400, 'invalid_route', NEVER_JOINS);
     next = { routeId: template.id, name: template.name, steps: withButtons(template.steps) };
   }
 
+  /* The same route is only refused when nothing in it changed: a route edited
+     since this lot was given it is exactly what a seller re-picks it for. */
   const before = routeOf(lot);
-  if (before.routeId === next.routeId && before.name === next.name) {
-    return error(409, 'same_route', 'That lot already travels that route.');
+  if (before.routeId === next.routeId && before.name === next.name && sameSteps(before.steps, next.steps)) {
+    return error(409, 'same_route', 'That lot already travels this route, and the route has not changed since.');
   }
 
-  /* Carried across by the stage the two ladders share, so a lot halfway to
-     India stays halfway to India rather than starting again - except a lot
-     still filling, which has taken none of its own steps and should be still
-     filling on the new ladder rather than mapped onto one. */
+  const result = await rerouteLot(repository, lot, next, userId, body.note);
+  return json(200, result);
+}
+
+/** Said wherever a lot is refused a route with no lot steps. */
+const NEVER_JOINS = 'That route never joins a lot - it is for items shipped one by one. Pick a route with steps in the lot.';
+
+/**
+ * Put one lot on a new copy of a route, carrying its position across.
+ *
+ * Shared by changing a lot's route and by pushing an edited route out to
+ * every lot on it, so the two cannot disagree about where a lot ends up.
+ */
+async function rerouteLot(repository: Repo, lot: Lot, next: LotRoute, userId: string, note?: string) {
+  const before = routeOf(lot);
+  /* Carried across by the step itself when it survived the edit, then by the
+     stage the two ladders share, so a lot halfway to India stays halfway to
+     India rather than starting again - except a lot still filling, which has
+     taken none of its own steps and stays filling on the new ladder. */
   const was = currentStepOf(lot);
+  const sameStep = before.routeId !== null && before.routeId === next.routeId
+    ? next.steps.findIndex((step) => step.id === before.steps[was]?.id)
+    : -1;
   const at = was < lotOffset(before)
     ? Math.max(0, lotOffset(next) - 1)
-    : stepForStage(next, coarseStage(before, was));
+    // Never onto a step that happens to one item, nor past where the lot is unpacked.
+    : Math.max(lotOffset(next) - 1, Math.min(
+      sameStep >= 0 ? sameStep : stepForStage(next, coarseStage(before, was)), lotEndIndex(next)));
   const stage = coarseStage(next, at);
   const now = new Date().toISOString();
+  const updatedRoute = before.routeId !== null && before.routeId === next.routeId;
+  const said = note?.trim()
+    || (updatedRoute ? `The steps of ${next.name} were updated.` : `Now tracked as ${next.name}.`);
   const event: StageEvent = {
     stage,
     step: next.steps[at]?.name,
     enteredAt: now,
     kind: 'note',
-    note: body.note?.trim() || `Now tracked as ${next.name}.`,
+    note: said,
     recordedBy: userId,
   };
 
@@ -512,11 +566,12 @@ async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   });
 
-  /* Every item in it, because an order's own position indexes into the lot's
-     ladder and a position left pointing at the old one is a buyer reading a
-     step that is no longer on their timeline. */
+  /* Every item still travelling, because an order's own position indexes
+     into the lot's ladder and a position left pointing at the old one is a
+     buyer reading a step that is no longer on their timeline. One already
+     delivered keeps where it ended. */
   const orders = (await repository.listOrdersForLot(lot.id))
-    .filter((order) => !isCancelledLike(order.status));
+    .filter((order) => !isCancelledLike(order.status) && order.status !== 'delivered');
   await Promise.all(orders.map((order) =>
     repository.updateOrder({
       ...order,
@@ -532,13 +587,47 @@ async function setLotRoute(request: HttpRequest, _context: InvocationContext) {
     {
       kind: 'lot_moved',
       title: `${lot.name}: tracking updated`,
-      body: event.note ?? `Now tracked as ${next.name}.`,
+      body: said,
       link: '/me?tab=purchases',
     },
     { except: lot.sellerId },
   );
 
-  return json(200, { lot: updated, ordersUpdated: orders.length });
+  return { lot: updated, ordersUpdated: orders.length };
+}
+
+/** The shop's unfinished lots on this route whose copy is older than the route now is. */
+async function lotsBehindOf(repository: Repo, sellerId: string, route: TrackingRoute): Promise<Lot[]> {
+  const lots = await repository.listLots({ sellerId });
+  return lots.filter((lot) => !lotIsDone(lot) && lot.route?.routeId === route.id
+    && !sameSteps(routeOf(lot).steps, withButtons(route.steps)));
+}
+
+/**
+ * POST /api/routes/{id}/apply - give every unfinished lot on this route its
+ * latest steps.
+ *
+ * A lot keeps its own copy so an edit never rewrites a timeline behind a
+ * buyer's back; this is the seller deciding, after the edit, that it should.
+ */
+async function applyRoute(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A route id is required.');
+
+  const repository = await getRepository();
+  const route = await repository.getRoute(user.id, id);
+  if (!route) return error(404, 'not_found', 'No such route.');
+  if (!routeJoinsLot(route)) return error(400, 'invalid_route', NEVER_JOINS);
+
+  const next: LotRoute = { routeId: route.id, name: route.name, steps: withButtons(route.steps) };
+  const behind = await lotsBehindOf(repository, user.id, route);
+  let ordersUpdated = 0;
+  for (const lot of behind) {
+    ordersUpdated += (await rerouteLot(repository, lot, next, user.id)).ordersUpdated;
+  }
+  return json(200, { lotsUpdated: behind.length, ordersUpdated });
 }
 
 /* ── Notes, and one item that travels differently ──────────────────────── */
@@ -886,6 +975,7 @@ export const addItemsRoute = handler(addItems);
 export const stepLotRoute = handler(stepLot);
 export const noteOnLotRoute = handler(noteOnLot);
 export const setLotRouteRoute = handler(setLotRoute);
+export const applyRouteRoute = handler(applyRoute);
 export const stepItemRoute = handler(stepItem);
 export const myItemsRoute = handler(myItems);
 
@@ -895,6 +985,7 @@ const anon = { authLevel: 'anonymous' } as const;
 
 app.http('routes-list', { ...anon, methods: ['GET'], route: 'routes', handler: listRoutesRoute });
 app.http('routes-save', { ...anon, methods: ['POST'], route: 'routes/new', handler: saveRouteRoute });
+app.http('routes-apply', { ...anon, methods: ['POST'], route: 'routes/{id}/apply', handler: applyRouteRoute });
 app.http('routes-delete', {
   ...anon, methods: ['POST'], route: 'routes/{id}/delete', handler: deleteRouteRoute,
 });

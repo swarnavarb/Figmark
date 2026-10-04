@@ -225,7 +225,7 @@ export function stepButtonLabel(
   if (!name) return step.trigger ? TRIGGER_LABELS[step.trigger].button : 'Done';
   const said = vars
     ? renderStepText(name, vars)
-    : name.replace(/\{(origin|destination)\}/g, ' ').replace(/\s+/g, ' ').trim();
+    : name.replace(/'?\{(origin|destination)\}'?/g, ' ').replace(/\s+/g, ' ').trim();
   return said.length > 44 ? `${said.slice(0, 43).replace(/\s+\S*$/, '')}…` : said;
 }
 
@@ -290,9 +290,13 @@ export function waitMessageFor(step: RouteStep | undefined): string | null {
  * it through this before a person reads it.
  */
 export function renderStepText(text: string, vars: { origin?: string | null; destination?: string | null }): string {
+  /* Quotes around a token are dropped with it: routes written before this
+     said "Received at '{destination}' Warehouse", and a buyer should never
+     read the punctuation that held a placeholder. A lot with no country set
+     reads as plain words rather than as the token's name in quotes. */
   return text
-    .replace(/\{origin\}/g, vars.origin?.trim() || 'origin')
-    .replace(/\{destination\}/g, vars.destination?.trim() || 'destination');
+    .replace(/'?\{origin\}'?/g, vars.origin?.trim() || 'the origin')
+    .replace(/'?\{destination\}'?/g, vars.destination?.trim() || 'the destination');
 }
 
 /**
@@ -327,6 +331,53 @@ export function preSteps(route: HasSteps): RouteStep[] {
 export function joinIndexOf(route: HasSteps): number {
   const at = route.steps.findIndex((step, index) => sideOf(step, index) === 'post');
   return at === -1 ? route.steps.length : at;
+}
+
+/**
+ * Whether a lot can travel this route at all.
+ *
+ * A route with no lot steps - a courier run, one parcel per order - is a
+ * fine route for a listing, but a lot put on it has nothing of its own to
+ * move, and every step would be moved for items that were meant to be worked
+ * one at a time.
+ */
+export function routeJoinsLot(route: HasSteps): boolean {
+  return joinIndexOf(route) < route.steps.length;
+}
+
+/**
+ * Where a route breaks into its three parts: steps before the lot, steps the
+ * lot moves, and steps worked per item after it. The Studio draws these as
+ * lanes, and every list that summarises a route says the same three numbers.
+ */
+export function routeParts(route: HasSteps): { before: number; lot: number; after: number } {
+  const join = joinIndexOf(route);
+  if (join >= route.steps.length) return { before: route.steps.length, lot: 0, after: 0 };
+  // As the Studio draws it: a lot never carries Dispatched, so items leave by then at the latest.
+  const dispatched = route.steps.findIndex((step) => step.trigger === 'dispatched');
+  const leave = Math.max(join, Math.min(leaveIndexOf(route), dispatched >= 0 ? dispatched : route.steps.length));
+  return { before: join, lot: leave - join, after: route.steps.length - leave };
+}
+
+/** The route in one line, by its three parts, e.g. "1 before the lot · 2 in the lot · 3 after". */
+export function routePartsLine(route: HasSteps): string {
+  const { before, lot, after } = routeParts(route);
+  if (lot === 0) return `${route.steps.length} ${route.steps.length === 1 ? 'step' : 'steps'}, never joins a lot`;
+  return `${before} before the lot · ${lot} in the lot · ${after} after`;
+}
+
+/**
+ * What a buyer could read differently between two copies of a route. A lot
+ * carries a copy, so this is how to tell whether the route it was given has
+ * been edited since.
+ */
+export function sameSteps(a: readonly RouteStep[], b: readonly RouteStep[]): boolean {
+  const key = (steps: readonly RouteStep[]) => JSON.stringify(steps.map((step, index) => [
+    step.name, step.description, sideOf(step, index), step.trigger ?? null, step.lastMile ?? false,
+    step.forward ?? false, step.button ?? null, step.waitMessage ?? null, step.custom ?? false,
+    step.assignee ?? null,
+  ]));
+  return key(a) === key(b);
 }
 
 /**
@@ -647,7 +698,7 @@ export const SUGGESTED_STEPS: readonly PresetStep[] = [
     stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
   },
   {
-    name: "Received at '{origin}' Dispatch Center",
+    name: 'Received at {origin} dispatch center',
     description: 'The piece is counted in and waiting for a lot.',
     side: 'pre', trigger: 'china_received',
     stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
@@ -706,8 +757,8 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
       { name: 'Supplier Accumulates Orders', description: "Held at the supplier's until enough orders are ready to ship together.", side: 'pre', trigger: 'china_received', stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
       { name: 'Dispatched to Freight Forwarder', description: "Handed over from the supplier to the freight forwarder.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
       { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Freight Forwarder Forwards to Destination', description: "On its way to '{destination}'.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: "Received at '{destination}' Warehouse", description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Freight Forwarder Forwards to Destination', description: 'On its way to {destination}.', side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Received at {destination} warehouse', description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
     ],
@@ -722,8 +773,8 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
       { name: 'Seller Purchases & Ships to Freight Forwarder', description: 'Bought from the supplier and sent straight on, with no stop at the seller.', side: 'pre', forward: true, stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
       { name: 'Freight Forwarder Receives Goods', description: 'Counted in at the freight forwarder.', side: 'post', trigger: 'china_received', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
       { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Freight Forwarder Forwards to Destination', description: "On its way to '{destination}'.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: "Received at '{destination}' Warehouse", description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Freight Forwarder Forwards to Destination', description: 'On its way to {destination}.', side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Received at {destination} warehouse', description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
     ],
@@ -989,8 +1040,3 @@ export function laneOf(lot: Pick<Lot, 'originCountry' | 'destinationCountry'>): 
   return `${lot.originCountry?.trim() || 'Origin'} → ${lot.destinationCountry?.trim() || 'Destination'}`;
 }
 
-export function suggestLotName(at: Date = new Date(), origin?: string): string {
-  const month = at.toLocaleDateString('en-GB', { month: 'long' });
-  const place = origin?.split(',')[0]?.trim();
-  return place ? `${place} run — ${month}` : `${month} run`;
-}

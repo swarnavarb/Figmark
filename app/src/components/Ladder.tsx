@@ -27,7 +27,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, actFor, lockFrom, zones,
+  leaveAt, leaveNote, actFor, lockFrom, zones, moveUpTo,
 }: {
   steps: RouteStep[];
   current: number;
@@ -88,6 +88,12 @@ export function Ladder({
    * timeline leaves this out.
    */
   zones?: { join: number; leave: number };
+  /**
+   * The furthest rung `onMove` may go to. Past it the move is not on offer at
+   * all - a lot cannot be moved onto the steps its items take one at a time,
+   * and a button that only answers with a refusal is worse than none.
+   */
+  moveUpTo?: number;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -255,7 +261,7 @@ export function Ladder({
                       <Icon name="plus" size={11} /> Note
                     </button>
                   )}
-                  {onMove && index !== current && forwarding !== index && (
+                  {onMove && index !== current && forwarding !== index && (moveUpTo === undefined || index <= moveUpTo) && (
                     <button type="button" className="ladder__act ladder__act--move" disabled={busy}
                       onClick={() => step.forward ? setForwarding(index) : void onMove(index)}>
                       {index < current ? 'Move back here' : 'Move here'}

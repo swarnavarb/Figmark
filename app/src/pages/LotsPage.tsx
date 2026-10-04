@@ -1,8 +1,10 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, type RouteStep,
+  WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
+  type RouteStep, type TrackingRoute,
 } from '@shared/routes';
+import { lotIsDone } from '@shared/fulfilment';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
 import {
@@ -14,8 +16,9 @@ import { Ladder } from '../components/Ladder';
 import { SerialButtons } from '../components/SerialButtons';
 import { serialButtons, withReceivedAs } from '@shared/buttons';
 import { LotPeople } from '../components/LotPeople';
-import { LotDetailFields, Modal, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
-import { ErrorNotice, Icon, type IconName } from '../components/ui';
+import { LotDetailFields, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
+import { ErrorNotice, Icon, Modal, type IconName } from '../components/ui';
+import { RouteStudio } from './RouteStudioPage';
 import { formatDate, formatMoney, formatWeight } from '../format';
 
 /**
@@ -198,40 +201,56 @@ function CrewCard({ lot, busy, onRun }: {
   );
 }
 /**
- * Open a lot.
- *
- * Everything a lot needs to start travelling, on one screen: what it is
- * called, where it is coming from, who works it at either end, and the ladder
- * it climbs. The ladder is the new part and the important one - it is what the
- * buyer will read for the next six weeks, in the seller's own words rather than
- * in seven fixed ones that fit nobody's actual route.
- *
- * The number is not asked for. It is derived from the lot's own id the moment
- * it exists, which is one fewer thing to invent and one fewer thing to collide.
+ * A route as a lot picker shows it: the steps the lot itself moves through,
+ * in the lot's own countries, and how long the whole thing is. Every route
+ * starts at Order Placed and ends at Delivered, so those say nothing about
+ * which one to pick; the middle is what differs.
  */
-/**
- * A route in one line: how many steps, and where it starts and ends.
- *
- * Enough to choose between two routes without opening either. The full ladder
- * is on the lot once it exists, and on the route itself in the library.
- */
-function summarise(steps: readonly { name: string }[]): string {
+function summarise(steps: readonly RouteStep[], vars: { origin?: string | null; destination?: string | null } = {}): string {
   if (steps.length === 0) return 'No steps yet';
-  const first = steps[0]!.name;
-  const last = steps[steps.length - 1]!.name;
-  return `${steps.length} steps · ${first} → ${last}`;
+  const { before, lot } = routeParts({ steps: [...steps] });
+  const middle = steps.slice(before, before + lot).map((step) => renderStepText(step.name, vars));
+  const count = `${steps.length} steps`;
+  return middle.length > 0 ? `${middle.join(' → ')} · ${count}` : `Never joins a lot · ${count}`;
 }
 
-export function NewLotForm({ onDone, onCancel, suggestedName }: {
+/**
+ * The Studio, over whatever screen asked for a route, so writing one never
+ * throws away the half-filled form underneath. Saved, it hands the new route
+ * straight back to be picked.
+ */
+export function RouteSheet({ onSaved, onClose }: {
+  onSaved: (route: TrackingRoute) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal title="New route"
+      onClose={() => { if (window.confirm('Close the route builder? A route not saved yet is lost.')) onClose(); }}>
+      <RouteStudio editing={null} onSaved={onSaved} onCancel={onClose}
+        intro={<p className="muted" style={{ marginTop: 0 }}>
+          Write it once - it is picked for this lot as soon as it is saved, and any lot after can use it.
+        </p>} />
+    </Modal>
+  );
+}
+
+/**
+ * Open a lot.
+ *
+ * Everything a lot needs to start travelling, on one screen: where it is
+ * coming from and going to, and the route it climbs. The rest - who works it
+ * at either end - is folded away and editable later.
+ *
+ * Nothing is asked twice: the countries and route of the shop's last lot are
+ * where the next one starts, since most shops run the same lane again. The
+ * name is optional, because the lot number is already unique.
+ */
+export function NewLotForm({ onDone, onCancel }: {
   /** Handed the lot just opened, for a caller that has something to put in it. */
   onDone: (lot: Lot) => void;
   onCancel: () => void;
-  /** What to call it if the seller does not care, which is most of the time. */
-  suggestedName?: string;
 }) {
-  const [details, setDetails] = useState<LotDetails>(
-    () => ({ ...emptyLotDetails, name: suggestedName ?? '' }),
-  );
+  const [details, setDetails] = useState<LotDetails>(() => ({ ...emptyLotDetails, name: '' }));
   /** Everything that is not a decision, folded away until asked for. */
   const [more, setMore] = useState(false);
   const [forwarderName, setForwarderName] = useState('');
@@ -240,27 +259,56 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
   const [handlers, setHandlers] = useState<ProviderCard[]>([]);
 
   /*
-   * The route builder used to live here, behind a "write my own steps"
-   * option. It is one thing now, not two: the Routes tab in Sell is where a
-   * route is designed, and this screen only ever picks from what is already
-   * there - so there is one place a seller learns to look, not two that can
-   * disagree about which is the real one.
+   * Picking, never designing: routes are written in the Studio, which opens
+   * over this form when a new one is needed and hands it straight back.
    */
   const [library, setLibrary] = useState<RoutesResponse | null>(null);
   const [routeId, setRouteId] = useState('');
+  /** The route the shop's last lot travelled, said beside it so the default is never silent. */
+  const [lastRouteId, setLastRouteId] = useState<string | null>(null);
+  const [designing, setDesigning] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void api.routes().then((result) => {
+  const loadRoutes = useCallback(async (pick?: string) => {
+    try {
+      const result = await api.routes();
       setLibrary(result);
-      setRouteId(result.routes[0]?.id ?? '');
+      if (pick) setRouteId(pick);
+    } catch {
+      setLibrary(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void Promise.all([api.routes(), api.myLots().catch(() => null)]).then(([routes, lots]) => {
+      setLibrary(routes);
+      const last = lots?.lots[0]?.lot;
+      const usable = routes.routes.filter(routeJoinsLot);
+      const lastRoute = last?.route?.routeId && usable.some((row) => row.id === last.route!.routeId)
+        ? last.route.routeId : null;
+      setLastRouteId(lastRoute);
+      // Last lot's route, or the only one there is. With a choice and no
+      // history, nothing is picked for the seller.
+      setRouteId(lastRoute ?? (usable.length === 1 ? usable[0]!.id : ''));
+      if (last?.originCountry || last?.destinationCountry) {
+        setDetails((now) => ({
+          ...now,
+          originCountry: now.originCountry || last.originCountry || '',
+          destinationCountry: now.destinationCountry || last.destinationCountry || '',
+        }));
+      }
     }).catch(() => setLibrary(null));
     void api.serviceDirectory('handler')
       .then((result) => setHandlers(result.providers))
       .catch(() => setHandlers([]));
   }, []);
+
+  /* A route with nothing in its lot lane is for items shipped one by one; a
+     lot put on it would have nothing of its own to move. */
+  const routes = (library?.routes ?? []).filter(routeJoinsLot);
+  const vars = { origin: details.originCountry, destination: details.destinationCountry };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -269,14 +317,15 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
     try {
       const { lot } = await api.createLot({
         ...details,
+        // Blank is fine: the lot is called by its number.
         name: details.name.trim(),
         // Either a directory forwarder or one you already work with; the lot
         // does not care which, and neither does the buyer's tracking.
         forwarderName: forwarderName.trim() || undefined,
         supplierHandle: supplierHandle.trim() || undefined,
         handlerUserId: handlerId || undefined,
-        // Left unset when nothing is picked yet: the lot still opens, on the
-        // generic ladder, and can be pointed at a route once one exists.
+        // Left unset only when the shop has no route yet: the lot opens on the
+        // generic ladder and can be pointed at a route once one exists.
         routeId: routeId || undefined,
       });
       onDone(lot);
@@ -287,28 +336,19 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
     }
   }
 
-  // The same fields as the popup in the sell flow, deliberately: one definition
-  // of what a lot has, so the two screens cannot drift apart.
   return (
+    <>
     <form className="card card--pad form" onSubmit={submit} style={{ marginBottom: 22 }}>
       <h2>New lot</h2>
       <p className="muted" style={{ marginTop: -6 }}>
-        A lot is one shipment. Name it, say how it travels, then file orders into it.
+        A lot is one shipment. Say where it goes and how it travels, then add orders to it.
       </p>
 
-      <label className="field">
-        <span>Name it</span>
-        <input value={details.name} onChange={(e) => setDetails({ ...details, name: e.target.value })}
-          placeholder="Guangzhou run — October" required autoFocus />
-        <span className="field__hint">For your own lists. Buyers see the lot number, not this.</span>
-      </label>
-
-      {/* Every step this lot's route names - "Received at 'China' Dispatch
-          Center" - reads these two, so they are asked before the route is,
-          not filled in as an afterthought once the words are already wrong. */}
+      {/* Every step this lot's route names - "Received at {origin} warehouse" -
+          reads these two, so they are asked before the route is. */}
       <div className="row" style={{ gap: 10 }}>
         <label className="field" style={{ flex: 1 }}>
-          <span>Origin</span>
+          <span>From</span>
           <select value={details.originCountry ?? ''} required
             onChange={(e) => setDetails({ ...details, originCountry: e.target.value })}>
             <option value="" disabled>Country</option>
@@ -317,7 +357,7 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
         </label>
         <span style={{ alignSelf: 'center', marginTop: 18 }}><Icon name="right" size={14} /></span>
         <label className="field" style={{ flex: 1 }}>
-          <span>Destination</span>
+          <span>To</span>
           <select value={details.destinationCountry ?? ''} required
             onChange={(e) => setDetails({ ...details, destinationCountry: e.target.value })}>
             <option value="" disabled>Country</option>
@@ -326,42 +366,48 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
         </label>
       </div>
 
-      {/* Picking, never designing: a route is written once, in the Routes
-          tab, and every lot after it just points at the ladder that already
-          exists. */}
       <fieldset className="pickset">
         <legend>How this lot travels</legend>
         <span className="field__hint">
-          Every item in the lot follows these steps, and buyers read them as their tracking.
+          Every order in the lot follows these steps, and buyers read them as their tracking.
         </span>
 
-        {(library?.routes ?? []).map((route) => (
+        {routes.map((route) => (
           <label key={route.id} className={`pick${routeId === route.id ? ' is-on' : ''}`}>
             <input type="radio" name="route" checked={routeId === route.id}
               onChange={() => setRouteId(route.id)} />
             <span className="pick__body">
-              <span className="pick__name">{route.name}</span>
-              <span className="pick__steps">{summarise(route.steps)}</span>
+              <span className="pick__name">
+                {route.name}
+                {route.id === lastRouteId && <span className="badge badge--quiet" style={{ marginLeft: 6 }}>Used on your last lot</span>}
+              </span>
+              <span className="pick__steps">{summarise(route.steps, vars)}</span>
             </span>
           </label>
         ))}
 
-        {library && library.routes.length === 0 && (
+        {library && routes.length === 0 && (
           <p className="field__hint" style={{ margin: 0 }}>
-            You have not written a route yet. Opening the lot now uses a generic ladder — write your
+            You have no route for lots yet. Opening the lot now uses a generic ladder — write your
             own any time and point this lot (or the next one) at it.
           </p>
         )}
 
-        <Link to="/shop?tab=routes&spotlight=new" className="silkcta">
+        <button type="button" className="silkcta" onClick={() => setDesigning(true)}>
           <span className="silkcta__label">✨ Define your Silk Route</span>
-          <span className="silkcta__note">Create a new route</span>
-        </Link>
+          <span className="silkcta__note">Write a new route without leaving this lot</span>
+        </button>
       </fieldset>
 
-      {/* Nobody, a forwarder, an supplier and a handler are all things a lot
-          may acquire later, and none of them stop it existing. They were four
-          fields between "New lot" and the button that makes one. */}
+      <label className="field">
+        <span>Name it <span className="faint">(optional)</span></span>
+        <input value={details.name} onChange={(e) => setDetails({ ...details, name: e.target.value })}
+          placeholder="Left blank, it is called by its lot number" />
+        <span className="field__hint">For your own lists. Buyers see the lot number, not this.</span>
+      </label>
+
+      {/* A forwarder, a supplier and a handler are all things a lot may
+          acquire later, and none of them stop it existing. */}
       <button type="button" className="disclose" aria-expanded={more}
         onClick={() => setMore(!more)}>
         <Icon name={more ? 'down' : 'right'} size={14} />
@@ -395,7 +441,9 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
                 <option key={entry.userId} value={entry.userId}>{entry.name} — {entry.line}</option>
               ))}
             </select>
-            <span className="field__hint">Who takes delivery in India and gets the parcels out.</span>
+            <span className="field__hint">
+              Who takes delivery in {details.destinationCountry || 'the destination country'} and gets the parcels out.
+            </span>
           </label>
         </div>
       )}
@@ -403,12 +451,19 @@ export function NewLotForm({ onDone, onCancel, suggestedName }: {
       {error && <ErrorNotice message={error} />}
       <div className="row">
         <button type="submit" className="btn"
-          disabled={busy || !details.name.trim()}>
+          disabled={busy || (routes.length > 0 && !routeId)}>
           {busy ? 'Opening…' : 'Open the lot'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
+        {routes.length > 0 && !routeId && <span className="field__hint">Pick how it travels first.</span>}
       </div>
     </form>
+
+    {designing && (
+      <RouteSheet onClose={() => setDesigning(false)}
+        onSaved={(route) => { setDesigning(false); void loadRoutes(routeJoinsLot(route) ? route.id : undefined); }} />
+    )}
+    </>
   );
 }
 
@@ -437,21 +492,33 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
   onCancel: () => void;
 }) {
   const [library, setLibrary] = useState<RoutesResponse | null>(null);
-  const [routeId, setRouteId] = useState(current.routeId ?? '');
+  const [routeId, setRouteId] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [designing, setDesigning] = useState(false);
 
-  useEffect(() => {
-    void api.routes().then((result) => {
+  const load = useCallback(async (pick?: string) => {
+    try {
+      const result = await api.routes();
       setLibrary(result);
-      // The lot's own route when it has one, otherwise whichever this shop
-      // wrote first - never the generic ladder, which is not offered here.
-      setRouteId((existing) => existing || result.routes[0]?.id || '');
-    }).catch(() => setLibrary(null));
+      setRouteId((existing) => pick ?? existing);
+    } catch {
+      setLibrary(null);
+    }
   }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  const picked = library?.routes.find((row) => row.id === routeId) ?? null;
+  /** Only routes a lot can travel: one with nothing in its lot lane has nothing for a lot to move. */
+  const routes = (library?.routes ?? []).filter(routeJoinsLot);
+  const picked = routes.find((row) => row.id === routeId) ?? null;
+  /* The lot's own route is offered again only when it was edited since the
+     lot was given it - picking it then is how the lot gets the new steps. */
+  const isCurrent = picked !== null && picked.id === current.routeId;
+  const currentBehind = routes.some((row) => row.id === current.routeId && !sameSteps(row.steps, current.steps));
+  const unchanged = isCurrent && !currentBehind;
+  const vars = { origin: lot.originCountry, destination: lot.destinationCountry };
+  const filling = current.currentStep < current.offset;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -468,37 +535,47 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
   }
 
   return (
+    <>
     <Modal title="Change route" onClose={onCancel}>
       <form className="form" onSubmit={submit}>
         <p className="muted" style={{ marginTop: 0 }}>
-          Travelling <strong>{current.name}</strong>, at step {current.currentStep + 1} of{' '}
-          {current.steps.length}. Everyone in this lot reads the new steps from the equivalent
-          point, not from the beginning.
+          Travelling <strong>{current.name}</strong>,{' '}
+          {filling
+            ? 'still filling - it has not taken any of its own steps yet.'
+            : <>at step {current.currentStep + 1} of {current.steps.length}.</>}{' '}
+          Everyone in this lot reads the new steps from the equivalent point, not from the beginning.
         </p>
 
-        {library && library.routes.length > 0 ? (
+        {library && routes.length > 0 ? (
           <label className="field">
             <span>Route</span>
             <select value={routeId} onChange={(event) => setRouteId(event.target.value)}>
-              {library.routes.map((row) => (
-                <option key={row.id} value={row.id}>{row.name} — {row.steps.length} steps</option>
+              <option value="" disabled>Pick a route</option>
+              {routes.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.name}
+                  {row.id === current.routeId
+                    ? (currentBehind ? ' — this lot\'s route, edited since: update it' : ' — this lot\'s route now')
+                    : ''}
+                </option>
               ))}
             </select>
           </label>
         ) : (
           <p className="field__hint">
-            {library ? 'You have not written a route yet.' : 'Loading…'}
+            {library ? 'You have no route for lots yet.' : 'Loading…'}
           </p>
         )}
 
-        <Link to="/shop?tab=routes&spotlight=new" className="silkcta silkcta--sm"
-          style={{ justifySelf: 'start' }}>
+        <button type="button" className="silkcta silkcta--sm" style={{ justifySelf: 'start' }}
+          onClick={() => setDesigning(true)}>
           <span className="silkcta__label">✨ Define your Silk Route</span>
-        </Link>
+        </button>
 
-        {picked && <Ladder steps={picked.steps} current={-1} />}
+        {picked && <p className="field__hint" style={{ margin: 0 }}>{summarise(picked.steps, vars)}</p>}
+        {picked && <Ladder steps={picked.steps} current={-1} vars={vars} />}
 
-        {picked && (
+        {picked && !unchanged && (
           <label className="field">
             <span>Note (optional)</span>
             <textarea value={note} rows={2} onChange={(event) => setNote(event.target.value)}
@@ -508,16 +585,22 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
             </span>
           </label>
         )}
+        {unchanged && <p className="field__hint">This lot already travels these exact steps.</p>}
 
         {error && <ErrorNotice message={error} />}
         <div className="row">
-          <button type="submit" className="btn" disabled={busy || !picked}>
-            {busy ? 'Changing…' : 'Change the route'}
+          <button type="submit" className="btn" disabled={busy || !picked || unchanged}>
+            {busy ? 'Changing…' : isCurrent ? 'Update to the new steps' : 'Change the route'}
           </button>
           <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
         </div>
       </form>
     </Modal>
+    {designing && (
+      <RouteSheet onClose={() => setDesigning(false)}
+        onSaved={(route) => { setDesigning(false); void load(routeJoinsLot(route) ? route.id : undefined); }} />
+    )}
+    </>
   );
 }
 
@@ -594,7 +677,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
   const onItsOwn = item.currentStep + 1 >= leaveAt;
   const toItem = (
     <Link className="ladder__leave-go" to={`/order/${item.id}`} state={{ from: `/shop?tab=lots&lot=${encodeURIComponent(lotId)}` }}>
-      Dispatch &amp; track this item <Icon name="right" size={11} />
+      Dispatch &amp; track this order <Icon name="right" size={11} />
     </Link>
   );
   /** Folded away by default: thirty-four open ladders is not a manifest. */
@@ -626,6 +709,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
         onItem={(key, on) => onTick(key, on)}
         onLot={onLot}
         orderLink={{ to: `/order/${item.id}`, state: { from: `/shop?tab=lots&lot=${encodeURIComponent(lotId)}` } }}
+        stepOf={{ at: item.currentStep, of: steps.length }}
       />
 
       {/* One item's own timeline. Almost always the lot's, which is why it is
@@ -635,7 +719,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
       <button type="button" className="lotitem__more" aria-expanded={open}
         onClick={() => setOpen(!open)}>
         <Icon name={open ? 'down' : 'right'} size={12} />
-        {open ? 'Hide' : 'Note, or move this item alone'}
+        {open ? 'Hide' : 'Note, or move this order alone'}
       </button>
 
       {open && (
@@ -740,14 +824,14 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
   return (
     <div className="picker-panel stack">
       <div className="row row--between">
-        <strong>Add items</strong>
+        <strong>Add orders</strong>
         <button type="button" className="btn btn--quiet btn--sm" onClick={onClose}>Close</button>
       </div>
 
       <div className="search">
         <span className="search__icon"><Icon name="search" /></span>
         <input value={query} onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search by item or customer…" aria-label="Search items" />
+          placeholder="Search by item or customer…" aria-label="Search orders" />
       </div>
 
       {error && <ErrorNotice message={error} />}
@@ -758,7 +842,7 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
         <p className="muted">
           {query
             ? 'Nothing matches that.'
-            : 'Nothing waiting. Items appear here when somebody buys an import that has no lot yet.'}
+            : 'Nothing waiting. Orders appear here when somebody buys an import that has no lot yet.'}
         </p>
       ) : (
         items.map((item) => {
@@ -895,7 +979,7 @@ export function LotDetail({ lotId, onBack, customers }: {
   /** Somewhere else an item could ride: any open lot of this shop but this one. */
   const others = siblings
     .map((entry) => entry.lot)
-    .filter((entry) => entry.id !== lot.id && entry.status !== 'closed');
+    .filter((entry) => entry.id !== lot.id && !lotIsDone(entry));
 
   /*
    * The lot's own ladder: the half of the route that happens to the whole
@@ -913,8 +997,9 @@ export function LotDetail({ lotId, onBack, customers }: {
      first step rather than offering nothing. */
   const nextAt = Math.max(route.currentStep + 1, route.offset);
   const nextStep = nextAt <= crateEnd ? route.steps[nextAt] ?? null : null;
-  const status = lotStep < 0 ? 'Filling' : lotSteps[lotStep]?.name ?? 'Not started';
-  const done = lotStep >= lotSteps.length - 1;
+  const lane = { origin: lot.originCountry, destination: lot.destinationCountry };
+  const status = lotIsDone(lot) ? 'Delivered' : lotStep < 0 ? 'Filling' : renderStepText(lotSteps[lotStep]?.name ?? 'Filling', lane);
+  const done = lotIsDone(lot) || lotStep >= lotSteps.length - 1;
 
   /** `membership` for anything that moves an item or listing in or out of this lot. */
   async function run(label: string, fn: () => Promise<void>, membership = false) {
@@ -1020,7 +1105,7 @@ export function LotDetail({ lotId, onBack, customers }: {
         <p className="lothero__line">
           {[
             (lot.originCountry || lot.destinationCountry) ? laneOf(lot) : null,
-            `${items.length} ${items.length === 1 ? 'item' : 'items'}`,
+            `${items.length} ${items.length === 1 ? 'order' : 'orders'}`,
             totals.weightGrams > 0 ? formatWeight(totals.weightGrams) : null,
             totals.valueMinor > 0 ? formatMoney(totals.valueMinor) : null,
             route.name,
@@ -1064,7 +1149,7 @@ export function LotDetail({ lotId, onBack, customers }: {
             <button type="button" className="disclose" aria-expanded={adding}
               onClick={() => setAdding(!adding)}>
               <Icon name={adding ? 'down' : 'right'} size={14} />
-              Not in any lot
+              Orders waiting for a lot
               <span className="faint">{adding ? 'hide' : 'add them to this one'}</span>
             </button>
             {adding && (
@@ -1088,7 +1173,8 @@ export function LotDetail({ lotId, onBack, customers }: {
               </div>
               <span className="field__hint">
                 {route.name}
-                {route.offset > 0 && ` · the ${route.offset} steps before this happen to each item`}
+                {route.offset === 1 && ' · the step before this happens to each order on its own'}
+                {route.offset > 1 && ` · the ${route.offset} steps before this happen to each order on its own`}
               </span>
             </div>
 
@@ -1109,24 +1195,28 @@ export function LotDetail({ lotId, onBack, customers }: {
                 </button>
               }
               busy={busy}
-              vars={{ origin: lot.originCountry, destination: lot.destinationCountry }}
+              vars={lane}
+              /* Only the rungs the lot can actually reach: from where it is
+                 back to its first step, and on to where it is unpacked. A
+                 finished lot moves no further at all. */
+              moveUpTo={done ? -1 : crateEnd - route.offset}
               whose={items.length === 0
                 ? 'Nothing is riding in this lot yet, so this is a note to yourself.'
-                : `Every one of the ${items.length} buyers in this lot reads it.`}
-              onMove={(to, details) =>
-                requestMove(to + route.offset, details, `Now: ${lotSteps[to]?.name ?? 'moved'}.`)}
+                : items.length === 1 ? 'The buyer in this lot reads it.' : `Every one of the ${items.length} buyers in this lot reads it.`}
+              onMove={done ? undefined : (to, details) =>
+                requestMove(to + route.offset, details, `Now: ${renderStepText(lotSteps[to]?.name ?? 'moved', lane)}.`)}
               onNote={(text, at) => run('Note added.', () =>
                 api.noteOnLot(lot.id, text, at + route.offset).then(() => {}))}
             />
 
-            {nextStep ? (
+            {nextStep && !done ? (
               /* The same lot button every order riding in this lot carries on its card. */
               <button className="btn btn--block" disabled={busy}
                 onClick={() => requestMove(nextAt, undefined, `Now: ${nextStep.name}.`)}>
-                🚢 Move lot to {nextStep.name}
+                🚢 Move lot to {renderStepText(nextStep.name, lane)}
               </button>
             ) : done ? (
-              <p className="notice notice--ok">{status}. Every item has reached its buyer.</p>
+              <p className="notice notice--ok">Finished. Every order in this lot has reached its buyer.</p>
             ) : unpacked ? (
               <p className="notice notice--info">
                 📦 Unpacked. Each item now goes to its own buyer: tick <b>Dispatched</b> and then <b>Delivered</b> on
@@ -1154,17 +1244,19 @@ export function LotDetail({ lotId, onBack, customers }: {
 
           <div id="lot-items" className="card card--pad stack">
             <div className="row row--between">
-              <h2>Items, by customer</h2>
-              <span className="faint">{items.length} items · {totals.units} units</span>
+              <h2>Orders, by customer</h2>
+              <span className="faint">
+                {items.length} {items.length === 1 ? 'order' : 'orders'} · {totals.units} {totals.units === 1 ? 'unit' : 'units'}
+              </span>
             </div>
             <span className="field__hint">
-              Each item's own buttons, in route order. 🚢 Lot is the part the whole lot moves
+              Each order's own buttons, in route order. 🚢 Lot is the part the whole lot moves
               together — that is done with the route above.
             </span>
 
             {items.length === 0 ? (
               <p className="muted">
-                Nothing in this lot yet. Add the items your customers have already bought.
+                Nothing in this lot yet. Add the orders your customers have already placed.
               </p>
             ) : (
               itemsByCustomer(items).map(({ key, name, handle, rows }) => (
@@ -1298,25 +1390,24 @@ export function LotDetail({ lotId, onBack, customers }: {
               <span aria-hidden="true" style={{ fontSize: 20 }}>🚚</span>
               <div style={{ minWidth: 0 }}>
                 <div className="pick__name">{route.name}</div>
-                <div className="pick__steps">{summarise(route.steps)}</div>
+                <div className="pick__steps">{summarise(route.steps, lane)}</div>
               </div>
             </div>
             <div className="row row--tight">
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRerouting(true)}>
-                Change route
-              </button>
-              <Link to="/shop?tab=routes&spotlight=new" className="silkcta silkcta--sm">
-                <span className="silkcta__label">✨ Define your Silk Route</span>
-              </Link>
+              {!done && (
+                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRerouting(true)}>
+                  Change route
+                </button>
+              )}
             </div>
           </div>
 
           <div className="card card--pad stack">
             <div>
-              <h2>Listings travelling in it</h2>
+              <h2>Listings that feed this lot</h2>
               <span className="field__hint">
-                The catalog side: anything bought from one of these goes straight into this lot,
-                rather than waiting to be added by hand.
+                Every new order of one of these listings goes straight into this lot, rather than
+                waiting to be added by hand.
               </span>
             </div>
             {listings.length === 0 ? (
@@ -1336,7 +1427,7 @@ export function LotDetail({ lotId, onBack, customers }: {
 
             {unassigned.length > 0 && (
               <>
-                <h3 className="settings__sub">Tag one in</h3>
+                <h3 className="settings__sub">Imports not feeding any lot</h3>
                 {unassigned.map((listing) => (
                   <div key={listing.id} className="row row--between tagrow">
                     <span className="tagrow__name muted">{listing.title}</span>

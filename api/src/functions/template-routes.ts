@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
-import { inLot, isDirect } from '../../../shared/fulfilment.js';
+import { inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
 import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf, ticksOf } from '../../../shared/routes.js';
@@ -257,6 +257,9 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
   if (body.lotId && !lot) return error(404, 'not_found', 'No such lot.');
   if (lot && lot.id === order.lotId) {
     return error(409, 'already_filed', 'That item is already in that lot.');
+  }
+  if (lot && lotIsDone(lot)) {
+    return error(409, 'lot_done', 'That lot is finished. Pick an open lot, or start a new one.');
   }
 
   if (!lot) {

@@ -2088,14 +2088,6 @@ code, kbd, samp, pre {
 }
 .lot__flag { font-size: 19px; line-height: 1; }
 
-/* Where the lot actually is, and who is working it. Always shown, whatever
-   the card's open/shut state — the box, not a drawer inside it. */
-.lot__box { padding: 8px 12px 2px; }
-.lot--carton .lot__facts { gap: 5px; color: var(--carton-ink); }
-.lot--carton .factlist dt { color: var(--carton-dim); }
-.lot--carton .factlist dd { color: var(--carton-ink); font-weight: var(--w-medium); }
-.lot--carton .factlist dd.is-unset { color: var(--carton-dim); font-weight: 400; font-style: italic; }
-
 /* The status pill: one badge, one colour, one fact, said once at the top of
    the lid - not repeated as a sentence further down the card. */
 .lotpill {
@@ -2111,20 +2103,6 @@ code, kbd, samp, pre {
 .lotpill--warn { background: linear-gradient(135deg, #FBBF24, #F59E0B); color: #2B1D00; }
 .lotpill--accent { background: linear-gradient(135deg, #C4B5FD, #8B5CF6); color: #fff; }
 
-/* One line that says what is inside, and opens the rest. Every card has it,
-   whatever stage the lot is at: a card that changes shape as its lot moves is
-   two components wearing one name. */
-.lot__more {
-  display: flex; align-items: center; gap: 10px;
-  width: 100%; padding: 8px 12px;
-  border: 0; border-top: 1px solid var(--carton-line); background: none;
-  color: var(--carton-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi);
-  text-align: left; cursor: pointer;
-  transition: background var(--dur-1, 0.15s) var(--ease, ease), color var(--dur-1, 0.15s) var(--ease, ease);
-}
-.lot__more:hover { color: var(--carton-ink); background: rgba(54, 42, 26, 0.05); }
-.lot__more svg:last-child { margin-left: auto; }
-.lot__count { display: inline-flex; align-items: center; gap: 4px; color: var(--carton-ink); }
 /* The one way in, spelled out - a card is a summary, this is the door. */
 .lot__open {
   display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -2142,57 +2120,10 @@ code, kbd, samp, pre {
 }
 .lot__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 4px 12px 10px; }
 
-/* Five numbers, full width, two rows - not two rows of different weight. */
-.lot__tiles { display: grid; gap: 4px; }
-.lot__tiles--2 { grid-template-columns: repeat(2, 1fr); }
-.lot__tiles--3 { grid-template-columns: repeat(3, 1fr); }
-
-/* A tile's name, said once when tapped, then gone - the icon has no room
-   to spell it out itself. */
-.lot__hint {
-  justify-self: center;
-  padding: 3px 10px;
-  border-radius: var(--r-pill);
-  background: var(--carton-ink);
-  color: var(--carton-bg);
-  font-size: var(--t-2xs); font-weight: var(--w-semi);
-  animation: lotHint 1.4s ease forwards;
-}
-@keyframes lotHint {
-  0% { opacity: 0; transform: translateY(-2px); }
-  12% { opacity: 1; transform: none; }
-  78% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-/* The flip: only the body below the lid turns over. Whichever face is
-   showing sits in normal flow and fills the rest of the card (so a
-   shorter card in the same row still stretches to match its neighbour);
-   the other face is lifted out so it can never leave a gap beneath it. */
-.lot--carton .lot__flip { position: relative; flex: 1 1 auto; display: flex; perspective: 1600px; }
-.lot--carton .lot__face {
-  flex: 1 1 auto;
-  display: flex; flex-direction: column;
-  min-width: 0;
-  backface-visibility: hidden;
-  transition: transform 0.5s cubic-bezier(0.4, 0.15, 0.2, 1);
-}
-/* Whatever sits last in a face - the Open or Back button - is pinned to
-   its bottom edge, however tall the card was stretched to match its row. */
-.lot--carton .lot__face > *:last-child { margin-top: auto; }
-.lot--carton .lot__face--front { transform: rotateY(0deg); }
-.lot--carton .lot__face--back { position: absolute; inset: 0; transform: rotateY(180deg); }
-.lot--carton.lot--flipped .lot__face--front { position: absolute; inset: 0; transform: rotateY(-180deg); }
-.lot--carton.lot--flipped .lot__face--back { position: static; transform: rotateY(0deg); }
-
-.lot--carton .tile {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  min-width: 0; padding: 7px 4px;
-  background: #fff; border-color: var(--carton-line-strong); color: var(--carton-ink);
-}
-.lot--carton .tile__value { font-size: 15px; }
-.lot--carton .tile--tap:hover { background: #fff; border-color: var(--carton-dim); }
-.lot--carton .tile--tap.is-open { border-color: var(--carton-ink); background: #fff; }
+.lot__count { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--carton-ink); }
+/* The body fills the card so "Open" sits on the bottom edge of every card in a row. */
+.lot--carton .lot__body { flex: 1 1 auto; align-content: start; }
+.lot--carton:focus-visible { outline: 2px solid var(--accent, #8B5CF6); outline-offset: 2px; }
 .lot--carton .bars { gap: 5px; }
 .lot--carton .bar { grid-template-columns: 58px 1fr auto; gap: 6px; }
 .lot--carton .bar__label { font-size: var(--t-2xs); }
@@ -11129,3 +11060,16 @@ a.ocust__name:hover { color: var(--accent-text); }
   font: inherit; font-size: var(--t-2xs); color: var(--text-faint);
 }
 .lotitem__more:hover { color: var(--accent-text); }
+
+/* A badge that is also the way somewhere: the lot a listing feeds, or into one. */
+.badge--link { font: inherit; font-size: var(--t-2xs); cursor: pointer; border: 1px solid var(--border-strong, rgba(255,255,255,0.18)); }
+.badge--link:hover { filter: brightness(1.15); }
+
+/* The Sell page's top cards while a section is open: titles only. */
+.sellhome--compact .door__note,
+.sellhome--compact .workflow__hint,
+.sellhome--compact .workflow__label { display: none; }
+.sellhome--compact .door--card { padding-block: 10px; }
+.sellhome--compact .door__glyph { display: none; }
+.sellhome--compact .workflow { padding-block: 10px; }
+.sellhome--compact .workflow__step { padding-block: 8px; }

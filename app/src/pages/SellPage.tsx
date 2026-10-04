@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { CONDITION_TAGS, LOT_STAGE_LABELS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
 import { CATEGORIES } from '@shared/catalog';
 import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
+import type { Lot } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
@@ -525,15 +527,16 @@ export function SellPage() {
             <OptionTiles label="How are you selling this?" value={shape} onChange={setShape} options={SHAPE_OPTIONS} />
             {shape === 'lot' && (
               <div className="lotpick" role="radiogroup" aria-label="Lot">
-                {lots.map(({ lot, listingCount, unitCount }) => (
+                {lots.map(({ lot, orderCount }) => (
                   <button key={lot.id} type="button" role="radio" aria-checked={lotId === lot.id}
                     className={`lotpick__row${lotId === lot.id ? ' is-on' : ''}`} onClick={() => setLotId(lot.id)}>
-                    <b>{lot.name}</b>
+                    {/* The number first: two lots can share a name, never a number. */}
+                    <b>{lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}</b>
                     <span className="lotpick__meta">
                       {[lot.originCountry && lot.destinationCountry ? `${lot.originCountry} → ${lot.destinationCountry}` : lot.origin,
-                        LOT_STAGE_LABELS[lot.stage],
+                        lotWhere(lot),
                         lot.estimatedDispatchAt ? `ships ${formatDate(lot.estimatedDispatchAt)}` : null,
-                        `${listingCount} item${listingCount === 1 ? '' : 's'} · ${unitCount} unit${unitCount === 1 ? '' : 's'}`,
+                        `${orderCount} order${orderCount === 1 ? '' : 's'}`,
                       ].filter(Boolean).join(' · ')}
                     </span>
                   </button>
@@ -606,4 +609,12 @@ export function SellPage() {
 
     </main>
   );
+}
+
+/** Where a lot is, in a seller's words: still filling, or the step it is on. */
+function lotWhere(lot: Lot): string {
+  const route = routeOf(lot);
+  const at = currentStepOf(lot);
+  if (at < lotOffset(route)) return 'Filling';
+  return renderStepText(route.steps[at]?.name ?? 'Filling', { origin: lot.originCountry, destination: lot.destinationCountry });
 }

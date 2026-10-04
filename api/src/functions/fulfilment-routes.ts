@@ -8,14 +8,14 @@ import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.j
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
-  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeOf, stepForStage, stepTickKey, triggeredStep,
+  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeJoinsLot, routeOf, stepForStage, stepTickKey, triggeredStep,
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, ticksOf
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
-import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isStopped, travellingStatus } from '../../../shared/orders.js';
+import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import {
-  awaitingLot, furthestStage, inLot, stagesFor,
+  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, sourcingOf, stagesFor,
 } from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
@@ -231,8 +231,15 @@ async function myLots(request: HttpRequest, _context: InvocationContext) {
   withContents.sort((a, b) => (a.lot.updatedAt < b.lot.updatedAt ? 1 : -1));
 
   // Listings on sale and not yet in any lot: the seller's to-do list.
-  const unassigned = allListings.filter((l) => l.status === 'active' && !l.unlisted && l.lotId === null);
-  return json(200, { lots: withContents, unassigned });
+  /* Only imports: an item shipping from the shelf never needs a lot, and
+     listing it here made a seller think something was wrong with it. */
+  const unassigned = allListings.filter((l) =>
+    l.status === 'active' && !l.unlisted && l.lotId === null && sourcingOf(l) === 'import');
+  /* Sold, bound for a lot, and in none - the orders actually waiting on the
+     seller, which is what the Lots screen asks them to act on. */
+  const awaitingOrders = allOrders.filter((order) =>
+    order.lotId === AWAITING_LOT_ID && !isCancelledLike(order.status)).length;
+  return json(200, { lots: withContents, unassigned, awaitingOrders });
 }
 
 /** Rows grouped by a key, in the order they came. */
@@ -296,8 +303,8 @@ export async function buildLot(
   const refuse = (status: number, code: string, message: string): LotOrRefusal =>
     ({ lot: null, refusal: { status, code, message } });
 
-  const name = body.name?.trim();
-  if (!name) return refuse(400, 'invalid_lot', 'Give the lot a name you will recognise.');
+  // Optional: a lot with no name is called by its number, which is unique.
+  const named = body.name?.trim();
 
   const originCountry = body.originCountry?.trim();
   const destinationCountry = body.destinationCountry?.trim();
@@ -315,6 +322,9 @@ export async function buildLot(
   if (body.routeId) {
     const template = await repository.getRoute(userId, body.routeId);
     if (!template) return refuse(404, 'not_found', 'No such route.');
+    if (!routeJoinsLot(template)) {
+      return refuse(400, 'invalid_route', 'That route never joins a lot - it is for items shipped one by one. Pick a route with steps in the lot.');
+    }
     // A copy, so editing the template later cannot rewrite this lot's
     // timeline under a buyer who has been reading it for three weeks.
     // Given its buttons on the way in, so a template saved before they were
@@ -330,6 +340,8 @@ export async function buildLot(
 
   const id = `lot_${randomUUID().slice(0, 12)}`;
   const now = new Date().toISOString();
+  const lotNumber = lotNumberFrom(id, now);
+  const name = named || `Lot ${lotNumber}`;
   /*
    * A new lot has not taken any of its own steps yet.
    *
@@ -376,7 +388,7 @@ export async function buildLot(
     id,
     sellerId: userId,
     name,
-    lotNumber: lotNumberFrom(id, now),
+    lotNumber,
     route,
     currentStep: opensAt,
     handler: handlerNamed,

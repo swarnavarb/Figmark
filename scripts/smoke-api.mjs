@@ -131,7 +131,7 @@ const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
   lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
   noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
-  myItemsRoute: myItems,
+  myItemsRoute: myItems, applyRouteRoute: applyRoute,
 } = await import(new URL('tracking-routes.js', fns));
 const {
   listTemplatesRoute: listTemplates, saveTemplateRoute: saveTemplate,
@@ -568,7 +568,7 @@ await check('a lot carries its origin and supplier', () => {
   assert.equal(lot.jsonBody.lot.supplier.reference, 'BH-1');
 });
 
-await check('a name and the two countries are all a lot insists on', async () => {
+await check('the two countries are all a lot insists on', async () => {
   const bare = await createLot(req({ headers: auth, body: { name: 'Bare lot' } }), ctx);
   assert.equal(bare.status, 201);
   assert.equal(bare.jsonBody.lot.origin, '');
@@ -577,9 +577,11 @@ await check('a name and the two countries are all a lot insists on', async () =>
   // A contact with nobody attached to it is not a supplier.
   assert.equal(bare.jsonBody.lot.supplier, null);
 
+  // No name is fine: the lot is called by its number, which is unique -
+  // two lots both suggested the same "October run" were indistinguishable.
   const nameless = await createLot(req({ headers: auth, body: { origin: 'Shenzhen, CN' } }), ctx);
-  assert.equal(nameless.status, 400);
-  assert.equal(nameless.jsonBody.error, 'invalid_lot');
+  assert.equal(nameless.status, 201);
+  assert.equal(nameless.jsonBody.lot.name, `Lot ${nameless.jsonBody.lot.lotNumber}`);
 });
 
 await check('a lot needs both an origin and a destination country', async () => {
@@ -5278,18 +5280,31 @@ await check('the buyer sees one timeline per lot, not one per item', async () =>
   assert.ok(group.items.length >= 1);
   assert.ok(group.sellerName);
 
-  // A second item in the same lot joins the same group rather than making
-  // a second identical timeline.
+  // That lot is finished - every item in it delivered - so nothing more is
+  // filed into it.
   const extra = await waitingItem('Also theirs');
   const alsoPlaced = await createOrder(req({ headers: earlyBuyer.headers, body: { listingId: extra } }), ctx);
-  await addItems(req({
+  const refused = await addItems(req({
     headers: auth, params: { id: routedLot.id }, body: { orderIds: [alsoPlaced.jsonBody.order.id] },
   }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'lot_done');
+
+  // Two of their items in one open lot are one group rather than two
+  // identical timelines.
+  const open = (await createLot(req({ headers: auth, body: { name: 'Open for two' } }), ctx)).jsonBody.lot;
+  const another = await waitingItem('Theirs as well');
+  const anotherPlaced = await createOrder(req({ headers: earlyBuyer.headers, body: { listingId: another } }), ctx);
+  const both = await addItems(req({
+    headers: auth, params: { id: open.id },
+    body: { orderIds: [alsoPlaced.jsonBody.order.id, anotherPlaced.jsonBody.order.id] },
+  }), ctx);
+  assert.equal(both.jsonBody.added, 2);
 
   const after = (await myItems(req({ headers: earlyBuyer.headers }), ctx)).jsonBody;
-  const groups = after.groups.filter((row) => row.lot?.id === routedLot.id);
+  const groups = after.groups.filter((row) => row.lot?.id === open.id);
   assert.equal(groups.length, 1, 'one group, two items');
-  assert.equal(groups[0].items.length, group.items.length + 1);
+  assert.equal(groups[0].items.length, 2);
 
   // What is waiting sorts first: it is the only thing a buyer might act on.
   const waiting = after.groups.find((row) => row.kind === 'awaiting');
@@ -5896,12 +5911,17 @@ await check('a lot is named by the person opening it, never by the first thing i
     headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
   }), ctx)).jsonBody.order;
 
+  // Left blank, it is called by its own lot number - unique, and nothing to
+  // do with whoever's parcel happened to be first in.
   for (const name of [undefined, '', '   ']) {
-    const refused = await assignOrderToLot(req({
+    const filed = await assignOrderToLot(req({
       headers: auth, params: { id: order.id },
       body: { newLot: { name, origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India' } },
     }), ctx);
-    assert.equal(refused.status, 400, `"${name}" is not a name`);
+    assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
+    const lot = filed.jsonBody.lot;
+    assert.equal(lot.name, `Lot ${lot.lotNumber}`, `"${name}" falls back to the lot number`);
+    assert.ok(!lot.name.includes('Names nothing'));
   }
 });
 
@@ -8670,6 +8690,104 @@ await check('similar items leave out the item itself and lead with its own kind'
   assert.ok(listings.length > 0);
   assert.ok(!listings.some((l) => l.id === affListed.id));
   assert.equal(listings[0].category, affListed.category);
+});
+
+
+await check('an edited route reaches the lots on it only when the seller says so', async () => {
+  const made = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Edited later',
+      steps: [
+        { name: 'Ordered', side: 'pre' }, { name: 'Consolidated', side: 'post' },
+        { name: 'Sailed', side: 'post' }, { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const route = made.jsonBody.route;
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Rides the edit', routeId: route.id } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'On an edited route', priceMinor: 4_000, sourcing: 'import' },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Edited Route Buyer');
+  const order = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.id } }), ctx);
+
+  // Unchanged, picking the same route again is refused.
+  const same = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
+  assert.equal(same.status, 409);
+
+  // Edited: the save says how many lots now read older steps, and they do.
+  const edit = (name) => saveRoute(req({
+    headers: auth,
+    body: { id: route.id, name: route.name, steps: route.steps.map((step) => (step.name === 'Sailed' ? { ...step, name } : step)) },
+  }), ctx);
+  const saved = await edit('Sailed by sea');
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.lotsBehind, 1);
+  const listed = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
+  assert.deepEqual(listed.usage[route.id], { lots: 1, behind: 1 });
+  let board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed'), 'the lot keeps its own copy until asked');
+
+  // Re-picking the same, now edited, route updates that lot.
+  const repicked = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
+  assert.equal(repicked.status, 200, JSON.stringify(repicked.jsonBody));
+  board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by sea'));
+
+  // And "update every lot on it" does the same for all of them at once.
+  await edit('Sailed by air');
+  const applied = await applyRoute(req({ headers: auth, params: { id: route.id } }), ctx);
+  assert.equal(applied.status, 200, JSON.stringify(applied.jsonBody));
+  assert.equal(applied.jsonBody.lotsUpdated, 1);
+  board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by air'));
+  assert.equal((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id].behind, 0);
+});
+
+await check('a route that never joins a lot cannot be given to one', async () => {
+  const library = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
+  const courier = library.presets.find((preset) => preset.steps.every((step) => step.side !== 'post'));
+  assert.ok(courier, 'a preset that never joins a lot exists');
+  const saved = await saveRoute(req({ headers: auth, body: { name: 'Courier only', steps: courier.steps } }), ctx);
+  assert.equal(saved.status, 201, JSON.stringify(saved.jsonBody));
+  const refused = await createLot(req({ headers: auth, body: { name: 'Nothing to move', routeId: saved.jsonBody.route.id } }), ctx);
+  assert.equal(refused.status, 400);
+  assert.equal(refused.jsonBody.error, 'invalid_route');
+  const open = (await createLot(req({ headers: auth, body: { name: 'Rerouted to nothing' } }), ctx)).jsonBody.lot;
+  const rerouted = await setLotRoute(req({ headers: auth, params: { id: open.id }, body: { routeId: saved.jsonBody.route.id } }), ctx);
+  assert.equal(rerouted.status, 400);
+});
+
+await check('a finished lot stays finished', async () => {
+  const board = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(board.lot.status, 'closed');
+  const back = await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: board.route.offset } }), ctx);
+  assert.equal(back.status, 409);
+  assert.equal(back.jsonBody.error, 'lot_done');
+  assert.equal((await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody.lot.status, 'closed');
+});
+
+await check('moving a lot before its own first step says so, not that it is at the end', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Too far back' } }), ctx)).jsonBody.lot;
+  const board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.offset >= 2, 'the generic route starts with steps each item takes on its own');
+  const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: 0 } }), ctx);
+  assert.equal(back.status, 409);
+  assert.ok(/start of its own steps/.test(back.jsonBody.message), back.jsonBody.message);
+});
+
+await check('the lots list counts orders waiting for a lot, and never in-hand stock', async () => {
+  const listing = await waitingItem('Waiting for a lot');
+  const buyer = await newBuyer('Waiting Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: listing } }), ctx);
+  await createListing(req({ headers: auth, body: { title: 'On the shelf', priceMinor: 2_000, sourcing: 'in_hand' } }), ctx);
+  const body = (await myLots(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.awaitingOrders >= 1);
+  assert.ok(body.unassigned.every((row) => row.sourcing === 'import'));
+  assert.ok(!body.unassigned.some((row) => row.title === 'On the shelf'));
 });
 
 console.log(`\n${passed} checks passed`);

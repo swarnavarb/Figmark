@@ -65,7 +65,7 @@ const {
 } = await import(new URL('profit-routes.js', apiRoot));
 const { costsRoute, saveCostSheetRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
 const {
-  listRoutesRoute, saveRouteRoute, deleteRouteRoute,
+  listRoutesRoute, saveRouteRoute, deleteRouteRoute, applyRouteRoute,
   lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, setLotRouteRoute,
   stepItemRoute, myItemsRoute,
 } = await import(new URL('tracking-routes.js', apiRoot));
@@ -269,6 +269,7 @@ const routes = [
   ['GET', '/api/routes', listRoutesRoute],
   ['POST', '/api/routes/new', saveRouteRoute],
   ['POST', '/api/routes/:id/delete', deleteRouteRoute],
+  ['POST', '/api/routes/:id/apply', applyRouteRoute],
   ['GET', '/api/lots/:id/candidates', lotCandidatesRoute],
   ['POST', '/api/lots/:id/items', addItemsRoute],
   ['POST', '/api/lots/:id/step', stepLotRoute],

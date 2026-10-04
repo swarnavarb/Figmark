@@ -25,8 +25,7 @@ const ListingPage = page(() => import('./pages/ListingPage'), 'ListingPage');
 const SellPage = page(() => import('./pages/SellPage'), 'SellPage');
 const ShopPage = page(() => import('./pages/ShopPage'), 'ShopPage');
 const LotBoardPage = page(() => import('./pages/LotBoardPage'), 'LotBoardPage');
-const RoutesPage = page(() => import('./pages/RoutesPage'), 'RoutesPage');
-const RouteEditorPage = page(() => import('./pages/RoutesPage'), 'RouteEditorPage');
+const RouteRedirect = page(() => import('./pages/RoutesPage'), 'RouteRedirect');
 const RouteStudioPage = page(() => import('./pages/RouteStudioPage'), 'RouteStudioPage');
 const ServicesPage = page(() => import('./pages/ServicesPage'), 'ServicesPage');
 const MyServicesPage = page(() => import('./pages/ServicesPage'), 'MyServicesPage');
@@ -91,14 +90,12 @@ function App() {
             these both just point there so nothing bookmarked or linked breaks. */}
         <Route path="/lots" element={<Navigate to="/shop?tab=lots" replace />} />
         <Route path="/batches" element={<Navigate to="/shop?tab=lots" replace />} />
-        <Route path="/routes" element={members(<RoutesPage />)} />
-        {/* `new` before `:id`, so writing a route is never read as editing one. */}
-        <Route path="/routes/new" element={members(<RouteEditorPage />)} />
-        {/* The experimental node-based builder, being compared against the one
-            above. Its own paths, so neither can be reached by the other's link. */}
+        {/* The route list lives in Sell → Routes, and every route is written
+            in the Studio. The old addresses still land in the right place. */}
+        <Route path="/routes" element={<Navigate to="/shop?tab=routes" replace />} />
         <Route path="/routes/studio/new" element={members(<RouteStudioPage />)} />
         <Route path="/routes/studio/:id" element={members(<RouteStudioPage />)} />
-        <Route path="/routes/:id" element={members(<RouteEditorPage />)} />
+        <Route path="/routes/:id" element={members(<RouteRedirect />)} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/services/mine" element={members(<MyServicesPage />)} />
         <Route path="/services/mine/forwarder" element={members(<ConsignmentsPage />)} />
