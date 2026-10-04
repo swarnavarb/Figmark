@@ -103,6 +103,8 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const [vars, setVars] = useState<PreviewVars>({});
   /** The chain as last opened or saved: anything else on screen is unsaved work. */
   const [savedAs, setSavedAs] = useState<string | null>(null);
+  /** Saved, and some unfinished lots still read the route's older steps. */
+  const [behind, setBehind] = useState<{ route: TrackingRoute; lots: number } | null>(null);
 
   useEffect(() => {
     void api.myLots().then((result) => {
@@ -271,11 +273,32 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
           })),
       });
       setSavedAs(snapshot(name, steps, joinAt, leaveAt));
-      /* Saving an edit also moves every unfinished lot on this route, and the
-         items in them, onto the new steps - done by the server in one go. */
-      onSaved(result.route);
+      /* Lots keep their own copy of a route, so an edit reaches none of them
+         by itself. Asked here, once, rather than discovered later. */
+      if (result.lotsBehind && result.lotsBehind > 0) setBehind({ route: result.route, lots: result.lotsBehind });
+      else onSaved(result.route);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that route.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateLots() {
+    if (!behind) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.applyRoute(behind.route.id);
+      if (result.lotsFailed && result.lotsFailed > 0) {
+        setError(`${result.lotsUpdated} updated, but ${result.lotsFailed} could not be - try again from the Routes list.`);
+        setBehind(null);
+        return;
+      }
+      onSaved(behind.route);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Saved, but those lots could not be updated. Try again from the Routes list.');
+      setBehind(null);
     } finally {
       setBusy(false);
     }
@@ -539,6 +562,24 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
         </button>
       )}
 
+      {behind && (
+        <Modal title="Update the lots on this route?" onClose={() => onSaved(behind.route)}>
+          <div className="stack">
+            <p>
+              Saved. {behind.lots === 1 ? '1 lot is' : `${behind.lots} lots are`} still on the older steps
+              of <strong>{behind.route.name}</strong>. Update {behind.lots === 1 ? 'it' : 'them'} and every
+              item inside shows the new steps from where the lot is now; leave {behind.lots === 1 ? 'it' : 'them'} and
+              only new lots use these steps.
+            </p>
+            <button type="button" className="btn btn--block" disabled={busy} onClick={() => void updateLots()}>
+              {busy ? 'Updating…' : `Update ${behind.lots === 1 ? 'that lot' : `all ${behind.lots} lots`}`}
+            </button>
+            <button type="button" className="btn btn--quiet btn--block" disabled={busy} onClick={() => onSaved(behind.route)}>
+              Keep the old steps on {behind.lots === 1 ? 'that lot' : 'those lots'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </form>
     </PreviewVarsContext.Provider>
   );

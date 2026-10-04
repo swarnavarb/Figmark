@@ -173,18 +173,18 @@ async function saveRoute(request: HttpRequest, _context: InvocationContext) {
     const existing = await repository.getRoute(user.id, body.id);
     if (!existing) return error(404, 'not_found', 'No such route.');
     const route = await repository.saveRoute({ ...existing, name, steps, updatedAt: now });
-    /* An edit is the seller fixing the route their lots travel, so every
-       unfinished lot on it - and every item in those lots - takes the new
-       steps straight away. Finished lots keep the copy they ended on. A route
-       edited down to no lot steps cannot carry a lot, so those keep theirs. */
-    const behind = await lotsBehindOf(repository, user.id, route);
-    if (!routeJoinsLot(route)) return json(200, { route, lotsUpdated: 0, lotsBehind: behind.length });
-    const next: LotRoute = { routeId: route.id, name: route.name, steps: withButtons(route.steps) };
-    let ordersUpdated = 0;
-    for (const lot of behind) {
-      ordersUpdated += (await rerouteLot(repository, lot, next, user.id)).ordersUpdated;
+    /* Saving only ever stores the route. The lots already on it keep their
+       own copy until the seller says otherwise - the Studio asks straight
+       after this, with the count returned here - so a save never fails, or
+       rewrites twenty buyers' timelines, because of a lot it did not mean to
+       touch. A route that no longer joins a lot cannot be given to one. */
+    let lotsBehind = 0;
+    try {
+      lotsBehind = routeJoinsLot(route) ? (await lotsBehindOf(repository, user.id, route)).length : 0;
+    } catch {
+      lotsBehind = 0;
     }
-    return json(200, { route, lotsUpdated: behind.length, ordersUpdated, lotsBehind: 0 });
+    return json(200, { route, lotsBehind });
   }
 
   return json(201, {
@@ -649,11 +649,20 @@ async function applyRoute(request: HttpRequest, _context: InvocationContext) {
 
   const next: LotRoute = { routeId: route.id, name: route.name, steps: withButtons(route.steps) };
   const behind = await lotsBehindOf(repository, user.id, route);
+  /* One lot at a time, and one that fails does not stop the rest: the reply
+     says how many made it, so the seller can try the stragglers again. */
   let ordersUpdated = 0;
+  let lotsUpdated = 0;
+  let lotsFailed = 0;
   for (const lot of behind) {
-    ordersUpdated += (await rerouteLot(repository, lot, next, user.id)).ordersUpdated;
+    try {
+      ordersUpdated += (await rerouteLot(repository, lot, next, user.id)).ordersUpdated;
+      lotsUpdated += 1;
+    } catch {
+      lotsFailed += 1;
+    }
   }
-  return json(200, { lotsUpdated: behind.length, ordersUpdated });
+  return json(200, { lotsUpdated, lotsFailed, ordersUpdated });
 }
 
 /** Said wherever a lot shut to new orders is offered one. */

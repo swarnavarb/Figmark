@@ -1829,7 +1829,7 @@ export const api = {
     post<{ route: TrackingRoute; lotsBehind?: number }>('/routes/new', body),
   /** Give every unfinished lot on this route its latest steps. */
   applyRoute: (id: string) =>
-    post<{ lotsUpdated: number; ordersUpdated: number }>(`/routes/${encodeURIComponent(id)}/apply`, {}),
+    post<{ lotsUpdated: number; lotsFailed?: number; ordersUpdated: number }>(`/routes/${encodeURIComponent(id)}/apply`, {}),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),
   lotCandidates: (id: string, q?: string) =>
     request<{ items: CandidateItem[] }>(

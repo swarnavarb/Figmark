@@ -8690,7 +8690,7 @@ await check('similar items leave out the item itself and lead with its own kind'
 });
 
 
-await check('an edited route reaches its unfinished lots as soon as it is saved', async () => {
+await check('an edited route reaches the lots on it only when the seller says so', async () => {
   const made = await saveRoute(req({
     headers: auth,
     body: {
@@ -8715,34 +8715,33 @@ await check('an edited route reaches its unfinished lots as soon as it is saved'
   const same = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
   assert.equal(same.status, 409);
 
-  // Edited: the save carries the new steps straight into the lot and its item.
+  // Edited: the save only stores the route, and says how many lots are behind.
   const edit = (name) => saveRoute(req({
     headers: auth,
     body: { id: route.id, name: route.name, steps: route.steps.map((step) => (step.name === 'Sailed' ? { ...step, name } : step)) },
   }), ctx);
   const saved = await edit('Sailed by sea');
   assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
-  assert.equal(saved.jsonBody.lotsUpdated, 1);
-  assert.equal(saved.jsonBody.lotsBehind, 0);
-  assert.deepEqual((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id], { lots: 1, behind: 0 });
+  assert.equal(saved.jsonBody.lotsBehind, 1);
+  assert.deepEqual((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id], { lots: 1, behind: 1 });
   let board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
-  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by sea'), 'the lot reads the edited steps');
-  assert.ok(!board.route.steps.some((step) => step.name === 'Sailed'));
-  // The item still rides its lot: no position of its own was invented for it.
-  const item = board.items.find((row) => row.id === order.id);
-  assert.equal(item.ownStep, false);
-  // A correction is not news: the lot's history gains no entry for it.
-  assert.ok(!board.history.some((event) => /were updated/.test(event.note ?? '')));
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed'), 'the lot keeps its own copy until asked');
 
-  // Once up to date, re-picking the same route is refused again.
-  const again = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
-  assert.equal(again.status, 409);
-
-  // "Update every lot on it" still works, and finds nothing left to do.
-  await edit('Sailed by air');
+  // Asked: every lot on it takes the new steps, and its items keep riding it.
   const applied = await applyRoute(req({ headers: auth, params: { id: route.id } }), ctx);
   assert.equal(applied.status, 200, JSON.stringify(applied.jsonBody));
-  assert.equal(applied.jsonBody.lotsUpdated, 0);
+  assert.equal(applied.jsonBody.lotsUpdated, 1);
+  board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by sea'));
+  const item = board.items.find((row) => row.id === order.id);
+  assert.equal(item.ownStep, false, 'no position of its own was invented for the item');
+  assert.ok(!board.history.some((event) => /were updated/.test(event.note ?? '')), 'a correction is not news');
+  assert.equal((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id].behind, 0);
+
+  // Re-picking the same, now edited, route does the same for one lot.
+  await edit('Sailed by air');
+  const repicked = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
+  assert.equal(repicked.status, 200, JSON.stringify(repicked.jsonBody));
   board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
   assert.ok(board.route.steps.some((step) => step.name === 'Sailed by air'));
 });

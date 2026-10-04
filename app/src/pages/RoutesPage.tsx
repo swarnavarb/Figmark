@@ -58,6 +58,22 @@ export function RoutesList({ spotlightNew = false }: {
     }
   }
 
+  /** Take a route off the list. Lots already on it keep their own copy of its steps. */
+  async function remove(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? Lots already on it keep their steps; new lots can no longer pick it.`)) return;
+    setApplying(id);
+    setError(null);
+    try {
+      await api.deleteRoute(id);
+      setFlash(`"${name}" deleted.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not delete that route.');
+    } finally {
+      setApplying(null);
+    }
+  }
+
   return (
     <div className="stack">
       <div className="page__head">
@@ -96,12 +112,18 @@ export function RoutesList({ spotlightNew = false }: {
                   note={use && use.lots > 0
                     ? `On ${use.lots} ${use.lots === 1 ? 'lot' : 'lots'}${use.behind > 0 ? ` · ${use.behind} on older steps` : ''}`
                     : undefined} />
-                {use && use.behind > 0 && (
-                  <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }}
-                    disabled={applying === route.id} onClick={() => void apply(route.id, use.behind)}>
-                    {applying === route.id ? 'Updating…' : `Update ${use.behind === 1 ? 'that lot' : `${use.behind} lots`} to these steps`}
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  {use && use.behind > 0 && (
+                    <button type="button" className="btn btn--ghost btn--sm"
+                      disabled={applying === route.id} onClick={() => void apply(route.id, use.behind)}>
+                      {applying === route.id ? 'Updating…' : `Update ${use.behind === 1 ? 'that lot' : `${use.behind} lots`} to these steps`}
+                    </button>
+                  )}
+                  <button type="button" className="btn btn--ghost btn--danger btn--sm"
+                    disabled={applying === route.id} onClick={() => void remove(route.id, route.name)}>
+                    <Icon name="trash" size={13} /> Delete
                   </button>
-                )}
+                </div>
               </div>
             );
           })}
@@ -136,8 +158,8 @@ function RoutesFaq() {
         <summary>What is a route?</summary>
         <p className="muted">
           A ladder of steps you write once, here, and reuse on every lot that travels the same
-          way. Saving an edit updates every lot still travelling that route, and the tracking of
-          the items in them, straight away. Finished lots keep the steps they ended on.
+          way. When you save an edit, you are asked whether the lots already on that route should
+          take the new steps. Finished lots always keep the steps they ended on.
         </p>
       </details>
 
