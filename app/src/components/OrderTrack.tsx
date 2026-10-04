@@ -173,6 +173,21 @@ function directSteps(order: Order): Step[] {
  * the seller's shelf and one crossing in a container read as one kind of
  * thing, with only the steps differing.
  */
+/** Statuses that end an order's journey for good. */
+const ENDED_LABELS: Partial<Record<Order['status'], string>> = {
+  cancelled: 'Order cancelled',
+  rejected: 'Order turned down',
+  refunded: 'Cancelled and refunded',
+  payment_reversal_pending: 'Order cancelled · money on its way back',
+  cancelled_reversed: 'Cancelled and refunded',
+};
+
+/** How an order's timeline ends, when it was called off - or null while it is still travelling. */
+export function endedOf(order: Pick<Order, 'status' | 'updatedAt'> & { cancelReason?: string | null }) {
+  const label = ENDED_LABELS[order.status];
+  return label ? { label, at: order.updatedAt, note: order.cancelReason ?? null } : null;
+}
+
 export function DirectTrack({ order, actFor }: {
   order: Order;
   /** The seller's buttons, on the rungs they reach. */
@@ -196,7 +211,7 @@ export function DirectTrack({ order, actFor }: {
   }));
 
   return (
-    <TrackHero icon={here.icon} now={here.label}
+    <TrackHero icon={endedOf(order) ? '🚫' : here.icon} now={endedOf(order)?.label ?? here.label}
       sub={<>🏠 In hand · ships from the seller{next ? <> · next: <b>{next.label}</b></> : null}</>}
       boxes={steps.map((step, index) => ({
         key: step.key, icon: step.icon, label: step.label,
@@ -205,7 +220,7 @@ export function DirectTrack({ order, actFor }: {
       done={done} total={steps.length}>
       {order.shipment && <ShipmentChip shipment={order.shipment} />}
       <div className="trk__ladder">
-        <Ladder steps={rungs} current={done - 1} actFor={actFor} lockFrom={3} />
+        <Ladder steps={rungs} current={done - 1} actFor={actFor} lockFrom={3} ended={endedOf(order)} />
       </div>
       {order.receivedAt && <span className="faint">Buyer confirmed receipt {timeAgo(order.receivedAt)}.</span>}
       {notes.length > 0 && (

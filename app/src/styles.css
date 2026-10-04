@@ -10946,40 +10946,46 @@ a.ocust__name:hover { color: var(--accent-text); }
     linear-gradient(160deg, var(--surface-2), var(--surface));
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
-.lpulse__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.lpulse__stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px; }
 .lpulse__stat {
-  display: grid; justify-items: center; gap: 2px; padding: 10px 4px;
-  border-radius: 16px; background: rgba(255, 255, 255, 0.04);
+  display: grid; gap: 1px; padding: 8px 10px; min-width: 0;
+  border-radius: 12px; background: rgba(255, 255, 255, 0.04);
 }
-.lpulse__stat b { font-family: var(--mono); font-size: var(--t-lg); font-variant-numeric: tabular-nums; color: var(--text); }
+.lpulse__stat b { font-family: var(--mono); font-size: var(--t-md); font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
 .lpulse__stat small { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
-.lpulse__stat.is-hot { background: rgba(251, 191, 36, 0.12); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.35); }
-.lpulse__stat.is-hot b { color: #FBBF24; }
-.lpulse__money { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.lpulse__money > div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); min-width: 0; }
-.lpulse__money small { font-size: var(--t-2xs); color: var(--text-faint); }
-.lpulse__money b { font-family: var(--mono); font-size: var(--t-sm); font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
-.lpulse__money > .is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
-.lpulse__money > .is-due b { color: #FBBF24; }
-.lpulse__money > .is-clear b { color: var(--ok); }
-.lpulse__route { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lpulse__stat.is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
+.lpulse__stat.is-due b { color: #FBBF24; }
+.lpulse__stat.is-clear b { color: var(--ok); }
+/* The orders' own steps as a pipeline: a ring per step, filled by how many
+   of the lot's orders have reached it, joined by a line that lights up as
+   the steps before it fill. */
+.lpulse__route {
+  list-style: none; margin: 0; padding: 2px 0 0;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(64px, 1fr);
+  overflow-x: auto; scrollbar-width: none;
+}
 .lpulse__step {
-  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 2px 8px;
-  font-size: var(--t-xs); color: var(--text-dim);
+  position: relative; display: grid; justify-items: center; gap: 6px;
+  font-size: var(--t-2xs); color: var(--text-dim); text-align: center;
 }
-.lpulse__stepn {
-  grid-row: span 2; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%;
-  font-family: var(--mono); font-size: var(--t-2xs); background: rgba(255, 255, 255, 0.07);
+.lpulse__step + .lpulse__step::before {
+  content: ''; position: absolute; top: 17px; right: calc(50% + 20px); left: calc(-50% + 20px);
+  height: 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.1);
 }
-.lpulse__stepname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lpulse__stepcount { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text-faint); }
-.lpulse__stepcount b { color: var(--text); }
-.lpulse__stepbar { grid-column: 2 / -1; height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
-.lpulse__stepbar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 600ms var(--ease); }
-.lpulse__step--all .lpulse__stepn { background: var(--ok); color: #06261b; }
-.lpulse__step--all .lpulse__stepbar span { background: var(--ok); }
-.lpulse__step--some .lpulse__stepbar span { background: linear-gradient(90deg, #7C3AED, #06D6E7); }
-.lpulse__step--none { opacity: 0.7; }
+.lpulse__step--all + .lpulse__step::before { background: var(--ok); }
+.lpulse__ring {
+  --c: #7C3AED;
+  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--c) var(--p), rgba(255, 255, 255, 0.08) 0);
+}
+.lpulse__ring > span {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); font-family: var(--mono); font-size: var(--t-xs); font-weight: var(--w-bold); color: var(--text);
+}
+.lpulse__step--all .lpulse__ring { --c: var(--ok); }
+.lpulse__step--all .lpulse__ring > span { background: var(--ok); color: #06261b; }
+.lpulse__step--none { opacity: 0.6; }
+.lpulse__stepname { max-width: 100%; padding: 0 2px; line-height: 1.25; overflow-wrap: anywhere; }
 .lpulse__couriers { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .lpulse__couriers small { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
 .lpulse__courier {
@@ -11631,4 +11637,37 @@ a.ocust__name:hover { color: var(--accent-text); }
   .belt__floor, .belt__scene, .belt__sun, .plane, .crate__box, .rail--belt .rail__icon { animation: none; }
   .belt { overflow-x: auto; cursor: auto; }
   .belt__plane, .belt__flag, .crate__drop, .crate__plus { display: none; }
+}
+
+/*
+ * One lot, tightened: less air between the hero, the tabs and the content,
+ * and customers that read as heads over their own indented orders.
+ */
+.lothero { gap: 5px; margin-bottom: 10px; }
+.lothero__name { font-size: var(--t-xl); }
+.lotnav { margin-bottom: 10px; padding: 3px; gap: 3px; border-radius: 14px; }
+.lotnav__tab { grid-auto-flow: column; gap: 6px; padding: 7px 4px; border-radius: 11px; }
+.lpulse { gap: 10px; padding: 12px; border-radius: 18px; }
+.ocusts { gap: 12px; }
+.ocust { gap: 8px; padding: 10px; border-radius: 18px; }
+.ocust__head {
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid rgb(var(--tone) / 0.25);
+}
+.ocust__name { font-size: var(--t-md); font-weight: var(--w-bold); }
+.ocust > .orows {
+  gap: 8px; margin-left: 10px; padding-left: 10px;
+  border-left: 2px solid rgb(var(--tone) / 0.35);
+}
+.ocust .ocard { padding: 10px 10px 8px; gap: 8px; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+.lotitem { border-bottom: none; }
+/* A called-off order: the timeline stops at a last rung, and nothing follows it. */
+.ladder__row--ended .ladder__dot {
+  display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--danger-soft, rgba(244, 63, 94, 0.15)); color: var(--danger, #F43F5E);
+  font-size: 11px; font-weight: var(--w-bold);
+}
+.ladder__row--ended .ladder__name { color: var(--danger, #F43F5E); }
+@media (max-width: 520px) {
+  .ocust > .orows { margin-left: 4px; padding-left: 8px; }
 }

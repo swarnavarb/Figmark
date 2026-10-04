@@ -5,7 +5,7 @@ import {
   type RouteStep, type TrackingRoute, lotNo,
 } from '@shared/routes';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';
-import type { Lot } from '@shared/models';
+import type { Lot, Order } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
 import {
   ApiRequestError, api,
@@ -19,7 +19,9 @@ import { SerialButtons } from '../components/SerialButtons';
 import { serialButtons, withReceivedAs } from '@shared/buttons';
 import { LotPeople } from '../components/LotPeople';
 import { LotDetailFields, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
-import { ErrorNotice, Icon, Modal, type IconName } from '../components/ui';
+import { Avatar, ErrorNotice, Icon, Modal, type IconName } from '../components/ui';
+import { ItemHead } from '../components/ItemHead';
+import { endedOf } from '../components/OrderTrack';
 import { RouteStudio } from './RouteStudioPage';
 import { formatDate, formatMoney, formatWeight } from '../format';
 
@@ -672,6 +674,8 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
   onRelot: (lotId: string) => void | Promise<void>;
 }) {
   const gone = Boolean(item.checkpoints.dispatched) || Boolean(item.checkpoints.delivered);
+  /* Called off: its journey ended where it was, so there is nothing to press. */
+  const ended = endedOf({ status: item.status as Order['status'], updatedAt: item.history.at(-1)?.enteredAt ?? '' });
   /* Past the crate's last rung the item is worked on its own: from its
      order, with the same dispatch card an in-hand sale uses. */
   const leaveAt = itemLeaveIndex({ steps });
@@ -685,15 +689,19 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
   const [open, setOpen] = useState(false);
 
   return (
-    <div className={`lotitem${gone ? ' lotitem--gone' : ''}`}>
-      <div className="lotitem__top">
-        <span className="lotitem__name">{item.itemName}</span>
-        {item.ownStep && <span className="badge badge--warn">Own timeline</span>}
-        <span className="badge">{item.condition}</span>
-      </div>
-      {item.quantity > 1 && <span className="faint">× {item.quantity}</span>}
+    <article className={`ocard ocard--${ended ? 'quiet' : gone ? 'ok' : 'accent'} lotitem${gone || ended ? ' lotitem--gone' : ''}`}>
+      <ItemHead id={item.id} name={item.itemName} to={`/order/${item.id}`}
+        state={{ from: `/shop?tab=lots&lot=${encodeURIComponent(lotId)}` }}
+        badges={item.ownStep && !ended && <span className="badge badge--warn">Own timeline</span>}
+        meta={<>
+          <span>{item.condition}</span>
+          {item.quantity > 1 && <><span aria-hidden="true">·</span><span>×{item.quantity}</span></>}
+        </>}
+        side={ended
+          ? <span className="badge badge--accent">🚫 {ended.label}</span>
+          : gone && <span className="badge badge--ok">{item.checkpoints.delivered ? 'Delivered' : 'Dispatched'}</span>} />
 
-      {onItsOwn && (
+      {!ended && onItsOwn && (
         <div className="lotitem__own">
           <span className="faint">Out of the lot — tracked on its own now.</span>
           {toItem}
@@ -703,7 +711,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
       {/* The buttons that move this item's tracking - its own presses and
           the lot's moves, one after another, exactly as its order card has
           them. Every one asks first. */}
-      <SerialButtons
+      {!ended && <SerialButtons
         buttons={serialButtons(withReceivedAs(steps, item.receivedAs), lotStep, item.ticks, vars)}
         busy={busy}
         who={{ itemName: item.itemName, buyerName: item.buyerName }}
@@ -711,19 +719,19 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
         onLot={onLot}
         orderLink={{ to: `/order/${item.id}`, state: { from: `/shop?tab=lots&lot=${encodeURIComponent(lotId)}` } }}
         stepOf={{ at: item.currentStep, of: steps.length }}
-      />
+      />}
 
       {/* One item's own timeline. Almost always the lot's, which is why it is
           closed: it is opened for the exception - the piece pulled at customs
           while the rest of the crate cleared - and that exception is exactly
           what nobody could tell its buyer before. */}
-      <button type="button" className="lotitem__more" aria-expanded={open}
+      {!ended && <button type="button" className="lotitem__more" aria-expanded={open}
         onClick={() => setOpen(!open)}>
         <Icon name={open ? 'down' : 'right'} size={12} />
         {open ? 'Hide' : 'Note, or move this order alone'}
-      </button>
+      </button>}
 
-      {open && (
+      {open && !ended && (
         <>
           <Ladder
             steps={steps}
@@ -760,7 +768,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
           )}
         </>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -1283,17 +1291,11 @@ export function LotDetail({ lotId, onBack, customers }: {
             </Modal>
           )}
 
-          <div id="lot-items" className="card card--pad stack">
+          <div id="lot-items" className="ocusts">
             <div className="row row--between">
               <h2>Orders, by customer</h2>
-              <span className="faint">
-                {items.length} {items.length === 1 ? 'order' : 'orders'} · {totals.units} {totals.units === 1 ? 'unit' : 'units'}
-              </span>
+              <span className="faint">{items.length} {items.length === 1 ? 'order' : 'orders'}</span>
             </div>
-            <span className="field__hint">
-              Each order's own buttons, in route order. 🚢 Lot is the part the whole lot moves
-              together — that is done with the route above.
-            </span>
 
             {items.length === 0 ? (
               <p className="muted">
@@ -1301,13 +1303,17 @@ export function LotDetail({ lotId, onBack, customers }: {
               </p>
             ) : (
               itemsByCustomer(items).map(({ key, name, handle, rows }) => (
-                <section key={key} className="lotcust">
-                  <header className="lotcust__head">
-                    <span className="lotcust__name">
-                      {handle ? <Link to={`/${handle}`}>{name}</Link> : name}
-                    </span>
-                    <span className="lotcust__count">{rows.length} {rows.length === 1 ? 'item' : 'items'}</span>
+                <section key={key} className="ocust">
+                  <header className="ocust__head">
+                    <Avatar name={name} size={36} />
+                    <div className="ocust__who">
+                      {handle
+                        ? <Link to={`/${handle}`} className="ocust__name">{name}</Link>
+                        : <span className="ocust__name">{name}</span>}
+                      <span className="ocust__meta">{rows.length} {rows.length === 1 ? 'order' : 'orders'}</span>
+                    </div>
                   </header>
+                  <div className="orows">
                   {rows.map((item) => (
                 <LotItemRow
                   key={item.id}
@@ -1341,6 +1347,7 @@ export function LotDetail({ lotId, onBack, customers }: {
                       api.assignOrderToLot(item.id, { lotId: to }).then(() => {}), true)}
                 />
                   ))}
+                  </div>
                 </section>
               ))
             )}

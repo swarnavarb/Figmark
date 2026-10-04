@@ -17,7 +17,7 @@ import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
-import { DirectTrack, TrackHero, boxesFor, withLastMile } from '../components/OrderTrack';
+import { DirectTrack, TrackHero, endedOf, boxesFor, withLastMile } from '../components/OrderTrack';
 import { useStepActs } from '../components/StepActs';
 import { ItemCard, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
@@ -221,8 +221,8 @@ export function OrderPage() {
               /* Which shipment it is in sits under the headline: for an item
                  bought into a lot that is the first thing its buyer wants,
                  and the ladder below is the answer to the second. */
-              <TrackHero icon={data.route.waitingForLot ? '⏳' : '🚢'}
-                now={data.route.waitingForLot ? 'Waiting for the lot to move' : lotTrack!.steps[lotAt]?.name ?? 'On its way'}
+              <TrackHero icon={endedOf(order) ? '🚫' : data.route.waitingForLot ? '⏳' : '🚢'}
+                now={endedOf(order)?.label ?? (data.route.waitingForLot ? 'Waiting for the lot to move' : lotTrack!.steps[lotAt]?.name ?? 'On its way')}
                 sub={<>
                   📦 {data.route.lotName} <span className="lotname__no">LOT {lotNo(data.route.lotNumber)}</span>
                   {leftLot ? ' · now travelling on its own' : ''}
@@ -240,6 +240,7 @@ export function OrderPage() {
                     warehouse tick, not above it. */}
                 <Ladder steps={lotTrack!.steps} current={lotAt}
                   history={data.order.stageHistory}
+                  ended={endedOf(order)}
                   /* Only the seller is told who moves the tracking from here:
                      for the buyer it is one journey, whoever is pushing it. */
                   leaveAt={seller && leaveAt !== undefined ? lotTrack!.at(leaveAt) : undefined}
@@ -273,14 +274,15 @@ export function OrderPage() {
                 </div>
               </TrackHero>
             ) : (
-              <TrackHero icon="⏳"
+              <TrackHero icon={endedOf(order) ? '🚫' : '⏳'}
                 boxes={boxesFor(preTrack.steps, data.preLot.currentStep)}
-                now={data.preLot.steps[data.preLot.currentStep]?.name ?? 'Ordered'}
+                now={endedOf(order)?.label ?? data.preLot.steps[data.preLot.currentStep]?.name ?? 'Ordered'}
                 sub="Not in a shipment lot yet — the rest of the journey appears once it is."
                 done={data.preLot.currentStep + 1} total={preTrack.steps.length + 1}>
                 <div className="trk__ladder">
                   <Ladder steps={preTrack.steps} current={data.preLot.currentStep}
                     history={data.order.stageHistory}
+                    ended={endedOf(order)}
                     /* Only its own steps have buttons before a lot: the last mile
                        is drawn, locked, and waits for one. */
                     actFor={(step, index) => (index < preSteps.length

@@ -48,6 +48,7 @@ import {
   type RefundableOrder,
   type RoutesResponse,
 } from '../api';
+import { ItemHead } from '../components/ItemHead';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
 import { InsightsPanel } from './InsightsPanel';
@@ -1238,19 +1239,18 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
 function LotPulse({ rows }: { rows: readonly SaleRow[] }) {
   const live = rows.filter((row) => !isClosed(row));
   const people = new Set(live.map((row) => row.buyer.handle ?? `name:${row.buyer.name}`)).size;
-  const units = live.reduce((sum, row) => sum + row.quantity, 0);
   const money = (pick: (row: SaleRow) => number) =>
     formatTotals(live.map((row) => ({ amountMinor: pick(row), currency: row.currency })), live[0]?.currency);
   const pendingCount = live.filter((row) => row.outstandingMinor > 0).length;
 
   /* Every order in a lot rides the same route, so one order's line of
-     buttons names the steps and each order's own line says which are done. */
+     buttons names the steps and each order's own line says which are done.
+     Only the orders' own presses: the lot's moves are said on Tracking. */
   const template = live.find((row) => row.serial && row.serial.length > 0)?.serial ?? [];
-  const steps = template.map((button, index) => ({
+  const steps = template.flatMap((button, index) => button.kind === 'lot' ? [] : [{
     label: button.label,
-    lot: button.kind === 'lot',
     done: live.filter((row) => row.serial?.[index]?.done).length,
-  }));
+  }]);
 
   const couriers = new Map<string, number>();
   for (const row of live) {
@@ -1261,38 +1261,32 @@ function LotPulse({ rows }: { rows: readonly SaleRow[] }) {
   return (
     <section className="lpulse" aria-label="This lot at a glance">
       <div className="lpulse__stats">
-        <div className="lpulse__stat"><b>{people}</b><small>{people === 1 ? 'Customer' : 'Customers'}</small></div>
-        <div className="lpulse__stat"><b>{live.length}</b><small>{live.length === 1 ? 'Order' : 'Orders'}</small></div>
-        <div className="lpulse__stat"><b>{units}</b><small>Units</small></div>
-      </div>
-
-      <div className="lpulse__money">
-        <div><small>Order value</small><b>{money((row) => row.totalMinor)}</b></div>
-        <div><small>Paid</small><b>{money((row) => Math.min(row.paidMinor, row.totalMinor))}</b></div>
-        <div className={pendingCount > 0 ? 'is-due' : 'is-clear'}>
+        <div className="lpulse__stat"><small>{people === 1 ? 'Customer' : 'Customers'}</small><b>{people}</b></div>
+        <div className="lpulse__stat"><small>{live.length === 1 ? 'Order' : 'Orders'}</small><b>{live.length}</b></div>
+        <div className="lpulse__stat"><small>Value</small><b>{money((row) => row.totalMinor)}</b></div>
+        <div className="lpulse__stat"><small>Paid</small><b>{money((row) => Math.min(row.paidMinor, row.totalMinor))}</b></div>
+        <div className={`lpulse__stat ${pendingCount > 0 ? 'is-due' : 'is-clear'}`}>
           <small>Pending{pendingCount > 0 ? ` · ${pendingCount}` : ''}</small>
           <b>{money((row) => row.outstandingMinor)}</b>
         </div>
       </div>
 
       {steps.length > 0 && live.length > 0 && (
-        <>
-        <h3 className="lpulse__title">Orders at each step</h3>
-        <ol className="lpulse__route">
+        <ol className="lpulse__route" aria-label="Orders at each step">
           {steps.map((step, index) => {
             const share = Math.round((step.done / live.length) * 100);
             const state = step.done === live.length ? 'all' : step.done > 0 ? 'some' : 'none';
             return (
-              <li key={index} className={`lpulse__step lpulse__step--${state}`}>
-                <span className="lpulse__stepn">{step.lot ? '🚢' : '⚡'}</span>
+              <li key={index} className={`lpulse__step lpulse__step--${state}`}
+                title={`${step.label}: ${step.done} of ${live.length} orders`}>
+                <span className="lpulse__ring" style={{ '--p': `${share}%` } as CSSProperties}>
+                  <span>{state === 'all' ? '✓' : step.done}</span>
+                </span>
                 <span className="lpulse__stepname">{step.label}</span>
-                <span className="lpulse__stepcount"><b>{step.done}</b>/{live.length}</span>
-                <span className="lpulse__stepbar" aria-hidden="true"><span style={{ width: `${share}%` }} /></span>
               </li>
             );
           })}
         </ol>
-        </>
       )}
 
       {couriers.size > 0 && (
@@ -1780,28 +1774,20 @@ function OrderRow({
     <article id={`order-${row.id}`}
       className={`ocard ocard--${tone}${needsAnswer ? ' is-urgent' : ''}${glowing ? ' is-glowing' : ''}${busy ? ' is-busy' : ''}`}
       style={{ '--i': Math.min(index, 12) } as CSSProperties}>
-      <div className="ocard__head">
-        <Link to={orderLink} state={linkState} className="ocard__thumb" tabIndex={-1} aria-hidden="true">
-          <Thumb seed={row.id} label={row.itemName} photo={row.photoUrl ? { url: row.photoUrl } : null}
-            className="thumb ocard__img" />
-        </Link>
-        <div className="ocard__title">
-          <Link to={orderLink} state={linkState} className="ocard__name">{row.itemName}</Link>
-          {row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
-          <div className="ocard__meta">
-            {!inLot && (row.buyer.handle
-              ? <Link to={`/${row.buyer.handle}`} className="ocard__buyer">{row.buyer.name}</Link>
-              : <span className="ocard__buyer">{row.buyer.name}</span>)}
-            {!inLot && <span aria-hidden="true">·</span>}
-            <span>{timeAgo(row.createdAt)}</span>
-            {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
-          </div>
-        </div>
-        <div className="ocard__price">
+      <ItemHead id={row.id} name={row.itemName} photoUrl={row.photoUrl} to={orderLink.pathname} state={linkState}
+        badges={row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
+        meta={<>
+          {!inLot && (row.buyer.handle
+            ? <Link to={`/${row.buyer.handle}`} className="ocard__buyer">{row.buyer.name}</Link>
+            : <span className="ocard__buyer">{row.buyer.name}</span>)}
+          {!inLot && <span aria-hidden="true">·</span>}
+          <span>{timeAgo(row.createdAt)}</span>
+          {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
+        </>}
+        side={<>
           <b>{formatMoney(row.totalMinor, row.currency)}</b>
           <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>
-        </div>
-      </div>
+        </>} />
 
       {/* The money, as a bar rather than a sentence: how much of this has
           actually landed. Once it is all in, the Paid badge already says so. */}

@@ -27,7 +27,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, actFor, lockFrom, zones, moveUpTo,
+  leaveAt, leaveNote, actFor, lockFrom, zones, moveUpTo, ended,
 }: {
   steps: RouteStep[];
   current: number;
@@ -94,6 +94,12 @@ export function Ladder({
    * and a button that only answers with a refusal is worse than none.
    */
   moveUpTo?: number;
+  /**
+   * The journey stopped here - the order was cancelled or turned down. The
+   * rungs past where it got to are not drawn at all, and one last rung says
+   * how it ended: nothing further is going to happen to it.
+   */
+  ended?: { label: string; at?: string | null; note?: string | null } | null;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -116,7 +122,7 @@ export function Ladder({
   /* Whether the lot has started carrying this item: until the item reaches a
      rung on the lot's half of the route, the lot is still a promise. */
   const stillWaiting = current < 0 || !steps[current] || sideOf(steps[current]!, current) === 'pre';
-  const editable = Boolean(onMove || onNote);
+  const editable = !ended && Boolean(onMove || onNote);
 
   /*
    * Stage headers, drawn only where the seller actually grouped steps.
@@ -148,11 +154,12 @@ export function Ladder({
    * to. Nothing, most of the time: only a handful of steps are places a
    * buyer actually waits.
    */
-  const gapMessage = waitingFor || (current >= 0 ? waitMessageFor(steps[current]) : null);
+  const gapMessage = ended ? null : waitingFor || (current >= 0 ? waitMessageFor(steps[current]) : null);
+  const shown = ended ? steps.slice(0, Math.max(0, current + 1)) : steps;
 
   return (
-    <ol className={`ladder${editable ? ' ladder--live' : ''}`}>
-      {steps.map((step, index) => {
+    <ol className={`ladder${editable ? ' ladder--live' : ''}${ended ? ' ladder--ended' : ''}`}>
+      {shown.map((step, index) => {
         // Reaching a step is what ticks it - the present is the gap after
         // it, drawn as its own row below, not a mark on the rung itself.
         const state = stepStateAt(index, current);
@@ -347,6 +354,17 @@ export function Ladder({
           </Fragment>
         );
       })}
+      {ended && (
+        <li className="ladder__row ladder__row--ended">
+          <span className="ladder__dot" aria-hidden="true">✕</span>
+          <span className="ladder__body">
+            <span className="ladder__name">{ended.label}</span>
+            {ended.note && <span className="faint">{ended.note}</span>}
+            <span className="faint">The journey ends here.</span>
+          </span>
+          {ended.at && <span className="ladder__note-when">{when(ended.at)}</span>}
+        </li>
+      )}
     </ol>
   );
 }
