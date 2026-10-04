@@ -11643,8 +11643,6 @@ a.ocust__name:hover { color: var(--accent-text); }
  * One lot, tightened: less air between the hero, the tabs and the content,
  * and customers that read as heads over their own indented orders.
  */
-.lothero { gap: 5px; margin-bottom: 10px; }
-.lothero__name { font-size: var(--t-xl); }
 .lotnav { margin-bottom: 10px; padding: 3px; gap: 3px; border-radius: 14px; }
 .lotnav__tab { grid-auto-flow: column; gap: 6px; padding: 7px 4px; border-radius: 11px; }
 .lpulse { gap: 10px; padding: 12px; border-radius: 18px; }
@@ -11671,3 +11669,43 @@ a.ocust__name:hover { color: var(--accent-text); }
 @media (max-width: 520px) {
   .ocust > .orows { margin-left: 4px; padding-left: 8px; }
 }
+
+/*
+ * The lot's hero: one card. Name and number on top, where it is right now
+ * as a sentence with a live dot and a step count, the route as a bar, then
+ * what buyers are shown beside the one switch that changes it.
+ */
+.lothero {
+  --hue: 124 58 237;
+  display: grid; gap: 10px; margin-bottom: 10px; padding: 14px 16px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 100% at 100% 0%, rgb(var(--hue) / 0.18), transparent 60%),
+    linear-gradient(160deg, var(--surface-2), var(--surface));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgb(var(--hue) / 0.22);
+}
+.lothero--filling { --hue: 251 191 36; }
+.lothero--done { --hue: 52 211 153; }
+.lothero__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.lothero__top .lothero__name { font-size: var(--t-xl); }
+.lothero__top .lothero__id { flex: none; margin-top: 3px; font-family: var(--mono); }
+.lothero__now { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lothero__pulse {
+  flex: none; width: 8px; height: 8px; border-radius: 50%;
+  background: rgb(var(--hue)); box-shadow: 0 0 0 0 rgb(var(--hue) / 0.6);
+  animation: lothero-pulse 2s var(--ease) infinite;
+}
+.lothero--done .lothero__pulse { animation: none; }
+@keyframes lothero-pulse { 70% { box-shadow: 0 0 0 7px rgb(var(--hue) / 0); } 100% { box-shadow: 0 0 0 0 rgb(var(--hue) / 0); } }
+@media (prefers-reduced-motion: reduce) { .lothero__pulse { animation: none; } }
+.lothero__now .lothero__state {
+  flex: 1; min-width: 0; padding: 0; background: none;
+  font-size: var(--t-sm); font-weight: var(--w-semi); letter-spacing: 0; text-transform: none;
+  color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lothero__step { flex: none; font-family: var(--mono); font-size: var(--t-xs); color: var(--text-faint); }
+.lothero .lothero__bar { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); }
+.lothero .lothero__bar span { border-radius: inherit; background: linear-gradient(90deg, rgb(var(--hue)), #06D6E7); }
+.lothero__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.lothero__buyers { display: inline-flex; align-items: center; gap: 8px; }
+.lothero__eyebrow { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); }

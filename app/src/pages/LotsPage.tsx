@@ -1128,19 +1128,24 @@ export function LotDetail({ lotId, onBack, customers }: {
 
       {/* The lot, said once and properly: what it is called, which one it is,
           and what it is doing. Everything else is a section below. */}
-      <header className="lothero">
-        <h1 className="lothero__name">{lot.name}</h1>
-        <div className="lothero__ids">
+      <header className={`lothero lothero--${done ? 'done' : lotStep < 0 ? 'filling' : 'moving'}`}>
+        <div className="lothero__top">
+          <h1 className="lothero__name">{lot.name}</h1>
           <span className="lothero__id">LOT {lotNo(route.lotNumber)}</span>
-          <span className={`lothero__state lothero__state--${done ? 'done' : lotStep < 0 ? 'filling' : 'moving'}`}>
-            {status}
-          </span>
         </div>
-        {/* What every buyer in this lot is shown, and the one switch that
-            belongs to the seller: shutting the box to new orders. */}
-        <div className="lothero__phase">
-          <LotPhaseBadge phase={phase} />
-          <span className="faint">what buyers see</span>
+        <div className="lothero__now">
+          <span className="lothero__pulse" aria-hidden="true" />
+          <span className="lothero__state">{status}</span>
+          <span className="lothero__step">{Math.max(0, lotStep + 1)}/{lotSteps.length}</span>
+        </div>
+        <div className="lothero__bar" aria-hidden="true">
+          <span style={{ width: `${((lotStep + 1) / Math.max(1, lotSteps.length)) * 100}%` }} />
+        </div>
+        <div className="lothero__foot">
+          <span className="lothero__buyers">
+            <span className="lothero__eyebrow">Buyers see</span>
+            <LotPhaseBadge phase={phase} />
+          </span>
           {(phase === 'filling' || (phase === 'closed' && lotStep < 0)) && (
             <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
               onClick={() => void run(
@@ -1160,9 +1165,6 @@ export function LotDetail({ lotId, onBack, customers }: {
             route.name,
           ].filter(Boolean).join(' · ')}
         </p>
-        <div className="lothero__bar" aria-hidden="true">
-          <span style={{ width: `${((lotStep + 1) / Math.max(1, lotSteps.length)) * 100}%` }} />
-        </div>
       </header>
 
       <nav className="lotnav" aria-label="This lot">
