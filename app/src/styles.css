@@ -4111,6 +4111,11 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .ocard__next:active:not(:disabled) { transform: scale(0.96); }
 .ocard__next:disabled { opacity: 0.55; cursor: default; }
 .ocard__wait { font-size: var(--t-xs); color: var(--text-dim); }
+.ocard__undo {
+  height: 30px; padding: 0 11px; border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 999px;
+  background: var(--ok-soft); color: var(--ok); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.ocard__undo:disabled { opacity: 0.55; cursor: default; }
 
 /* Yes and no, labelled and coloured - green for yes, red for no. */
 .orow__decide {
