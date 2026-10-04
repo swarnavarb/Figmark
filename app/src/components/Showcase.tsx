@@ -41,6 +41,16 @@ function parts(until: string | null, now: number) {
   };
 }
 
+/** A wait in the fewest units that still say it: 2d 4h, 3h 12m, 4:05. */
+function span(seconds: number): string {
+  const d = Math.floor(seconds / 86_400);
+  const h = Math.floor((seconds % 86_400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 /** Starts its story once it is on screen, so nothing plays to an empty room. */
 function useInView<T extends Element>(): [React.RefObject<T>, boolean] {
   const ref = useRef<T>(null);
@@ -168,7 +178,7 @@ function DropTicket({ drop: initial, index }: { drop: DropCardData; index: numbe
         ) : (
           <span className="ticket__when">
             Drop {Math.max(1, drop.itemsOut)}/{drop.itemCount}
-            {next.left > 0 ? <> · next in <b>{next.m}:{next.s}</b></> : ' · dropping now'}
+            {next.left > 0 ? <> · next in <b>{span(next.left)}</b></> : ' · dropping now'}
           </span>
         )}
         <ul className="ticket__preview">

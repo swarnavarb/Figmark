@@ -36,6 +36,15 @@ export const MAX_SALE_ITEMS = 30;
 /** Floors, so a sale cannot be configured into a wall of posts. */
 export const MIN_EVERY_MINUTES = 1;
 export const MIN_WINDOW_MINUTES = 5;
+/**
+ * The least time between the opening message and the first item.
+ *
+ * Half an hour, so every drop has a countdown on the Buy tab's Drops shelf and
+ * in the channel - time for the announcement to travel and for people to set
+ * a reminder. A sale whose first item lands with its own announcement gives
+ * nobody a chance to turn up.
+ */
+export const MIN_LEAD_MINUTES = 30;
 
 function minutes(n: number): number {
   return n * 60_000;

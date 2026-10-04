@@ -44,6 +44,7 @@ import {
   seedPledges,
   seedUsers,
 } from './seed.js';
+import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
 
 /**
  * Whether an empty database may be filled with the development fixtures.
@@ -440,9 +441,10 @@ export class CosmosRepository implements Repository {
     // start, and every request landing on a cold worker waits behind it.
     const fixtures = [
       ['users', [...seedUsers(), ...seedLotBuyers()]],
-      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot()]],
-      ['listings', seedListings()],
-      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders()]],
+      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
+      ['listings', [...seedListings(), ...seedShowcaseListings()]],
+      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
+      ['powerSales', seedShowcaseSales()],
       ['comments', seedComments()],
       ['forums', seedForums()],
       ['posts', seedPosts()],
@@ -563,9 +565,10 @@ export class CosmosRepository implements Repository {
     }
 
     for (const [name, items] of [
-      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot()]],
-      ['listings', seedListings()],
-      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders()]],
+      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
+      ['listings', [...seedListings(), ...seedShowcaseListings()]],
+      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
+      ['powerSales', seedShowcaseSales()],
       ['comments', seedComments()],
       ['forums', seedForums()],
       ['posts', seedPosts()],

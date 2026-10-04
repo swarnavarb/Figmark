@@ -102,7 +102,7 @@ const { notificationsRoute: notifications, notificationsReadRoute: markRead } =
 const { preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge } =
   await import(new URL('preorder-routes.js', fns));
 const {
-  powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSale,
+  powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSaleRaw,
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
 } = await import(new URL('power-sale-routes.js', fns));
 const {
@@ -184,6 +184,24 @@ const repository_dispute = async (id) => (await getRepository()).getDisputeById(
 // Fixture buyers have no password, so their notifications are read through the
 // same repository the routes write them to rather than by signing in as them.
 const noticesFor = async (id) => (await getRepository()).listNotifications(id, 40);
+
+/*
+ * Every sale now waits at least 30 minutes between its opening message and
+ * its first item. The checks written before that schedule a sale and expect
+ * it dropping at once; unless one names its own lead time, this lets the
+ * half hour pass, the way the minute timer would.
+ */
+const schedulePowerSale = async (request, ctx) => {
+  const made = await schedulePowerSaleRaw(request, ctx);
+  const body = await request.json().catch(() => ({}));
+  if (made.status !== 201 || body.leadMinutes !== undefined || made.jsonBody.sale.status !== 'running') return made;
+  const repository = await getRepository();
+  const stored = (await repository.listLivePowerSales()).find((sale) => sale.id === made.jsonBody.sale.id);
+  if (!stored) return made;
+  await repository.savePowerSale({ ...stored, leadMinutes: 0 });
+  const read = await readPowerSale(req({ headers: Object.fromEntries(request.headers), params: { id: stored.id } }), ctx);
+  return { ...made, jsonBody: read.jsonBody };
+};
 // Campaigns end when a cutoff passes, and a smoke test cannot wait a week for
 // one. Moving the cutoff into the past is the same fact arriving sooner.
 const expireCampaign = async (id) => {
@@ -369,9 +387,11 @@ await check('serves the catalog anonymously', async () => {
 });
 
 await check('text search narrows results', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings.length;
   const body = (await feed(req({ query: { q: 'sneaker' } }), ctx)).jsonBody;
-  assert.equal(body.listings.length, 2);
-  assert.ok(body.listings.every((l) => /sneaker|runner|high-top/i.test(`${l.title} ${l.tags.join(' ')}`)));
+  // Narrower than everything, and every hit is a sneaker by its words or its category.
+  assert.ok(body.listings.length >= 2 && body.listings.length < all);
+  assert.ok(body.listings.every((l) => /sneaker|runner|high-top/i.test(`${l.title} ${l.tags.join(' ')} ${l.category}`)));
 });
 
 await check('extra search words narrow rather than widen', async () => {
@@ -4079,10 +4099,12 @@ await check('a run says when the last item hands over', async () => {
   }), ctx);
   const sale = made.jsonBody.sale;
 
-  // The third is due at +20 minutes and its window shuts 30 after that, so the
-  // whole run is public about fifty minutes from now.
+  // Asked for no wait, it gets the half-hour minimum: the first item is due at
+  // +30 minutes, the third at +50, and its window shuts 30 after that - so
+  // the whole run is public about eighty minutes from now.
+  assert.equal(sale.leadMinutes, 30, 'no drop lands with its own announcement');
   const minutesOut = (Date.parse(sale.finishesAt) - Date.now()) / 60_000;
-  assert.ok(minutesOut > 45 && minutesOut < 55, `expected about 50 minutes, got ${minutesOut}`);
+  assert.ok(minutesOut > 75 && minutesOut < 85, `expected about 80 minutes, got ${minutesOut}`);
 
   // And nothing to count down to once it is over.
   await stopPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx);

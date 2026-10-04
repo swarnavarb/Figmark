@@ -40,6 +40,7 @@ import {
   seedPledges,
   seedUsers,
 } from './seed.js';
+import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
 
 /**
  * In-process store used when Cosmos DB is not configured.
@@ -84,8 +85,13 @@ export class MemoryRepository implements Repository {
     for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()].map((one) => this.withSampleRoute(one))) {
       this.lots.set(lot.id, lot);
     }
-    for (const listing of seedListings()) this.listings.set(listing.id, listing);
-    for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders()]) this.orders.set(order.id, order);
+    // The Buy tab's demo lots and drops, timed off the real clock.
+    for (const lot of seedShowcaseLots()) this.lots.set(lot.id, lot);
+    for (const listing of [...seedListings(), ...seedShowcaseListings()]) this.listings.set(listing.id, listing);
+    for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]) {
+      this.orders.set(order.id, order);
+    }
+    for (const sale of seedShowcaseSales()) this.powerSales.set(sale.id, sale);
     for (const comment of seedComments()) this.comments.set(comment.id, comment);
     for (const like of seedLikes()) this.likes.set(likeKey(like.userId, like.listingId), like);
     for (const follow of seedFollows()) {

@@ -11,6 +11,7 @@ import { error, handler, json } from './http.js';
 import {
   MAX_SALE_ITEMS,
   MIN_EVERY_MINUTES,
+  MIN_LEAD_MINUTES,
   MIN_WINDOW_MINUTES,
   advanceAll,
   advancePowerSale,
@@ -278,7 +279,8 @@ async function create(request: HttpRequest, _context: InvocationContext) {
     status: 'scheduled',
     openingBody,
     openingAt,
-    leadMinutes: Math.max(0, Math.min(1440, Math.round(Number(body.leadMinutes) || 0))),
+    // Thirty minutes at least, and thirty when not given: see MIN_LEAD_MINUTES.
+    leadMinutes: Math.max(MIN_LEAD_MINUTES, Math.min(1440, Math.round(Number(body.leadMinutes) || MIN_LEAD_MINUTES))),
     everyMinutes: Math.max(MIN_EVERY_MINUTES, positive(body.everyMinutes, 5)),
     windowMinutes: Math.max(MIN_WINDOW_MINUTES, positive(body.windowMinutes, 60)),
     closingBody: trimmed(body.closingBody, 600),
