@@ -1470,6 +1470,13 @@ export interface ItemGroup {
     currentStep: number;
     estimatedDispatchAt: string | null;
     trackingReference: string | null;
+    phase: LotBuyerPhase;
+    /** Where the lot itself is on its route. */
+    lotStep: number;
+    originCountry: string | null;
+    destinationCountry: string | null;
+    /** People with an item in this lot, the buyer included. */
+    people: number;
   } | null;
   sellerName: string;
   sellerHandle: string | null;
@@ -1488,6 +1495,8 @@ export interface ItemGroup {
     canPayMore: boolean;
     /** False while the buyer has pressed Buy but not yet paid or booked. */
     placed: boolean;
+    /** This item's own step on its lot's route; null outside a lot. */
+    stepAt: number | null;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
     /** When it reached the buyer, or null while it is still on its way. */
     deliveredAt: string | null;

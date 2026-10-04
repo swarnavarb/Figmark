@@ -29,7 +29,6 @@ const PHASE_ICON: Record<LotBuyerPhase, string> = {
   closed: '📦',
   in_transit: '🚚',
   received: '🏁',
-  delivered: '✅',
   cancelled: '✖',
 };
 

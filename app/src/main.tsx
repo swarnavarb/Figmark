@@ -47,6 +47,7 @@ const ForwardersPage = page(() => import('./pages/ForwardersPage'), 'ForwardersP
 const ProfilePage = page(() => import('./pages/ProfilePage'), 'ProfilePage');
 const PurchasesPage = page(() => import('./pages/PurchasesPage'), 'PurchasesPage');
 const CartPage = page(() => import('./pages/PurchasesPage'), 'CartPage');
+const BuyerLotPage = page(() => import('./pages/BuyerLotPage'), 'BuyerLotPage');
 const MyRefundsPage = page(() => import('./pages/MyRefundsPage'), 'MyRefundsPage');
 const MyDisputesPage = page(() => import('./pages/MyDisputesPage'), 'MyDisputesPage');
 const QuestsPage = page(() => import('./pages/QuestsPage'), 'QuestsPage');
@@ -119,6 +120,7 @@ function App() {
         <Route path="/forwarders" element={<Navigate to="/services/forwarder" replace />} />
         <Route path="/me" element={members(<ProfilePage />)} />
         <Route path="/purchases" element={members(<PurchasesPage />)} />
+        <Route path="/purchases/lot/:lotId" element={members(<BuyerLotPage />)} />
         <Route path="/cart" element={members(<CartPage />)} />
         {/* Old notifications still link here; the details live under My wallet now. */}
         <Route path="/buyer-settings" element={<Navigate to="/wallet?tab=details" replace />} />

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect, lotIsDone, lotPhase } from '../../../shared/fulfilment.js';
 import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import {
   BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeJoinsLot, routeOf, sameSteps, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
@@ -1013,9 +1013,18 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   // One read per lot rather than one per item: three items in one lot are
   // one journey, and asking three times would be three chances to disagree.
   const lots = new Map<string, Lot | null>();
+  /** How many people are in each lot, this buyer included: a box is shared. */
+  const peopleIn = new Map<string, number>();
   for (const order of orders) {
     if (!inLot(order) || lots.has(order.lotId)) continue;
     lots.set(order.lotId, await repository.getLot(order.sellerId, order.lotId));
+    try {
+      const everyone = (await repository.listOrdersForLot(order.lotId))
+        .filter((row) => !isCancelledLike(row.status));
+      peopleIn.set(order.lotId, new Set(everyone.map((row) => row.buyerId)).size);
+    } catch {
+      peopleIn.set(order.lotId, 1);
+    }
   }
 
   // Photos for the purchase cards, one read per item bought.
@@ -1066,6 +1075,13 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
             currentStep: index,
             estimatedDispatchAt: lot.estimatedDispatchAt,
             trackingReference: lot.forwarder?.trackingReference ?? null,
+            /** Filling, closed, in transit or received: the lot as its buyers see it. */
+            phase: lotPhase(lot),
+            /** Where the lot itself is - not the furthest of the buyer's items. */
+            lotStep: currentStepOf(lot),
+            originCountry: lot.originCountry ?? null,
+            destinationCountry: lot.destinationCountry ?? null,
+            people: peopleIn.get(lot.id) ?? 1,
           }
         : null,
       sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'Seller',
@@ -1109,6 +1125,10 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         shipment: order.shipment ?? null,
         disputed: order.escrow.state === 'disputed',
         createdAt: order.createdAt,
+        /** Where this one item is on its lot's route - its own, where it differs. */
+        stepAt: lot && route
+          ? itemStepOn(route, currentStepOf(lot), order.currentStep, ticksOf(order))
+          : null,
       })),
     };
   });

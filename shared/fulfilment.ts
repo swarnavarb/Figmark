@@ -26,20 +26,31 @@ export function lotIsDone(lot: Pick<Lot, 'status' | 'stage'>): boolean {
  * still being filled, has been shut and is getting ready to go, is on its
  * way, or has arrived - not which of the seller's eleven steps it is on.
  */
-export type LotBuyerPhase = 'filling' | 'closed' | 'in_transit' | 'received' | 'delivered' | 'cancelled';
+export type LotBuyerPhase = 'filling' | 'closed' | 'in_transit' | 'received' | 'cancelled';
 
 export const LOT_PHASE_LABELS: Record<LotBuyerPhase, string> = {
-  filling: 'Lot getting filled',
-  closed: 'Lot closed – prepping for dispatch',
-  in_transit: 'Lot in transit',
-  received: 'Lot received',
-  delivered: 'Lot delivered',
-  cancelled: 'Lot called off',
+  filling: 'Filling',
+  closed: 'Closed',
+  in_transit: 'In transit',
+  received: 'Received',
+  cancelled: 'Called off',
+};
+
+/** The four a lot goes through, in order - the stops on a buyer's track. */
+export const LOT_PHASES: readonly LotBuyerPhase[] = ['filling', 'closed', 'in_transit', 'received'];
+
+/** What each one means, in a line a buyer reads under it. */
+export const LOT_PHASE_HINTS: Record<LotBuyerPhase, string> = {
+  filling: 'Still taking orders - the box is filling up.',
+  closed: 'Sealed and taped - being prepped for dispatch.',
+  in_transit: 'On its way across.',
+  received: 'Landed - items are being sent out to their buyers.',
+  cancelled: 'This lot was called off.',
 };
 
 export function lotPhase(lot: Pick<Lot, 'status' | 'stage' | 'route' | 'currentStep'>): LotBuyerPhase {
   if (lot.status === 'cancelled') return 'cancelled';
-  if (lot.stage === 'delivered' || lot.status === 'closed') return 'delivered';
+  if (lot.stage === 'delivered' || lot.status === 'closed') return 'received';
   const route = routeOf(lot);
   const at = currentStepOf(lot);
   const offset = lotOffset(route);

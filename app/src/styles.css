@@ -2064,7 +2064,7 @@ code, kbd, samp, pre {
 .lotbox .lotphase { padding: 2px 8px; font-size: var(--t-2xs); gap: 4px; background: rgba(217, 119, 6, 0.14); color: #8A4B05; border-color: rgba(217, 119, 6, 0.35); }
 .lotbox .lotphase--closed { background: rgba(124, 58, 237, 0.12); color: #5B21B6; border-color: rgba(124, 58, 237, 0.35); }
 .lotbox .lotphase--in_transit { background: rgba(37, 99, 235, 0.12); color: #1E4FB8; border-color: rgba(37, 99, 235, 0.35); }
-.lotbox .lotphase--received, .lotbox .lotphase--delivered { background: rgba(5, 150, 105, 0.13); color: #05684A; border-color: rgba(5, 150, 105, 0.35); }
+.lotbox .lotphase--received { background: rgba(5, 150, 105, 0.13); color: #05684A; border-color: rgba(5, 150, 105, 0.35); }
 .lotbox .lotphase--cancelled { background: rgba(220, 38, 38, 0.1); color: #9B1C1C; border-color: rgba(220, 38, 38, 0.3); }
 
 /* Opening: the lid swings up and off, a warm light spills out of the box,
@@ -11056,7 +11056,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 }
 .lotphase--closed { background: rgba(167, 139, 250, 0.16); color: #C4B5FD; border-color: rgba(167, 139, 250, 0.4); }
 .lotphase--in_transit { background: rgba(96, 165, 250, 0.16); color: #93C5FD; border-color: rgba(96, 165, 250, 0.4); }
-.lotphase--received, .lotphase--delivered { background: rgba(52, 211, 153, 0.16); color: #6EE7B7; border-color: rgba(52, 211, 153, 0.4); }
+.lotphase--received { background: rgba(52, 211, 153, 0.16); color: #6EE7B7; border-color: rgba(52, 211, 153, 0.4); }
 .lotphase--cancelled { background: rgba(248, 113, 113, 0.14); color: #FCA5A5; border-color: rgba(248, 113, 113, 0.4); }
 .lothero__phase { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 
@@ -11093,3 +11093,188 @@ a.ocust__name:hover { color: var(--accent-text); }
 }
 .undobar__btn:disabled { opacity: 0.6; }
 .undobar__x { border: 0; background: transparent; color: var(--text-faint); cursor: pointer; padding: 4px; }
+
+/* ── The buyer's boxes ───────────────────────────────────────────────────
+   My Purchases, sorted by what each thing is waiting on: what needs the
+   buyer, the boxes on their way, things straight from a shop's shelf, things
+   waiting for a box, and the shelf of what has arrived. */
+.purch { gap: 22px; }
+.purch__section { display: grid; gap: 12px; }
+.purch__h { margin: 0; font-size: var(--t-lg); display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.purch__h .faint { font-size: var(--t-xs); font-weight: var(--w-medium); }
+
+/* What needs them: one calm line when nothing does. */
+.needs {
+  display: grid; gap: 10px; padding: 14px;
+  border-radius: var(--r-lg); border: 1px solid var(--border);
+  background: var(--surface);
+}
+.needs__title { font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.needs__calm { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+.needs__row { display: grid; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); font-size: var(--t-sm); }
+.needs__row--pay { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.35); }
+.needs__row--confirm { background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.35); }
+.needs__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.needs__chip {
+  padding: 4px 10px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08);
+  color: var(--text); font-size: var(--t-xs); font-weight: var(--w-semi); text-decoration: none;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* The buyer's box: the seller's carton, with their items peeking over the rim. */
+.lot-grid--buyer { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 30px 12px; padding-top: 20px; }
+.lotbox--buyer { padding-top: 14px; }
+.lotbox__peek {
+  position: absolute; z-index: 1; top: -16px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 0;
+  transition: transform 0.4s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.lotbox__peekitem {
+  width: 34px; height: 34px; border-radius: 9px; overflow: hidden; margin-left: -8px;
+  border: 2px solid var(--card, #F4E6C8); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  font-size: 11px;
+}
+.lotbox__peekitem:first-child { margin-left: 0; transform: rotate(-8deg); }
+.lotbox__peekitem:nth-child(3) { transform: rotate(8deg); }
+.lotbox--buyer:hover .lotbox__peek { transform: translateX(-50%) translateY(-4px); }
+.lotbox--buyer.is-opening .lotbox__peek { transform: translateX(-50%) translateY(-16px) scale(1.08); }
+.lotbox__store { font-size: var(--t-2xs); color: var(--card-dim); margin-top: -3px; }
+
+/* Four stops: Filling, Closed, In transit, Received - the box on its stop. */
+.ptrack { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); position: relative; }
+.ptrack--sm { gap: 0; }
+.ptrack--shelf { grid-template-columns: repeat(3, 1fr); }
+.ptrack::before {
+  content: ''; position: absolute; top: 10px; left: 12%; right: 12%; height: 2px;
+  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px); opacity: 0.25;
+}
+.ptrack__stop { position: relative; display: grid; justify-items: center; gap: 3px; text-align: center; }
+.ptrack__dot {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  background: rgba(127, 127, 127, 0.18); font-size: 11px; line-height: 1; z-index: 1;
+}
+.ptrack__label { font-size: 10px; font-weight: var(--w-semi); opacity: 0.55; white-space: nowrap; }
+.ptrack__stop.is-done .ptrack__dot { background: #34D399; color: #04251A; font-weight: 700; }
+.ptrack__stop.is-here .ptrack__dot {
+  width: 26px; height: 26px; margin-top: -3px; font-size: 15px;
+  background: #FDE68A; box-shadow: 0 0 0 3px rgba(253, 230, 138, 0.35);
+  animation: ptrack-bob 1.8s ease-in-out infinite;
+}
+.ptrack__stop.is-here .ptrack__label { opacity: 1; }
+@keyframes ptrack-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.ptrack--lg .ptrack__dot { width: 28px; height: 28px; font-size: 14px; }
+.ptrack--lg::before { top: 14px; }
+.ptrack--lg .ptrack__stop.is-here .ptrack__dot { width: 36px; height: 36px; margin-top: -4px; font-size: 19px; }
+.ptrack--lg .ptrack__label { font-size: var(--t-xs); }
+.lotbox .ptrack { color: var(--card-ink); margin: 2px 0; }
+@media (prefers-reduced-motion: reduce) { .ptrack__stop.is-here .ptrack__dot { animation: none; } }
+
+/* The money on an item, in the fewest words. */
+.paychip {
+  display: inline-flex; align-items: center; gap: 4px; width: fit-content;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: var(--w-semi);
+}
+.paychip--ok { background: rgba(52, 211, 153, 0.14); color: #6EE7B7; }
+.paychip--due { background: rgba(248, 113, 113, 0.16); color: #FCA5A5; }
+.paychip--info { background: rgba(96, 165, 250, 0.16); color: #93C5FD; }
+.lotbox .paychip--due { background: rgba(220, 38, 38, 0.12); color: #9B1C1C; }
+
+/* An item outside any box. */
+.irow {
+  display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--border);
+  background: var(--surface); color: inherit; text-decoration: none;
+}
+.irow .thumb { width: 48px; height: 48px; border-radius: 10px; }
+.irow__body { display: grid; gap: 3px; min-width: 0; }
+.irow__body b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+.irow__status { font-size: var(--t-xs); color: var(--text-dim); }
+.irow__note { font-size: var(--t-2xs); color: var(--text-faint); }
+.irow__go { font-size: 22px; color: var(--text-faint); }
+.irow--urgent { border-color: rgba(248, 113, 113, 0.45); }
+.shelfcard { display: grid; gap: 10px; padding: 10px; border-radius: var(--r-lg); border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.shelfcard .irow { border: 0; padding: 0; background: transparent; }
+.shelfcard .ptrack { color: var(--text); }
+
+/* What has arrived: a shelf of thumbnails. */
+.arrived { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px; }
+.arrived__item { display: grid; gap: 4px; justify-items: center; text-align: center; color: inherit; text-decoration: none; }
+.arrived__item .thumb { width: 72px; height: 72px; border-radius: 14px; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); }
+.arrived__name { font-size: var(--t-2xs); font-weight: var(--w-semi); line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.arrived__tag { font-size: 10px; color: #6EE7B7; font-weight: var(--w-semi); }
+.arrived__tag--ask { color: #FDE68A; }
+
+/* The quick look inside a box. */
+.peek__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-top: -6px; }
+.peek__hint { margin: 0; font-size: var(--t-sm); color: var(--text-dim); text-align: center; }
+.peek__title { font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.peek .ptrack { color: var(--text); margin-top: 6px; }
+.peek__items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.peek__item {
+  display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--r-md); background: rgba(255, 255, 255, 0.04);
+  animation: peek-in 0.35s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+.peek__item:nth-child(2) { animation-delay: 0.05s; }
+.peek__item:nth-child(3) { animation-delay: 0.1s; }
+.peek__item:nth-child(n+4) { animation-delay: 0.15s; }
+@keyframes peek-in { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .peek__item { animation: none; } }
+.peek__item .thumb { width: 44px; height: 44px; border-radius: 10px; }
+.peek__body { display: grid; gap: 3px; min-width: 0; }
+.peek__body b { font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peek__status { font-size: var(--t-xs); color: var(--text-dim); }
+.peek__go { font-size: 22px; color: var(--text-faint); text-decoration: none; padding: 0 4px; }
+
+/* The lot from inside: the box open, its name on the front. */
+.blot { display: grid; gap: 18px; }
+.blot__hero { position: relative; padding-top: 18px; --card: #F4E6C8; --card-ink: #362A1A; --card-dim: #7D6A50; --tape: rgba(234, 200, 115, 0.85); }
+.blot__lid {
+  position: absolute; z-index: 1; top: 0; left: 0; right: 0; height: 26px;
+  border-radius: 8px 8px 3px 3px; background: var(--lid, var(--violet));
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18), 0 3px 6px rgba(0, 0, 0, 0.28);
+  transform-origin: 0% 100%; transform: rotate(-4deg) translateY(-6px);
+}
+.blot__front {
+  position: relative; display: grid; gap: 10px; justify-items: start;
+  padding: 22px 18px 18px; border-radius: 3px 3px 14px 14px;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08), transparent 16px),
+    linear-gradient(90deg, rgba(90, 60, 20, 0.12), transparent 12px, transparent calc(100% - 12px), rgba(90, 60, 20, 0.12)),
+    var(--card);
+  color: var(--card-ink); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+.blot__front::before { content: ''; position: absolute; top: 0; left: 50%; width: 30px; height: 14px; transform: translateX(-50%); background: var(--tape); }
+.blot__front .ptrack { width: 100%; color: var(--card-ink); margin-top: 4px; }
+.blot__name { margin: 0; font-size: var(--t-xl, 24px); line-height: 1.15; letter-spacing: -0.02em; }
+.blot__ids { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: var(--t-xs); color: var(--card-dim); }
+.blot__ids a { color: inherit; font-weight: var(--w-semi); }
+.blot__ids .lotname__no { opacity: 1; }
+.blot__hint { margin: 0; font-size: var(--t-sm); color: var(--card-dim); }
+.blot__facts { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.blot__facts > span { padding: 5px 10px; border-radius: var(--r-pill); background: rgba(54, 42, 26, 0.08); font-size: var(--t-xs); }
+.blot__front .lotphase { background: rgba(124, 58, 237, 0.12); color: #5B21B6; border-color: rgba(124, 58, 237, 0.35); }
+.blot__front .lotphase--filling { background: rgba(217, 119, 6, 0.14); color: #8A4B05; border-color: rgba(217, 119, 6, 0.35); }
+.blot__front .lotphase--in_transit { background: rgba(37, 99, 235, 0.12); color: #1E4FB8; border-color: rgba(37, 99, 235, 0.35); }
+.blot__front .lotphase--received { background: rgba(5, 150, 105, 0.13); color: #05684A; border-color: rgba(5, 150, 105, 0.35); }
+.blot__h { margin: 0; font-size: var(--t-lg); }
+.blot__now { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+
+/* One of theirs, inside: opens onto its own timeline. */
+.inside { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); }
+.inside.is-open { border-color: var(--border-strong); }
+.inside__main { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; }
+.inside__main .thumb { width: 56px; height: 56px; border-radius: 12px; }
+.inside__body { display: grid; gap: 3px; min-width: 0; }
+.inside__body b { font-size: var(--t-base); }
+.inside__status { font-size: var(--t-xs); color: var(--text-dim); }
+.inside__step { font-size: var(--t-xs); color: var(--text-faint); }
+.inside__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.inside__link { margin-left: auto; font-size: var(--t-xs); color: var(--accent-text); text-decoration: none; }
+.inside__track { border-top: 1px dashed var(--border); padding-top: 10px; }
+/* In a box there is room for one word: the stop it is at. */
+.lotbox .ptrack__label { display: none; }
+.lotbox .ptrack__stop.is-here .ptrack__label { display: block; }
+.lotbox .ptrack__stop:first-child.is-here .ptrack__label { justify-self: start; }
+.lotbox .ptrack__stop:last-child.is-here .ptrack__label { justify-self: end; }
