@@ -1,10 +1,10 @@
-import { Fragment, useState, useEffect, type FormEvent } from 'react';
+import { Fragment, createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  renderStepText, sideOf, stepButtonLabel, stepId, stepTickKey, waitMessageFor,
-  type RouteStep, type StepAssignee, type StepTrigger,
+  renderStepText, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, waitMessageFor,
+  type RouteStep, type StepAssignee, type StepTrigger, type TrackingRoute,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { ErrorNotice, Icon, Modal, WaveLoader } from '../components/ui';
@@ -16,10 +16,14 @@ import {
 } from '../components/RouteMascot';
 import { RoutePreview } from '../components/RoutePreview';
 
-/** Stands in for the real lot's countries while a route is being written -
- *  nothing is attached to one yet, and the tokens have to show as something
- *  rather than the literal word "origin". */
-const PREVIEW_VARS = { origin: 'China', destination: 'India' };
+/**
+ * Stands in for the real lot's countries while a route is being written -
+ * nothing is attached to one yet. Read off the shop's own latest lot, so a
+ * shop shipping Japan to India previews in those words; with no lot yet the
+ * tokens read as plain "the origin" and "the destination".
+ */
+type PreviewVars = { origin?: string | null; destination?: string | null };
+const PreviewVarsContext = createContext<PreviewVars>({});
 
 /**
  * The last stop, guaranteed. Every route opened here ends on a locked
@@ -42,26 +46,21 @@ function ensureDelivered(steps: readonly RouteStep[]): RouteStep[] {
 }
 
 /**
- * The other route builder: a vertical chain of nodes instead of stage boxes,
- * a step inserted exactly where the "+" between two nodes is tapped instead
- * of only appended to a box, and a scrubbable preview instead of a static
- * one. It exists to be compared against the original, not to replace it -
- * see RouteEditor in RoutesPage.tsx for that one. Whichever wins, this one
- * goes; nothing here is meant to survive both.
+ * Where a route is written: a vertical chain of nodes in three lanes - before
+ * the lot, in it, after it - with a "+" between any two, and a scrubbable
+ * preview of what a buyer sees. The one route builder; every way into a
+ * route, new or saved, opens here.
  */
 export function RouteStudioPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const back = () => navigate('/shop?tab=routes');
   return (
     <main className="page">
-      <Link to="/routes" className="backlink">
+      <Link to="/shop?tab=routes" className="backlink">
         <Icon name="back" size={14} /> Routes
       </Link>
-      <RouteStudio
-        editing={id && id !== 'new' ? id : null}
-        onSaved={() => navigate('/routes')}
-        onCancel={() => navigate('/routes')}
-      />
+      <RouteStudio editing={id && id !== 'new' ? id : null} onSaved={back} onCancel={back} />
     </main>
   );
 }
@@ -73,10 +72,14 @@ const blankStep = (seed: number): RouteStep => ({
   id: stepId(seed), name: '', description: '', position: 0,
 });
 
-function RouteStudio({ editing, onSaved, onCancel }: {
+export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel' }: {
   editing: string | null;
-  onSaved: () => void;
+  /** Handed the route as saved, for a caller that picks it straight away. */
+  onSaved: (route: TrackingRoute) => void;
   onCancel: () => void;
+  /** Said above the starting points, for somebody meeting routes for the first time. */
+  intro?: ReactNode;
+  cancelLabel?: string;
 }) {
   const [library, setLibrary] = useState<RoutesResponse | null>(null);
   const [name, setName] = useState('');
@@ -96,6 +99,19 @@ function RouteStudio({ editing, onSaved, onCancel }: {
   const [previewing, setPreviewing] = useState(false);
   /** Where a step is being added: the index it will take, and which part of the journey. */
   const [adding, setAdding] = useState<{ at: number; zone: StepZone } | null>(null);
+  /** The shop's own lane, so the preview reads in its countries rather than ours. */
+  const [vars, setVars] = useState<PreviewVars>({});
+  /** The chain as last opened or saved: anything else on screen is unsaved work. */
+  const [savedAs, setSavedAs] = useState<string | null>(null);
+  /** Saved, and some unfinished lots still read the route's older steps. */
+  const [behind, setBehind] = useState<{ route: TrackingRoute; lots: number } | null>(null);
+
+  useEffect(() => {
+    void api.myLots().then((result) => {
+      const lane = result.lots.find((entry) => entry.lot.originCountry || entry.lot.destinationCountry)?.lot;
+      if (lane) setVars({ origin: lane.originCountry, destination: lane.destinationCountry });
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     void api.routes().then((result) => {
@@ -125,11 +141,16 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     const withDelivered = ensureDelivered(from);
     const withSides = withDelivered.map((step, index) => ({ ...step, position: index, side: sideOf(step, index) }));
     const { steps: given, changes } = assignButtons(withSides);
+    const join = joinIndexOf({ steps: given });
+    const leave = Math.min(leaveIndexOf({ steps: given }), given.findIndex((step) => step.trigger === 'dispatched'));
     setName(called);
     setSteps(given);
-    setJoinAt(joinIndexOf({ steps: given }));
-    setLeaveAt(Math.min(leaveIndexOf({ steps: given }), given.findIndex((step) => step.trigger === 'dispatched')));
+    setJoinAt(join);
+    setLeaveAt(leave);
     setStarted(true);
+    /* A saved route opens clean; a starting point is already unsaved work
+       the moment it is on screen, so it is never thrown away unasked. */
+    setSavedAs(editing ? snapshot(called, given, join, leave) : null);
     return changes;
   }
 
@@ -145,7 +166,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
     const before = routeFromAnswers(answers);
     const after = routeFromAnswers(next);
     setAnswers(next);
-    setPipSaid(pipAck(before, after));
+    setPipSaid(pipAck(before, after, vars));
     open(after, name);
     if (pipQueue(next).length === 0) { setPip('coach'); setTipAt(0); }
   }
@@ -227,10 +248,12 @@ function RouteStudio({ editing, onSaved, onCancel }: {
 
   async function save(event: FormEvent) {
     event.preventDefault();
+    // The Studio also opens over the new-lot form; its save is never that form's submit.
+    event.stopPropagation();
     setBusy(true);
     setError(null);
     try {
-      await api.saveRoute({
+      const result = await api.saveRoute({
         id: editing ?? undefined,
         name: name.trim(),
         steps: given
@@ -249,12 +272,61 @@ function RouteStudio({ editing, onSaved, onCancel }: {
             assignee: step.assignee,
           })),
       });
-      onSaved();
+      setSavedAs(snapshot(name, steps, joinAt, leaveAt));
+      /* Lots keep their own copy of a route, so an edit reaches none of them
+         by itself. Asked here, once, rather than discovered later. */
+      if (result.lotsBehind && result.lotsBehind > 0) setBehind({ route: result.route, lots: result.lotsBehind });
+      else onSaved(result.route);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that route.');
     } finally {
       setBusy(false);
     }
+  }
+
+  async function updateLots() {
+    if (!behind) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.applyRoute(behind.route.id);
+      if (result.lotsFailed && result.lotsFailed > 0) {
+        setError(`${result.lotsUpdated} updated, but ${result.lotsFailed} could not be - try again from the Routes list.`);
+        setBehind(null);
+        return;
+      }
+      onSaved(behind.route);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Saved, but those lots could not be updated. Try again from the Routes list.');
+      setBehind(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* Lots carry their own copy of a route, so deleting one only takes it off
+     the list - every lot already on it keeps travelling exactly as before. */
+  async function remove() {
+    if (!editing) return;
+    if (!window.confirm(`Delete "${name.trim() || 'this route'}"? Lots already on it keep their steps.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteRoute(editing);
+      setSavedAs(null);
+      onCancel();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not delete that route.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Leaving asks first whenever there is anything on screen that was not saved. */
+  function leave() {
+    const dirty = started && savedAs !== snapshot(name, steps, joinAt, leaveAt);
+    if (dirty && !window.confirm('Leave without saving? This route will be lost.')) return;
+    onCancel();
   }
 
   const named = given.filter((step) => step.name.trim());
@@ -301,16 +373,18 @@ function RouteStudio({ editing, onSaved, onCancel }: {
 
   if (!started) {
     return (
-      <>
-        <div className="page__head">
-          <div>
-            <h1>Route Studio <span className="badge badge--accent">Experimental</span></h1>
-            <p className="muted">
-              The same routes, a different way to write them: one node per step, top to bottom,
-              with a scrubbable preview of what a buyer actually sees.
-            </p>
+      <PreviewVarsContext.Provider value={vars}>
+        {intro ?? (
+          <div className="page__head">
+            <div>
+              <h1>{editing ? 'Edit route' : 'New route'}</h1>
+              <p className="muted">
+                One node per step, top to bottom, with a preview of what a buyer actually sees.
+                Start with Pip, from a blank chain, or from a shape close to yours.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         {error && <ErrorNotice message={error} />}
         {!library && !error && <SkeletonRows count={5} />}
@@ -335,7 +409,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
                   <span className="rscard__icon"><Icon name={STAGE_ICON_META[template.icon].icon} size={20} /></span>
                   <span className="rscard__name">{template.name}</span>
                   <span className="rscard__note">{template.blurb}</span>
-                  <span className="faint">{template.steps.length} steps</span>
+                  <span className="faint">{routePartsLine(template)}</span>
                 </button>
               ))}
               {library.presets.map((preset) => (
@@ -344,7 +418,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
                   <span className="rscard__icon"><Icon name="truck" size={20} /></span>
                   <span className="rscard__name">{preset.name}</span>
                   <span className="rscard__note">{preset.blurb}</span>
-                  <span className="faint">{preset.steps.length} steps</span>
+                  <span className="faint">{routePartsLine(preset)}</span>
                 </button>
               ))}
             </div>
@@ -352,13 +426,14 @@ function RouteStudio({ editing, onSaved, onCancel }: {
         )}
 
         <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={onCancel}>
-          Cancel
+          {cancelLabel}
         </button>
-      </>
+      </PreviewVarsContext.Provider>
     );
   }
 
   return (
+    <PreviewVarsContext.Provider value={vars}>
     <form className="rsstudio" onSubmit={save}>
       {pipDock}
 
@@ -443,7 +518,7 @@ function RouteStudio({ editing, onSaved, onCancel }: {
       {error && <ErrorNotice message={error} />}
 
       {previewing && (
-        <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={PREVIEW_VARS} problems={problems}
+        <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} problems={problems}
           onChangeStep={(index, patch) => {
             const id = named[index]?.id;
             setSteps((now) => now.map((step) => (step.id === id ? { ...step, ...patch } : step)));
@@ -467,12 +542,55 @@ function RouteStudio({ editing, onSaved, onCancel }: {
           title={blocking.length > 0 ? 'Fix the button words above first' : !name.trim() ? 'Give the route a name first' : undefined}>
           {busy ? 'Saving…' : blocking.length > 0 ? `⚠️ ${blocking.length} to fix` : 'Save'}
         </button>
-        <button type="button" className="iconbtn" aria-label="Cancel" onClick={onCancel}>
+        <button type="button" className="iconbtn" aria-label={cancelLabel} title={cancelLabel} onClick={leave}>
           <Icon name="close" size={14} />
         </button>
       </div>
+      {!name.trim() && named.length >= 2 && (
+        <span className="field__hint" role="status">Name the route at the top to save it.</span>
+      )}
+      {lanes[1]!.indexes.length === 0 && (
+        <span className="field__hint">
+          Nothing is in the lot lane, so this route never joins a lot: it suits listings shipped one by
+          one, and cannot be given to a lot.
+        </span>
+      )}
+      {editing && (
+        <button type="button" className="btn btn--ghost btn--danger btn--sm" style={{ justifySelf: 'start' }}
+          disabled={busy} onClick={() => void remove()}>
+          Delete route
+        </button>
+      )}
+
+      {behind && (
+        <Modal title="Update the lots on this route?" onClose={() => onSaved(behind.route)}>
+          <div className="stack">
+            <p>
+              Saved. {behind.lots === 1 ? '1 lot is' : `${behind.lots} lots are`} still on the older steps
+              of <strong>{behind.route.name}</strong>. Update {behind.lots === 1 ? 'it' : 'them'} and every
+              item inside shows the new steps from where the lot is now; leave {behind.lots === 1 ? 'it' : 'them'} and
+              only new lots use these steps.
+            </p>
+            <button type="button" className="btn btn--block" disabled={busy} onClick={() => void updateLots()}>
+              {busy ? 'Updating…' : `Update ${behind.lots === 1 ? 'that lot' : `all ${behind.lots} lots`}`}
+            </button>
+            <button type="button" className="btn btn--quiet btn--block" disabled={busy} onClick={() => onSaved(behind.route)}>
+              Keep the old steps on {behind.lots === 1 ? 'that lot' : 'those lots'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </form>
+    </PreviewVarsContext.Provider>
   );
+}
+
+/** Everything a save would store, as one comparable string. */
+function snapshot(name: string, steps: readonly RouteStep[], joinAt: number, leaveAt: number): string {
+  return JSON.stringify([name.trim(), joinAt, leaveAt, steps.map((step) => [
+    step.name, step.description, step.trigger ?? null, step.button ?? null, step.waitMessage ?? null,
+    step.forward ?? false, step.custom ?? false, step.assignee ?? null,
+  ])]);
 }
 
 const ZONE_TEXT: Record<StepZone, { title: string; note: string; short: string }> = {
@@ -575,6 +693,7 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
   onPick: (kind: StepKind) => void;
   onClose: () => void;
 }) {
+  const vars = useContext(PreviewVarsContext);
   const choices = stepChoices(steps, at, zone);
   const group = (title: string, rows: typeof choices) => rows.length > 0 && (
     <div className="rspick__group">
@@ -584,12 +703,12 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
           onClick={() => onPick(kind)}>
           <span className="rspick__icon" aria-hidden="true">{open ? kind.icon : '🔒'}</span>
           <span className="rspick__body">
-            <b>{kind.custom ? 'A step with your own button' : kind.trigger ? renderStepText(kind.name, PREVIEW_VARS) : 'A plain step'}</b>
+            <b>{kind.custom ? 'A step with your own button' : kind.trigger ? renderStepText(kind.name, vars) : 'A plain step'}</b>
             <span>{open
               ? kind.custom ? 'You name it and its button - pressed per item.'
                 : kind.trigger ? `⚡ Comes with its button - ${BUTTON_NOTE[kind.trigger].toLowerCase()}`
                   : zone === 'lot' ? 'Moves when you move the lot.' : 'No button - ticked off with the next one.'
-              : renderStepText(why ?? '', PREVIEW_VARS)}</span>
+              : renderStepText(why ?? '', vars)}</span>
           </span>
         </button>
       ))}
@@ -621,6 +740,7 @@ function GapRow({ afterStep, onChangeWait, onInsert }: {
   onChangeWait?: (patch: Partial<RouteStep>) => void;
   onInsert: () => void;
 }) {
+  const vars = useContext(PreviewVarsContext);
   const [editing, setEditing] = useState(false);
   const message = afterStep ? waitMessageFor(afterStep) : null;
 
@@ -633,7 +753,7 @@ function GapRow({ afterStep, onChangeWait, onInsert }: {
           <button type="button" className="rsgap__wait" onClick={() => setEditing(true)}>
             {message ? <WaveLoader /> : <Icon name="plus" size={11} />}
             <span className={message ? undefined : 'faint'}>
-              {message ? renderStepText(message, PREVIEW_VARS) : 'What buyers see in between steps'}
+              {message ? renderStepText(message, vars) : 'What buyers see in between steps'}
             </span>
           </button>
         )
@@ -652,6 +772,7 @@ function WaitMessageEditor({ step, onChange, onDone }: {
   onChange: (patch: Partial<RouteStep>) => void;
   onDone: () => void;
 }) {
+  const vars = useContext(PreviewVarsContext);
   const defaultWait = step.trigger ? DEFAULT_WAIT_MESSAGES[step.trigger] : undefined;
   const isPreset = (WAIT_MESSAGE_PRESETS as readonly string[]).includes(step.waitMessage ?? '');
   const [customMode, setCustomMode] = useState(!isPreset && Boolean(step.waitMessage?.trim())
@@ -666,12 +787,12 @@ function WaitMessageEditor({ step, onChange, onDone }: {
           setCustomMode(false);
           onChange({ waitMessage: event.target.value || undefined });
         }}>
-        <option value="">{defaultWait ? `Default — ${renderStepText(defaultWait, PREVIEW_VARS)}` : 'Nothing — the gap stays quiet'}</option>
+        <option value="">{defaultWait ? `Default — ${renderStepText(defaultWait, vars)}` : 'Nothing — the gap stays quiet'}</option>
         {/* A default only ever offers "use it" or "write something else" — this
             is the third answer, explicitly saying nothing at all, which is not
             otherwise reachable once a trigger has a default of its own. */}
         {defaultWait && <option value={NO_WAIT_MESSAGE}>Nothing — the gap stays quiet</option>}
-        {WAIT_MESSAGE_PRESETS.map((text) => <option key={text} value={text}>{renderStepText(text, PREVIEW_VARS)}</option>)}
+        {WAIT_MESSAGE_PRESETS.map((text) => <option key={text} value={text}>{renderStepText(text, vars)}</option>)}
         <option value="Custom">Custom…</option>
       </select>
       {customMode && (
@@ -709,6 +830,7 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
   onRemove: () => void;
   onMove: (to: number) => void;
 }) {
+  const vars = useContext(PreviewVarsContext);
   const [open, setOpen] = useState(false);
 
   /* Always first, never renamed, moved or removed - "Order Placed" reads as
@@ -772,7 +894,7 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
             or one of the seller's own. Never inside a lot. */}
         {stepTickKey(step) ? (
           <div className={`rsbtn${problems.length ? ' is-wrong' : ''}`}>
-            <span className="rsbtn__chip">⚡ {stepButtonLabel(step, PREVIEW_VARS) || 'Button'}</span>
+            <span className="rsbtn__chip">⚡ {stepButtonLabel(step, vars) || 'Button'}</span>
             <input className="rsbtn__words" value={step.button ?? ''} maxLength={28}
               placeholder="Your words (optional)"
               aria-label={`Words on the button for step ${index + 1}`}

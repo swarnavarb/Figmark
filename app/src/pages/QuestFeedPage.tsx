@@ -16,6 +16,7 @@ import {
   DemandRail, EarnRail, EndingRail, FEED_VIEW_TITLES, FillingRail, PreOrderRail, demandPicks, earnPicks, endingPicks,
   fillingPicks, isFeedView, preOrderPicks,
 } from '../components/FeedRails';
+import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
 import {
   CardFace, CollectorChip, DesignSwitch, Glyph, RarityRibbon, XpBar, useQuest, type GlyphName,
@@ -74,6 +75,9 @@ export function QuestFeedPage() {
   const endingAt = Math.min(7, shown.length - 1);
   const earnAt = Math.min(11, shown.length - 1);
   const preOrderAt = Math.min(15, shown.length - 1);
+  // Boxes filling up sit in the grid's own run, between In demand and Ending soon.
+  const boxesAt = Math.min(5, shown.length - 1);
+  const fillingLots = useFillingLots();
 
   const filling = useMemo(() => fillingPicks(rated), [rated]);
 
@@ -90,6 +94,8 @@ export function QuestFeedPage() {
 
       {browsing && <DailyDrop listings={rated} now={now} />}
       {browsing && <TodayQuests />}
+      {/* Drops sit up top, before the catalogue: an event on now beats any one item. */}
+      {browsing && <DropsStage />}
 
       <div className="stack" id="catalogue" style={{ marginBottom: 18 }}>
         {/* Zones: what a thing is. Round, like the pin badges they are named after. */}
@@ -183,6 +189,7 @@ export function QuestFeedPage() {
             <Fragment key={listing.id}>
               <LootCard listing={listing} />
               {browsing && n === demandAt && <DemandRail listings={demand} />}
+              {browsing && n === boxesAt && <FillingBoxes lots={fillingLots} />}
               {browsing && n === endingAt && <EndingRail listings={endingSoon} now={now} />}
               {browsing && n === earnAt && <EarnRail listings={earn} />}
               {browsing && n === preOrderAt && <PreOrderRail listings={preOrders} now={now} />}

@@ -350,7 +350,11 @@ await check('a correct password clears the failed-attempt record', async () => {
 console.log('\ndata layer');
 
 await check('search matches title, tags and description', async () => {
-  assert.equal((await repository.listListings({ search: 'sneaker' })).length, 2);
+  // Behaviour rather than a seed count: every hit says the word somewhere.
+  const sneakers = await repository.listListings({ search: 'sneaker' });
+  assert.ok(sneakers.length >= 2);
+  assert.ok(sneakers.every((listing) => [listing.title, listing.description, listing.category, ...listing.tags]
+    .some((text) => text.toLowerCase().includes('sneaker'))));
   assert.equal((await repository.listListings({ search: 'deadstock' })).length, 1);
   assert.equal((await repository.listListings({ search: 'nothingmatchesthis' })).length, 0);
 });

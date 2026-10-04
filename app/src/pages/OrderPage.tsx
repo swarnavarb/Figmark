@@ -10,6 +10,7 @@ import {
   ApiRequestError, api,
   type Checkout, type EscrowOption, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
 } from '../api';
+import { LotPhaseBadge, lotLabel } from '../components/LotName';
 import { Ladder } from '../components/Ladder';
 import { ReportButton } from '../components/ReportButton';
 import { PaymentHistory } from '../components/Buy';
@@ -222,7 +223,13 @@ export function OrderPage() {
                  and the ladder below is the answer to the second. */
               <TrackHero icon={data.route.waitingForLot ? '⏳' : '🚢'}
                 now={data.route.waitingForLot ? 'Waiting for the lot to move' : lotTrack!.steps[lotAt]?.name ?? 'On its way'}
-                sub={<>📦 {data.route.lotName} · lot #{data.route.lotNumber}{leftLot ? ' · now travelling on its own' : ''}</>}
+                sub={<>
+                  📦 {data.route.lotName} <span className="lotname__no">LOT {data.route.lotNumber}</span>
+                  {leftLot ? ' · now travelling on its own' : ''}
+                  {data.route.lotPhase && !leftLot && (
+                    <span style={{ display: 'block', marginTop: 6 }}><LotPhaseBadge phase={data.route.lotPhase} /></span>
+                  )}
+                </>}
                 boxes={boxesFor(lotTrack!.steps, lotAt)}
                 done={lotAt + 1} total={lotTrack!.steps.length}>
                 {order.shipment && <ShipmentChip shipment={order.shipment} />}
@@ -423,7 +430,7 @@ function ChangeLotDialog({ orderId, current, onClose, onDone }: {
             <option value="">Pick a lot…</option>
             {(lots ?? []).map((row) => (
               <option key={row.lot.id} value={row.lot.id}>
-                {row.lot.lotNumber ? `LOT ${row.lot.lotNumber} — ` : ''}{row.lot.name}
+                {lotLabel(row.lot)}
               </option>
             ))}
           </select>

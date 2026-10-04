@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Order } from '@shared/models';
 import type { RouteStep, StageIcon } from '@shared/routes';
+import { settledHistory } from '@shared/fulfilment';
 import { formatDateOrdinal, timeAgo } from '../format';
 import { ShipmentChip } from './OrderStatus';
 import { Ladder } from './Ladder';
@@ -183,7 +184,7 @@ export function DirectTrack({ order, actFor }: {
   const here = current === -1 ? steps[steps.length - 1]! : steps[Math.max(0, current - 1)]!;
   const next = current === -1 ? null : steps[current]!;
   // What the seller said along the way, newest first, so nothing typed is lost.
-  const notes = order.stageHistory
+  const notes = settledHistory(order.stageHistory)
     .filter((event) => event.note && !/^Courier:/.test(event.note))
     .slice(-6)
     .reverse();

@@ -4,7 +4,7 @@ import type { Sourcing } from '../../../shared/enums.js';
 import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
 import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefront.js';
 import { can } from '../../../shared/stores.js';
-import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone, sourcingOf } from '../../../shared/fulfilment.js';
 import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
 import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
@@ -704,7 +704,11 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
    * order was even placed. So the join is recorded as the opening event, not
    * inferred from `lotId` by whoever draws the timeline later.
    */
-  const bornInLot = listing.lotId ? await repository.getLot(listing.sellerId, listing.lotId) : null;
+  /* A lot the seller has shut to new orders, or that is finished, cannot
+     have this item put in it, so the order waits for the next lot like any
+     import sold without one. */
+  const listedLot = listing.lotId ? await repository.getLot(listing.sellerId, listing.lotId) : null;
+  const bornInLot = listedLot && listedLot.status !== 'filled' && !lotIsDone(listedLot) ? listedLot : null;
   const joined: StageEvent[] = bornInLot
     ? [{
         stage: 'ordering',
@@ -726,8 +730,8 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // the item is: a domestic sale tracks against the short vocabulary and
     // never joins a lot, while an import sold before its run is opened waits
     // for one - and has to be findable on the screen where a shop fills it.
-    lotId: listing.lotId
-      ?? (sourcingOf(listing) === 'import' ? AWAITING_LOT_ID : DIRECT_LOT_ID),
+    lotId: bornInLot?.id
+      ?? (listing.lotId || sourcingOf(listing) === 'import' ? AWAITING_LOT_ID : DIRECT_LOT_ID),
     sellerId: listing.sellerId,
     buyerId: user.id,
     listingId: listing.id,
@@ -742,7 +746,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     advancePercent: listing.advancePercent ?? null,
     payments: [],
     credits: [],
-    stage: listing.lotId ? 'ordering' : 'preparing',
+    stage: bornInLot || listing.lotId ? 'ordering' : 'preparing',
     // Copied from the listing, for the same reason a lot copies its route:
     // the template is a template, and editing it must not rewrite a timeline
     // somebody is already reading.

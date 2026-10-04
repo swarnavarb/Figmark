@@ -18,7 +18,14 @@ async function list(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const rows = await repository.listNotifications(user.id, 40);
+  /* Withdrawn ones never show; held ones show once the step they report can
+     no longer be undone. Sorted by when they became visible, so a held notice
+     lands at the top when it appears rather than three minutes down. */
+  const now = Date.now();
+  const rows = (await repository.listNotifications(user.id, 40))
+    .filter((row) => !row.withdrawn && !(row.notBefore && Date.parse(row.notBefore) > now))
+    .map((row) => (row.notBefore ? { ...row, createdAt: row.notBefore } : row))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return json(200, {
     notifications: rows.map((row) => ({
@@ -53,7 +60,9 @@ async function markRead(request: HttpRequest, _context: InvocationContext) {
     body = {};
   }
 
-  const rows = await repository.listNotifications(user.id, 100);
+  // Only what the reader could have seen: a held notice is not read yet.
+  const rows = (await repository.listNotifications(user.id, 100))
+    .filter((row) => !row.withdrawn && !(row.notBefore && Date.parse(row.notBefore) > Date.now()));
   const target = body.id ? rows.filter((row) => row.id === body.id) : rows;
   if (body.id && target.length === 0) return error(404, 'not_found', 'No such notification.');
 

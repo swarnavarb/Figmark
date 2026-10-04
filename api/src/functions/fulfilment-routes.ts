@@ -8,14 +8,15 @@ import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.j
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
-  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeOf, stepForStage, stepTickKey, triggeredStep,
+  itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeJoinsLot, routeOf, stepForStage, stepTickKey, triggeredStep,
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, ticksOf
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
+import { UNDO_EXPIRED, canUndo, undoTag, withoutUndo } from './undo.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
-import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isStopped, travellingStatus } from '../../../shared/orders.js';
+import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import {
-  awaitingLot, furthestStage, inLot, stagesFor,
+  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, sourcingOf, stagesFor,
 } from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
@@ -231,8 +232,15 @@ async function myLots(request: HttpRequest, _context: InvocationContext) {
   withContents.sort((a, b) => (a.lot.updatedAt < b.lot.updatedAt ? 1 : -1));
 
   // Listings on sale and not yet in any lot: the seller's to-do list.
-  const unassigned = allListings.filter((l) => l.status === 'active' && !l.unlisted && l.lotId === null);
-  return json(200, { lots: withContents, unassigned });
+  /* Only imports: an item shipping from the shelf never needs a lot, and
+     listing it here made a seller think something was wrong with it. */
+  const unassigned = allListings.filter((l) =>
+    l.status === 'active' && !l.unlisted && l.lotId === null && sourcingOf(l) === 'import');
+  /* Sold, bound for a lot, and in none - the orders actually waiting on the
+     seller, which is what the Lots screen asks them to act on. */
+  const awaitingOrders = allOrders.filter((order) =>
+    order.lotId === AWAITING_LOT_ID && !isCancelledLike(order.status)).length;
+  return json(200, { lots: withContents, unassigned, awaitingOrders });
 }
 
 /** Rows grouped by a key, in the order they came. */
@@ -296,8 +304,10 @@ export async function buildLot(
   const refuse = (status: number, code: string, message: string): LotOrRefusal =>
     ({ lot: null, refusal: { status, code, message } });
 
+  // Required: the name is how a shop tells its lots apart at a glance; the
+  // number beside it is only the tiebreak.
   const name = body.name?.trim();
-  if (!name) return refuse(400, 'invalid_lot', 'Give the lot a name you will recognise.');
+  if (!name) return refuse(400, 'invalid_lot', 'Give this lot a name.');
 
   const originCountry = body.originCountry?.trim();
   const destinationCountry = body.destinationCountry?.trim();
@@ -315,6 +325,9 @@ export async function buildLot(
   if (body.routeId) {
     const template = await repository.getRoute(userId, body.routeId);
     if (!template) return refuse(404, 'not_found', 'No such route.');
+    if (!routeJoinsLot(template)) {
+      return refuse(400, 'invalid_route', 'That route never joins a lot - it is for items shipped one by one. Pick a route with steps in the lot.');
+    }
     // A copy, so editing the template later cannot rewrite this lot's
     // timeline under a buyer who has been reading it for three weeks.
     // Given its buttons on the way in, so a template saved before they were
@@ -330,6 +343,7 @@ export async function buildLot(
 
   const id = `lot_${randomUUID().slice(0, 12)}`;
   const now = new Date().toISOString();
+  const lotNumber = lotNumberFrom(id, now);
   /*
    * A new lot has not taken any of its own steps yet.
    *
@@ -376,7 +390,7 @@ export async function buildLot(
     id,
     sellerId: userId,
     name,
-    lotNumber: lotNumberFrom(id, now),
+    lotNumber,
     route,
     currentStep: opensAt,
     handler: handlerNamed,
@@ -501,6 +515,10 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
       buyerName: byId.get(order.buyerId)?.displayName ?? 'Unknown',
       buyerHandle: byId.get(order.buyerId)?.username ?? null,
       checkpoints: order.checkpoints ?? {},
+      /** Every press, custom buttons included, keyed as the route's buttons are. */
+      ticks: ticksOf(order),
+      /** Its own word for where it was received, which renames that button. */
+      receivedAs: order.receivedAs ?? null,
       /** Where this item is on the lot's route: the lot's, its own, or what it has done. */
       currentStep: itemStepOn(
         route, step, order.currentStep, ticksOf(order),
@@ -803,7 +821,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
    */
   const stepsForNotes = route ? route.steps : before.steps;
   const notedTexts = new Set(order.stageHistory.map((event) => event.note));
-  const healedHistory = [
+  const healedHistory: StageEvent[] = [
     ...order.stageHistory,
     ...ORDER_CHECKPOINTS.filter((checkpoint) => order.checkpoints?.[checkpoint] && !notedTexts.has(CHECKPOINT_EVENT_TEXT[checkpoint])
       // Received in the seller's own words is a recorded tick too.
@@ -816,7 +834,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
         recordedBy: order.sellerId,
       })),
   ];
-  const orderForClient = healedHistory.length === order.stageHistory.length ? order : { ...order, stageHistory: healedHistory };
+  // A step that can still be undone is in effect but on no timeline yet.
+  const orderForClient = { ...order, stageHistory: settledHistory(healedHistory) };
 
   /*
    * A checkpoint that has been ticked has happened.
@@ -881,6 +900,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
           lotId: lot!.id,
           lotName: lot!.name,
           lotNumber: lot!.lotNumber ?? lotNumberFrom(lot!.id, lot!.createdAt),
+          /** The lot as a whole, in a few words: filling, closed, in transit, received. */
+          lotPhase: lotPhase(lot!),
         }
       : null,
     /** True while it is sold, bound for a lot, and not in one. */
@@ -1038,7 +1059,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const orderId = request.params.id;
   if (!orderId) return error(400, 'invalid_order', 'An order id is required.');
 
-  let body: { checkpoint?: string; on?: boolean; orderIds?: string[]; courier?: string; awb?: string; label?: string };
+  let body: { checkpoint?: string; on?: boolean; orderIds?: string[]; courier?: string; awb?: string; label?: string; undoOf?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -1100,6 +1121,14 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const on = body.on !== false;
   const now = new Date().toISOString();
 
+  /* Undoing a press made in the last three minutes: the opposite press, with
+     the first one taken off the timeline instead of a second "undone" line
+     written under it. Outside the window it is an ordinary press. */
+  const undoing = body.undoOf ?? null;
+  if (undoing && !canUndo(order.stageHistory, undoing)) return error(409, 'undo_expired', UNDO_EXPIRED);
+  const tag = undoing ? null : undoTag(now);
+  const undoReply = (key: string) => (tag ? { undo: { id: tag.undoId, until: tag.undoUntil, checkpoint: key, on: !on } } : {});
+
   // Shipping or handing over a booking is serving it, and the seller has not
   // yet said they will. Undoing a tick is always allowed.
   if (on && (checkpoint === 'dispatched' || checkpoint === 'delivered') && awaitingAcceptance(order)) {
@@ -1114,13 +1143,16 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     }
     order.customTicks = { ...(order.customTicks ?? {}), [customId]: on ? now : null };
     order.updatedAt = now;
-    order.stageHistory = [
-      ...order.stageHistory,
-      { stage: order.stage, step: button.name, enteredAt: now, note: on ? `${button.name}.` : `${button.name} — undone.`, recordedBy: user.id },
-    ];
+    order.stageHistory = undoing
+      ? withoutUndo(order.stageHistory, undoing)
+      : [
+          ...order.stageHistory,
+          { stage: order.stage, step: button.name, enteredAt: now, note: on ? `${button.name}.` : `${button.name} — undone.`, recordedBy: user.id, ...tag },
+        ];
     const saved = await repository.updateOrder(order);
     return json(200, {
       order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, customTicks: saved.customTicks ?? {}, status: saved.status },
+      ...undoReply(key),
     });
   }
 
@@ -1202,7 +1234,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const found = stepForCheckpoint(stepsForTick, checkpoint, order);
   // Filed under the step as this order reads it - in its own words when it has some.
   const tickedStep = found && checkpoint === 'china_received' && order.receivedAs ? { ...found, name: order.receivedAs } : found;
-  order.stageHistory = [
+  order.stageHistory = undoing ? withoutUndo(order.stageHistory, undoing) : [
     ...order.stageHistory,
     {
       stage: order.stage,
@@ -1210,11 +1242,12 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       enteredAt: now,
       note: on ? receivedNote ?? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
       recordedBy: user.id,
+      ...tag,
     },
     // Its own line rather than folded into the tick's, which reading an order
     // matches word for word to tell a recorded tick from an unrecorded one.
     ...(shipmentNote
-      ? [{ stage: order.stage, step: tickedStep?.name, enteredAt: now, note: shipmentNote, recordedBy: user.id }]
+      ? [{ stage: order.stage, step: tickedStep?.name, enteredAt: now, note: shipmentNote, recordedBy: user.id, ...tag }]
       : []),
   ];
 
@@ -1264,6 +1297,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   return json(200, {
     order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, status: saved.status },
     tally: tally(siblings),
+    ...undoReply(key),
   });
 }
 

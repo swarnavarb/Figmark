@@ -12,10 +12,11 @@ import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { ServiceKind, ServiceMeta } from '@shared/services';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
-import type { CardButton } from '@shared/buttons';
+import type { CardButton, SerialButton } from '@shared/buttons';
 import type { MergedRating, StoreLevel } from '@shared/storefront';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
+import type { LotBuyerPhase } from '@shared/fulfilment';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
@@ -337,6 +338,47 @@ export interface ActivityResponse {
 
 export type DirectoryForwarder = ForwarderProfile & { id: string };
 
+/** A lot still taking orders, as the Buy tab's "Boxes filling up" shows it. */
+export interface FillingLot {
+  id: string;
+  name: string;
+  number: string;
+  sellerId: string;
+  shop: { name: string; handle: string | null };
+  originCountry: string | null;
+  destinationCountry: string | null;
+  closesAround: string | null;
+  people: number;
+  orders: number;
+  listings: { id: string; title: string; priceMinor: number; currency: string; photoUrl: string | null }[];
+}
+
+/** A power sale announced in its channel, as the Drops shelf shows it. */
+export interface DropCardData {
+  id: string;
+  sellerId: string;
+  shop: { name: string; handle: string | null };
+  name: string;
+  message: string;
+  openedAt: string | null;
+  startsAt: string;
+  live: boolean;
+  nextAt: string | null;
+  endsAt: string | null;
+  itemCount: number;
+  itemsOut: number;
+  preview: { title: string; priceMinor: number; listPriceMinor: number; out: boolean }[];
+  reminders: number;
+  reminded: boolean;
+  channel: string;
+}
+
+/** A step forward that can still be taken back, and until when. */
+export interface UndoOffer {
+  id: string;
+  until: string;
+}
+
 export interface LotSummary {
   lot: Lot;
   listingCount: number;
@@ -350,8 +392,10 @@ export interface LotSummary {
 
 export interface LotsResponse {
   lots: LotSummary[];
-  /** Listings not yet tagged into any lot. */
+  /** Import listings not yet tagged into any lot. */
   unassigned: Listing[];
+  /** Orders sold, bound for a lot, and in none yet. */
+  awaitingOrders: number;
 }
 
 export interface LotContents {
@@ -381,6 +425,8 @@ export interface OrderTracking {
     lotId: string;
     lotName: string;
     lotNumber: string;
+    /** The lot as a whole: filling, closed, in transit, received. */
+    lotPhase?: LotBuyerPhase;
   } | null;
   /** The ladder before any lot, in the words the shop's template used. */
   preLot: {
@@ -523,6 +569,17 @@ export interface SaleRow {
   lotName: string | null;
   lotNumber: string | null;
   lotStep: string | null;
+  /**
+   * The lot's own next move, the same one its Tracking section offers: `to` is
+   * the step index, `unchecked` how many of its items the move would carry past
+   * the warehouse check-in unticked. Null when not in a lot, or the lot has
+   * gone as far as a lot goes.
+   */
+  lotNext: { to: number; label: string; unchecked: number } | null;
+  /** The route's buttons and the lot's moves, one after another, while it rides in a lot. */
+  serial: SerialButton[] | null;
+  /** Where it is on its lot's route, counted over every step: index and total. */
+  routeStep: { at: number; of: number } | null;
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
   /** When the seller ticked it delivered, on the lot's own item list. */
@@ -1364,6 +1421,8 @@ export interface RoutePreset {
 
 export interface RoutesResponse {
   routes: TrackingRoute[];
+  /** Per route: how many unfinished lots ride it, and how many carry an older copy. */
+  usage: Record<string, { lots: number; behind: number }>;
   /** The seven stages this app has always had, as a route you can pick. */
   builtIn: { routeId: string | null; name: string; steps: RouteStep[] };
   /** The shapes a shop can start from, described. */
@@ -1377,6 +1436,8 @@ export interface RoutesResponse {
 /** An item that could go in a lot: sold, bound for one, not in one. */
 export interface CandidateItem {
   id: string;
+  /** The listing it was bought from. */
+  listingId: string;
   itemName: string;
   condition: string;
   quantity: number;
@@ -1398,6 +1459,9 @@ export interface LotItem {
   buyerName: string;
   buyerHandle: string | null;
   checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+  /** Every press, custom buttons included, keyed as the route's buttons are. */
+  ticks: Record<string, string | null>;
+  receivedAs: string | null;
   /** Where this item is on the lot's route. The lot's position unless moved alone. */
   currentStep: number;
   /** True when the seller moved this one item away from the rest of the lot. */
@@ -1441,6 +1505,13 @@ export interface ItemGroup {
     currentStep: number;
     estimatedDispatchAt: string | null;
     trackingReference: string | null;
+    phase: LotBuyerPhase;
+    /** Where the lot itself is on its route. */
+    lotStep: number;
+    originCountry: string | null;
+    destinationCountry: string | null;
+    /** People with an item in this lot, the buyer included. */
+    people: number;
   } | null;
   sellerName: string;
   sellerHandle: string | null;
@@ -1459,6 +1530,8 @@ export interface ItemGroup {
     canPayMore: boolean;
     /** False while the buyer has pressed Buy but not yet paid or booked. */
     placed: boolean;
+    /** This item's own step on its lot's route; null outside a lot. */
+    stepAt: number | null;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
     /** When it reached the buyer, or null while it is still on its way. */
     deliveredAt: string | null;
@@ -1803,7 +1876,10 @@ export const api = {
       waitMessage?: string; lastMile?: boolean; button?: string; custom?: boolean; assignee?: StepAssignee;
     }[];
   }) =>
-    post<{ route: TrackingRoute }>('/routes/new', body),
+    post<{ route: TrackingRoute; lotsBehind?: number }>('/routes/new', body),
+  /** Give every unfinished lot on this route its latest steps. */
+  applyRoute: (id: string) =>
+    post<{ lotsUpdated: number; lotsFailed?: number; ordersUpdated: number }>(`/routes/${encodeURIComponent(id)}/apply`, {}),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),
   lotCandidates: (id: string, q?: string) =>
     request<{ items: CandidateItem[] }>(
@@ -1812,18 +1888,27 @@ export const api = {
   addItemsToLot: (id: string, orderIds: string[]) =>
     post<{ added: number; orderIds: string[] }>(`/lots/${encodeURIComponent(id)}/items`, { orderIds }),
   /** Move the lot along its route. Omit `to` for the next step. */
-  stepLot: (id: string, body: { to?: number; note?: string; trackingId?: string; shipper?: string } = {}) =>
-    post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
+  stepLot: (id: string, body: { to?: number; note?: string; trackingId?: string; shipper?: string; undoOf?: string } = {}) =>
+    post<{ lot: Lot; ordersUpdated: number; undo?: UndoOffer & { to: number } }>(`/lots/${encodeURIComponent(id)}/step`, body),
   /** Put the lot on a different ladder, carrying its position across. */
+  /** Shut a lot to new orders (prepping for dispatch), or open it again. */
+  closeLot: (id: string, closed: boolean) =>
+    post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/close`, { closed }),
   setLotRoute: (id: string, routeId: string | null, note?: string) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/route`, { routeId, note }),
   /** Say something about the lot, at a step, without moving it. Every buyer in it reads it. */
   noteOnLot: (id: string, note: string, at?: number) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/note`, { note, at }),
   /** Move one item on its own, or note something about it. Omit `to` to just note. */
-  stepItem: (id: string, body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string }) =>
-    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/step`, body),
+  stepItem: (id: string, body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string; undoOf?: string }) =>
+    post<{ order: Order; undo?: UndoOffer & { to: number } }>(`/orders/${encodeURIComponent(id)}/step`, body),
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
+  fillingLots: () => request<{ lots: FillingLot[] }>('/showcase/lots'),
+  drops: () => request<{ drops: DropCardData[] }>('/showcase/drops'),
+  drop: (sellerId: string, id: string) =>
+    request<{ drop: DropCardData }>(`/showcase/drops/${encodeURIComponent(sellerId)}/${encodeURIComponent(id)}`),
+  remindDrop: (sellerId: string, id: string, on: boolean) =>
+    post<{ drop: DropCardData }>(`/showcase/drops/${encodeURIComponent(sellerId)}/${encodeURIComponent(id)}/remind`, { on }),
 
   templates: () => request<{ templates: PostTemplate[] }>('/templates'),
   saveTemplate: (body: {
@@ -1925,10 +2010,14 @@ export const api = {
   /** `checkpoint` is one of the seven, or `custom:<step id>` for a route's own button. */
   setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
     /** The courier and AWB with a dispatch; `label`, where an item with no lot was received. */
-    shipment?: { courier?: string; awb?: string; label?: string }) =>
-    post<{ order: { id: string; checkpoints: BoardOrder['checkpoints'] }; tally: LotTally }>(
+    shipment?: { courier?: string; awb?: string; label?: string }, undoOf?: string) =>
+    post<{
+      order: { id: string; checkpoints: BoardOrder['checkpoints'] };
+      tally: LotTally;
+      undo?: UndoOffer & { checkpoint: string; on: boolean };
+    }>(
       `/orders/${encodeURIComponent(orderId)}/checkpoint`,
-      { checkpoint, on, ...shipment },
+      { checkpoint, on, ...shipment, ...(undoOf ? { undoOf } : {}) },
     ),
 
   inbox: () => request<Inbox>('/messages'),

@@ -749,6 +749,15 @@ export type StageEventKind = 'step' | 'note' | 'joined' | 'moved';
 export interface StageEvent {
   stage: FulfilmentStage;
   enteredAt: string;
+  /**
+   * Progress can be taken back for a few minutes after it is made. Until
+   * `undoUntil` passes the event is in effect but not shown on any timeline
+   * (and its buyers are not told), so a slip of the thumb that is undone in
+   * time leaves no trace. `undoId` ties together every copy of one action -
+   * the lot's and each of its items'.
+   */
+  undoId?: string;
+  undoUntil?: string;
   note: string | null;
   /** User id that recorded the transition. */
   recordedBy: string;
@@ -1581,6 +1590,11 @@ export interface Post extends BaseDocument {
   photoUrls?: string[];
   /** Set on a power sale drop: the members' window and what comes after it. */
   drop?: PostDrop | null;
+  /**
+   * Set on a power sale's opening message: which sale, and when its first
+   * item drops. The channel draws a countdown and a "Remind me" on it.
+   */
+  opening?: PostOpening | null;
   /** Written by a power sale run - its drops and its messages - and tagged as such. */
   powerSale?: boolean;
   /**
@@ -1750,6 +1764,12 @@ export interface Notification extends BaseDocument {
   /** Where tapping it goes, as an in-app route. */
   link: string;
   readAt: string | null;
+  /** Held back until then: the action it reports can still be undone. */
+  notBefore?: string;
+  /** The undoable action it reports, so undoing it can take the notice back. */
+  undoId?: string;
+  /** Taken back because what it reported was undone. Never shown. */
+  withdrawn?: boolean;
 }
 
 export type NotificationKind =
@@ -1846,6 +1866,10 @@ export interface PowerSale extends BaseDocument {
    * public. Absent on older sales, which announced nothing at that point.
    */
   afterWindow?: { channel: boolean; feed: boolean };
+  /** People who asked to be told when the first item drops. */
+  reminders?: string[];
+  /** When they were told, so nobody is told twice. */
+  remindedAt?: string | null;
 }
 
 export type PowerSaleStatus = 'draft' | 'scheduled' | 'running' | 'done' | 'cancelled';
@@ -1898,6 +1922,15 @@ export interface PowerSaleItem {
 }
 
 /** What a channel drop post shows beside its item: the clock and the price after it. */
+export interface PostOpening {
+  saleId: string;
+  sellerId: string;
+  /** When the first item goes out. */
+  startsAt: string;
+  saleName: string;
+  itemCount: number;
+}
+
 export interface PostDrop {
   endsAt: string;
   memberPriceMinor: number;

@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { assignButtons, checkButtons } from '@shared/buttons';
-import { joinIndexOf, sideOf, stepButtonLabel, type RouteStep } from '@shared/routes';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, Navigate, useParams } from 'react-router-dom';
+import { routePartsLine, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
-import { RouteBuilder, STAGE_ICON_META } from '../components/RouteBuilder';
-import { Ladder } from '../components/Ladder';
 
 /**
  * The routes a shop can send a lot along.
@@ -43,6 +40,40 @@ export function RoutesList({ spotlightNew = false }: {
 
   useEffect(() => { void load(); }, [load]);
 
+  /** Bring every unfinished lot on a route up to its latest steps. */
+  const [applying, setApplying] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  async function apply(id: string, lots: number) {
+    if (!window.confirm(`Update ${lots === 1 ? 'the lot' : `all ${lots} lots`} on this route? Every buyer in ${lots === 1 ? 'it' : 'them'} reads the new steps from where the lot is now.`)) return;
+    setApplying(id);
+    setError(null);
+    try {
+      const result = await api.applyRoute(id);
+      setFlash(`${result.lotsUpdated === 1 ? '1 lot' : `${result.lotsUpdated} lots`} updated.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not update those lots.');
+    } finally {
+      setApplying(null);
+    }
+  }
+
+  /** Take a route off the list. Lots already on it keep their own copy of its steps. */
+  async function remove(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? Lots already on it keep their steps; new lots can no longer pick it.`)) return;
+    setApplying(id);
+    setError(null);
+    try {
+      await api.deleteRoute(id);
+      setFlash(`"${name}" deleted.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not delete that route.');
+    } finally {
+      setApplying(null);
+    }
+  }
+
   return (
     <div className="stack">
       <div className="page__head">
@@ -54,18 +85,12 @@ export function RoutesList({ spotlightNew = false }: {
           </p>
         </div>
         <span className="spotlight-row">
-          <Link to="/routes/new" className="btn"><Icon name="plus" size={14} /> New route</Link>
+          <Link to="/routes/studio/new" className="btn"><Icon name="plus" size={14} /> New route</Link>
           {spotlightNew && (
             <span className="spotlight-badge" aria-hidden="true">
               <Icon name="left" size={18} />
             </span>
           )}
-          {/* The other builder, being tried out beside this one - see
-              RouteStudioPage. A separate, quieter door in on purpose: this
-              is the one everybody still lands on unless they go looking. */}
-          <Link to="/routes/studio/new" className="btn btn--ghost btn--sm">
-            Try the Studio builder
-          </Link>
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => setShowFaq(!showFaq)} aria-label="FAQ" title="How routes and tracking work">
             <Icon name="message" size={14} />
           </button>
@@ -73,14 +98,35 @@ export function RoutesList({ spotlightNew = false }: {
       </div>
 
       {error && <ErrorNotice message={error} />}
+      {flash && <p className="notice notice--ok">{flash}</p>}
       {!data && !error && <SkeletonRows count={4} />}
 
       {data && data.routes.length > 0 && (
         <div className="rlist">
           <span className="rlist__label">My designed Silk Routes</span>
-          {data.routes.map((route) => (
-            <RouteRow key={route.id} to={`/routes/${route.id}`} name={route.name} steps={route.steps} />
-          ))}
+          {data.routes.map((route) => {
+            const use = data.usage?.[route.id];
+            return (
+              <div key={route.id} className="stack" style={{ gap: 6 }}>
+                <RouteRow to={`/routes/studio/${encodeURIComponent(route.id)}`} name={route.name} steps={route.steps}
+                  note={use && use.lots > 0
+                    ? `On ${use.lots} ${use.lots === 1 ? 'lot' : 'lots'}${use.behind > 0 ? ` · ${use.behind} on older steps` : ''}`
+                    : undefined} />
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  {use && use.behind > 0 && (
+                    <button type="button" className="btn btn--ghost btn--sm"
+                      disabled={applying === route.id} onClick={() => void apply(route.id, use.behind)}>
+                      {applying === route.id ? 'Updating…' : `Update ${use.behind === 1 ? 'that lot' : `${use.behind} lots`} to these steps`}
+                    </button>
+                  )}
+                  <button type="button" className="btn btn--ghost btn--danger btn--sm"
+                    disabled={applying === route.id} onClick={() => void remove(route.id, route.name)}>
+                    <Icon name="trash" size={13} /> Delete
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -112,9 +158,8 @@ function RoutesFaq() {
         <summary>What is a route?</summary>
         <p className="muted">
           A ladder of steps you write once, here, and reuse on every lot that travels the same
-          way. A lot carries its own copy of the route it is given, so renaming or editing a
-          route later never rewrites the tracking a buyer has already been reading for weeks —
-          only lots given the route afterwards see the change.
+          way. When you save an edit, you are asked whether the lots already on that route should
+          take the new steps. Finished lots always keep the steps they ended on.
         </p>
       </details>
 
@@ -176,11 +221,11 @@ function RoutesFaq() {
       <details className="faq__item">
         <summary>How do I design a route?</summary>
         <p className="muted">
-          From "New route": tap <strong>✨ Design your Silk Route</strong> for a blank ladder of
-          common steps, or pick one of the predefined shapes below it if it is close to yours.
-          Name it, group its steps into stages, and bind a step to one of the seller's buttons if
-          you want it to move on its own. Save it, and any lot — this one or a future one — can
-          be pointed at it.
+          From "New route": let Pip ask you a few questions, start from a blank chain, or pick a
+          shape close to yours. The route has three lanes - before the lot, in the lot, after it -
+          and each step's button is handed out for you. Save it, and any lot can be pointed at it.
+          A route with nothing in the lot lane is for items shipped one by one and is not offered
+          to lots.
         </p>
       </details>
     </div>
@@ -188,24 +233,15 @@ function RoutesFaq() {
 }
 
 /**
- * The routes a shop can send a lot along.
- *
- * Its own screen rather than a section of the new-lot form, because how a
- * shipment travels is a decision a shop makes once and reuses, not a question
- * worth asking every time somebody opens a crate.
+ * The old addresses of a route: the list and each route's own page. Both
+ * live in the Sell tab and the Studio now, and a bookmark should still land.
  */
-export function RoutesPage() {
-  return (
-    <main className="page">
-      <Link to="/shop?tab=lots" className="backlink">
-        <Icon name="back" size={14} /> Lots
-      </Link>
-      <RoutesList />
-    </main>
-  );
+export function RouteRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={id && id !== 'new' ? `/routes/studio/${encodeURIComponent(id)}` : '/routes/studio/new'} replace />;
 }
 
-/** A route in a list: its name, its shape, and where it changes hands. */
+/** A route in a list: its name, its three parts, and what it is used on. */
 export function RouteRow({ name, steps, to, onClick, note }: {
   name: string;
   steps: RouteStep[];
@@ -214,21 +250,13 @@ export function RouteRow({ name, steps, to, onClick, note }: {
   onClick?: () => void;
   note?: string;
 }) {
-  const join = joinIndexOf({ steps });
   const body = (
     <>
       <span className="rrow__body">
         <span className="rrow__name">{name}</span>
-        <span className="rrow__sum">
-          {/* Where the route expects the hand-over, not where it happened: an
-              item can be in a lot before it is listed, or join halfway. The
-              split says which steps are written for one item on its own. */}
-          {join === 0
-            ? `${steps.length} steps, all with the lot`
-            : join >= steps.length
-              ? `${steps.length} steps, never joins a lot`
-              : `${join} step${join === 1 ? '' : 's'} alone, then ${steps.length - join} with the lot`}
-        </span>
+        {/* The same three parts the Studio draws as lanes, so the list and
+            the editor never describe one route two ways. */}
+        <span className="rrow__sum">{routePartsLine({ steps })}</span>
         {note && <span className="rrow__note">{note}</span>}
       </span>
       {(to || onClick) && <Icon name="right" size={16} />}
@@ -237,272 +265,4 @@ export function RouteRow({ name, steps, to, onClick, note }: {
   if (to) return <Link to={to} className="rrow">{body}</Link>;
   if (onClick) return <button type="button" className="rrow" onClick={onClick}>{body}</button>;
   return <div className="rrow rrow--fixed">{body}</div>;
-}
-
-/* ── The editor ──────────────────────────────────────────────────────────── */
-
-/**
- * Writing or correcting one route.
- *
- * Two screens in one: the shapes to start from, then the ladder itself. A shop
- * that picks "Courier, end to end" gets a correct route in one tap, where the
- * same shop in a blank builder writes one with customs missing.
- */
-export function RouteEditorPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  return (
-    <main className="page">
-      <Link to="/routes" className="backlink">
-        <Icon name="back" size={14} /> Routes
-      </Link>
-      <RouteEditor
-        editing={id && id !== 'new' ? id : null}
-        onSaved={() => navigate('/routes')}
-        onCancel={() => navigate('/routes')}
-      />
-    </main>
-  );
-}
-
-/**
- * Writing or correcting one route, wherever that is being done.
- *
- * Its own component because a shop is asked for its route twice: once on the
- * way in, while opening the storefront, and every time after that from the
- * route library. Two copies of this would be two answers to "what is a route",
- * and the one on the way in would be the worse of them.
- */
-export function RouteEditor({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel' }: {
-  editing: string | null;
-  onSaved: () => void;
-  onCancel: () => void;
-  /** Said above the shapes, for somebody meeting routes for the first time. */
-  intro?: ReactNode;
-  cancelLabel?: string;
-}) {
-  const [library, setLibrary] = useState<RoutesResponse | null>(null);
-  const [name, setName] = useState('');
-  const [steps, setSteps] = useState<RouteStep[]>([]);
-  const [started, setStarted] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void api.routes().then((result) => {
-      setLibrary(result);
-      if (!editing) return;
-      const found = result.routes.find((route) => route.id === editing);
-      if (!found) {
-        setError('No such route.');
-        return;
-      }
-      setName(found.name);
-      // Sides made explicit on the way in, so a route written before they
-      // existed splits where it always did rather than collapsing into one half.
-      setSteps(found.steps.map((step, index) => ({ ...step, side: sideOf(step, index) })));
-      setStarted(true);
-    }).catch((err) => {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your routes.');
-    });
-  }, [editing]);
-
-  const open = (from: readonly RouteStep[], called: string) => {
-    setName(called);
-    setSteps(from.map((step, index) => ({ ...step, position: index, side: sideOf(step, index) })));
-    setStarted(true);
-  };
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await api.saveRoute({
-        id: editing ?? undefined,
-        name: name.trim(),
-        steps: steps
-          .filter((step) => step.name.trim())
-          .map((step, index) => ({
-            id: step.id,
-            name: step.name.trim(),
-            description: step.description.trim(),
-            side: sideOf(step, index),
-            trigger: step.trigger,
-            stageId: step.stageId,
-            stageName: step.stageName,
-            stageIcon: step.stageIcon,
-            // Not edited from this screen, but carried through rather than
-            // dropped - a route opened here after being written in the
-            // studio builder should not lose what it said in the gaps.
-            waitMessage: step.waitMessage,
-            button: step.button,
-          })),
-      });
-      onSaved();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not save that route.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /* Lots carry their own copy of a route, so deleting one only takes it off
-     this list - every lot already on it keeps travelling exactly as before. */
-  async function remove() {
-    if (!editing) return;
-    if (!window.confirm(`Delete "${name.trim() || 'this route'}"? Lots already on it keep their steps.`)) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.deleteRoute(editing);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not delete that route.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const named = steps.filter((step) => step.name.trim()).length;
-  /* The buttons, handed out from the steps as written - the same rules the
-     save applies, so what is shown here is what gets stored. */
-  const given = assignButtons(steps.filter((step) => step.name.trim())).steps;
-  const buttons = new Map(given.filter((step) => step.trigger).map((step) => [step.id, stepButtonLabel(step)]));
-  const bound = buttons.size;
-  const wrong = checkButtons(given).find((problem) => problem.level === 'error');
-
-  /* Nothing chosen yet: offer the shapes rather than an empty list. */
-  if (!started) {
-    return (
-      <>
-        {intro ?? (
-          <div className="page__head"><div>
-            <h1>New route</h1>
-            <p className="muted">Start from a shape close to yours. Everything is editable after.</p>
-          </div></div>
-        )}
-
-        {error && <ErrorNotice message={error} />}
-        {!library && !error && <SkeletonRows count={5} />}
-
-        {library && (
-          <div className="stack">
-            {/* The primary door: a blank ladder, in the seller's own words.
-                Styled as an action rather than as one more row in the list
-                below it, since picking a shape is the common case and this
-                is the uncommon, deliberate one. */}
-            <button type="button" className="silkcta silkcta--wide"
-              onClick={() => open(library.suggested, '')}>
-              <span className="silkcta__label">✨ Design your Silk Route</span>
-              <span className="silkcta__note">
-                {library.suggested.length} common steps to start from, all editable — for a
-                journey none of the shapes below describes.
-              </span>
-            </button>
-
-            <div className="rlist">
-              <span className="rlist__label">Use predefined routes</span>
-              {/* Where an order enters the lot's journey - the supplier holds
-                  it until enough orders are ready, or it goes straight to the
-                  forwarder - is a decision, not something to assume. */}
-              {library.routeTemplates.map((template) => (
-                <button key={template.id} type="button" className="rrow"
-                  onClick={() => open(template.steps, template.name)}>
-                  <span className="rrow__body">
-                    <span className="rrow__name">
-                      <Icon name={STAGE_ICON_META[template.icon].icon} size={15} /> {template.name}
-                    </span>
-                    <span className="rrow__sum">{template.steps.length} steps</span>
-                    <span className="rrow__note">{template.blurb}</span>
-                  </span>
-                  <Icon name="right" size={16} />
-                </button>
-              ))}
-              {library.presets.map((preset) => (
-                <button key={preset.id} type="button" className="rrow"
-                  onClick={() => open(preset.steps, preset.name)}>
-                  <span className="rrow__body">
-                    <span className="rrow__name">{preset.name}</span>
-                    <span className="rrow__sum">{preset.steps.length} steps</span>
-                    <span className="rrow__note">{preset.blurb}</span>
-                  </span>
-                  <Icon name="right" size={16} />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }}
-          onClick={onCancel}>
-          {cancelLabel}
-        </button>
-      </>
-    );
-  }
-
-  return (
-    <form className="card card--pad form" onSubmit={save}>
-      <h2>{editing ? 'Edit route' : 'New route'}</h2>
-
-      <label className="field">
-        <span>Call it *</span>
-        <input value={name} onChange={(event) => setName(event.target.value)}
-          placeholder="Guangzhou air express" required autoFocus />
-        <span className="field__hint">For your own lists. Buyers see the steps, not this.</span>
-      </label>
-
-      <RouteBuilder steps={steps} onChange={setSteps} split buttons={buttons} />
-
-      {/* What the buyer will actually read, while it is being written. The
-          builder is a list of fields; this is the thing the fields produce,
-          and seeing it beside them is the difference between writing a route
-          and guessing at one. */}
-      <div className="preview">
-        <div className="preview__head">
-          <h3>What your buyer will see</h3>
-          <span className="field__hint">
-            {bound} buttons, handed out in order. Dispatched and Delivered are always the last two.
-          </span>
-        </div>
-        <Ladder steps={named > 0 ? given : []} current={-1} />
-        {named === 0 && <p className="muted">Name a step and it appears here.</p>}
-
-        {bound > 0 && (
-          <div className="preview__keys">
-            <span className="field__hint">The buttons this route uses:</span>
-            <div className="preview__row">
-              {given.filter((step) => step.trigger).map((step) => (
-                <span key={step.id} className="trigkey">
-                  <span className="trigkey__btn">{stepButtonLabel(step)}</span>
-                  <Icon name="right" size={11} />
-                  <span className="trigkey__to">{step.name}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {error && <ErrorNotice message={error} />}
-
-      <div className="row">
-        {wrong && <span className="field__hint" role="alert">⚠️ {wrong.text}</span>}
-        <button type="submit" className="btn" disabled={busy || named < 2 || !name.trim() || Boolean(wrong)}>
-          {busy ? 'Saving…' : 'Save route'}
-        </button>
-        <button type="button" className="btn btn--quiet" onClick={onCancel}>{cancelLabel}</button>
-        {editing && (
-          <button type="button" className="btn btn--ghost btn--danger" style={{ marginLeft: 'auto' }}
-            disabled={busy} onClick={() => void remove()}>
-            Delete route
-          </button>
-        )}
-      </div>
-      {named < 2 && (
-        <span className="field__hint">A route needs at least two named steps.</span>
-      )}
-    </form>
-  );
 }

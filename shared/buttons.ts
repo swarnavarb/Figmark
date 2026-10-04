@@ -1,6 +1,7 @@
 import type { OrderCheckpoint } from './enums.js';
 import {
-  itemStepOn, joinIndexOf, leaveIndexOf, normaliseSteps, sideOf, stepButtonLabel, stepTickKey, triggeredStep,
+  itemStepOn, joinIndexOf, leaveIndexOf, lotEndIndex, lotOffset, normaliseSteps, renderStepText, sideOf,
+  stepButtonLabel, stepTickKey, triggeredStep,
   type LotRoute, type RouteStep, type StepAssignee, type StepTrigger, type Ticks,
 } from './routes.js';
 import { preLotRouteOf } from './templates.js';
@@ -575,4 +576,60 @@ export function withReceivedAs<T extends Pick<RouteStep, 'trigger' | 'name'>>(st
   const said = label?.trim();
   if (!said) return [...steps];
   return steps.map((step) => (step.trigger === 'china_received' ? { ...step, name: said } : step));
+}
+
+/* ── Every button an item in a lot has, in the order they happen ────── */
+
+/**
+ * One button in an item's serial chain: a press of its own (`item`, under
+ * the key `stepTickKey` gives it) or a move of the whole lot it rides in
+ * (`lot`, to that index on the lot's stored route).
+ */
+export type SerialButton =
+  | { kind: 'item'; key: string; label: string; step: string; done: boolean; lastMile: 'dispatched' | 'delivered' | null }
+  /** `gated`: moving there would carry items past the warehouse check-in unticked. */
+  | { kind: 'lot'; to: number; label: string; step: string; done: boolean; gated?: boolean };
+
+/**
+ * The route's buttons and the lot's moves, together and in route order.
+ *
+ * An item in a lot reaches each step one of two ways: a button pressed on the
+ * item, or the crate moving. Showing the two apart made a seller hunt for the
+ * second; this lays every one out on a single line, so the next thing to
+ * press is simply the first one not yet done. `steps` is the lot's stored
+ * route (one order's reading of it, where it has one); `lotStep` is where the
+ * lot is on it.
+ */
+export function serialButtons(
+  steps: readonly RouteStep[],
+  lotStep: number,
+  ticks: Ticks,
+  vars?: { origin?: string | null; destination?: string | null },
+): SerialButton[] {
+  const route = { steps: [...steps] };
+  const track = withLastMile(steps);
+  const placed: { at: number; button: SerialButton }[] = [];
+
+  track.steps.forEach((step, index) => {
+    const key = stepTickKey(step);
+    if (!key) return;
+    placed.push({
+      at: index,
+      button: {
+        kind: 'item', key, label: stepButtonLabel(step, vars), step: renderStepText(step.name, vars ?? {}),
+        done: Boolean(ticks?.[key]),
+        lastMile: step.trigger === 'dispatched' || step.trigger === 'delivered' ? step.trigger : null,
+      },
+    });
+  });
+
+  const end = lotEndIndex(route);
+  for (let index = lotOffset(route); index <= end && index < steps.length; index += 1) {
+    const step = steps[index]!;
+    if (stepTickKey(step)) continue;
+    const name = renderStepText(step.name, vars ?? {});
+    placed.push({ at: track.at(index), button: { kind: 'lot', to: index, label: name, step: name, done: lotStep >= index } });
+  }
+
+  return placed.sort((a, b) => a.at - b.at).map((entry) => entry.button);
 }

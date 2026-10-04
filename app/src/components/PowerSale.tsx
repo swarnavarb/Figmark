@@ -469,7 +469,7 @@ export function PowerSaleBuilderPage() {
   const [fillNote, setFillNote] = useState<string | null>(null);
   const [startNow, setStartNow] = useState<'now' | 'later'>('now');
   const [startHours, setStartHours] = useState('2');
-  const [lead, setLead] = useState('60');
+  const [lead, setLead] = useState('30');
   const [every, setEvery] = useState('1');
   const [window_, setWindow] = useState('60');
   const [afterChannel, setAfterChannel] = useState(true);
@@ -553,7 +553,7 @@ export function PowerSaleBuilderPage() {
         name: saleName.trim(),
         openingBody: openingText.trim(),
         openingAt: startNow === 'now' ? null : startsAt.toISOString(),
-        leadMinutes: Math.max(0, Number(lead) || 0),
+        leadMinutes: Math.max(30, Number(lead) || 30),
         everyMinutes: Math.max(1, Number(every) || 1),
         windowMinutes: Math.max(5, Number(window_) || 60),
         closingBody: closing.trim(),
@@ -774,8 +774,11 @@ export function PowerSaleBuilderPage() {
           <label className="field">
             <span>Wait for the 1st item to drop</span>
             <span className="psunit">
-              <input type="number" min="0" value={lead} onChange={(e) => setLead(e.target.value)} />
+              <input type="number" min="30" value={lead} onChange={(e) => setLead(e.target.value)} />
               <span>min after the opening message</span>
+            </span>
+            <span className="field__hint">
+              At least 30. The drop shows on the Buy tab with this countdown, and people can set a reminder.
             </span>
           </label>
           <div className="field-row">

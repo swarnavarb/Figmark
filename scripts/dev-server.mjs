@@ -58,6 +58,7 @@ const { preOrderReadRoute, preOrderPledgeRoute } =
 const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
 } = await import(new URL('power-sale-routes.js', apiRoot));
+const { fillingLotsRoute, dropsRoute, dropRoute, remindRoute } = await import(new URL('showcase-routes.js', apiRoot));
 const { insightsRoute, interestRoute, marketRoute } = await import(new URL('insight-routes.js', apiRoot));
 const {
   listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute,
@@ -65,7 +66,7 @@ const {
 } = await import(new URL('profit-routes.js', apiRoot));
 const { costsRoute, saveCostSheetRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
 const {
-  listRoutesRoute, saveRouteRoute, deleteRouteRoute,
+  listRoutesRoute, saveRouteRoute, deleteRouteRoute, applyRouteRoute, closeLotRoute,
   lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, setLotRouteRoute,
   stepItemRoute, myItemsRoute,
 } = await import(new URL('tracking-routes.js', apiRoot));
@@ -269,6 +270,8 @@ const routes = [
   ['GET', '/api/routes', listRoutesRoute],
   ['POST', '/api/routes/new', saveRouteRoute],
   ['POST', '/api/routes/:id/delete', deleteRouteRoute],
+  ['POST', '/api/routes/:id/apply', applyRouteRoute],
+  ['POST', '/api/lots/:id/close', closeLotRoute],
   ['GET', '/api/lots/:id/candidates', lotCandidatesRoute],
   ['POST', '/api/lots/:id/items', addItemsRoute],
   ['POST', '/api/lots/:id/step', stepLotRoute],
@@ -293,6 +296,10 @@ const routes = [
   ['POST', '/api/power-sales/new', powerSaleCreateRoute],
   ['GET', '/api/power-sales/:id', powerSaleReadRoute],
   ['POST', '/api/power-sales/:id/stop', powerSaleStopRoute],
+  ['GET', '/api/showcase/lots', fillingLotsRoute],
+  ['GET', '/api/showcase/drops', dropsRoute],
+  ['GET', '/api/showcase/drops/:sellerId/:id', dropRoute],
+  ['POST', '/api/showcase/drops/:sellerId/:id/remind', remindRoute],
   ['GET', '/api/listings/:id/preorder', preOrderReadRoute],
   ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
   ['GET', '/api/notifications', notificationsRoute],

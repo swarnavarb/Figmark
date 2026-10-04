@@ -7,6 +7,9 @@
  */
 import assert from 'node:assert/strict';
 
+// Steps are undoable for three minutes in the app; these checks read every
+// step at once, as they were written to, except the one that tests undo.
+process.env.FIGMARK_UNDO_WINDOW_MS = '0';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse } = await import(new URL('http.js', fns));
@@ -99,9 +102,12 @@ const { notificationsRoute: notifications, notificationsReadRoute: markRead } =
 const { preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge } =
   await import(new URL('preorder-routes.js', fns));
 const {
-  powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSale,
+  powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSaleRaw,
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
 } = await import(new URL('power-sale-routes.js', fns));
+const {
+  fillingLotsRoute: fillingLots, dropsRoute: dropsShelf, dropRoute: readDrop, remindRoute: remindDrop,
+} = await import(new URL('showcase-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
 const {
   acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
@@ -131,7 +137,7 @@ const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
   lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
   noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
-  myItemsRoute: myItems,
+  myItemsRoute: myItems, applyRouteRoute: applyRoute, closeLotRoute: closeLot,
 } = await import(new URL('tracking-routes.js', fns));
 const {
   listTemplatesRoute: listTemplates, saveTemplateRoute: saveTemplate,
@@ -178,6 +184,24 @@ const repository_dispute = async (id) => (await getRepository()).getDisputeById(
 // Fixture buyers have no password, so their notifications are read through the
 // same repository the routes write them to rather than by signing in as them.
 const noticesFor = async (id) => (await getRepository()).listNotifications(id, 40);
+
+/*
+ * Every sale now waits at least 30 minutes between its opening message and
+ * its first item. The checks written before that schedule a sale and expect
+ * it dropping at once; unless one names its own lead time, this lets the
+ * half hour pass, the way the minute timer would.
+ */
+const schedulePowerSale = async (request, ctx) => {
+  const made = await schedulePowerSaleRaw(request, ctx);
+  const body = await request.json().catch(() => ({}));
+  if (made.status !== 201 || body.leadMinutes !== undefined || made.jsonBody.sale.status !== 'running') return made;
+  const repository = await getRepository();
+  const stored = (await repository.listLivePowerSales()).find((sale) => sale.id === made.jsonBody.sale.id);
+  if (!stored) return made;
+  await repository.savePowerSale({ ...stored, leadMinutes: 0 });
+  const read = await readPowerSale(req({ headers: Object.fromEntries(request.headers), params: { id: stored.id } }), ctx);
+  return { ...made, jsonBody: read.jsonBody };
+};
 // Campaigns end when a cutoff passes, and a smoke test cannot wait a week for
 // one. Moving the cutoff into the past is the same fact arriving sooner.
 const expireCampaign = async (id) => {
@@ -363,9 +387,11 @@ await check('serves the catalog anonymously', async () => {
 });
 
 await check('text search narrows results', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings.length;
   const body = (await feed(req({ query: { q: 'sneaker' } }), ctx)).jsonBody;
-  assert.equal(body.listings.length, 2);
-  assert.ok(body.listings.every((l) => /sneaker|runner|high-top/i.test(`${l.title} ${l.tags.join(' ')}`)));
+  // Narrower than everything, and every hit is a sneaker by its words or its category.
+  assert.ok(body.listings.length >= 2 && body.listings.length < all);
+  assert.ok(body.listings.every((l) => /sneaker|runner|high-top/i.test(`${l.title} ${l.tags.join(' ')} ${l.category}`)));
 });
 
 await check('extra search words narrow rather than widen', async () => {
@@ -568,7 +594,7 @@ await check('a lot carries its origin and supplier', () => {
   assert.equal(lot.jsonBody.lot.supplier.reference, 'BH-1');
 });
 
-await check('a name and the two countries are all a lot insists on', async () => {
+await check('the two countries are all a lot insists on', async () => {
   const bare = await createLot(req({ headers: auth, body: { name: 'Bare lot' } }), ctx);
   assert.equal(bare.status, 201);
   assert.equal(bare.jsonBody.lot.origin, '');
@@ -577,6 +603,7 @@ await check('a name and the two countries are all a lot insists on', async () =>
   // A contact with nobody attached to it is not a supplier.
   assert.equal(bare.jsonBody.lot.supplier, null);
 
+  // The name is required: it is how a shop tells its lots apart.
   const nameless = await createLot(req({ headers: auth, body: { origin: 'Shenzhen, CN' } }), ctx);
   assert.equal(nameless.status, 400);
   assert.equal(nameless.jsonBody.error, 'invalid_lot');
@@ -3914,6 +3941,90 @@ await check('a run posts its opening message and its first item', async () => {
   assert.ok(first.windowLeft > 0, 'the window is open');
 });
 
+await check('a drop is on the shelf from its opening message, with a reminder that fires at the first item', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Shelf drop',
+      openingBody: 'Shelf drop in half an hour!',
+      leadMinutes: 30,
+      everyMinutes: 1,
+      windowMinutes: 60,
+      items: [saleItem('Shelf first', 30_000, 40_000), saleItem('Shelf second', 20_000, 25_000)],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const saleId = made.jsonBody.sale.id;
+
+  // Announced, not started: on the shelf, counting down, nothing dropped yet.
+  let shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  let row = shelf.find((entry) => entry.id === saleId);
+  assert.ok(row, 'on the shelf once the opening message is out');
+  assert.equal(row.live, false);
+  assert.ok(Date.parse(row.startsAt) - Date.now() > 25 * 60_000, 'counting down to the first item');
+  // The opening message in the channel carries the countdown too.
+  const thread = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(thread.posts.some((card) => card.post.opening?.saleId === saleId));
+
+  // A buyer asks to be reminded; a guest is asked to sign in.
+  const buyer = await newBuyer('Drop Watcher');
+  const reminded = await remindDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(reminded.status, 200, JSON.stringify(reminded.jsonBody));
+  assert.equal(reminded.jsonBody.drop.reminded, true);
+  assert.equal(reminded.jsonBody.drop.reminders, 1);
+  const guest = await remindDrop(req({ params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(guest.status, 401);
+  assert.equal((await readDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId } }), ctx)).jsonBody.drop.reminded, true);
+
+  // The curtain goes up: the first item drops, and the reminder goes out.
+  const repository = await getRepository();
+  const stored = await repository.getPowerSale('usr_demo', saleId);
+  await repository.savePowerSale({ ...stored, leadMinutes: 0 });
+  shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  row = shelf.find((entry) => entry.id === saleId);
+  assert.equal(row.live, true);
+  const told = await noticesFor(buyer.id);
+  assert.ok(told.some((notice) => notice.title.includes('Shelf drop is dropping now')), 'reminded');
+  const late = await remindDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(late.status, 409);
+
+  // A sale not yet announced is nobody's business.
+  const later = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Secret plan', openingBody: 'Tomorrow.', openingAt: new Date(Date.now() + 86_400_000).toISOString(),
+      everyMinutes: 1, windowMinutes: 60, items: [saleItem('Not yet', 10_000, 12_000)],
+    },
+  }), ctx);
+  shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  assert.ok(!shelf.some((entry) => entry.id === later.jsonBody.sale.id));
+});
+
+await check('boxes filling up lists lots still taking orders that something can be bought into', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Shelf box' } }), ctx)).jsonBody.lot;
+  let lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  assert.ok(!lots.some((row) => row.id === lot.id), 'an empty box is a dead end, not shown');
+
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'In the shelf box', priceMinor: 9_000, sourcing: 'import', quantityAvailable: 4 },
+  }), ctx)).jsonBody.listing;
+  await assignToLot(req({ headers: auth, params: { id: lot.id }, body: { listingIds: [listing.id] } }), ctx);
+  const buyer = await newBuyer('Box Joiner');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx);
+
+  lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  const row = lots.find((entry) => entry.id === lot.id);
+  assert.ok(row, 'shown once it has something to buy');
+  assert.equal(row.people, 1);
+  assert.ok(row.listings.some((entry) => entry.id === listing.id));
+  assert.ok(lots.filter((entry) => entry.sellerId === 'usr_demo').length <= 2, 'no shop fills the shelf');
+
+  // Shut to new orders: off the shelf.
+  await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: true } }), ctx);
+  lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  assert.ok(!lots.some((entry) => entry.id === lot.id));
+});
+
 await check('a live sale item is in the channel and nowhere else', async () => {
   const made = await schedulePowerSale(req({
     headers: auth,
@@ -3988,10 +4099,12 @@ await check('a run says when the last item hands over', async () => {
   }), ctx);
   const sale = made.jsonBody.sale;
 
-  // The third is due at +20 minutes and its window shuts 30 after that, so the
-  // whole run is public about fifty minutes from now.
+  // Asked for no wait, it gets the half-hour minimum: the first item is due at
+  // +30 minutes, the third at +50, and its window shuts 30 after that - so
+  // the whole run is public about eighty minutes from now.
+  assert.equal(sale.leadMinutes, 30, 'no drop lands with its own announcement');
   const minutesOut = (Date.parse(sale.finishesAt) - Date.now()) / 60_000;
-  assert.ok(minutesOut > 45 && minutesOut < 55, `expected about 50 minutes, got ${minutesOut}`);
+  assert.ok(minutesOut > 75 && minutesOut < 85, `expected about 80 minutes, got ${minutesOut}`);
 
   // And nothing to count down to once it is over.
   await stopPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx);
@@ -5278,18 +5391,31 @@ await check('the buyer sees one timeline per lot, not one per item', async () =>
   assert.ok(group.items.length >= 1);
   assert.ok(group.sellerName);
 
-  // A second item in the same lot joins the same group rather than making
-  // a second identical timeline.
+  // That lot is finished - every item in it delivered - so nothing more is
+  // filed into it.
   const extra = await waitingItem('Also theirs');
   const alsoPlaced = await createOrder(req({ headers: earlyBuyer.headers, body: { listingId: extra } }), ctx);
-  await addItems(req({
+  const refused = await addItems(req({
     headers: auth, params: { id: routedLot.id }, body: { orderIds: [alsoPlaced.jsonBody.order.id] },
   }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'lot_done');
+
+  // Two of their items in one open lot are one group rather than two
+  // identical timelines.
+  const open = (await createLot(req({ headers: auth, body: { name: 'Open for two' } }), ctx)).jsonBody.lot;
+  const another = await waitingItem('Theirs as well');
+  const anotherPlaced = await createOrder(req({ headers: earlyBuyer.headers, body: { listingId: another } }), ctx);
+  const both = await addItems(req({
+    headers: auth, params: { id: open.id },
+    body: { orderIds: [alsoPlaced.jsonBody.order.id, anotherPlaced.jsonBody.order.id] },
+  }), ctx);
+  assert.equal(both.jsonBody.added, 2);
 
   const after = (await myItems(req({ headers: earlyBuyer.headers }), ctx)).jsonBody;
-  const groups = after.groups.filter((row) => row.lot?.id === routedLot.id);
+  const groups = after.groups.filter((row) => row.lot?.id === open.id);
   assert.equal(groups.length, 1, 'one group, two items');
-  assert.equal(groups[0].items.length, group.items.length + 1);
+  assert.equal(groups[0].items.length, 2);
 
   // What is waiting sorts first: it is the only thing a buyer might act on.
   const waiting = after.groups.find((row) => row.kind === 'awaiting');
@@ -5896,12 +6022,15 @@ await check('a lot is named by the person opening it, never by the first thing i
     headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
   }), ctx)).jsonBody.order;
 
+  // Left blank, it is refused rather than named after whoever's parcel
+  // happened to be first in.
   for (const name of [undefined, '', '   ']) {
-    const refused = await assignOrderToLot(req({
+    const filed = await assignOrderToLot(req({
       headers: auth, params: { id: order.id },
       body: { newLot: { name, origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India' } },
     }), ctx);
-    assert.equal(refused.status, 400, `"${name}" is not a name`);
+    assert.equal(filed.status, 400, `"${name}" is refused`);
+    assert.equal(filed.jsonBody.error, 'invalid_lot');
   }
 });
 
@@ -6043,6 +6172,16 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   const card = async () => (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((row) => row.id === order.id);
   assert.equal((await card()).next.checkpoint, 'china_received');
   assert.match((await card()).next.label, /^Received at international/);
+  /* The lot's own next move rides on the card too - and says it would carry
+     an item past the warehouse check-in that was never ticked in there. */
+  assert.equal((await card()).lotNext.label, 'Dispatched from China');
+  assert.equal((await card()).lotNext.unchecked, 1);
+  /* And every button the item has - its own and the lot's - on one line, in route order. */
+  const serial = (await card()).serial;
+  assert.deepEqual(serial.slice(0, 2).map((button) => [button.kind, button.label]),
+    [['item', 'Received at international warehouse'], ['lot', 'Dispatched from China']]);
+  assert.equal(serial[1].gated, true, 'the lot move warns while the item is not checked in');
+  assert.ok(serial.some((button) => button.kind === 'item' && button.key === 'delivered'), 'the last mile is on the line');
 
   // One press.
   await setCheckpoint(req({
@@ -6051,6 +6190,9 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   assert.equal(await where(), 'Received at international warehouse');
   assert.equal((await card()).next, null, 'the lot flies it, not a button');
   assert.equal((await card()).waitingOnLot, true);
+  assert.equal((await card()).lotNext.unchecked, 0, 'checked in, so the lot can move from the card');
+  assert.equal((await card()).serial[0].done, true);
+  assert.equal((await card()).serial[1].gated, false);
   assert.equal((await card()).done.checkpoint, 'china_received', 'and the press just made is there to undo');
 
   // A button bound to a step further along jumps straight there: the lot flew
@@ -8657,6 +8799,209 @@ await check('similar items leave out the item itself and lead with its own kind'
   assert.ok(listings.length > 0);
   assert.ok(!listings.some((l) => l.id === affListed.id));
   assert.equal(listings[0].category, affListed.category);
+});
+
+
+await check('an edited route reaches the lots on it only when the seller says so', async () => {
+  const made = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Edited later',
+      steps: [
+        { name: 'Ordered', side: 'pre' }, { name: 'Consolidated', side: 'post' },
+        { name: 'Sailed', side: 'post' }, { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const route = made.jsonBody.route;
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Rides the edit', routeId: route.id } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'On an edited route', priceMinor: 4_000, sourcing: 'import' },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Edited Route Buyer');
+  const order = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.id } }), ctx);
+
+  // Unchanged, picking the same route again is refused.
+  const same = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
+  assert.equal(same.status, 409);
+
+  // Edited: the save only stores the route, and says how many lots are behind.
+  const edit = (name) => saveRoute(req({
+    headers: auth,
+    body: { id: route.id, name: route.name, steps: route.steps.map((step) => (step.name === 'Sailed' ? { ...step, name } : step)) },
+  }), ctx);
+  const saved = await edit('Sailed by sea');
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.lotsBehind, 1);
+  assert.deepEqual((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id], { lots: 1, behind: 1 });
+  let board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed'), 'the lot keeps its own copy until asked');
+
+  // Asked: every lot on it takes the new steps, and its items keep riding it.
+  const applied = await applyRoute(req({ headers: auth, params: { id: route.id } }), ctx);
+  assert.equal(applied.status, 200, JSON.stringify(applied.jsonBody));
+  assert.equal(applied.jsonBody.lotsUpdated, 1);
+  board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by sea'));
+  const item = board.items.find((row) => row.id === order.id);
+  assert.equal(item.ownStep, false, 'no position of its own was invented for the item');
+  assert.ok(!board.history.some((event) => /were updated/.test(event.note ?? '')), 'a correction is not news');
+  assert.equal((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id].behind, 0);
+
+  // Re-picking the same, now edited, route does the same for one lot.
+  await edit('Sailed by air');
+  const repicked = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
+  assert.equal(repicked.status, 200, JSON.stringify(repicked.jsonBody));
+  board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by air'));
+});
+
+await check('a closed lot takes no new orders, and its buyers are told it is prepping for dispatch', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Shut box' } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'In the shut box', priceMinor: 3_000, sourcing: 'import', quantityAvailable: 5 },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Shut Box Buyer');
+  const first = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: first.id }, body: { lotId: lot.id } }), ctx);
+
+  let tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: first.id } }), ctx)).jsonBody;
+  assert.equal(tracked.route.lotPhase, 'filling');
+
+  const closed = await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: true } }), ctx);
+  assert.equal(closed.status, 200, JSON.stringify(closed.jsonBody));
+  assert.equal(closed.jsonBody.lot.status, 'filled');
+  tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: first.id } }), ctx)).jsonBody;
+  assert.equal(tracked.route.lotPhase, 'closed');
+
+  // Nothing more goes in while it is shut.
+  const other = await newBuyer('Late To The Box');
+  const late = await createOrder(req({ headers: other.headers, body: { listingId: listing.id } }), ctx);
+  assert.ok(late.jsonBody.order, JSON.stringify(late.jsonBody));
+  const second = late.jsonBody.order;
+  const refused = await assignOrderToLot(req({ headers: auth, params: { id: second.id }, body: { lotId: lot.id } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'lot_closed');
+
+  // Reopened, it fills again.
+  const reopened = await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: false } }), ctx);
+  assert.equal(reopened.jsonBody.lot.status, 'open');
+  const filed = await assignOrderToLot(req({ headers: auth, params: { id: second.id }, body: { lotId: lot.id } }), ctx);
+  assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
+});
+
+await check('a step forward can be undone for three minutes, and shows nowhere until then', async () => {
+  process.env.FIGMARK_UNDO_WINDOW_MS = String(3 * 60 * 1000);
+  try {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Undo box' } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'Undo item', priceMinor: 2_000, sourcing: 'import', quantityAvailable: 3 },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Undo Buyer');
+  const order = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.id } }), ctx);
+  const startAt = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody.route.currentStep;
+
+  // Moved: in effect at once, offered for undoing, on no timeline, nobody told.
+  const moved = await stepLot(req({ headers: auth, params: { id: lot.id }, body: {} }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  const undo = moved.jsonBody.undo;
+  assert.ok(undo && undo.id && undo.until, 'the move comes with an undo');
+  assert.ok(Date.parse(undo.until) - Date.now() > 170_000, 'about three minutes');
+  let tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.ok(!tracked.order.stageHistory.some((event) => event.undoId === undo.id), 'hidden from the buyer timeline');
+  let told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
+  assert.ok(!told.some((row) => row.title.startsWith('Undo box')), 'the buyer is not told yet');
+
+  // Undone: back where it was, no trace, the held notice withdrawn.
+  const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
+  assert.equal(back.status, 200, JSON.stringify(back.jsonBody));
+  const board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.equal(board.route.currentStep, startAt);
+  assert.ok(!board.history.some((event) => event.undoId === undo.id));
+  assert.ok((await noticesFor(buyer.id)).filter((row) => row.undoId === undo.id).every((row) => row.withdrawn));
+  const twice = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
+  assert.equal(twice.status, 409);
+  assert.equal(twice.jsonBody.error, 'undo_expired');
+
+  // Left alone past the window: it is history, shown and told, and no longer undoable.
+  const again = (await stepLot(req({ headers: auth, params: { id: lot.id }, body: {} }), ctx)).jsonBody;
+  const repository = await getRepository();
+  const past = new Date(Date.now() - 1000).toISOString();
+  const age = (history) => history.map((event) => (event.undoId === again.undo.id ? { ...event, undoUntil: past } : event));
+  const stored = await repository.getLot(lot.sellerId, lot.id);
+  await repository.updateLot({ ...stored, stageHistory: age(stored.stageHistory) });
+  const storedOrder = await repository.getOrder(order.id);
+  await repository.updateOrder({ ...storedOrder, stageHistory: age(storedOrder.stageHistory) });
+  for (const row of await noticesFor(buyer.id)) {
+    if (row.undoId === again.undo.id) await repository.saveNotification({ ...row, notBefore: past });
+  }
+  tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.ok(tracked.order.stageHistory.some((event) => event.undoId === again.undo.id), 'shown once the window closes');
+  told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.title.startsWith('Undo box')), 'and the buyer is told');
+  const late = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: again.undo.to, undoOf: again.undo.id } }), ctx);
+  assert.equal(late.status, 409);
+
+  // A button press undone leaves no "undone" line behind.
+  const pressed = await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: true } }), ctx);
+  assert.equal(pressed.status, 200, JSON.stringify(pressed.jsonBody));
+  assert.ok(pressed.jsonBody.undo);
+  const unpressed = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: false, undoOf: pressed.jsonBody.undo.id },
+  }), ctx);
+  assert.equal(unpressed.status, 200, JSON.stringify(unpressed.jsonBody));
+  assert.ok(!unpressed.jsonBody.order.checkpoints.china_packed);
+  const after = await repository.getOrder(order.id);
+  assert.ok(!after.stageHistory.some((event) => /undone/.test(event.note ?? '')));
+  } finally {
+    process.env.FIGMARK_UNDO_WINDOW_MS = '0';
+  }
+});
+
+await check('a route that never joins a lot cannot be given to one', async () => {
+  const library = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
+  const courier = library.presets.find((preset) => preset.steps.every((step) => step.side !== 'post'));
+  assert.ok(courier, 'a preset that never joins a lot exists');
+  const saved = await saveRoute(req({ headers: auth, body: { name: 'Courier only', steps: courier.steps } }), ctx);
+  assert.equal(saved.status, 201, JSON.stringify(saved.jsonBody));
+  const refused = await createLot(req({ headers: auth, body: { name: 'Nothing to move', routeId: saved.jsonBody.route.id } }), ctx);
+  assert.equal(refused.status, 400);
+  assert.equal(refused.jsonBody.error, 'invalid_route');
+  const open = (await createLot(req({ headers: auth, body: { name: 'Rerouted to nothing' } }), ctx)).jsonBody.lot;
+  const rerouted = await setLotRoute(req({ headers: auth, params: { id: open.id }, body: { routeId: saved.jsonBody.route.id } }), ctx);
+  assert.equal(rerouted.status, 400);
+});
+
+await check('a finished lot stays finished', async () => {
+  const board = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(board.lot.status, 'closed');
+  const back = await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: board.route.offset } }), ctx);
+  assert.equal(back.status, 409);
+  assert.equal(back.jsonBody.error, 'lot_done');
+  assert.equal((await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody.lot.status, 'closed');
+});
+
+await check('moving a lot before its own first step says so, not that it is at the end', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Too far back' } }), ctx)).jsonBody.lot;
+  const board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.offset >= 2, 'the generic route starts with steps each item takes on its own');
+  const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: 0 } }), ctx);
+  assert.equal(back.status, 409);
+  assert.ok(/start of its own steps/.test(back.jsonBody.message), back.jsonBody.message);
+});
+
+await check('the lots list counts orders waiting for a lot, and never in-hand stock', async () => {
+  const listing = await waitingItem('Waiting for a lot');
+  const buyer = await newBuyer('Waiting Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: listing } }), ctx);
+  await createListing(req({ headers: auth, body: { title: 'On the shelf', priceMinor: 2_000, sourcing: 'in_hand' } }), ctx);
+  const body = (await myLots(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.awaitingOrders >= 1);
+  assert.ok(body.unassigned.every((row) => row.sourcing === 'import'));
+  assert.ok(!body.unassigned.some((row) => row.title === 'On the shelf'));
 });
 
 console.log(`\n${passed} checks passed`);
