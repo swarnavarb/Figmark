@@ -10,11 +10,13 @@ import { Thumb } from './ui';
 /**
  * The two Buy-tab shelves that sell an event, each telling its own story.
  *
- * Drops is a stage: lights round the edge, a curtain still shut, a clock
+ * Drops is a stage: bulbs along a velvet valance, drapes drawn back at the
+ * sides, footlights on the boards, each drop a ticket behind its own curtain
+ * still shut, a clock
  * counting down to the first item, and a bell to be told when the curtain
  * goes up. When it does, the curtain parts and the card goes live.
  *
- * Boxes filling up is a packing line: open cartons riding a conveyor belt,
+ * Lots filling up is a packing line: open cartons riding a conveyor belt,
  * the shop's items dropping into them one after another, and the number of
  * people already in each on its side - the box is filling, and there is room.
  */
@@ -188,17 +190,23 @@ export function DropsStage() {
 
   return (
     <section className="stage" aria-label="Drops">
+      <span className="stage__valance" aria-hidden="true" />
+      <span className="stage__drape stage__drape--l" aria-hidden="true" />
+      <span className="stage__drape stage__drape--r" aria-hidden="true" />
       <span className="stage__bulbs" aria-hidden="true">
         {Array.from({ length: 14 }, (_, i) => <span key={i} style={{ ['--b' as string]: i }} />)}
       </span>
       <span className="stage__spot" aria-hidden="true" />
       <div className="stage__head">
         <h2>⚡ Drops</h2>
-        <span>Live sales from shops' channels. Get a reminder before the curtain goes up.</span>
+        <span>Join now or get a reminder on the live drops</span>
       </div>
       <div className="stage__row">
         {drops.map((drop, index) => <DropTicket key={drop.id} drop={drop} index={index} />)}
       </div>
+      <span className="stage__floor" aria-hidden="true">
+        {Array.from({ length: 7 }, (_, i) => <i key={i} style={{ ['--f' as string]: i }} />)}
+      </span>
     </section>
   );
 }
@@ -247,8 +255,8 @@ function lane(lot: FillingLot): string | null {
   return `${countryFlag(lot.originCountry) || '🏳️'} ✈ ${countryFlag(lot.destinationCountry) || '🏳️'}`;
 }
 
-/** Flags drifting by: [flag, top %, seconds to cross, delay s]. */
-const DRIFT = [['🇯🇵', 6, 26, 0], ['🇮🇳', 22, 31, 9], ['🇺🇸', 12, 34, 17], ['🇫🇷', 26, 29, 4], ['🇰🇷', 3, 37, 22], ['🇬🇧', 18, 33, 13], ['🇦🇪', 28, 27, 26], ['🇹🇭', 9, 35, 6]] as const;
+/** Flags scattered over the sky, each wandering on its own: [flag, left %, top %, seconds, delay s]. */
+const DRIFT = [['🇯🇵', 4, 10, 9, 0], ['🇮🇳', 17, 26, 11, 3], ['🇺🇸', 31, 6, 13, 6], ['🇫🇷', 44, 22, 10, 1], ['🇰🇷', 56, 4, 12, 5], ['🇬🇧', 68, 18, 9, 7], ['🇦🇪', 81, 8, 14, 2], ['🇹🇭', 93, 24, 11, 4]] as const;
 /**
  * One stretch of horizon, drawn so its two ends meet: hills, then a city of
  * landmarks from around the world. Two of these side by side slide by forever.
@@ -375,8 +383,8 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
       <span className="belt__bg" aria-hidden="true">
         <span className="belt__sun" />
         <span className="belt__plane"><Plane /></span>
-        {DRIFT.map(([flag, top, across, delay]) => (
-          <i key={flag} className="belt__flag" style={{ top: `${top}%`, animationDuration: `${across}s`, animationDelay: `${-delay}s` }}>{flag}</i>
+        {DRIFT.map(([flag, left, top, seconds, delay]) => (
+          <i key={flag} className="belt__flag" style={{ left: `${left}%`, top: `${top}%`, animationDuration: `${seconds}s`, animationDelay: `${-delay}s` }}>{flag}</i>
         ))}
         <span className="belt__scene"><Scenery /><Scenery /></span>
       </span>

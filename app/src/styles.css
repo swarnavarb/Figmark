@@ -11280,20 +11280,69 @@ a.ocust__name:hover { color: var(--accent-text); }
 .lotbox .ptrack__stop:last-child.is-here .ptrack__label { justify-self: end; }
 
 /* ── Drops: a stage ──────────────────────────────────────────────────────
-   Not a rail. A framed stage with a row of marquee bulbs chasing round the
-   top, a spotlight sweeping across, and each drop a ticket behind a red
-   curtain. The curtain parts when the clock runs out. */
+   Not a rail. A theatre: a scalloped velvet valance with marquee bulbs
+   chasing along it, drapes that sweep open to the sides when it comes into
+   view and then sway, a spotlight, and footlights glowing on the boards.
+   Each drop is a ticket behind its own small curtain, which breathes while
+   it waits and is swept away when the clock runs out. */
 .stage {
+  --velvet:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.35), transparent 18%, rgba(255, 255, 255, 0.07) 50%, transparent 82%, rgba(0, 0, 0, 0.35)) 0 0 / 14px 100%,
+    linear-gradient(#B91C1C, #7F1D1D 70%, #5B0B12);
   position: relative; overflow: hidden; isolation: isolate;
-  margin: 6px 0 22px; padding: 26px 0 18px;
+  margin: 6px 0 22px; padding: 44px 0 34px;
   border-radius: 22px;
   background:
-    radial-gradient(120% 80% at 50% 0%, rgba(255, 196, 92, 0.14), transparent 60%),
-    repeating-linear-gradient(90deg, #4A0B16 0 14px, #3B0812 14px 28px);
+    radial-gradient(70% 90% at 50% 10%, rgba(255, 196, 92, 0.16), transparent 65%),
+    radial-gradient(120% 100% at 50% 100%, #2A0A10, #12040A 70%);
   box-shadow: inset 0 0 0 2px rgba(253, 224, 71, 0.35), 0 18px 40px rgba(0, 0, 0, 0.45);
   color: #FFF7E6;
 }
-.stage__bulbs { position: absolute; top: 8px; left: 14px; right: 14px; display: flex; justify-content: space-between; z-index: 2; }
+/* The valance: velvet pleats with a scalloped hem and a gold trim. */
+.stage__valance {
+  position: absolute; top: 0; left: 0; right: 0; height: 34px; z-index: 3; pointer-events: none;
+  background: var(--velvet);
+  -webkit-mask: linear-gradient(#000 0 0) top / 100% 22px no-repeat, radial-gradient(circle 12px at 12px 0, #000 98%, transparent) 0 22px / 24px 12px repeat-x;
+  mask: linear-gradient(#000 0 0) top / 100% 22px no-repeat, radial-gradient(circle 12px at 12px 0, #000 98%, transparent) 0 22px / 24px 12px repeat-x;
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.5));
+}
+.stage__valance::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 20px; height: 3px;
+  background: linear-gradient(90deg, #A16207, #FDE68A, #CA8A04, #FDE68A, #A16207);
+}
+/* The drapes: gathered to each side and tied back with a gold rope. */
+.stage__drape {
+  position: absolute; top: 0; bottom: 0; z-index: 3; width: clamp(24px, 4vw, 40px); pointer-events: none;
+  background: var(--velvet);
+  filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.6));
+  animation: drape-open 1.8s cubic-bezier(0.6, 0, 0.2, 1) both, drape-sway 5s ease-in-out 1.8s infinite alternate;
+}
+.stage__drape--l { left: 0; transform-origin: 0 0; clip-path: polygon(0 0, 100% 0, 78% 30%, 34% 58%, 60% 76%, 100% 100%, 0 100%); }
+.stage__drape--r { right: 0; transform-origin: 100% 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 40% 76%, 66% 58%, 22% 30%); }
+.stage__drape::after {
+  content: ''; position: absolute; top: 57%; width: 22px; height: 6px; border-radius: 3px;
+  background: linear-gradient(#FDE68A, #A16207); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.stage__drape--l::after { left: 2px; }
+.stage__drape--r::after { right: 2px; }
+@keyframes drape-open { from { transform: scaleX(12); } to { transform: scaleX(1); } }
+@keyframes drape-sway { from { transform: scaleX(1); } to { transform: scaleX(1.15) skewY(0.6deg); } }
+/* The boards, lit from the front by a row of footlights. */
+.stage__floor {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; height: 30px; pointer-events: none;
+  display: flex; justify-content: space-around; align-items: flex-start;
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.3) 0 1px, transparent 1px 70px),
+    linear-gradient(#6B4423, #3B2410);
+  box-shadow: inset 0 2px 0 rgba(253, 230, 138, 0.35);
+}
+.stage__floor i {
+  width: 18px; height: 6px; margin-top: -3px; border-radius: 50%; background: #FEF3C7;
+  box-shadow: 0 0 14px 6px rgba(253, 224, 71, 0.45), 0 -18px 30px 10px rgba(253, 224, 71, 0.12);
+  animation: footlight 2.8s ease-in-out infinite alternate; animation-delay: calc(var(--f) * -0.4s);
+}
+@keyframes footlight { to { opacity: 0.6; box-shadow: 0 0 10px 4px rgba(253, 224, 71, 0.3), 0 -14px 24px 8px rgba(253, 224, 71, 0.08); } }
+.stage__bulbs { position: absolute; top: 6px; left: 40px; right: 40px; display: flex; justify-content: space-between; z-index: 4; }
 .stage__bulbs span {
   width: 8px; height: 8px; border-radius: 50%; background: #FDE68A;
   box-shadow: 0 0 8px 2px rgba(253, 224, 71, 0.8);
@@ -11306,12 +11355,12 @@ a.ocust__name:hover { color: var(--accent-text); }
   animation: spot-sweep 7s ease-in-out infinite alternate;
 }
 @keyframes spot-sweep { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
-.stage__head { position: relative; z-index: 2; display: grid; gap: 2px; padding: 4px 18px 12px; }
+.stage__head { position: relative; z-index: 2; display: grid; gap: 2px; padding: 4px 44px 12px; }
 .stage__head h2 { margin: 0; font-size: var(--t-xl, 24px); letter-spacing: 0.02em; text-shadow: 0 0 18px rgba(253, 224, 71, 0.55); }
 .stage__head span { font-size: var(--t-xs); opacity: 0.8; }
 .stage__row {
   position: relative; z-index: 2; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 78%);
-  gap: 14px; overflow-x: auto; padding: 4px 18px 10px; scroll-snap-type: x mandatory; scroll-padding-inline: 18px; scrollbar-width: none;
+  gap: 14px; overflow-x: auto; padding: 4px 44px 10px; scroll-snap-type: x mandatory; scroll-padding-inline: 44px; scrollbar-width: none;
 }
 .stage__row::-webkit-scrollbar { display: none; }
 @media (min-width: 720px) { .stage__row { grid-auto-columns: minmax(260px, 320px); } }
@@ -11347,7 +11396,7 @@ a.ocust__name:hover { color: var(--accent-text); }
   position: relative;
 }
 .ticket__perf::before, .ticket__perf::after {
-  content: ''; position: absolute; top: -7px; width: 16px; height: 16px; border-radius: 50%; background: #3B0812;
+  content: ''; position: absolute; top: -7px; width: 16px; height: 16px; border-radius: 50%; background: #1E070C;
 }
 .ticket__perf::before { left: -8px; }
 .ticket__perf::after { right: -8px; }
@@ -11358,18 +11407,28 @@ a.ocust__name:hover { color: var(--accent-text); }
   box-shadow: 0 6px 16px rgba(220, 38, 38, 0.45);
 }
 .ticket__chan { font-size: var(--t-xs); color: #7A5A30; text-decoration: none; font-weight: var(--w-semi); }
-/* The curtain: two velvet halves drawn mostly shut over the ticket's edges
-   while it waits, swept apart when it goes live. */
+/* The curtain: two velvet halves gathered over the ticket's edges and tied
+   back, breathing in and out while it waits, swept away when it goes live. */
 .ticket__curtain {
-  position: absolute; z-index: 2; top: 0; bottom: 0; width: 18px; pointer-events: none;
-  background: repeating-linear-gradient(90deg, #9F1239 0 5px, #7F1D1D 5px 10px);
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.4);
+  position: absolute; z-index: 2; top: 0; bottom: 0; width: 24px; pointer-events: none;
+  background: var(--velvet);
   transition: transform 1.1s cubic-bezier(0.6, 0, 0.2, 1);
 }
-.ticket__curtain--l { left: 0; border-radius: 16px 0 0 16px; transform-origin: left; }
-.ticket__curtain--r { right: 0; border-radius: 0 16px 16px 0; transform-origin: right; }
-.ticket:not(.is-live) .ticket__curtain { animation: curtain-sway 3s ease-in-out infinite alternate; }
-@keyframes curtain-sway { from { transform: scaleX(1); } to { transform: scaleX(1.18); } }
+.ticket__curtain::after {
+  content: ''; position: absolute; top: 55%; width: 12px; height: 5px; border-radius: 3px;
+  background: linear-gradient(#FDE68A, #A16207);
+}
+.ticket__curtain--l { left: 0; border-radius: 16px 0 0 16px; transform-origin: left; clip-path: polygon(0 0, 100% 0, 80% 35%, 42% 56%, 70% 74%, 100% 100%, 0 100%); }
+.ticket__curtain--r { right: 0; border-radius: 0 16px 16px 0; transform-origin: right; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 30% 74%, 58% 56%, 20% 35%); }
+.ticket__curtain--l::after { left: 1px; }
+.ticket__curtain--r::after { right: 1px; }
+.ticket:not(.is-live) .ticket__curtain { animation: curtain-breathe 3.2s ease-in-out infinite alternate; }
+.ticket:not(.is-live) .ticket__curtain--r { animation-delay: -1.6s; }
+.ticket:not(.is-live):hover .ticket__curtain { animation-duration: 0.8s; }
+@keyframes curtain-breathe {
+  from { transform: scaleX(1); background-position: 0 0, 0 0; }
+  to { transform: scaleX(1.3) skewY(1deg); background-position: 5px 0, 0 0; }
+}
 .ticket.is-live .ticket__curtain--l { transform: translateX(-100%); }
 .ticket.is-live .ticket__curtain--r { transform: translateX(100%); }
 .ticket.is-live { box-shadow: 0 0 0 2px #FBBF24, 0 10px 30px rgba(251, 191, 36, 0.35); }
@@ -11449,14 +11508,14 @@ a.ocust__name:hover { color: var(--accent-text); }
 .scene__near { fill: #1E1B4B; }
 @keyframes belt-scene { to { transform: translateX(-50%); } }
 .belt__flag {
-  position: absolute; left: 100%; font-style: normal; font-size: 15px; opacity: 0.6;
-  animation: belt-flag 30s linear infinite;
+  position: absolute; font-style: normal; font-size: 15px; opacity: 0.65;
+  animation: belt-flag 10s ease-in-out infinite alternate;
 }
-@keyframes belt-flag {
-  0% { transform: translate(0, 0); }
-  50% { transform: translate(-60vw, -10px) rotate(-8deg); }
-  100% { transform: translate(-110vw, 0) rotate(4deg); }
-}
+.belt__flag:nth-of-type(3n + 1) { animation-name: belt-flag-b; }
+.belt__flag:nth-of-type(3n + 2) { animation-name: belt-flag-c; }
+@keyframes belt-flag { 0% { transform: translate(0, 0) rotate(-6deg); } 50% { transform: translate(26px, -8px) rotate(4deg); } 100% { transform: translate(-18px, 6px) rotate(-2deg); } }
+@keyframes belt-flag-b { 0% { transform: translate(0, 0) rotate(5deg); } 50% { transform: translate(-30px, 6px) rotate(-5deg); } 100% { transform: translate(14px, -6px) rotate(3deg); } }
+@keyframes belt-flag-c { 0% { transform: translate(0, 0); } 33% { transform: translate(18px, 8px) rotate(-8deg); } 66% { transform: translate(-22px, -4px) rotate(6deg); } 100% { transform: translate(8px, -10px); } }
 .belt__plane {
   position: absolute; top: 2px; left: -60px; width: 46px; height: 22px;
   animation: belt-plane 16s linear infinite;
@@ -11482,12 +11541,12 @@ a.ocust__name:hover { color: var(--accent-text); }
 .belt { position: relative; z-index: 1; overflow: hidden; touch-action: pan-y; cursor: grab; user-select: none; -webkit-user-select: none; }
 .belt:active { cursor: grabbing; }
 .belt__run { display: flex; gap: 14px; width: max-content; padding: 0 7px; will-change: transform; }
-/* The belt itself: amber and charcoal in equal bands, running the way the boxes go. */
+/* The belt itself: green and yellow in equal bands, running the way the boxes go. */
 .belt__floor {
   display: block; height: 14px; margin-top: -3px; border-top: 2px solid #CBD5E1; border-radius: 2px 2px 5px 5px;
   background:
     linear-gradient(rgba(255, 255, 255, 0.2), transparent 45%, rgba(0, 0, 0, 0.4)),
-    repeating-linear-gradient(90deg, #F59E0B 0 11px, #1F2937 11px 22px) 0 0 / 22px 100%;
+    repeating-linear-gradient(90deg, #16A34A 0 11px, #FACC15 11px 22px) 0 0 / 22px 100%;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
   animation: belt-roll 0.65s linear infinite;
 }
@@ -11502,8 +11561,10 @@ a.ocust__name:hover { color: var(--accent-text); }
   background: linear-gradient(#2A1708, #5C3A1B);
 }
 .crate__mouth::before {
-  content: ''; position: absolute; bottom: 100%; left: 2px; right: 2px; height: 11px;
-  background: linear-gradient(#D9A862, #C08A47); clip-path: polygon(0 0, 100% 0, 94% 100%, 6% 100%);
+  content: ''; position: absolute; bottom: 100%; left: -3px; right: -3px; height: 13px;
+  background: linear-gradient(#E8BE7E, #C9914C 60%, #B07A3A);
+  clip-path: polygon(0 0, 100% 0, 95% 100%, 5% 100%);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 /* The item: in front of the inside, behind the front of the box, so it sinks into it. */
 .thumb.crate__drop {
@@ -11519,8 +11580,7 @@ a.ocust__name:hover { color: var(--accent-text); }
   60% { transform: translateY(22px) rotate(6deg); opacity: 1; }
   100% { transform: translateY(48px) rotate(0deg) scale(0.92); opacity: 1; }
 }
-/* The front of the box: corrugated kraft, shaded on the sides, a flap folded
-   out at each end that stays clear of the next box along. */
+/* The front of the box: corrugated kraft, shaded on the sides. */
 .crate__box {
   position: relative; z-index: 2; display: grid; place-items: center; width: 88px; height: 56px;
   border-radius: 2px 2px 5px 5px; transform-origin: 50% 100%;
@@ -11532,16 +11592,16 @@ a.ocust__name:hover { color: var(--accent-text); }
   box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.5), inset 0 -3px 0 rgba(0, 0, 0, 0.18), 0 5px 8px -2px rgba(0, 0, 0, 0.5);
   animation: crate-bump 0.5s ease-out calc(var(--d) + 0.95s) both;
 }
-.crate__box::before, .crate__box::after {
-  content: ''; position: absolute; top: -1px; width: 14px; height: 9px; background: linear-gradient(#D19A55, #B98144);
-  box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.45);
+/* The front flap, folded down over the face, casting a little shadow. */
+.crate__box::before {
+  content: ''; position: absolute; top: 0; left: -2px; right: -2px; height: 9px; border-radius: 2px 2px 1px 1px;
+  background: linear-gradient(#C68E4B, #B07A3A);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.45), 0 2px 3px rgba(60, 30, 5, 0.35);
 }
-.crate__box::before { right: 100%; transform-origin: 100% 100%; transform: rotate(-74deg); border-radius: 2px 0 0 2px; }
-.crate__box::after { left: 100%; transform-origin: 0 100%; transform: rotate(74deg); border-radius: 0 2px 2px 0; }
 @keyframes crate-bump { 30% { transform: scale(1.06, 0.9); } 65% { transform: scale(0.97, 1.04); } }
 /* Where it's going, as a postage stamp with a perforated edge. */
 .crate__stamp {
-  position: absolute; top: 5px; left: 50%; padding: 3px 7px; white-space: nowrap;
+  position: absolute; top: 8px; left: 50%; padding: 3px 7px; white-space: nowrap;
   transform: translateX(-50%) rotate(-5deg); background: #FFF7E6; color: #7F1D1D;
   font-size: 10px; font-weight: 800; line-height: 1.2; letter-spacing: 0.02em;
   outline: 1px solid rgba(127, 29, 29, 0.45); outline-offset: -3px;
@@ -11550,7 +11610,7 @@ a.ocust__name:hover { color: var(--accent-text); }
   mask: linear-gradient(#000 0 0) 50% 50% / calc(100% - 4px) calc(100% - 4px) no-repeat, radial-gradient(circle 1.6px, transparent 95%, #000) -2.5px -2.5px / 5px 5px;
   filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.2));
 }
-.crate__label { display: grid; justify-items: center; margin-top: 18px; line-height: 1.05; color: #3B2410; }
+.crate__label { display: grid; justify-items: center; margin-top: 22px; line-height: 1.05; color: #3B2410; }
 .crate__label b { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-base); }
 .crate__label small { font-size: 9px; font-weight: var(--w-semi); opacity: 0.85; }
 .crate__plus {
@@ -11566,7 +11626,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .crate:hover .crate__box { box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.5), 0 0 0 2px #FEF08A, 0 4px 12px rgba(254, 240, 138, 0.4); }
 
 @media (prefers-reduced-motion: reduce) {
-  .stage__bulbs span, .stage__spot, .ticket, .ticket__curtain, .flip__tile, .ticket__dot, .remind__bell.is-ringing { animation: none; }
+  .stage__bulbs span, .stage__spot, .stage__drape, .stage__floor i, .ticket, .ticket__curtain, .flip__tile, .ticket__dot, .remind__bell.is-ringing { animation: none; }
   .ticket__curtain { transition: none; }
   .belt__floor, .belt__scene, .belt__sun, .plane, .crate__box, .rail--belt .rail__icon { animation: none; }
   .belt { overflow-x: auto; cursor: auto; }
