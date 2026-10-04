@@ -9,6 +9,7 @@ import { stepButtonLabel, stepTickKey, ticksOf, type RouteStep, type StepAssigne
 import { ApiRequestError, api, type OrderState } from '../api';
 import { formatDate } from '../format';
 import { ErrorNotice, Modal } from './ui';
+import { useUndo } from './Undo';
 
 /** A button on a rung: the one to press next, or one already pressed. */
 export type StepButtonState = 'done' | 'next';
@@ -157,6 +158,7 @@ export function useStepActs(
   const [awb, setAwb] = useState('');
 
   const order = state?.order;
+  const offerUndo = useUndo();
   const live = Boolean(state && order && state.side === 'seller' && order.placedAt !== null && !isStopped(order.status));
 
   async function tick(checkpoint: string, on: boolean, shipment?: { courier?: string; awb?: string; label?: string }) {
@@ -164,7 +166,16 @@ export function useStepActs(
     setBusy(true);
     setError(null);
     try {
-      await api.setCheckpoint(order.id, checkpoint, on, shipment);
+      const result = await api.setCheckpoint(order.id, checkpoint, on, shipment);
+      const undo = result.undo;
+      if (undo) {
+        offerUndo({
+          label: `${order.itemName} updated`,
+          until: undo.until,
+          undo: async () => { await api.setCheckpoint(order.id, checkpoint, !on, undefined, undo.id); },
+          onUndone: () => void onDone(),
+        });
+      }
       setShipping(false);
       setAsking(false);
       setReceiving(false);

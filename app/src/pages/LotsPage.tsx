@@ -13,6 +13,7 @@ import {
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { LotPhaseBadge, lotLabel } from '../components/LotName';
+import { useUndo } from '../components/Undo';
 import { Ladder } from '../components/Ladder';
 import { SerialButtons } from '../components/SerialButtons';
 import { serialButtons, withReceivedAs } from '@shared/buttons';
@@ -900,6 +901,7 @@ export function LotDetail({ lotId, onBack, customers }: {
 }) {
   const [data, setData] = useState<LotContents | null>(null);
   const [unassigned, setUnassigned] = useState<LotsResponse['unassigned']>([]);
+  const offerUndo = useUndo();
   const [siblings, setSiblings] = useState<LotsResponse['lots']>([]);
   const [error, setError] = useState<string | null>(null);
   /*
@@ -1065,7 +1067,30 @@ export function LotDetail({ lotId, onBack, customers }: {
       setGate({ targetAbsolute, details, label, missing });
       return;
     }
-    void run(label, () => api.stepLot(lot.id, { to: targetAbsolute, ...details }).then(() => {}));
+    void run(label, () => api.stepLot(lot.id, { to: targetAbsolute, ...details }).then(offerLotUndo));
+  }
+
+  /** After a move of the whole lot: three minutes to take it back. */
+  function offerLotUndo(result: { undo?: { id: string; until: string; to: number } }) {
+    const undo = result.undo;
+    if (!undo) return;
+    offerUndo({
+      label: `${lot.name} moved`,
+      until: undo.until,
+      undo: async () => { await api.stepLot(lot.id, { to: undo.to, undoOf: undo.id }); },
+      onUndone: () => { setFlash({ text: 'Move undone. Nobody was told.', ok: true }); void load(); },
+    });
+  }
+
+  /** After an item's button or move: three minutes to take it back. */
+  function offerItemUndo(itemName: string, undo: { id: string; until: string } | undefined, back: () => Promise<unknown>) {
+    if (!undo) return;
+    offerUndo({
+      label: `${itemName} updated`,
+      until: undo.until,
+      undo: async () => { await back(); },
+      onUndone: () => { setFlash({ text: 'Undone. Nobody was told.', ok: true }); void load(); },
+    });
   }
 
   async function confirmBypass() {
@@ -1083,7 +1108,7 @@ export function LotDetail({ lotId, onBack, customers }: {
       if (failed > 0) {
         throw new Error(`${failed} of ${missing.length} items could not be marked received, so the lot has not moved. Try again.`);
       }
-      await api.stepLot(lot.id, { to: targetAbsolute, ...details });
+      offerLotUndo(await api.stepLot(lot.id, { to: targetAbsolute, ...details }));
     });
   }
 
@@ -1294,7 +1319,9 @@ export function LotDetail({ lotId, onBack, customers }: {
                   others={others}
                   busy={busy}
                   onTick={(key, on) =>
-                    run('Item updated.', () => api.setCheckpoint(item.id, key, on).then(() => {}))}
+                    run('Item updated.', () => api.setCheckpoint(item.id, key, on).then((result) =>
+                      offerItemUndo(item.itemName, result.undo, () =>
+                        api.setCheckpoint(item.id, key, !on, undefined, result.undo!.id))))}
                   onLot={() => document.getElementById('lot-tracking')
                     ?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                   onMove={(to, details) => setAsking({
@@ -1303,7 +1330,9 @@ export function LotDetail({ lotId, onBack, customers }: {
                       {' '}{item.buyerName} reads it; the rest of the lot stays where it is.</>,
                     yes: 'Move this item',
                     go: () => void run(`Item moved to ${route.steps[to]?.name ?? 'that step'}.`, () =>
-                      api.stepItem(item.id, { to, ...details }).then(() => {})),
+                      api.stepItem(item.id, { to, ...details }).then((result) =>
+                        offerItemUndo(item.itemName, result.undo, () =>
+                          api.stepItem(item.id, { to: result.undo!.to, undoOf: result.undo!.id })))),
                   })}
                   onNote={(text, at) =>
                     run('Note added.', () => api.stepItem(item.id, { note: text, at }).then(() => {}))}

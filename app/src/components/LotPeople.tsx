@@ -9,6 +9,7 @@ import { countOf } from '@shared/board';
 import { ApiRequestError, api, type BoardCustomer, type LotBoard } from '../api';
 import { EmptyState, Icon } from './ui';
 import { formatWeight } from '../format';
+import { useUndo } from './Undo';
 
 /**
  * One lot, worked customer by customer.
@@ -28,6 +29,7 @@ export function LotPeople({ board, onChanged, onError }: {
   onChanged: (next: LotBoard) => void;
   onError: (message: string) => void;
 }) {
+  const offerUndo = useUndo();
   /** Ticks in flight, so a row cannot be clicked twice into a race. */
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
@@ -59,6 +61,17 @@ export function LotPeople({ board, onChanged, onError }: {
     try {
       const result = await api.setCheckpoint(orderId, checkpoint, on);
       onChanged({ ...before, tally: result.tally });
+      const undo = result.undo;
+      if (undo) {
+        offerUndo({
+          label: 'Tick saved',
+          until: undo.until,
+          undo: async () => {
+            const back = await api.setCheckpoint(orderId, checkpoint, !on, undefined, undo.id);
+            onChanged({ ...before, tally: back.tally });
+          },
+        });
+      }
     } catch (err) {
       onChanged(before);
       onError(err instanceof ApiRequestError ? err.message : 'Could not save that tick.');

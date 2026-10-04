@@ -7,6 +7,9 @@
  */
 import assert from 'node:assert/strict';
 
+// Steps are undoable for three minutes in the app; these checks read every
+// step at once, as they were written to, except the one that tests undo.
+process.env.FIGMARK_UNDO_WINDOW_MS = '0';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse } = await import(new URL('http.js', fns));
@@ -8778,6 +8781,75 @@ await check('a closed lot takes no new orders, and its buyers are told it is pre
   assert.equal(reopened.jsonBody.lot.status, 'open');
   const filed = await assignOrderToLot(req({ headers: auth, params: { id: second.id }, body: { lotId: lot.id } }), ctx);
   assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
+});
+
+await check('a step forward can be undone for three minutes, and shows nowhere until then', async () => {
+  process.env.FIGMARK_UNDO_WINDOW_MS = String(3 * 60 * 1000);
+  try {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Undo box' } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'Undo item', priceMinor: 2_000, sourcing: 'import', quantityAvailable: 3 },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Undo Buyer');
+  const order = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.id } }), ctx);
+  const startAt = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody.route.currentStep;
+
+  // Moved: in effect at once, offered for undoing, on no timeline, nobody told.
+  const moved = await stepLot(req({ headers: auth, params: { id: lot.id }, body: {} }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  const undo = moved.jsonBody.undo;
+  assert.ok(undo && undo.id && undo.until, 'the move comes with an undo');
+  assert.ok(Date.parse(undo.until) - Date.now() > 170_000, 'about three minutes');
+  let tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.ok(!tracked.order.stageHistory.some((event) => event.undoId === undo.id), 'hidden from the buyer timeline');
+  let told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
+  assert.ok(!told.some((row) => row.title.startsWith('Undo box')), 'the buyer is not told yet');
+
+  // Undone: back where it was, no trace, the held notice withdrawn.
+  const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
+  assert.equal(back.status, 200, JSON.stringify(back.jsonBody));
+  const board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.equal(board.route.currentStep, startAt);
+  assert.ok(!board.history.some((event) => event.undoId === undo.id));
+  assert.ok((await noticesFor(buyer.id)).filter((row) => row.undoId === undo.id).every((row) => row.withdrawn));
+  const twice = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
+  assert.equal(twice.status, 409);
+  assert.equal(twice.jsonBody.error, 'undo_expired');
+
+  // Left alone past the window: it is history, shown and told, and no longer undoable.
+  const again = (await stepLot(req({ headers: auth, params: { id: lot.id }, body: {} }), ctx)).jsonBody;
+  const repository = await getRepository();
+  const past = new Date(Date.now() - 1000).toISOString();
+  const age = (history) => history.map((event) => (event.undoId === again.undo.id ? { ...event, undoUntil: past } : event));
+  const stored = await repository.getLot(lot.sellerId, lot.id);
+  await repository.updateLot({ ...stored, stageHistory: age(stored.stageHistory) });
+  const storedOrder = await repository.getOrder(order.id);
+  await repository.updateOrder({ ...storedOrder, stageHistory: age(storedOrder.stageHistory) });
+  for (const row of await noticesFor(buyer.id)) {
+    if (row.undoId === again.undo.id) await repository.saveNotification({ ...row, notBefore: past });
+  }
+  tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.ok(tracked.order.stageHistory.some((event) => event.undoId === again.undo.id), 'shown once the window closes');
+  told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.title.startsWith('Undo box')), 'and the buyer is told');
+  const late = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: again.undo.to, undoOf: again.undo.id } }), ctx);
+  assert.equal(late.status, 409);
+
+  // A button press undone leaves no "undone" line behind.
+  const pressed = await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: true } }), ctx);
+  assert.equal(pressed.status, 200, JSON.stringify(pressed.jsonBody));
+  assert.ok(pressed.jsonBody.undo);
+  const unpressed = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: false, undoOf: pressed.jsonBody.undo.id },
+  }), ctx);
+  assert.equal(unpressed.status, 200, JSON.stringify(unpressed.jsonBody));
+  assert.ok(!unpressed.jsonBody.order.checkpoints.china_packed);
+  const after = await repository.getOrder(order.id);
+  assert.ok(!after.stageHistory.some((event) => /undone/.test(event.note ?? '')));
+  } finally {
+    process.env.FIGMARK_UNDO_WINDOW_MS = '0';
+  }
 });
 
 await check('a route that never joins a lot cannot be given to one', async () => {

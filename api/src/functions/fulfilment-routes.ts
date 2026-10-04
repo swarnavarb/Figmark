@@ -12,10 +12,11 @@ import {
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, ticksOf
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
+import { UNDO_EXPIRED, canUndo, undoTag, withoutUndo } from './undo.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
 import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import {
-  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, sourcingOf, stagesFor,
+  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, sourcingOf, stagesFor,
 } from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
@@ -820,7 +821,7 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
    */
   const stepsForNotes = route ? route.steps : before.steps;
   const notedTexts = new Set(order.stageHistory.map((event) => event.note));
-  const healedHistory = [
+  const healedHistory: StageEvent[] = [
     ...order.stageHistory,
     ...ORDER_CHECKPOINTS.filter((checkpoint) => order.checkpoints?.[checkpoint] && !notedTexts.has(CHECKPOINT_EVENT_TEXT[checkpoint])
       // Received in the seller's own words is a recorded tick too.
@@ -833,7 +834,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
         recordedBy: order.sellerId,
       })),
   ];
-  const orderForClient = healedHistory.length === order.stageHistory.length ? order : { ...order, stageHistory: healedHistory };
+  // A step that can still be undone is in effect but on no timeline yet.
+  const orderForClient = { ...order, stageHistory: settledHistory(healedHistory) };
 
   /*
    * A checkpoint that has been ticked has happened.
@@ -1057,7 +1059,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const orderId = request.params.id;
   if (!orderId) return error(400, 'invalid_order', 'An order id is required.');
 
-  let body: { checkpoint?: string; on?: boolean; orderIds?: string[]; courier?: string; awb?: string; label?: string };
+  let body: { checkpoint?: string; on?: boolean; orderIds?: string[]; courier?: string; awb?: string; label?: string; undoOf?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -1119,6 +1121,14 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const on = body.on !== false;
   const now = new Date().toISOString();
 
+  /* Undoing a press made in the last three minutes: the opposite press, with
+     the first one taken off the timeline instead of a second "undone" line
+     written under it. Outside the window it is an ordinary press. */
+  const undoing = body.undoOf ?? null;
+  if (undoing && !canUndo(order.stageHistory, undoing)) return error(409, 'undo_expired', UNDO_EXPIRED);
+  const tag = undoing ? null : undoTag(now);
+  const undoReply = (key: string) => (tag ? { undo: { id: tag.undoId, until: tag.undoUntil, checkpoint: key, on: !on } } : {});
+
   // Shipping or handing over a booking is serving it, and the seller has not
   // yet said they will. Undoing a tick is always allowed.
   if (on && (checkpoint === 'dispatched' || checkpoint === 'delivered') && awaitingAcceptance(order)) {
@@ -1133,13 +1143,16 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     }
     order.customTicks = { ...(order.customTicks ?? {}), [customId]: on ? now : null };
     order.updatedAt = now;
-    order.stageHistory = [
-      ...order.stageHistory,
-      { stage: order.stage, step: button.name, enteredAt: now, note: on ? `${button.name}.` : `${button.name} — undone.`, recordedBy: user.id },
-    ];
+    order.stageHistory = undoing
+      ? withoutUndo(order.stageHistory, undoing)
+      : [
+          ...order.stageHistory,
+          { stage: order.stage, step: button.name, enteredAt: now, note: on ? `${button.name}.` : `${button.name} — undone.`, recordedBy: user.id, ...tag },
+        ];
     const saved = await repository.updateOrder(order);
     return json(200, {
       order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, customTicks: saved.customTicks ?? {}, status: saved.status },
+      ...undoReply(key),
     });
   }
 
@@ -1221,7 +1234,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const found = stepForCheckpoint(stepsForTick, checkpoint, order);
   // Filed under the step as this order reads it - in its own words when it has some.
   const tickedStep = found && checkpoint === 'china_received' && order.receivedAs ? { ...found, name: order.receivedAs } : found;
-  order.stageHistory = [
+  order.stageHistory = undoing ? withoutUndo(order.stageHistory, undoing) : [
     ...order.stageHistory,
     {
       stage: order.stage,
@@ -1229,11 +1242,12 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       enteredAt: now,
       note: on ? receivedNote ?? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
       recordedBy: user.id,
+      ...tag,
     },
     // Its own line rather than folded into the tick's, which reading an order
     // matches word for word to tell a recorded tick from an unrecorded one.
     ...(shipmentNote
-      ? [{ stage: order.stage, step: tickedStep?.name, enteredAt: now, note: shipmentNote, recordedBy: user.id }]
+      ? [{ stage: order.stage, step: tickedStep?.name, enteredAt: now, note: shipmentNote, recordedBy: user.id, ...tag }]
       : []),
   ];
 
@@ -1283,6 +1297,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   return json(200, {
     order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, status: saved.status },
     tally: tally(siblings),
+    ...undoReply(key),
   });
 }
 

@@ -59,6 +59,19 @@ export function lotPhase(lot: Pick<Lot, 'status' | 'stage' | 'route' | 'currentS
 const LEFT = /dispatch|ship|transit|sail|flight|flown|fly|depart|forwards?\b|on (its|the) way|left/i;
 const ARRIVED = /receiv|land|arriv|customs|clear|destination warehouse/i;
 
+/** How long a step forward can be taken back before it shows on the timeline. */
+export const UNDO_WINDOW_MS = 3 * 60 * 1000;
+
+/** Whether an event is still inside its undo window, and so not shown yet. */
+export function isPendingUndo(event: Pick<StageEvent, 'undoUntil'>, now: number = Date.now()): boolean {
+  return Boolean(event.undoUntil) && Date.parse(event.undoUntil!) > now;
+}
+
+/** A history as a timeline shows it: everything except what can still be undone. */
+export function settledHistory<T extends Pick<StageEvent, 'undoUntil'>>(events: readonly T[], now: number = Date.now()): T[] {
+  return events.filter((event) => !isPendingUndo(event, now));
+}
+
 /**
  * Partition key for an order with no shipment lot behind it.
  *

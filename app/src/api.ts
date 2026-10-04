@@ -338,6 +338,12 @@ export interface ActivityResponse {
 
 export type DirectoryForwarder = ForwarderProfile & { id: string };
 
+/** A step forward that can still be taken back, and until when. */
+export interface UndoOffer {
+  id: string;
+  until: string;
+}
+
 export interface LotSummary {
   lot: Lot;
   listingCount: number;
@@ -1838,8 +1844,8 @@ export const api = {
   addItemsToLot: (id: string, orderIds: string[]) =>
     post<{ added: number; orderIds: string[] }>(`/lots/${encodeURIComponent(id)}/items`, { orderIds }),
   /** Move the lot along its route. Omit `to` for the next step. */
-  stepLot: (id: string, body: { to?: number; note?: string; trackingId?: string; shipper?: string } = {}) =>
-    post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
+  stepLot: (id: string, body: { to?: number; note?: string; trackingId?: string; shipper?: string; undoOf?: string } = {}) =>
+    post<{ lot: Lot; ordersUpdated: number; undo?: UndoOffer & { to: number } }>(`/lots/${encodeURIComponent(id)}/step`, body),
   /** Put the lot on a different ladder, carrying its position across. */
   /** Shut a lot to new orders (prepping for dispatch), or open it again. */
   closeLot: (id: string, closed: boolean) =>
@@ -1850,8 +1856,8 @@ export const api = {
   noteOnLot: (id: string, note: string, at?: number) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/note`, { note, at }),
   /** Move one item on its own, or note something about it. Omit `to` to just note. */
-  stepItem: (id: string, body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string }) =>
-    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/step`, body),
+  stepItem: (id: string, body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string; undoOf?: string }) =>
+    post<{ order: Order; undo?: UndoOffer & { to: number } }>(`/orders/${encodeURIComponent(id)}/step`, body),
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
 
   templates: () => request<{ templates: PostTemplate[] }>('/templates'),
@@ -1954,10 +1960,14 @@ export const api = {
   /** `checkpoint` is one of the seven, or `custom:<step id>` for a route's own button. */
   setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
     /** The courier and AWB with a dispatch; `label`, where an item with no lot was received. */
-    shipment?: { courier?: string; awb?: string; label?: string }) =>
-    post<{ order: { id: string; checkpoints: BoardOrder['checkpoints'] }; tally: LotTally }>(
+    shipment?: { courier?: string; awb?: string; label?: string }, undoOf?: string) =>
+    post<{
+      order: { id: string; checkpoints: BoardOrder['checkpoints'] };
+      tally: LotTally;
+      undo?: UndoOffer & { checkpoint: string; on: boolean };
+    }>(
       `/orders/${encodeURIComponent(orderId)}/checkpoint`,
-      { checkpoint, on, ...shipment },
+      { checkpoint, on, ...shipment, ...(undoOf ? { undoOf } : {}) },
     ),
 
   inbox: () => request<Inbox>('/messages'),

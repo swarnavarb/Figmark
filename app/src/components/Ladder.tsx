@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from 'react';
-import { isLotEvent, kindOf } from '@shared/fulfilment';
+import { isLotEvent, kindOf, settledHistory } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import {
@@ -111,7 +111,8 @@ export function Ladder({
     setShipper('');
   }
 
-  const notes = notesByStep(steps, history ?? [], current);
+  // What can still be undone is not on the timeline yet.
+  const notes = notesByStep(steps, settledHistory(history ?? []), current);
   /* Whether the lot has started carrying this item: until the item reaches a
      rung on the lot's half of the route, the lot is still a promise. */
   const stillWaiting = current < 0 || !steps[current] || sideOf(steps[current]!, current) === 'pre';

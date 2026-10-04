@@ -11,6 +11,7 @@ import { lotIsDone, lotPhase, sourcingOf } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
 import { LotName, LotPhaseBadge, lotLabel } from '../components/LotName';
+import { useUndo } from '../components/Undo';
 import { RarityRibbon, XpBar } from '../components/Quest';
 import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderStatus';
 import { LBox, OptionTiles } from '../components/ListingForm';
@@ -986,13 +987,8 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     return () => window.clearTimeout(timer);
   }, [data, focusOrder, here, navigate]);
 
-  /** The press this order card offers, and the one just made - kept a moment so a slip can be undone. */
-  const [undoable, setUndoable] = useState<{ rowId: string; button: CardButton } | null>(null);
-  useEffect(() => {
-    if (!undoable) return;
-    const timer = window.setTimeout(() => setUndoable(null), 9000);
-    return () => window.clearTimeout(timer);
-  }, [undoable]);
+  /** A press can be taken back for three minutes, from the undo bar. */
+  const offerUndo = useUndo();
 
   /**
    * The order's next button, pressed from its card - or undone. The card's
@@ -1016,9 +1012,17 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     setBusy(row.id);
     setError(null);
     try {
-      await api.setCheckpoint(row.id, button.checkpoint, on, label ? { label } : undefined);
+      const result = await api.setCheckpoint(row.id, button.checkpoint, on, label ? { label } : undefined);
       setReceiving(null);
-      setUndoable(on ? { rowId: row.id, button } : null);
+      const undo = result.undo;
+      if (undo) {
+        offerUndo({
+          label: `${row.itemName}: ${button.label}${on ? '' : ' (undone)'}`,
+          until: undo.until,
+          undo: async () => { await api.setCheckpoint(row.id, button.checkpoint, !on, undefined, undo.id); },
+          onUndone: () => void refresh(),
+        });
+      }
       await refresh();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
@@ -1090,7 +1094,6 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       glowing={glowing === row.id}
       busy={busy === row.id}
       needsAnswer={needsAnswer.has(row.id)}
-      undoable={undoable?.rowId === row.id ? undoable.button : null}
       onPress={(button, on) => void press(row, button, on)}
       onLotTracking={() => (onTracking
         ? onTracking()
@@ -1718,7 +1721,7 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, inLot = false, glowing, busy, needsAnswer, undoable, onPress, onLotTracking, onFile, onReject,
+  index, row, store, from, inLot = false, glowing, busy, needsAnswer, onPress, onLotTracking, onFile, onReject,
   onAccept, onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -1734,8 +1737,6 @@ function OrderRow({
   glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
-  /** The press just made on this card, while it can still be taken back. */
-  undoable: CardButton | null;
   onPress: (button: CardButton, on: boolean) => void;
   /** The Lot stop on this card's buttons: opens the lot's Tracking, where the crate is moved. */
   onLotTracking: () => void;
@@ -1923,11 +1924,6 @@ function OrderRow({
         ))}
         {working && !row.serial && !row.next && row.waitingOnLot && (
           <span className="ocard__wait">🚢 Moves with the lot</span>
-        )}
-        {undoable && !row.serial && (
-          <button type="button" className="ocard__undo" disabled={busy} onClick={() => onPress(undoable, false)}>
-            ✓ {undoable.label} · Undo
-          </button>
         )}
         {!row.inHand && !isClosed(row) && !lotHref && (
           <button type="button" className="orow__toggle" aria-label="Add this order to a lot" onClick={onFile}>

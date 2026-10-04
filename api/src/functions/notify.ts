@@ -36,7 +36,7 @@ export async function notify(
   repository: Repo,
   audience: readonly (string | null | undefined)[],
   draft: NoticeDraft,
-  options: { except?: string } = {},
+  options: { except?: string; notBefore?: string; undoId?: string } = {},
 ): Promise<void> {
   const now = new Date().toISOString();
   const people = new Set(
@@ -54,6 +54,8 @@ export async function notify(
           body: draft.body,
           link: draft.link,
           readAt: null,
+          ...(options.notBefore ? { notBefore: options.notBefore } : {}),
+          ...(options.undoId ? { undoId: options.undoId } : {}),
           createdAt: now,
           updatedAt: now,
         };

@@ -749,6 +749,15 @@ export type StageEventKind = 'step' | 'note' | 'joined' | 'moved';
 export interface StageEvent {
   stage: FulfilmentStage;
   enteredAt: string;
+  /**
+   * Progress can be taken back for a few minutes after it is made. Until
+   * `undoUntil` passes the event is in effect but not shown on any timeline
+   * (and its buyers are not told), so a slip of the thumb that is undone in
+   * time leaves no trace. `undoId` ties together every copy of one action -
+   * the lot's and each of its items'.
+   */
+  undoId?: string;
+  undoUntil?: string;
   note: string | null;
   /** User id that recorded the transition. */
   recordedBy: string;
@@ -1750,6 +1759,12 @@ export interface Notification extends BaseDocument {
   /** Where tapping it goes, as an in-app route. */
   link: string;
   readAt: string | null;
+  /** Held back until then: the action it reports can still be undone. */
+  notBefore?: string;
+  /** The undoable action it reports, so undoing it can take the notice back. */
+  undoId?: string;
+  /** Taken back because what it reported was undone. Never shown. */
+  withdrawn?: boolean;
 }
 
 export type NotificationKind =

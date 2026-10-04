@@ -16,6 +16,7 @@ import { autoReleaseDays } from '../settings.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
+import { UNDO_EXPIRED, canUndo, undoTag, withdrawNotices, withoutUndo } from './undo.js';
 import { checkButtons, withButtons } from '../../../shared/buttons.js';
 
 /**
@@ -369,7 +370,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   if (!id) return error(400, 'invalid_request', 'A lot id is required.');
   const { lot, userId } = await ownedLot(request, id);
 
-  let body: { to?: number; note?: string; trackingId?: string; shipper?: string };
+  let body: { to?: number; note?: string; trackingId?: string; shipper?: string; undoOf?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -379,6 +380,39 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   const route = routeOf(lot);
   const from = currentStepOf(lot);
   const target = typeof body.to === 'number' ? Math.trunc(body.to) : from + 1;
+
+  /* Taking back a move made in the last three minutes: back to where it was,
+     with the move gone from every timeline and its notices withdrawn - as
+     if it never happened, because as far as any buyer knows it did not. */
+  if (body.undoOf) {
+    if (!canUndo(lot.stageHistory, body.undoOf) || typeof body.to !== 'number') {
+      return error(409, 'undo_expired', UNDO_EXPIRED);
+    }
+    const undoId = body.undoOf;
+    const repository = await getRepository();
+    const now = new Date().toISOString();
+    const stage = coarseStage(route, target);
+    const restored = await repository.updateLot({
+      ...lot,
+      currentStep: target,
+      stage,
+      stageHistory: withoutUndo(lot.stageHistory, undoId),
+      updatedAt: now,
+    });
+    const touched = (await repository.listOrdersForLot(lot.id))
+      .filter((order) => order.stageHistory.some((event) => event.undoId === undoId));
+    await Promise.all(touched.map((order) => repository.updateOrder({
+      ...order,
+      stage,
+      // Back to filling, an item rides its own buttons again rather than a
+      // position that would read as received before it was.
+      currentStep: target < lotOffset(route) ? undefined : target,
+      stageHistory: withoutUndo(order.stageHistory, undoId),
+      updatedAt: now,
+    })));
+    await withdrawNotices(repository, touched.map((order) => order.buyerId), undoId);
+    return json(200, { lot: restored, ordersUpdated: touched.length, undone: true });
+  }
 
   /* A lot may not be stepped into the half of the route that happens to one
      item at a time. The floor is one short of its own first step, which is
@@ -425,6 +459,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     // read as tracking for a leg that never had a carrier.
     trackingId: step.forward ? body.trackingId?.trim() || undefined : undefined,
     shipper: step.forward ? body.shipper?.trim() || undefined : undefined,
+    ...undoTag(now),
   };
 
   const repository = await getRepository();
@@ -451,7 +486,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
         // Written on the item as well as the lot: an item the seller had moved
         // on its own is brought back in line by the next move of the lot,
         // rather than staying stuck at a position nobody remembers setting.
-        currentStep: target,
+        currentStep: target < lotOffset(route) ? undefined : target,
         stageHistory: [...order.stageHistory, event],
         status: travellingStatus(order.status),
         updatedAt: now,
@@ -471,10 +506,14 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
       body: `${live.length} ${live.length === 1 ? 'item' : 'items'} in this lot moved.`,
       link: '/me?tab=purchases',
     },
-    { except: lot.sellerId },
+    { except: lot.sellerId, notBefore: event.undoUntil, undoId: event.undoId },
   );
 
-  return json(200, { lot: updated, ordersUpdated: live.length });
+  return json(200, {
+    lot: updated,
+    ordersUpdated: live.length,
+    undo: { id: event.undoId, until: event.undoUntil, to: from },
+  });
 }
 
 /**
@@ -838,14 +877,21 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   if (!id) return error(400, 'invalid_request', 'An order id is required.');
   const { order, lot, userId, repository } = await ownedOrder(request, id);
 
-  let body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string };
+  let body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string; undoOf?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     body = {};
   }
 
-  const note = body.note?.trim() || null;
+  // Taking back a move made in the last three minutes: a move the other way
+  // that removes the first one instead of writing a second.
+  const undoing = body.undoOf ?? null;
+  if (undoing && (!canUndo(order.stageHistory, undoing) || typeof body.to !== 'number')) {
+    return error(409, 'undo_expired', UNDO_EXPIRED);
+  }
+
+  const note = undoing ? null : body.note?.trim() || null;
   const moving = typeof body.to === 'number';
   if (!moving && !note) {
     return error(400, 'invalid_request', 'Write a note, or pick a step to move it to.');
@@ -882,6 +928,8 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
     recordedBy: userId,
     trackingId: moving && targetStep?.forward ? body.trackingId?.trim() || undefined : undefined,
     shipper: moving && targetStep?.forward ? body.shipper?.trim() || undefined : undefined,
+    // A move can be taken back for a while; a note is just said.
+    ...(moving ? undoTag(now) : {}),
   };
 
   const last = Boolean(route) && target === route!.steps.length - 1;
@@ -895,7 +943,11 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'delivery_final', lockedReason(order));
   }
 
-  const next: Order = { ...order, stageHistory: [...order.stageHistory, event], updatedAt: now };
+  const next: Order = {
+    ...order,
+    stageHistory: undoing ? withoutUndo(order.stageHistory, undoing) : [...order.stageHistory, event],
+    updatedAt: now,
+  };
   let delivered = false;
   if (moving) {
     next.currentStep = target;
@@ -918,6 +970,11 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   // Only arriving, or being taken back, can finish or reopen the lot.
   if (moving && (updated.status === 'delivered') !== wasDelivered) await syncLotDelivery(updated, repository);
 
+  if (undoing) {
+    await withdrawNotices(repository, [order.buyerId], undoing);
+    return json(200, { order: updated, undone: true });
+  }
+
   // A delivery already sent its own notice, with what to do next.
   if (!delivered) await notify(
     repository,
@@ -928,10 +985,13 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
       body: note ?? 'Your item moved on.',
       link: '/me?tab=purchases',
     },
-    { except: order.sellerId },
+    { except: order.sellerId, notBefore: event.undoUntil, undoId: event.undoId },
   );
 
-  return json(200, { order: updated });
+  return json(200, {
+    order: updated,
+    ...(moving && event.undoId ? { undo: { id: event.undoId, until: event.undoUntil, to: here } } : {}),
+  });
 }
 
 /* ── What the buyer sees ───────────────────────────────────────────────── */

@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { SessionProvider, useSession } from './session';
 import { ToastHost } from './components/Feedback';
+import { UndoHost } from './components/Undo';
 import { QuestProvider } from './components/Quest';
 import { GuestWall } from './components/GuestWall';
 import './styles.css';
@@ -145,7 +146,9 @@ createRoot(container).render(
     <BrowserRouter>
       <SessionProvider>
         <ToastHost>
-          <App />
+          <UndoHost>
+            <App />
+          </UndoHost>
         </ToastHost>
       </SessionProvider>
     </BrowserRouter>
