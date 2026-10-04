@@ -12,6 +12,7 @@ import { formatMoney, timeAgo } from '../format';
 import { Avatar, Modal, PersonLink, Thumb } from './ui';
 import { Icon } from './Icon';
 import { useVoice, VoiceAvatar } from './SocialVoice';
+import { OpeningCard } from './Showcase';
 
 /**
  * One post, and everything people do with it.
@@ -306,6 +307,10 @@ export function SocialPostCard({
           }} />
       )}
 
+      {post.opening && (
+        <OpeningCard sellerId={post.opening.sellerId} saleId={post.opening.saleId}
+          startsAt={post.opening.startsAt} saleName={post.opening.saleName} itemCount={post.opening.itemCount} />
+      )}
       {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
 
       {listing && !post.drop && (

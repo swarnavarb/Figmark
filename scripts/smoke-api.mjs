@@ -105,6 +105,9 @@ const {
   powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSale,
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
 } = await import(new URL('power-sale-routes.js', fns));
+const {
+  fillingLotsRoute: fillingLots, dropsRoute: dropsShelf, dropRoute: readDrop, remindRoute: remindDrop,
+} = await import(new URL('showcase-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
 const {
   acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
@@ -3916,6 +3919,90 @@ await check('a run posts its opening message and its first item', async () => {
   const listed = (await listingDetail(req({ params: { id: first.listingId } }), ctx)).jsonBody;
   assert.equal(listed.listing.priceMinor, 50_000);
   assert.ok(first.windowLeft > 0, 'the window is open');
+});
+
+await check('a drop is on the shelf from its opening message, with a reminder that fires at the first item', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Shelf drop',
+      openingBody: 'Shelf drop in half an hour!',
+      leadMinutes: 30,
+      everyMinutes: 1,
+      windowMinutes: 60,
+      items: [saleItem('Shelf first', 30_000, 40_000), saleItem('Shelf second', 20_000, 25_000)],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const saleId = made.jsonBody.sale.id;
+
+  // Announced, not started: on the shelf, counting down, nothing dropped yet.
+  let shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  let row = shelf.find((entry) => entry.id === saleId);
+  assert.ok(row, 'on the shelf once the opening message is out');
+  assert.equal(row.live, false);
+  assert.ok(Date.parse(row.startsAt) - Date.now() > 25 * 60_000, 'counting down to the first item');
+  // The opening message in the channel carries the countdown too.
+  const thread = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(thread.posts.some((card) => card.post.opening?.saleId === saleId));
+
+  // A buyer asks to be reminded; a guest is asked to sign in.
+  const buyer = await newBuyer('Drop Watcher');
+  const reminded = await remindDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(reminded.status, 200, JSON.stringify(reminded.jsonBody));
+  assert.equal(reminded.jsonBody.drop.reminded, true);
+  assert.equal(reminded.jsonBody.drop.reminders, 1);
+  const guest = await remindDrop(req({ params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(guest.status, 401);
+  assert.equal((await readDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId } }), ctx)).jsonBody.drop.reminded, true);
+
+  // The curtain goes up: the first item drops, and the reminder goes out.
+  const repository = await getRepository();
+  const stored = await repository.getPowerSale('usr_demo', saleId);
+  await repository.savePowerSale({ ...stored, leadMinutes: 0 });
+  shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  row = shelf.find((entry) => entry.id === saleId);
+  assert.equal(row.live, true);
+  const told = await noticesFor(buyer.id);
+  assert.ok(told.some((notice) => notice.title.includes('Shelf drop is dropping now')), 'reminded');
+  const late = await remindDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(late.status, 409);
+
+  // A sale not yet announced is nobody's business.
+  const later = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Secret plan', openingBody: 'Tomorrow.', openingAt: new Date(Date.now() + 86_400_000).toISOString(),
+      everyMinutes: 1, windowMinutes: 60, items: [saleItem('Not yet', 10_000, 12_000)],
+    },
+  }), ctx);
+  shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  assert.ok(!shelf.some((entry) => entry.id === later.jsonBody.sale.id));
+});
+
+await check('boxes filling up lists lots still taking orders that something can be bought into', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Shelf box' } }), ctx)).jsonBody.lot;
+  let lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  assert.ok(!lots.some((row) => row.id === lot.id), 'an empty box is a dead end, not shown');
+
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'In the shelf box', priceMinor: 9_000, sourcing: 'import', quantityAvailable: 4 },
+  }), ctx)).jsonBody.listing;
+  await assignToLot(req({ headers: auth, params: { id: lot.id }, body: { listingIds: [listing.id] } }), ctx);
+  const buyer = await newBuyer('Box Joiner');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx);
+
+  lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  const row = lots.find((entry) => entry.id === lot.id);
+  assert.ok(row, 'shown once it has something to buy');
+  assert.equal(row.people, 1);
+  assert.ok(row.listings.some((entry) => entry.id === listing.id));
+  assert.ok(lots.filter((entry) => entry.sellerId === 'usr_demo').length <= 2, 'no shop fills the shelf');
+
+  // Shut to new orders: off the shelf.
+  await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: true } }), ctx);
+  lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  assert.ok(!lots.some((entry) => entry.id === lot.id));
 });
 
 await check('a live sale item is in the channel and nowhere else', async () => {

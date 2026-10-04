@@ -338,6 +338,41 @@ export interface ActivityResponse {
 
 export type DirectoryForwarder = ForwarderProfile & { id: string };
 
+/** A lot still taking orders, as the Buy tab's "Boxes filling up" shows it. */
+export interface FillingLot {
+  id: string;
+  name: string;
+  number: string;
+  sellerId: string;
+  shop: { name: string; handle: string | null };
+  originCountry: string | null;
+  destinationCountry: string | null;
+  closesAround: string | null;
+  people: number;
+  orders: number;
+  listings: { id: string; title: string; priceMinor: number; currency: string; photoUrl: string | null }[];
+}
+
+/** A power sale announced in its channel, as the Drops shelf shows it. */
+export interface DropCardData {
+  id: string;
+  sellerId: string;
+  shop: { name: string; handle: string | null };
+  name: string;
+  message: string;
+  openedAt: string | null;
+  startsAt: string;
+  live: boolean;
+  nextAt: string | null;
+  endsAt: string | null;
+  itemCount: number;
+  itemsOut: number;
+  preview: { title: string; priceMinor: number; listPriceMinor: number; out: boolean }[];
+  reminders: number;
+  reminded: boolean;
+  channel: string;
+}
+
 /** A step forward that can still be taken back, and until when. */
 export interface UndoOffer {
   id: string;
@@ -1868,6 +1903,12 @@ export const api = {
   stepItem: (id: string, body: { to?: number; note?: string; at?: number; trackingId?: string; shipper?: string; undoOf?: string }) =>
     post<{ order: Order; undo?: UndoOffer & { to: number } }>(`/orders/${encodeURIComponent(id)}/step`, body),
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
+  fillingLots: () => request<{ lots: FillingLot[] }>('/showcase/lots'),
+  drops: () => request<{ drops: DropCardData[] }>('/showcase/drops'),
+  drop: (sellerId: string, id: string) =>
+    request<{ drop: DropCardData }>(`/showcase/drops/${encodeURIComponent(sellerId)}/${encodeURIComponent(id)}`),
+  remindDrop: (sellerId: string, id: string, on: boolean) =>
+    post<{ drop: DropCardData }>(`/showcase/drops/${encodeURIComponent(sellerId)}/${encodeURIComponent(id)}/remind`, { on }),
 
   templates: () => request<{ templates: PostTemplate[] }>('/templates'),
   saveTemplate: (body: {

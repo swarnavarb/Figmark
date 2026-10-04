@@ -58,6 +58,7 @@ const { preOrderReadRoute, preOrderPledgeRoute } =
 const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
 } = await import(new URL('power-sale-routes.js', apiRoot));
+const { fillingLotsRoute, dropsRoute, dropRoute, remindRoute } = await import(new URL('showcase-routes.js', apiRoot));
 const { insightsRoute, interestRoute, marketRoute } = await import(new URL('insight-routes.js', apiRoot));
 const {
   listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute,
@@ -295,6 +296,10 @@ const routes = [
   ['POST', '/api/power-sales/new', powerSaleCreateRoute],
   ['GET', '/api/power-sales/:id', powerSaleReadRoute],
   ['POST', '/api/power-sales/:id/stop', powerSaleStopRoute],
+  ['GET', '/api/showcase/lots', fillingLotsRoute],
+  ['GET', '/api/showcase/drops', dropsRoute],
+  ['GET', '/api/showcase/drops/:sellerId/:id', dropRoute],
+  ['POST', '/api/showcase/drops/:sellerId/:id/remind', remindRoute],
   ['GET', '/api/listings/:id/preorder', preOrderReadRoute],
   ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
   ['GET', '/api/notifications', notificationsRoute],

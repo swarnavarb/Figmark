@@ -18,6 +18,7 @@ import './functions/want-routes.js';
 import './functions/notification-routes.js';
 import './functions/preorder-routes.js';
 import './functions/power-sale-routes.js';
+import './functions/showcase-routes.js';
 import './functions/insight-routes.js';
 import './functions/profit-routes.js';
 import './functions/pro-routes.js';

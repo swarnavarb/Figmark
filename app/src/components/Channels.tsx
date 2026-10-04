@@ -12,6 +12,7 @@ import { DropCard, Lightbox, copyLink, withReaction } from './SocialPost';
 import { PersonVoice, useVoice } from './SocialVoice';
 import { RoomBar, useLongPress, useScrolledPast } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
+import { OpeningCard } from './Showcase';
 
 /**
  * Channels: one room per shop, where the shop announces and its customers
@@ -671,6 +672,10 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
             </div>
           )}
           {post.body && !(listing && post.drop) && <p className="cmsg__body">{post.body}</p>}
+          {post.opening && (
+            <OpeningCard sellerId={post.opening.sellerId} saleId={post.opening.saleId}
+              startsAt={post.opening.startsAt} saleName={post.opening.saleName} itemCount={post.opening.itemCount} />
+          )}
           {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
           {listing && !post.drop && (
             <Link to={`/listing/${listing.id}`} className="cmsg__item">

@@ -1590,6 +1590,11 @@ export interface Post extends BaseDocument {
   photoUrls?: string[];
   /** Set on a power sale drop: the members' window and what comes after it. */
   drop?: PostDrop | null;
+  /**
+   * Set on a power sale's opening message: which sale, and when its first
+   * item drops. The channel draws a countdown and a "Remind me" on it.
+   */
+  opening?: PostOpening | null;
   /** Written by a power sale run - its drops and its messages - and tagged as such. */
   powerSale?: boolean;
   /**
@@ -1861,6 +1866,10 @@ export interface PowerSale extends BaseDocument {
    * public. Absent on older sales, which announced nothing at that point.
    */
   afterWindow?: { channel: boolean; feed: boolean };
+  /** People who asked to be told when the first item drops. */
+  reminders?: string[];
+  /** When they were told, so nobody is told twice. */
+  remindedAt?: string | null;
 }
 
 export type PowerSaleStatus = 'draft' | 'scheduled' | 'running' | 'done' | 'cancelled';
@@ -1913,6 +1922,15 @@ export interface PowerSaleItem {
 }
 
 /** What a channel drop post shows beside its item: the clock and the price after it. */
+export interface PostOpening {
+  saleId: string;
+  sellerId: string;
+  /** When the first item goes out. */
+  startsAt: string;
+  saleName: string;
+  itemCount: number;
+}
+
 export interface PostDrop {
   endsAt: string;
   memberPriceMinor: number;
