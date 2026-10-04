@@ -11709,3 +11709,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .lothero__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .lothero__buyers { display: inline-flex; align-items: center; gap: 8px; }
 .lothero__eyebrow { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); }
+
+/* A lot opened inside the Sell tab: the tab already pads the page, so this adds none. */
+.lotdetail { display: grid; gap: 0; }
+.lotdetail > .backlink { justify-self: start; margin-bottom: 8px; }

@@ -982,8 +982,8 @@ export function LotDetail({ lotId, onBack, customers }: {
   }, [section, people, lotId, customers]);
 
   // A <div>, not a <main>: this is drawn inside the Sell tab's own <main>.
-  if (error && !data) return <div className="page"><ErrorNotice message={error} /></div>;
-  if (!data) return <div className="page"><p className="muted">Loading…</p></div>;
+  if (error && !data) return <div className="stack"><ErrorNotice message={error} /></div>;
+  if (!data) return <div className="stack"><p className="muted">Loading…</p></div>;
 
   const { lot, listings, totals, route, items } = data;
   /** Somewhere else an item could ride: any open lot of this shop but this one. */
@@ -1121,7 +1121,7 @@ export function LotDetail({ lotId, onBack, customers }: {
   }
 
   return (
-    <div className="page">
+    <div className="lotdetail">
       <button className="backlink" onClick={onBack}>
         <Icon name="back" size={14} /> All lots
       </button>
