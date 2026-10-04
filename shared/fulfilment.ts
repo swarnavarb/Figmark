@@ -9,6 +9,7 @@ import {
   type Sourcing,
 } from './enums.js';
 import type { Lot, Order, StageEvent, StageEventKind } from './models.js';
+import { currentStepOf, lotEndIndex, lotOffset, routeOf } from './routes.js';
 
 /**
  * A lot that is finished: closed, or every item in it delivered. Nothing more
@@ -17,6 +18,46 @@ import type { Lot, Order, StageEvent, StageEventKind } from './models.js';
 export function lotIsDone(lot: Pick<Lot, 'status' | 'stage'>): boolean {
   return lot.status === 'closed' || lot.status === 'cancelled' || lot.stage === 'delivered';
 }
+
+/**
+ * Where a lot is, in the few words its buyers are shown.
+ *
+ * Coarser than the route on purpose: a buyer wants to know whether the box is
+ * still being filled, has been shut and is getting ready to go, is on its
+ * way, or has arrived - not which of the seller's eleven steps it is on.
+ */
+export type LotBuyerPhase = 'filling' | 'closed' | 'in_transit' | 'received' | 'delivered' | 'cancelled';
+
+export const LOT_PHASE_LABELS: Record<LotBuyerPhase, string> = {
+  filling: 'Lot getting filled',
+  closed: 'Lot closed – prepping for dispatch',
+  in_transit: 'Lot in transit',
+  received: 'Lot received',
+  delivered: 'Lot delivered',
+  cancelled: 'Lot called off',
+};
+
+export function lotPhase(lot: Pick<Lot, 'status' | 'stage' | 'route' | 'currentStep'>): LotBuyerPhase {
+  if (lot.status === 'cancelled') return 'cancelled';
+  if (lot.stage === 'delivered' || lot.status === 'closed') return 'delivered';
+  const route = routeOf(lot);
+  const at = currentStepOf(lot);
+  const offset = lotOffset(route);
+  // Not one of its own steps taken: still filling, unless the seller shut it.
+  if (at < offset) return lot.status === 'filled' ? 'closed' : 'filling';
+  /* The steps are the seller's own words, so where the lot is is read from
+     what the steps it has taken say: nothing about leaving yet is a box shut
+     and waiting; anything about arriving is a box that has landed. Past the
+     lot's last step its items are being worked one by one at the far end. */
+  if (at > lotEndIndex(route)) return 'received';
+  const taken = route.steps.slice(offset, at + 1).map((step) => step.name);
+  if (taken.some((name) => ARRIVED.test(name))) return 'received';
+  if (taken.some((name) => LEFT.test(name))) return 'in_transit';
+  return 'closed';
+}
+
+const LEFT = /dispatch|ship|transit|sail|flight|flown|fly|depart|forwards?\b|on (its|the) way|left/i;
+const ARRIVED = /receiv|land|arriv|customs|clear|destination warehouse/i;
 
 /**
  * Partition key for an order with no shipment lot behind it.

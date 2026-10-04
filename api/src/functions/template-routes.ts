@@ -261,6 +261,9 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
   if (lot && lotIsDone(lot)) {
     return error(409, 'lot_done', 'That lot is finished. Pick an open lot, or start a new one.');
   }
+  if (lot && lot.status === 'filled') {
+    return error(409, 'lot_closed', 'This lot is closed to new orders. Reopen it, or pick a lot that is still filling.');
+  }
 
   if (!lot) {
     if (!body.newLot) return error(400, 'invalid_request', 'Pick a lot, or describe a new one.');

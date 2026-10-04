@@ -131,7 +131,7 @@ const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
   lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
   noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
-  myItemsRoute: myItems, applyRouteRoute: applyRoute,
+  myItemsRoute: myItems, applyRouteRoute: applyRoute, closeLotRoute: closeLot,
 } = await import(new URL('tracking-routes.js', fns));
 const {
   listTemplatesRoute: listTemplates, saveTemplateRoute: saveTemplate,
@@ -8745,6 +8745,40 @@ await check('an edited route reaches its unfinished lots as soon as it is saved'
   assert.equal(applied.jsonBody.lotsUpdated, 0);
   board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
   assert.ok(board.route.steps.some((step) => step.name === 'Sailed by air'));
+});
+
+await check('a closed lot takes no new orders, and its buyers are told it is prepping for dispatch', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Shut box' } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'In the shut box', priceMinor: 3_000, sourcing: 'import', quantityAvailable: 5 },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Shut Box Buyer');
+  const first = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: first.id }, body: { lotId: lot.id } }), ctx);
+
+  let tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: first.id } }), ctx)).jsonBody;
+  assert.equal(tracked.route.lotPhase, 'filling');
+
+  const closed = await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: true } }), ctx);
+  assert.equal(closed.status, 200, JSON.stringify(closed.jsonBody));
+  assert.equal(closed.jsonBody.lot.status, 'filled');
+  tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: first.id } }), ctx)).jsonBody;
+  assert.equal(tracked.route.lotPhase, 'closed');
+
+  // Nothing more goes in while it is shut.
+  const other = await newBuyer('Late To The Box');
+  const late = await createOrder(req({ headers: other.headers, body: { listingId: listing.id } }), ctx);
+  assert.ok(late.jsonBody.order, JSON.stringify(late.jsonBody));
+  const second = late.jsonBody.order;
+  const refused = await assignOrderToLot(req({ headers: auth, params: { id: second.id }, body: { lotId: lot.id } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'lot_closed');
+
+  // Reopened, it fills again.
+  const reopened = await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: false } }), ctx);
+  assert.equal(reopened.jsonBody.lot.status, 'open');
+  const filed = await assignOrderToLot(req({ headers: auth, params: { id: second.id }, body: { lotId: lot.id } }), ctx);
+  assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
 });
 
 await check('a route that never joins a lot cannot be given to one', async () => {

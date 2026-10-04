@@ -7,10 +7,10 @@ import {
 import { CATEGORIES } from '@shared/catalog';
 import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
-import { lotIsDone, sourcingOf } from '@shared/fulfilment';
+import { lotIsDone, lotPhase, sourcingOf } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
-import { LotName, lotLabel } from '../components/LotName';
+import { LotName, LotPhaseBadge, lotLabel } from '../components/LotName';
 import { RarityRibbon, XpBar } from '../components/Quest';
 import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderStatus';
 import { LBox, OptionTiles } from '../components/ListingForm';
@@ -21,10 +21,9 @@ import { SerialButtons } from '../components/SerialButtons';
 import { Ladder } from '../components/Ladder';
 import { RoutesList } from './RoutesPage';
 import { RouteStudio } from './RouteStudioPage';
-import { phaseOfCounts } from '@shared/insights';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
-  renderStepText, routeOf as routeOfLot,
+  lotNumberFrom, renderStepText, routeOf as routeOfLot,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { BuyerReversalDetails, Listing, Lot, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
@@ -3101,122 +3100,72 @@ function hueOf(id: string): (typeof CARTON_HUES)[number] {
   return CARTON_HUES[sum % CARTON_HUES.length]!;
 }
 
-/** The one status pill on a carton, from the same phase the bars beneath it chart. */
-const PHASE_PILL: Record<ReturnType<typeof phaseOfCounts>, { label: string; icon: IconName; tone: 'ok' | 'info' | 'warn' | 'accent' }> = {
-  empty: { label: 'Filling', icon: 'box', tone: 'warn' },
-  filling: { label: 'Filling', icon: 'box', tone: 'warn' },
-  prepping: { label: 'At origin', icon: 'tag', tone: 'info' },
-  china_done: { label: 'Dispatched', icon: 'truck', tone: 'info' },
-  india: { label: 'In transit', icon: 'truck', tone: 'ok' },
-  domestic: { label: 'Out for delivery', icon: 'truck', tone: 'ok' },
-  completed: { label: 'Delivered', icon: 'check', tone: 'accent' },
-};
-
-/** A country as a card says it: its flag and its name, or nothing pretending to be one. */
-function placeOf(country: string | null | undefined): string {
-  return country ? `${countryFlag(country)} ${country}` : '?';
+/** A country as a card says it: its flag, or a question mark for one not set. */
+function flagOf(country: string | null | undefined): string {
+  return country ? countryFlag(country) : '?';
 }
 
+/** How long the lid takes to swing open before the lot itself is shown. */
+const LID_OPEN_MS = 460;
+
 /**
- * One consignment: what it is, where it is going, where it is now, and how
- * much is in it - every fact in words. The whole card opens the lot; there is
- * nothing else on it to press, so nothing to guess about.
+ * One consignment, drawn as the box it is: a coloured lid with a strip of
+ * tape over a carton that says what is inside. Small enough for two on a
+ * phone's row; the whole box opens the lot, lid first.
  */
 function LotCard({ summary, onOpen }: {
   summary: LotSummary;
   onOpen: () => void;
 }) {
   const { lot, tally } = summary;
-  // Read off the same tally the bars below chart, rather than from the stage
-  // the seller last ticked: thirty-three of thirty-four in the warehouse is
-  // "prepping" whatever the lot record says. A finished lot says so whatever
-  // is (or is not) inside it.
-  const pill = lotIsDone(lot)
-    ? { label: lot.status === 'cancelled' ? 'Cancelled' : 'Completed', icon: 'check' as IconName, tone: 'accent' as const }
-    : PHASE_PILL[phaseOfCounts(tally.counts)];
   const hue = hueOf(lot.id);
-  const crew = [lot.supplier?.name, lot.forwarder?.name, lot.handler?.name].filter(Boolean);
-  /** The three progress checkpoints, said in words. */
-  const BAR_LABEL: Record<string, string> = {
-    china_received: 'Received',
-    china_packed: 'Packed',
-    india_received: 'Landed',
-  };
+  const phase = lotPhase(lot);
+  const number = lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt);
+  // Packed out of everything in it: the one bar that says how ready the box is.
+  const packed = tally.progress.find((row) => row.checkpoint === 'china_packed');
+  const share = packed && packed.total > 0 ? packed.done / packed.total : 0;
+  const [opening, setOpening] = useState(false);
 
-  /* Where it is, in the words its buyers read: still filling, or the step
-     it is on - with how far along its own route that is. */
-  const route = routeOfLot(lot);
-  const at = currentStepOfLot(lot);
-  const filling = at < lotOffsetOf(route);
-  const now = lotIsDone(lot)
-    ? (lot.status === 'cancelled' ? 'Called off' : 'All delivered')
-    : filling ? 'Not moved yet — still taking orders' : lotStepLabel(lot);
+  function open() {
+    if (opening) return;
+    const still = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (still) { onOpen(); return; }
+    setOpening(true);
+    window.setTimeout(onOpen, LID_OPEN_MS);
+  }
 
   return (
     <article role="button" tabIndex={0} aria-label={`Open ${lot.name}`}
-      className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}`}
-      style={{ cursor: 'pointer' }}
-      onClick={onOpen}
+      className={`lotbox lotbox--${hue}${opening ? ' is-opening' : ''}`}
+      onClick={open}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
       }}>
-      {/* The lid: the name on a line of its own, so no badge ever cuts it
-          short; the number, the lanes and the status sit beneath it. */}
-      <div className="lot__head">
-        <span className="lot__title">
-          <span className="lot__name">{lot.name}</span>
-          {lot.lotNumber && <span className="lot__no">LOT {lot.lotNumber}</span>}
+      <span className="lotbox__glow" aria-hidden="true" />
+      <span className="lotbox__lid" aria-hidden="true">
+        <span className="lotbox__tape" />
+      </span>
+      <div className="lotbox__body">
+        <span className="lotbox__name">{lot.name}</span>
+        <span className="lotbox__meta">
+          <span className="lotname__no">LOT {number}</span>
+          {(lot.originCountry || lot.destinationCountry) && (
+            <span className="lotbox__lane">
+              {flagOf(lot.originCountry)} → {flagOf(lot.destinationCountry)}
+            </span>
+          )}
         </span>
-        <div className="lot__headrow">
-          <span className="lot__lane">
-            {lot.originCountry || lot.destinationCountry
-              ? <>{placeOf(lot.originCountry)} <Icon name="right" size={12} /> {placeOf(lot.destinationCountry)}</>
-              : 'Countries not set'}
-          </span>
-          <span className={`lotpill lotpill--sm lotpill--${pill.tone}`}>
-            <Icon name={pill.icon} size={12} /> {pill.label}
-          </span>
-        </div>
-        <svg className="lot__crease" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M0 0 L38 0 L50 9 L62 0 L100 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        </svg>
-      </div>
-
-      <div className="lot__body">
-        <div className="lot__now">
-          <span className="lot__nowlabel">Now</span>
-          <span className="lot__nowstep">{now}</span>
-          <span className="lot__route">
-            {route.name || 'Generic route'}
-            {!filling && !lotIsDone(lot) && ` · step ${at + 1} of ${route.steps.length}`}
-          </span>
-        </div>
-
-        <div className="lot__stats">
-          <span className="lot__stat"><b>{summary.orderCount}</b> {summary.orderCount === 1 ? 'order' : 'orders'}</span>
-          <span className="lot__stat"><b>{tally.customers}</b> {tally.customers === 1 ? 'customer' : 'customers'}</span>
-          <span className="lot__stat">
-            {summary.weightGrams > 0 ? <><b>{formatWeight(summary.weightGrams)}</b> weight</> : <><b>{summary.unitCount}</b> {summary.unitCount === 1 ? 'unit' : 'units'}</>}
-          </span>
-        </div>
-
+        <LotPhaseBadge phase={phase} />
+        <span className="lotbox__count">
+          {summary.orderCount} {summary.orderCount === 1 ? 'order' : 'orders'} · {tally.customers} {tally.customers === 1 ? 'buyer' : 'buyers'}
+        </span>
         {summary.orderCount > 0 && (
-          <div className="bars">
-            {tally.progress.map((row) => (
-              <div key={row.checkpoint} className="bar">
-                <span className="bar__label">{BAR_LABEL[row.checkpoint] ?? row.checkpoint}</span>
-                <span className="bar__track">
-                  <span className="bar__fill"
-                    style={{ width: `${row.total === 0 ? 0 : (row.done / row.total) * 100}%` }} />
-                </span>
-                <span className="bar__count">{row.done}/{row.total}</span>
-              </div>
-            ))}
-          </div>
+          <span className="lotbox__bar" title={`${packed?.done ?? 0} of ${packed?.total ?? 0} packed`}>
+            <span style={{ width: `${share * 100}%` }} />
+          </span>
         )}
-        {crew.length > 0 && <span className="lot__crew"><Icon name="truck" size={12} /> {crew.join(' · ')}</span>}
       </div>
-      <span className="lot__open" aria-hidden="true">Open lot <Icon name="right" size={13} /></span>
     </article>
   );
 }

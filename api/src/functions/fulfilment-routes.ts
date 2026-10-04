@@ -15,7 +15,7 @@ import { COUNTRIES } from '../../../shared/countries.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
 import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import {
-  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, sourcingOf, stagesFor,
+  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, sourcingOf, stagesFor,
 } from '../../../shared/fulfilment.js';
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
@@ -898,6 +898,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
           lotId: lot!.id,
           lotName: lot!.name,
           lotNumber: lot!.lotNumber ?? lotNumberFrom(lot!.id, lot!.createdAt),
+          /** The lot as a whole, in a few words: filling, closed, in transit, received. */
+          lotPhase: lotPhase(lot!),
         }
       : null,
     /** True while it is sold, bound for a lot, and not in one. */

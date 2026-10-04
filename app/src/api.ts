@@ -16,6 +16,7 @@ import type { CardButton, SerialButton } from '@shared/buttons';
 import type { MergedRating, StoreLevel } from '@shared/storefront';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
+import type { LotBuyerPhase } from '@shared/fulfilment';
 import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
@@ -383,6 +384,8 @@ export interface OrderTracking {
     lotId: string;
     lotName: string;
     lotNumber: string;
+    /** The lot as a whole: filling, closed, in transit, received. */
+    lotPhase?: LotBuyerPhase;
   } | null;
   /** The ladder before any lot, in the words the shop's template used. */
   preLot: {
@@ -1838,6 +1841,9 @@ export const api = {
   stepLot: (id: string, body: { to?: number; note?: string; trackingId?: string; shipper?: string } = {}) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/step`, body),
   /** Put the lot on a different ladder, carrying its position across. */
+  /** Shut a lot to new orders (prepping for dispatch), or open it again. */
+  closeLot: (id: string, closed: boolean) =>
+    post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/close`, { closed }),
   setLotRoute: (id: string, routeId: string | null, note?: string) =>
     post<{ lot: Lot; ordersUpdated: number }>(`/lots/${encodeURIComponent(id)}/route`, { routeId, note }),
   /** Say something about the lot, at a step, without moving it. Every buyer in it reads it. */

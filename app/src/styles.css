@@ -1990,163 +1990,105 @@ code, kbd, samp, pre {
 }
 .chip--pro.is-on .probadge { background: #1F1300; color: #FDE68A; }
 
-/* ── A consignment ─────────────────────────────────────────────────────────
-   One card for the whole life of a lot: opening it, filling it, watching it
-   move. It replaced two - an admin card on its own page and a tracking card in
-   the sell tab - that described the same object and agreed about none of it. */
+/* ── A lot, drawn as a box ──────────────────────────────────────────────
+   A coloured lid with a strip of tape over a cardboard carton. The hue is
+   only there to tell one box from the next in a long list (hashed off the
+   lot's id), so it only ever colours the lid. Tapping a box swings its lid
+   open and lets a little light out before the lot itself is shown. */
+.lot-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 18px 12px; padding-top: 4px;
+}
+.lotbox {
+  --lid: var(--violet);
+  --card: #F4E6C8; --card-ink: #362A1A; --card-dim: #7D6A50; --tape: rgba(234, 200, 115, 0.85);
+  position: relative; display: flex; flex-direction: column;
+  padding-top: 14px; cursor: pointer; outline: none;
+  transition: transform 0.18s var(--ease, ease);
+}
+.lotbox--violet { --lid: var(--violet); }
+.lotbox--coral  { --lid: var(--coral);  }
+.lotbox--aqua   { --lid: var(--aqua);   }
+.lotbox--blue   { --lid: var(--blue);   }
+.lotbox--pink   { --lid: var(--pink);   }
+.lotbox--lime   { --lid: var(--lime);   }
+.lotbox:hover { transform: translateY(-2px); }
+.lotbox:focus-visible .lotbox__body { outline: 2px solid var(--accent, #8B5CF6); outline-offset: 2px; }
 
-.lot {
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
-  overflow: hidden;
+/* The lid overhangs the carton a little on each side, as a real one does,
+   and is hinged at its back-left corner so it swings up and away. */
+.lotbox__lid {
+  position: absolute; z-index: 2; top: 0; left: -4px; right: -4px; height: 22px;
+  border-radius: 6px 6px 3px 3px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--lid) 85%, #fff) 0%, var(--lid) 55%);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18), 0 3px 6px rgba(0, 0, 0, 0.28);
+  transform-origin: 0% 100%;
+  transition: transform 0.44s cubic-bezier(0.3, 1.35, 0.5, 1), opacity 0.2s ease 0.24s;
 }
-/* On its way: the packing figures it was worked by are history the moment it
-   is on a plane, so the card is a name, a stage and a tracking number. */
-.lot--moving { border-color: rgba(251, 191, 36, 0.3); }
+.lotbox__tape {
+  position: absolute; top: 0; bottom: 3px; left: 50%; width: 26px; transform: translateX(-50%);
+  background: var(--tape); box-shadow: inset 0 0 0 1px rgba(120, 90, 30, 0.15);
+}
+.lotbox:hover .lotbox__lid { transform: translateY(-2px) rotate(-3deg); }
 
-/* ── The carton. A shipping box, not a dark-UI panel: cream card stock, a
-   vivid lid, kraft-brown ink — the one place in the app that leaves the dark
-   palette on purpose, because a box sitting on a warehouse floor is not a
-   glass panel. Everything here is scoped under `.lot--carton` so nothing
-   elsewhere in the app is touched. ─────────────────────────────────────── */
-.lot--carton {
-  --carton-bg: #FBF3E2;
-  --carton-ink: #362A1A;
-  --carton-dim: #8A7860;
-  --carton-line: rgba(54, 42, 26, 0.14);
-  --carton-line-strong: rgba(54, 42, 26, 0.24);
-  --carton-tape: #EAC873;
-  display: flex; flex-direction: column;
-  background: var(--carton-bg);
-  border-color: var(--carton-line-strong);
-  border-radius: var(--r-sm);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px rgba(0, 0, 0, 0.32);
-  transition: transform var(--dur-1, 0.18s) var(--ease, ease), box-shadow var(--dur-1, 0.18s) var(--ease, ease);
+.lotbox__body {
+  position: relative; flex: 1 1 auto;
+  display: grid; align-content: start; gap: 6px;
+  padding: 16px 10px 10px;
+  border-radius: 2px 2px 8px 8px;
+  /* Shade under the lid and down both sides, so the front reads as one face of a box. */
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08), transparent 14px),
+    linear-gradient(90deg, rgba(90, 60, 20, 0.12), transparent 10px, transparent calc(100% - 10px), rgba(90, 60, 20, 0.12)),
+    var(--card);
+  color: var(--card-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 18px rgba(0, 0, 0, 0.3);
 }
-.lot--carton:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3), 0 18px 34px rgba(0, 0, 0, 0.4);
+/* The tape carries on down the front of the box from the lid. */
+.lotbox__body::before {
+  content: ''; position: absolute; top: 0; left: 50%; width: 26px; height: 10px;
+  transform: translateX(-50%); background: var(--tape);
 }
-.lot--carton.lot--moving { border-color: var(--carton-line-strong); }
-
-/* One box to a shelf on a phone, so the name and the facts get room to be
-   read; two side by side once the screen is wide enough for both. */
-.lot-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
-@media (min-width: 720px) { .lot-grid { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 640px) {
-  .lot--carton .factlist > div { flex-direction: column; align-items: flex-start; gap: 0; }
-  .lot--carton .factlist dd { text-align: left; }
-}
-
-/* The lid: a coloured cap on the box, tapped to open the lot. The hue is
-   cosmetic (which box is which at a glance in a long list), so it only ever
-   touches the lid's own background — never a status colour anywhere else on
-   the card. A soft inner shadow along the bottom edge reads as the fold of
-   an actual flap without needing a second shape. */
-.lot--carton .lot__head {
-  position: relative;
-  cursor: pointer;
-  padding-bottom: 15px;
-  box-shadow: inset 0 -14px 12px -10px rgba(0, 0, 0, 0.22);
-  transition: filter var(--dur-1, 0.15s) var(--ease, ease);
-}
-.lot--carton .lot__head:hover { filter: brightness(1.06); }
-.lot--carton .lot__head:active { filter: brightness(1.02); }
-/* The crease of a flap folded shut, drawn as one stroke rather than shipped
-   as an image - cheap, and it recolours itself with the lid for free. */
-.lot__crease {
-  position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 8px;
-  color: rgba(0, 0, 0, 0.24);
-}
-.lot--violet .lot__head { background: var(--violet); color: var(--violet-ink); }
-.lot--coral .lot__head  { background: var(--coral);  color: var(--coral-ink); }
-.lot--aqua .lot__head   { background: var(--aqua);   color: var(--aqua-ink); }
-.lot--blue .lot__head   { background: var(--blue);   color: var(--blue-ink); }
-.lot--pink .lot__head   { background: var(--pink);   color: var(--pink-ink); }
-.lot--lime .lot__head   { background: var(--lime);   color: var(--lime-ink); }
-
-.lot__head {
-  display: grid; gap: 6px;
-  width: 100%;
-  padding: 10px 12px 8px;
-  text-align: left;
-}
-.lot__headrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.lot__title { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 8px; row-gap: 2px; }
-/* The name gets the whole width of the lid and up to two lines: it is the
-   one thing on the card a seller looks for. */
-.lot__name {
-  font-size: var(--t-lg, 1.2rem); font-weight: var(--w-bold); letter-spacing: -0.015em; line-height: 1.2;
+.lotbox__name {
+  font-size: var(--t-sm); font-weight: var(--w-bold); line-height: 1.25; letter-spacing: -0.01em;
   overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.lot__no {
-  font-size: var(--t-2xs); font-weight: var(--w-medium); opacity: 0.6; letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums; white-space: nowrap;
-}
-.lot__lane {
-  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
-  font-size: var(--t-xs); font-weight: var(--w-medium); opacity: 0.95;
-}
-.lot__flag { font-size: 19px; line-height: 1; }
+.lotbox__meta { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: var(--t-xs); }
+.lotbox__meta .lotname__no { font-size: var(--t-2xs); color: var(--card-dim); opacity: 1; }
+.lotbox__lane { white-space: nowrap; }
+.lotbox__count { font-size: var(--t-2xs); color: var(--card-dim); }
+.lotbox__bar { height: 4px; border-radius: 4px; background: rgba(54, 42, 26, 0.12); overflow: hidden; }
+.lotbox__bar > span { display: block; height: 100%; border-radius: inherit; background: #4C9A6A; }
+/* The buyer-facing status, darkened to read on cardboard. */
+.lotbox .lotphase { padding: 2px 8px; font-size: var(--t-2xs); gap: 4px; background: rgba(217, 119, 6, 0.14); color: #8A4B05; border-color: rgba(217, 119, 6, 0.35); }
+.lotbox .lotphase--closed { background: rgba(124, 58, 237, 0.12); color: #5B21B6; border-color: rgba(124, 58, 237, 0.35); }
+.lotbox .lotphase--in_transit { background: rgba(37, 99, 235, 0.12); color: #1E4FB8; border-color: rgba(37, 99, 235, 0.35); }
+.lotbox .lotphase--received, .lotbox .lotphase--delivered { background: rgba(5, 150, 105, 0.13); color: #05684A; border-color: rgba(5, 150, 105, 0.35); }
+.lotbox .lotphase--cancelled { background: rgba(220, 38, 38, 0.1); color: #9B1C1C; border-color: rgba(220, 38, 38, 0.3); }
 
-/* The status pill: one badge, one colour, one fact, said once at the top of
-   the lid - not repeated as a sentence further down the card. */
-.lotpill {
-  display: inline-flex; align-items: center; gap: 6px;
-  width: fit-content;
-  padding: 6px 12px;
-  border-radius: var(--r-pill);
-  font-size: var(--t-xs); font-weight: var(--w-semi);
+/* Opening: the lid swings up and off, a warm light spills out of the box,
+   and the carton gives a small bounce - then the lot is shown. */
+.lotbox__glow {
+  position: absolute; z-index: 1; top: 6px; left: 12%; right: 12%; height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 100%, rgba(255, 230, 150, 0.95), rgba(255, 200, 90, 0.4) 45%, transparent 72%);
+  opacity: 0; transform: translateY(8px) scaleY(0.3); transform-origin: 50% 100%;
+  pointer-events: none;
+  transition: opacity 0.25s ease 0.1s, transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s;
 }
-.lotpill--sm { flex: 0 0 auto; padding: 4px 10px; gap: 5px; font-size: var(--t-xs); white-space: nowrap; }
-.lotpill--ok { background: linear-gradient(135deg, #34D399, #10B981); color: #04251A; }
-.lotpill--info { background: linear-gradient(135deg, #60A5FA, #3B82F6); color: #fff; }
-.lotpill--warn { background: linear-gradient(135deg, #FBBF24, #F59E0B); color: #2B1D00; }
-.lotpill--accent { background: linear-gradient(135deg, #C4B5FD, #8B5CF6); color: #fff; }
-
-/* The one way in, spelled out - a card is a summary, this is the door. */
-.lot__open {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  width: 100%; padding: 9px 12px;
-  border: 0; border-top: 1px solid var(--carton-line);
-  background: rgba(54, 42, 26, 0.06); color: var(--carton-ink);
-  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi);
-  cursor: pointer;
-  transition: background var(--dur-1, 0.15s) var(--ease, ease);
+.lotbox.is-opening .lotbox__lid { transform: translate(-4px, -20px) rotate(-24deg); opacity: 0; }
+.lotbox.is-opening .lotbox__glow { opacity: 1; transform: translateY(-14px) scaleY(1.4); }
+.lotbox.is-opening .lotbox__body { animation: lotbox-pop 0.44s cubic-bezier(0.3, 1.4, 0.5, 1); }
+@keyframes lotbox-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.04, 0.97); }
+  100% { transform: scale(1); }
 }
-.lot__open:hover { background: rgba(54, 42, 26, 0.12); }
-.lot__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 4px 12px 10px; }
-
-.lot--carton .lot__head { padding: 14px 16px 18px; gap: 8px; }
-.lot--carton .lot__body { gap: 12px; padding: 12px 16px 14px; }
-/* Where it is now: the line the seller opens the card to learn. */
-.lot__now { display: grid; gap: 2px; color: var(--carton-ink); }
-.lot__nowlabel {
-  font-size: var(--t-2xs); font-weight: var(--w-semi); text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--carton-dim);
+@media (prefers-reduced-motion: reduce) {
+  .lotbox, .lotbox__lid, .lotbox__glow { transition: none; }
+  .lotbox.is-opening .lotbox__body { animation: none; }
 }
-.lot__nowstep { font-size: var(--t-base); font-weight: var(--w-bold); line-height: 1.3; }
-.lot__route { font-size: var(--t-xs); color: var(--carton-dim); }
-/* Three counts, each a number first and its word after. */
-.lot__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.lot__stat {
-  display: grid; gap: 1px; padding: 8px 10px;
-  border-radius: var(--r-sm); background: rgba(54, 42, 26, 0.06);
-  font-size: var(--t-2xs); color: var(--carton-dim);
-}
-.lot__stat b { font-size: var(--t-base); color: var(--carton-ink); font-variant-numeric: tabular-nums; }
-.lot__crew { display: flex; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--carton-dim); }
-/* The body fills the card so "Open" sits on the bottom edge of every card in a row. */
-.lot--carton .lot__body { flex: 1 1 auto; align-content: start; }
-.lot--carton:focus-visible { outline: 2px solid var(--accent, #8B5CF6); outline-offset: 2px; }
-.lot--carton .bars { gap: 5px; }
-.lot--carton .bar { grid-template-columns: 64px 1fr auto; gap: 8px; }
-.lot--carton .bar__label { font-size: var(--t-xs); }
-.lot--carton .bar__label, .lot--carton .bar__count { color: var(--carton-dim); }
-.lot--carton .bar__track { background: rgba(54, 42, 26, 0.1); }
 
 /*
  * The lot, said once and properly.
@@ -11104,3 +11046,16 @@ a.ocust__name:hover { color: var(--accent-text); }
   font-size: 0.72em; font-weight: var(--w-medium); letter-spacing: 0.04em;
   opacity: 0.6; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
+
+/* The lot's status as its buyers read it. */
+.lotphase {
+  display: inline-flex; align-items: center; gap: 6px; width: fit-content;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: var(--w-semi);
+  background: rgba(251, 191, 36, 0.16); color: #FCD34D; border: 1px solid rgba(251, 191, 36, 0.35);
+}
+.lotphase--closed { background: rgba(167, 139, 250, 0.16); color: #C4B5FD; border-color: rgba(167, 139, 250, 0.4); }
+.lotphase--in_transit { background: rgba(96, 165, 250, 0.16); color: #93C5FD; border-color: rgba(96, 165, 250, 0.4); }
+.lotphase--received, .lotphase--delivered { background: rgba(52, 211, 153, 0.16); color: #6EE7B7; border-color: rgba(52, 211, 153, 0.4); }
+.lotphase--cancelled { background: rgba(248, 113, 113, 0.14); color: #FCA5A5; border-color: rgba(248, 113, 113, 0.4); }
+.lothero__phase { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; }

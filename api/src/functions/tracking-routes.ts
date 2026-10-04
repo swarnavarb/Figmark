@@ -289,6 +289,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
   const wanted = [...new Set(body.orderIds ?? [])].filter(Boolean);
   if (wanted.length === 0) return error(400, 'invalid_request', 'Pick at least one item.');
   if (lotIsDone(lot)) return error(409, 'lot_done', 'That lot is finished. Add these to an open lot instead.');
+  if (lot.status === 'filled') return error(409, 'lot_closed', LOT_CLOSED);
 
   const repository = await getRepository();
   const route = routeOf(lot);
@@ -655,6 +656,66 @@ async function applyRoute(request: HttpRequest, _context: InvocationContext) {
   return json(200, { lotsUpdated: behind.length, ordersUpdated });
 }
 
+/** Said wherever a lot shut to new orders is offered one. */
+export const LOT_CLOSED = 'This lot is closed to new orders. Reopen it, or pick a lot that is still filling.';
+
+/**
+ * POST /api/lots/{id}/close - shut a lot to new orders, or open it again.
+ *
+ * The moment between "still filling" and "on its way": the seller has stopped
+ * taking orders for this box and is getting it ready to go. Its buyers are
+ * told, because "closed - prepping for dispatch" is the news they were waiting
+ * for. Reopening is allowed until the lot has taken a step of its own.
+ */
+async function closeLot(request: HttpRequest, _context: InvocationContext) {
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A lot id is required.');
+  const { lot, userId } = await ownedLot(request, id);
+
+  let body: { closed?: boolean };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  const closed = body.closed !== false;
+  if (lotIsDone(lot)) return error(409, 'lot_done', 'This lot is finished.');
+  const route = routeOf(lot);
+  if (!closed && currentStepOf(lot) >= lotOffset(route)) {
+    return error(409, 'lot_moving', 'This lot has already set off, so it cannot take new orders again.');
+  }
+  if ((lot.status === 'filled') === closed) return json(200, { lot });
+
+  const repository = await getRepository();
+  const now = new Date().toISOString();
+  const said = closed ? 'Lot closed – prepping for dispatch.' : 'Lot reopened for orders.';
+  const event: StageEvent = {
+    stage: lot.stage,
+    step: route.steps[currentStepOf(lot)]?.name,
+    enteredAt: now,
+    kind: 'note',
+    note: said,
+    recordedBy: userId,
+  };
+  const updated = await repository.updateLot({
+    ...lot,
+    status: closed ? 'filled' : 'open',
+    stageHistory: [...lot.stageHistory, event],
+    updatedAt: now,
+  });
+  const orders = (await repository.listOrdersForLot(lot.id))
+    .filter((order) => !isCancelledLike(order.status) && order.status !== 'delivered');
+  if (closed) {
+    await notify(
+      repository,
+      orders.map((order) => order.buyerId),
+      { kind: 'lot_moved', title: `${lot.name}: ${said.replace(/\.$/, '')}`, body: said, link: '/me?tab=purchases' },
+      { except: lot.sellerId },
+    );
+  }
+  return json(200, { lot: updated });
+}
+
 /* ── Notes, and one item that travels differently ──────────────────────── */
 
 /**
@@ -1001,6 +1062,7 @@ export const stepLotRoute = handler(stepLot);
 export const noteOnLotRoute = handler(noteOnLot);
 export const setLotRouteRoute = handler(setLotRoute);
 export const applyRouteRoute = handler(applyRoute);
+export const closeLotRoute = handler(closeLot);
 export const stepItemRoute = handler(stepItem);
 export const myItemsRoute = handler(myItems);
 
@@ -1021,5 +1083,6 @@ app.http('lot-items', { ...anon, methods: ['POST'], route: 'lots/{id}/items', ha
 app.http('lot-step', { ...anon, methods: ['POST'], route: 'lots/{id}/step', handler: stepLotRoute });
 app.http('lot-note', { ...anon, methods: ['POST'], route: 'lots/{id}/note', handler: noteOnLotRoute });
 app.http('lot-route', { ...anon, methods: ['POST'], route: 'lots/{id}/route', handler: setLotRouteRoute });
+app.http('lot-close', { ...anon, methods: ['POST'], route: 'lots/{id}/close', handler: closeLotRoute });
 app.http('order-step', { ...anon, methods: ['POST'], route: 'orders/{id}/step', handler: stepItemRoute });
 app.http('me-items', { ...anon, methods: ['GET'], route: 'me/items', handler: myItemsRoute });

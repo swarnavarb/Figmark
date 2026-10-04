@@ -4,7 +4,7 @@ import {
   WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
   type RouteStep, type TrackingRoute,
 } from '@shared/routes';
-import { lotIsDone } from '@shared/fulfilment';
+import { lotIsDone, lotPhase } from '@shared/fulfilment';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
 import {
@@ -12,7 +12,7 @@ import {
   type LotBoard, type LotContents, type LotDetails, type LotRouteView, type LotsResponse,
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
-import { lotLabel } from '../components/LotName';
+import { LotPhaseBadge, lotLabel } from '../components/LotName';
 import { Ladder } from '../components/Ladder';
 import { SerialButtons } from '../components/SerialButtons';
 import { serialButtons, withReceivedAs } from '@shared/buttons';
@@ -1000,6 +1000,7 @@ export function LotDetail({ lotId, onBack, customers }: {
   const lane = { origin: lot.originCountry, destination: lot.destinationCountry };
   const status = lotIsDone(lot) ? 'Delivered' : lotStep < 0 ? 'Filling' : renderStepText(lotSteps[lotStep]?.name ?? 'Filling', lane);
   const done = lotIsDone(lot) || lotStep >= lotSteps.length - 1;
+  const phase = lotPhase(lot);
 
   /** `membership` for anything that moves an item or listing in or out of this lot. */
   async function run(label: string, fn: () => Promise<void>, membership = false) {
@@ -1101,6 +1102,21 @@ export function LotDetail({ lotId, onBack, customers }: {
           <span className={`lothero__state lothero__state--${done ? 'done' : lotStep < 0 ? 'filling' : 'moving'}`}>
             {status}
           </span>
+        </div>
+        {/* What every buyer in this lot is shown, and the one switch that
+            belongs to the seller: shutting the box to new orders. */}
+        <div className="lothero__phase">
+          <LotPhaseBadge phase={phase} />
+          <span className="faint">what buyers see</span>
+          {(phase === 'filling' || (phase === 'closed' && lotStep < 0)) && (
+            <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
+              onClick={() => void run(
+                phase === 'filling' ? 'Lot closed. Buyers now see it is being prepped for dispatch.' : 'Lot reopened for orders.',
+                async () => { await api.closeLot(lot.id, phase === 'filling'); },
+              )}>
+              {phase === 'filling' ? 'Close lot' : 'Reopen lot'}
+            </button>
+          )}
         </div>
         <p className="lothero__line">
           {[
