@@ -11421,7 +11421,8 @@ a.ocust__name:hover { color: var(--accent-text); }
 
 /* ── Lots filling up: a packing line ────────────────────────────────────
    Edge to edge like the other shelves, and short. Open boxes ride a belt at
-   dusk past a skyline of far-off places, flags drifting and a plane crossing.
+   dusk past one long horizon of far-off cities, flags drifting overhead and a
+   plane crossing.
    Each box catches the shop's next item as it drops in through the open top,
    bumps as it lands and pops a +1. The belt is moved by script so it can be
    pushed by hand; touch-action leaves vertical scrolling to the page. */
@@ -11436,18 +11437,19 @@ a.ocust__name:hover { color: var(--accent-text); }
   animation: belt-sun 6s ease-in-out infinite alternate;
 }
 @keyframes belt-sun { to { transform: translateY(-8px) scale(1.06); } }
-/* Landmarks as silhouettes, sliding the way the boxes ride, slower. */
-.belt__skyline {
-  position: absolute; left: 0; bottom: 10px; display: flex; gap: 46px; width: max-content; padding-left: 20px;
-  font-size: 40px; line-height: 1; filter: brightness(0); opacity: 0.4;
-  animation: belt-skyline 70s linear infinite;
+/* One horizon, drawn twice so it loops: hills, a city of landmarks, near ground. */
+.belt__scene {
+  position: absolute; left: 0; bottom: 8px; display: flex; width: 200%; height: 96px;
+  animation: belt-scene 80s linear infinite;
 }
-.belt__skyline i { font-style: normal; }
-.belt__skyline i:nth-child(3n) { font-size: 28px; align-self: flex-end; }
-.belt__skyline i:nth-child(4n + 1) { font-size: 52px; }
-@keyframes belt-skyline { to { transform: translateX(-50%); } }
+.scene { flex: 1 0 50%; width: 50%; height: 100%; }
+.scene__far { fill: #6D28D9; opacity: 0.45; }
+.scene__city { fill: #2E1065; opacity: 0.8; }
+.scene__lit { fill: #FDE68A; opacity: 0.9; }
+.scene__near { fill: #1E1B4B; }
+@keyframes belt-scene { to { transform: translateX(-50%); } }
 .belt__flag {
-  position: absolute; left: 100%; font-style: normal; font-size: 15px; opacity: 0.5;
+  position: absolute; left: 100%; font-style: normal; font-size: 15px; opacity: 0.6;
   animation: belt-flag 30s linear infinite;
 }
 @keyframes belt-flag {
@@ -11456,15 +11458,22 @@ a.ocust__name:hover { color: var(--accent-text); }
   100% { transform: translate(-110vw, 0) rotate(4deg); }
 }
 .belt__plane {
-  position: absolute; top: 10px; left: -40px; font-size: 16px;
-  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.6));
-  animation: belt-plane 14s linear infinite;
+  position: absolute; top: 2px; left: -60px; width: 46px; height: 22px;
+  animation: belt-plane 16s linear infinite;
 }
-.belt__plane::after {
-  content: ''; position: absolute; top: 55%; right: 100%; width: 90px; height: 0;
-  border-top: 2px dashed rgba(255, 255, 255, 0.35);
+/* The contrail, thinning out behind it. */
+.belt__plane::before {
+  content: ''; position: absolute; top: 11px; right: 92%; width: 140px; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55));
 }
-@keyframes belt-plane { 0% { transform: translate(0, 18px); } 100% { transform: translate(calc(100vw + 80px), -4px); } }
+.plane { display: block; width: 100%; height: 100%; animation: belt-bob 2.4s ease-in-out infinite; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
+.plane__body { fill: #F8FAFC; }
+.plane__wing { fill: #CBD5E1; }
+.plane__tail { fill: #F97316; }
+.plane__glass { fill: #1E3A8A; }
+.plane__stripe { stroke: #F97316; stroke-width: 1; }
+@keyframes belt-plane { 0% { transform: translate(0, 4px); } 100% { transform: translate(calc(100vw + 120px), -8px); } }
+@keyframes belt-bob { 50% { transform: translateY(-2px) rotate(-2deg); } }
 .rail--belt .rail__head { padding-bottom: 0; }
 .rail--belt .rail__icon { color: #FED7AA; background: rgba(251, 146, 60, 0.28); animation: belt-icon 2.6s ease-in-out infinite; }
 @keyframes belt-icon { 40% { transform: translateY(-3px); } 50% { transform: translateY(1px) scaleY(0.9); } 60% { transform: none; } }
@@ -11473,32 +11482,29 @@ a.ocust__name:hover { color: var(--accent-text); }
 .belt { position: relative; z-index: 1; overflow: hidden; touch-action: pan-y; cursor: grab; user-select: none; -webkit-user-select: none; }
 .belt:active { cursor: grabbing; }
 .belt__run { display: flex; gap: 14px; width: max-content; padding: 0 7px; will-change: transform; }
-/* The belt itself: teal rubber with amber chevrons running the way the boxes go. */
+/* The belt itself: amber and charcoal in equal bands, running the way the boxes go. */
 .belt__floor {
   display: block; height: 14px; margin-top: -3px; border-top: 2px solid #CBD5E1; border-radius: 2px 2px 5px 5px;
   background:
     linear-gradient(rgba(255, 255, 255, 0.2), transparent 45%, rgba(0, 0, 0, 0.4)),
-    repeating-linear-gradient(90deg, transparent 0 14px, rgba(251, 191, 36, 0.85) 14px 17px, transparent 17px 22px) 0 0 / 22px 100%,
-    #0F766E;
+    repeating-linear-gradient(90deg, #F59E0B 0 11px, #1F2937 11px 22px) 0 0 / 22px 100%;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
   animation: belt-roll 0.65s linear infinite;
 }
-@keyframes belt-roll { to { background-position: 0 0, -22px 0, 0 0; } }
+@keyframes belt-roll { to { background-position: 0 0, -22px 0; } }
 
 .crate { flex: none; width: 104px; display: grid; justify-items: center; color: #fff; text-decoration: none; -webkit-user-drag: none; }
 /* Tall enough above the box that the whole item is seen before it drops in. */
 .crate__carton { position: relative; display: grid; justify-items: center; width: 100%; padding-top: 46px; }
-/* The open top seen from just above: dark inside, flaps folded back. */
+/* The open top seen from just above: dark inside, the back flap standing up behind it. */
 .crate__mouth {
-  position: absolute; top: 38px; left: 10px; right: 10px; height: 10px; border-radius: 3px 3px 0 0;
-  background: linear-gradient(#3B2410, #6B4423);
+  position: absolute; top: 36px; left: 9px; right: 9px; height: 12px; border-radius: 2px 2px 0 0;
+  background: linear-gradient(#2A1708, #5C3A1B);
 }
-.crate__mouth::before, .crate__mouth::after {
-  content: ''; position: absolute; bottom: 3px; width: 34px; height: 9px; background: #C48D4A;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2);
+.crate__mouth::before {
+  content: ''; position: absolute; bottom: 100%; left: 2px; right: 2px; height: 11px;
+  background: linear-gradient(#D9A862, #C08A47); clip-path: polygon(0 0, 100% 0, 94% 100%, 6% 100%);
 }
-.crate__mouth::before { right: 100%; transform-origin: 100% 100%; transform: rotate(-22deg); margin-right: -3px; }
-.crate__mouth::after { left: 100%; transform-origin: 0 100%; transform: rotate(22deg); margin-left: -3px; }
 /* The item: in front of the inside, behind the front of the box, so it sinks into it. */
 .thumb.crate__drop {
   position: absolute; top: 2px; left: 50%; z-index: 1; width: 32px; height: 32px; margin-left: -16px;
@@ -11513,16 +11519,25 @@ a.ocust__name:hover { color: var(--accent-text); }
   60% { transform: translateY(22px) rotate(6deg); opacity: 1; }
   100% { transform: translateY(48px) rotate(0deg) scale(0.92); opacity: 1; }
 }
-/* The front of the box. */
+/* The front of the box: corrugated kraft, shaded on the sides, a flap folded
+   out at each end that stays clear of the next box along. */
 .crate__box {
   position: relative; z-index: 2; display: grid; place-items: center; width: 88px; height: 56px;
-  border-radius: 2px 2px 6px 6px; transform-origin: 50% 100%;
+  border-radius: 2px 2px 5px 5px; transform-origin: 50% 100%;
   background:
-    linear-gradient(90deg, rgba(90, 60, 20, 0.18), transparent 10px, transparent calc(100% - 10px), rgba(90, 60, 20, 0.18)),
-    linear-gradient(#D6A35C, #B07A3A);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -3px 0 rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.4);
+    linear-gradient(rgba(0, 0, 0, 0.18), transparent 5px),
+    linear-gradient(90deg, rgba(70, 40, 10, 0.22), transparent 12px, transparent calc(100% - 12px), rgba(70, 40, 10, 0.3)),
+    repeating-linear-gradient(90deg, transparent 0 3px, rgba(120, 75, 25, 0.07) 3px 4px),
+    linear-gradient(#DDAE6A, #B98144);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.5), inset 0 -3px 0 rgba(0, 0, 0, 0.18), 0 5px 8px -2px rgba(0, 0, 0, 0.5);
   animation: crate-bump 0.5s ease-out calc(var(--d) + 0.95s) both;
 }
+.crate__box::before, .crate__box::after {
+  content: ''; position: absolute; top: -1px; width: 14px; height: 9px; background: linear-gradient(#D19A55, #B98144);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.45);
+}
+.crate__box::before { right: 100%; transform-origin: 100% 100%; transform: rotate(-74deg); border-radius: 2px 0 0 2px; }
+.crate__box::after { left: 100%; transform-origin: 0 100%; transform: rotate(74deg); border-radius: 0 2px 2px 0; }
 @keyframes crate-bump { 30% { transform: scale(1.06, 0.9); } 65% { transform: scale(0.97, 1.04); } }
 /* Where it's going, as a postage stamp with a perforated edge. */
 .crate__stamp {
@@ -11548,12 +11563,12 @@ a.ocust__name:hover { color: var(--accent-text); }
   width: 100%; margin: 6px 0 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-size: 10.5px; font-weight: var(--w-semi); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
-.crate:hover .crate__box { box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2), 0 0 0 2px #FEF08A, 0 4px 12px rgba(254, 240, 138, 0.4); }
+.crate:hover .crate__box { box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.5), 0 0 0 2px #FEF08A, 0 4px 12px rgba(254, 240, 138, 0.4); }
 
 @media (prefers-reduced-motion: reduce) {
   .stage__bulbs span, .stage__spot, .ticket, .ticket__curtain, .flip__tile, .ticket__dot, .remind__bell.is-ringing { animation: none; }
   .ticket__curtain { transition: none; }
-  .belt__floor, .belt__skyline, .belt__sun, .crate__box, .rail--belt .rail__icon { animation: none; }
+  .belt__floor, .belt__scene, .belt__sun, .plane, .crate__box, .rail--belt .rail__icon { animation: none; }
   .belt { overflow-x: auto; cursor: auto; }
   .belt__plane, .belt__flag, .crate__drop, .crate__plus { display: none; }
 }

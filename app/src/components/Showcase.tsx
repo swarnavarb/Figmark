@@ -247,10 +247,59 @@ function lane(lot: FillingLot): string | null {
   return `${countryFlag(lot.originCountry) || '🏳️'} ✈ ${countryFlag(lot.destinationCountry) || '🏳️'}`;
 }
 
-/** Landmarks along the skyline behind the belt, from all over. */
-const SKYLINE = ['🗼', '🕌', '🗽', '🏯', '🎡', '🛕', '🏰', '🗻', '⛩️', '🌉', '🏛️', '🕋', '⛪', '🏟️'];
 /** Flags drifting by: [flag, top %, seconds to cross, delay s]. */
-const DRIFT = [['🇯🇵', 18, 26, 0], ['🇮🇳', 52, 31, 9], ['🇺🇸', 30, 34, 17], ['🇫🇷', 64, 29, 4], ['🇰🇷', 12, 37, 22], ['🇬🇧', 44, 33, 13], ['🇦🇪', 70, 27, 26], ['🇹🇭', 24, 35, 6]] as const;
+const DRIFT = [['🇯🇵', 6, 26, 0], ['🇮🇳', 22, 31, 9], ['🇺🇸', 12, 34, 17], ['🇫🇷', 26, 29, 4], ['🇰🇷', 3, 37, 22], ['🇬🇧', 18, 33, 13], ['🇦🇪', 28, 27, 26], ['🇹🇭', 9, 35, 6]] as const;
+/**
+ * One stretch of horizon, drawn so its two ends meet: hills, then a city of
+ * landmarks from around the world. Two of these side by side slide by forever.
+ */
+function Scenery() {
+  return (
+    <svg className="scene" viewBox="0 0 1200 96" preserveAspectRatio="none" aria-hidden="true">
+      <path className="scene__far" d="M0 70 C80 52 150 60 220 50 S360 40 430 56 S580 66 650 48 S800 38 880 54 S1060 64 1120 52 S1180 62 1200 70 V96 H0Z" />
+      <g className="scene__city">
+        {/* Paris */}
+        <path d="M60 96 L71 58 L74 30 L76 8 L78 30 L81 58 L92 96 H85 L76 70 L67 96Z M68 60 H84 V63 H68Z M72 40 H80 V42 H72Z" />
+        {/* Giza */}
+        <path d="M130 96 L166 60 L202 96Z M180 96 L206 70 L232 96Z" />
+        {/* London */}
+        <path d="M262 96 V36 L270 22 L278 36 V96Z M258 40 H282 V44 H258Z" /><circle cx="270" cy="50" r="4" className="scene__lit" />
+        <path d="M290 96 V66 H340 V96Z M296 66 V58 H304 V66 M326 66 V58 H334 V66" />
+        {/* Kyoto */}
+        <path d="M380 96 V84 H420 V96Z M372 84 L400 76 L428 84Z M384 76 V68 H416 V76Z M376 68 L400 60 L424 68Z M388 60 V52 H412 V60Z M380 52 L400 44 L420 52Z M398 44 V34 H402 V44Z" />
+        {/* Agra */}
+        <path d="M470 96 V70 H560 V96Z M488 70 C488 50 500 42 515 36 C530 42 542 50 542 70Z M514 36 V26 H516 V36Z M474 70 V44 H480 V70Z M550 70 V44 H556 V70Z M473 44 L477 38 L481 44Z M549 44 L553 38 L557 44Z" />
+        {/* Dubai and New York */}
+        <path d="M600 96 V60 H618 V96Z M622 96 V40 H636 V96Z M640 96 V54 L646 18 L648 4 L650 18 L656 54 V96Z M660 96 V48 H676 V96Z M680 96 V66 H700 V96Z M704 96 V30 L712 22 L720 30 V96Z M724 96 V58 H742 V96Z" />
+        {/* Liberty */}
+        <path d="M790 96 V82 H812 V96Z M795 82 L798 52 H804 L807 82Z M797 52 L801 44 L805 52Z M803 46 L810 28 L812 29 L806 47Z M809 26 L813 22 L815 27Z" />
+        {/* Sydney */}
+        <path d="M850 96 V88 H960 V96Z M856 88 C858 70 870 60 884 56 C878 66 878 78 880 88Z M884 88 C886 68 900 56 916 52 C908 64 908 78 912 88Z M914 88 C916 72 928 64 942 62 C936 70 936 80 940 88Z" />
+        {/* Rome */}
+        <path d="M990 96 V62 C1020 54 1070 54 1100 62 V96Z" />
+        {/* Rio */}
+        <path d="M1130 96 C1140 70 1150 54 1165 50 C1180 54 1190 72 1200 96Z M1164 50 V34 H1166 V50Z M1156 38 H1174 V41 H1156Z" />
+      </g>
+      <path className="scene__near" d="M0 90 C100 86 200 92 300 88 S500 84 600 90 S800 94 900 88 S1100 86 1200 90 V96 H0Z" />
+    </svg>
+  );
+}
+
+/** A little airliner, side on, nose to the right. */
+function Plane() {
+  return (
+    <svg className="plane" viewBox="0 0 52 24" aria-hidden="true">
+      <path className="plane__tail" d="M5 11 L2 1 H8 L15 11Z" />
+      <path className="plane__body" d="M3 13 C3 10.5 5 10 8 10 H38 C44 10 48 11.5 50 13.5 C48 15.5 44 17 38 17 H8 C5 17 3 15.5 3 13Z" />
+      <path className="plane__wing" d="M20 14 H31 L24 23 H19Z" />
+      <path className="plane__tail" d="M4 14 H12 L9 18 H3Z" />
+      <path className="plane__glass" d="M43 11.6 C45 11.8 47 12.4 48.4 13.2 H43Z" />
+      {[14, 18, 22, 26, 30, 34, 38].map((x) => <circle key={x} cx={x} cy="12.6" r="0.9" className="plane__glass" />)}
+      <path className="plane__stripe" d="M8 15 H40" />
+    </svg>
+  );
+}
+
 /** How often the next item drops into every box. */
 const DROP_EVERY = 2600;
 /** How fast the belt runs on its own, in px a second. */
@@ -325,19 +374,17 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
     <section className="rail rail--belt" aria-label="Lots filling up">
       <span className="belt__bg" aria-hidden="true">
         <span className="belt__sun" />
-        <span className="belt__plane">✈️</span>
+        <span className="belt__plane"><Plane /></span>
         {DRIFT.map(([flag, top, across, delay]) => (
           <i key={flag} className="belt__flag" style={{ top: `${top}%`, animationDuration: `${across}s`, animationDelay: `${-delay}s` }}>{flag}</i>
         ))}
-        <span className="belt__skyline">
-          {[...SKYLINE, ...SKYLINE].map((mark, n) => <i key={n}>{mark}</i>)}
-        </span>
+        <span className="belt__scene"><Scenery /><Scenery /></span>
       </span>
       <header className="rail__head">
         <span className="rail__icon"><Svg name="box" size={18} /></span>
         <span className="rail__titles">
           <h2>Lots filling up</h2>
-          <small>Shared boxes still open. Hop in before they ship</small>
+          <small>Open lots getting filled. Contact the store to include yours</small>
         </span>
       </header>
       <div className="belt" onPointerDown={grab} onPointerMove={slide} onPointerUp={letGo} onPointerCancel={letGo}
