@@ -8181,11 +8181,33 @@ body.is-locked { overflow: hidden; }
 .qrow__head h2 { font-size: var(--t-md); display: inline-flex; align-items: center; gap: 6px; }
 .qrow__head h2 svg { color: var(--coral); }
 .qrow__more { border: 0; background: none; color: var(--violet-text); font: inherit; font-size: var(--t-xs); cursor: pointer; }
+.qrow__scroll { display: flex; gap: 10px; overflow-x: auto; padding: 8px 2px 4px; scrollbar-width: none; }
+.qrow__scroll::-webkit-scrollbar { display: none; }
 
+.qboard {
+  position: relative; flex: none; width: 168px; display: flex; gap: 10px; align-items: center;
+  padding: 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); text-decoration: none;
+}
+.qboard:hover { border-color: var(--border-strong); }
+.qboard__rank {
+  position: absolute; top: -8px; left: -4px; padding: 1px 6px; border-radius: 6px;
+  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: var(--w-bold); color: var(--q-gold-ink); background: var(--surface-hover);
+}
 .qboard__rank--1 { background: var(--q-gold); }
 .qboard__rank--2 { background: #C9D3E3; }
 .qboard__rank--3 { background: #D08A4E; }
 .qboard__rank--4 { background: var(--surface-hover); color: var(--text-dim); }
+.qboard__ring { width: 44px; height: 44px; flex: none; }
+.qboard__ring text { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 600; fill: var(--text); }
+.qboard__text { display: grid; min-width: 0; line-height: 1.25; }
+.qboard__text b {
+  font-size: var(--t-xs); font-weight: var(--w-semi);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.qboard__text small { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10.5px; color: var(--text-faint); }
+.qboard--ending { width: 200px; }
+.thumb.qboard__thumb { width: 44px; height: 44px; aspect-ratio: 1; border-radius: 10px; overflow: hidden; flex: none; font-size: 12px; }
 
 /* ── The loot card ─────────────────────────────────────────────────────── */
 
@@ -8489,6 +8511,7 @@ body.is-locked { overflow: hidden; }
 
 @media (min-width: 720px) {
   .qstats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .qboard { width: 200px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -10298,116 +10321,6 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   .honey__rain, .launch__rocket, .honey__spark, .launch__shoot, .launch__ticket, .launch__pad { display: none; }
 }
 
-/* Filling now: a packing line. Boxes ride a conveyor, catch the item dropping
-   in, bump as it lands and show how full they are. Shorter than the others. */
-.rail--belt {
-  margin: 0 0 0 calc(50% - 50vw); padding: 14px 0 16px;
-  background: radial-gradient(80% 120% at 15% 0%, #0F766E 0%, #0B3B44 40%, #081521 100%);
-}
-.belt__bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-.belt__bg::before {
-  content: ''; position: absolute; inset: 0;
-  background: repeating-linear-gradient(-45deg, rgba(250, 204, 21, 0.08) 0 14px, transparent 14px 28px) 0 0 / 40px 40px;
-  animation: belt-hazard 2.4s linear infinite;
-  -webkit-mask-image: linear-gradient(transparent 70%, #000); mask-image: linear-gradient(transparent 70%, #000);
-}
-@keyframes belt-hazard { to { background-position: -40px 0; } }
-.belt__beam {
-  position: absolute; top: -40%; left: 10%; width: 120px; height: 180%; transform: rotate(18deg);
-  background: linear-gradient(90deg, transparent, rgba(153, 246, 228, 0.16), transparent);
-  animation: belt-sweep 7s ease-in-out infinite alternate;
-}
-.belt__beam + .belt__beam { left: 60%; width: 80px; animation-duration: 9s; animation-delay: -3s; }
-@keyframes belt-sweep { to { translate: 30vw 0; } }
-.belt__dust {
-  position: absolute; bottom: 0; width: 4px; height: 4px; border-radius: 50%; background: #FDE68A;
-  box-shadow: 0 0 6px 1px rgba(253, 230, 138, 0.8); animation: belt-dust 4s ease-in infinite;
-}
-@keyframes belt-dust { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: 0.9; } 100% { transform: translateY(-170px) translateX(14px); opacity: 0; } }
-
-.belt { position: relative; z-index: 1; overflow: hidden; padding-top: 6px; }
-.belt__run {
-  display: flex; gap: 14px; width: max-content; padding: 0 7px;
-  animation: belt-run calc(var(--n) * 3.2s) linear infinite;
-}
-.belt:hover .belt__run, .belt:active .belt__run { animation-play-state: paused; }
-@keyframes belt-run { to { transform: translateX(-50%); } }
-/* The belt itself: rollers turning at the speed the boxes ride. */
-.belt__floor {
-  display: block; height: 12px; margin-top: -2px; border-radius: 3px;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.18), transparent 40%, rgba(0, 0, 0, 0.35)),
-    repeating-linear-gradient(90deg, #334155 0 10px, #1E293B 10px 20px) 0 0 / 20px 100%;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
-  animation: belt-roll 0.57s linear infinite;
-}
-@keyframes belt-roll { to { background-position: 0 0, -20px 0; } }
-
-.crate {
-  --drop: 2.6s; position: relative; flex: none; width: 96px; display: grid; justify-items: center;
-  color: #fff; text-decoration: none; padding-top: 30px;
-}
-/* The item falling in, behind the front of the box. */
-.thumb.crate__drop {
-  position: absolute; top: 0; left: 50%; z-index: 1; width: 28px; height: 28px; margin-left: -14px;
-  aspect-ratio: 1; border-radius: 7px; overflow: hidden; font-size: 9px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5), 0 0 0 1.5px rgba(255, 255, 255, 0.6);
-  animation: crate-drop var(--drop) cubic-bezier(0.5, 0, 0.9, 0.6) infinite; animation-delay: calc(var(--i) * -0.43s);
-}
-.crate__drop .thumb__img { width: 100%; height: 100%; object-fit: cover; }
-@keyframes crate-drop {
-  0% { transform: translateY(-18px) rotate(-18deg); opacity: 0; }
-  12% { opacity: 1; }
-  46% { transform: translateY(34px) rotate(8deg) scale(0.85); opacity: 1; }
-  52%, 100% { transform: translateY(44px) scale(0.5); opacity: 0; }
-}
-/* An open cardboard box, its flaps up, filling from the bottom. */
-.crate__box {
-  position: relative; z-index: 2; display: grid; place-items: center; width: 84px; height: 50px; overflow: visible;
-  border-radius: 3px 3px 6px 6px; transform-origin: 50% 100%;
-  background: linear-gradient(#D6A35C, #B07A3A); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.4);
-  animation: crate-bump var(--drop) ease-out infinite; animation-delay: calc(var(--i) * -0.43s);
-}
-.crate__box::before, .crate__box::after {
-  content: ''; position: absolute; top: -9px; width: 56%; height: 10px; background: #C48D4A;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.18);
-}
-.crate__box::before { left: -2px; transform: skewX(-24deg); transform-origin: 100% 100%; }
-.crate__box::after { right: -2px; transform: skewX(24deg); transform-origin: 0 100%; }
-@keyframes crate-bump {
-  0%, 48% { transform: none; }
-  54% { transform: scale(1.06, 0.9); }
-  62% { transform: scale(0.97, 1.04); }
-  70%, 100% { transform: none; }
-}
-.crate__level {
-  position: absolute; inset: auto 0 0; height: var(--fill); border-radius: 0 0 6px 6px; overflow: hidden;
-  background: repeating-linear-gradient(-45deg, rgba(45, 212, 191, 0.85) 0 6px, rgba(20, 184, 166, 0.85) 6px 12px) 0 0 / 17px 100%;
-  box-shadow: 0 -2px 10px rgba(45, 212, 191, 0.7);
-  animation: crate-fill 1.4s var(--spring) both, launch-stripes 0.6s linear infinite;
-}
-@keyframes crate-fill { from { height: 0; } }
-.crate__label { position: relative; display: grid; justify-items: center; line-height: 1.05; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); }
-.crate__label b { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-sm); }
-.crate__label small { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; opacity: 0.9; }
-.crate__plus {
-  position: absolute; top: -26px; right: 4px; font-size: 11px; font-weight: var(--w-bold); color: #FDE68A; opacity: 0;
-  text-shadow: 0 0 6px rgba(253, 230, 138, 0.9);
-  animation: crate-plus var(--drop) ease-out infinite; animation-delay: calc(var(--i) * -0.43s);
-}
-@keyframes crate-plus { 0%, 50% { opacity: 0; transform: translateY(6px); } 58% { opacity: 1; } 80%, 100% { opacity: 0; transform: translateY(-12px); } }
-.crate__name {
-  width: 100%; margin: 6px 0 4px; font-size: 10.5px; font-weight: var(--w-semi); text-align: center;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.92;
-}
-.crate:hover .crate__box { box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2), 0 0 0 2px #FDE68A, 0 4px 12px rgba(253, 230, 138, 0.4); }
-
-@media (prefers-reduced-motion: reduce) {
-  .belt__run, .belt__floor, .crate__box, .crate__level, .belt__bg::before { animation: none; }
-  .belt { overflow-x: auto; }
-  .crate.is-echo, .belt__beam, .belt__dust, .crate__drop, .crate__plus { display: none; }
-}
-
 .lp__about .hashtags { margin-top: 2px; }
 
 /* ── Affiliate: share and earn, who referred you, highlighted thumbnails ── */
@@ -11506,92 +11419,112 @@ a.ocust__name:hover { color: var(--accent-text); }
 .opening__acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .opening.is-live .opening__when { color: #B91C1C; font-weight: var(--w-semi); }
 
-/* ── Boxes filling up: a warehouse floor ─────────────────────────────────
-   Light where the rails are dark: a kraft-and-concrete floor with a belt
-   running along the bottom. The boxes roll in on it, the shop's items drop
-   into each one, and the number of people already in ticks up. */
-.floor {
-  grid-column: 1 / -1; position: relative; overflow: hidden;
-  margin: 12px 0; padding: 20px 0 34px;
-  border-radius: 20px;
-  background:
-    radial-gradient(100% 60% at 50% 0%, rgba(255, 255, 255, 0.5), transparent 70%),
-    linear-gradient(180deg, #EFE3CB, #E2D2B2);
-  color: #362A1A;
-  box-shadow: inset 0 -2px 0 rgba(54, 42, 26, 0.12);
+/* ── Boxes filling up: a packing line ──────────────────────────────────
+   Edge to edge like the other shelves, and shorter. Open boxes ride a
+   conveyor, each catching the shop's next item as it drops in, bumping as it
+   lands and popping a +1. Light beams sweep the floor and dust drifts up. */
+.rail--belt {
+  margin: 4px 0 8px calc(50% - 50vw); padding: 16px 0 18px;
+  background: radial-gradient(80% 120% at 15% 0%, #0F766E 0%, #0B3B44 40%, #081521 100%);
 }
-.floor__head { display: grid; gap: 2px; padding: 0 18px 14px; }
-.floor__head h2 { margin: 0; font-size: var(--t-lg); color: #362A1A; }
-.floor__head span { font-size: var(--t-xs); color: #7D6A50; }
-.floor__row {
-  position: relative; z-index: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(210px, 62%);
-  gap: 16px; overflow-x: auto; padding: 18px 18px 6px; scroll-snap-type: x mandatory; scroll-padding-inline: 18px; scrollbar-width: none;
+.belt__bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.belt__bg::before {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(-45deg, rgba(250, 204, 21, 0.08) 0 14px, transparent 14px 28px) 0 0 / 40px 40px;
+  animation: belt-hazard 2.4s linear infinite;
+  -webkit-mask-image: linear-gradient(transparent 65%, #000); mask-image: linear-gradient(transparent 65%, #000);
 }
-.floor__row::-webkit-scrollbar { display: none; }
-@media (min-width: 720px) { .floor__row { grid-auto-columns: 240px; } }
-.floor__belt {
-  position: absolute; left: 0; right: 0; bottom: 10px; height: 14px;
-  background: repeating-linear-gradient(90deg, #4B3B27 0 18px, #3A2D1D 18px 36px);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.15), 0 -1px 0 rgba(0, 0, 0, 0.2);
-  animation: belt-run 1.6s linear infinite paused;
+@keyframes belt-hazard { to { background-position: -40px 0; } }
+.belt__beam {
+  position: absolute; top: -40%; left: 10%; width: 120px; height: 180%; transform: rotate(18deg);
+  background: linear-gradient(90deg, transparent, rgba(153, 246, 228, 0.16), transparent);
+  animation: belt-sweep 7s ease-in-out infinite alternate;
 }
-.floor.is-in .floor__belt { animation-play-state: running; }
-@keyframes belt-run { to { background-position: -36px 0; } }
+.belt__beam + .belt__beam { left: 60%; width: 80px; animation-duration: 9s; animation-delay: -3s; }
+@keyframes belt-sweep { to { translate: 30vw 0; } }
+.belt__dust {
+  position: absolute; bottom: 0; width: 4px; height: 4px; border-radius: 50%; background: #FDE68A;
+  box-shadow: 0 0 6px 1px rgba(253, 230, 138, 0.8); animation: belt-dust 4s ease-in infinite;
+}
+@keyframes belt-dust { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: 0.9; } 100% { transform: translateY(-170px) translateX(14px); opacity: 0; } }
+.rail--belt .rail__head { padding-bottom: 2px; }
+.rail--belt .rail__icon { color: #FDE68A; background: rgba(45, 212, 191, 0.22); animation: belt-icon 2.6s ease-in-out infinite; }
+@keyframes belt-icon { 40% { transform: translateY(-3px); } 50% { transform: translateY(1px) scaleY(0.9); } 60% { transform: none; } }
+.rail--belt .rail__titles h2 { text-shadow: 0 0 16px rgba(45, 212, 191, 0.7); }
 
-/* One open carton. */
-.fbox { scroll-snap-align: start; display: grid; gap: 10px; opacity: 0; transform: translateX(60px); }
-.floor.is-in .fbox { animation: box-roll 0.8s cubic-bezier(0.25, 1, 0.4, 1) forwards; animation-delay: calc(var(--i) * 0.18s); }
-@keyframes box-roll { to { opacity: 1; transform: none; } }
-.fbox__carton { position: relative; height: 104px; margin: 0 10px; }
-.fbox__front {
-  position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: 70px;
-  border-radius: 4px 4px 8px 8px;
+.belt { position: relative; z-index: 1; overflow: hidden; padding-top: 4px; }
+.belt__run {
+  display: flex; gap: 14px; width: max-content; padding: 0 7px;
+  animation: belt-run calc(var(--n) * 3.2s) linear infinite;
+}
+.belt:hover .belt__run, .belt:active .belt__run { animation-play-state: paused; }
+@keyframes belt-run { to { transform: translateX(-50%); } }
+/* The belt itself: rollers turning at the speed the boxes ride. */
+.belt__floor {
+  display: block; height: 12px; margin-top: -2px; border-radius: 3px;
   background:
-    linear-gradient(90deg, rgba(90, 60, 20, 0.15), transparent 12px, transparent calc(100% - 12px), rgba(90, 60, 20, 0.15)),
-    linear-gradient(180deg, #D6B27A, #C79D5E);
-  box-shadow: 0 8px 16px rgba(54, 42, 26, 0.3);
-  display: grid; place-items: center;
+    linear-gradient(rgba(255, 255, 255, 0.18), transparent 40%, rgba(0, 0, 0, 0.35)),
+    repeating-linear-gradient(90deg, #334155 0 10px, #1E293B 10px 20px) 0 0 / 20px 100%;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+  animation: belt-roll 0.57s linear infinite;
 }
-.fbox__stamp {
-  padding: 3px 8px; border: 2px solid rgba(127, 29, 29, 0.55); border-radius: 4px; transform: rotate(-6deg);
-  color: rgba(127, 29, 29, 0.75); font-size: 11px; font-weight: 800; letter-spacing: 0.08em;
+@keyframes belt-roll { to { background-position: 0 0, -20px 0; } }
+
+.crate { flex: none; width: 104px; display: grid; justify-items: center; color: #fff; text-decoration: none; }
+.crate__carton { position: relative; display: grid; justify-items: center; width: 100%; padding-top: 30px; }
+/* The item dropping in, behind the front of the box. */
+.thumb.crate__drop {
+  position: absolute; top: 0; left: 50%; z-index: 1; width: 28px; height: 28px; margin-left: -14px;
+  aspect-ratio: 1; border-radius: 7px; overflow: hidden; font-size: 9px; opacity: 0;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5), 0 0 0 1.5px rgba(255, 255, 255, 0.6);
+  animation: crate-drop 1s cubic-bezier(0.5, 0, 0.9, 0.6) var(--d) both;
 }
-.fbox__flap { position: absolute; z-index: 0; bottom: 66px; width: 50%; height: 26px; background: #CFA567; }
-.fbox__flap--l { left: 0; transform-origin: right bottom; transform: skewX(18deg) rotate(-14deg); border-radius: 3px 0 0 0; }
-.fbox__flap--r { right: 0; transform-origin: left bottom; transform: skewX(-18deg) rotate(14deg); border-radius: 0 3px 0 0; }
-/* The items, falling in one after another. */
-.fbox__drop { position: absolute; z-index: 2; left: 0; right: 0; bottom: 50px; display: flex; justify-content: center; }
-.fbox__item {
-  width: 40px; height: 40px; border-radius: 9px; margin: 0 -4px; overflow: hidden; font-size: 11px;
-  border: 2px solid #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
-  opacity: 0; transform: translateY(-70px) rotate(-12deg);
+.crate__drop .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+@keyframes crate-drop {
+  0% { transform: translateY(-20px) rotate(-18deg); opacity: 0; }
+  15% { opacity: 1; }
+  85% { transform: translateY(34px) rotate(8deg) scale(0.85); opacity: 1; }
+  100% { transform: translateY(44px) scale(0.5); opacity: 0; }
 }
-.floor.is-in .fbox__item { animation: item-fall 0.7s cubic-bezier(0.5, 0, 0.6, 1.4) forwards; }
-.floor.is-in .fbox__item--0 { animation-delay: calc(var(--i) * 0.18s + 0.7s); }
-.floor.is-in .fbox__item--1 { animation-delay: calc(var(--i) * 0.18s + 1.0s); }
-.floor.is-in .fbox__item--2 { animation-delay: calc(var(--i) * 0.18s + 1.3s); }
-.fbox__item--1 { --rot: 6deg; }
-.fbox__item--2 { --rot: -4deg; }
-@keyframes item-fall { to { opacity: 1; transform: translateY(0) rotate(var(--rot, -6deg)); } }
-.fbox__info { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 10px 12px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.55); }
-.fbox__name { font-size: var(--t-sm); line-height: 1.25; }
-.fbox__shop { font-size: var(--t-2xs); color: #7D6A50; }
-.fbox__shop a { color: inherit; font-weight: var(--w-semi); }
-.fbox__people { font-size: var(--t-xs); }
-.fbox__people b { font-size: var(--t-base); font-variant-numeric: tabular-nums; }
-.fbox__closes { font-size: var(--t-2xs); color: #9A3412; font-weight: var(--w-semi); }
-.fbox__list { list-style: none; margin: 2px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
-.fbox__list a { display: flex; justify-content: space-between; gap: 8px; min-width: 0; color: inherit; text-decoration: none; font-size: var(--t-2xs); }
-.fbox__list span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fbox__list b { flex: none; }
-.fbox__join {
-  margin-top: 4px; text-align: center; padding: 8px 12px; border-radius: var(--r-pill);
-  background: #362A1A; color: #FBF3E2; font-size: var(--t-xs); font-weight: var(--w-bold); text-decoration: none;
+/* An open cardboard box, flaps up. */
+.crate__box {
+  position: relative; z-index: 2; display: grid; place-items: center; width: 88px; height: 56px;
+  border-radius: 3px 3px 6px 6px; transform-origin: 50% 100%;
+  background:
+    linear-gradient(90deg, rgba(90, 60, 20, 0.18), transparent 10px, transparent calc(100% - 10px), rgba(90, 60, 20, 0.18)),
+    linear-gradient(#D6A35C, #B07A3A);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.4);
+  animation: crate-bump 0.5s ease-out calc(var(--d) + 0.85s) both;
 }
+.crate__box::before, .crate__box::after {
+  content: ''; position: absolute; top: -9px; width: 56%; height: 10px; background: #C48D4A;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.18);
+}
+.crate__box::before { left: -2px; transform: skewX(-24deg); transform-origin: 100% 100%; }
+.crate__box::after { right: -2px; transform: skewX(24deg); transform-origin: 0 100%; }
+@keyframes crate-bump { 30% { transform: scale(1.06, 0.9); } 65% { transform: scale(0.97, 1.04); } }
+.crate__stamp {
+  position: absolute; top: 4px; left: 50%; padding: 0 3px; border: 1.5px solid rgba(127, 29, 29, 0.6); border-radius: 3px;
+  white-space: nowrap; transform: translateX(-50%) rotate(-4deg); color: rgba(127, 29, 29, 0.85); font-size: 7.5px; font-weight: 800; letter-spacing: 0.06em;
+}
+.crate__label { display: grid; justify-items: center; margin-top: 14px; line-height: 1.05; color: #3B2410; }
+.crate__label b { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-base); }
+.crate__label small { font-size: 9px; font-weight: var(--w-semi); opacity: 0.85; }
+.crate__plus {
+  position: absolute; top: -26px; right: 6px; font-size: 11px; font-weight: var(--w-bold); color: #FDE68A; opacity: 0;
+  text-shadow: 0 0 6px rgba(253, 230, 138, 0.9);
+  animation: crate-plus 0.9s ease-out calc(var(--d) + 0.9s) both;
+}
+@keyframes crate-plus { 0% { opacity: 0; transform: translateY(6px); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
+.crate__name, .crate__shop { width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crate__name { margin-top: 6px; font-size: 10.5px; font-weight: var(--w-semi); }
+.crate__shop { margin-bottom: 4px; font-size: 9.5px; opacity: 0.7; }
+.crate:hover .crate__box { box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2), 0 0 0 2px #FDE68A, 0 4px 12px rgba(253, 230, 138, 0.4); }
 
 @media (prefers-reduced-motion: reduce) {
   .stage__bulbs span, .stage__spot, .ticket, .ticket__curtain, .flip__tile, .ticket__dot, .remind__bell.is-ringing { animation: none; }
   .ticket__curtain { transition: none; }
-  .floor__belt { animation: none; }
-  .fbox, .fbox__item { opacity: 1; transform: none; animation: none !important; }
+  .belt__run, .belt__floor, .belt__bg::before, .crate__box, .rail--belt .rail__icon { animation: none; }
+  .belt { overflow-x: auto; }
+  .crate.is-echo, .belt__beam, .belt__dust, .crate__drop, .crate__plus { display: none; }
 }

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { countryFlag } from '@shared/countries';
 import { ApiRequestError, api, type DropCardData, type FillingLot } from '../api';
-import { formatDate, formatMoney } from '../format';
+import { formatMoney } from '../format';
 import { useSession } from '../session';
+import { Svg } from './ListingBlocks';
 import { Thumb } from './ui';
 
 /**
@@ -13,9 +14,9 @@ import { Thumb } from './ui';
  * counting down to the first item, and a bell to be told when the curtain
  * goes up. When it does, the curtain parts and the card goes live.
  *
- * Boxes filling up is a warehouse floor: open cartons rolling in on a belt,
- * the shop's items dropping into them one by one, and the number of people
- * already in each ticking up - the box is filling, and there is room for you.
+ * Boxes filling up is a packing line: open cartons riding a conveyor belt,
+ * the shop's items dropping into them one after another, and the number of
+ * people already in each on its side - the box is filling, and there is room.
  */
 
 /* ── Shared clock ──────────────────────────────────────────────────────── */
@@ -49,42 +50,6 @@ function span(seconds: number): string {
   if (d > 0) return `${d}d ${h}h`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
-/** Starts its story once it is on screen, so nothing plays to an empty room. */
-function useInView<T extends Element>(): [React.RefObject<T>, boolean] {
-  const ref = useRef<T>(null);
-  const [seen, setSeen] = useState(false);
-  useEffect(() => {
-    const node = ref.current;
-    if (!node || seen) return undefined;
-    if (typeof IntersectionObserver === 'undefined') { setSeen(true); return undefined; }
-    const watch = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) { setSeen(true); watch.disconnect(); }
-    }, { threshold: 0.25 });
-    watch.observe(node);
-    return () => watch.disconnect();
-  }, [seen]);
-  return [ref, seen];
-}
-
-/** A number that counts up from zero the first time it is seen. */
-function CountUp({ to, run }: { to: number; run: boolean }) {
-  const [shown, setShown] = useState(0);
-  useEffect(() => {
-    if (!run) return undefined;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || to <= 1) { setShown(to); return undefined; }
-    let frame = 0;
-    const start = performance.now();
-    const step = (time: number) => {
-      const done = Math.min(1, (time - start) / 1100);
-      setShown(Math.round(to * (1 - (1 - done) ** 3)));
-      if (done < 1) frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [to, run]);
-  return <>{shown}</>;
 }
 
 /* ── Drops: the stage ──────────────────────────────────────────────────── */
@@ -281,71 +246,73 @@ function lane(lot: FillingLot): string | null {
   return `${countryFlag(lot.originCountry) || '?'} → ${countryFlag(lot.destinationCountry) || '?'}`;
 }
 
-/** One open carton on the belt: items falling in, people ticking up. */
-function FillingBox({ lot, index, run }: { lot: FillingLot; index: number; run: boolean }) {
-  const first = lot.listings[0];
-  return (
-    <article className={`fbox${run ? ' is-in' : ''}`} style={{ ['--i' as string]: index }}>
-      <div className="fbox__carton" aria-hidden="true">
-        <span className="fbox__flap fbox__flap--l" />
-        <span className="fbox__flap fbox__flap--r" />
-        <span className="fbox__drop">
-          {lot.listings.slice(0, 3).map((listing, at) => (
-            <Thumb key={listing.id} seed={listing.id} label={listing.title}
-              photo={listing.photoUrl ? { url: listing.photoUrl } : null}
-              className={`fbox__item fbox__item--${at}`} />
-          ))}
-        </span>
-        <span className="fbox__front">
-          <span className="fbox__stamp">LOT {lot.number}</span>
-        </span>
-      </div>
-      <div className="fbox__info">
-        <b className="fbox__name">{lot.name}</b>
-        <span className="fbox__shop">
-          {lot.shop.handle ? <Link to={`/${lot.shop.handle}`}>{lot.shop.name}</Link> : lot.shop.name}
-          {lane(lot) && <> · {lane(lot)}</>}
-        </span>
-        <span className="fbox__people">
-          <b><CountUp to={lot.people} run={run} /></b> {lot.people === 1 ? 'person is' : 'people are'} in
-          {lot.people === 0 && ' — be the first'}
-        </span>
-        {lot.closesAround && Date.parse(lot.closesAround) > Date.now() && (
-          <span className="fbox__closes">Box closes around {formatDate(lot.closesAround)}</span>
-        )}
-        <ul className="fbox__list">
-          {lot.listings.slice(0, 3).map((listing) => (
-            <li key={listing.id}>
-              <Link to={`/listing/${listing.id}`}>
-                <span>{listing.title}</span>
-                <b>{formatMoney(listing.priceMinor, listing.currency)}</b>
-              </Link>
-            </li>
-          ))}
-        </ul>
-        {first && <Link to={`/listing/${first.id}`} className="fbox__join">Join this box →</Link>}
-      </div>
-    </article>
-  );
-}
+/** Specks of dust rising off the floor: [left %, delay s]. */
+const DUST = [[5, 0], [14, 1.8], [26, 0.7], [37, 2.6], [49, 1.2], [61, 3.1], [72, 0.3], [84, 2.1], [95, 1.5]] as const;
+/** How often the next item drops into every box. */
+const DROP_EVERY = 2600;
 
 /**
  * Boxes filling up: lots still taking orders that something can be bought
- * into, busiest first. Hidden when there are none.
+ * into, busiest first, riding a conveyor belt. Every couple of seconds the
+ * next of each lot's items drops into its box, the box bumps, and a +1 pops
+ * out of it. Hidden when there are none.
  */
 export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
-  const [ref, seen] = useInView<HTMLElement>();
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (lots.length === 0 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const timer = window.setInterval(() => setTick((n) => n + 1), DROP_EVERY);
+    return () => window.clearInterval(timer);
+  }, [lots.length]);
   if (lots.length === 0) return null;
+  // Enough boxes to cover a wide screen, then the lot again so the loop has no seam.
+  let line = lots;
+  while (line.length < 6) line = [...line, ...lots];
+  const loop = [...line, ...line];
   return (
-    <section ref={ref} className={`floor${seen ? ' is-in' : ''}`} aria-label="Boxes filling up">
-      <div className="floor__head">
-        <h2>📦 Boxes filling up</h2>
-        <span>Shared shipments still taking orders. Hop in before the box is taped shut.</span>
+    <section className="rail rail--belt" aria-label="Boxes filling up">
+      <span className="belt__bg" aria-hidden="true">
+        <i className="belt__beam" /><i className="belt__beam" />
+        {DUST.map(([left, delay], n) => (
+          <i key={n} className="belt__dust" style={{ left: `${left}%`, animationDelay: `${-delay}s` }} />
+        ))}
+      </span>
+      <header className="rail__head">
+        <span className="rail__icon"><Svg name="box" size={18} /></span>
+        <span className="rail__titles">
+          <h2>Boxes filling up</h2>
+          <small>Shared shipments still taking orders. Hop in before the box is taped shut</small>
+        </span>
+      </header>
+      <div className="belt">
+        <div className="belt__run" style={{ ['--n' as string]: line.length }}>
+          {loop.map((lot, n) => {
+            const echo = n >= lots.length;
+            const item = lot.listings.length ? lot.listings[(tick + n) % lot.listings.length] : null;
+            const first = lot.listings[0];
+            return (
+              <Link key={n} to={first ? `/listing/${first.id}` : `/${lot.shop.handle ?? ''}`} className={`crate${echo ? ' is-echo' : ''}`}
+                aria-hidden={echo || undefined} tabIndex={echo ? -1 : undefined}
+                aria-label={echo ? undefined : `${lot.name}, ${lot.people} ${lot.people === 1 ? 'person' : 'people'} in`}>
+                <span key={tick} className="crate__carton" style={{ ['--d' as string]: `${(n % 6) * 0.22}s` }}>
+                  {item && (
+                    <Thumb seed={item.id} label={item.title} photo={item.photoUrl ? { url: item.photoUrl } : null}
+                      className="thumb crate__drop" />
+                  )}
+                  <span className="crate__box">
+                    <span className="crate__stamp">LOT {lot.number}</span>
+                    <span className="crate__label"><b>{lot.people}</b><small>{lot.people === 1 ? 'person in' : 'people in'}</small></span>
+                    <span className="crate__plus">+1</span>
+                  </span>
+                </span>
+                <span className="crate__name">{lot.name}</span>
+                <span className="crate__shop">{lot.shop.name}{lane(lot) && ` · ${lane(lot)}`}</span>
+              </Link>
+            );
+          })}
+        </div>
+        <span className="belt__floor" aria-hidden="true" />
       </div>
-      <div className="floor__row">
-        {lots.map((lot, index) => <FillingBox key={lot.id} lot={lot} index={index} run={seen} />)}
-      </div>
-      <span className="floor__belt" aria-hidden="true" />
     </section>
   );
 }
