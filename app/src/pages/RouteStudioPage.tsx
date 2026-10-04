@@ -103,8 +103,6 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const [vars, setVars] = useState<PreviewVars>({});
   /** The chain as last opened or saved: anything else on screen is unsaved work. */
   const [savedAs, setSavedAs] = useState<string | null>(null);
-  /** Saved, and some unfinished lots still read the route's older steps. */
-  const [behind, setBehind] = useState<{ route: TrackingRoute; lots: number } | null>(null);
 
   useEffect(() => {
     void api.myLots().then((result) => {
@@ -273,27 +271,11 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
           })),
       });
       setSavedAs(snapshot(name, steps, joinAt, leaveAt));
-      /* Lots keep their own copy of a route, so an edit reaches none of them
-         by itself. Asked here, once, rather than discovered later. */
-      if (result.lotsBehind && result.lotsBehind > 0) setBehind({ route: result.route, lots: result.lotsBehind });
-      else onSaved(result.route);
+      /* Saving an edit also moves every unfinished lot on this route, and the
+         items in them, onto the new steps - done by the server in one go. */
+      onSaved(result.route);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that route.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function updateLots() {
-    if (!behind) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.applyRoute(behind.route.id);
-      onSaved(behind.route);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not update those lots.');
-      setBehind(null);
     } finally {
       setBusy(false);
     }
@@ -557,23 +539,6 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
         </button>
       )}
 
-      {behind && (
-        <Modal title="Update the lots on this route?" onClose={() => onSaved(behind.route)}>
-          <div className="stack">
-            <p>
-              Saved. {behind.lots === 1 ? '1 lot still travels' : `${behind.lots} lots still travel`} the
-              older steps of <strong>{behind.route.name}</strong>. Lots keep their own copy, so nothing
-              changes for their buyers unless you update them.
-            </p>
-            <button type="button" className="btn btn--block" disabled={busy} onClick={() => void updateLots()}>
-              {busy ? 'Updating…' : `Update ${behind.lots === 1 ? 'that lot' : `all ${behind.lots}`} now`}
-            </button>
-            <button type="button" className="btn btn--quiet btn--block" onClick={() => onSaved(behind.route)}>
-              Leave them as they are
-            </button>
-          </div>
-        </Modal>
-      )}
     </form>
     </PreviewVarsContext.Provider>
   );

@@ -7,6 +7,7 @@ import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
+import { LotName } from '../components/LotName';
 import { PhotoManager } from '../components/PhotoManager';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
@@ -530,8 +531,7 @@ export function SellPage() {
                 {lots.map(({ lot, orderCount }) => (
                   <button key={lot.id} type="button" role="radio" aria-checked={lotId === lot.id}
                     className={`lotpick__row${lotId === lot.id ? ' is-on' : ''}`} onClick={() => setLotId(lot.id)}>
-                    {/* The number first: two lots can share a name, never a number. */}
-                    <b>{lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}</b>
+                    <b><LotName name={lot.name} number={lot.lotNumber} /></b>
                     <span className="lotpick__meta">
                       {[lot.originCountry && lot.destinationCountry ? `${lot.originCountry} → ${lot.destinationCountry}` : lot.origin,
                         lotWhere(lot),

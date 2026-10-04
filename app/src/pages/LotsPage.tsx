@@ -12,6 +12,7 @@ import {
   type LotBoard, type LotContents, type LotDetails, type LotRouteView, type LotsResponse,
   type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
+import { lotLabel } from '../components/LotName';
 import { Ladder } from '../components/Ladder';
 import { SerialButtons } from '../components/SerialButtons';
 import { serialButtons, withReceivedAs } from '@shared/buttons';
@@ -243,7 +244,7 @@ export function RouteSheet({ onSaved, onClose }: {
  *
  * Nothing is asked twice: the countries and route of the shop's last lot are
  * where the next one starts, since most shops run the same lane again. The
- * name is optional, because the lot number is already unique.
+ * name is asked for first: it is how the shop finds this lot again.
  */
 export function NewLotForm({ onDone, onCancel }: {
   /** Handed the lot just opened, for a caller that has something to put in it. */
@@ -317,7 +318,6 @@ export function NewLotForm({ onDone, onCancel }: {
     try {
       const { lot } = await api.createLot({
         ...details,
-        // Blank is fine: the lot is called by its number.
         name: details.name.trim(),
         // Either a directory forwarder or one you already work with; the lot
         // does not care which, and neither does the buyer's tracking.
@@ -343,6 +343,13 @@ export function NewLotForm({ onDone, onCancel }: {
       <p className="muted" style={{ marginTop: -6 }}>
         A lot is one shipment. Say where it goes and how it travels, then add orders to it.
       </p>
+
+      <label className="field">
+        <span>Lot name *</span>
+        <input value={details.name} required onChange={(e) => setDetails({ ...details, name: e.target.value })}
+          placeholder="e.g. Diwali air run" />
+        <span className="field__hint">Shown first on every list; the lot number sits beside it.</span>
+      </label>
 
       {/* Every step this lot's route names - "Received at {origin} warehouse" -
           reads these two, so they are asked before the route is. */}
@@ -399,13 +406,6 @@ export function NewLotForm({ onDone, onCancel }: {
         </button>
       </fieldset>
 
-      <label className="field">
-        <span>Name it <span className="faint">(optional)</span></span>
-        <input value={details.name} onChange={(e) => setDetails({ ...details, name: e.target.value })}
-          placeholder="Left blank, it is called by its lot number" />
-        <span className="field__hint">For your own lists. Buyers see the lot number, not this.</span>
-      </label>
-
       {/* A forwarder, a supplier and a handler are all things a lot may
           acquire later, and none of them stop it existing. */}
       <button type="button" className="disclose" aria-expanded={more}
@@ -451,7 +451,7 @@ export function NewLotForm({ onDone, onCancel }: {
       {error && <ErrorNotice message={error} />}
       <div className="row">
         <button type="submit" className="btn"
-          disabled={busy || (routes.length > 0 && !routeId)}>
+          disabled={busy || !details.name.trim() || (routes.length > 0 && !routeId)}>
           {busy ? 'Opening…' : 'Open the lot'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
@@ -748,7 +748,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
                 <option value="">Stays in this lot</option>
                 {others.map((lot) => (
                   <option key={lot.id} value={lot.id}>
-                    {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
+                    {lotLabel(lot)}
                   </option>
                 ))}
               </select>

@@ -10,6 +10,7 @@ import {
   ApiRequestError, api,
   type Checkout, type EscrowOption, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
 } from '../api';
+import { lotLabel } from '../components/LotName';
 import { Ladder } from '../components/Ladder';
 import { ReportButton } from '../components/ReportButton';
 import { PaymentHistory } from '../components/Buy';
@@ -423,7 +424,7 @@ function ChangeLotDialog({ orderId, current, onClose, onDone }: {
             <option value="">Pick a lot…</option>
             {(lots ?? []).map((row) => (
               <option key={row.lot.id} value={row.lot.id}>
-                {row.lot.lotNumber ? `LOT ${row.lot.lotNumber} — ` : ''}{row.lot.name}
+                {lotLabel(row.lot)}
               </option>
             ))}
           </select>

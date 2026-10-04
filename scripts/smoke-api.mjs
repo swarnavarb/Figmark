@@ -577,11 +577,10 @@ await check('the two countries are all a lot insists on', async () => {
   // A contact with nobody attached to it is not a supplier.
   assert.equal(bare.jsonBody.lot.supplier, null);
 
-  // No name is fine: the lot is called by its number, which is unique -
-  // two lots both suggested the same "October run" were indistinguishable.
+  // The name is required: it is how a shop tells its lots apart.
   const nameless = await createLot(req({ headers: auth, body: { origin: 'Shenzhen, CN' } }), ctx);
-  assert.equal(nameless.status, 201);
-  assert.equal(nameless.jsonBody.lot.name, `Lot ${nameless.jsonBody.lot.lotNumber}`);
+  assert.equal(nameless.status, 400);
+  assert.equal(nameless.jsonBody.error, 'invalid_lot');
 });
 
 await check('a lot needs both an origin and a destination country', async () => {
@@ -5911,17 +5910,15 @@ await check('a lot is named by the person opening it, never by the first thing i
     headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
   }), ctx)).jsonBody.order;
 
-  // Left blank, it is called by its own lot number - unique, and nothing to
-  // do with whoever's parcel happened to be first in.
+  // Left blank, it is refused rather than named after whoever's parcel
+  // happened to be first in.
   for (const name of [undefined, '', '   ']) {
     const filed = await assignOrderToLot(req({
       headers: auth, params: { id: order.id },
       body: { newLot: { name, origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India' } },
     }), ctx);
-    assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
-    const lot = filed.jsonBody.lot;
-    assert.equal(lot.name, `Lot ${lot.lotNumber}`, `"${name}" falls back to the lot number`);
-    assert.ok(!lot.name.includes('Names nothing'));
+    assert.equal(filed.status, 400, `"${name}" is refused`);
+    assert.equal(filed.jsonBody.error, 'invalid_lot');
   }
 });
 
@@ -8693,7 +8690,7 @@ await check('similar items leave out the item itself and lead with its own kind'
 });
 
 
-await check('an edited route reaches the lots on it only when the seller says so', async () => {
+await check('an edited route reaches its unfinished lots as soon as it is saved', async () => {
   const made = await saveRoute(req({
     headers: auth,
     body: {
@@ -8718,33 +8715,36 @@ await check('an edited route reaches the lots on it only when the seller says so
   const same = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
   assert.equal(same.status, 409);
 
-  // Edited: the save says how many lots now read older steps, and they do.
+  // Edited: the save carries the new steps straight into the lot and its item.
   const edit = (name) => saveRoute(req({
     headers: auth,
     body: { id: route.id, name: route.name, steps: route.steps.map((step) => (step.name === 'Sailed' ? { ...step, name } : step)) },
   }), ctx);
   const saved = await edit('Sailed by sea');
   assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
-  assert.equal(saved.jsonBody.lotsBehind, 1);
-  const listed = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
-  assert.deepEqual(listed.usage[route.id], { lots: 1, behind: 1 });
+  assert.equal(saved.jsonBody.lotsUpdated, 1);
+  assert.equal(saved.jsonBody.lotsBehind, 0);
+  assert.deepEqual((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id], { lots: 1, behind: 0 });
   let board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
-  assert.ok(board.route.steps.some((step) => step.name === 'Sailed'), 'the lot keeps its own copy until asked');
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by sea'), 'the lot reads the edited steps');
+  assert.ok(!board.route.steps.some((step) => step.name === 'Sailed'));
+  // The item still rides its lot: no position of its own was invented for it.
+  const item = board.items.find((row) => row.id === order.id);
+  assert.equal(item.ownStep, false);
+  // A correction is not news: the lot's history gains no entry for it.
+  assert.ok(!board.history.some((event) => /were updated/.test(event.note ?? '')));
 
-  // Re-picking the same, now edited, route updates that lot.
-  const repicked = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
-  assert.equal(repicked.status, 200, JSON.stringify(repicked.jsonBody));
-  board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
-  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by sea'));
+  // Once up to date, re-picking the same route is refused again.
+  const again = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
+  assert.equal(again.status, 409);
 
-  // And "update every lot on it" does the same for all of them at once.
+  // "Update every lot on it" still works, and finds nothing left to do.
   await edit('Sailed by air');
   const applied = await applyRoute(req({ headers: auth, params: { id: route.id } }), ctx);
   assert.equal(applied.status, 200, JSON.stringify(applied.jsonBody));
-  assert.equal(applied.jsonBody.lotsUpdated, 1);
+  assert.equal(applied.jsonBody.lotsUpdated, 0);
   board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
   assert.ok(board.route.steps.some((step) => step.name === 'Sailed by air'));
-  assert.equal((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id].behind, 0);
 });
 
 await check('a route that never joins a lot cannot be given to one', async () => {

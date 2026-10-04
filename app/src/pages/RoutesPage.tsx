@@ -136,10 +136,8 @@ function RoutesFaq() {
         <summary>What is a route?</summary>
         <p className="muted">
           A ladder of steps you write once, here, and reuse on every lot that travels the same
-          way. A lot carries its own copy of the route it is given, so renaming or editing a
-          route later never rewrites the tracking a buyer has already been reading for weeks on
-          its own. Saving an edit offers to bring the lots on that route up to date, and this list
-          shows any lot still on older steps.
+          way. Saving an edit updates every lot still travelling that route, and the tracking of
+          the items in them, straight away. Finished lots keep the steps they ended on.
         </p>
       </details>
 

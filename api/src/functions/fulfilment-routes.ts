@@ -303,8 +303,10 @@ export async function buildLot(
   const refuse = (status: number, code: string, message: string): LotOrRefusal =>
     ({ lot: null, refusal: { status, code, message } });
 
-  // Optional: a lot with no name is called by its number, which is unique.
-  const named = body.name?.trim();
+  // Required: the name is how a shop tells its lots apart at a glance; the
+  // number beside it is only the tiebreak.
+  const name = body.name?.trim();
+  if (!name) return refuse(400, 'invalid_lot', 'Give this lot a name.');
 
   const originCountry = body.originCountry?.trim();
   const destinationCountry = body.destinationCountry?.trim();
@@ -341,7 +343,6 @@ export async function buildLot(
   const id = `lot_${randomUUID().slice(0, 12)}`;
   const now = new Date().toISOString();
   const lotNumber = lotNumberFrom(id, now);
-  const name = named || `Lot ${lotNumber}`;
   /*
    * A new lot has not taken any of its own steps yet.
    *

@@ -10,6 +10,7 @@ import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { lotIsDone, sourcingOf } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
+import { LotName, lotLabel } from '../components/LotName';
 import { RarityRibbon, XpBar } from '../components/Quest';
 import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderStatus';
 import { LBox, OptionTiles } from '../components/ListingForm';
@@ -55,7 +56,7 @@ import { SalesPanel } from './SalesPanel';
 import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
 import {
-  currencySymbol, formatDateOrdinal, formatMoney, formatTotals, fromMinor, timeAgo, toMinor,
+  currencySymbol, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
 } from '../format';
 import { useSession } from '../session';
 import { Svg } from '../components/ListingBlocks';
@@ -1626,7 +1627,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
             <option value="">No lot — filed after it sells</option>
             {lots.map(({ lot }) => (
               <option key={lot.id} value={lot.id}>
-                {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
+                {lotLabel(lot)}
               </option>
             ))}
           </select>
@@ -1840,7 +1841,7 @@ function OrderRow({
           {lotHref
             ? (
               <Link to={lotHref} className="ocard__chip ocard__chip--lot">
-                📦 {row.lotName ?? `LOT ${row.lotNumber}`}
+                📦 {row.lotName ?? `LOT ${row.lotNumber}`}{row.lotName && row.lotNumber ? <span className="lotname__no"> LOT {row.lotNumber}</span> : null}
                 {row.lotStep && <span className="ocard__chipstep"> · {row.lotStep}</span>}
               </Link>
             )
@@ -2568,7 +2569,7 @@ function ListingIntoLot({ listing, store, onClose, onDone }: {
       const waiting = (await api.lotCandidates(picked.id)).items
         .filter((item) => item.listingId === listing.id).map((item) => item.id);
       if (waiting.length > 0) await api.addItemsToLot(picked.id, waiting);
-      const name = picked.lotNumber ? `LOT ${picked.lotNumber}` : picked.name;
+      const name = lotLabel(picked);
       onDone(`${listing.title} now goes into ${name}${waiting.length > 0
         ? `, with the ${waiting.length === 1 ? 'order' : `${waiting.length} orders`} already waiting` : ''}.`);
     } catch (err) {
@@ -2597,7 +2598,7 @@ function ListingIntoLot({ listing, store, onClose, onDone }: {
               <label key={lot.id} className={`pick${lotId === lot.id ? ' is-on' : ''}`}>
                 <input type="radio" name="tag-lot" checked={lotId === lot.id} onChange={() => setLotId(lot.id)} />
                 <span className="pick__body">
-                  <span className="pick__name">{lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}</span>
+                  <span className="pick__name"><LotName name={lot.name} number={lot.lotNumber} /></span>
                   <span className="faint" style={{ fontSize: 'var(--t-xs)' }}>
                     {lot.route?.name ?? 'Generic route'} · now: {lotStepLabel(lot)}
                   </span>
@@ -2672,7 +2673,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
         // Best effort: the order is filed either way, which is what was asked.
         fed = await api.assignToLot(lotId, [row.listingId]).then(() => true, () => false);
       }
-      const name = `${picked.lotNumber ? `LOT ${picked.lotNumber}` : picked.name}`;
+      const name = lotLabel(picked);
       onDone(`${row.itemName} is in ${name}.${fed ? ' New orders of this listing will go straight in too.' : ''}`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
@@ -2701,7 +2702,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
                   onChange={() => setLotId(lot.id)} />
                 <span className="pick__body">
                   <span className="pick__name">
-                    {lot.lotNumber ? `LOT ${lot.lotNumber} — ` : ''}{lot.name}
+                    <LotName name={lot.name} number={lot.lotNumber} />
                   </span>
                   <span className="faint" style={{ display: 'grid', gap: 4, marginTop: 6, fontSize: 'var(--t-xs)' }}>
                     <span>
@@ -3142,6 +3143,15 @@ function LotCard({ summary, onOpen }: {
     india_received: 'Landed',
   };
 
+  /* Where it is, in the words its buyers read: still filling, or the step
+     it is on - with how far along its own route that is. */
+  const route = routeOfLot(lot);
+  const at = currentStepOfLot(lot);
+  const filling = at < lotOffsetOf(route);
+  const now = lotIsDone(lot)
+    ? (lot.status === 'cancelled' ? 'Called off' : 'All delivered')
+    : filling ? 'Not moved yet — still taking orders' : lotStepLabel(lot);
+
   return (
     <article role="button" tabIndex={0} aria-label={`Open ${lot.name}`}
       className={`lot lot--carton lot--${hue}${lot.stage === 'ordering' ? '' : ' lot--moving'}`}
@@ -3150,31 +3160,46 @@ function LotCard({ summary, onOpen }: {
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); }
       }}>
+      {/* The lid: the name on a line of its own, so no badge ever cuts it
+          short; the number, the lanes and the status sit beneath it. */}
       <div className="lot__head">
-        <div className="lot__headtop">
-          <span className="lot__title">
-            <span className="lot__name">{lot.name}</span>
-            {lot.lotNumber && <span className="lot__no">LOT {lot.lotNumber}</span>}
+        <span className="lot__title">
+          <span className="lot__name">{lot.name}</span>
+          {lot.lotNumber && <span className="lot__no">LOT {lot.lotNumber}</span>}
+        </span>
+        <div className="lot__headrow">
+          <span className="lot__lane">
+            {lot.originCountry || lot.destinationCountry
+              ? <>{placeOf(lot.originCountry)} <Icon name="right" size={12} /> {placeOf(lot.destinationCountry)}</>
+              : 'Countries not set'}
           </span>
           <span className={`lotpill lotpill--sm lotpill--${pill.tone}`}>
-            <Icon name={pill.icon} size={11} /> {pill.label}
+            <Icon name={pill.icon} size={12} /> {pill.label}
           </span>
         </div>
-        <span className="lot__lane">
-          {lot.originCountry || lot.destinationCountry
-            ? <>{placeOf(lot.originCountry)} <Icon name="right" size={11} /> {placeOf(lot.destinationCountry)}</>
-            : 'Countries not set'}
-        </span>
         <svg className="lot__crease" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
           <path d="M0 0 L38 0 L50 9 L62 0 L100 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
         </svg>
       </div>
 
       <div className="lot__body">
-        <span className="lot__count">
-          {tally.customers} {tally.customers === 1 ? 'customer' : 'customers'} · {summary.orderCount} {summary.orderCount === 1 ? 'order' : 'orders'}
-        </span>
-        {crew.length > 0 && <span className="lot__empty" style={{ padding: 0 }}>{crew.join(' · ')}</span>}
+        <div className="lot__now">
+          <span className="lot__nowlabel">Now</span>
+          <span className="lot__nowstep">{now}</span>
+          <span className="lot__route">
+            {route.name || 'Generic route'}
+            {!filling && !lotIsDone(lot) && ` · step ${at + 1} of ${route.steps.length}`}
+          </span>
+        </div>
+
+        <div className="lot__stats">
+          <span className="lot__stat"><b>{summary.orderCount}</b> {summary.orderCount === 1 ? 'order' : 'orders'}</span>
+          <span className="lot__stat"><b>{tally.customers}</b> {tally.customers === 1 ? 'customer' : 'customers'}</span>
+          <span className="lot__stat">
+            {summary.weightGrams > 0 ? <><b>{formatWeight(summary.weightGrams)}</b> weight</> : <><b>{summary.unitCount}</b> {summary.unitCount === 1 ? 'unit' : 'units'}</>}
+          </span>
+        </div>
+
         {summary.orderCount > 0 && (
           <div className="bars">
             {tally.progress.map((row) => (
@@ -3189,8 +3214,9 @@ function LotCard({ summary, onOpen }: {
             ))}
           </div>
         )}
+        {crew.length > 0 && <span className="lot__crew"><Icon name="truck" size={12} /> {crew.join(' · ')}</span>}
       </div>
-      <span className="lot__open" aria-hidden="true">Open <Icon name="right" size={13} /></span>
+      <span className="lot__open" aria-hidden="true">Open lot <Icon name="right" size={13} /></span>
     </article>
   );
 }

@@ -173,10 +173,18 @@ async function saveRoute(request: HttpRequest, _context: InvocationContext) {
     const existing = await repository.getRoute(user.id, body.id);
     if (!existing) return error(404, 'not_found', 'No such route.');
     const route = await repository.saveRoute({ ...existing, name, steps, updatedAt: now });
-    /* The lots already on it keep their own copy; say how many now read an
-       older one, so the seller can choose to bring them up to date. */
-    const lotsBehind = routeJoinsLot(route) ? (await lotsBehindOf(repository, user.id, route)).length : 0;
-    return json(200, { route, lotsBehind });
+    /* An edit is the seller fixing the route their lots travel, so every
+       unfinished lot on it - and every item in those lots - takes the new
+       steps straight away. Finished lots keep the copy they ended on. A route
+       edited down to no lot steps cannot carry a lot, so those keep theirs. */
+    const behind = await lotsBehindOf(repository, user.id, route);
+    if (!routeJoinsLot(route)) return json(200, { route, lotsUpdated: 0, lotsBehind: behind.length });
+    const next: LotRoute = { routeId: route.id, name: route.name, steps: withButtons(route.steps) };
+    let ordersUpdated = 0;
+    for (const lot of behind) {
+      ordersUpdated += (await rerouteLot(repository, lot, next, user.id)).ordersUpdated;
+    }
+    return json(200, { route, lotsUpdated: behind.length, ordersUpdated, lotsBehind: 0 });
   }
 
   return json(201, {
@@ -557,12 +565,16 @@ async function rerouteLot(repository: Repo, lot: Lot, next: LotRoute, userId: st
     recordedBy: userId,
   };
 
+  /* The same route with its steps edited is a correction, not news: the
+     lot's history and the buyers' inboxes stay quiet unless the seller said
+     something. A different route is a change the buyer should hear about. */
+  const quiet = updatedRoute && !note?.trim();
   const updated = await repository.updateLot({
     ...lot,
     route: next,
     currentStep: at,
     stage,
-    stageHistory: [...lot.stageHistory, event],
+    stageHistory: quiet ? lot.stageHistory : [...lot.stageHistory, event],
     updatedAt: now,
   });
 
@@ -572,16 +584,29 @@ async function rerouteLot(repository: Repo, lot: Lot, next: LotRoute, userId: st
      delivered keeps where it ended. */
   const orders = (await repository.listOrdersForLot(lot.id))
     .filter((order) => !isCancelledLike(order.status) && order.status !== 'delivered');
-  await Promise.all(orders.map((order) =>
-    repository.updateOrder({
+  await Promise.all(orders.map((order) => {
+    /* An item that rides its lot keeps riding it: no position of its own is
+       invented for it, or it would stop following the lot (and, on a lot
+       still filling, read as received before it was). One the seller placed
+       keeps that step when the step survived the edit, and otherwise joins
+       the lot - or, on a lot still filling, its own buttons. */
+    const placed = order.currentStep;
+    const kept = typeof placed === 'number' && updatedRoute
+      ? next.steps.findIndex((step) => step.id === before.steps[placed]?.id)
+      : -1;
+    const itemAt = typeof placed !== 'number'
+      ? undefined
+      : kept >= 0 ? kept : at >= lotOffset(next) ? at : undefined;
+    return repository.updateOrder({
       ...order,
-      stage,
-      currentStep: at,
-      stageHistory: [...order.stageHistory, event],
+      stage: itemAt === undefined || itemAt === at ? stage : coarseStage(next, itemAt),
+      currentStep: itemAt,
+      stageHistory: quiet ? order.stageHistory : [...order.stageHistory, event],
       updatedAt: now,
-    })));
+    });
+  }));
 
-  await notify(
+  if (!quiet) await notify(
     repository,
     orders.map((order) => order.buyerId),
     {

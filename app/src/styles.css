@@ -2031,9 +2031,10 @@ code, kbd, samp, pre {
 }
 .lot--carton.lot--moving { border-color: var(--carton-line-strong); }
 
-/* Two boxes to a shelf, phone included - each carton just gets narrower,
-   so its contents restack below rather than being squeezed sideways. */
-.lot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+/* One box to a shelf on a phone, so the name and the facts get room to be
+   read; two side by side once the screen is wide enough for both. */
+.lot-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 720px) { .lot-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 640px) {
   .lot--carton .factlist > div { flex-direction: column; align-items: flex-start; gap: 0; }
   .lot--carton .factlist dd { text-align: left; }
@@ -2072,15 +2073,18 @@ code, kbd, samp, pre {
   padding: 10px 12px 8px;
   text-align: left;
 }
-.lot__headtop { display: flex; align-items: center; gap: 8px; }
-.lot__title { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.lot__headrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.lot__title { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 8px; row-gap: 2px; }
+/* The name gets the whole width of the lid and up to two lines: it is the
+   one thing on the card a seller looks for. */
 .lot__name {
-  font-size: var(--t-sm); font-weight: var(--w-bold); letter-spacing: -0.01em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-lg, 1.2rem); font-weight: var(--w-bold); letter-spacing: -0.015em; line-height: 1.2;
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .lot__no {
-  font-size: var(--t-2xs); font-weight: var(--w-medium); opacity: 0.85;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--t-2xs); font-weight: var(--w-medium); opacity: 0.6; letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .lot__lane {
   display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
@@ -2097,7 +2101,7 @@ code, kbd, samp, pre {
   border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: var(--w-semi);
 }
-.lotpill--sm { flex: 0 0 auto; padding: 3px 8px; gap: 4px; font-size: var(--t-2xs); white-space: nowrap; }
+.lotpill--sm { flex: 0 0 auto; padding: 4px 10px; gap: 5px; font-size: var(--t-xs); white-space: nowrap; }
 .lotpill--ok { background: linear-gradient(135deg, #34D399, #10B981); color: #04251A; }
 .lotpill--info { background: linear-gradient(135deg, #60A5FA, #3B82F6); color: #fff; }
 .lotpill--warn { background: linear-gradient(135deg, #FBBF24, #F59E0B); color: #2B1D00; }
@@ -2114,19 +2118,33 @@ code, kbd, samp, pre {
   transition: background var(--dur-1, 0.15s) var(--ease, ease);
 }
 .lot__open:hover { background: rgba(54, 42, 26, 0.12); }
-.lot__empty {
-  margin: 0; padding: 0 12px 12px;
-  font-size: var(--t-xs); color: var(--carton-dim);
-}
 .lot__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 4px 12px 10px; }
 
-.lot__count { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--carton-ink); }
+.lot--carton .lot__head { padding: 14px 16px 18px; gap: 8px; }
+.lot--carton .lot__body { gap: 12px; padding: 12px 16px 14px; }
+/* Where it is now: the line the seller opens the card to learn. */
+.lot__now { display: grid; gap: 2px; color: var(--carton-ink); }
+.lot__nowlabel {
+  font-size: var(--t-2xs); font-weight: var(--w-semi); text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--carton-dim);
+}
+.lot__nowstep { font-size: var(--t-base); font-weight: var(--w-bold); line-height: 1.3; }
+.lot__route { font-size: var(--t-xs); color: var(--carton-dim); }
+/* Three counts, each a number first and its word after. */
+.lot__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.lot__stat {
+  display: grid; gap: 1px; padding: 8px 10px;
+  border-radius: var(--r-sm); background: rgba(54, 42, 26, 0.06);
+  font-size: var(--t-2xs); color: var(--carton-dim);
+}
+.lot__stat b { font-size: var(--t-base); color: var(--carton-ink); font-variant-numeric: tabular-nums; }
+.lot__crew { display: flex; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--carton-dim); }
 /* The body fills the card so "Open" sits on the bottom edge of every card in a row. */
 .lot--carton .lot__body { flex: 1 1 auto; align-content: start; }
 .lot--carton:focus-visible { outline: 2px solid var(--accent, #8B5CF6); outline-offset: 2px; }
 .lot--carton .bars { gap: 5px; }
-.lot--carton .bar { grid-template-columns: 58px 1fr auto; gap: 6px; }
-.lot--carton .bar__label { font-size: var(--t-2xs); }
+.lot--carton .bar { grid-template-columns: 64px 1fr auto; gap: 8px; }
+.lot--carton .bar__label { font-size: var(--t-xs); }
 .lot--carton .bar__label, .lot--carton .bar__count { color: var(--carton-dim); }
 .lot--carton .bar__track { background: rgba(54, 42, 26, 0.1); }
 
@@ -11069,7 +11087,20 @@ a.ocust__name:hover { color: var(--accent-text); }
 .sellhome--compact .door__note,
 .sellhome--compact .workflow__hint,
 .sellhome--compact .workflow__label { display: none; }
-.sellhome--compact .door--card { padding-block: 10px; }
-.sellhome--compact .door__glyph { display: none; }
+.sellhome--compact .door--card {
+  padding-block: 10px;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+}
+.sellhome--compact .door__glyph { display: inline-flex; }
 .sellhome--compact .workflow { padding-block: 10px; }
 .sellhome--compact .workflow__step { padding-block: 8px; }
+
+/* A lot's name, then its number in small, quiet type. */
+.lotname { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.lotname__name { font-weight: inherit; min-width: 0; overflow-wrap: anywhere; }
+.lotname__no {
+  font-size: 0.72em; font-weight: var(--w-medium); letter-spacing: 0.04em;
+  opacity: 0.6; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
