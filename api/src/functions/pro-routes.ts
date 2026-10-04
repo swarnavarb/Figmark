@@ -1,3 +1,4 @@
+import { lotNo } from '../../../shared/routes.js';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Listing, Lot, Order, User } from '../../../shared/models.js';
 import type { OrderStatus } from '../../../shared/enums.js';
@@ -158,7 +159,7 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
     const sheet = listing?.costSheet;
     const lot = lotById.get(order.lotId);
     if (lot) {
-      const row = lotRows.get(lot.id) ?? blankRow(lot.id, lot.name, lot.lotNumber ? `#${lot.lotNumber}` : null, null);
+      const row = lotRows.get(lot.id) ?? blankRow(lot.id, lot.name, lot.lotNumber ? `#${lotNo(lot.lotNumber)}` : null, null);
       addOrder(row, order, sheet);
       lotRows.set(lot.id, row);
     }

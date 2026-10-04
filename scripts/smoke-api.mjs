@@ -5016,7 +5016,7 @@ await check('a lot carries a copy of its route, not a pointer to one', async () 
   assert.equal(lot.currentStep, 1);
   assert.equal(lot.stage, 'ordering', 'and reads as what it is: filling');
   // A number a person can say out loud, derived rather than invented.
-  assert.match(lot.lotNumber, /^\d\d-[A-Z0-9]{4}$/);
+  assert.match(lot.lotNumber, /^[A-Z][2-9]-[A-Z0-9]{4}$/);
 
   // Renaming the template must not rewrite a timeline a buyer has been reading
   // for three weeks.

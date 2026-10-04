@@ -1,3 +1,4 @@
+import { lotNo } from '@shared/routes';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { countryFlag } from '@shared/countries';
@@ -132,7 +133,7 @@ export function BuyerLotBox({ group, onOpen }: { group: ItemGroup; onOpen: () =>
       <div className="lotbox__body">
         <span className="lotbox__name">{lot.name}</span>
         <span className="lotbox__meta">
-          <span className="lotname__no">LOT {lot.number}</span>
+          <span className="lotname__no">LOT {lotNo(lot.number)}</span>
           {lane && <span className="lotbox__lane">{lane}</span>}
         </span>
         <span className="lotbox__store">from {group.sellerName}</span>
@@ -162,7 +163,7 @@ export function LotPeek({ group, onClose, onPayMore }: {
     <Modal title={`📦 ${lot.name}`} onClose={onClose}>
       <div className="stack peek">
         <div className="peek__head">
-          <span className="lotname__no">LOT {lot.number}</span>
+          <span className="lotname__no">LOT {lotNo(lot.number)}</span>
           <span className="faint">from {group.sellerName}{laneFlags(lot) ? ` · ${laneFlags(lot)}` : ''}</span>
         </div>
         <PhaseTrack phase={lot.phase} />

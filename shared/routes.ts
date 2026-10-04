@@ -990,10 +990,27 @@ export function atSellerYet(lot: Pick<Lot, 'route' | 'currentStep' | 'stage'>): 
  * need a counter and a lock for no benefit - what matters is that it is short,
  * unambiguous, and the same every time anyone looks.
  */
-export function lotNumberFrom(id: string, createdAt: string): string {
-  const year = new Date(createdAt).getUTCFullYear() % 100;
-  const tail = id.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase();
-  return `${year}-${tail}`;
+export function lotNumberFrom(id: string, _createdAt?: string): string {
+  return lotNo(`00-${id.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase()}`);
+}
+
+const LOT_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+/**
+ * A lot number as it is shown now. Numbers used to open with the two-digit
+ * year, so every lot this year read "LOT 26-…" and they all looked alike;
+ * the year is swapped for a letter and digit drawn from the number's own tail,
+ * so a number saved the old way reads the same as one made today.
+ */
+export function lotNo(number: string): string;
+export function lotNo(number: string | null | undefined): string | null | undefined;
+export function lotNo(number: string | null | undefined): string | null | undefined {
+  const match = number && /^\d\d-([A-Z0-9]{4})$/.exec(number);
+  if (!match) return number;
+  const tail = match[1] ?? '';
+  let hash = 7;
+  for (const char of tail) hash = (hash * 31 + char.charCodeAt(0)) % 9973;
+  return `${LOT_LETTERS[hash % LOT_LETTERS.length]}${2 + (Math.floor(hash / LOT_LETTERS.length) % 8)}-${tail}`;
 }
 
 /** A lot as an event names it: enough to read it back, never a pointer. */
@@ -1001,7 +1018,7 @@ export function lotRefOf(lot: { id: string; name: string; lotNumber?: string | n
   return {
     id: lot.id,
     name: lot.name,
-    number: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
+    number: lotNo(lot.lotNumber) ?? lotNumberFrom(lot.id, lot.createdAt),
   };
 }
 

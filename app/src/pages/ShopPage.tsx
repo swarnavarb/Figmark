@@ -24,7 +24,7 @@ import { RoutesList } from './RoutesPage';
 import { RouteStudio } from './RouteStudioPage';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
-  lotNumberFrom, renderStepText, routeOf as routeOfLot,
+  lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { BuyerReversalDetails, Listing, Lot, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
@@ -1841,7 +1841,7 @@ function OrderRow({
           {lotHref
             ? (
               <Link to={lotHref} className="ocard__chip ocard__chip--lot">
-                📦 {row.lotName ?? `LOT ${row.lotNumber}`}{row.lotName && row.lotNumber ? <span className="lotname__no"> LOT {row.lotNumber}</span> : null}
+                📦 {row.lotName ?? `LOT ${lotNo(row.lotNumber)}`}{row.lotName && row.lotNumber ? <span className="lotname__no"> LOT {lotNo(row.lotNumber)}</span> : null}
                 {row.lotStep && <span className="ocard__chipstep"> · {row.lotStep}</span>}
               </Link>
             )
@@ -3116,7 +3116,7 @@ function LotCard({ summary, onOpen }: {
   const { lot, tally } = summary;
   const hue = hueOf(lot.id);
   const phase = lotPhase(lot);
-  const number = lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt);
+  const number = lotNo(lot.lotNumber) ?? lotNumberFrom(lot.id, lot.createdAt);
   // Packed out of everything in it: the one bar that says how ready the box is.
   const packed = tally.progress.find((row) => row.checkpoint === 'china_packed');
   const share = packed && packed.total > 0 ? packed.done / packed.total : 0;

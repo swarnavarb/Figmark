@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { countryFlag } from '@shared/countries';
 import { ApiRequestError, api, type DropCardData, type FillingLot } from '../api';
@@ -239,74 +239,140 @@ export function OpeningCard({ sellerId, saleId, startsAt, saleName, itemCount }:
   );
 }
 
-/* ── Boxes filling up: the warehouse floor ─────────────────────────────── */
+/* ── Lots filling up: a packing line ───────────────────────────────────── */
 
+/** Where a lot travels, as a stamp: the two flags with a plane between. */
 function lane(lot: FillingLot): string | null {
   if (!lot.originCountry && !lot.destinationCountry) return null;
-  return `${countryFlag(lot.originCountry) || '?'} → ${countryFlag(lot.destinationCountry) || '?'}`;
+  return `${countryFlag(lot.originCountry) || '🏳️'} ✈ ${countryFlag(lot.destinationCountry) || '🏳️'}`;
 }
 
-/** Specks of dust rising off the floor: [left %, delay s]. */
-const DUST = [[5, 0], [14, 1.8], [26, 0.7], [37, 2.6], [49, 1.2], [61, 3.1], [72, 0.3], [84, 2.1], [95, 1.5]] as const;
+/** Landmarks along the skyline behind the belt, from all over. */
+const SKYLINE = ['🗼', '🕌', '🗽', '🏯', '🎡', '🛕', '🏰', '🗻', '⛩️', '🌉', '🏛️', '🕋', '⛪', '🏟️'];
+/** Flags drifting by: [flag, top %, seconds to cross, delay s]. */
+const DRIFT = [['🇯🇵', 18, 26, 0], ['🇮🇳', 52, 31, 9], ['🇺🇸', 30, 34, 17], ['🇫🇷', 64, 29, 4], ['🇰🇷', 12, 37, 22], ['🇬🇧', 44, 33, 13], ['🇦🇪', 70, 27, 26], ['🇹🇭', 24, 35, 6]] as const;
 /** How often the next item drops into every box. */
 const DROP_EVERY = 2600;
+/** How fast the belt runs on its own, in px a second. */
+const BELT_SPEED = 34;
 
 /**
- * Boxes filling up: lots still taking orders that something can be bought
- * into, busiest first, riding a conveyor belt. Every couple of seconds the
- * next of each lot's items drops into its box, the box bumps, and a +1 pops
- * out of it. Hidden when there are none.
+ * Lots filling up: shared shipments still taking orders, busiest first,
+ * riding a conveyor past a skyline of far-off places. Every couple of seconds
+ * the next of each lot's items drops into its box, the box bumps, and a +1
+ * pops out of it. The belt can be pushed either way by hand and picks up
+ * again when let go; a box opens its shop. Hidden when there are none.
  */
 export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
   const [tick, setTick] = useState(0);
+  const run = useRef<HTMLDivElement>(null);
+  const offset = useRef(0);
+  const hover = useRef(false);
+  const drag = useRef<{ x: number; from: number; moved: boolean } | null>(null);
+  const dragged = useRef(false);
+  const still = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
   useEffect(() => {
-    if (lots.length === 0 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
+    if (lots.length === 0 || still) return undefined;
     const timer = window.setInterval(() => setTick((n) => n + 1), DROP_EVERY);
     return () => window.clearInterval(timer);
-  }, [lots.length]);
+  }, [lots.length, still]);
+
+  useEffect(() => {
+    const belt = run.current;
+    if (!belt || still) return undefined;
+    let last = performance.now();
+    let frame = 0;
+    const step = (now: number) => {
+      const seconds = Math.min(now - last, 64) / 1000;
+      last = now;
+      if (!drag.current && !hover.current) offset.current += BELT_SPEED * seconds;
+      const half = belt.scrollWidth / 2;
+      if (half > 0) offset.current = ((offset.current % half) + half) % half;
+      belt.style.transform = `translate3d(${-offset.current}px, 0, 0)`;
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [lots.length, still]);
+
   if (lots.length === 0) return null;
   // Enough boxes to cover a wide screen, then the lot again so the loop has no seam.
   let line = lots;
   while (line.length < 6) line = [...line, ...lots];
-  const loop = [...line, ...line];
+  const loop = still ? lots : [...line, ...line];
+
+  const grab = (event: PointerEvent<HTMLDivElement>) => {
+    if (still || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    drag.current = { x: event.clientX, from: offset.current, moved: false };
+  };
+  const slide = (event: PointerEvent<HTMLDivElement>) => {
+    const held = drag.current;
+    if (!held) return;
+    const dx = event.clientX - held.x;
+    if (!held.moved && Math.abs(dx) > 6) {
+      held.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    if (held.moved) offset.current = held.from - dx;
+  };
+  const letGo = () => {
+    if (drag.current?.moved) dragged.current = true;
+    drag.current = null;
+  };
+
   return (
-    <section className="rail rail--belt" aria-label="Boxes filling up">
+    <section className="rail rail--belt" aria-label="Lots filling up">
       <span className="belt__bg" aria-hidden="true">
-        <i className="belt__beam" /><i className="belt__beam" />
-        {DUST.map(([left, delay], n) => (
-          <i key={n} className="belt__dust" style={{ left: `${left}%`, animationDelay: `${-delay}s` }} />
+        <span className="belt__sun" />
+        <span className="belt__plane">✈️</span>
+        {DRIFT.map(([flag, top, across, delay]) => (
+          <i key={flag} className="belt__flag" style={{ top: `${top}%`, animationDuration: `${across}s`, animationDelay: `${-delay}s` }}>{flag}</i>
         ))}
+        <span className="belt__skyline">
+          {[...SKYLINE, ...SKYLINE].map((mark, n) => <i key={n}>{mark}</i>)}
+        </span>
       </span>
       <header className="rail__head">
         <span className="rail__icon"><Svg name="box" size={18} /></span>
         <span className="rail__titles">
-          <h2>Boxes filling up</h2>
-          <small>Shared shipments still taking orders. Hop in before the box is taped shut</small>
+          <h2>Lots filling up</h2>
+          <small>Shared boxes still open. Hop in before they ship</small>
         </span>
       </header>
-      <div className="belt">
-        <div className="belt__run" style={{ ['--n' as string]: line.length }}>
+      <div className="belt" onPointerDown={grab} onPointerMove={slide} onPointerUp={letGo} onPointerCancel={letGo}
+        onPointerEnter={(event) => { if (event.pointerType === 'mouse') hover.current = true; }}
+        onPointerLeave={(event) => { hover.current = false; if (event.pointerType === 'mouse') letGo(); }}
+        onClickCapture={(event) => {
+          if (!dragged.current) return;
+          dragged.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onDragStart={(event) => event.preventDefault()}>
+        <div className="belt__run" ref={run}>
           {loop.map((lot, n) => {
             const echo = n >= lots.length;
             const item = lot.listings.length ? lot.listings[(tick + n) % lot.listings.length] : null;
-            const first = lot.listings[0];
+            const route = lane(lot);
             return (
-              <Link key={n} to={first ? `/listing/${first.id}` : `/${lot.shop.handle ?? ''}`} className={`crate${echo ? ' is-echo' : ''}`}
+              <Link key={n} to={lot.shop.handle ? `/${lot.shop.handle}` : `/listing/${lot.listings[0]?.id ?? ''}`}
+                className="crate" draggable={false}
                 aria-hidden={echo || undefined} tabIndex={echo ? -1 : undefined}
-                aria-label={echo ? undefined : `${lot.name}, ${lot.people} ${lot.people === 1 ? 'person' : 'people'} in`}>
+                aria-label={echo ? undefined : `${lot.shop.name}: ${lot.name}, ${lot.people} ${lot.people === 1 ? 'person' : 'people'} in`}>
                 <span key={tick} className="crate__carton" style={{ ['--d' as string]: `${(n % 6) * 0.22}s` }}>
+                  <span className="crate__mouth" />
                   {item && (
                     <Thumb seed={item.id} label={item.title} photo={item.photoUrl ? { url: item.photoUrl } : null}
                       className="thumb crate__drop" />
                   )}
                   <span className="crate__box">
-                    <span className="crate__stamp">LOT {lot.number}</span>
+                    <span className="crate__stamp">{route ?? `LOT ${lot.number}`}</span>
                     <span className="crate__label"><b>{lot.people}</b><small>{lot.people === 1 ? 'person in' : 'people in'}</small></span>
                     <span className="crate__plus">+1</span>
                   </span>
                 </span>
-                <span className="crate__name">{lot.name}</span>
-                <span className="crate__shop">{lot.shop.name}{lane(lot) && ` · ${lane(lot)}`}</span>
+                <span className="crate__shop">{lot.shop.name}</span>
               </Link>
             );
           })}

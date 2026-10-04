@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
-import { WAITING_FOR_A_LOT, WAITING_FOR_LOT, itemLeaveIndex } from '@shared/routes';
+import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex } from '@shared/routes';
 import { REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
@@ -224,7 +224,7 @@ export function OrderPage() {
               <TrackHero icon={data.route.waitingForLot ? '⏳' : '🚢'}
                 now={data.route.waitingForLot ? 'Waiting for the lot to move' : lotTrack!.steps[lotAt]?.name ?? 'On its way'}
                 sub={<>
-                  📦 {data.route.lotName} <span className="lotname__no">LOT {data.route.lotNumber}</span>
+                  📦 {data.route.lotName} <span className="lotname__no">LOT {lotNo(data.route.lotNumber)}</span>
                   {leftLot ? ' · now travelling on its own' : ''}
                   {data.route.lotPhase && !leftLot && (
                     <span style={{ display: 'block', marginTop: 6 }}><LotPhaseBadge phase={data.route.lotPhase} /></span>

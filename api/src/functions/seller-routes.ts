@@ -2,7 +2,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
-import { currentStepOf, itemStepOn, lotEndIndex, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
+import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
@@ -436,7 +436,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       awaitingLot: awaitingLot(order),
       lotId: lot?.id ?? null,
       lotName: lot?.name ?? null,
-      lotNumber: lot ? lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt) : null,
+      lotNumber: lot ? lotNo(lot.lotNumber) ?? lotNumberFrom(lot.id, lot.createdAt) : null,
       lotStep: lot
         ? renderStepText(routeOf(lot).steps[currentStepOf(lot)]?.name ?? '', { origin: lot.originCountry, destination: lot.destinationCountry }) || null
         : null,

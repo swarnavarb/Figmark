@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactN
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
-  type RouteStep, type TrackingRoute,
+  type RouteStep, type TrackingRoute, lotNo,
 } from '@shared/routes';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';
 import type { Lot } from '@shared/models';
@@ -1123,7 +1123,7 @@ export function LotDetail({ lotId, onBack, customers }: {
       <header className="lothero">
         <h1 className="lothero__name">{lot.name}</h1>
         <div className="lothero__ids">
-          <span className="lothero__id">LOT {route.lotNumber}</span>
+          <span className="lothero__id">LOT {lotNo(route.lotNumber)}</span>
           <span className={`lothero__state lothero__state--${done ? 'done' : lotStep < 0 ? 'filling' : 'moving'}`}>
             {status}
           </span>

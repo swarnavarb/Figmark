@@ -5,7 +5,7 @@ import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
 import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefront.js';
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone, sourcingOf } from '../../../shared/fulfilment.js';
-import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
+import { lotNo, lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
 import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, isReaction, type ReactionKind } from '../../../shared/social.js';
@@ -717,7 +717,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
         lot: {
           id: bornInLot.id,
           name: bornInLot.name,
-          number: bornInLot.lotNumber ?? lotNumberFrom(bornInLot.id, bornInLot.createdAt),
+          number: lotNo(bornInLot.lotNumber) ?? lotNumberFrom(bornInLot.id, bornInLot.createdAt),
         },
         note: null,
         recordedBy: user.id,

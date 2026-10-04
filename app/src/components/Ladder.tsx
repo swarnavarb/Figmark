@@ -3,7 +3,7 @@ import { isLotEvent, kindOf, settledHistory } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import {
-  groupStages, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep,
+  groupStages, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep, lotNo,
 } from '@shared/routes';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { formatDateOrdinal } from '../format';
@@ -213,7 +213,7 @@ export function Ladder({
                           : stillWaiting
                             ? <>Will be shipped with <strong>{event.lot?.name}</strong></>
                             : <>Travelling with <strong>{event.lot?.name}</strong></>}
-                        {event.lot?.number && <span className="ladder__lot-no">LOT {event.lot.number}</span>}
+                        {event.lot?.number && <span className="ladder__lot-no">LOT {lotNo(event.lot.number)}</span>}
                       </span>
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>
                       {lotAction?.(event)}

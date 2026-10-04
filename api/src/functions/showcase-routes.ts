@@ -1,6 +1,6 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { lotIsDone, lotPhase } from '../../../shared/fulfilment.js';
-import { lotNumberFrom } from '../../../shared/routes.js';
+import { lotNo, lotNumberFrom } from '../../../shared/routes.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import type { Lot, PowerSale, User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
@@ -88,7 +88,7 @@ async function fillingLots(_request: HttpRequest, _context: InvocationContext) {
     lots: picked.map(({ lot, listings, people, orders }) => ({
       id: lot.id,
       name: lot.name,
-      number: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
+      number: lotNo(lot.lotNumber) ?? lotNumberFrom(lot.id, lot.createdAt),
       sellerId: lot.sellerId,
       shop: shopOf(shops.get(lot.sellerId)),
       originCountry: lot.originCountry ?? null,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { LOT_PHASE_HINTS } from '@shared/fulfilment';
-import { renderStepText, type RouteStep } from '@shared/routes';
+import { lotNo, renderStepText, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type ItemGroup, type OrderTracking } from '../api';
 import { MoneyBar } from '../components/Buy';
 import { PayChip, PhaseTrack, factsOf, hueOfLot, laneFlags, type BuyerItem } from '../components/BuyerLots';
@@ -69,7 +69,7 @@ export function BuyerLotPage() {
         <div className="blot__front">
           <h1 className="blot__name">{lot.name}</h1>
           <div className="blot__ids">
-            <span className="lotname__no">LOT {lot.number}</span>
+            <span className="lotname__no">LOT {lotNo(lot.number)}</span>
             {laneFlags(lot) && <span>{laneFlags(lot)}</span>}
             <span>from {group.sellerHandle
               ? <Link to={`/${group.sellerHandle}`}>{group.sellerName}</Link>

@@ -7,7 +7,7 @@ import { can } from '../../../shared/stores.js';
 import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
-  BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNumberFrom, normaliseSteps,
+  BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNo, lotNumberFrom, normaliseSteps,
   itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeJoinsLot, routeOf, stepForStage, stepTickKey, triggeredStep,
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, ticksOf
 } from '../../../shared/routes.js';
@@ -501,7 +501,7 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
       offset: lotOffset(route),
       /** Once the lot is with the seller, items are finished one at a time. */
       atSeller: atSellerYet(lot),
-      lotNumber: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
+      lotNumber: lotNo(lot.lotNumber) ?? lotNumberFrom(lot.id, lot.createdAt),
     },
     /** The lot's own history: every step it took and every note written on it. */
     history: lot.stageHistory,
@@ -1031,7 +1031,7 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
          Without it this screen was the only place a lot appeared under its
          name alone, so a row elsewhere reading "LOT 26-832C" looked like a
          link to a different lot entirely. */
-      lotNumber: lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt),
+      lotNumber: lotNo(lot.lotNumber) ?? lotNumberFrom(lot.id, lot.createdAt),
       stage: lot.stage,
       status: lot.status,
       origin: lot.origin ?? '',
