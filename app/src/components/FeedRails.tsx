@@ -52,6 +52,16 @@ export function preOrderPicks<T extends FeedListing>(listings: readonly T[]): T[
     .sort((a, b) => Date.parse(a.preOrder!.cutoffAt) - Date.parse(b.preOrder!.cutoffAt));
 }
 
+/** Pre-orders still short of going ahead, the nearest to full first. */
+export function fillingPicks<T extends FeedListing>(listings: readonly T[]) {
+  return listings
+    .filter((listing) => listing.preOrder && !listing.preOrder.closedAt)
+    .map((listing) => ({ listing, view: preOrderView(listing.preOrder!) }))
+    .filter(({ view }) => view.toGo > 0)
+    .sort((a, b) => b.view.committed / b.view.fillThreshold - a.view.committed / a.view.fillThreshold)
+    .slice(0, 6);
+}
+
 const SHELF = 10;
 
 /** Most viewed and saved, on fire: flames behind the photos and licking over their bottom edge. */
@@ -194,6 +204,52 @@ export function PreOrderRail({ listings, now }: { listings: readonly FeedListing
         ))}
       </span>
     </section>
+  );
+}
+
+/**
+ * The boxes under "Filling now": pre-orders as a packing line: open boxes ride a conveyor belt,
+ * each one catching the item as it drops in and showing how full it is.
+ */
+const DUST = [[5, 0], [14, 1.8], [26, 0.7], [37, 2.6], [49, 1.2], [61, 3.1], [72, 0.3], [84, 2.1], [95, 1.5]] as const;
+
+export function FillingRail({ picks }: { picks: ReturnType<typeof fillingPicks> }) {
+  if (picks.length === 0) return null;
+  // Enough boxes to cover a wide screen, then the lot again so the loop has no seam.
+  let line = picks;
+  while (line.length < 6) line = [...line, ...picks];
+  const loop = [...line, ...line];
+  return (
+    <div className="rail rail--belt">
+      <span className="belt__bg" aria-hidden="true">
+        <i className="belt__beam" /><i className="belt__beam" />
+        {DUST.map(([left, delay], n) => (
+          <i key={n} className="belt__dust" style={{ left: `${left}%`, animationDelay: `${-delay}s` }} />
+        ))}
+      </span>
+      <div className="belt">
+        <div className="belt__run" style={{ ['--n' as string]: line.length }}>
+          {loop.map(({ listing, view }, n) => {
+            const percent = Math.min(100, Math.round((view.committed / Math.max(1, view.fillThreshold)) * 100));
+            const echo = n >= picks.length;
+            return (
+              <Link key={n} to={`/listing/${listing.id}`} className={`crate${echo ? ' is-echo' : ''}`}
+                aria-hidden={echo || undefined} tabIndex={echo ? -1 : undefined}
+                style={{ ['--i' as string]: n % line.length, ['--fill' as string]: `${percent}%` }}>
+                <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb crate__drop" />
+                <span className="crate__box">
+                  <span className="crate__level" />
+                  <span className="crate__label"><b>{percent}%</b><small>{view.committed}/{view.fillThreshold}</small></span>
+                  <span className="crate__plus">+1</span>
+                </span>
+                <span className="crate__name">{listing.title}</span>
+              </Link>
+            );
+          })}
+        </div>
+        <span className="belt__floor" aria-hidden="true" />
+      </div>
+    </div>
   );
 }
 

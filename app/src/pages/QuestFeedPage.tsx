@@ -13,8 +13,8 @@ import { api, type FeedListing } from '../api';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import {
-  DemandRail, EarnRail, EndingRail, FEED_VIEW_TITLES, PreOrderRail, demandPicks, earnPicks, endingPicks, isFeedView,
-  preOrderPicks,
+  DemandRail, EarnRail, EndingRail, FEED_VIEW_TITLES, FillingRail, PreOrderRail, demandPicks, earnPicks, endingPicks,
+  fillingPicks, isFeedView, preOrderPicks,
 } from '../components/FeedRails';
 import { SkeletonGrid } from '../components/Feedback';
 import {
@@ -75,12 +75,7 @@ export function QuestFeedPage() {
   const earnAt = Math.min(11, shown.length - 1);
   const preOrderAt = Math.min(15, shown.length - 1);
 
-  const filling = rated
-    .filter((listing) => listing.preOrder && !listing.preOrder.closedAt)
-    .map((listing) => ({ listing, view: preOrderView(listing.preOrder!) }))
-    .filter(({ view }) => view.toGo > 0)
-    .sort((a, b) => b.view.committed / b.view.fillThreshold - a.view.committed / a.view.fillThreshold)
-    .slice(0, 6);
+  const filling = useMemo(() => fillingPicks(rated), [rated]);
 
   const browsing = !search && activeFilters === 0 && !rarityFilter && !feedView;
   const counts = Object.fromEntries(
@@ -160,18 +155,7 @@ export function QuestFeedPage() {
             <h2><Glyph name="flame" size={15} /> Filling now</h2>
             <button type="button" className="qrow__more" onClick={() => chooseKind('pre_order')}>All pre-orders</button>
           </div>
-          <div className="qrow__scroll">
-            {filling.map(({ listing, view }, index) => (
-              <Link key={listing.id} to={`/listing/${listing.id}`} className="qboard">
-                <span className={`qboard__rank qboard__rank--${Math.min(index + 1, 4)}`}>#{index + 1}</span>
-                <FillRing percent={view.committed / view.fillThreshold} />
-                <span className="qboard__text">
-                  <b>{listing.title}</b>
-                  <small>{view.committed}/{view.fillThreshold} · {view.toGo} to go</small>
-                </span>
-              </Link>
-            ))}
-          </div>
+          <FillingRail picks={filling} />
         </section>
       )}
 
@@ -752,19 +736,6 @@ function LootCard({ listing }: { listing: Rated }) {
         </span>
       </div>
     </Link>
-  );
-}
-
-function FillRing({ percent }: { percent: number }) {
-  const length = 2 * Math.PI * 18;
-  const tone = percent >= 0.9 ? 'var(--coral)' : percent >= 0.6 ? 'var(--q-gold)' : 'var(--violet-text)';
-  return (
-    <svg className="qboard__ring" viewBox="0 0 44 44" aria-hidden="true">
-      <circle cx="22" cy="22" r="18" fill="none" stroke="var(--q-track)" strokeWidth="5" />
-      <circle cx="22" cy="22" r="18" fill="none" stroke={tone} strokeWidth="5" strokeLinecap="round"
-        strokeDasharray={`${Math.min(1, percent) * length} ${length}`} transform="rotate(-90 22 22)" />
-      <text x="22" y="26" textAnchor="middle">{Math.round(Math.min(1, percent) * 100)}%</text>
-    </svg>
   );
 }
 
