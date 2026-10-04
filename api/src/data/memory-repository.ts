@@ -19,6 +19,8 @@ import {
   DEMO_PHONE,
   ESCROW_EMAIL,
   HANDLER_EMAIL,
+  ARTIST_EMAIL,
+  FORWARDER_EMAIL,
   PACKER_EMAIL,
   seedComments,
   seedFollows,
@@ -272,6 +274,8 @@ export class MemoryRepository implements Repository {
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
       { identifier: ESCROW_EMAIL, label: `the escrow holding the money · ${DEMO_PASSWORD}` },
       { identifier: HANDLER_EMAIL, label: `the handler getting the parcels out · ${DEMO_PASSWORD}` },
+      { identifier: FORWARDER_EMAIL, label: `the freight forwarder's store · ${DEMO_PASSWORD}` },
+      { identifier: ARTIST_EMAIL, label: `the artist studio taking commissions · ${DEMO_PASSWORD}` },
     ];
   }
 
@@ -385,6 +389,12 @@ export class MemoryRepository implements Repository {
     return [...this.orders.values()]
       .filter((order) => order.protection?.escrowAgentId === escrowAgentId && isPlaced(order))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async listOrdersCommissionedFrom(artistId: string): Promise<Order[]> {
+    return [...this.orders.values()]
+      .filter((order) => order.artistJob?.artistId === artistId)
+      .sort((a, b) => (b.artistJob?.updatedAt ?? '').localeCompare(a.artistJob?.updatedAt ?? ''));
   }
 
   async listOrdersForBuyer(buyerId: string): Promise<Order[]> {

@@ -33,6 +33,10 @@ const MyServicesPage = page(() => import('./pages/ServicesPage'), 'MyServicesPag
 const ConsignmentsPage = page(() => import('./pages/ServicesPage'), 'ConsignmentsPage');
 const DistributionPage = page(() => import('./pages/ServicesPage'), 'DistributionPage');
 const ServiceDirectoryPage = page(() => import('./pages/ServicesPage'), 'ServiceDirectoryPage');
+const StoreApplyPage = page(() => import('./pages/StoreApplyPage'), 'StoreApplyPage');
+const StoreConsolePage = page(() => import('./pages/StoreConsolePage'), 'StoreConsolePage');
+const StorePage = page(() => import('./pages/StorePage'), 'StorePage');
+const CrewLotPage = page(() => import('./pages/CrewLotPage'), 'CrewLotPage');
 const SocialPage = page(() => import('./pages/SocialPage'), 'SocialPage');
 const ChannelPage = page(() => import('./pages/SocialPage'), 'ChannelPage');
 const PostPage = page(() => import('./pages/SocialPage'), 'PostPage');
@@ -43,7 +47,6 @@ const PackingLotPage = page(() => import('./pages/SupplierPage'), 'PackingLotPag
 const OrderPage = page(() => import('./pages/OrderPage'), 'OrderPage');
 const DisputePage = page(() => import('./pages/DisputePage'), 'DisputePage');
 const EscrowPage = page(() => import('./pages/EscrowPage'), 'EscrowPage');
-const ForwardersPage = page(() => import('./pages/ForwardersPage'), 'ForwardersPage');
 const ProfilePage = page(() => import('./pages/ProfilePage'), 'ProfilePage');
 const PurchasesPage = page(() => import('./pages/PurchasesPage'), 'PurchasesPage');
 const CartPage = page(() => import('./pages/PurchasesPage'), 'CartPage');
@@ -102,11 +105,13 @@ function App() {
         <Route path="/services/mine" element={members(<MyServicesPage />)} />
         <Route path="/services/mine/forwarder" element={members(<ConsignmentsPage />)} />
         <Route path="/services/mine/handler" element={members(<DistributionPage />)} />
-        {/* Freight forwarders are the forwarder directory itself, which used
-            to hang off the header and now lives here with the other trades. */}
-        <Route path="/services/forwarder" element={<ForwardersPage />} />
+        <Route path="/services/apply/:kind" element={members(<StoreApplyPage />)} />
+        <Route path="/services/store/:kind" element={members(<StoreConsolePage />)} />
+        <Route path="/services/store/:kind/:ownerId" element={members(<StoreConsolePage />)} />
+        <Route path="/services/crew/:sellerId/:lotId" element={members(<CrewLotPage />)} />
         {/* Last of the four, so the static paths above win the match. */}
         <Route path="/services/:kind" element={<ServiceDirectoryPage />} />
+        <Route path="/services/:kind/:slug" element={<StorePage />} />
         <Route path="/social" element={members(<SocialPage />)} />
         <Route path="/social/c/:id" element={members(<ChannelPage />)} />
         <Route path="/social/f/:id" element={members(<ForumRoom />)} />

@@ -151,6 +151,8 @@ export interface User extends BaseDocument {
    * the same reason - one person is often a seller too.
    */
   handlerProfile?: HandlerProfile | null;
+  /** An artist's studio, opened on application. */
+  artistProfile?: ArtistProfile | null;
   /**
    * Non-null once the company has granted this seller protected checkout.
    * Absent on every account that has not been granted it, which is most.
@@ -396,6 +398,159 @@ export interface StoreManager {
   addedBy: string;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Service stores                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where a service store stands with the company. See `shared/service-stores.ts`
+ * for the rules; absent on a store means approved, which is what every entry
+ * written before review existed already was.
+ */
+export type StoreStatus = 'pending' | 'changes' | 'approved' | 'rejected' | 'suspended';
+
+/** One decision on a store, oldest first: what was asked and what was decided. */
+export interface StoreReviewEvent {
+  at: string;
+  by: string;
+  status: StoreStatus;
+  note: string;
+}
+
+export interface StoreApplication {
+  submittedAt: string;
+  history: StoreReviewEvent[];
+}
+
+export interface StoreLink {
+  label: string;
+  url: string;
+}
+
+/** What a team member may do in a service store, besides the owner. */
+export type StoreRight = 'work' | 'store' | 'team';
+
+export interface StoreMember {
+  userId: string;
+  displayName: string;
+  rights: StoreRight[];
+  addedAt: string;
+  addedBy: string;
+}
+
+/**
+ * The shopfront every service store shares, forwarder or artist.
+ *
+ * The first block is what the directory has always read. Everything after it
+ * is optional so an entry written before stores existed still loads as one.
+ */
+export interface StoreCore {
+  companyName: string;
+  /** URL slug for the public store page. */
+  directorySlug: string;
+  description: string;
+  contactEmail: string;
+  contactPhone: string;
+  trust: TrustSignals;
+  /** Withdrawn entries keep their history but stop appearing in search. */
+  listedInDirectory: boolean;
+
+  status?: StoreStatus;
+  application?: StoreApplication | null;
+  /** One line under the name. */
+  tagline?: string;
+  logoUrl?: string | null;
+  coverUrl?: string | null;
+  /** One of the app's hues, for the store page's wash. */
+  accent?: string;
+  city?: string;
+  country?: string;
+  /** GST, company or studio registration - read by operators, shown as "registered". */
+  businessId?: string | null;
+  /** Trading since, as a year. */
+  since?: number | null;
+  links?: StoreLink[];
+  team?: StoreMember[];
+  /** Where a buyer pays this store directly. Artists use it; a forwarder is paid through the shop. */
+  payment?: SellerPaymentDetails | null;
+}
+
+/** One lane a forwarder runs, priced. */
+export interface FreightLane {
+  id: string;
+  originCity: string;
+  originCountry: string;
+  destinationCity: string;
+  destinationCountry: string;
+  mode: 'air' | 'express' | 'sea' | 'rail' | 'road';
+  /** Indicative rate in minor units per kilogram. */
+  ratePerKgMinor: number;
+  /** The least weight billed, in kg. */
+  minChargeKg: number;
+  transitDaysMin: number;
+  transitDaysMax: number;
+  /** Duty and clearance handled by the forwarder at destination. */
+  customsIncluded: boolean;
+  /** Cut-off day, consolidation window, anything a shop plans around. */
+  note: string;
+  active: boolean;
+}
+
+/** Transit cover a forwarder sells, which a buyer can add to their item. */
+export interface InsurancePlan {
+  id: string;
+  name: string;
+  /** Share of the declared value paid out on a loss. */
+  coverPercent: number;
+  /** Premium, in basis points of the declared value. */
+  premiumBasisPoints: number;
+  minPremiumMinor: number;
+  /** Ceiling on a payout, per item. Null means none. */
+  maxCoverMinor: number | null;
+  /** What is and is not covered, and how a claim is made. */
+  terms: string;
+  active: boolean;
+}
+
+/** Where goods go to be consolidated. */
+export interface StoreWarehouse {
+  address: string;
+  contact: string;
+  hours: string;
+}
+
+/** One thing an artist offers, priced from. */
+export interface ArtistOffering {
+  id: string;
+  name: string;
+  description: string;
+  priceFromMinor: number;
+  turnaroundDays: number;
+  active: boolean;
+}
+
+export interface PortfolioPiece {
+  id: string;
+  url: string;
+  caption: string;
+}
+
+/**
+ * An artist's studio: repaints, customs, restoration, diorama work.
+ *
+ * Opened on application like a forwarder's store. Buyers commission one on an
+ * item they bought here, so the work hangs off the order (see `ArtistJob`).
+ */
+export interface ArtistProfile extends StoreCore {
+  specialties: string[];
+  offerings: ArtistOffering[];
+  portfolio: PortfolioPiece[];
+  /** Off means the store stays up but takes no new commissions. */
+  acceptingWork: boolean;
+  /** Where an item is sent to be worked on. Shown to the shop once a commission is paid. */
+  studioAddress: string;
+}
+
 /** One China-origin to India-destination lane a forwarder claims to serve. */
 export interface ForwarderRoute {
   originCity: string;
@@ -408,27 +563,28 @@ export interface ForwarderRoute {
 }
 
 /**
- * A freight forwarder's directory entry. Forwarders sign themselves up and
- * sellers choose them; nothing here is admin-entered.
+ * A freight forwarder's store. They apply with their details and lanes, an
+ * operator approves it, and sellers book them on a lot from then on.
  */
-export interface ForwarderProfile {
-  companyName: string;
-  /** URL slug for the public directory entry. */
-  directorySlug: string;
-  description: string;
+export interface ForwarderProfile extends StoreCore {
+  /**
+   * The lanes as the directory has always read them. Kept in step with
+   * `lanes` on every save, so older screens keep working.
+   */
   routes: ForwarderRoute[];
-  contactEmail: string;
-  contactPhone: string;
   /** Monthly volume in kg the forwarder claims to handle. Unverified. */
   claimedMonthlyCapacityKg: number | null;
+  /** Priced lanes, as the store sells them. */
+  lanes?: FreightLane[];
+  /** Transit cover buyers can add to an item travelling with this forwarder. */
+  insurance?: InsurancePlan[];
+  /** Where suppliers drop goods for consolidation. */
+  warehouse?: StoreWarehouse | null;
   /**
-   * Ratings from sellers, gated on lots this forwarder actually shipped - the
-   * same completed-transaction rule as buyer and seller reviews, so a rating
-   * cannot exist without a shipment behind it.
+   * Take every lot a shop sends without asking. Off, a lot arrives as a
+   * request the team accepts or declines before it can work it.
    */
-  trust: TrustSignals;
-  /** Withdrawn entries keep their history but stop appearing in search. */
-  listedInDirectory: boolean;
+  autoAccept?: boolean;
 }
 
 /**
@@ -925,6 +1081,19 @@ export interface LotForwarder {
    * is no live carrier API pull yet; this is the tracking reference as given.
    */
   trackingReference: string | null;
+  /** The store lane this lot is booked on, when picked from a store. */
+  laneId?: string | null;
+  /** The lane in words as it was booked, so a later edit does not rewrite it. */
+  laneLabel?: string | null;
+  /**
+   * Whether the forwarder has taken the lot. A store on auto-accept takes it
+   * at once; otherwise it waits as a request. Absent on a typed-in forwarder.
+   */
+  acceptance?: 'pending' | 'accepted' | 'declined';
+  respondedAt?: string | null;
+  respondedBy?: string | null;
+  /** Cover the shop offers its buyers on this lot, from the forwarder's plans. */
+  insurancePlanIds?: string[];
 }
 
 /** Inputs to the landed-cost / profit calculator. All amounts in minor units. */
@@ -1133,6 +1302,14 @@ export interface Order extends BaseDocument {
    * and so have no lot tracking reference to borrow.
    */
   shipment?: OrderShipment | null;
+  /**
+   * Extras the buyer opted into on this item - transit cover so far. Their
+   * premiums are part of what the order costs (`orderTotalMinor`), paid the
+   * same way as the goods.
+   */
+  addOns?: OrderAddOn[];
+  /** A commission on this item with an artist, when the buyer asked for one. */
+  artistJob?: ArtistJob | null;
 }
 
 /** Who earns a commission on an order, and on what terms. */
@@ -1202,6 +1379,82 @@ export interface BuyerReversalDetails {
   accountName: string;
   notes?: string | null;
   qrCodeUrl?: string | null;
+  updatedAt: string;
+}
+
+/** An extra a buyer added to their order. */
+export interface OrderAddOn {
+  id: string;
+  kind: 'insurance';
+  /** The forwarder store selling it. */
+  providerId: string;
+  providerName: string;
+  planId: string;
+  planName: string;
+  /** The value insured: the goods, at what the buyer paid. */
+  valueMinor: number;
+  coverMinor: number;
+  premiumMinor: number;
+  terms: string;
+  addedAt: string;
+  addedBy: string;
+  /** Taken off before the goods left. Kept so the history still says it was there. */
+  removedAt: string | null;
+}
+
+export type ArtistJobStatus =
+  | 'requested' | 'quoted' | 'accepted' | 'paid' | 'working' | 'ready' | 'shipped' | 'completed'
+  | 'declined' | 'cancelled';
+
+export interface ArtistJobPayment {
+  at: string;
+  amountMinor: number;
+  method: PaymentMethod;
+  reference: string | null;
+  /** Direct payments wait on the artist saying it arrived; held ones are confirmed at once. */
+  confirmedAt: string | null;
+}
+
+export interface ArtistJobEvent {
+  at: string;
+  by: string;
+  status: ArtistJobStatus;
+  note: string;
+}
+
+/**
+ * A commission: a buyer asks an artist to work on something they bought.
+ *
+ * Paid on its own, to the artist, the same two ways an order is: held by an
+ * escrow until the buyer has the finished piece, or sent direct with the
+ * artist confirming it arrived.
+ */
+export interface ArtistJob {
+  id: string;
+  artistId: string;
+  artistName: string;
+  offeringId: string | null;
+  offeringName: string;
+  brief: string;
+  /** Reference pictures the buyer linked. */
+  refUrls: string[];
+  status: ArtistJobStatus;
+  quoteMinor: number | null;
+  quoteNote: string;
+  turnaroundDays: number | null;
+  method: PaymentMethod | null;
+  escrowAgentId: string | null;
+  escrowName: string | null;
+  protectionFeeMinor: number;
+  payments: ArtistJobPayment[];
+  /** Held by the escrow, released when the buyer marks it complete. */
+  heldMinor: number;
+  releasedAt: string | null;
+  /** Pictures of the finished work. */
+  photos: string[];
+  shipment: { courier: string; awb: string; at: string } | null;
+  history: ArtistJobEvent[];
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -1817,7 +2070,11 @@ export type NotificationKind =
   | 'post_reacted'
   | 'post_commented'
   | 'comment_replied'
-  | 'post_shared';
+  | 'post_shared'
+  /** A service store's application was decided, or a lot was booked with one. */
+  | 'service_store'
+  /** An artist commission moved: quoted, paid, finished, shipped. */
+  | 'commission';
 
 /**
  * A run of channel posts that sells things, on a timer the shop sets.

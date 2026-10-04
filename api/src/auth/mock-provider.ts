@@ -396,6 +396,30 @@ function readToken(request: HttpRequest): string | null {
  * never something a row can acquire through a bug in a write path, and never
  * something that survives being copied between databases.
  */
+/**
+ * The forwarder's directory line, without the store behind it.
+ *
+ * This object rides in the session cookie, and a store's lanes, cover terms
+ * and review history pushed a real one past the 4 KB a browser will keep -
+ * the forwarder signed in, and was signed straight back out. Nothing in the
+ * app reads the store from the session; the console fetches it.
+ */
+function forwarderSummary(profile: User['forwarderProfile']): AuthUser['forwarderProfile'] {
+  if (!profile) return null;
+  return {
+    companyName: profile.companyName,
+    directorySlug: profile.directorySlug,
+    description: profile.description.slice(0, 200),
+    routes: [],
+    contactEmail: profile.contactEmail,
+    contactPhone: profile.contactPhone,
+    claimedMonthlyCapacityKg: profile.claimedMonthlyCapacityKg,
+    trust: profile.trust,
+    listedInDirectory: profile.listedInDirectory,
+    status: profile.status,
+  };
+}
+
 export function toAuthUser(user: User): AuthUser {
   const operator = config.adminEmails.includes(user.email.trim().toLowerCase());
   return {
@@ -409,7 +433,7 @@ export function toAuthUser(user: User): AuthUser {
     buyerTrust: user.buyerTrust,
     sellerTrust: user.sellerTrust,
     sellerProfile: user.sellerProfile,
-    forwarderProfile: user.forwarderProfile,
+    forwarderProfile: forwarderSummary(user.forwarderProfile),
     escrowRights: user.escrowRights ?? null,
     bio: user.bio ?? '',
     coverUrl: user.coverUrl ?? null,

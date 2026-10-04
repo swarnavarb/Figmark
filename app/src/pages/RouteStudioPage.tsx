@@ -930,6 +930,20 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
         ) : step.name.trim() && (
           <span className="rsbtn__none">
             {zone === 'lot' ? '🚢 The lot moves this step - items in a lot move together' : '↪ No button - ticked off with the next one'}
+            {/* Moving the crate is the forwarder's job, so a lot step can be
+                theirs to press - every buyer in the lot is told when it is. */}
+            {zone === 'lot' && !fixed && (
+              <span className="rsbtn__who" role="group" aria-label="Who moves the lot here">
+                <span className="rsbtn__who-label">Who moves it</span>
+                {LOT_WHO.map((who) => (
+                  <button key={who.id} type="button" aria-pressed={(step.assignee ?? 'seller') === who.id}
+                    className={`rsbtn__whochip${(step.assignee ?? 'seller') === who.id ? ' is-on' : ''}`}
+                    onClick={() => onChange({ assignee: who.id === 'seller' ? undefined : 'forwarder' })}>
+                    {who.label}
+                  </button>
+                ))}
+              </span>
+            )}
             {zone !== 'lot' && !fixed && (
               <button type="button" className="rsbtn__add" onClick={() => onChange({ custom: true })}>
                 ✨ Give it its own button
@@ -977,7 +991,14 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
 const WHO: { id: 'seller' | StepAssignee; label: string }[] = [
   { id: 'seller', label: '🧑‍💼 Only you' },
   { id: 'supplier', label: '🏭 + Supplier' },
+  { id: 'forwarder', label: '✈️ + Forwarder' },
   { id: 'handler', label: '🧑‍🔧 + Handler' },
+];
+
+/** Who may move the whole lot onto a step inside it. */
+const LOT_WHO: { id: 'seller' | 'forwarder'; label: string }[] = [
+  { id: 'seller', label: '🧑‍💼 Only you' },
+  { id: 'forwarder', label: '✈️ + Forwarder' },
 ];
 
 /** What pressing each button does, said under it in the Studio. */

@@ -23,6 +23,7 @@ import './functions/insight-routes.js';
 import './functions/profit-routes.js';
 import './functions/pro-routes.js';
 import './functions/service-routes.js';
+import './functions/store-routes.js';
 import './functions/tracking-routes.js';
 import './functions/template-routes.js';
 import './functions/admin-routes.js';

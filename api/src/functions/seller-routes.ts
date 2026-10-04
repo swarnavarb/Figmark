@@ -7,6 +7,7 @@ import { cardButtons, ladderBeforeLot, serialButtons, withLastMile, withReceived
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
 import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
+import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
@@ -418,7 +419,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       listingId: order.listingId,
       itemName: order.itemName,
       quantity: order.quantity,
-      totalMinor: order.unitPriceMinor * order.quantity,
+      totalMinor: orderTotalMinor(order),
       currency: order.currency,
       buyer: buyers.get(order.buyerId) ?? personRef(null),
       paymentStatus: order.paymentStatus,

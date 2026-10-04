@@ -9,6 +9,7 @@ import type {
 import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
+import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
   REVIEW_REVEAL_DAYS,
@@ -108,7 +109,7 @@ function statusFromMoney(order: Order): void {
 
 /** How much the chosen plan asks for now, or the refusal. */
 function planAmount(order: Order, plan: unknown): { plan: 'full' | 'advance'; amountMinor: number } | null {
-  const totalMinor = order.unitPriceMinor * order.quantity;
+  const totalMinor = orderTotalMinor(order);
   if (plan !== 'advance') return { plan: 'full', amountMinor: totalMinor };
   if (!order.advancePercent) return null;
   return { plan: 'advance', amountMinor: advanceMinor(totalMinor, order.advancePercent) };
@@ -195,7 +196,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
   const now = new Date().toISOString();
-  const totalMinor = order.unitPriceMinor * order.quantity;
+  const totalMinor = orderTotalMinor(order);
   // Credit the seller kept for this buyer was spent when the order was
   // placed, so only what it did not cover is asked for now.
   const dueMinor = dueAfterCredit(order, terms.amountMinor);
@@ -266,7 +267,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
 
   const seller = await repository.getUserById(order.sellerId);
-  const totalMinor = order.unitPriceMinor * order.quantity;
+  const totalMinor = orderTotalMinor(order);
 
   // Everyone approved to hold money, minus the two people who cannot be neutral
   // in this particular trade.
@@ -757,7 +758,7 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
     record(order, {
       kind: claim?.plan === 'additional' ? 'additional' : (claim?.plan ?? 'full'),
       method: 'direct',
-      amountMinor: claim?.amountMinor ?? order.unitPriceMinor * order.quantity,
+      amountMinor: claim?.amountMinor ?? orderTotalMinor(order),
       batchId: claim?.batchId ?? null,
       batchTotalMinor: claim?.batchTotalMinor ?? null,
       reference: claim?.reference ?? null,

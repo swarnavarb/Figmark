@@ -348,6 +348,8 @@ export interface Repository {
   listOrdersForSeller(sellerId: string): Promise<Order[]>;
   /** Everything one escrow is holding, or has held. */
   listOrdersHeldBy(escrowAgentId: string): Promise<Order[]>;
+  /** Every order carrying a commission with this artist, newest first. */
+  listOrdersCommissionedFrom(artistId: string): Promise<Order[]>;
 
   /* Social. */
 

@@ -183,8 +183,11 @@ export interface RouteStep {
   assignee?: StepAssignee;
 }
 
-/** The crew a button can be handed to. */
-export type StepAssignee = 'supplier' | 'handler';
+/**
+ * The crew a button can be handed to. A forwarder can also be handed a step
+ * inside the lot - the whole crate moving - since moving the crate is their job.
+ */
+export type StepAssignee = 'supplier' | 'handler' | 'forwarder';
 
 /**
  * The key a step's button is recorded under on an order: the checkpoint it
@@ -593,6 +596,8 @@ interface PresetStep {
   stageIcon?: StageIcon;
   locked?: boolean;
   forward?: boolean;
+  /** Who besides the shop presses it - on a template, the forwarder's own legs. */
+  assignee?: StepAssignee;
 }
 
 export interface RoutePreset {
@@ -756,8 +761,8 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
       { name: 'Order Placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
       { name: 'Supplier Accumulates Orders', description: "Held at the supplier's until enough orders are ready to ship together.", side: 'pre', trigger: 'china_received', stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
       { name: 'Dispatched to Freight Forwarder', description: "Handed over from the supplier to the freight forwarder.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Freight Forwarder Forwards to Destination', description: 'On its way to {destination}.', side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Forwards to Destination', description: 'On its way to {destination}.', side: 'post', forward: true, assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
       { name: 'Received at {destination} warehouse', description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
@@ -772,8 +777,8 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
       { name: 'Order Placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre', locked: true, stageId: 'order', stageName: 'Order', stageIcon: 'supplier' },
       { name: 'Seller Purchases & Ships to Freight Forwarder', description: 'Bought from the supplier and sent straight on, with no stop at the seller.', side: 'pre', forward: true, stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
       { name: 'Freight Forwarder Receives Goods', description: 'Counted in at the freight forwarder.', side: 'post', trigger: 'china_received', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Freight Forwarder Forwards to Destination', description: 'On its way to {destination}.', side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Freight Forwarder Forwards to Destination', description: 'On its way to {destination}.', side: 'post', forward: true, assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
       { name: 'Received at {destination} warehouse', description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
@@ -852,8 +857,12 @@ export function normaliseSteps(
       lastMile: step.lastMile === true || undefined,
       button: step.trigger || step.custom || keepButtons ? step.button?.trim().slice(0, 28) || undefined : undefined,
       custom: step.custom === true && (keepButtons || !step.trigger) ? true : undefined,
-      assignee: (step.trigger || step.custom || keepButtons) && (step.assignee === 'supplier' || step.assignee === 'handler')
-        ? step.assignee : undefined,
+      // A forwarder may be handed a lot step, which has no button of its own,
+      // so theirs is carried whatever the step; `assignButtons` drops it where
+      // it means nothing.
+      assignee: step.assignee === 'forwarder' ? ('forwarder' as const)
+        : (step.trigger || step.custom || keepButtons) && (step.assignee === 'supplier' || step.assignee === 'handler')
+          ? step.assignee : undefined,
     }))
     .filter((step) => step.name.length > 0)
     .map((step, index) => ({ ...step, position: index }));

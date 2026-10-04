@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Order } from '../../../shared/models.js';
 import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
+import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { affiliateCommissionMinor } from '../../../shared/affiliate.js';
 import { affiliateFor, creditAffiliate } from '../affiliate.js';
 import type { getRepository } from '../data/index.js';
@@ -255,7 +256,7 @@ export async function returnKeptCredit(repository: Repo, order: Order, actorId: 
   // take the stale 'paid' status at its word.
   const paidMinor = order.payments.filter((payment) => payment.kind !== 'refund')
     .reduce((sum, payment) => sum + payment.amountMinor, 0);
-  const totalMinor = order.unitPriceMinor * order.quantity;
+  const totalMinor = orderTotalMinor(order);
   order.paymentStatus = paidMinor === 0 ? 'unpaid' : paidMinor >= totalMinor ? 'paid' : 'partially_paid';
   return returned;
 }

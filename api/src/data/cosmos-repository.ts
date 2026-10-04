@@ -22,6 +22,8 @@ import {
   DEMO_PHONE,
   ESCROW_EMAIL,
   HANDLER_EMAIL,
+  ARTIST_EMAIL,
+  FORWARDER_EMAIL,
   PACKER_EMAIL,
   seedComments,
   seedFollows,
@@ -1258,6 +1260,16 @@ export class CosmosRepository implements Repository {
     return resources.filter(isPlaced);
   }
 
+  async listOrdersCommissionedFrom(artistId: string): Promise<Order[]> {
+    const { resources } = await this.container('orders')
+      .items.query<Order>({
+        query: 'SELECT * FROM c WHERE c.artistJob.artistId = @id',
+        parameters: [{ name: '@id', value: artistId }],
+      })
+      .fetchAll();
+    return resources.sort((a, b) => (b.artistJob?.updatedAt ?? '').localeCompare(a.artistJob?.updatedAt ?? ''));
+  }
+
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
     // Orders are partitioned by lot, so a seller's book is cross-partition.
     // Bounded by one seller's order count, which is the right size for the
@@ -1394,6 +1406,8 @@ export class CosmosRepository implements Repository {
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
       { identifier: ESCROW_EMAIL, label: `the escrow holding the money · ${DEMO_PASSWORD}` },
       { identifier: HANDLER_EMAIL, label: `the handler getting the parcels out · ${DEMO_PASSWORD}` },
+      { identifier: FORWARDER_EMAIL, label: `the freight forwarder's store · ${DEMO_PASSWORD}` },
+      { identifier: ARTIST_EMAIL, label: `the artist studio taking commissions · ${DEMO_PASSWORD}` },
     ];
   }
 

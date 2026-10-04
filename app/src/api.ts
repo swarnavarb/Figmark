@@ -10,7 +10,8 @@ import type {
 import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
-import type { ServiceKind, ServiceMeta } from '@shared/services';
+import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
+import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CardButton, SerialButton } from '@shared/buttons';
 import type { MergedRating, StoreLevel } from '@shared/storefront';
@@ -45,6 +46,8 @@ import type {
   BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
   MessageDeal, MessageParty, Order, OrderShipment, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
   StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
+  ArtistJob, ArtistOffering, ArtistProfile, FreightLane, InsurancePlan, OrderAddOn, PortfolioPiece, StoreCore, StoreLink,
+  StoreMember, StoreRight, StoreStatus, StoreWarehouse,
 } from '@shared/models';
 
 /**
@@ -1350,6 +1353,11 @@ export interface ProviderCard {
   contact: string | null;
   trustScore: number | null;
   completed: number | null;
+  /** A store page to open, for forwarders and artists. */
+  slug?: string | null;
+  tagline?: string;
+  logoUrl?: string | null;
+  accent?: string | null;
 }
 
 export interface ServicesHub {
@@ -1718,6 +1726,186 @@ export interface SupplierLot {
   items: SupplierItem[];
 }
 
+
+/* ── Service stores ──────────────────────────────────────────────────── */
+
+/** A store as the person running it sees it in My services. */
+export interface MyStoreRow {
+  kind: StoreKind;
+  ownerId: string;
+  isOwner: boolean;
+  rights: StoreRight[];
+  name: string;
+  slug: string;
+  tagline: string;
+  logoUrl: string | null;
+  accent: string;
+  status: StoreStatus | null;
+  /** Lots waiting on an answer, or commissions waiting on a move. */
+  waiting: number;
+  active: number;
+  lastNote: string | null;
+}
+
+/** A lot somebody else's shop named this person on. */
+export interface CrewRow {
+  role: CrewRole;
+  store: { ownerId: string; name: string; handle: string | null };
+  lot: CrewLotRef;
+  items: number;
+  parcels: number;
+  /** The words on the buttons the route handed them. */
+  buttons: string[];
+  /** Items still waiting on one of those presses. */
+  toPress: number;
+}
+
+export interface CrewLotRef {
+  id: string;
+  sellerId: string;
+  name: string;
+  number: string;
+  stage: string;
+  status: string;
+  origin: string;
+  step: string;
+  stepIndex: number;
+  steps: number;
+}
+
+export interface MyServicesView {
+  stores: MyStoreRow[];
+  crew: CrewRow[];
+  own: { forwarder: StoreStatus | null; artist: StoreStatus | null };
+  handler: boolean;
+  escrow: boolean;
+}
+
+export interface CrewLotView {
+  role: CrewRole;
+  roles: CrewRole[];
+  store: { ownerId: string; name: string; handle: string | null };
+  forwarder: { ownerId: string; name: string } | null;
+  lot: CrewLotRef & { laneLabel: string | null; trackingReference: string | null; city: string | null };
+  steps: { index: number; name: string; assignee: StepAssignee | null; key: string | null }[];
+  buttons: { key: string; label: string; step: string; index: number; assigned: boolean }[];
+  moves: { index: number; name: string; forward: boolean }[];
+  items: {
+    id: string; itemName: string; condition: string; quantity: number; weightGrams: number;
+    parcel: string | null; buyer: { name: string; phone: string | null } | null;
+    ticks: Record<string, string | null>; covered: boolean; toStudio: boolean;
+  }[];
+}
+
+/** Everything a store form edits. */
+export type StoreDraft = Partial<StoreCore> & Partial<Pick<ForwarderProfile, 'lanes' | 'insurance' | 'warehouse' | 'autoAccept' | 'claimedMonthlyCapacityKg'>>
+  & Partial<Pick<ArtistProfile, 'specialties' | 'offerings' | 'portfolio' | 'acceptingWork' | 'studioAddress'>>;
+
+export interface StoreConsole {
+  kind: StoreKind;
+  ownerId: string;
+  ownerName: string;
+  handle: string | null;
+  isOwner: boolean;
+  rights: StoreRight[];
+  status: StoreStatus | null;
+  store: StoreCore & Partial<ForwarderProfile> & Partial<ArtistProfile>;
+}
+
+export interface ForwarderLotRow {
+  store: { ownerId: string; name: string; handle: string | null };
+  lot: CrewLotRef;
+  laneLabel: string | null;
+  acceptance: 'pending' | 'accepted' | 'declined';
+  trackingReference: string | null;
+  pieces: number;
+  weightGrams: number;
+  covered: number;
+  premiumsMinor: number;
+  coverMinor: number;
+}
+
+export interface ArtistJobRow {
+  orderId: string;
+  item: { name: string; condition: string; quantity: number };
+  buyer: { name: string; handle: string | null };
+  shop: { ownerId: string; name: string; handle: string | null } | null;
+  job: ArtistJob;
+  actions: ArtistJobAction[];
+}
+
+export interface StoreWork {
+  kind: StoreKind;
+  lots: ForwarderLotRow[];
+  jobs: ArtistJobRow[];
+}
+
+/** A store's public page. */
+export interface PublicStore {
+  kind: StoreKind;
+  ownerId: string;
+  handle: string | null;
+  name: string;
+  slug: string;
+  tagline: string;
+  about: string;
+  logoUrl: string | null;
+  coverUrl: string | null;
+  accent: string;
+  city: string;
+  country: string;
+  registered: boolean;
+  since: number | null;
+  links: StoreLink[];
+  contactEmail: string | null;
+  contactPhone: string | null;
+  trust: { score: number; completedTransactions: number };
+  teamSize: number;
+  status: StoreStatus | null;
+  lanes: FreightLane[];
+  insurance: InsurancePlan[];
+  warehouse: StoreWarehouse | null;
+  autoAccept: boolean;
+  capacityKg: number | null;
+  offerings: ArtistOffering[];
+  portfolio: PortfolioPiece[];
+  specialties: string[];
+  acceptingWork: boolean;
+}
+
+export interface OrderServicesView {
+  side: 'buyer' | 'seller';
+  insurance: {
+    open: boolean;
+    provider: { ownerId: string; name: string; slug: string } | null;
+    valueMinor: number;
+    plans: (InsurancePlan & { premiumMinor: number; coverMinor: number })[];
+    current: OrderAddOn | null;
+  };
+  commission: {
+    job: ArtistJob | null;
+    actions: ArtistJobAction[];
+    artist: PublicStore | null;
+    artistPayment: SellerPaymentDetails | null;
+    studioAddress: string | null;
+    artists: PublicStore[];
+    escrows: { id: string; name: string; feeBasisPoints: number }[];
+  };
+}
+
+export interface OpsStoreRow {
+  kind: StoreKind;
+  owner: { id: string; displayName: string; email: string; phone: string | null; username: string | null; createdAt: string; suspended: boolean };
+  status: StoreStatus;
+  submittedAt: string | null;
+  store: PublicStore;
+  businessId: string | null;
+  history: { at: string; by: string; status: StoreStatus; note: string }[];
+  team: StoreMember[];
+  payment: boolean;
+  studioAddress: string | null;
+}
+
 export const api = {
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),
@@ -1848,6 +2036,39 @@ export const api = {
     post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/tracking`, body),
 
   services: () => request<ServicesHub>('/services'),
+  myServices: () => request<MyServicesView>('/me/services'),
+  applyStore: (kind: StoreKind, draft: StoreDraft) => post<{ kind: StoreKind; store: StoreCore }>('/me/services/apply', { ...draft, kind }),
+  storeConsole: (kind: StoreKind, ownerId: string) =>
+    request<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}`),
+  saveStore: (kind: StoreKind, ownerId: string, draft: StoreDraft) =>
+    post<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/save`, draft),
+  storeTeam: (kind: StoreKind, ownerId: string, body: { identifier?: string; rights?: StoreRight[]; remove?: string }) =>
+    post<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/team`, body),
+  storeWork: (kind: StoreKind, ownerId: string) =>
+    request<StoreWork>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/work`),
+  respondToLot: (ownerId: string, body: { sellerId: string; lotId: string; accept: boolean }) =>
+    post<{ acceptance: string }>(`/service-stores/forwarder/${encodeURIComponent(ownerId)}/respond`, body),
+  artistAct: (ownerId: string, orderId: string, body: { action: ArtistJobAction; quoteMinor?: number; days?: number; note?: string; photos?: string[]; courier?: string; awb?: string }) =>
+    post<ArtistJobRow>(`/service-stores/artist/${encodeURIComponent(ownerId)}/jobs/${encodeURIComponent(orderId)}`, body),
+  storePage: (kind: StoreKind, slug: string) =>
+    request<{ store: PublicStore; stats: { lotsCarried: number; commissions: number } }>(`/service-store/${kind}/${encodeURIComponent(slug)}`),
+  crewLot: (sellerId: string, lotId: string, role?: string) =>
+    request<CrewLotView>(`/me/crew/${encodeURIComponent(sellerId)}/${encodeURIComponent(lotId)}${role ? `?role=${role}` : ''}`),
+  /** Move a lot as the forwarder booked on it. */
+  forwarderStepLot: (sellerId: string, lotId: string, to: number, extra: { trackingId?: string; shipper?: string; note?: string; undoOf?: string } = {}) =>
+    post<{ lot: Lot; ordersUpdated: number; undo?: { id: string; until: string; to: number } }>(
+      `/lots/${encodeURIComponent(lotId)}/step?store=${encodeURIComponent(sellerId)}`, { to, ...extra }),
+  lotForwarders: (lotId: string) =>
+    request<{ weightGrams: number; current: Lot['forwarder']; stores: PublicStore[] }>(`/lots/${encodeURIComponent(lotId)}/forwarders`),
+  bookForwarder: (lotId: string, body: { storeOwnerId: string | null; laneId?: string | null; insurancePlanIds?: string[]; trackingReference?: string }) =>
+    post<{ lot: Lot }>(`/lots/${encodeURIComponent(lotId)}/forwarder-store`, body),
+  orderServices: (orderId: string) => request<OrderServicesView>(`/orders/${encodeURIComponent(orderId)}/services`),
+  setInsurance: (orderId: string, planId: string | null) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/insurance`, { planId }),
+  commission: (orderId: string, body: { artistId: string; offeringId?: string | null; brief: string; refUrls?: string[] }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/commission`, body),
+  commissionAct: (orderId: string, body: { action: ArtistJobAction; method?: 'protected' | 'direct'; escrowAgentId?: string; reference?: string }) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/commission/act`, body),
   serviceDirectory: (kind: ServiceKind, q?: string) =>
     request<ServiceDirectory>(`/services/${encodeURIComponent(kind)}${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   offerService: (body: {

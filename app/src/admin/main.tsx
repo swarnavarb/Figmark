@@ -7,6 +7,7 @@ import { DisputesView } from './DisputesView';
 import { LearnView } from './LearnView';
 import { ReportsView } from './ReportsView';
 import { SettingsView } from './SettingsView';
+import { StoresView } from './StoresView';
 import '../styles.css';
 
 /**
@@ -29,10 +30,11 @@ import '../styles.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'disputes' | 'reports' | 'settings' | 'learn';
+type Tab = 'users' | 'stores' | 'disputes' | 'reports' | 'settings' | 'learn';
 
 const TAB_LABELS: Record<Tab, string> = {
   users: 'People and stores',
+  stores: 'Service stores',
   disputes: 'Disputes',
   reports: 'Reviews & comments',
   settings: 'Settings',
@@ -107,6 +109,7 @@ function Console() {
         </div>
 
         {tab === 'users' ? <UsersView />
+          : tab === 'stores' ? <StoresView />
           : tab === 'disputes' ? <DisputesView />
           : tab === 'reports' ? <ReportsView />
           : tab === 'settings' ? <SettingsView />

@@ -202,8 +202,10 @@ export function assignButtons(input: readonly RouteStep[]): AssignedRoute {
       : index === dispatched ? 'dispatched'
         : picked.get(index);
     const custom = !trigger && customHere(index) ? true : undefined;
-    // Who else may press it only means something while there is a button.
-    const assignee = trigger || custom ? step.assignee : undefined;
+    // Who else may press it only means something while there is a button -
+    // or, inside the lot, where the forwarder may be the one moving the crate.
+    const assignee = trigger || custom ? step.assignee
+      : zoneOf(index) === 'lot' && step.assignee === 'forwarder' ? 'forwarder' : undefined;
     return { ...step, trigger, custom, assignee, position: index };
   });
 

@@ -14,6 +14,7 @@ import { cleanCostSheet } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
+import { isLive } from '../../../shared/service-stores.js';
 import { error, handler, json } from './http.js';
 import { placeOrder } from './placement.js';
 import {
@@ -985,7 +986,7 @@ async function forwarders(request: HttpRequest, _context: InvocationContext) {
   const route = request.query.get('route')?.trim().toLowerCase();
 
   const entries = all
-    .filter((user) => user.forwarderProfile !== null)
+    .filter((user) => user.forwarderProfile !== null && isLive(user.forwarderProfile) && !user.suspended)
     .map((user) => ({ id: user.id, ...user.forwarderProfile! }))
     .filter((entry) =>
       !route

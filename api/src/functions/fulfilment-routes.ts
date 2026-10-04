@@ -21,6 +21,7 @@ import {
 import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
+import { bookingFor, forwarderWorks } from '../service-access.js';
 import { getRepository } from '../data/index.js';
 import {
   afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, syncLotDelivery, undeliver,
@@ -414,9 +415,10 @@ export async function buildLot(
     ],
     estimatedDispatchAt: body.estimatedDispatchAt ?? null,
     // Either picked from the directory or typed in; both are the same shape.
+    // A store named here is booked the way the store says; see `bookingFor`.
     forwarder: body.forwarderName
       ? {
-          forwarderUserId: body.forwarderUserId ?? null,
+          ...(await bookingFor(await getRepository(), body.forwarderUserId)),
           name: body.forwarderName,
           contact: body.forwarderContact ?? null,
           trackingReference: null,
@@ -691,10 +693,14 @@ async function setTracking(request: HttpRequest, _context: InvocationContext) {
   if (!name) return error(400, 'invalid_request', 'Name the forwarder before adding tracking.');
 
   const repository = await getRepository();
+  // Naming a different store here would skip its say in taking the lot, so a
+  // change of store goes through the booking; this keeps whatever is booked.
+  const switching = body.forwarderUserId && body.forwarderUserId !== lot.forwarder?.forwarderUserId;
   const updated = await repository.updateLot({
     ...lot,
     forwarder: {
-      forwarderUserId: body.forwarderUserId ?? lot.forwarder?.forwarderUserId ?? null,
+      ...(lot.forwarder ?? {}),
+      ...(switching ? await bookingFor(repository, body.forwarderUserId) : { forwarderUserId: lot.forwarder?.forwarderUserId ?? null }),
       name,
       contact: body.forwarderContact?.trim() ?? lot.forwarder?.contact ?? null,
       trackingReference: body.trackingReference?.trim() || null,
@@ -1098,12 +1104,15 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     // the record of work done, so the person who did it is the one who makes
     // them.
     const owner = await repository.getUserById(order.sellerId);
-    const role: CrewRole | null =
-      (owner && can(owner, user.id, 'export')) || (lot && supplierIdOf(lot) === user.id)
-        ? 'supplier'
-        : lot && lot.handler?.handlerUserId === user.id
-          ? 'handler'
-          : null;
+    /* Everyone this lot names who this person is. One person can be more
+       than one - a forwarder who also packs - and may press what any of
+       their roles may. */
+    const roles: CrewRole[] = [];
+    if ((owner && can(owner, user.id, 'export')) || (lot && supplierIdOf(lot) === user.id)) roles.push('supplier');
+    if (lot && lot.handler?.handlerUserId === user.id) roles.push('handler');
+    if (lot && (await forwarderWorks(repository, lot, user.id))) roles.push('forwarder');
+    const role: CrewRole | null = roles.find((each) =>
+      (!customId && mayTick(each, checkpoint)) || button?.assignee === each) ?? roles[0] ?? null;
 
     if (!role) return error(403, 'forbidden', 'That order is not yours to work.');
     // Their own half of the journey, plus any button the seller handed them.
@@ -1113,7 +1122,9 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
         'forbidden',
         role === 'supplier'
           ? 'You can mark items packed, and nothing else.'
-          : 'You can work this lot from the moment it lands, and no earlier.',
+          : role === 'forwarder'
+            ? 'The shop’s route has not handed that button to the forwarder.'
+            : 'You can work this lot from the moment it lands, and no earlier.',
       );
     }
   }

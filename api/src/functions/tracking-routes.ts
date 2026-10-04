@@ -8,6 +8,7 @@ import {
 import { NOT_ACCEPTED_MESSAGE, actionsFor, awaitingAcceptance, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
+import { forwarderWorks } from '../service-access.js';
 import { getRepository } from '../data/index.js';
 import {
   afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, settleAll, syncLotDelivery, undeliver,
@@ -368,7 +369,10 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
 async function stepLot(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A lot id is required.');
-  const { lot, userId } = await ownedLot(request, id);
+  /* The shop moves its own lots. A forwarder moves somebody else's, named
+     by `?store=`, and only onto the steps the shop's route handed them. */
+  const store = request.query.get('store');
+  const { lot, userId, asForwarder } = store ? await forwardedLot(request, store, id) : { ...(await ownedLot(request, id)), asForwarder: false };
 
   let body: { to?: number; note?: string; trackingId?: string; shipper?: string; undoOf?: string };
   try {
@@ -380,6 +384,9 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   const route = routeOf(lot);
   const from = currentStepOf(lot);
   const target = typeof body.to === 'number' ? Math.trunc(body.to) : from + 1;
+  if (asForwarder && !body.undoOf && route.steps[target]?.assignee !== 'forwarder') {
+    return error(403, 'forbidden', 'The shop’s route has not handed that move to the forwarder.');
+  }
 
   /* Taking back a move made in the last three minutes: back to where it was,
      with the move gone from every timeline and its notices withdrawn - as
@@ -387,6 +394,10 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   if (body.undoOf) {
     if (!canUndo(lot.stageHistory, body.undoOf) || typeof body.to !== 'number') {
       return error(409, 'undo_expired', UNDO_EXPIRED);
+    }
+    // A forwarder takes back only their own moves.
+    if (asForwarder && !lot.stageHistory.some((event) => event.undoId === body.undoOf && event.recordedBy === userId)) {
+      return error(403, 'forbidden', 'Only the shop can take back a move it made.');
     }
     const undoId = body.undoOf;
     const repository = await getRepository();
@@ -514,6 +525,16 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     ordersUpdated: live.length,
     undo: { id: event.undoId, until: event.undoUntil, to: from },
   });
+}
+
+/** A lot this person moves as the forwarder booked on it. */
+async function forwardedLot(request: HttpRequest, sellerId: string, lotId: string): Promise<{ lot: Lot; userId: string; asForwarder: true }> {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const lot = await repository.getLot(sellerId, lotId);
+  if (!lot || !(await forwarderWorks(repository, lot, user.id))) throw AuthError.forbidden('That lot is not yours to move.');
+  return { lot, userId: user.id, asForwarder: true };
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { OrderStatus } from './enums.js';
 import type { DisputeTopic, Order, Review } from './models.js';
 import { rupees } from './payments.js';
+import { orderTotalMinor } from './service-stores.js';
 
 /**
  * What may happen to an order, and who may do it.
@@ -327,7 +328,7 @@ export interface DisputeSubject {
  */
 export function disputeSubjects(
   order: Pick<Order, 'buyerId' | 'sellerId' | 'unitPriceMinor' | 'quantity'>
-    & Partial<Pick<Order, 'paymentClaim' | 'credits' | 'reversal' | 'disputeLinks'>>,
+    & Partial<Pick<Order, 'paymentClaim' | 'credits' | 'reversal' | 'disputeLinks' | 'addOns'>>,
   viewerId: string,
 ): DisputeSubject[] {
   const side = sideOf(order, viewerId);
@@ -336,7 +337,7 @@ export function disputeSubjects(
 
   const claim = order.paymentClaim;
   if (side === 'buyer' && claim?.decision === 'denied') {
-    const amount = claim.amountMinor ?? order.unitPriceMinor * order.quantity;
+    const amount = claim.amountMinor ?? orderTotalMinor(order);
     out.push({
       subject: `claim:${claim.claimedAt}`, kind: 'payment_rejected', amountMinor: amount,
       label: `The seller says your payment of ${rupees(amount)} did not arrive`,

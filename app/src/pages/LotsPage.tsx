@@ -23,6 +23,7 @@ import { Avatar, ErrorNotice, Icon, Modal, type IconName } from '../components/u
 import { ItemHead } from '../components/ItemHead';
 import { endedOf } from '../components/OrderTrack';
 import { RouteStudio } from './RouteStudioPage';
+import { ForwarderBooking } from '../components/ForwarderBooking';
 import { formatDate, formatMoney, formatWeight } from '../format';
 
 /**
@@ -44,16 +45,12 @@ function CrewCard({ lot, busy, onRun }: {
   onRun: (label: string, fn: () => Promise<void>) => Promise<void>;
 }) {
   const [handlers, setHandlers] = useState<ProviderCard[]>([]);
-  const [forwarders, setForwarders] = useState<ProviderCard[]>([]);
 
   const [supplierName, setSupplierName] = useState(lot.supplier?.name ?? '');
   const [supplierHandle, setSupplierHandle] = useState('');
   const [supplierContact, setSupplierContact] = useState(lot.supplier?.contact ?? '');
   const [supplierReference, setSupplierReference] = useState(lot.supplier?.reference ?? '');
 
-  const [forwarderPick, setForwarderPick] = useState(lot.forwarder?.forwarderUserId ?? '');
-  const [forwarderName, setForwarderName] = useState(lot.forwarder?.name ?? '');
-  const [tracking, setTracking] = useState(lot.forwarder?.trackingReference ?? '');
 
   const [choice, setChoice] = useState(lot.handler?.handlerUserId ?? (lot.handler ? 'manual' : ''));
   const [manualName, setManualName] = useState(lot.handler?.handlerUserId ? '' : lot.handler?.name ?? '');
@@ -63,11 +60,7 @@ function CrewCard({ lot, busy, onRun }: {
     // shop names them by typing - they are simply not on offer to strangers.
     void api.serviceDirectory('handler')
       .then((result) => setHandlers(result.providers)).catch(() => setHandlers([]));
-    void api.serviceDirectory('forwarder')
-      .then((result) => setForwarders(result.providers)).catch(() => setForwarders([]));
   }, []);
-
-  const picked = forwarders.find((row) => row.userId === forwarderPick) ?? null;
 
   return (
     <div className="stack">
@@ -118,48 +111,7 @@ function CrewCard({ lot, busy, onRun }: {
         </button>
       </div>
 
-      <div className="card card--pad stack">
-        <div>
-          <h2>Freight forwarder</h2>
-          <span className="field__hint">
-            Who moves the lot, as opposed to who you bought it from. Their tracking reference
-            shows on every buyer's order in this lot.
-          </span>
-        </div>
-        <label className="field">
-          <span>From the directory</span>
-          <select value={forwarderPick} onChange={(e) => {
-            setForwarderPick(e.target.value);
-            const row = forwarders.find((entry) => entry.userId === e.target.value);
-            if (row) setForwarderName(row.name);
-          }}>
-            <option value="">Someone not listed — I will type their name</option>
-            {forwarders.map((row) => (
-              <option key={row.userId} value={row.userId}>{row.name} — {row.line}</option>
-            ))}
-          </select>
-        </label>
-        {picked?.handle && <span className="faint">@{picked.handle}</span>}
-        <label className="field">
-          <span>Name</span>
-          <input value={forwarderName} onChange={(e) => setForwarderName(e.target.value)}
-            placeholder="Lotus Freight, or your own" />
-        </label>
-        <label className="field">
-          <span>Tracking reference</span>
-          <input value={tracking} onChange={(e) => setTracking(e.target.value)}
-            placeholder="SSC-2026-08-4471" />
-        </label>
-        <button type="button" className="btn btn--ghost btn--block" disabled={busy || !forwarderName.trim()}
-          onClick={() => void onRun('Forwarder saved.', () =>
-            api.setTracking(lot.id, {
-              trackingReference: tracking,
-              forwarderName: forwarderName.trim(),
-              forwarderUserId: forwarderPick || undefined,
-            }).then(() => {}))}>
-          Save forwarder
-        </button>
-      </div>
+      <ForwarderBooking lot={lot} busy={busy} onRun={onRun} />
 
       <div className="card card--pad stack">
         <div>

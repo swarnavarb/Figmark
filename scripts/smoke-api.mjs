@@ -132,6 +132,14 @@ const {
   offerServiceRoute: offerService, consignmentsRoute: consignments,
   distributionRoute: distribution, distributionDetailRoute: distributionDetail,
 } = await import(new URL('service-routes.js', fns));
+const {
+  myServicesRoute: myServices, applyStoreRoute: applyStore, storeConsoleRoute: storeConsole, saveStoreRoute: saveStore,
+  storeTeamRoute: storeTeam, storeWorkRoute: storeWork, respondLotRoute: respondLot, artistActRoute: artistAct,
+  storePageRoute: storePage, lotForwarderOptionsRoute: lotForwarderOptions, bookForwarderRoute: bookForwarder,
+  orderServicesRoute: orderServices, setInsuranceRoute: setInsurance, commissionRoute: commission,
+  commissionActRoute: commissionAct, crewLotRoute: crewLot, opsStoresRoute: opsStores, opsReviewRoute: opsReview,
+} = await import(new URL('store-routes.js', fns));
+const { orderMoney } = await import(new URL('../api/dist/shared/payments.js', import.meta.url));
 const { setCrewRoute: setCrew } = await import(new URL('fulfilment-routes.js', fns));
 const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
@@ -4590,7 +4598,7 @@ await check('the hub counts what there is to count, and says so where there is n
   const byKind = Object.fromEntries(body.categories.map((row) => [row.kind, row]));
 
   // Every job, in the order the goods move.
-  assert.deepEqual(body.categories.map((row) => row.kind), ['supplier', 'forwarder', 'handler', 'escrow']);
+  assert.deepEqual(body.categories.map((row) => row.kind), ['supplier', 'forwarder', 'handler', 'artist', 'escrow']);
   assert.ok(byKind.forwarder.count >= 3, 'the seeded forwarders should be counted');
   assert.ok(byKind.handler.count >= 2);
   assert.ok(byKind.escrow.count >= 1);
@@ -4810,9 +4818,18 @@ await check('naming a supplier on one lot hands over that lot and no other', asy
   assert.equal(nobody.status, 404);
 });
 
+/** A complete forwarder application, as the wizard sends it. */
+const forwarderApplication = (name) => ({
+  kind: 'forwarder', companyName: name, city: 'Guangzhou', country: 'China', contactPhone: '+8613800009999',
+  description: 'Consolidated air freight from Guangzhou to Mumbai, customs cleared at both ends, weekly.',
+  lanes: [{ originCity: 'Guangzhou', destinationCity: 'Mumbai', mode: 'air', ratePerKgMinor: 50_000, minChargeKg: 5, transitDaysMin: 8, transitDaysMax: 11, customsIncluded: true }],
+  insurance: [{ name: 'Transit cover', coverPercent: 100, premiumBasisPoints: 200, minPremiumMinor: 5_000 }],
+});
+
 await check('a forwarder finally has a screen of their own', async () => {
   // The directory has existed since the first week and led nowhere: a forwarder
   // could be listed, chosen and consigned to, and had no way to see any of it.
+  // Listing yourself is gone too - a forwarder applies for a store now.
   const made = await signup(req({
     body: {
       displayName: 'Harbour Air Cargo', email: 'harbour@figmark.example',
@@ -4820,10 +4837,15 @@ await check('a forwarder finally has a screen of their own', async () => {
     },
   }), ctx);
   const theirs = { authorization: `Bearer ${made.jsonBody.token}` };
-  await offerService(req({
+  const listed = await offerService(req({
     headers: theirs,
     body: { kind: 'forwarder', companyName: 'Harbour Air Cargo', places: ['Guangzhou → Mumbai'] },
   }), ctx);
+  assert.equal(listed.status, 400);
+  assert.equal(listed.jsonBody.error, 'apply_instead');
+
+  assert.equal((await applyStore(req({ headers: theirs, body: forwarderApplication('Harbour Air Cargo') }), ctx)).status, 200);
+  assert.equal((await opsReview(req({ headers: auth, params: { kind: 'forwarder', ownerId: made.jsonBody.user.id }, body: { decision: 'approved' } }), ctx)).status, 200);
 
   assert.deepEqual((await consignments(req({ headers: theirs }), ctx)).jsonBody.consignments, []);
 
@@ -9002,6 +9024,251 @@ await check('the lots list counts orders waiting for a lot, and never in-hand st
   assert.ok(body.awaitingOrders >= 1);
   assert.ok(body.unassigned.every((row) => row.sourcing === 'import'));
   assert.ok(!body.unassigned.some((row) => row.title === 'On the shelf'));
+});
+
+
+/* ── service stores ────────────────────────────────────────────────────── */
+console.log('\nservice stores');
+
+const signInAs = async (identifier) =>
+  ({ authorization: `Bearer ${(await login(req({ body: { identifier, password: DEMO_PASSWORD } }), ctx)).jsonBody.token}` });
+const lotusTeam = await signInAs('ops@lotusfreight.example');
+const inkwellTeam = await signInAs('studio@inkwell.example');
+const newMember = async (name, email, phone) => {
+  const made = await signup(req({ body: { displayName: name, email, phone, password: 'longenough1' } }), ctx);
+  return { id: made.jsonBody.user.id, headers: { authorization: `Bearer ${made.jsonBody.token}` } };
+};
+
+/** A copy of a seeded order, fresh: placed, unpaid, nothing ticked, nothing added. */
+const freshOrder = async (id, lotId, buyerId = 'usr_demo') => {
+  const repository = await getRepository();
+  const base = await repository.getOrder('ord_1001');
+  return repository.createOrder({
+    ...structuredClone(base), id, lotId, buyerId, status: 'confirmed', stage: 'ordering', paymentStatus: 'unpaid',
+    checkpoints: {}, customTicks: {}, payments: [], credits: [], addOns: [], artistJob: null, paymentClaim: null,
+    protection: null, escrow: { ...base.escrow, state: 'none', heldAt: null, autoReleaseAt: null },
+    stageHistory: [], placedAt: new Date().toISOString(), currentStep: undefined, completedAt: null,
+  });
+};
+
+await check('a store opens only when an operator approves it, and says why when not', async () => {
+  const applicant = await newMember('Pearl River Freight', 'pearl@figmark.example', '+919000078901');
+
+  const thin = await applyStore(req({ headers: applicant.headers, body: { kind: 'forwarder', companyName: 'Pearl River Freight' } }), ctx);
+  assert.equal(thin.status, 400);
+  assert.equal(thin.jsonBody.error, 'incomplete');
+
+  const sent = await applyStore(req({ headers: applicant.headers, body: forwarderApplication('Pearl River Freight') }), ctx);
+  assert.equal(sent.status, 200);
+  assert.equal(sent.jsonBody.store.status, 'pending');
+
+  // Nothing public while it waits: not listed, no page for a stranger.
+  const listed = (await serviceDirectory(req({ params: { kind: 'forwarder' } }), ctx)).jsonBody.providers;
+  assert.equal(listed.some((row) => row.userId === applicant.id), false);
+  const slug = sent.jsonBody.store.directorySlug;
+  assert.equal((await storePage(req({ params: { kind: 'forwarder', slug } }), ctx)).status, 404);
+  // Its own team may preview it.
+  assert.equal((await storePage(req({ headers: applicant.headers, params: { kind: 'forwarder', slug } }), ctx)).status, 200);
+
+  // Only an operator reads the queue, and a refusal has to say why.
+  assert.equal((await opsStores(req({ headers: applicant.headers }), ctx)).status, 403);
+  const queue = (await opsStores(req({ headers: auth }), ctx)).jsonBody.stores;
+  assert.equal(queue[0].status, 'pending', 'waiting applications come first');
+  assert.ok(queue.some((row) => row.owner.id === applicant.id));
+  const silent = await opsReview(req({ headers: auth, params: { kind: 'forwarder', ownerId: applicant.id }, body: { decision: 'changes' } }), ctx);
+  assert.equal(silent.status, 400);
+  assert.equal((await opsReview(req({ headers: auth, params: { kind: 'forwarder', ownerId: applicant.id }, body: { decision: 'changes', note: 'Add your GST number.' } }), ctx)).status, 200);
+  const told = await noticesFor(applicant.id);
+  assert.ok(told.some((notice) => notice.kind === 'service_store' && notice.body.includes('GST')));
+
+  // Fixed and resent, then approved: listed, and the page is public.
+  assert.equal((await applyStore(req({ headers: applicant.headers, body: { ...forwarderApplication('Pearl River Freight'), businessId: 'GST-1' } }), ctx)).jsonBody.store.status, 'pending');
+  assert.equal((await opsReview(req({ headers: auth, params: { kind: 'forwarder', ownerId: applicant.id }, body: { decision: 'approved' } }), ctx)).status, 200);
+  const live = (await serviceDirectory(req({ params: { kind: 'forwarder' } }), ctx)).jsonBody.providers;
+  assert.ok(live.some((row) => row.userId === applicant.id && row.slug === slug));
+  const page = (await storePage(req({ params: { kind: 'forwarder', slug } }), ctx)).jsonBody.store;
+  assert.equal(page.lanes.length, 1);
+  assert.equal(page.registered, true);
+  // The registration itself is for operators: the page only says there is one.
+  assert.equal(JSON.stringify(page).includes('GST-1'), false);
+
+  // A live store edits in place, and applying again is refused.
+  const edited = await saveStore(req({ headers: applicant.headers, params: { kind: 'forwarder', ownerId: applicant.id }, body: { tagline: 'Faster now' } }), ctx);
+  assert.equal(edited.jsonBody.status, 'approved');
+  assert.equal((await applyStore(req({ headers: applicant.headers, body: forwarderApplication('Pearl River Freight') }), ctx)).status, 409);
+});
+
+await check('a team member holds the rights they were given, and no more', async () => {
+  const member = await newMember('Chen Ops', 'chen.ops@figmark.example', '+919000078902');
+  const added = await storeTeam(req({ headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { identifier: 'chen.ops@figmark.example', rights: ['work'] } }), ctx);
+  assert.equal(added.status, 200);
+  const theirs = (await myServices(req({ headers: member.headers }), ctx)).jsonBody.stores;
+  assert.deepEqual(theirs.map((row) => [row.ownerId, row.rights]), [['usr_fwd_lotus', ['work']]]);
+  // Working is not editing the rate card, and not managing people.
+  assert.equal((await saveStore(req({ headers: member.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { tagline: 'x' } }), ctx)).status, 403);
+  assert.equal((await storeTeam(req({ headers: member.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { identifier: DEMO_EMAIL, rights: ['team'] } }), ctx)).status, 403);
+  assert.equal((await storeWork(req({ headers: member.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).status, 200);
+  // A stranger has no door at all.
+  assert.equal((await storeConsole(req({ headers: auth, params: { kind: 'artist', ownerId: 'usr_art_inkwell' } }), ctx)).status, 403);
+});
+
+await check('booking a store on a lot is instant, or a request the forwarder answers', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Booked on Pearl' } }), ctx)).jsonBody.lot;
+  const options = (await lotForwarderOptions(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  const pearl = options.stores.find((row) => row.name === 'Pearl River Freight');
+  assert.ok(pearl, 'approved stores are bookable');
+  assert.equal(options.stores.some((row) => row.status !== 'approved'), false);
+  const booked = await bookForwarder(req({ headers: auth, params: { id: lot.id }, body: { storeOwnerId: pearl.ownerId, laneId: pearl.lanes[0].id, insurancePlanIds: [pearl.insurance[0].id] } }), ctx);
+  assert.equal(booked.jsonBody.lot.forwarder.acceptance, 'accepted', 'auto-accept takes it at once');
+  assert.match(booked.jsonBody.lot.forwarder.laneLabel, /Guangzhou → Mumbai/);
+
+  // Lotus asks first: Lot 24 waits on them, and they cannot work it yet.
+  const work = (await storeWork(req({ headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).jsonBody.lots;
+  assert.equal(work.find((row) => row.lot.id === 'lot_open_24').acceptance, 'pending');
+  const order = (await (await getRepository()).listOrdersForLot('lot_open_24')).find((row) => !row.checkpoints?.china_received);
+  const early = await setCheckpoint(req({ headers: lotusTeam, params: { id: order.id }, body: { checkpoint: 'china_received' } }), ctx);
+  assert.equal(early.status, 403);
+  assert.equal((await respondLot(req({ headers: lotusTeam, params: { ownerId: 'usr_fwd_lotus' }, body: { sellerId: 'usr_demo', lotId: 'lot_open_24', accept: true } }), ctx)).status, 200);
+  const ticked = await setCheckpoint(req({ headers: lotusTeam, params: { id: order.id }, body: { checkpoint: 'china_received' } }), ctx);
+  assert.equal(ticked.status, 200);
+  // Their own button, and not the handler's.
+  const handlers = await setCheckpoint(req({ headers: lotusTeam, params: { id: order.id }, body: { checkpoint: 'dispatched' } }), ctx);
+  assert.equal(handlers.status, 403);
+
+  // A store still in review cannot be booked by naming it.
+  const waiting = await newMember('Not Yet Freight', 'notyet@figmark.example', '+919000078903');
+  await applyStore(req({ headers: waiting.headers, body: forwarderApplication('Not Yet Freight') }), ctx);
+  const named = await setTracking(req({ headers: auth, params: { id: lot.id }, body: { forwarderUserId: waiting.id, forwarderName: 'Not Yet Freight' } }), ctx);
+  assert.equal(named.jsonBody.lot.forwarder.forwarderUserId, null, 'a store in review is a typed name, with no screen behind it');
+  assert.equal(named.jsonBody.lot.forwarder.name, 'Not Yet Freight');
+});
+
+await check('the crew get the lot with exactly the buttons the route handed them', async () => {
+  // The shop hands the crate's own legs to the forwarder in the Studio; an
+  // earlier check put this lot on a route of its own, so do that here.
+  const repository = await getRepository();
+  const lot = await repository.getLot('usr_demo', 'lot_open_24');
+  const { lotOffset, lotEndIndex } = await import(new URL('../api/dist/shared/routes.js', import.meta.url));
+  const span = [lotOffset(lot.route), lotEndIndex(lot.route)];
+  await repository.updateLot({
+    ...lot,
+    route: { ...lot.route, steps: lot.route.steps.map((step, index) => (index >= span[0] && index <= span[1] && !step.trigger ? { ...step, assignee: 'forwarder' } : step)) },
+  });
+  const forwarder = (await crewLot(req({ headers: lotusTeam, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.equal(forwarder.role, 'forwarder');
+  assert.ok(forwarder.buttons.some((button) => button.key === 'china_received'));
+  assert.ok(forwarder.moves.length > 0, 'the route handed them the flight');
+  // Pieces, not people, and never a price.
+  assert.equal(forwarder.items.every((item) => item.buyer === null), true);
+  assert.equal(JSON.stringify(forwarder).includes('unitPriceMinor'), false);
+
+  const handlerHeaders = await signInAs(HANDLER_EMAIL);
+  const handler = (await crewLot(req({ headers: handlerHeaders, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' }, query: { role: 'handler' } }), ctx)).jsonBody;
+  assert.equal(handler.role, 'handler');
+  // Their own half of the trip, plus whatever the route handed the handler - and nothing else.
+  const ownHalf = ['india_received', 'ready_to_dispatch', 'packed', 'dispatched'];
+  assert.ok(handler.buttons.length > 0);
+  assert.ok(handler.buttons.every((button) => handler.steps[button.index].assignee === 'handler' || ownHalf.includes(button.key)));
+  assert.ok(forwarder.buttons.every((button) => forwarder.steps[button.index].assignee === 'forwarder' || button.key === 'china_received'));
+  assert.ok(handler.items.every((item) => item.buyer && item.buyer.name), 'a handler addresses parcels');
+
+  const mine = (await myServices(req({ headers: handlerHeaders }), ctx)).jsonBody;
+  assert.ok(mine.crew.some((row) => row.role === 'handler' && row.lot.id === 'lot_open_24' && row.buttons.length > 0));
+  assert.equal((await crewLot(req({ headers: inkwellTeam, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' } }), ctx)).status, 403);
+});
+
+await check('a forwarder moves the crate only onto steps the route gave them', async () => {
+  const before = await (await getRepository()).getLot('usr_demo', 'lot_open_24');
+  const route = before.route.steps;
+  const theirs = route.findIndex((step) => step.assignee === 'forwarder');
+  const notTheirs = route.findIndex((step, index) => index > theirs && !step.assignee);
+  const refused = await stepLot(req({ headers: lotusTeam, params: { id: 'lot_open_24' }, query: { store: 'usr_demo' }, body: { to: notTheirs } }), ctx);
+  assert.equal(refused.status, 403);
+  const moved = await stepLot(req({ headers: lotusTeam, params: { id: 'lot_open_24' }, query: { store: 'usr_demo' }, body: { to: theirs } }), ctx);
+  assert.equal(moved.status, 200);
+  assert.equal(moved.jsonBody.lot.currentStep, theirs);
+  // Somebody else's lot entirely is not theirs to move.
+  const stranger = await stepLot(req({ headers: inkwellTeam, params: { id: 'lot_open_24' }, query: { store: 'usr_demo' }, body: { to: theirs } }), ctx);
+  assert.equal(stranger.status, 403);
+});
+
+await check('cover is the buyer’s to add, priced on the item, and paid with the order', async () => {
+  const order = await freshOrder('ord_cover_1', 'lot_gz_sep');
+  const goods = order.unitPriceMinor * order.quantity;
+  const view = (await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(view.insurance.open, true);
+  assert.deepEqual(view.insurance.plans.map((plan) => plan.id).sort(), ['plan_lotus_full', 'plan_lotus_std']);
+  const plan = view.insurance.plans.find((row) => row.id === 'plan_lotus_std');
+
+  const added = (await setInsurance(req({ headers: auth, params: { id: order.id }, body: { planId: 'plan_lotus_std' } }), ctx)).jsonBody.order;
+  assert.equal(orderMoney(added).totalMinor, goods + plan.premiumMinor);
+  assert.equal(added.addOns.filter((row) => !row.removedAt).length, 1);
+  // A plan the shop did not offer, or one from nowhere, is refused.
+  assert.equal((await setInsurance(req({ headers: auth, params: { id: order.id }, body: { planId: 'plan_harbor' } }), ctx)).status, 404);
+  // Only the buyer decides.
+  const other = await newMember('Cover Onlooker', 'cover.onlooker@figmark.example', '+919000078914');
+  assert.equal((await setInsurance(req({ headers: other.headers, params: { id: order.id }, body: { planId: null } }), ctx)).status, 403);
+
+  // Paid in full, then the goods leave: cover is fixed from there.
+  const removed = (await setInsurance(req({ headers: auth, params: { id: order.id }, body: { planId: null } }), ctx)).jsonBody.order;
+  assert.equal(orderMoney(removed).totalMinor, goods);
+  const repository = await getRepository();
+  await repository.updateOrder({ ...removed, checkpoints: { china_packed: new Date().toISOString() } });
+  assert.equal((await setInsurance(req({ headers: auth, params: { id: order.id }, body: { planId: 'plan_lotus_std' } }), ctx)).status, 409);
+});
+
+await check('a commission runs from request to release, held by an escrow', async () => {
+  const order = await freshOrder('ord_art_1', 'lot_gz_sep');
+  const short = await commission(req({ headers: auth, params: { id: order.id }, body: { artistId: 'usr_art_inkwell', brief: 'paint' } }), ctx);
+  assert.equal(short.status, 400);
+  const asked = await commission(req({ headers: auth, params: { id: order.id }, body: { artistId: 'usr_art_inkwell', offeringId: 'svc_repaint', brief: 'Battle-damaged repaint, matte, like the reference.' } }), ctx);
+  assert.equal(asked.status, 200);
+  assert.equal(asked.jsonBody.order.artistJob.status, 'requested');
+  // Nothing to accept before there is a price.
+  assert.equal((await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'accept' } }), ctx)).status, 409);
+
+  const jobs = (await storeWork(req({ headers: inkwellTeam, params: { kind: 'artist', ownerId: 'usr_art_inkwell' } }), ctx)).jsonBody.jobs;
+  assert.deepEqual(jobs.find((row) => row.orderId === order.id).actions.sort(), ['decline', 'quote']);
+  // The buyer cannot press the artist's side.
+  assert.equal((await artistAct(req({ headers: auth, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action: 'quote', quoteMinor: 1 } }), ctx)).status, 403);
+
+  const artist = (action, extra = {}) => artistAct(req({ headers: inkwellTeam, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action, ...extra } }), ctx);
+  const buyer = (action, extra = {}) => commissionAct(req({ headers: auth, params: { id: order.id }, body: { action, ...extra } }), ctx);
+  assert.equal((await artist('quote', { quoteMinor: 7_00_000, days: 21, note: 'Includes gloss coat.' })).jsonBody.job.status, 'quoted');
+  assert.equal((await buyer('accept')).jsonBody.order.artistJob.status, 'accepted');
+  // The studio's address reaches the shop only once it is paid for.
+  assert.equal((await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody.commission.studioAddress, null);
+
+  const paid = (await buyer('pay', { method: 'protected', escrowAgentId: 'usr_escrow_meera' })).jsonBody.order.artistJob;
+  assert.equal(paid.status, 'paid');
+  assert.ok(paid.heldMinor > 7_00_000, 'the escrow’s fee rides on top');
+  assert.ok((await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody.commission.studioAddress);
+
+  assert.equal((await artist('start')).jsonBody.job.status, 'working');
+  assert.equal((await artist('ready', { photos: ['https://example.com/done.jpg'] })).jsonBody.job.status, 'ready');
+  assert.equal((await artist('ship', { courier: 'Delhivery', awb: '998877' })).jsonBody.job.status, 'shipped');
+  const done = (await buyer('complete')).jsonBody.order.artistJob;
+  assert.equal(done.status, 'completed');
+  assert.ok(done.releasedAt, 'completing releases what was held');
+  assert.ok((await noticesFor('usr_demo')).some((notice) => notice.kind === 'commission'));
+});
+
+await check('paid direct, a commission waits for the artist to say the money came', async () => {
+  const order = await freshOrder('ord_art_2', 'lot_gz_sep');
+  await commission(req({ headers: auth, params: { id: order.id }, body: { artistId: 'usr_art_inkwell', brief: 'Fix the paint rub on the left wing, please.' } }), ctx);
+  await artistAct(req({ headers: inkwellTeam, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action: 'quote', quoteMinor: 1_80_000 } }), ctx);
+  await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'accept' } }), ctx);
+  const view = (await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(view.commission.artistPayment.upiId, 'inkwell@okaxis');
+  const sent = (await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'pay', method: 'direct', reference: 'UPI-55' } }), ctx)).jsonBody.order.artistJob;
+  assert.equal(sent.status, 'accepted', 'sent is not received');
+  assert.equal(sent.payments[0].confirmedAt, null);
+  // Once claimed, neither paying twice nor cancelling.
+  assert.equal((await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'pay', method: 'direct' } }), ctx)).status, 409);
+  assert.equal((await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'cancel' } }), ctx)).status, 409);
+  const confirmed = (await artistAct(req({ headers: inkwellTeam, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action: 'confirm_payment' } }), ctx)).jsonBody.job;
+  assert.equal(confirmed.status, 'paid');
+  assert.ok(confirmed.payments[0].confirmedAt);
 });
 
 console.log(`\n${passed} checks passed`);

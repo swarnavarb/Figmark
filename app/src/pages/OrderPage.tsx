@@ -1,3 +1,5 @@
+import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
+import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
@@ -154,7 +156,7 @@ export function OrderPage() {
         eyebrow={placed ? (state.side === 'seller' ? 'Order' : 'Your order') : <><Svg name="cart" size={13} /> In your cart</>}
         meta={<>{state.side === 'seller' ? 'Sold to' : 'From'} <PersonLink party={state.counterparty} /> · {timeAgo(order.createdAt)}</>}
         facts={[
-          { label: 'Total', value: formatMoney(order.unitPriceMinor * order.quantity, order.currency), tone: 'accent' },
+          { label: 'Total', value: formatMoney(orderTotalMinor(order), order.currency), tone: 'accent' },
           { label: 'Qty', value: order.quantity },
           { label: 'Stock', value: isDirect(order) ? <><Svg name="home" size={13} /> In hand</> : <><Svg name="ship" size={13} /> Import</>, tone: isDirect(order) ? 'ok' : undefined },
           { label: 'Status', value: placed ? order.status.replace(/_/g, ' ') : 'Not placed', tone: placed ? statusTone(order.status) : 'warn' },
@@ -185,6 +187,9 @@ export function OrderPage() {
       {acts.dialogs}
       <CollectionPrompt state={state} />
       <DisputePanel state={state} />
+      {/* Cover from the forwarder flying it, and a commission with an artist:
+          what can be added to this item, by the people who would do it. */}
+      <OrderServices orderId={order.id} onChanged={load} />
 
       {placed && <div className="tabs tabs--vivid">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
@@ -306,7 +311,7 @@ export function OrderPage() {
             <div className="row row--between">
               <span className="muted">Total</span>
               <span className="detail__price" style={{ fontSize: 'var(--t-lg)' }}>
-                {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}
+                {formatMoney(orderTotalMinor(order), order.currency)}
               </span>
             </div>
             <dl style={{ margin: 0 }}>
@@ -317,6 +322,9 @@ export function OrderPage() {
                 <dd>{order.paymentStatus.replace(/_/g, ' ')}</dd>
               </div>
               <div className="kv"><dt>Escrow</dt><dd>{order.escrow.state}</dd></div>
+              {liveAddOns(order).map((addOn) => (
+                <div key={addOn.id} className="kv"><dt>🛡 {addOn.planName}</dt><dd>{formatMoney(addOn.premiumMinor, order.currency)}</dd></div>
+              ))}
               {data.estimatedDispatchAt && (
                 <div className="kv"><dt>Est. dispatch</dt><dd>{formatDate(data.estimatedDispatchAt)}</dd></div>
               )}
@@ -571,7 +579,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {actions.includes('pay') && !paying && (
               <button className="btn btn--lg" onClick={() => setPaying(true)}>
-                Pay {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}
+                Pay {formatMoney(orderTotalMinor(order), order.currency)}
               </button>
             )}
             {actions.includes('pay_more') && (
@@ -1309,7 +1317,7 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
   // What this claim is actually for - not the order's full price, which is
   // what an advance or a further instalment is never asking to be confirmed
   // against. Absent only on a claim recorded before this field existed.
-  const claimedMinor = claim?.amountMinor ?? order.unitPriceMinor * order.quantity;
+  const claimedMinor = claim?.amountMinor ?? orderTotalMinor(order);
   const money = orderMoney(order);
   const balanceAfter = Math.max(0, money.outstandingMinor - claimedMinor);
   const claimLabel = claim?.plan === 'additional' ? 'Additional payment'
@@ -1391,7 +1399,7 @@ function RejectOrder({ order, busy, onReject, onClose }: {
     <Modal title="Turn this order down" onClose={onClose}>
       <div className="form">
         <p className="muted">
-          {order.itemName} — {formatMoney(order.unitPriceMinor * order.quantity, order.currency)}.
+          {order.itemName} — {formatMoney(orderTotalMinor(order), order.currency)}.
         </p>
         <label className="field">
           <span>Why</span>

@@ -79,6 +79,11 @@ const {
   consignmentsRoute, distributionRoute, distributionDetailRoute,
 } = await import(new URL('service-routes.js', apiRoot));
 const {
+  myServicesRoute, applyStoreRoute, storeConsoleRoute, saveStoreRoute, storeTeamRoute, storeWorkRoute,
+  respondLotRoute, artistActRoute, storePageRoute, lotForwarderOptionsRoute, bookForwarderRoute,
+  orderServicesRoute, setInsuranceRoute, commissionRoute, commissionActRoute, crewLotRoute, opsStoresRoute, opsReviewRoute,
+} = await import(new URL('store-routes.js', apiRoot));
+const {
   creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute,
   saveReversalDetailsRoute, reversalDetailsRoute,
 } = await import(new URL('profile-routes.js', apiRoot));
@@ -286,6 +291,24 @@ const routes = [
   ['GET', '/api/photos/:name', photoRoute],
   ['POST', '/api/orders/:id/lot', assignOrderToLotRoute],
   ['GET', '/api/services', servicesHubRoute],
+  ['GET', '/api/me/services', myServicesRoute],
+  ['POST', '/api/me/services/apply', applyStoreRoute],
+  ['GET', '/api/me/crew/:sellerId/:lotId', crewLotRoute],
+  ['POST', '/api/service-stores/forwarder/:ownerId/respond', respondLotRoute],
+  ['POST', '/api/service-stores/artist/:ownerId/jobs/:orderId', artistActRoute],
+  ['GET', '/api/service-stores/:kind/:ownerId', storeConsoleRoute],
+  ['POST', '/api/service-stores/:kind/:ownerId/save', saveStoreRoute],
+  ['POST', '/api/service-stores/:kind/:ownerId/team', storeTeamRoute],
+  ['GET', '/api/service-stores/:kind/:ownerId/work', storeWorkRoute],
+  ['GET', '/api/service-store/:kind/:slug', storePageRoute],
+  ['GET', '/api/lots/:id/forwarders', lotForwarderOptionsRoute],
+  ['POST', '/api/lots/:id/forwarder-store', bookForwarderRoute],
+  ['GET', '/api/orders/:id/services', orderServicesRoute],
+  ['POST', '/api/orders/:id/insurance', setInsuranceRoute],
+  ['POST', '/api/orders/:id/commission', commissionRoute],
+  ['POST', '/api/orders/:id/commission/act', commissionActRoute],
+  ['GET', '/api/ops/stores', opsStoresRoute],
+  ['POST', '/api/ops/stores/:kind/:ownerId/review', opsReviewRoute],
   ['POST', '/api/me/service', offerServiceRoute],
   ['GET', '/api/me/service/consignments', consignmentsRoute],
   ['GET', '/api/me/service/distribution', distributionRoute],

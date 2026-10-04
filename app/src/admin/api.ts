@@ -3,7 +3,9 @@ import type { Dispute, EscrowRights, SellerTrustSignals, TrustSignals } from '@s
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
-import { ApiRequestError, api as marketplace } from '../api';
+import { ApiRequestError, api as marketplace, type OpsStoreRow } from '../api';
+import type { StoreStatus } from '@shared/models';
+import type { StoreKind } from '@shared/service-stores';
 
 /**
  * The operations API.
@@ -124,6 +126,11 @@ export const admin = {
     post<{ deleted: Record<string, unknown> }>('/ops/resources/delete', { kind, id, ownerId }),
   setEscrow: (id: string, body: { enabled: boolean; feeBasisPoints?: number; displayName?: string; note?: string }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/escrow`, body),
+
+  /** Service stores: applications waiting first, then every store. */
+  stores: () => request<{ stores: OpsStoreRow[] }>('/ops/stores'),
+  reviewStore: (kind: StoreKind, ownerId: string, body: { decision: StoreStatus; note: string }) =>
+    post<{ ok: true; status: StoreStatus }>(`/ops/stores/${kind}/${encodeURIComponent(ownerId)}/review`, body),
 
   /** What the API is actually running on, for the status line. */
   health: () => request<HealthResponse>('/health'),

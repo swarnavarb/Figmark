@@ -80,7 +80,7 @@ export function StepButton({ step, state, busy = false, vars, onPress, children 
 export function AssigneeTag({ who }: { who: StepAssignee }) {
   return (
     <span className={`stepact__who is-${who}`}>
-      {who === 'supplier' ? '🏭 Supplier' : '🧑‍🔧 Handler'} can press this too
+      {who === 'supplier' ? '🏭 Supplier' : who === 'forwarder' ? '✈️ Forwarder' : '🧑‍🔧 Handler'} can press this too
     </span>
   );
 }
