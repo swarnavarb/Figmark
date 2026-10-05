@@ -249,12 +249,20 @@ export function PersonLink({ party, className, children, bare }: {
  */
 export function LevelChip({ tag, inline = false }: { tag: Tag | null | undefined; inline?: boolean }) {
   if (!tag) return null;
-  const tone = tag.level >= 8 ? 'gold' : tag.level >= 4 ? 'violet' : 'plain';
   return (
-    <span className={`lvtag lvtag--${tone}${inline ? ' lvtag--inline' : ''}`} title={`Level ${tag.level} · ${tag.title}`}>
+    <span className={`lvtag lvtag--l${levelRung(tag.level)}${inline ? ' lvtag--inline' : ''}`} title={`Level ${tag.level} · ${tag.title}`}>
       <span className="lvtag__lv">Lv {tag.level}</span>
       <span className="lvtag__title">{tag.title}</span>
       {tag.shop && <span className="lvtag__shop">Shop</span>}
     </span>
   );
+}
+
+/** Which colour a level wears: its own up to ten, then one per titled band. */
+function levelRung(level: number): number {
+  if (level >= 50) return 50;
+  if (level >= 30) return 30;
+  if (level >= 20) return 20;
+  if (level >= 15) return 15;
+  return Math.min(Math.max(Math.floor(level), 1), 10);
 }

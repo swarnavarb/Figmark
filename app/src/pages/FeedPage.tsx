@@ -50,7 +50,8 @@ export function useCatalog() {
   const group = params.get('group') ?? '';
   const category = params.get('category') ?? '';
   const condition = params.get('condition') ?? '';
-  const kind = params.get('kind') ?? '';
+  // Mixed lots are no longer a tab; an old link to them shows everything.
+  const kind = params.get('kind') === 'mixed_lot' ? '' : params.get('kind') ?? '';
   const sort = params.get('sort') ?? 'newest';
   const maxPrice = params.get('maxPrice') ?? '';
 
@@ -539,7 +540,10 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
         {/* The store, then its level under it: side by side they never fit a phone's half-width card. */}
         {listing.seller && (
           <span className="qloot__foot qseller" title={`Trust ${listing.seller.trustScore} of 100`}>
-            <span className={`qseller__crest qcrest__mark--${crestFor(listing.seller.trustScore)}`}><Glyph name="crest" size={13} /></span>
+            <span className={`qseller__crest qcrest__mark--${crestFor(listing.seller.trustScore)}`}>
+              <Glyph name="crest" size={13} />
+              {listing.seller.photoUrl && <StorePic url={listing.seller.photoUrl} />}
+            </span>
             <span className="qseller__name">{listing.seller.storefrontName}</span>
             <span className="qseller__lv"><LevelChip tag={listing.seller.level} /></span>
           </span>
@@ -552,6 +556,22 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
 }, (before, after) => before.listing.id === after.listing.id
   && before.listing.liked === after.listing.liked
   && JSON.stringify(before.listing.rarity) === JSON.stringify(after.listing.rarity));
+
+/**
+ * The store's picture over its crest. The address already comes with the
+ * feed, so this costs no request of its own; the picture is lazy, sized, and
+ * fades in once it has loaded. Until then, or if it never loads, the crest
+ * underneath is what shows.
+ */
+function StorePic({ url }: { url: string }) {
+  const [state, setState] = useState<'wait' | 'ok' | 'gone'>('wait');
+  if (state === 'gone') return null;
+  return (
+    <img className={`qseller__pic${state === 'ok' ? ' is-in' : ''}`} src={url} alt="" width={26} height={26}
+      loading="lazy" decoding="async" referrerPolicy="no-referrer"
+      onLoad={() => setState('ok')} onError={() => setState('gone')} />
+  );
+}
 
 /** A seller's trust as a rank crest: bronze, silver, gold. */
 function crestFor(score: number): 'gold' | 'silver' | 'bronze' {
@@ -620,10 +640,12 @@ const PICKER_ICONS: Record<PickerIcon, ReactNode> = {
   type: icon(<><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" /></>),
 };
 
-const KIND_ICONS: Record<CatalogKind, ReactNode> = {
+/** The tabs on the bar: mixed lots were dropped from it. */
+const SHOWN_KINDS = CATALOG_KINDS.filter((kind) => kind !== 'mixed_lot');
+
+const KIND_ICONS: Partial<Record<CatalogKind, ReactNode>> = {
   all: icon(<><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></>),
   pre_order: icon(<path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9" />),
-  mixed_lot: icon(<><path d="M3 8l9-5 9 5v8l-9 5-9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></>),
   in_hand: icon(<><path d="M20 6 9 17l-5-5" /></>),
 };
 
@@ -658,7 +680,7 @@ function KindTabs({ value, onChoose }: { value: CatalogKind; onChoose: (kind: st
           <span key={value} className="qkinds__flash" />
         </span>
       )}
-      {CATALOG_KINDS.map((entry, i) => (
+      {SHOWN_KINDS.map((entry, i) => (
         <button key={entry} type="button" role="tab" aria-selected={value === entry}
           className={`qkind${value === entry ? ' is-on' : ''}`} style={{ ['--i' as string]: i }}
           onPointerDown={tapFx} onClick={() => onChoose(entry)}>
