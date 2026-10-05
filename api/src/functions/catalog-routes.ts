@@ -723,13 +723,28 @@ async function toggleFollow(request: HttpRequest, _context: InvocationContext) {
 
 const MAX_ORDER_QUANTITY = 100;
 
+/**
+ * The post a Buy came from, when the client names one and it really is a
+ * post selling this item. Anything else is dropped rather than refused: the
+ * order is the point, the credit to a post is not.
+ */
+async function postSelling(
+  repository: Awaited<ReturnType<typeof getRepository>>, value: unknown, listingId: string,
+): Promise<{ channelId: string; postId: string } | null> {
+  if (!value || typeof value !== 'object') return null;
+  const { channelId, postId } = value as { channelId?: unknown; postId?: unknown };
+  if (typeof channelId !== 'string' || typeof postId !== 'string') return null;
+  const post = await repository.getPost(channelId, postId).catch(() => null);
+  return post?.listingId === listingId ? { channelId, postId } : null;
+}
+
 /** POST /api/orders - buy an in-stock item, or join a group-buy lot. */
 async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
-  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book'; ref?: string };
+  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book'; ref?: string; fromPost?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -770,6 +785,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     if (buyer) await recordReferral(repository, buyer, listing, referredBy);
   }
   const affiliate = await affiliateFor(repository, user.id, listing);
+  const fromPost = await postSelling(repository, body.fromPost, listing.id);
 
   // Pressing Buy again on an item already at the checkout goes back to that
   // checkout rather than opening a second one nobody asked for.
@@ -785,6 +801,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
         open.unitPriceMinor = Math.max(100, base - (affiliate.buyerOffMinor ?? 0));
       }
       open.quantity = quantity;
+      if (fromPost && !open.fromPost) open.fromPost = fromPost;
       open.escrow = { ...open.escrow, amountMinor: open.unitPriceMinor * quantity };
       open.buyClicks = (open.buyClicks ?? 1) + 1;
       open.updatedAt = new Date().toISOString();
@@ -881,6 +898,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // belongs to that moment rather than to the click that finally paid.
     broughtBy: await verifiedReferrer(repository, body.via, user.id, listing),
     affiliate,
+    fromPost,
     completedAt: null,
     createdAt: now,
     updatedAt: now,

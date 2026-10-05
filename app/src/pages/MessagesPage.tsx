@@ -188,7 +188,9 @@ export function ThreadPage() {
   // very chat is open lands on the same page rather than a fresh one.
   const location = useLocation();
   // The buyer's ask-for-a-deal form. A shop makes its deal on the full listing form instead.
-  const [asking, setAsking] = useState(false);
+  // A post's "Make me an offer" lands here with `?ask=<what>`, the form open.
+  const askFor = params.get('ask');
+  const [asking, setAsking] = useState(askFor !== null);
   const makeDeal = useMakeDeal();
   const us = data?.us;
   const them = data?.them;
@@ -249,7 +251,13 @@ export function ThreadPage() {
     try {
       const page = await api.thread(handle, as, { before: first.createdAt });
       const height = document.documentElement.scrollHeight;
-      setData((current) => current && { ...current, more: page.more, messages: [...page.messages, ...current.messages] });
+      setData((current) => {
+        if (!current) return current;
+        // The page edge is inclusive, so the first message here comes back too.
+        const known = new Set(current.messages.map((message) => message.id));
+        const fresh = page.messages.filter((message) => !known.has(message.id));
+        return { ...current, more: page.more && fresh.length > 0, messages: [...fresh, ...current.messages] };
+      });
       // Hold the reader where they were rather than jumping to the top.
       requestAnimationFrame(() => window.scrollBy(0, document.documentElement.scrollHeight - height));
     } catch (err) {
@@ -424,8 +432,8 @@ export function ThreadPage() {
 
         {notice && <p className="chtoast" role="status" onAnimationEnd={() => setNotice(null)}>{notice}</p>}
 
-        {asking && (
-          <DealForm us={data.us} them={data.them} onClose={() => setAsking(false)}
+        {asking && !data.us.isStore && data.them.isStore && (
+          <DealForm us={data.us} them={data.them} initialTitle={askFor ?? ''} onClose={() => setAsking(false)}
             onSent={() => { setAsking(false); void load(); }} />
         )}
 

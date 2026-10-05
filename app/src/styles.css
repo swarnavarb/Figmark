@@ -6455,6 +6455,31 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   font-weight: var(--w-bold); font-size: var(--t-xs);
 }
 
+.spost__itemcta--buy { background: var(--lime); color: var(--lime-ink); }
+
+/* A sale post: the item, how to buy it, and what the post has sold. */
+.spost__sale { display: grid; gap: 8px; }
+.spost__sale.is-gone .spost__item { border-color: var(--border); background: var(--surface-2); opacity: 0.8; }
+.spost__left {
+  padding: 0 7px; border-radius: var(--r-pill);
+  background: var(--warn-soft); color: var(--warn);
+  font-size: var(--t-2xs); font-weight: var(--w-semi);
+}
+.spost__fill { display: grid; gap: 3px; margin-top: 4px; font-size: var(--t-2xs); }
+.spost__fillbar { display: block; height: 5px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
+.spost__fillbar > i { display: block; height: 100%; border-radius: inherit; background: var(--lime); }
+.spost__saleline {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  color: var(--text-dim); font-size: var(--t-xs);
+}
+.spost__saleline > span { display: inline-flex; align-items: center; gap: 4px; }
+.spost__offer {
+  padding: 4px 10px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong); color: var(--text);
+  font-weight: var(--w-semi);
+}
+.spost__offer:hover { background: var(--surface-2); }
+
 /* ── Composer, restyled for the tab ────────────────────────────────────── */
 
 .social .writer {

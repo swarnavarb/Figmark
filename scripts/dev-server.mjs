@@ -49,7 +49,7 @@ const {
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
-  payRoute, confirmRoute, reviewRoute, orderStateRoute, checkoutRoute,
+  payRoute, confirmRoute, reviewRoute, unboxingRoute, orderStateRoute, checkoutRoute,
   claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
   acceptOrderRoute, cancelOrderRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
   submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
@@ -219,6 +219,7 @@ const routes = [
   ['POST', '/api/orders/:id/confirm', confirmRoute],
   ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],
+  ['POST', '/api/orders/:id/unboxing', unboxingRoute],
   ['POST', '/api/orders/:id/book', bookOrderRoute],
   ['POST', '/api/orders/:id/accept', acceptOrderRoute],
   ['POST', '/api/orders/:id/cancel', cancelOrderRoute],

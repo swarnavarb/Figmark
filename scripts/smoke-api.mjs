@@ -84,7 +84,10 @@ const {
 const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
   publicProfileRoute: publicProfile, setUsernameRoute: setUsername, reactToMessageRoute: reactToMessage,
+  blockRoute: blockHandle, muteRoute: muteThread,
 } = await import(new URL('message-routes.js', fns));
+const { unboxingRoute: shareUnboxing } = await import(new URL('order-routes.js', fns));
+const { resetRateLimits } = await import(new URL('../rate-limit.js', fns));
 const {
   payRoute: payOrder, confirmRoute: confirmOrder, reviewRoute: reviewOrder,
   orderStateRoute: orderState, checkoutRoute: checkout,
@@ -9405,6 +9408,180 @@ await check('what is said in a shop\'s room cannot be touched from outside it', 
   assert.equal((await commentOn(req({ ...at, body: { body: 'hi' } }), ctx)).status, 403);
   assert.equal((await reactors(req(at), ctx)).status, 403);
   assert.equal((await sharePost(req({ ...at, body: { mode: 'link' } }), ctx)).status, 403);
+});
+
+await check('posts and hunts only carry photos uploaded here', async () => {
+  const outside = await createPost(req({ headers: auth, body: { body: 'Look', photoUrls: ['https://tracker.example/pixel.gif'] } }), ctx);
+  assert.equal(outside.status, 400);
+  const sneaky = await createPost(req({ headers: auth, body: { body: 'Look', photoUrls: ['/api/photos/../secret'] } }), ctx);
+  assert.equal(sneaky.status, 400);
+  const hunt = await postWant(req({ headers: auth, body: {
+    title: 'ISO outside photo', category: 'Model kits', photoUrls: ['https://tracker.example/a.jpg'],
+  } }), ctx);
+  assert.equal(hunt.status, 400);
+  const longCategory = await postWant(req({ headers: auth, body: { title: 'ISO long category', category: 'x'.repeat(41) } }), ctx);
+  assert.equal(longCategory.status, 400);
+});
+
+await check('posting in a burst is slowed down, and only for whoever is bursting', async () => {
+  process.env.FIGMARK_RATE_LIMITS = 'on';
+  resetRateLimits();
+  try {
+    const burster = await newBuyer('Burst Poster');
+    const statuses = [];
+    for (let index = 0; index < 11; index += 1) {
+      statuses.push((await createPost(req({ headers: burster.headers, body: { body: `Post ${index}` } }), ctx)).status);
+    }
+    assert.deepEqual(statuses.slice(0, 10), Array(10).fill(201));
+    const refused = await createPost(req({ headers: burster.headers, body: { body: 'One more' } }), ctx);
+    assert.equal(refused.status, 429);
+    assert.equal(refused.jsonBody.error, 'slow_down');
+    const calm = await newBuyer('Calm Poster');
+    assert.equal((await createPost(req({ headers: calm.headers, body: { body: 'Hello' } }), ctx)).status, 201);
+  } finally {
+    process.env.FIGMARK_RATE_LIMITS = 'off';
+    resetRateLimits();
+  }
+});
+
+await check('nobody spends the whole forum cap, and names stay short', async () => {
+  const opener = await newBuyer('Room Opener');
+  const tooLong = await createForum(req({ headers: opener.headers, body: { name: 'x'.repeat(61) } }), ctx);
+  assert.equal(tooLong.status, 400);
+  const repository = await getRepository();
+  const now = new Date().toISOString();
+  for (const index of [1, 2]) {
+    await repository.createForum({
+      id: `frm_opener_${index}`, name: `Opener room ${index}`, description: '', createdBy: opener.id,
+      postCount: 0, memberIds: [opener.id], createdAt: now, updatedAt: now,
+    });
+  }
+  const third = await createForum(req({ headers: opener.headers, body: { name: 'Opener room 3' } }), ctx);
+  assert.equal(third.status, 409);
+  assert.equal(third.jsonBody.error, 'forum_limit_reached');
+});
+
+await check('joining a forum says which, so a double tap does not undo it', async () => {
+  const joiner = await newBuyer('Double Tapper');
+  const first = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: true } }), ctx);
+  const second = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: true } }), ctx);
+  assert.equal(first.jsonBody.forum.member, true);
+  assert.equal(second.jsonBody.forum.member, true, 'still in');
+  const left = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: false } }), ctx);
+  assert.equal(left.jsonBody.forum.member, false);
+});
+
+await check('a blocked person cannot write, a muted thread is not counted, and long threads page', async () => {
+  const pest = await newBuyer('Pest Person');
+  const target = await newBuyer('Quiet Person');
+  await setUsername(req({ headers: pest.headers, body: { username: 'pest_person' } }), ctx);
+  await setUsername(req({ headers: target.headers, body: { username: 'quiet_person' } }), ctx);
+  for (let index = 0; index < 62; index += 1) {
+    assert.equal((await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: `hi ${index}` } }), ctx)).status, 201);
+  }
+  const open = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' } }), ctx)).jsonBody;
+  assert.equal(open.messages.length, 60);
+  assert.equal(open.more, true);
+  const earlier = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' }, query: { before: open.messages[0].createdAt } }), ctx)).jsonBody;
+  const shown = new Set(open.messages.map((message) => message.id));
+  assert.equal(earlier.messages.filter((message) => !shown.has(message.id)).length, 2, 'the two before the page, none lost');
+  const since = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' }, query: { since: open.messages.at(-1).createdAt } }), ctx)).jsonBody;
+  assert.ok(since.messages.every((message) => message.createdAt >= open.messages.at(-1).createdAt), 'a refresh only carries what is new');
+
+  assert.equal((await muteThread(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { mute: true } }), ctx)).status, 200);
+  await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'still here' } }), ctx);
+  const muted = (await inbox(req({ headers: target.headers }), ctx)).jsonBody.threads.find((row) => row.them.handle === 'pest_person');
+  assert.equal(muted.muted, true);
+  assert.equal(muted.unread, 0);
+
+  assert.equal((await blockHandle(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { block: true } }), ctx)).status, 200);
+  const refused = await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'let me in' } }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.jsonBody.error, 'blocked');
+  assert.ok(!(await inbox(req({ headers: target.headers }), ctx)).jsonBody.threads.some((row) => row.them.handle === 'pest_person'));
+  const blockedView = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' } }), ctx)).jsonBody;
+  assert.equal(blockedView.blocked, true);
+  await blockHandle(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { block: false } }), ctx);
+  assert.equal((await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'sorry' } }), ctx)).status, 201);
+});
+
+await check('the home feed pages back through followed posts', async () => {
+  const first = (await socialHome(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok('next' in first);
+  if (first.next) {
+    const second = (await socialHome(req({ headers: auth, query: { before: first.next } }), ctx)).jsonBody;
+    assert.ok(second.posts.every((card) => card.post.createdAt < first.next || card.forum));
+  }
+});
+
+await check('a sale post can be bought from, and the post counts what it sold', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const repository = await getRepository();
+  let item = null;
+  for (const entry of stock) {
+    const listing = await repository.getListing(entry.id);
+    if (listing.status === 'active' && !listing.privateFor && !listing.preOrder && listing.quantityAvailable > 1) { item = listing; break; }
+  }
+  assert.ok(item, 'a demo item with stock');
+  const made = (await createPost(req({ headers: auth, body: { body: 'Grab one', storeId: 'usr_demo', listingId: item.id } }), ctx)).jsonBody.post;
+  const card = (await readPost(req({ headers: auth, params: on(made) }), ctx)).jsonBody.card;
+  assert.equal(card.listing.buyable, true);
+  const buyer = await newBuyer('Post Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: item.id, fromPost: { channelId: made.channelId, postId: made.id } } }), ctx);
+  assert.equal(placed.status, 201);
+  assert.deepEqual(placed.jsonBody.order.fromPost, { channelId: made.channelId, postId: made.id });
+  const after = (await readPost(req({ headers: auth, params: on(made) }), ctx)).jsonBody.card;
+  assert.equal(after.post.buyCount, 1);
+  assert.equal(after.post.boughtBy, undefined, 'who bought is not on the wire');
+  // A post that is not selling this item gets no credit.
+  const other = await newBuyer('Other Buyer');
+  const stray = await createOrder(req({ headers: other.headers, body: { listingId: item.id, fromPost: { channelId: 'usr_tokyoline', postId: 'pst_tokyo_1' } } }), ctx);
+  assert.equal(stray.jsonBody.order.fromPost ?? null, null);
+});
+
+await check('a saved item and an answered hunt reach the people who wanted them', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const fan = await newBuyer('Item Fan');
+  await toggleLike(req({ headers: fan.headers, params: { id: stock[0].id } }), ctx);
+  const made = (await createPost(req({ headers: auth, body: { body: 'Restocked', storeId: 'usr_demo', listingId: stock[0].id } }), ctx)).jsonBody.post;
+  const fanFeed = (await socialHome(req({ headers: fan.headers }), ctx)).jsonBody.posts;
+  assert.ok(fanFeed.find((card) => card.post.id === made.id)?.badges?.includes('rising'), 'saved it, so sees the new post');
+
+  const hunter = await newBuyer('Hunter One');
+  const hunt = (await postWant(req({ headers: hunter.headers, body: { title: 'ISO restocked thing', category: 'Model kits' } }), ctx)).jsonBody.want;
+  const answered = await offerOnWant(req({
+    headers: auth, params: { id: hunt.id }, query: { buyer: hunter.id },
+    body: { message: 'Have one right here.', storeId: 'usr_demo', listingId: stock[0].id },
+  }), ctx);
+  assert.equal(answered.status, 201);
+  const hunterFeed = (await socialHome(req({ headers: hunter.headers }), ctx)).jsonBody.posts;
+  const answer = hunterFeed.find((card) => card.post.answersWant?.id === hunt.id);
+  assert.ok(answer, 'the hunter sees the answer on their feed');
+  assert.ok(answer.badges.includes('rising'));
+  assert.equal(answer.post.audience, undefined, 'who it was tried on is not on the wire');
+});
+
+await check('a buyer shows off what arrived in the shop\'s channel, without a rating', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const buyer = await newBuyer('Happy Buyer');
+  const repository = await getRepository();
+  let order = null;
+  for (const entry of stock) {
+    const made = await createOrder(req({ headers: buyer.headers, body: { listingId: entry.id } }), ctx);
+    if (made.status === 201) { order = made.jsonBody.order; break; }
+  }
+  assert.ok(order);
+  const early = await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx);
+  assert.equal(early.status, 409, 'not before it is complete');
+  await repository.updateOrder({ ...(await repository.getOrder(order.id)), completedAt: new Date().toISOString() });
+  assert.equal((await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { body: 'Lovely' } }), ctx)).status, 400, 'needs a photo');
+  assert.equal((await shareUnboxing(req({ headers: auth, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx)).status, 403, 'the buyer only');
+  const shared = await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { body: 'Lovely', photoUrls: ['/api/photos/box.jpg'] } }), ctx);
+  assert.equal(shared.status, 201);
+  assert.equal(shared.jsonBody.post.channelId, 'usr_demo');
+  assert.equal(shared.jsonBody.post.voice, 'visitor');
+  assert.equal(shared.jsonBody.post.delivered.orderId, order.id);
+  assert.equal((await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx)).status, 409, 'once');
 });
 
 console.log(`\n${passed} checks passed`);

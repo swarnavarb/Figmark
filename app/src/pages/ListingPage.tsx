@@ -41,6 +41,11 @@ export function ListingPage() {
   // sharing a group-buy worth a person's own reputation.
   const [params] = useSearchParams();
   const via = params.get('via');
+  // Arrived from a post's Buy button: the post gets the credit for the sale.
+  const fromPost = (() => {
+    const [channelId, postId] = (params.get('post') ?? '').split(':');
+    return channelId && postId ? { channelId, postId } : null;
+  })();
   // An affiliate's signed link. The server checks it and remembers it against
   // this account, so it is passed through rather than trusted here.
   const ref = params.get(AFFILIATE_PARAM);
@@ -115,7 +120,7 @@ export function ListingPage() {
   // looking like a completed one.
   const buy = () =>
     run('', async () => {
-      const placed = await api.order(listing.id, quantity, via, ref);
+      const placed = await api.order(listing.id, quantity, via, ref, fromPost);
       navigate(`/order/${placed.order.id}`);
     });
 

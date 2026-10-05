@@ -9,6 +9,7 @@ import {
   type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
 import { can } from '../../../shared/stores.js';
+import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -30,7 +31,14 @@ import { notify } from './notify.js';
 interface PostCard {
   /** The post, without the lists `social` summarises - who voted is nobody's business. */
   post: Post;
-  listing: (Pick<Listing, 'id' | 'title' | 'priceMinor' | 'currency' | 'condition'> & { photoUrl: string | null }) | null;
+  listing: (Pick<Listing, 'id' | 'title' | 'priceMinor' | 'currency' | 'condition'> & {
+    photoUrl: string | null;
+    /** Whether it can still be bought, and how many are left when that is a number worth saying. */
+    buyable?: boolean;
+    left?: number | null;
+    /** A group pre-order's fill, for the meter on the card. */
+    fill?: { joined: number; total: number; cutoffAt: string } | null;
+  }) | null;
   /**
    * Where the author's name goes when tapped.
    *
@@ -104,7 +112,10 @@ const notYours = () => error(403, 'forbidden', 'You cannot speak for that shop.'
 
 /** The post as it goes over the wire: the heavy lists summarised elsewhere. */
 function publicPost(post: Post): Post {
-  const { reactions: _reactions, comments: _comments, poll: _poll, sharedBy: _sharedBy, ...rest } = post;
+  const {
+    reactions: _reactions, comments: _comments, poll: _poll, sharedBy: _sharedBy, boughtBy: _boughtBy,
+    audience: _audience, ...rest
+  } = post;
   return {
     ...rest,
     likeCount: post.reactions?.length ?? post.likeCount,
@@ -187,6 +198,26 @@ async function peopleFor(posts: readonly Post[], repository: Repo, extra: readon
   }
   const users = await repository.listUsersByIds([...ids]);
   return new Map(users.map((user) => [user.id, user]));
+}
+
+/**
+ * What the Buy button on a sale post needs: can it be bought, how many are
+ * left (only when few enough to matter), and how full a group pre-order is.
+ */
+function saleState(listing: Listing) {
+  const pre = listing.preOrder;
+  const multiple = isMultiple(listing);
+  return {
+    buyable: listing.status === 'active' && !isExpired(listing) && !listing.privateFor && (multiple || listing.quantityAvailable > 0),
+    left: !multiple && !pre && listing.quantityAvailable <= 10 ? listing.quantityAvailable : null,
+    fill: pre && pre.fillThreshold > 0
+      ? {
+          joined: Math.min(pre.fillThreshold, pre.filledCount + (pre.pledgedCount ?? 0)),
+          total: pre.fillThreshold,
+          cutoffAt: pre.cutoffAt,
+        }
+      : null,
+  };
 }
 
 /** The picture a listing leads with, if it has one. */
@@ -292,6 +323,7 @@ async function decorate(
             currency: listing.currency,
             condition: listing.condition,
             photoUrl: leadPhotoOf(listing),
+            ...saleState(listing),
           }
         : null,
       social: {
@@ -391,9 +423,11 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
  */
 function heat(post: Post, now: number): number {
   const votes = post.poll?.options.reduce((sum, option) => sum + option.voterIds.length, 0) ?? 0;
+  // A sale is the strongest thing a post can do: somebody paid because of it.
   const engagement = (post.reactions?.length ?? post.likeCount)
     + 2 * (post.comments?.length ?? post.replyCount)
     + 3 * (post.shareCount ?? 0)
+    + 4 * (post.buyCount ?? 0)
     + 0.5 * votes;
   const hours = Math.max(0, (now - new Date(post.createdAt).getTime()) / 3_600_000);
   return engagement / Math.pow(hours / 24 + 1, 0.6);
@@ -501,10 +535,13 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   const before = request.query?.get('before') || undefined;
   const followed = await repository.listFollowedSellerIds(user.id);
   const followedSet = new Set(followed);
-  const [ownFeed, recent] = await Promise.all([
+  const [ownFeed, recent, liked] = await Promise.all([
     repository.listPostsForChannels([...new Set([...followed, user.id])], HOME_PAGE, { before, feedOnly: true }),
     before ? Promise.resolve([] as Post[]) : repository.listRecentPosts(200),
+    before ? Promise.resolve([] as string[]) : repository.listLikedListingIds(user.id),
   ]);
+  // Items this person saved: a new post selling one is news to them.
+  const wished = new Set(liked);
   const now = Date.now();
   const scores = new Map(recent.map((post) => [post.id, heat(post, now)]));
   const engaged = new Map(recent.map((post) => [post.id, engagedActors(post)]));
@@ -531,8 +568,9 @@ async function home(request: HttpRequest, _context: InvocationContext) {
     if (!isBroadcast(post) || post.repostOf || now - new Date(post.createdAt).getTime() > RISING_WINDOW_MS) continue;
     if (post.authorId === user.id || post.channelId === user.id) continue;
     const proven = engaged.get(post.id)!.size >= RISING_GRADUATE;
-    const tried = !followedSet.has(post.channelId) && (affinity.has(post.channelId) || followedActed(post)
-      || bucket(post.id, user.id) < RISING_SEED_PERCENT);
+    const wanted = (post.audience ?? []).includes(user.id) || (post.listingId !== null && wished.has(post.listingId));
+    const tried = wanted || (!followedSet.has(post.channelId) && (affinity.has(post.channelId) || followedActed(post)
+      || bucket(post.id, user.id) < RISING_SEED_PERCENT));
     if (proven || tried) risingIds.add(post.id);
   }
 

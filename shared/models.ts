@@ -1256,6 +1256,13 @@ export interface Order extends BaseDocument {
    */
   broughtBy?: string | null;
   /**
+   * The social post the buyer pressed Buy on, when they did - so a post can
+   * say how many it sold and trending can count sales, not only taps.
+   */
+  fromPost?: { channelId: string; postId: string } | null;
+  /** The buyer's "it arrived" post in the shop's channel, once they shared one. */
+  unboxingPostId?: string | null;
+  /**
    * The affiliate who brought this buyer, with the rate the shop offered when
    * the checkout opened. Copied so editing the item cannot move a commission
    * somebody has already earned. The name is a snapshot for the same reason.
@@ -1946,6 +1953,19 @@ export interface Post extends BaseDocument {
    * to put anything at the top.
    */
   sharedBy?: string[];
+  /**
+   * People this post is first tried on as Rising, beyond whoever the feed
+   * would pick: the hunters of the ISO it answers, say.
+   */
+  audience?: string[];
+  /** A buyer showing what arrived: the order it came from. */
+  delivered?: { orderId: string; itemName: string } | null;
+  /** The hunt this post answers, when a shop posted its answer to the feed. */
+  answersWant?: { id: string; buyerId: string; title: string } | null;
+  /** Orders placed from this post's Buy button. */
+  buyCount?: number;
+  /** Who bought from it, so one buyer's second order is not a second sale. */
+  boughtBy?: string[];
   /** A question with a few answers to pick from. */
   poll?: StoredPoll | null;
   /** Set when this post is somebody else's, passed on to the reposter's followers. */

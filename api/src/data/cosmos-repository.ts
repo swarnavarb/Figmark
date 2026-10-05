@@ -835,7 +835,7 @@ export class CosmosRepository implements Repository {
       .items.query<Message>(
         {
           // No `before` reads from the newest: every ISO time sorts below '~'.
-          query: 'SELECT * FROM c WHERE c.createdAt < @before ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+          query: 'SELECT * FROM c WHERE c.createdAt <= @before ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
           parameters: [{ name: '@before', value: before ?? '~' }, { name: '@limit', value: limit }],
         },
         { partitionKey: threadId },

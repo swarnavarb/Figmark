@@ -455,4 +455,12 @@ await check('a typed ?u= picks the page, never the server the page comes from', 
   assert.match(tag(response.body, 'og:url'), /^https:\/\/figmark\.example\/tokyo-line$/);
 });
 
+await check('a name with $ in it is written as it is, not read as a replacement pattern', async () => {
+  const html = injectMeta(shell, {
+    title: "Shop $' and $& and $`", description: 'd', image: 'https://figmark.example/i.jpg', large: false, fallback: '/',
+  }, 'https://figmark.example/x');
+  assert.equal((html.match(/<div id="root">/g) ?? []).length, 1, 'the page is not pasted into itself');
+  assert.match(html, /<title>Shop \$' and \$&amp; and \$`<\/title>/);
+});
+
 console.log(`\n${passed} checks passed`);

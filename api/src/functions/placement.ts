@@ -86,6 +86,16 @@ export async function placeOrder(
 
   await repository.updateOrder(order);
 
+  // A sale the post made: counted once per buyer, on the post itself.
+  if (order.fromPost) {
+    const buyer = order.buyerId;
+    await repository.mutatePost(order.fromPost.channelId, order.fromPost.postId, (post) =>
+      (post.boughtBy ?? []).includes(buyer)
+        ? null
+        : { ...post, buyCount: (post.buyCount ?? 0) + 1, boughtBy: [...(post.boughtBy ?? []), buyer] },
+    ).catch(() => null);
+  }
+
   if (listing.preOrder) {
     // Re-read: taking stock moved the fill counter.
     const fresh = await repository.getListing(listing.id);

@@ -587,7 +587,7 @@ export class MemoryRepository implements Repository {
 
   async listMessages(threadId: string, limit = 200, before?: string): Promise<Message[]> {
     return [...this.messages.values()]
-      .filter((message) => message.threadId === threadId && (!before || message.createdAt < before))
+      .filter((message) => message.threadId === threadId && (!before || message.createdAt <= before))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .slice(-limit);
   }

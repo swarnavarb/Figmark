@@ -348,6 +348,39 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
     await notifySeekers(repository, want, who.name);
   }
 
+  // A shop answering with an item it sells says so on its feed too, and the
+  // post is shown first to everybody hunting for it - the people most likely
+  // to buy it - before it has to earn a wider audience like any new post.
+  if (!existing && voice === 'shop' && listingId) {
+    const seekers = await repository.listWantSeekers(want.id);
+    await repository.createPost({
+      id: `pst_${randomUUID().slice(0, 12)}`,
+      channelId: answerer,
+      channel: 'seller',
+      kind: 'sale',
+      authorId: user.id,
+      authorName: who.name,
+      body: `Found one for a hunt: ${want.title}\n\n${message.slice(0, 400)}`,
+      listingId,
+      photoUrl: null,
+      likeCount: 0,
+      replyCount: 0,
+      voice: 'store',
+      reach: 'feed',
+      announcement: false,
+      photoUrls: [],
+      reactions: [],
+      comments: [],
+      shareCount: 0,
+      poll: null,
+      vibe: null,
+      audience: [...new Set([want.buyerId, ...seekers.map((seeker) => seeker.userId)])].slice(0, 500),
+      answersWant: { id: want.id, buyerId: want.buyerId, title: want.title },
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
   return json(existing ? 200 : 201, { offer: saved, offerCount: want.offerCount });
 }
 

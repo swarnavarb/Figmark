@@ -208,7 +208,8 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
   const before = request.query.get('before') || undefined;
   const since = request.query.get('since') || null;
   const page = await repository.listMessages(threadId, THREAD_PAGE, before);
-  const messages = since ? page.filter((message) => message.createdAt > since) : page;
+  // Inclusive, as `before` is: the app drops what it already has.
+  const messages = since ? page.filter((message) => message.createdAt >= since) : page;
   // Writing read receipts is a write per message; only when there is one to write.
   if (!before && page.some((message) => message.to.handle === us.handle && !message.readAt)) {
     await repository.markThreadRead(threadId, us.handle);

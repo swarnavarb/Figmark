@@ -953,6 +953,12 @@ export interface PostCard {
   post: Post;
   listing: {
     id: string; title: string; priceMinor: number; currency: string; condition: string; photoUrl?: string | null;
+    /** Whether it can still be bought; absent on older answers. */
+    buyable?: boolean;
+    /** How many are left, when few enough to say. */
+    left?: number | null;
+    /** A group pre-order's fill. */
+    fill?: { joined: number; total: number; cutoffAt: string } | null;
   } | null;
   /** Where the author's name goes. Resolved on read, not frozen into the post. */
   author: PartyRef;
@@ -2070,8 +2076,10 @@ export const api = {
     ),
   follow: (sellerId: string) =>
     post<{ following: boolean; followerCount?: number }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
-  order: (listingId: string, quantity = 1, via?: string | null, ref?: string | null) =>
-    post<{ order: Order }>('/orders', { listingId, quantity, via: via ?? undefined, ref: ref ?? undefined }),
+  order: (listingId: string, quantity = 1, via?: string | null, ref?: string | null, fromPost?: { channelId: string; postId: string } | null) =>
+    post<{ order: Order }>('/orders', {
+      listingId, quantity, via: via ?? undefined, ref: ref ?? undefined, ...(fromPost ? { fromPost } : {}),
+    }),
 
   /**
    * Join a pre-order, or leave it.
@@ -2288,6 +2296,9 @@ export const api = {
     request<{ rights: EscrowRights; heldMinor: number; holdings: EscrowHolding[] }>('/escrow/holdings'),
   reviewOrder: (id: string, rating: number, body: string) =>
     post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
+  /** The buyer's photo of what arrived, posted to the shop's channel. */
+  shareUnboxing: (id: string, body: string, photoUrls: string[]) =>
+    post<{ post: Post }>(`/orders/${encodeURIComponent(id)}/unboxing`, { body, photoUrls }),
   reviewsAbout: (userId: string) =>
     request<ReviewsAbout>(`/users/${encodeURIComponent(userId)}/reviews`),
 

@@ -178,6 +178,70 @@ function BoostBadge({ kind }: { kind: PostBoost }) {
   );
 }
 
+/**
+ * The item on a sale post, with the way to buy it right there.
+ *
+ * Buy opens the item carrying which post it came from, so the post is credited
+ * with the sale and can say how many it sold. A group pre-order shows how full
+ * it is, a short-stock item how many are left - the two things that make
+ * somebody act now rather than later.
+ */
+function SaleItem({ listing, post, nested, offerTo }: {
+  listing: NonNullable<PostCard['listing']>;
+  post: PostCard['post'];
+  nested: boolean;
+  /** The shop's handle, when this viewer may ask it for a private deal. */
+  offerTo: string | null;
+}) {
+  const href = `/listing/${listing.id}?post=${encodeURIComponent(`${post.channelId}:${post.id}`)}`;
+  const fill = listing.fill ?? null;
+  const pct = fill ? Math.min(100, Math.round((fill.joined / Math.max(1, fill.total)) * 100)) : 0;
+  const sold = post.buyCount ?? 0;
+  const gone = listing.buyable === false;
+  return (
+    <div className={`spost__sale${gone ? ' is-gone' : ''}`}>
+      <Link to={href} className="spost__item">
+        {listing.photoUrl ? (
+          <img className="spost__itemphoto" src={listing.photoUrl} alt="" loading="lazy" />
+        ) : (
+          <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
+        )}
+        <span className="spost__itembody">
+          <span className="spost__itemtag">{gone ? 'Sold out' : fill ? 'Group pre-order' : 'For sale'}</span>
+          <span className="spost__itemname">{listing.title}</span>
+          <span className="spost__itemmeta">
+            <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+            <span className="faint">{listing.condition}</span>
+            {!gone && listing.left != null && listing.left > 0 && (
+              <span className="spost__left">{listing.left === 1 ? 'Last one' : `${listing.left} left`}</span>
+            )}
+          </span>
+          {fill && (
+            <span className="spost__fill" aria-label={`${fill.joined} of ${fill.total} joined`}>
+              <span className="spost__fillbar"><i style={{ width: `${pct}%` }} /></span>
+              <span className="faint">{fill.joined} of {fill.total} joined</span>
+            </span>
+          )}
+        </span>
+        <span className={`spost__itemcta${gone ? '' : ' spost__itemcta--buy'}`}>
+          {gone ? 'View' : fill ? 'Join' : 'Buy'} <Icon name="right" size={12} />
+        </span>
+      </Link>
+      {!nested && (sold > 0 || offerTo) && (
+        <span className="spost__saleline">
+          {sold > 0 && <span><Icon name="tag" size={12} /> {sold} bought from this post</span>}
+          {offerTo && (
+            <Link className="spost__offer"
+              to={`/messages/${encodeURIComponent(offerTo)}?ask=${encodeURIComponent(listing.title)}`}>
+              🤝 Make me an offer
+            </Link>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function reduceMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
@@ -262,6 +326,13 @@ export function SocialPostCard({
         <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>
       )}
       {social.poll && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
+      {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
+      {post.answersWant && (
+        <Link className="spost__kind spost__kind--poll"
+          to={`/social?view=wanted&want=${encodeURIComponent(post.answersWant.id)}&buyer=${encodeURIComponent(post.answersWant.buyerId)}`}>
+          <Icon name="target" size={11} /> Answers an ISO
+        </Link>
+      )}
       {hot && <span className="spost__kind spost__kind--hot">🔥 Hot</span>}
       {post.powerSale || post.drop ? (
         <span className="spost__kind spost__kind--drop">⚡ Exclusive drop <span className="probadge">PRO</span></span>
@@ -373,22 +444,8 @@ export function SocialPostCard({
       {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
 
       {listing && !post.drop && (
-        <Link to={`/listing/${listing.id}`} className="spost__item">
-          {listing.photoUrl ? (
-            <img className="spost__itemphoto" src={listing.photoUrl} alt="" loading="lazy" />
-          ) : (
-            <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
-          )}
-          <span className="spost__itembody">
-            <span className="spost__itemtag">For sale</span>
-            <span className="spost__itemname">{listing.title}</span>
-            <span className="spost__itemmeta">
-              <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-              <span className="faint">{listing.condition}</span>
-            </span>
-          </span>
-          <span className="spost__itemcta">View <Icon name="right" size={12} /></span>
-        </Link>
+        <SaleItem listing={listing} post={post} nested={nested}
+          offerTo={!nested && card.shop && !social.mine && !voice.storeId ? author.handle : null} />
       )}
 
       {post.repostOf && (
