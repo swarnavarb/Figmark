@@ -619,6 +619,8 @@ function listingShareSpec(data: ListingDetail): ShareSpec {
       fill: pre ? { joined, threshold: pre.fillThreshold } : null,
       headline: filling ? 'Help fill this pre-order' : data.isOwn ? 'New drop' : off ? 'Grab this with me' : 'Look what I found',
       discount: off,
+      deal: off && data.affiliate?.buyerOffMinor ? formatMoney(Math.max(100, listing.priceMinor - data.affiliate.buyerOffMinor), listing.currency) : null,
+      seed: listing.id,
       badge: shopBadge(seller, shop),
     },
     link: { to: 'item', listingId: listing.id, moment: filling ? 'fill' : undefined, affiliate: viaLink, own: data.isOwn },

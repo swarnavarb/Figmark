@@ -5,7 +5,7 @@ import { useSession } from '../session';
 import { useToast } from './Feedback';
 import { useQuest } from './Quest';
 import { Modal } from './ui';
-import { renderMoment, sizeOf, themeOf, type Moment, type MomentBadge, type MomentFormat } from './momentCard';
+import { renderMoment, themeOf, type Moment, type MomentBadge } from './momentCard';
 
 /*
  * Sharing out of the app, in one place.
@@ -125,21 +125,12 @@ function canShareFiles(): boolean {
   }
 }
 
-const FORMAT_KEY = 'figmark.shareFormat';
-
 export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => void }) {
   const { user } = useSession();
   const { view, refresh } = useQuest();
   const toast = useToast();
-  const [format, setFormat] = useState<MomentFormat>(() => {
-    try {
-      return window.localStorage.getItem(FORMAT_KEY) === 'post' ? 'post' : 'story';
-    } catch {
-      return 'story';
-    }
-  });
   const [link, setLink] = useState<string | null>(null);
-  const [pictures, setPictures] = useState<Partial<Record<MomentFormat, { blob: Blob; url: string }>>>({});
+  const [picture, setPicture] = useState<{ blob: Blob; url: string } | null>(null);
   const [failed, setFailed] = useState(false);
   const [copied, setCopied] = useState(false);
   const urls = useRef<string[]>([]);
@@ -155,40 +146,21 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
     return () => { cancelled = true; };
   }, [spec.link, user?.id]);
 
-  // The chosen shape first, then the other in the background, so switching
-  // is instant. Each is drawn once per opening.
+  // Drawn once per opening: one square picture, for chats, Status and feeds alike.
   useEffect(() => {
     let cancelled = false;
-    const order: MomentFormat[] = format === 'story' ? ['story', 'post'] : ['post', 'story'];
-    void (async () => {
-      for (const shape of order) {
+    void renderMoment(moment)
+      .then((blob) => {
         if (cancelled) return;
-        try {
-          const blob = await renderMoment(moment, shape);
-          if (cancelled) return;
-          const url = URL.createObjectURL(blob);
-          urls.current.push(url);
-          setPictures((current) => (current[shape] ? current : { ...current, [shape]: { blob, url } }));
-        } catch {
-          if (!cancelled && shape === format) setFailed(true);
-        }
-      }
-    })();
+        const url = URL.createObjectURL(blob);
+        urls.current.push(url);
+        setPicture({ blob, url });
+      })
+      .catch(() => !cancelled && setFailed(true));
     return () => { cancelled = true; };
-    // `format` only orders the work; the pictures do not depend on it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moment]);
 
   useEffect(() => () => urls.current.forEach((url) => URL.revokeObjectURL(url)), []);
-
-  const choose = (next: MomentFormat) => {
-    setFormat(next);
-    try {
-      window.localStorage.setItem(FORMAT_KEY, next);
-    } catch {
-      // Remembering the shape is a nicety.
-    }
-  };
 
   const sent = useCallback((via: ShareEvent['via']) => {
     if (!user) return;
@@ -198,8 +170,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
   }, [user, spec.kind, spec.target, spec.storeId, refresh]);
 
   const text = link ? `${spec.caption}\n${link}` : spec.caption;
-  const picture = pictures[format];
-  const fileName = `figmark-${spec.kind}-${format}.jpg`;
+  const fileName = `figmark-${spec.kind}.jpg`;
 
   const whatsapp = () => {
     if (!link) return;
@@ -225,7 +196,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
     anchor.download = fileName;
     anchor.click();
     sent('download');
-    toast('Saved. Post it to your Status or story, and send the link with it.', 'ok');
+    toast('Saved. Post it to a chat, your Status or your feed, and send the link with it.', 'ok');
   };
 
   const copy = async () => {
@@ -241,21 +212,11 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
   };
 
   const theme = themeOf(spec.kind);
-  const { w, h } = sizeOf(format);
 
   return (
     <Modal title="Share" onClose={onClose}>
       <div className="shs">
-        <div className="shs__seg" role="tablist" aria-label="Picture shape">
-          {(['story', 'post'] as const).map((shape) => (
-            <button key={shape} type="button" role="tab" aria-selected={format === shape}
-              className={`shs__tab${format === shape ? ' is-on' : ''}`} onClick={() => choose(shape)}>
-              {shape === 'story' ? 'Story · Status' : 'Post · Chat'}
-            </button>
-          ))}
-        </div>
-
-        <div className="shs__stage" style={{ aspectRatio: `${w} / ${h}`, background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}>
+        <div className="shs__stage" style={{ aspectRatio: '1 / 1', background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}>
           {picture ? (
             <img className="shs__img" src={picture.url} alt={`${spec.moment.headline} - picture to share`} />
           ) : (
@@ -338,7 +299,7 @@ export function MomentBanner({ spec, title, note }: { spec: ShareSpec; title: st
     let url: string | null = null;
     // Drawn when the page is idle, so it never slows the screen it sits on.
     const start = () => {
-      void renderMoment(momentFor(spec, user, view), 'post')
+      void renderMoment(momentFor(spec, user, view))
         .then((blob) => {
           if (cancelled) return;
           url = URL.createObjectURL(blob);

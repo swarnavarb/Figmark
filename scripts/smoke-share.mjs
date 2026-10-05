@@ -252,6 +252,16 @@ const preview = async (path) => {
   return response.body;
 };
 const tag = (html, property) => html.match(new RegExp(`<meta property="${property}" content="([^"]*)"`))?.[1]?.replace(/&amp;/g, '&') ?? null;
+const cardAt = async (image) => {
+  const url = new URL(image);
+  const [, , , , kind, name] = url.pathname.split('/');
+  const response = await ogCard(req({ query: Object.fromEntries(url.searchParams), params: { kind, name } }), ctx);
+  assert.equal(response.status, 200, `card for ${image}`);
+  assert.equal(response.headers['Content-Type'], 'image/jpeg');
+  assert.ok(response.body[0] === 0xff && response.body[1] === 0xd8, 'a real JPEG');
+  assert.ok(response.body.byteLength < 300_000, `small enough for a chat preview: ${response.body.byteLength}`);
+  return response.body;
+};
 
 await check('the app\'s own page gets the link\'s tags in place of its defaults', async () => {
   const html = injectMeta(shell, { title: 'A & "B"', description: 'd', image: 'https://x/y.jpg', large: true, fallback: '/' }, 'https://x/r/abc');
@@ -287,7 +297,9 @@ await check('an invite and a seller invite unfold into their own cards', async (
   assert.equal(tag(await preview(`/i/${code}`), 'og:title'), 'Sharer Sam invited you to Figmark');
   const seller = await preview(`/i/${code}?as=seller`);
   assert.equal(tag(seller, 'og:title'), 'Sharer Sam invited you to sell on Figmark');
-  assert.equal(tag(seller, 'og:image'), 'https://figmark.example/og/invite-seller.jpg');
+  assert.match(tag(seller, 'og:image'), new RegExp(`^https://figmark\\.example/api/og/card/i/${code}\\.jpg\\?v=\\w+&as=seller$`));
+  await cardAt(tag(seller, 'og:image'));
+  await cardAt(tag(await preview(`/i/${code}`), 'og:image'));
 });
 
 await check('a moment link names it, and an unknown link still gets the brand card', async () => {
@@ -330,16 +342,6 @@ await check('the link preview leads with the discount', async () => {
   assert.equal(tag(await preview(`/s/l/${deal.id}`), 'og:title'), 'Deal Figure · ₹300', 'a plain link takes nothing off');
 });
 
-const cardAt = async (image) => {
-  const url = new URL(image);
-  const [, , , , kind, name] = url.pathname.split('/');
-  const response = await ogCard(req({ query: Object.fromEntries(url.searchParams), params: { kind, name } }), ctx);
-  assert.equal(response.status, 200, `card for ${image}`);
-  assert.equal(response.headers['Content-Type'], 'image/jpeg');
-  assert.ok(response.body[0] === 0xff && response.body[1] === 0xd8, 'a real JPEG');
-  assert.ok(response.body.byteLength < 300_000, `small enough for a chat preview: ${response.body.byteLength}`);
-  return response.body;
-};
 
 await check('an item with no photo gets its own drawn picture, not the Figmark banner', async () => {
   const plain = tag(await preview(`/s/l/${deal.id}`), 'og:image');

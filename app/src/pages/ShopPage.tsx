@@ -503,7 +503,7 @@ function Grow({ store }: { store: StoreAccess }) {
         photo: leadPhoto(listing)?.url ?? null, title: listing.title,
         detail: pre ? 'Pre-order · Buyer Protection' : 'Buyer Protection on Figmark', price,
         fill: pre ? { joined, threshold: pre.fillThreshold } : null,
-        headline: filling ? 'Join our pre-order' : 'New drop', byline: '', badge,
+        headline: filling ? 'Join our pre-order' : 'New drop', byline: '', badge, seed: listing.id,
       },
       link: { to: 'item', listingId: listing.id, moment: filling ? 'fill' : undefined, own: true },
       caption: filling

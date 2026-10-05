@@ -766,6 +766,7 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
     price: formatMoney(order.unitPriceMinor + (order.affiliate?.buyerOffMinor ?? 0), order.currency),
     fill: pre ? { joined: Math.min(pre.joined, pre.threshold), threshold: pre.threshold } : null,
     badge,
+    seed: listing.id,
   };
 
   if (state.side === 'seller') {
@@ -815,7 +816,10 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
   }[kind];
   const spec: ShareSpec = {
     kind,
-    moment: { ...base, headline: words.headline, discount: off },
+    moment: {
+      ...base, headline: words.headline, discount: off,
+      deal: off ? formatMoney(Math.max(100, order.unitPriceMinor + (order.affiliate?.buyerOffMinor ?? 0) - (listing.buyerOffMinor ?? 0)), order.currency) : null,
+    },
     link: { to: 'item', listingId: listing.id, moment: kind, affiliate: Boolean(listing.affiliate) },
     caption: off ? `${words.caption} 🎁 Get ${off} off with my link:` : words.caption,
     target: listing.id,

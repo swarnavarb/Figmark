@@ -9,7 +9,8 @@ import { offersAffiliate, resolveShortCode } from '../affiliate.js';
 import { getRepository } from '../data/index.js';
 import { resolveInvite } from '../share.js';
 import { handler } from './http.js';
-import { listingSvg, personSvg, renderCard, type ListingCard, type PersonCard } from '../og-card.js';
+import { cardSvg, renderCard } from '../og-card.js';
+import { THEMES, type CardSpec } from '../../../shared/shareCard.js';
 
 /**
  * Link previews for everything people share out of the app.
@@ -51,8 +52,6 @@ interface Meta {
 }
 
 const DEFAULT_IMAGE = '/og/figmark.jpg';
-const INVITE_IMAGE = '/og/invite.jpg';
-const SELLER_IMAGE = '/og/invite-seller.jpg';
 
 /* ── Reading the link ───────────────────────────────────────────────────── */
 
@@ -183,12 +182,12 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
       ? {
           title: `${name} invited you to sell on Figmark`,
           description: 'Run pre-orders with order manifests, tracking buyers can see, Buyer Protection and affiliates who sell for you. Opening a shop takes a minute.',
-          image: `${origin}${SELLER_IMAGE}`, large: true, fallback: `/?i=${encodeURIComponent(first)}`,
+          image: inviteCardUrl(origin, first, true, inviter), large: true, fallback: `/?i=${encodeURIComponent(first)}`,
         }
       : {
           title: `${name} invited you to Figmark`,
           description: 'Pre-orders from import resellers, Buyer Protection on payments and reviews only real buyers can leave. Collect cards and level up as you shop.',
-          image: `${origin}${INVITE_IMAGE}`, large: true, fallback: `/?i=${encodeURIComponent(first)}`,
+          image: inviteCardUrl(origin, first, false, inviter), large: true, fallback: `/?i=${encodeURIComponent(first)}`,
         };
   }
   if (kind === 's' && first === 'l' && second) {
@@ -245,6 +244,11 @@ function listingCardUrl(origin: string, listing: Listing, seller: User | null, o
   return `${origin}/api/og/card/l/${encodeURIComponent(listing.id)}.jpg?v=${v}${via}`;
 }
 
+function inviteCardUrl(origin: string, code: string, seller: boolean, inviter: User): string {
+  const v = versionOf(inviter.updatedAt, inviter.displayName, inviter.quest?.levelCache, inviter.sellerProfile?.storefrontName, inviter.sellerProfile?.levelCache);
+  return `${origin}/api/og/card/i/${encodeURIComponent(code)}.jpg?v=${v}${seller ? '&as=seller' : ''}`;
+}
+
 function personCardUrl(origin: string, handle: string, user: User): string {
   const shop = user.sellerProfile;
   const v = versionOf(user.updatedAt, user.displayName, user.quest?.levelCache, shop?.storefrontName, shop?.levelCache, shop?.followerCount, (user.collection ?? []).length);
@@ -272,7 +276,8 @@ async function inlinePhoto(origin: string, url: string | null | undefined): Prom
   }
 }
 
-async function listingCard(repository: Repo, origin: string, listing: Listing, code: string | null): Promise<ListingCard> {
+/** The square picture for an item with no photo: the same one the app shares. */
+async function listingCard(repository: Repo, origin: string, listing: Listing, code: string | null): Promise<CardSpec> {
   const seller = await repository.getUserById(listing.sellerId);
   let offMinor = 0;
   if (code) {
@@ -282,66 +287,97 @@ async function listingCard(repository: Repo, origin: string, listing: Listing, c
   const pre = listing.preOrder;
   const fill = fillLine(listing, Date.now());
   const level = seller?.sellerProfile ? seller.sellerProfile.levelCache ?? 1 : null;
+  const preOrder = Boolean(pre) || (listing.tags ?? []).includes('pre-order');
   return {
-    id: listing.id,
+    seed: listing.id,
+    hero: { kind: 'tile', label: listing.title },
+    chips: [
+      ...(preOrder ? [{ label: 'PRE-ORDER', fill: '#F472B6', ink: '#2A0614' }] : []),
+      ...(listing.condition ? [{ label: listing.condition.toUpperCase(), fill: 'rgba(8,11,18,0.62)', ink: '#FFFFFF' }] : []),
+    ],
+    meter: pre && fill && pre.fillThreshold > 0
+      ? { joined: Math.min(pre.fillThreshold, pre.filledCount + (pre.pledgedCount ?? 0)), total: pre.fillThreshold, line: fill.line.split(' · ')[0]! }
+      : null,
+    headline: offMinor > 0 ? `Get ${rupees(offMinor)} off with my link` : null,
     title: listing.title,
+    detail: preOrder ? 'Pre-order · ships when the lot lands' : null,
     price: rupees(Math.max(100, listing.priceMinor - offMinor)),
     was: offMinor > 0 ? rupees(listing.priceMinor) : null,
     off: offMinor > 0 ? rupees(offMinor) : null,
-    condition: listing.condition || null,
-    preOrder: Boolean(pre) || (listing.tags ?? []).includes('pre-order'),
-    fill: pre && fill && pre.fillThreshold > 0
-      ? { joined: Math.min(pre.fillThreshold, pre.filledCount + (pre.pledgedCount ?? 0)), total: pre.fillThreshold, line: fill.line.split(' · ')[0]! }
-      : null,
-    shop: {
+    badge: {
       name: shopName(seller),
       level,
       title: level ? storeTitleFor(level) : null,
       photo: await inlinePhoto(origin, seller?.sellerProfile?.photoUrl),
     },
+    protection: true,
   };
 }
 
-async function personCard(origin: string, user: User, isStore: boolean): Promise<PersonCard> {
+/** A shop or a person with no photo: their mark, large, with their standing. */
+async function personCard(origin: string, user: User, isStore: boolean): Promise<CardSpec> {
   const shop = isStore ? user.sellerProfile : null;
   if (shop) {
     const level = shop.levelCache ?? 1;
+    const theme = THEMES.shop;
     return {
-      id: user.id,
-      name: shop.storefrontName,
-      kicker: 'Shop',
-      level,
-      title: storeTitleFor(level),
-      lines: [
-        [shop.followerCount ? `${shop.followerCount.toLocaleString('en-IN')} followers` : null, user.sellerTrust.score >= 80 ? 'Trusted seller' : null, 'Buyer Protection']
-          .filter(Boolean).join(' · '),
-        shop.bio?.trim() ?? '',
-      ].filter(Boolean),
-      photo: await inlinePhoto(origin, shop.photoUrl),
+      seed: shop.storefrontName,
+      stamp: { label: theme.stamp, from: theme.from, to: theme.to, ink: theme.ink },
+      headline: 'Shop with us',
+      hero: { kind: 'avatar', name: shop.storefrontName, level, photo: await inlinePhoto(origin, shop.photoUrl) },
+      title: shop.storefrontName,
+      detail: [
+        `Level ${level} ${storeTitleFor(level)}`,
+        shop.followerCount ? `${shop.followerCount.toLocaleString('en-IN')} followers` : null,
+        user.sellerTrust.score >= 80 ? 'Trusted seller' : null,
+      ].filter(Boolean).join(' · '),
+      protection: true,
     };
   }
   const level = user.quest?.levelCache ?? 1;
   const owned = (user.collection ?? []).length;
+  const theme = THEMES.profile;
   return {
-    id: user.id,
-    name: user.displayName,
-    kicker: 'Collector',
-    level,
-    title: titleFor(level),
-    lines: [owned ? `${owned} in their collection` : '', user.bio?.trim() ?? ''].filter(Boolean),
-    photo: null,
+    seed: user.displayName,
+    stamp: { label: theme.stamp, from: theme.from, to: theme.to, ink: theme.ink },
+    headline: `Meet ${user.displayName.split(/\s+/)[0]}`,
+    hero: { kind: 'level', level },
+    title: user.displayName,
+    detail: [`Level ${level} ${titleFor(level)}`, owned ? `${owned} in their collection` : null].filter(Boolean).join(' · '),
+    badge: { name: user.displayName, level, title: titleFor(level) },
+  };
+}
+
+/** An invite: Figmark's mark, with the person inviting at its foot. */
+async function inviteCard(origin: string, inviter: User, seller: boolean): Promise<CardSpec> {
+  const theme = THEMES[seller ? 'invite_seller' : 'invite'];
+  const shop = inviter.sellerProfile;
+  const level = shop ? shop.levelCache ?? 1 : inviter.quest?.levelCache ?? 1;
+  return {
+    seed: inviter.id,
+    stamp: { label: theme.stamp, from: theme.from, to: theme.to, ink: theme.ink },
+    headline: seller ? 'Sell with me on Figmark' : 'Come shop with me',
+    hero: { kind: 'brand' },
+    title: seller ? 'Open your shop' : 'Join me on Figmark',
+    detail: seller ? 'Pre-orders · tracking · Buyer Protection · affiliates' : 'Pre-orders · Buyer Protection · card packs',
+    badge: {
+      name: shop?.storefrontName ?? inviter.displayName,
+      level,
+      title: shop ? storeTitleFor(level) : titleFor(level),
+      photo: await inlinePhoto(origin, shop?.photoUrl),
+    },
   };
 }
 
 const cardCache = new Map<string, Buffer>();
 const CARD_CACHE_SIZE = 200;
 
-/** GET /api/og/card/{l|p}/{id}.jpg - the drawn preview for something with no photo. */
+/** GET /api/og/card/{l|p|i}/{id}.jpg - the drawn preview: an item or page with no photo, or an invite. */
 async function ogCard(request: HttpRequest, _context: InvocationContext) {
   const kind = request.params.kind;
   const name = (request.params.name ?? '').replace(/\.jpe?g$/i, '');
-  if (!name || (kind !== 'l' && kind !== 'p')) return { status: 404, body: 'Not found' };
-  const key = `${kind}/${name}?${request.query.get('v') ?? ''}&${request.query.get('r') ?? ''}`;
+  if (!name || (kind !== 'l' && kind !== 'p' && kind !== 'i')) return { status: 404, body: 'Not found' };
+  const key = `${kind}/${name}?${request.query.get('v') ?? ''}&${request.query.get('r') ?? ''}&${request.query.get('as') ?? ''}`;
   let bytes = cardCache.get(key);
   if (!bytes) {
     const repository = await getRepository();
@@ -349,10 +385,13 @@ async function ogCard(request: HttpRequest, _context: InvocationContext) {
     let svg: string | null = null;
     if (kind === 'l') {
       const listing = await repository.getListing(name);
-      if (listing && !listing.privateFor) svg = listingSvg(await listingCard(repository, origin, listing, request.query.get('r')));
+      if (listing && !listing.privateFor) svg = cardSvg(await listingCard(repository, origin, listing, request.query.get('r')));
+    } else if (kind === 'i') {
+      const inviter = await resolveInvite(repository, name);
+      if (inviter) svg = cardSvg(await inviteCard(origin, inviter, request.query.get('as') === 'seller'));
     } else {
       const found = await repository.getByHandle(name);
-      if (found) svg = personSvg(await personCard(origin, found.user, found.isStore));
+      if (found) svg = cardSvg(await personCard(origin, found.user, found.isStore));
     }
     if (!svg) return { status: 404, body: 'Not found' };
     try {
