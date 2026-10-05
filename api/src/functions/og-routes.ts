@@ -7,6 +7,7 @@ import { titleFor } from '../../../shared/quest.js';
 import { linkDiscountMinor } from '../../../shared/affiliate.js';
 import { offersAffiliate, resolveShortCode } from '../affiliate.js';
 import { getRepository } from '../data/index.js';
+import { getPhotoStore, ownPhotoName } from '../storage/index.js';
 import { resolveInvite } from '../share.js';
 import { handler } from './http.js';
 import { cardSvg, renderCard } from '../og-card.js';
@@ -66,10 +67,15 @@ function originOf(request: HttpRequest, original: URL | null): string {
 
 /** The address the visitor actually asked for, before the rewrite. */
 function originalUrl(request: HttpRequest): URL | null {
-  const raw = request.headers.get('x-ms-original-url') ?? request.headers.get('x-original-url') ?? request.query.get('u');
+  const header = request.headers.get('x-ms-original-url') ?? request.headers.get('x-original-url');
+  const raw = header ?? request.query.get('u');
   if (!raw) return null;
   try {
-    return new URL(raw, RELATIVE);
+    const parsed = new URL(raw, RELATIVE);
+    // `?u=` is anybody's to type, so only its path counts. Its origin would
+    // decide where the page shell is fetched from, and a shell from somebody
+    // else's server served on this one is their script running as us.
+    return header ? parsed : new URL(`${parsed.pathname}${parsed.search}`, RELATIVE);
   } catch {
     return null;
   }
@@ -256,21 +262,24 @@ function personCardUrl(origin: string, handle: string, user: User): string {
 }
 
 /**
- * A photo the card can embed: a data URL as it is, a link fetched (briefly)
- * and inlined, since the renderer cannot reach the network itself.
+ * A photo the card can embed: a data URL as it is, or one of our own uploads
+ * read from the store and inlined, since the renderer cannot reach the network
+ * itself.
+ *
+ * Only our own. Fetching whatever link a profile carries would let anybody
+ * point this server at an address of their choosing - an internal one
+ * included - just by sharing their page.
  */
-async function inlinePhoto(origin: string, url: string | null | undefined): Promise<string | null> {
+async function inlinePhoto(_origin: string, url: string | null | undefined): Promise<string | null> {
   if (!url) return null;
   if (/^data:image\/(png|jpe?g|gif|webp)[;,]/i.test(url)) return url;
-  const full = absolute(origin, url);
-  if (!full) return null;
+  const name = await ownPhotoName(url);
+  if (!name) return null;
   try {
-    const response = await fetch(full, { signal: AbortSignal.timeout(1500) });
-    const type = response.headers.get('content-type') ?? '';
-    if (!response.ok || !/^image\/(png|jpe?g|gif|webp)/i.test(type)) return null;
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.byteLength > 2_000_000) return null;
-    return `data:${type.split(';')[0]};base64,${bytes.toString('base64')}`;
+    const photo = await (await getPhotoStore()).read(name);
+    if (!photo || !/^image\/(png|jpe?g|gif|webp)/i.test(photo.contentType)) return null;
+    if (photo.bytes.byteLength > 2_000_000) return null;
+    return `data:${photo.contentType.split(';')[0]};base64,${Buffer.from(photo.bytes).toString('base64')}`;
   } catch {
     return null;
   }
@@ -443,7 +452,10 @@ export function injectMeta(shell: string, meta: Meta, url: string): string {
     .replace(/<title>[\s\S]*?<\/title>/i, '')
     .replace(/<meta\s+name="description"[\s\S]*?\/?>/gi, '')
     .replace(/<meta\s+(?:property|name)="(?:og|twitter):[^"]*"[\s\S]*?\/?>/gi, '');
-  return stripped.replace(/<head>/i, `<head>\n    ${tags(meta, url)}`);
+  // A function, not a string: in a replacement string `$'` and `$&` are
+  // instructions, and a shop is free to put them in its name.
+  const head = `<head>\n    ${tags(meta, url)}`;
+  return stripped.replace(/<head>/i, () => head);
 }
 
 /** Enough of a page for a preview, sending a person on to the app when the shell could not be read. */

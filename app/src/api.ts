@@ -33,6 +33,17 @@ import type { LearnDoc } from '@shared/learn';
 import type { AffiliateEarningStatus } from '@shared/affiliate';
 
 /** Somebody named on a screen, and the page their name opens. */
+
+/** A shop's quests with its level, as the Grow tab and the Quests page show them. */
+export interface ShopQuestBoard {
+  view: GrowthView;
+  level: StoreLevel;
+  handle: string | null;
+  name: string;
+  photoUrl: string | null;
+  levelTag: LevelTag;
+  followers: number;
+}
 export interface PartyRef {
   name: string;
   handle: string | null;
@@ -942,6 +953,12 @@ export interface PostCard {
   post: Post;
   listing: {
     id: string; title: string; priceMinor: number; currency: string; condition: string; photoUrl?: string | null;
+    /** Whether it can still be bought; absent on older answers. */
+    buyable?: boolean;
+    /** How many are left, when few enough to say. */
+    left?: number | null;
+    /** A group pre-order's fill. */
+    fill?: { joined: number; total: number; cutoffAt: string } | null;
   } | null;
   /** Where the author's name goes. Resolved on read, not frozen into the post. */
   author: PartyRef;
@@ -957,7 +974,11 @@ export interface PostCard {
   alsoIn?: { id: string; name: string }[];
   /** Said by a shop in its own name, so it has a channel to open. */
   shop?: boolean;
+  /** Why the home feed shows it: trending anywhere, or new and rising past its followers. */
+  badges?: PostBoost[];
 }
+
+export type PostBoost = 'trending' | 'rising';
 
 /** One post read in full, with everything said under it. */
 export interface PostDetail {
@@ -1676,6 +1697,8 @@ export interface ThreadRow {
   lastAt: string;
   lastFromUs: boolean;
   unread: number;
+  /** Kept, but its messages are not counted. */
+  muted?: boolean;
 }
 
 export interface Inbox {
@@ -1690,6 +1713,12 @@ export interface Thread {
   handles: MessageParty[];
   threadId: string;
   messages: Message[];
+  /** More to page back to, before the first of `messages`. */
+  more?: boolean;
+  /** You blocked them: nothing goes either way until you unblock. */
+  blocked?: boolean;
+  /** Kept, but not counted as unread. */
+  muted?: boolean;
 }
 
 /** Which of an account's two pages: its shop, or the person behind it. */
@@ -1977,13 +2006,12 @@ export const api = {
     const suffix = query.toString();
     return request<InviteOpen>(`/i/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`);
   },
-  growth: (ownerId: string) => request<{
-    view: GrowthView; handle: string | null; name: string; photoUrl: string | null; levelTag: LevelTag; followers: number;
-  }>(`/growth/${encodeURIComponent(ownerId)}`),
-  claimGrowth: (ownerId: string, taskId: string) =>
-    post<{ view: GrowthView; gained: { spotlights: number; xp: number } }>(`/growth/${encodeURIComponent(ownerId)}/claim`, { taskId }),
-  spotlight: (listingId: string) =>
-    post<{ spotlights: number; bumpedAt: string }>(`/listings/${encodeURIComponent(listingId)}/spotlight`, {}),
+  growth: (ownerId: string) => request<ShopQuestBoard>(`/growth/${encodeURIComponent(ownerId)}`),
+  /** One quest by id, or every one that is ready with `'all'`. */
+  claimGrowth: (ownerId: string, taskId: string | 'all') =>
+    post<ShopQuestBoard & { gained: { bumps: number; xp: number; quests: number } }>(
+      `/growth/${encodeURIComponent(ownerId)}/claim`, taskId === 'all' ? { all: true } : { taskId },
+    ),
   markAffiliatePaid: (orderId: string, reference?: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
@@ -2038,7 +2066,8 @@ export const api = {
   collectionRemove: (orderId: string) => post<CollectionShelf>('/me/collection/remove', { orderId }),
   collectionGroups: (action: 'create' | 'rename' | 'delete', body: { id?: string; name?: string }) =>
     post<CollectionShelf>('/me/collection/groups', { action, ...body }),
-  bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
+  /** Spends a bump point. Out of points, it fails with 409 `no_bumps`. */
+  bump: (id: string) => post<{ bumped: boolean; bumpedAt: string; bumps: number; shop: number; own: number; spent: 'shop' | 'own' }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
     post<{ comment: ListingPost }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
   reactToComment: (id: string, commentId: string, kind: ReactionKind | null) =>
@@ -2047,8 +2076,10 @@ export const api = {
     ),
   follow: (sellerId: string) =>
     post<{ following: boolean; followerCount?: number }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
-  order: (listingId: string, quantity = 1, via?: string | null, ref?: string | null) =>
-    post<{ order: Order }>('/orders', { listingId, quantity, via: via ?? undefined, ref: ref ?? undefined }),
+  order: (listingId: string, quantity = 1, via?: string | null, ref?: string | null, fromPost?: { channelId: string; postId: string } | null) =>
+    post<{ order: Order }>('/orders', {
+      listingId, quantity, via: via ?? undefined, ref: ref ?? undefined, ...(fromPost ? { fromPost } : {}),
+    }),
 
   /**
    * Join a pre-order, or leave it.
@@ -2265,6 +2296,9 @@ export const api = {
     request<{ rights: EscrowRights; heldMinor: number; holdings: EscrowHolding[] }>('/escrow/holdings'),
   reviewOrder: (id: string, rating: number, body: string) =>
     post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
+  /** The buyer's photo of what arrived, posted to the shop's channel. */
+  shareUnboxing: (id: string, body: string, photoUrls: string[]) =>
+    post<{ post: Post }>(`/orders/${encodeURIComponent(id)}/unboxing`, { body, photoUrls }),
   reviewsAbout: (userId: string) =>
     request<ReviewsAbout>(`/users/${encodeURIComponent(userId)}/reviews`),
 
@@ -2294,8 +2328,18 @@ export const api = {
     ),
 
   inbox: () => request<Inbox>('/messages'),
-  thread: (handle: string, as?: string) =>
-    request<Thread>(`/messages/${encodeURIComponent(handle)}${as ? `?as=${encodeURIComponent(as)}` : ''}`),
+  thread: (handle: string, as?: string, page: { since?: string; before?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (as) query.set('as', as);
+    if (page.since) query.set('since', page.since);
+    if (page.before) query.set('before', page.before);
+    const tail = query.toString();
+    return request<Thread>(`/messages/${encodeURIComponent(handle)}${tail ? `?${tail}` : ''}`);
+  },
+  blockHandle: (handle: string, block: boolean) =>
+    post<{ blocked: boolean }>(`/messages/${encodeURIComponent(handle)}/block`, { block }),
+  muteThread: (handle: string, mute: boolean, as?: string) =>
+    post<{ muted: boolean }>(`/messages/${encodeURIComponent(handle)}/mute`, { mute, as }),
   sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>, replyToId?: string) =>
     post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, {
       body, as, ...(deal ? { deal } : {}), ...(replyToId ? { replyToId } : {}),
@@ -2369,10 +2413,21 @@ export const api = {
 
   socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
   trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
+  /** Who you follow, with trending and rising posts mixed in and badged. */
+  socialHome: (as?: string | null, before?: string) => {
+    const query = new URLSearchParams();
+    if (as) query.set('as', as);
+    if (before) query.set('before', before);
+    const tail = query.toString();
+    return request<{ posts: PostCard[]; next: string | null }>(`/social/home${tail ? `?${tail}` : ''}`);
+  },
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
-  channelThread: (id: string, as?: string | null) =>
-    request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}${voice(as)}`),
+  /** `light` is the refresh while a room is open: the posts only, without the shop's item list. */
+  channelThread: (id: string, as?: string | null, light = false) => {
+    const base = `/social/channels/${encodeURIComponent(id)}${voice(as)}`;
+    return request<ChannelThread>(light ? `${base}${base.includes('?') ? '&' : '?'}light=1` : base);
+  },
   pinPost: (channelId: string, id: string) =>
     post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
   createPost: (body: {
@@ -2405,7 +2460,8 @@ export const api = {
   deletePost: (channelId: string, id: string) =>
     post<{ deleted: string }>(`${postPath(channelId, id)}/delete`),
   forums: () => request<ForumsResponse>('/social/forums'),
-  joinForum: (id: string) => post<{ forum: ForumRow }>(`/social/forums/${encodeURIComponent(id)}/join`),
+  joinForum: (id: string, join: boolean) =>
+    post<{ forum: ForumRow }>(`/social/forums/${encodeURIComponent(id)}/join`, { join }),
   socialSearch: (q: string) => request<SocialSearchResult>(`/social/search?q=${encodeURIComponent(q)}`),
 
   wants: (options: { category?: string; q?: string } = {}) => {

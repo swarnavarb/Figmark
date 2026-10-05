@@ -41,13 +41,15 @@ export function useMakeDeal() {
 }
 
 /** The buyer's side: ask a shop for a deal - what, how many, at what price. */
-export function DealForm({ us, them, onClose, onSent }: {
+export function DealForm({ us, them, onClose, onSent, initialTitle = '' }: {
   us: MessageParty;
   them: MessageParty;
   onClose: () => void;
   onSent: () => void;
+  /** What they are asking about, when they came from a post about it. */
+  initialTitle?: string;
 }) {
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(initialTitle.slice(0, 120));
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('1');

@@ -110,6 +110,13 @@ export interface User extends BaseDocument {
    */
   username?: string;
   /**
+   * Accounts this one will not take messages from. By account rather than
+   * handle, so a blocked person cannot come back as their shop.
+   */
+  messageBlocks?: string[];
+  /** Conversations this account keeps but is not told about: no unread count. */
+  mutedThreads?: string[];
+  /**
    * Platform administration: verification queue, dispute console, payouts.
    * A real assigned role, not a capability derived from verification, so it is
    * stored rather than computed.
@@ -244,16 +251,16 @@ export type ShareKind =
   | 'level' | 'card' | 'set' | 'shop' | 'invite' | 'invite_seller' | 'profile';
 
 /**
- * A shop's growth quests: which it collected, and the Spotlights they paid.
+ * A shop's growth quests: which it collected, and the bump points they paid.
  * Kept on the shop's profile because the shop - not whichever manager pressed
  * Claim - earned them.
  */
 export interface StoreGrowthState {
   /** `taskId:period` -> when it was claimed. */
   claimed: Record<string, string>;
-  /** Spotlights earned and not yet spent. */
+  /** Bump points earned and not yet spent. The name is from when they were called Spotlights. */
   spotlights: number;
-  /** Spent ones, newest last. */
+  /** Bumps spent, newest last. */
   spotlightLog?: { listingId: string; at: string; by: string }[];
   /** Times somebody on the shop sent it out of the app. */
   shares?: { at: string; kind: ShareKind; by: string }[];
@@ -318,6 +325,13 @@ export interface QuestState {
   claimed: Record<string, string>;
   /** Every card pulled, one per opened pack. */
   cards: OwnedCard[];
+  /**
+   * Bump points earned from weekly and monthly quests and not yet spent. Bump
+   * on a shop's item spends the shop's points first, then these.
+   */
+  bumps?: number;
+  /** Bumps spent, newest last. */
+  bumpLog?: { listingId: string; at: string }[];
   /** The last XP and level worked out, so a leaderboard is a scan, not a recount. */
   xpCache?: number;
   levelCache?: number;
@@ -399,7 +413,7 @@ export interface SellerProfile {
   tags?: string[];
   /** The shop's level as last worked out, so names elsewhere can show it without a recount. */
   levelCache?: number;
-  /** Growth quests and the Spotlights they earned. Absent until the shop first plays. */
+  /** Growth quests and the bump points they earned. Absent until the shop first plays. */
   growth?: StoreGrowthState;
 }
 
@@ -1242,6 +1256,13 @@ export interface Order extends BaseDocument {
    */
   broughtBy?: string | null;
   /**
+   * The social post the buyer pressed Buy on, when they did - so a post can
+   * say how many it sold and trending can count sales, not only taps.
+   */
+  fromPost?: { channelId: string; postId: string } | null;
+  /** The buyer's "it arrived" post in the shop's channel, once they shared one. */
+  unboxingPostId?: string | null;
+  /**
    * The affiliate who brought this buyer, with the rate the shop offered when
    * the checkout opened. Copied so editing the item cannot move a commission
    * somebody has already earned. The name is a snapshot for the same reason.
@@ -1926,6 +1947,25 @@ export interface Post extends BaseDocument {
   comments?: StoredComment[];
   /** How many times it was passed on - reposted, or sent out as a link. */
   shareCount?: number;
+  /**
+   * Actor keys that have been counted for sharing it, so passing it on twice
+   * counts once. Shares weigh most in trending; an uncapped tap would be a way
+   * to put anything at the top.
+   */
+  sharedBy?: string[];
+  /**
+   * People this post is first tried on as Rising, beyond whoever the feed
+   * would pick: the hunters of the ISO it answers, say.
+   */
+  audience?: string[];
+  /** A buyer showing what arrived: the order it came from. */
+  delivered?: { orderId: string; itemName: string } | null;
+  /** The hunt this post answers, when a shop posted its answer to the feed. */
+  answersWant?: { id: string; buyerId: string; title: string } | null;
+  /** Orders placed from this post's Buy button. */
+  buyCount?: number;
+  /** Who bought from it, so one buyer's second order is not a second sale. */
+  boughtBy?: string[];
   /** A question with a few answers to pick from. */
   poll?: StoredPoll | null;
   /** Set when this post is somebody else's, passed on to the reposter's followers. */

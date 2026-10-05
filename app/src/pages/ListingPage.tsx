@@ -7,7 +7,8 @@ import { SkeletonText } from '../components/Feedback';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
 import { ListingPosts } from '../components/ListingPosts';
-import { RarityRibbon } from '../components/Quest';
+import { Glyph, RarityRibbon } from '../components/Quest';
+import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
 import { FillBlock } from '../components/FillMeter';
 import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
@@ -30,6 +31,7 @@ export function ListingPage() {
   const { id = '' } = useParams();
   const { user, gate } = useSession();
   const navigate = useNavigate();
+  const bumpItem = useBump();
   const location = useLocation();
   // Anything here a guest reaches for opens the sign-in popup; they stay on this item.
   const lock = user ? '' : ' is-locked';
@@ -39,6 +41,11 @@ export function ListingPage() {
   // sharing a group-buy worth a person's own reputation.
   const [params] = useSearchParams();
   const via = params.get('via');
+  // Arrived from a post's Buy button: the post gets the credit for the sale.
+  const fromPost = (() => {
+    const [channelId, postId] = (params.get('post') ?? '').split(':');
+    return channelId && postId ? { channelId, postId } : null;
+  })();
   // An affiliate's signed link. The server checks it and remembers it against
   // this account, so it is passed through rather than trusted here.
   const ref = params.get(AFFILIATE_PARAM);
@@ -113,7 +120,7 @@ export function ListingPage() {
   // looking like a completed one.
   const buy = () =>
     run('', async () => {
-      const placed = await api.order(listing.id, quantity, via, ref);
+      const placed = await api.order(listing.id, quantity, via, ref, fromPost);
       navigate(`/order/${placed.order.id}`);
     });
 
@@ -124,9 +131,11 @@ export function ListingPage() {
       setData((prev) => (prev ? { ...prev, following: result.following } : prev));
     });
 
+  // Spends a bump point; with none left, useBump goes to the quests that earn them.
   const bump = () =>
-    run('Bumped to the top of the feed.', async () => {
-      await api.bump(listing.id);
+    run('', async () => {
+      const result = await bumpItem(listing);
+      if (result) setAction({ text: `Bumped to the top of the feed. ${result.bumps} bump point${result.bumps === 1 ? '' : 's'} left.`, ok: true });
     });
 
   const shareSpec = listingShareSpec(data);
@@ -164,7 +173,12 @@ export function ListingPage() {
           <button className="btn buybox__buy" onClick={() => setEditing(true)}>
             {isExpired(listing) ? 'Make available again' : 'Edit, quantity or delete'}
           </button>
-          <button className="btn btn--ghost" onClick={() => void bump()} disabled={busy}>Bump</button>
+          <span className="buybox__bump">
+            <button className="btn btn--ghost" onClick={() => void bump()} disabled={busy}>
+              <Glyph name="bolt" size={14} /> Bump
+            </button>
+            <InfoTip label="What Bump does"><BumpHelp /></InfoTip>
+          </span>
         </div>
       ) : isExpired(listing) ? (
         <p className="notice notice--warn">This item has expired and can no longer be bought.</p>

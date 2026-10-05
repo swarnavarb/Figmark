@@ -66,6 +66,10 @@ function autoSeedEnabled(): boolean {
  * written out here, so a query can never assume a key the container was not
  * created with.
  */
+
+/** How long one instance reuses the newest-posts window and the forum list. */
+const RECENT_TTL_MS = 15_000;
+const FORUM_TTL_MS = 60_000;
 export class CosmosRepository implements Repository {
   readonly backend: BackendKind = 'cosmos';
 
@@ -826,12 +830,13 @@ export class CosmosRepository implements Repository {
     await this.container('identifiers').item(key, key).delete().catch(() => {});
   }
 
-  async listMessages(threadId: string, limit = 200): Promise<Message[]> {
+  async listMessages(threadId: string, limit = 200, before?: string): Promise<Message[]> {
     const { resources } = await this.container('messages')
       .items.query<Message>(
         {
-          query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
-          parameters: [{ name: '@limit', value: limit }],
+          // No `before` reads from the newest: every ISO time sorts below '~'.
+          query: 'SELECT * FROM c WHERE c.createdAt <= @before ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+          parameters: [{ name: '@before', value: before ?? '~' }, { name: '@limit', value: limit }],
         },
         { partitionKey: threadId },
       )
@@ -1207,6 +1212,7 @@ export class CosmosRepository implements Repository {
   }
 
   async deletePost(channelId: string, id: string): Promise<void> {
+    this.recentCache = null;
     await this.container('posts').item(id, channelId).delete().catch(() => {});
   }
 
@@ -1293,14 +1299,21 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
-  async listPostsForChannels(channelIds: readonly string[], limit = 60): Promise<Post[]> {
+  async listPostsForChannels(
+    channelIds: readonly string[], limit = 60, options: { before?: string; feedOnly?: boolean } = {},
+  ): Promise<Post[]> {
     if (channelIds.length === 0) return [];
     const { resources } = await this.container('posts')
       .items.query<Post>({
         query:
-          'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.channelId) ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+          'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.channelId) AND c.createdAt < @before'
+          + " AND (@everything = true OR NOT IS_DEFINED(c.reach) OR c.reach = 'feed')"
+          + ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
         parameters: [
           { name: '@ids', value: [...channelIds] },
+          // No `before` reads from the newest: every ISO time sorts below '~'.
+          { name: '@before', value: options.before ?? '~' },
+          { name: '@everything', value: !options.feedOnly },
           { name: '@limit', value: limit },
         ],
       })
@@ -1309,6 +1322,8 @@ export class CosmosRepository implements Repository {
   }
 
   async createPost(post: Post): Promise<Post> {
+    this.recentCache = null;
+    if (post.channel === 'forum') this.forumCache = null;
     const { resource } = await this.container('posts').items.create(post);
     // The forum's own count is denormalised, so a room can show its size
     // without counting its posts.
@@ -1323,14 +1338,33 @@ export class CosmosRepository implements Repository {
     return resource ?? post;
   }
 
+  /**
+   * The newest posts anywhere, kept for a few seconds per instance.
+   *
+   * Trending and the home feed both read the same couple of hundred posts on
+   * every load, across every partition. Any post written through this
+   * instance clears it; one written elsewhere shows within the TTL.
+   */
+  private recentCache: { at: number; limit: number; posts: Promise<Post[]> } | null = null;
+
   async listRecentPosts(limit: number): Promise<Post[]> {
-    const { resources } = await this.container('posts')
+    const cached = this.recentCache;
+    if (cached && cached.limit >= limit && Date.now() - cached.at < RECENT_TTL_MS) {
+      return structuredClone((await cached.posts).slice(0, limit));
+    }
+    const posts = this.container('posts')
       .items.query<Post>({
         query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
         parameters: [{ name: '@limit', value: limit }],
       })
-      .fetchAll();
-    return resources;
+      .fetchAll()
+      .then(({ resources }) => resources);
+    const entry = { at: Date.now(), limit, posts };
+    this.recentCache = entry;
+    posts.catch(() => {
+      if (this.recentCache === entry) this.recentCache = null;
+    });
+    return structuredClone(await posts);
   }
 
   async getPost(channelId: string, id: string): Promise<Post | null> {
@@ -1356,6 +1390,7 @@ export class CosmosRepository implements Repository {
       if (!resource) return null;
       const next = change(resource);
       if (!next) return resource;
+      this.recentCache = null;
       try {
         const { resource: saved } = await this.container('posts').item(id, channelId).replace<Post>(next, {
           accessCondition: { type: 'IfMatch', condition: etag ?? '' },
@@ -1369,11 +1404,22 @@ export class CosmosRepository implements Repository {
     throw new Error('That post is too busy to change right now. Try again.');
   }
 
+  /** Forums change rarely and are read by every feed with a forum post in it. */
+  private forumCache: { at: number; forums: Promise<Forum[]> } | null = null;
+
   async listForums(): Promise<Forum[]> {
-    const { resources } = await this.container('forums')
+    const cached = this.forumCache;
+    if (cached && Date.now() - cached.at < FORUM_TTL_MS) return structuredClone(await cached.forums);
+    const forums = this.container('forums')
       .items.query<Forum>({ query: 'SELECT * FROM c ORDER BY c.name' })
-      .fetchAll();
-    return resources;
+      .fetchAll()
+      .then(({ resources }) => resources);
+    const entry = { at: Date.now(), forums };
+    this.forumCache = entry;
+    forums.catch(() => {
+      if (this.forumCache === entry) this.forumCache = null;
+    });
+    return structuredClone(await forums);
   }
 
   async getForum(id: string): Promise<Forum | null> {
@@ -1387,11 +1433,13 @@ export class CosmosRepository implements Repository {
   }
 
   async createForum(forum: Forum): Promise<Forum> {
+    this.forumCache = null;
     const { resource } = await this.container('forums').items.create(forum);
     return resource ?? forum;
   }
 
   async saveForum(forum: Forum): Promise<Forum> {
+    this.forumCache = null;
     const { resource } = await this.container('forums').items.upsert(forum);
     return (resource as Forum | undefined) ?? forum;
   }

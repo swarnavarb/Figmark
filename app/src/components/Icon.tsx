@@ -22,7 +22,7 @@ export type IconName =
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image'
   | 'trash' | 'sort' | 'filter' | 'external' | 'home'
-  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy';
+  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy' | 'rising';
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>),
@@ -72,6 +72,8 @@ const PATHS: Record<IconName, ReactNode> = {
   /** In search of: a crosshair, since the magnifier already means "search this site". */
   target: (<><circle cx="12" cy="12" r="7.6" /><circle cx="12" cy="12" r="2.4" /><path d="M12 2.4v3.4M12 18.2v3.4M2.4 12h3.4M18.2 12h3.4" /></>),
   compose: (<><path d="M4.4 19.6h15.2" /><path d="M14.8 5.2l3.2 3.2-8.8 8.8H6v-3.2Z" /></>),
+  /** A new post climbing: a line going up and to the right. */
+  rising: (<><path d="m3.6 17.4 5.6-5.6 3.8 3.8 7.4-7.4" /><path d="M14.6 8.2h5.8v5.8" /></>),
 };
 
 /** Glyphs that read better filled than stroked. */

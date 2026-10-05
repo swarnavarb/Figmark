@@ -29,7 +29,7 @@ const {
 } = await import(new URL('catalog-routes.js', apiRoot));
 const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affiliate-routes.js', apiRoot));
 const {
-  logShareRoute, myInviteRoute, openInviteRoute, growthRoute, growthClaimRoute, spotlightRoute,
+  logShareRoute, myInviteRoute, openInviteRoute, growthRoute, growthClaimRoute,
 } = await import(new URL('share-routes.js', apiRoot));
 const { ogRoute, ogCardRoute } = await import(new URL('og-routes.js', apiRoot));
 const {
@@ -44,12 +44,12 @@ const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
-  removePostRoute, trendingRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
+  removePostRoute, trendingRoute, homeRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
 } = await import(new URL('social-routes.js', apiRoot));
-const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute } =
+const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
-  payRoute, confirmRoute, reviewRoute, orderStateRoute, checkoutRoute,
+  payRoute, confirmRoute, reviewRoute, unboxingRoute, orderStateRoute, checkoutRoute,
   claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
   acceptOrderRoute, cancelOrderRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
   submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
@@ -144,7 +144,6 @@ const routes = [
   ['GET', '/api/i/:code', openInviteRoute],
   ['GET', '/api/growth/:ownerId', growthRoute],
   ['POST', '/api/growth/:ownerId/claim', growthClaimRoute],
-  ['POST', '/api/listings/:id/spotlight', spotlightRoute],
   ['GET', '/api/og', ogRoute],
   ['GET', '/api/og/card/:kind/:name', ogCardRoute],
   ['POST', '/api/listings/:id/like', toggleLikeRoute],
@@ -182,6 +181,7 @@ const routes = [
   ['POST', '/api/social/forums/:id/join', joinForumRoute],
   ['GET', '/api/social/search', socialSearchRoute],
   ['GET', '/api/social/trending', trendingRoute],
+  ['GET', '/api/social/home', homeRoute],
   ['GET', '/api/social/shareable', shareableRoute],
   ['GET', '/api/social/posts/:channel/:id', readPostRoute],
   ['POST', '/api/social/posts/:channel/:id/react', reactRoute],
@@ -197,6 +197,8 @@ const routes = [
   ['GET', '/api/messages/:handle', threadRoute],
   ['POST', '/api/messages/:handle/send', sendMessageRoute],
   ['POST', '/api/messages/:handle/react', reactToMessageRoute],
+  ['POST', '/api/messages/:handle/block', blockRoute],
+  ['POST', '/api/messages/:handle/mute', muteRoute],
   ['GET', '/api/u/:handle', publicProfileRoute],
   ['POST', '/api/me/username', setUsernameRoute],
   ['GET', '/api/orders/:id/state', orderStateRoute],
@@ -217,6 +219,7 @@ const routes = [
   ['POST', '/api/orders/:id/confirm', confirmRoute],
   ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],
+  ['POST', '/api/orders/:id/unboxing', unboxingRoute],
   ['POST', '/api/orders/:id/book', bookOrderRoute],
   ['POST', '/api/orders/:id/accept', acceptOrderRoute],
   ['POST', '/api/orders/:id/cancel', cancelOrderRoute],

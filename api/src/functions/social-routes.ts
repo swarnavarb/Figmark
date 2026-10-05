@@ -9,9 +9,12 @@ import {
   type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
 import { can } from '../../../shared/stores.js';
+import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { ownPhotos } from '../storage/index.js';
+import { tooFast } from '../rate-limit.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { notify } from './notify.js';
@@ -28,7 +31,14 @@ import { notify } from './notify.js';
 interface PostCard {
   /** The post, without the lists `social` summarises - who voted is nobody's business. */
   post: Post;
-  listing: (Pick<Listing, 'id' | 'title' | 'priceMinor' | 'currency' | 'condition'> & { photoUrl: string | null }) | null;
+  listing: (Pick<Listing, 'id' | 'title' | 'priceMinor' | 'currency' | 'condition'> & {
+    photoUrl: string | null;
+    /** Whether it can still be bought, and how many are left when that is a number worth saying. */
+    buyable?: boolean;
+    left?: number | null;
+    /** A group pre-order's fill, for the meter on the card. */
+    fill?: { joined: number; total: number; cutoffAt: string } | null;
+  }) | null;
   /**
    * Where the author's name goes when tapped.
    *
@@ -59,7 +69,12 @@ interface PostCard {
   alsoIn?: { id: string; name: string }[];
   /** Said by a shop, in its own name - which is what has a channel to open. */
   shop?: boolean;
+  /** Why the home feed is showing it, beyond "you follow them". See `home`. */
+  badges?: Boost[];
 }
+
+/** Trending: among the liveliest posts anywhere. Rising: new, and being tried on a wider audience. */
+type Boost = 'trending' | 'rising';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -97,7 +112,10 @@ const notYours = () => error(403, 'forbidden', 'You cannot speak for that shop.'
 
 /** The post as it goes over the wire: the heavy lists summarised elsewhere. */
 function publicPost(post: Post): Post {
-  const { reactions: _reactions, comments: _comments, poll: _poll, ...rest } = post;
+  const {
+    reactions: _reactions, comments: _comments, poll: _poll, sharedBy: _sharedBy, boughtBy: _boughtBy,
+    audience: _audience, ...rest
+  } = post;
   return {
     ...rest,
     likeCount: post.reactions?.length ?? post.likeCount,
@@ -180,6 +198,26 @@ async function peopleFor(posts: readonly Post[], repository: Repo, extra: readon
   }
   const users = await repository.listUsersByIds([...ids]);
   return new Map(users.map((user) => [user.id, user]));
+}
+
+/**
+ * What the Buy button on a sale post needs: can it be bought, how many are
+ * left (only when few enough to matter), and how full a group pre-order is.
+ */
+function saleState(listing: Listing) {
+  const pre = listing.preOrder;
+  const multiple = isMultiple(listing);
+  return {
+    buyable: listing.status === 'active' && !isExpired(listing) && !listing.privateFor && (multiple || listing.quantityAvailable > 0),
+    left: !multiple && !pre && listing.quantityAvailable <= 10 ? listing.quantityAvailable : null,
+    fill: pre && pre.fillThreshold > 0
+      ? {
+          joined: Math.min(pre.fillThreshold, pre.filledCount + (pre.pledgedCount ?? 0)),
+          total: pre.fillThreshold,
+          cutoffAt: pre.cutoffAt,
+        }
+      : null,
+  };
 }
 
 /** The picture a listing leads with, if it has one. */
@@ -285,6 +323,7 @@ async function decorate(
             currency: listing.currency,
             condition: listing.condition,
             photoUrl: leadPhotoOf(listing),
+            ...saleState(listing),
           }
         : null,
       social: {
@@ -323,24 +362,6 @@ function gist(text: string): string {
   return line.length > 60 ? `${line.slice(0, 57)}…` : line || 'your post';
 }
 
-/**
- * Photo addresses a post may carry.
- *
- * Only what the upload route hands back, or a plain https link. Anything else
- * - a data URL, a javascript: link - is somebody putting something in an
- * <img> that the upload route exists to have vetted.
- */
-function cleanPhotos(value: unknown): string[] | null {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) return null;
-  const urls = value.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean);
-  if (urls.length > POST_MAX_PHOTOS) return null;
-  const ok = urls.every(
-    (url) => url.length <= 500 && (/^\/api\/photos\/[\w.-]+$/.test(url) || /^https:\/\/[^\s"'<>]+$/.test(url)),
-  );
-  return ok ? urls : null;
-}
-
 /** The viewer speaking as themselves, for reads that have no voice to choose. */
 function personActor(user: Viewer): Actor {
   return { userId: user.id, storeId: null, key: user.id, name: user.displayName };
@@ -364,6 +385,10 @@ async function withoutShops(posts: Post[], repository: Repo): Promise<Post[]> {
 
 /** Said when a shop tries to take part in a forum. */
 const MAX_ALSO_FORUMS = 2;
+/** Forums one person may open while the total is capped. */
+const FORUMS_PER_PERSON = 2;
+const FORUM_NAME_MAX = 60;
+const FORUM_ABOUT_MAX = 200;
 const shopsStayOut = () => error(403, 'people_only', 'Forums are for people. Switch to your profile to take part.');
 /** A shop has one room - its own. In anybody else's channel you are a customer. */
 const shopsStayHome = () => error(403, 'people_only', 'Only people read and write in other shops\' channels. Switch to your profile.');
@@ -381,7 +406,7 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
 
   const followed = await repository.listFollowedSellerIds(user.id);
   const channelIds = [...new Set([...followed, user.id])];
-  const posts = await repository.listPostsForChannels(channelIds);
+  const posts = await repository.listPostsForChannels(channelIds, 60, { feedOnly: true });
   // Channel messages stay in their channel. A post written before the two were
   // separate carries no reach and was a broadcast, so absent reads as 'feed'.
   const broadcast = posts.filter((post) => (post.reach ?? 'feed') === 'feed');
@@ -398,9 +423,11 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
  */
 function heat(post: Post, now: number): number {
   const votes = post.poll?.options.reduce((sum, option) => sum + option.voterIds.length, 0) ?? 0;
+  // A sale is the strongest thing a post can do: somebody paid because of it.
   const engagement = (post.reactions?.length ?? post.likeCount)
     + 2 * (post.comments?.length ?? post.replyCount)
     + 3 * (post.shareCount ?? 0)
+    + 4 * (post.buyCount ?? 0)
     + 0.5 * votes;
   const hours = Math.max(0, (now - new Date(post.createdAt).getTime()) / 3_600_000);
   return engagement / Math.pow(hours / 24 + 1, 0.6);
@@ -431,6 +458,151 @@ async function trending(request: HttpRequest, _context: InvocationContext) {
     .slice(0, 12)
     .map((entry) => entry.post);
   return json(200, { posts: await decorate(ranked, repository, actor) });
+}
+
+/** How many of the hottest posts count as trending. */
+const TRENDING_SIZE = 12;
+/**
+ * And never more than this share of the posts anybody engaged with: on a quiet
+ * day the top twelve is most of them, and a lightning on everything means nothing.
+ */
+const TRENDING_SHARE = 0.25;
+/** How long a post counts as new, and so may rise. */
+const RISING_WINDOW_MS = 48 * 3_600_000;
+/** Share of everybody else a new post is tried on before it has earned more. */
+const RISING_SEED_PERCENT = 15;
+/** Different people engaging before a new post is shown to everyone. */
+const RISING_GRADUATE = 3;
+/** Followed posts per page of the home feed. */
+const HOME_PAGE = 40;
+/** One followed post, then one found post, in this rhythm. */
+const DISCOVER_EVERY = 3;
+
+/** Everyone who reacted, commented or voted, not counting whoever wrote it. */
+function engagedActors(post: Post): Set<string> {
+  const actors = new Set<string>();
+  for (const reaction of post.reactions ?? []) actors.add(reactionActor(reaction));
+  for (const comment of post.comments ?? []) actors.add(actorKey(comment.authorId, comment.asStore));
+  for (const option of post.poll?.options ?? []) for (const id of option.voterIds) actors.add(id);
+  actors.delete(post.authorId);
+  actors.delete(`store:${post.channelId}`);
+  return actors;
+}
+
+/**
+ * A stable number 0-99 for a post and a viewer.
+ *
+ * Picks who a new post is tried on without storing an audience: the same
+ * viewer lands in the same bucket on every load, so a post does not flicker
+ * in and out of somebody's feed between refreshes.
+ */
+function bucket(postId: string, viewerId: string): number {
+  let hash = 0x811c9dc5;
+  for (const char of `${postId}:${viewerId}`) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193);
+  return (hash >>> 0) % 100;
+}
+
+/** A broadcast on somebody's feed, as opposed to a room message, a forum post or a wall echo of one. */
+const isBroadcast = (post: Post) =>
+  post.channel === 'seller' && (post.reach ?? 'feed') === 'feed' && !post.wallOf;
+
+/**
+ * GET /api/social/home - one feed: who you follow, with what is catching on mixed in.
+ *
+ * Followed posts keep their order, newest first, so "what did my people say"
+ * stays reliable; every few of them, one post from outside is slotted in. Two
+ * kinds come from outside, and each carries a badge saying why it is there:
+ *
+ * - trending: among the liveliest posts anywhere right now (see `heat`).
+ * - rising: new (under two days old), from somebody you do not follow, and
+ *   either tried on you first or already proven. A new post goes to a small
+ *   audience - people who have engaged with its author before, people whose
+ *   follows reacted to it, and a stable slice of everybody else - and once
+ *   enough different people engage it goes to everyone.
+ *
+ * A followed post that is also trending or rising stays where it is and gets
+ * the badge, rather than showing twice.
+ */
+async function home(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const actor = await actorFor(request, user, repository);
+  if (!actor) return notYours();
+
+  // `before` is the next page: older followed posts only. What is catching on
+  // is chosen once, on the first page, so it is not offered twice.
+  const before = request.query?.get('before') || undefined;
+  const followed = await repository.listFollowedSellerIds(user.id);
+  const followedSet = new Set(followed);
+  const [ownFeed, recent, liked] = await Promise.all([
+    repository.listPostsForChannels([...new Set([...followed, user.id])], HOME_PAGE, { before, feedOnly: true }),
+    before ? Promise.resolve([] as Post[]) : repository.listRecentPosts(200),
+    before ? Promise.resolve([] as string[]) : repository.listLikedListingIds(user.id),
+  ]);
+  // Items this person saved: a new post selling one is news to them.
+  const wished = new Set(liked);
+  const now = Date.now();
+  const scores = new Map(recent.map((post) => [post.id, heat(post, now)]));
+  const engaged = new Map(recent.map((post) => [post.id, engagedActors(post)]));
+
+  const lively = recent.filter((post) => isBroadcast(post) && scores.get(post.id)! > 0);
+  const trendingIds = new Set(lively
+    .sort((a, b) => scores.get(b.id)! - scores.get(a.id)!)
+    .slice(0, Math.min(TRENDING_SIZE, Math.ceil(lively.length * TRENDING_SHARE)))
+    .map((post) => post.id));
+
+  // Whose posts this viewer has engaged with lately: the strongest sign a new
+  // one from them is wanted.
+  const affinity = new Set<string>();
+  for (const post of recent) {
+    const who = engaged.get(post.id)!;
+    if (who.has(actor.key) || who.has(user.id)) affinity.add(post.channelId);
+  }
+  const followedActed = (post: Post) =>
+    (post.reactions ?? []).some((reaction) => followedSet.has(reaction.asStore ?? reaction.userId))
+    || (post.comments ?? []).some((comment) => followedSet.has(comment.asStore ?? comment.authorId));
+
+  const risingIds = new Set<string>();
+  for (const post of recent) {
+    if (!isBroadcast(post) || post.repostOf || now - new Date(post.createdAt).getTime() > RISING_WINDOW_MS) continue;
+    if (post.authorId === user.id || post.channelId === user.id) continue;
+    const proven = engaged.get(post.id)!.size >= RISING_GRADUATE;
+    const wanted = (post.audience ?? []).includes(user.id) || (post.listingId !== null && wished.has(post.listingId));
+    const tried = wanted || (!followedSet.has(post.channelId) && (affinity.has(post.channelId) || followedActed(post)
+      || bucket(post.id, user.id) < RISING_SEED_PERCENT));
+    if (proven || tried) risingIds.add(post.id);
+  }
+
+  const followedPosts = ownFeed;
+  const inFeed = new Set(followedPosts.map((post) => post.id));
+  // Trending first, hottest first; then rising, proven before merely tried.
+  const found = [
+    ...recent.filter((post) => trendingIds.has(post.id))
+      .sort((a, b) => scores.get(b.id)! - scores.get(a.id)!),
+    ...recent.filter((post) => risingIds.has(post.id) && !trendingIds.has(post.id))
+      .sort((a, b) => engaged.get(b.id)!.size - engaged.get(a.id)!.size || b.createdAt.localeCompare(a.createdAt)),
+  ].filter((post) => !inFeed.has(post.id) && post.authorId !== user.id && post.channelId !== user.id);
+
+  const merged: Post[] = [];
+  let next = 0;
+  followedPosts.forEach((post, index) => {
+    merged.push(post);
+    if ((index + 1) % DISCOVER_EVERY === 0 && next < found.length) merged.push(found[next++]!);
+  });
+  merged.push(...found.slice(next));
+
+  const cards = await decorate(merged, repository, actor, { followed: followedSet });
+  return json(200, {
+    /** Pass back as `before` for the next page; null when there is none. */
+    next: ownFeed.length === HOME_PAGE ? ownFeed.at(-1)!.createdAt : null,
+    posts: cards.map((card) => {
+      const badges: Boost[] = [];
+      if (trendingIds.has(card.post.id)) badges.push('trending');
+      if (risingIds.has(card.post.id)) badges.push('rising');
+      return badges.length ? { ...card, badges } : card;
+    }),
+  });
 }
 
 /**
@@ -517,10 +689,7 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   // would fill this list with rooms nobody has any reason to open.
   const shops = candidates.filter((account: User) => account.sellerProfile);
 
-  const rowFor = async (seller: User) => {
-    // The newest few, not one: the app counts what arrived since you last
-    // looked, and it needs the times to do it without a read receipt per room.
-    const posts = await repository.listPosts(seller.id, 20);
+  const rowFrom = (seller: User, posts: Post[]) => {
     const latest = posts[0] ?? null;
     return {
       sellerId: seller.id,
@@ -541,7 +710,9 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
     };
   };
 
-  const rows = await Promise.all(shops.map(rowFor));
+  // The newest few per room, not one: the app counts what arrived since you
+  // last looked, and it needs the times to do it without a read receipt per room.
+  const rows = await Promise.all(shops.map(async (seller) => rowFrom(seller, await repository.listPosts(seller.id, 20))));
   // Yours on top, then whoever spoke most recently.
   rows.sort(
     (a, b) => Number(b.mine) - Number(a.mine) || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''),
@@ -549,9 +720,21 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
 
   // Rooms you are not in yet, busiest first: a channel list that only ever
   // shows what you already chose never grows.
-  const strangers = owners.filter((owner) => owner.sellerProfile && !mineToo.includes(owner.id));
-  const discover = (await Promise.all(strangers.map(rowFor)))
-    .filter((row) => row.lastPostAt)
+  // Read from the newest posts anywhere - one shared, cached window - rather
+  // than a query per shop on the platform: a room nobody has spoken in lately
+  // is not one to recommend anyway.
+  const strangers = new Map(owners
+    .filter((owner) => owner.sellerProfile && !mineToo.includes(owner.id))
+    .map((owner) => [owner.id, owner]));
+  const byRoom = new Map<string, Post[]>();
+  for (const post of await repository.listRecentPosts(200)) {
+    if (post.channel !== 'seller' || !strangers.has(post.channelId)) continue;
+    const list = byRoom.get(post.channelId) ?? [];
+    if (list.length < 20) list.push(post);
+    byRoom.set(post.channelId, list);
+  }
+  const discover = [...byRoom.entries()]
+    .map(([id, posts]) => rowFrom(strangers.get(id)!, posts))
     .sort((a, b) => b.recent.length - a.recent.length || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''))
     .slice(0, 8);
 
@@ -595,7 +778,8 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
   // What the shop could put in front of its followers without leaving the
   // channel to go and find it. Only for whoever runs it - nobody else has a
   // reason to see an unsorted list of somebody's stock.
-  const shareable = mine
+  const light = request.query?.get('light') === '1';
+  const shareable = mine && !light
     ? (await repository.listListings({ sellerId: channelId, limit: 30 })).map((listing) => ({
         id: listing.id,
         title: listing.title,
@@ -669,7 +853,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const photoUrls = cleanPhotos(body.photoUrls);
+  const photoUrls = await ownPhotos(body.photoUrls, POST_MAX_PHOTOS);
   if (!photoUrls) {
     return error(400, 'invalid_post', `Up to ${POST_MAX_PHOTOS} photos, uploaded here first.`);
   }
@@ -677,6 +861,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   const text = body.body?.trim() ?? '';
   if (!text && photoUrls.length === 0) return error(400, 'invalid_post', 'Write something first.');
   if (text.length > 2000) return error(400, 'invalid_post', 'Keep a post under 2000 characters.');
+  const slow = tooFast(user.id, 'post');
+  if (slow) return slow;
 
   let poll: StoredPoll | null = null;
   if (body.poll) {
@@ -952,6 +1138,7 @@ async function commentsFor(post: Post, repository: Repo, viewer: Actor): Promise
 }
 
 const noPost = () => error(404, 'not_found', 'That post is not there any more.');
+const followFirst = () => error(403, 'follow_required', 'Follow the shop to read its channel.');
 
 /**
  * Whether this person may read a post.
@@ -972,9 +1159,7 @@ async function readPost(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
-  if (!(await mayRead(post, user.id, repository))) {
-    return error(403, 'follow_required', 'Follow the shop to read its channel.');
-  }
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
   return json(200, {
     card: await cardFor(post, repository, actor),
     comments: await commentsFor(post, repository, actor),
@@ -991,6 +1176,7 @@ async function react(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
   if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
   if (shopInSomebodyElsesRoom(post, actor)) return shopsStayHome();
   const body = await readJson<{ kind?: unknown }>(request);
@@ -998,6 +1184,8 @@ async function react(request: HttpRequest, _context: InvocationContext) {
   if (body.kind !== null && !isReaction(body.kind)) {
     return error(400, 'invalid_reaction', 'No such reaction.');
   }
+  const slow = tooFast(user.id, 'react');
+  if (slow) return slow;
 
   let firstTime = false;
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
@@ -1031,9 +1219,10 @@ async function react(request: HttpRequest, _context: InvocationContext) {
 
 /** GET /api/social/posts/{channel}/{id}/reactions - who reacted, and with what. */
 async function reactors(request: HttpRequest, _context: InvocationContext) {
-  const { repository, post, actor } = await target(request);
+  const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
   const reactions = [...(post.reactions ?? [])].sort((a, b) => (a.at < b.at ? 1 : -1));
   const people = new Map(
     (await repository.listUsersByIds(reactions.map((reaction) => reaction.asStore ?? reaction.userId)))
@@ -1058,6 +1247,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
   if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
   if (shopInSomebodyElsesRoom(post, actor)) return shopsStayHome();
   const body = await readJson<{ body?: unknown; parentId?: unknown }>(request);
@@ -1068,6 +1258,8 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   if (text.length > COMMENT_MAX_CHARS) {
     return error(400, 'invalid_comment', `Keep a comment under ${COMMENT_MAX_CHARS} characters.`);
   }
+  const slow = tooFast(user.id, 'comment');
+  if (slow) return slow;
 
   let parent: StoredComment | null = null;
   let answering: StoredComment | null = null;
@@ -1132,15 +1324,18 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
 
 /** POST /api/social/posts/{channel}/{id}/comments/{comment}/like - a heart on a comment, or not. */
 async function likeComment(request: HttpRequest, _context: InvocationContext) {
-  const { repository, post, actor } = await target(request);
+  const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
   if (post.channel === 'forum' && actor.storeId) return shopsStayOut();
   if (shopInSomebodyElsesRoom(post, actor)) return shopsStayHome();
   const commentId = request.params.comment;
   if (!post.comments?.some((comment) => comment.id === commentId)) {
     return error(404, 'not_found', 'That comment is not there any more.');
   }
+  const slow = tooFast(user.id, 'react');
+  if (slow) return slow;
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => ({
     ...current,
@@ -1200,11 +1395,14 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
   const body = await readJson<{ mode?: unknown; body?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
   if (body.mode !== 'repost' && body.mode !== 'link') {
     return error(400, 'invalid_share', 'Share as a repost or as a link.');
   }
+  const slow = tooFast(user.id, body.mode === 'repost' ? 'post' : 'share');
+  if (slow) return slow;
 
   // A repost of a repost passes on the original, not the wrapper around it.
   const source = post.repostOf ? await repository.getPost(post.repostOf.channelId, post.repostOf.postId) : post;
@@ -1247,10 +1445,13 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
     });
   }
 
-  const saved = await repository.mutatePost(source.channelId, source.id, (current) => ({
-    ...current,
-    shareCount: (current.shareCount ?? 0) + 1,
-  }));
+  // Once per actor, however many times it goes out: shares weigh most in
+  // trending, and a counter anybody can tap forever would rank anything.
+  const saved = await repository.mutatePost(source.channelId, source.id, (current) => {
+    const sharers = current.sharedBy ?? [];
+    if (sharers.includes(actor.key)) return null;
+    return { ...current, shareCount: (current.shareCount ?? 0) + 1, sharedBy: [...sharers, actor.key] };
+  });
   if (!saved) return noPost();
 
   if (repost) {
@@ -1273,6 +1474,7 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
   if (!post.poll) return error(400, 'invalid_vote', 'That post has nothing to vote on.');
   const body = await readJson<{ optionId?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
@@ -1283,6 +1485,8 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
   if (post.poll.closesAt && post.poll.closesAt < new Date().toISOString()) {
     return error(409, 'poll_closed', 'Voting on this one has closed.');
   }
+  const slow = tooFast(user.id, 'react');
+  if (slow) return slow;
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
     if (!current.poll) return null;
@@ -1380,9 +1584,14 @@ async function joinForum(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const forum = request.params.id ? await repository.getForum(request.params.id) : null;
   if (!forum) return error(404, 'not_found', 'No such forum.');
+  // Say which: `{ join: true }` or `{ join: false }`, so a double tap cannot
+  // join and leave again. A bare call still toggles, for older clients.
+  const wanted = (await readJson<{ join?: unknown }>(request))?.join;
   const members = new Set(forum.memberIds ?? []);
-  if (members.has(user.id)) members.delete(user.id);
-  else members.add(user.id);
+  const join = typeof wanted === 'boolean' ? wanted : !members.has(user.id);
+  if (join === members.has(user.id)) return json(200, { forum: forumRow(forum, user.id) });
+  if (join) members.add(user.id);
+  else members.delete(user.id);
   forum.memberIds = [...members];
   forum.updatedAt = new Date().toISOString();
   const saved = await repository.saveForum(forum);
@@ -1465,12 +1674,23 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const name = body.name?.trim();
+  const name = body.name?.trim().replace(/\s+/g, ' ');
   if (!name) return error(400, 'invalid_forum', 'Give the forum a name.');
+  if (name.length > FORUM_NAME_MAX) return error(400, 'invalid_forum', `Keep the name under ${FORUM_NAME_MAX} characters.`);
+  const description = body.description?.trim() ?? '';
+  if (description.length > FORUM_ABOUT_MAX) {
+    return error(400, 'invalid_forum', `Keep the description under ${FORUM_ABOUT_MAX} characters.`);
+  }
   if (request.query?.get('as')) return shopsStayOut();
 
   const repository = await getRepository();
   const existing = await repository.listForums();
+  // The cap is everybody's, so nobody gets to spend all of it. Operators
+  // seed the rooms and are not counted.
+  if (!user.capabilities?.isAdmin
+    && existing.filter((forum) => forum.createdBy === user.id).length >= FORUMS_PER_PERSON) {
+    return error(409, 'forum_limit_reached', `You can open ${FORUMS_PER_PERSON} forums while they are being built out.`);
+  }
   if (existing.length >= FORUM_CAP) {
     return error(
       409,
@@ -1486,7 +1706,7 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
   const forum: Forum = {
     id: `frm_${randomUUID().slice(0, 12)}`,
     name,
-    description: body.description?.trim() ?? '',
+    description,
     createdBy: user.id,
     postCount: 0,
     // Whoever opens a room is in it.
@@ -1508,6 +1728,7 @@ export const listForumsRoute = handler(listForums);
 export const createForumRoute = handler(createForum);
 export const readPostRoute = handler(readPost);
 export const trendingRoute = handler(trending);
+export const homeRoute = handler(home);
 export const shareableRoute = handler(shareable);
 export const reactRoute = handler(react);
 export const reactorsRoute = handler(reactors);
@@ -1542,6 +1763,7 @@ app.http('social-post-share', { ...anon, methods: ['POST'], route: 'social/posts
 app.http('social-post-vote', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/vote', handler: voteRoute });
 app.http('social-post-delete', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/delete', handler: removePostRoute });
 app.http('social-trending', { ...anon, methods: ['GET'], route: 'social/trending', handler: trendingRoute });
+app.http('social-home', { ...anon, methods: ['GET'], route: 'social/home', handler: homeRoute });
 app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });
 app.http('social-post-pin', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/pin', handler: pinPostRoute });
 app.http('social-forum-join', { ...anon, methods: ['POST'], route: 'social/forums/{id}/join', handler: joinForumRoute });

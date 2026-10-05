@@ -31,6 +31,8 @@ import { notify } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
 import { adjustHeldCredit, heldCreditMinor, placeOrder, returnKeptCredit } from './placement.js';
 import { error, handler, json } from './http.js';
+import { ownPhotos } from '../storage/index.js';
+import { tooFast } from '../rate-limit.js';
 
 /**
  * What happens to an order after it is placed.
@@ -485,6 +487,79 @@ async function review(request: HttpRequest, _context: InvocationContext) {
   if (written.revealed) await rescore(written.subjectId, repository);
 
   return json(201, { review: written });
+}
+
+/**
+ * POST /api/orders/{id}/unboxing - show the shop's followers what arrived.
+ *
+ * The buyer's photos and words, in the shop's channel and on its followers'
+ * feeds, with the item attached so the next person can buy it from there.
+ * Separate from the review on purpose: a review is blind until both sides have
+ * written, and a public post of it would give the rating away. This carries no
+ * rating at all. Once per order, buyer only, after it is complete.
+ */
+async function unboxing(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  if (sideOf(order, user.id) !== 'buyer') return error(403, 'forbidden', 'Only the buyer shares what arrived.');
+  if (!order.completedAt) return error(409, 'not_delivered', 'Share it once the order is complete.');
+  if (order.unboxingPostId) return error(409, 'already_shared', 'You already shared this one.');
+
+  let body: { body?: unknown; photoUrls?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  if (text.length > 1000) return error(400, 'invalid_post', 'Keep it under 1000 characters.');
+  const photoUrls = await ownPhotos(body.photoUrls, 4);
+  if (!photoUrls || photoUrls.length === 0) return error(400, 'invalid_post', 'Add a photo of what arrived.');
+  const slow = tooFast(user.id, 'post');
+  if (slow) return slow;
+
+  const [buyer, listing] = await Promise.all([repository.getUserById(user.id), repository.getListing(order.listingId)]);
+  const now = new Date().toISOString();
+  const post = await repository.createPost({
+    id: `pst_${randomUUID().slice(0, 12)}`,
+    channelId: order.sellerId,
+    channel: 'seller',
+    kind: listing ? 'sale' : 'update',
+    authorId: user.id,
+    authorName: buyer?.displayName ?? user.displayName,
+    body: text || `It arrived: ${order.itemName}`,
+    listingId: listing?.id ?? null,
+    photoUrl: photoUrls[0]!,
+    likeCount: 0,
+    replyCount: 0,
+    // A customer speaking, out loud: on the shop's followers' feeds.
+    voice: 'visitor',
+    reach: 'feed',
+    announcement: false,
+    photoUrls,
+    reactions: [],
+    comments: [],
+    shareCount: 0,
+    poll: null,
+    vibe: null,
+    delivered: { orderId: order.id, itemName: order.itemName },
+    createdAt: now,
+    updatedAt: now,
+  });
+  order.unboxingPostId = post.id;
+  order.updatedAt = now;
+  await repository.updateOrder(order);
+  await notify(repository, [order.sellerId], {
+    kind: 'post_shared',
+    title: `${buyer?.displayName ?? 'Your buyer'} showed off what arrived`,
+    body: order.itemName,
+    link: `/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`,
+  }, { except: user.id });
+  return json(201, { post });
 }
 
 /**
@@ -1656,6 +1731,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
 export const settleClaimRoute = handler(settleClaim);
 export const rejectOrderRoute = handler(rejectOrder);
 export const confirmRoute = handler(confirm);
+export const unboxingRoute = handler(unboxing);
 export const reviewRoute = handler(review);
 export const orderStateRoute = handler(orderState);
 export const checkoutRoute = handler(checkout);
@@ -2230,6 +2306,7 @@ app.http('order-settle-claim', { ...anon, methods: ['POST'], route: 'orders/{id}
 app.http('order-reject', { ...anon, methods: ['POST'], route: 'orders/{id}/reject', handler: rejectOrderRoute });
 app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/confirm', handler: confirmRoute });
 app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
+app.http('order-unboxing', { ...anon, methods: ['POST'], route: 'orders/{id}/unboxing', handler: unboxingRoute });
 app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state', handler: orderStateRoute });
 app.http('order-checkout', { ...anon, methods: ['GET'], route: 'orders/{id}/checkout', handler: checkoutRoute });
 app.http('order-book', { ...anon, methods: ['POST'], route: 'orders/{id}/book', handler: bookOrderRoute });

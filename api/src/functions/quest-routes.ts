@@ -170,6 +170,7 @@ async function claim(request: HttpRequest, _context: InvocationContext) {
   return commit(repository, user, before, {
     ...state,
     claimed: { ...state.claimed, [key]: new Date().toISOString() },
+    bumps: (state.bumps ?? 0) + task.bumps,
   }, { taskId });
 }
 

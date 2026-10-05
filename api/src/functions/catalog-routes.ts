@@ -11,6 +11,8 @@ import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, isReaction, type ReactionKind } from '../../../shared/social.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
+import { BUMP_GUARD_MS, emptyQuestState, tidyQuestState } from '../../../shared/quest.js';
+import { emptyGrowth, tidyGrowth } from '../../../shared/store-growth.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
@@ -537,19 +539,61 @@ async function toggleLike(request: HttpRequest, _context: InvocationContext) {
   return json(200, { liked: await repository.toggleLike(user.id, id) });
 }
 
-/** POST /api/listings/{id}/bump - push a listing back up the feed. */
+/**
+ * POST /api/listings/{id}/bump - spend a bump point to put a live item back at
+ * the top of the feed.
+ *
+ * Points come from quests. The shop's own, earned on its board by whoever runs
+ * it, go first; then the points of the person pressing Bump, earned on their
+ * own quests. With none left on either the answer is 409 `no_bumps`, and the
+ * app sends the seller to the quests that earn more. A second Bump within the
+ * hour is refused before it costs anything, since the item is still near the top.
+ */
 async function bumpListing(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  const user = await auth.requireCapability(request, ['sell']);
+  const principal = await auth.requireCapability(request, ['sell']);
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A listing id is required.');
 
   const repository = await getRepository();
-  const bumped = await repository.bumpListing(user.id, id);
-  if (!bumped) {
-    return error(429, 'bump_rate_limited', 'This listing was bumped recently. Try again later.');
+  const listing = await repository.getListing(id);
+  if (!listing) return error(404, 'not_found', 'No such listing.');
+  const owner = await repository.getUserById(listing.sellerId);
+  const allowed = owner && (owner.sellerProfile ? can(owner, principal.id, 'listings') : owner.id === principal.id);
+  if (!owner || !allowed) return error(403, 'forbidden', 'Only the seller can bump this item.');
+  if (listing.status !== 'active' || isExpired(listing)) return error(409, 'not_active', 'Only a live item can be bumped.');
+
+  const presser = owner.id === principal.id ? owner : await repository.getUserById(principal.id);
+  const shopLeft = owner.sellerProfile?.growth?.spotlights ?? 0;
+  const ownLeft = presser?.quest?.bumps ?? 0;
+  if (shopLeft + ownLeft < 1) {
+    return error(409, 'no_bumps', 'No bump points left. Finish a weekly or monthly quest to earn more.');
   }
-  return json(200, { bumped: true });
+  const last = listing.bumpedAt ? Date.parse(listing.bumpedAt) : 0;
+  if (Date.now() - last < BUMP_GUARD_MS) {
+    return error(429, 'bump_rate_limited', 'This item was bumped in the last hour, so it is still near the top.');
+  }
+
+  const now = new Date().toISOString();
+  listing.bumpedAt = now;
+  listing.updatedAt = now;
+  await repository.updateListing(listing);
+  if (shopLeft > 0) {
+    const growth = owner.sellerProfile!.growth ?? emptyGrowth();
+    owner.sellerProfile!.growth = tidyGrowth({
+      ...growth,
+      spotlights: shopLeft - 1,
+      spotlightLog: [...(growth.spotlightLog ?? []), { listingId: listing.id, at: now, by: principal.id }],
+    });
+    await repository.updateUser(owner);
+  } else {
+    const quest = presser!.quest ?? emptyQuestState();
+    presser!.quest = tidyQuestState({ ...quest, bumps: ownLeft - 1, bumpLog: [...(quest.bumpLog ?? []), { listingId: listing.id, at: now }] });
+    await repository.updateUser(presser!);
+  }
+  const shop = shopLeft > 0 ? shopLeft - 1 : 0;
+  const own = shopLeft > 0 ? ownLeft : ownLeft - 1;
+  return json(200, { bumped: true, bumpedAt: now, bumps: shop + own, shop, own, spent: shopLeft > 0 ? 'shop' : 'own' });
 }
 
 const COMMENT_MAX = 2000;
@@ -679,13 +723,28 @@ async function toggleFollow(request: HttpRequest, _context: InvocationContext) {
 
 const MAX_ORDER_QUANTITY = 100;
 
+/**
+ * The post a Buy came from, when the client names one and it really is a
+ * post selling this item. Anything else is dropped rather than refused: the
+ * order is the point, the credit to a post is not.
+ */
+async function postSelling(
+  repository: Awaited<ReturnType<typeof getRepository>>, value: unknown, listingId: string,
+): Promise<{ channelId: string; postId: string } | null> {
+  if (!value || typeof value !== 'object') return null;
+  const { channelId, postId } = value as { channelId?: unknown; postId?: unknown };
+  if (typeof channelId !== 'string' || typeof postId !== 'string') return null;
+  const post = await repository.getPost(channelId, postId).catch(() => null);
+  return post?.listingId === listingId ? { channelId, postId } : null;
+}
+
 /** POST /api/orders - buy an in-stock item, or join a group-buy lot. */
 async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
-  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book'; ref?: string };
+  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book'; ref?: string; fromPost?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -726,6 +785,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     if (buyer) await recordReferral(repository, buyer, listing, referredBy);
   }
   const affiliate = await affiliateFor(repository, user.id, listing);
+  const fromPost = await postSelling(repository, body.fromPost, listing.id);
 
   // Pressing Buy again on an item already at the checkout goes back to that
   // checkout rather than opening a second one nobody asked for.
@@ -741,6 +801,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
         open.unitPriceMinor = Math.max(100, base - (affiliate.buyerOffMinor ?? 0));
       }
       open.quantity = quantity;
+      if (fromPost && !open.fromPost) open.fromPost = fromPost;
       open.escrow = { ...open.escrow, amountMinor: open.unitPriceMinor * quantity };
       open.buyClicks = (open.buyClicks ?? 1) + 1;
       open.updatedAt = new Date().toISOString();
@@ -837,6 +898,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // belongs to that moment rather than to the click that finally paid.
     broughtBy: await verifiedReferrer(repository, body.via, user.id, listing),
     affiliate,
+    fromPost,
     completedAt: null,
     createdAt: now,
     updatedAt: now,

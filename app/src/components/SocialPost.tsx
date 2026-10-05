@@ -2,14 +2,14 @@ import { ReportButton } from './ReportButton';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { ApiRequestError, api, type PostCard } from '../api';
+import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
 import {
   REACTIONS, REACTION_META,
   type CommentThread, type CommentView, type PollView, type ReactionKind, type ReactionSummary, type ReactorRow,
 } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
-import { Avatar, Modal, PersonLink, Thumb } from './ui';
+import { Avatar, Modal, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { useVoice, VoiceAvatar } from './SocialVoice';
 import { PostInFigmark } from './PostInFigmark';
@@ -123,6 +123,126 @@ export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['lis
   );
 }
 
+/** What each badge says when tapped: the name first, then why the post is in front of you. */
+const BOOSTS: Record<PostBoost, { icon: 'bolt' | 'rising'; title: string; line: string }> = {
+  trending: { icon: 'bolt', title: 'Trending', line: 'One of the most talked-about posts on Figmark right now.' },
+  rising: { icon: 'rising', title: 'Rising', line: 'A new post picking up fast. You are seeing it early.' },
+};
+
+const TIP_MS = 2600;
+
+/**
+ * Why the home feed is showing a post: a small icon that, tapped, says so in a
+ * bubble right above itself.
+ *
+ * Above the icon rather than at the foot of the screen, because the question
+ * is "what is this mark" and the answer belongs where the eye already is. It
+ * goes by itself after a moment, on a second tap, on Escape, or on a tap
+ * anywhere else.
+ */
+function BoostBadge({ kind }: { kind: PostBoost }) {
+  const meta = BOOSTS[kind];
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => setOpen(false), TIP_MS);
+    const away = (event: Event) => {
+      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', escape);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+
+  return (
+    <span className="boost" ref={wrap}>
+      <button type="button" className={`boost__icon boost__icon--${kind}`} aria-label={meta.title}
+        aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name={meta.icon} size={12} />
+      </button>
+      {open && (
+        <span className={`boost__tip boost__tip--${kind}`} role="status">
+          <strong><Icon name={meta.icon} size={13} /> {meta.title}</strong>
+          <span>{meta.line}</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The item on a sale post, with the way to buy it right there.
+ *
+ * Buy opens the item carrying which post it came from, so the post is credited
+ * with the sale and can say how many it sold. A group pre-order shows how full
+ * it is, a short-stock item how many are left - the two things that make
+ * somebody act now rather than later.
+ */
+function SaleItem({ listing, post, nested, offerTo }: {
+  listing: NonNullable<PostCard['listing']>;
+  post: PostCard['post'];
+  nested: boolean;
+  /** The shop's handle, when this viewer may ask it for a private deal. */
+  offerTo: string | null;
+}) {
+  const href = `/listing/${listing.id}?post=${encodeURIComponent(`${post.channelId}:${post.id}`)}`;
+  const fill = listing.fill ?? null;
+  const pct = fill ? Math.min(100, Math.round((fill.joined / Math.max(1, fill.total)) * 100)) : 0;
+  const sold = post.buyCount ?? 0;
+  const gone = listing.buyable === false;
+  return (
+    <div className={`spost__sale${gone ? ' is-gone' : ''}`}>
+      <Link to={href} className="spost__item">
+        {listing.photoUrl ? (
+          <img className="spost__itemphoto" src={listing.photoUrl} alt="" loading="lazy" />
+        ) : (
+          <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
+        )}
+        <span className="spost__itembody">
+          <span className="spost__itemtag">{gone ? 'Sold out' : fill ? 'Group pre-order' : 'For sale'}</span>
+          <span className="spost__itemname">{listing.title}</span>
+          <span className="spost__itemmeta">
+            <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+            <span className="faint">{listing.condition}</span>
+            {!gone && listing.left != null && listing.left > 0 && (
+              <span className="spost__left">{listing.left === 1 ? 'Last one' : `${listing.left} left`}</span>
+            )}
+          </span>
+          {fill && (
+            <span className="spost__fill" aria-label={`${fill.joined} of ${fill.total} joined`}>
+              <span className="spost__fillbar"><i style={{ width: `${pct}%` }} /></span>
+              <span className="faint">{fill.joined} of {fill.total} joined</span>
+            </span>
+          )}
+        </span>
+        <span className={`spost__itemcta${gone ? '' : ' spost__itemcta--buy'}`}>
+          {gone ? 'View' : fill ? 'Join' : 'Buy'} <Icon name="right" size={12} />
+        </span>
+      </Link>
+      {!nested && (sold > 0 || offerTo) && (
+        <span className="spost__saleline">
+          {sold > 0 && <span><Icon name="tag" size={12} /> {sold} bought from this post</span>}
+          {offerTo && (
+            <Link className="spost__offer"
+              to={`/messages/${encodeURIComponent(offerTo)}?ask=${encodeURIComponent(listing.title)}`}>
+              🤝 Make me an offer
+            </Link>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function reduceMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
@@ -155,6 +275,7 @@ export function SocialPostCard({
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [burst, setBurst] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   useEffect(() => {
     setCard(initial);
@@ -163,7 +284,9 @@ export function SocialPostCard({
 
   const { post, listing, author, social } = card;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
-  const hot = social.reactions.total >= HOT_REACTIONS
+  const badges = nested ? [] : card.badges ?? [];
+  // The lightning already says it louder; two flames for one post is noise.
+  const hot = !badges.includes('trending') && social.reactions.total >= HOT_REACTIONS
     && Date.now() - new Date(post.createdAt).getTime() < HOT_WINDOW_MS;
 
   const react = useCallback(async (kind: ReactionKind | null) => {
@@ -189,7 +312,10 @@ export function SocialPostCard({
 
   async function remove() {
     setMenu(false);
-    if (!window.confirm('Delete this post? Its reactions and comments go with it.')) return;
+    const sure = await confirm({
+      title: 'Delete this post?', body: 'Its reactions and comments go with it.', action: 'Delete', danger: true,
+    });
+    if (!sure) return;
     try {
       await api.deletePost(post.channelId, post.id);
       onRemoved?.(post.id);
@@ -205,6 +331,13 @@ export function SocialPostCard({
         <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>
       )}
       {social.poll && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
+      {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
+      {post.answersWant && (
+        <Link className="spost__kind spost__kind--poll"
+          to={`/social?view=wanted&want=${encodeURIComponent(post.answersWant.id)}&buyer=${encodeURIComponent(post.answersWant.buyerId)}`}>
+          <Icon name="target" size={11} /> Answers an ISO
+        </Link>
+      )}
       {hot && <span className="spost__kind spost__kind--hot">🔥 Hot</span>}
       {post.powerSale || post.drop ? (
         <span className="spost__kind spost__kind--drop">⚡ Exclusive drop <span className="probadge">PRO</span></span>
@@ -217,12 +350,31 @@ export function SocialPostCard({
   return (
     <article className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {!nested && <span className="spost__glow" aria-hidden="true" />}
+      {dialog}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
           <span className="spost__byline">
             <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
+            {/* Right by the name, for anyone not yet followed. A shop does not
+                follow anybody, so speaking as one still follows as the person. */}
+            {!nested && !social.mine && !following && post.channel === 'seller' && voice.storeId !== post.channelId && (
+              <button type="button" className="spost__follow" disabled={followBusy}
+                title={voice.storeId ? 'Shops do not follow - this follows as you' : undefined}
+                onClick={async () => {
+                  setFollowBusy(true);
+                  try {
+                    setFollowing((await api.follow(post.channelId)).following);
+                  } catch (err) {
+                    setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
+                  } finally {
+                    setFollowBusy(false);
+                  }
+                }}>
+                <Icon name="plus" size={11} /> Follow
+              </button>
+            )}
             {card.forum && !inForum && (
               <>
                 <Icon name="right" size={12} className="spost__in" />
@@ -239,6 +391,7 @@ export function SocialPostCard({
           </span>
           <span className="spost__meta">
             <Link to={postHref(post)} className="spost__time">{timeAgo(post.createdAt)}</Link>
+            {badges.map((kind) => <BoostBadge key={kind} kind={kind} />)}
             {card.shop && !nested && (
               <>
                 <span aria-hidden="true">·</span>
@@ -248,22 +401,6 @@ export function SocialPostCard({
             {kindLine}
           </span>
         </div>
-        {/* People follow; a shop does not, so the button is not offered to one. */}
-        {!nested && !social.mine && !following && post.channel === 'seller' && !voice.storeId && (
-          <button type="button" className="followbtn" disabled={followBusy}
-            onClick={async () => {
-              setFollowBusy(true);
-              try {
-                setFollowing((await api.follow(post.channelId)).following);
-              } catch (err) {
-                setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
-              } finally {
-                setFollowBusy(false);
-              }
-            }}>
-            <Icon name="plus" size={12} /> Follow
-          </button>
-        )}
         {!nested && (
           <div className="spost__menuwrap">
             <button type="button" className="iconbtn" aria-label="More" aria-expanded={menu}
@@ -315,22 +452,8 @@ export function SocialPostCard({
       {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
 
       {listing && !post.drop && (
-        <Link to={`/listing/${listing.id}`} className="spost__item">
-          {listing.photoUrl ? (
-            <img className="spost__itemphoto" src={listing.photoUrl} alt="" loading="lazy" />
-          ) : (
-            <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
-          )}
-          <span className="spost__itembody">
-            <span className="spost__itemtag">For sale</span>
-            <span className="spost__itemname">{listing.title}</span>
-            <span className="spost__itemmeta">
-              <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-              <span className="faint">{listing.condition}</span>
-            </span>
-          </span>
-          <span className="spost__itemcta">View <Icon name="right" size={12} /></span>
-        </Link>
+        <SaleItem listing={listing} post={post} nested={nested}
+          offerTo={!nested && card.shop && !social.mine && !voice.storeId ? author.handle : null} />
       )}
 
       {post.repostOf && (
@@ -1041,6 +1164,8 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
     setLikes(comment.likeCount);
   }, [comment.likedByMe, comment.likeCount]);
 
+  const { confirm, dialog } = useConfirm();
+
   async function like() {
     setLiked(!liked);
     setLikes(likes + (liked ? -1 : 1));
@@ -1055,7 +1180,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   }
 
   async function remove() {
-    if (!window.confirm('Delete this comment?')) return;
+    if (!(await confirm({ title: 'Delete this comment?', body: 'Replies to it go with it.', action: 'Delete', danger: true }))) return;
     try {
       onChanged(await api.deletePostComment(channelId, id, comment.id, voice.storeId));
     } catch {
@@ -1065,6 +1190,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
 
   return (
     <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}`}>
+      {dialog}
       <Avatar name={comment.authorName} size={small ? 26 : 32} />
       <div className="cmt__main">
         <div className="cmt__bubble">

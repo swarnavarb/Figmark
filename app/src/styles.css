@@ -2440,6 +2440,11 @@ code, kbd, samp, pre {
    so it never reads as "the primary button here happens to be red". */
 .btn--danger { background: var(--danger-solid); border-color: var(--danger-solid); color: var(--danger-ink); font-weight: var(--w-bold); box-shadow: 0 2px 10px rgba(225, 29, 72, 0.36); }
 .btn--danger:hover:not(:disabled) { filter: brightness(1.08); }
+/* The app's own "are you sure?". */
+.confirm { display: grid; gap: 16px; }
+.confirm__body { margin: 0; color: var(--text-dim); }
+.confirm__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm__actions .btn { min-width: 96px; justify-content: center; }
 .btn--danger:disabled { opacity: 0.45; }
 
 /* Accept gets the same treatment, in green: a decision this consequential
@@ -4577,6 +4582,62 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .spost__kind--poll { background: var(--aqua-soft); color: var(--aqua); }
 .spost__kind--hot { background: var(--grad-warm); color: #fff; }
 
+/* Follow, beside the name of whoever is not followed yet. */
+.spost__follow {
+  display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto;
+  padding: 2px 9px; margin-left: 2px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-pill);
+  background: var(--accent-soft); color: var(--accent-text);
+  font-size: var(--t-2xs); font-weight: var(--w-bold); line-height: 1.5; cursor: pointer;
+  transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.spost__follow:hover { background: var(--accent); color: var(--accent-ink); }
+.spost__follow:active { transform: scale(0.95); }
+.spost__follow:disabled { opacity: 0.6; cursor: default; }
+
+/* Why the home feed shows a post: an icon that explains itself in a bubble above it. */
+.boost { position: relative; display: inline-flex; }
+.boost__icon {
+  display: inline-grid; place-items: center;
+  width: 20px; height: 20px; padding: 0;
+  border: 1px solid transparent; border-radius: 50%;
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease);
+}
+.boost__icon:active { transform: scale(0.9); }
+.boost__icon:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.boost__icon--trending { background: var(--warn-soft); color: var(--warn); border-color: rgba(251, 191, 36, 0.4); }
+.boost__icon--rising { background: var(--aqua-soft); color: var(--aqua); border-color: var(--aqua-line); }
+.boost__tip {
+  position: absolute; z-index: 30;
+  left: -8px; bottom: calc(100% + 8px);
+  display: grid; gap: 2px;
+  width: max-content; max-width: min(240px, 70vw);
+  padding: 8px 11px;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+  font-size: var(--t-xs); line-height: 1.35;
+  transform-origin: 18px 100%;
+  animation: boost-tip var(--dur-1) var(--ease) both;
+}
+.boost__tip strong { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-sm); }
+.boost__tip > span { color: var(--text-dim); }
+.boost__tip--trending strong { color: var(--warn); }
+.boost__tip--rising strong { color: var(--aqua); }
+/* The point of the bubble sits over the icon it explains. */
+.boost__tip::after {
+  content: ''; position: absolute; left: 14px; top: 100%;
+  width: 8px; height: 8px; margin-top: -4px;
+  background: inherit; border: inherit; border-width: 0 1px 1px 0;
+  transform: rotate(45deg);
+}
+@keyframes boost-tip {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .boost__tip { animation: none; } }
+
 .spost__menuwrap { position: relative; flex: 0 0 auto; }
 .spost__menuwrap .iconbtn { width: 34px; height: 34px; border-color: transparent; background: transparent; }
 .spost__menuwrap .iconbtn:hover { background: var(--surface-2); }
@@ -6412,6 +6473,31 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   font-weight: var(--w-bold); font-size: var(--t-xs);
 }
 
+.spost__itemcta--buy { background: var(--lime); color: var(--lime-ink); }
+
+/* A sale post: the item, how to buy it, and what the post has sold. */
+.spost__sale { display: grid; gap: 8px; }
+.spost__sale.is-gone .spost__item { border-color: var(--border); background: var(--surface-2); opacity: 0.8; }
+.spost__left {
+  padding: 0 7px; border-radius: var(--r-pill);
+  background: var(--warn-soft); color: var(--warn);
+  font-size: var(--t-2xs); font-weight: var(--w-semi);
+}
+.spost__fill { display: grid; gap: 3px; margin-top: 4px; font-size: var(--t-2xs); }
+.spost__fillbar { display: block; height: 5px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
+.spost__fillbar > i { display: block; height: 100%; border-radius: inherit; background: var(--lime); }
+.spost__saleline {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  color: var(--text-dim); font-size: var(--t-xs);
+}
+.spost__saleline > span { display: inline-flex; align-items: center; gap: 4px; }
+.spost__offer {
+  padding: 4px 10px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong); color: var(--text);
+  font-weight: var(--w-semi);
+}
+.spost__offer:hover { background: var(--surface-2); }
+
 /* ── Composer, restyled for the tab ────────────────────────────────────── */
 
 .social .writer {
@@ -6596,7 +6682,9 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 /* ── The composer: a line forever running round it ─────────────────────── */
 
-.social .writer { isolation: isolate; border-color: transparent; }
+/* Above the posts that follow it: the voice menu opens out of it and down
+   over them, and each post is a layer of its own (its entrance animation). */
+.social .writer { isolation: isolate; border-color: transparent; z-index: 5; }
 .social .writer::before {
   content: '';
   position: absolute; inset: 0; z-index: -1;
@@ -6820,6 +6908,18 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 .chthread { display: grid; gap: 3px; padding-bottom: 8px; }
 .chday { display: flex; justify-content: center; margin: 14px 0 8px; }
+/* Paging back through a long conversation. */
+.chmore {
+  display: block; margin: 6px auto 4px; padding: 6px 14px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text-dim);
+  font-size: var(--t-xs); cursor: pointer;
+}
+.chmore:disabled { opacity: 0.6; cursor: default; }
+.dmactions { display: inline-flex; align-items: center; gap: 6px; }
+.dmactions .iconbtn { width: 34px; height: 34px; border-color: transparent; background: rgba(255, 255, 255, 0.16); color: inherit; }
+.chrow__muted { display: inline-grid; place-items: center; color: var(--text-faint); opacity: 0.8; }
+.cbar--blocked { display: grid; justify-items: center; gap: 8px; padding: 14px; text-align: center; color: var(--text-dim); font-size: var(--t-sm); }
 .chday span {
   padding: 3px 12px; border-radius: var(--r-pill);
   background: var(--surface-2); color: var(--text-dim);
@@ -7033,7 +7133,8 @@ body.is-locked { overflow: hidden; }
      over the page. The stripe clips itself instead. */
   position: relative; z-index: 50; isolation: isolate;
   color: #fff;
-  border-radius: 0 0 28px 28px;
+  /* Square along the bottom: the header is the top edge of the screen, not a card on it. */
+  border-radius: 0;
   padding-top: env(safe-area-inset-top, 0px);
   background:
     linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.22) 100%),
@@ -7123,9 +7224,14 @@ body.is-locked { overflow: hidden; }
 .soccompact {
   position: fixed; top: 0; left: 0; right: 0; z-index: 60;
   padding-top: env(safe-area-inset-top, 0px);
-  border-radius: 0 0 20px 20px;
-  background: var(--sx-grad);
-  box-shadow: 0 8px 26px rgba(255, 60, 90, 0.3);
+  /* Square, and see-through: the feed scrolls on underneath, blurred, so
+     the bar reads as glass over the page rather than a lid on it. */
+  border-radius: 0;
+  background: linear-gradient(115deg, rgba(255, 91, 31, 0.72) 0%, rgba(255, 46, 126, 0.72) 58%, rgba(192, 38, 211, 0.72) 100%);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 26px rgba(255, 60, 90, 0.18);
   color: #fff;
   transform: translateY(-110%);
   transition: transform 300ms var(--ease);
@@ -7216,7 +7322,7 @@ body.is-locked { overflow: hidden; }
 .roombar {
   position: sticky; top: 0; z-index: 30;
   padding-top: env(safe-area-inset-top, 0px);
-  border-radius: 0 0 20px 20px;
+  border-radius: 0;
   background: var(--sx-grad);
   box-shadow: 0 8px 24px rgba(255, 60, 90, 0.26);
   color: #fff;
@@ -7700,9 +7806,9 @@ body.is-locked { overflow: hidden; }
 
 /* ── Top bar: level chip, check-in, switch ─────────────────────────────── */
 
-.qbar { display: flex; align-items: center; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+.qbar { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; flex-wrap: wrap; }
 .qbar__spacer { flex: 1; }
-.qpage__title { font-size: var(--t-xl); }
+.qpage__title { margin: 0; font-size: var(--t-lg); }
 
 .qchip {
   display: inline-flex; align-items: center; gap: 8px;
@@ -8356,7 +8462,6 @@ body.is-locked { overflow: hidden; }
 .qhero__body { flex: 1; min-width: 0; display: grid; gap: 4px; }
 .qhero__eyebrow { margin: 0; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet-text); }
 .qhero__xp { margin: 0 0 4px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-xs); color: var(--text-dim); }
-.qhero__next { margin: 4px 0 0; font-size: var(--t-xs); }
 
 .qpanel {
   display: grid; gap: 12px; margin-bottom: 14px; padding: 14px; border-radius: var(--r-lg);
@@ -8414,8 +8519,6 @@ body.is-locked { overflow: hidden; }
 .qleaders__xp { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-xs); color: var(--violet-text); }
 
 .qbreak { margin: 0; }
-.qrules { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: var(--t-sm); color: var(--text-dim); }
-.qrules .qrarity { margin-right: 6px; }
 
 /* ── Collector profile ─────────────────────────────────────────────────── */
 
@@ -12560,87 +12663,170 @@ button.sk-plan__pick { cursor: pointer; }
 .mshare__acts { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 .mshare__go { background: var(--grad-hero); }
 
-/* ── Invite & earn (Quests) ────────────────────────────────────────────── */
+/* ── Quest boards: the parts a person's and a shop's share ─────────────── */
 
-.qinv { border-color: var(--pink-line); background: linear-gradient(160deg, rgba(236, 72, 153, 0.10), var(--surface) 60%); scroll-margin-top: 80px; }
-.qinv__lead { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
-.qinv__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
-.qinv__card {
-  display: grid; gap: 4px; justify-items: start; text-align: left; padding: 14px;
-  border: 0; border-radius: var(--r-md); color: #fff; font: inherit; cursor: pointer;
-  transition: transform 140ms ease, box-shadow 160ms ease;
-}
-.qinv__card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35); }
-.qinv__card:active { transform: scale(0.98); }
-.qinv__card--friend { background: var(--grad-hero); }
-.qinv__card--seller { background: var(--grad-play); color: var(--lime-ink); }
-.qinv__card b { font-size: var(--t-md); }
-.qinv__card small { opacity: 0.85; font-size: var(--t-xs); }
-.qinv__emoji { font-size: 24px; line-height: 1; }
-.qinv__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.qinv__stat {
-  display: grid; gap: 2px; padding: 10px; border-radius: var(--r-md); text-align: center;
-  background: var(--surface-2); border: 1px solid var(--border);
-}
-.qinv__stat b { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: var(--t-lg); }
-.qinv__stat small { color: var(--text-faint); font-size: var(--t-xs); }
-.qinv__recent { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.qinv__recent li {
-  padding: 4px 10px; border-radius: var(--r-pill); font-size: var(--t-xs);
-  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
-}
-.qinv__recent li.is-seller { border-color: var(--lime-line); color: var(--lime); }
+.qside { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.qside > .qpanel, .qside > .qhero { margin-bottom: 0; }
 
-/* ── Grow (Sell) ───────────────────────────────────────────────────────── */
+/* The ⓘ beside anything with more to say, and the note it opens. */
+.qinfo {
+  flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--border-strong, var(--border)); background: transparent;
+  color: var(--text-faint); font: italic 700 11px/1 Georgia, 'Times New Roman', serif; cursor: pointer;
+  vertical-align: middle; transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.qinfo:hover, .qinfo.is-on { color: var(--text); border-color: var(--violet-lit); background: rgba(124, 58, 237, 0.18); }
+.qinfo:focus-visible { outline: 2px solid var(--violet-lit); outline-offset: 2px; }
+.qinfo__bubble {
+  position: fixed; z-index: 260; display: grid; gap: 6px; padding: 12px 14px; border-radius: 14px;
+  background: #15102B; color: #EDE9FE; border: 1px solid rgba(167, 139, 250, 0.35);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); font-size: var(--t-xs); line-height: 1.5; text-align: left;
+  font-style: normal; font-weight: var(--w-regular, 400); text-transform: none; letter-spacing: normal;
+  animation: qinfo-in 140ms ease-out both;
+}
+.qinfo__bubble > b { font-size: var(--t-sm); color: #fff; }
+.qinfo__bubble p b { color: #fff; }
+.qinfo__bubble p { margin: 0; color: #C9C2EA; }
+@keyframes qinfo-in { from { opacity: 0; transform: translateY(-4px); } }
 
-.grow { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-.grow__hero {
-  display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px;
-  border-radius: var(--r-lg); border: 1px solid var(--blue-line);
-  background: radial-gradient(120% 140% at 0% 0%, rgba(59, 130, 246, 0.22), transparent 60%), var(--surface);
+/* Bump points, beside the level. */
+.qbump {
+  flex: none; display: grid; grid-template-columns: auto 1fr; align-items: center; justify-items: start;
+  position: relative; column-gap: 8px; padding: 10px 28px 10px 12px; border-radius: 16px;
+  background: linear-gradient(160deg, rgba(250, 204, 21, 0.16), rgba(250, 204, 21, 0.04)); border: 1px solid var(--q-gold-line);
 }
-.grow__hero h2 { margin: 2px 0 6px; font-size: var(--t-xl); }
-.grow__hero p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); max-width: 46ch; }
-.grow__eyebrow { margin: 0; color: var(--blue-text); font-size: var(--t-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-.grow__spot {
-  flex: 0 0 auto; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%;
-  background: conic-gradient(from 210deg, #FBBF24, #FF5A5F, #7C3AED, #FBBF24); padding: 3px;
+.qbump__icon {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: var(--q-gold); color: var(--q-gold-ink); box-shadow: 0 0 16px rgba(250, 204, 21, 0.45);
 }
-.grow__spot > span {
-  display: grid; place-items: center; align-content: center; width: 100%; height: 100%;
-  border-radius: 50%; background: var(--surface);
+.qbump__count { display: grid; line-height: 1.1; }
+.qbump__count b { font-family: var(--display); font-size: 22px; }
+.qbump__count small { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+.qbump .qinfo { position: absolute; top: 6px; right: 6px; }
+.qbump.is-empty .qbump__icon { background: var(--surface-hover); color: var(--text-faint); box-shadow: none; }
+.qbump.is-empty { background: var(--surface-2); border-color: var(--border); }
+
+/* The hero on either board: ring, level, and the bump wallet, which drops below on a phone. */
+.qhero--shop {
+  background: radial-gradient(120% 120% at 0% 0%, rgba(59, 130, 246, 0.36), transparent 60%), linear-gradient(160deg, #0F1A33, var(--surface));
+  border-color: var(--blue-line);
 }
-.grow__spot b { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 30px; line-height: 1; }
-.grow__spot small { color: var(--text-faint); font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-.grow__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.grow__stat { display: grid; gap: 2px; padding: 12px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border); }
-.grow__stat b { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: var(--t-lg); }
-.grow__stat small { color: var(--text-faint); font-size: var(--t-xs); }
-.grow__share { display: flex; flex-wrap: wrap; gap: 8px; }
-.grow__head { margin: 6px 0 0; font-size: var(--t-sm); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
-.grow__tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.grow__task {
-  display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 14px;
-  border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border);
+.qhero__title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--t-xl); }
+.qhero__xp b { color: var(--text); }
+.qhero__who { color: var(--text); text-transform: none; letter-spacing: 0.02em; font-weight: var(--w-semi); text-decoration: none; }
+.qhero__who:hover { text-decoration: underline; }
+@media (max-width: 520px) {
+  .qside .qhero { flex-wrap: wrap; gap: 14px; padding: 16px; }
+  .qside .qhero .qbump { flex: 1 1 100%; }
 }
-.grow__task.is-ready { border-color: var(--q-gold-line, rgba(251, 191, 36, 0.5)); box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.25) inset; }
-.grow__task.is-claimed { opacity: 0.62; }
-.grow__body { display: grid; gap: 4px; min-width: 0; flex: 1; }
-.grow__body small { color: var(--text-dim); font-size: var(--t-xs); }
-.grow__bar { display: flex; align-items: center; gap: 8px; }
-.grow__track { flex: 1; height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
-.grow__fill { display: block; height: 100%; border-radius: inherit; background: var(--grad-sea); transition: width 400ms ease; }
-.grow__count { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: var(--t-xs); color: var(--text-faint); }
-.grow__act { flex: 0 0 auto; }
-.grow__ok { color: var(--ok); font-size: var(--t-sm); font-weight: 600; white-space: nowrap; }
-.grow__items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.grow__item {
-  display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: var(--r-md);
-  background: var(--surface); border: 1px solid var(--border);
+
+/* A shop's XP by area: five small tiles. */
+.qareas { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.qareas__tile {
+  display: grid; gap: 2px; justify-items: center; text-align: center; padding: 8px 6px; min-width: 0; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--qa, var(--border));
 }
-.grow__thumb { width: 48px; height: 48px; flex: 0 0 auto; border-radius: 10px; object-fit: cover; background: var(--surface-2); }
-.grow__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
-.grow__btns { display: flex; gap: 6px; flex: 0 0 auto; }
+.qareas__tile b { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-sm); }
+.qareas__tile small { max-width: 100%; color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qareas__tile--reviews { --qa: var(--violet-lit); }
+.qareas__tile--popularity { --qa: var(--pink); }
+.qareas__tile--sales { --qa: var(--ok); }
+.qareas__tile--marketing { --qa: var(--blue); }
+.qareas__tile--upkeep { --qa: var(--surface-hover); opacity: 0.75; }
+/* On a phone: three over two, the second row as wide as the first. */
+@media (max-width: 480px) {
+  .qareas { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .qareas__tile { grid-column: span 2; }
+  .qareas__tile:nth-child(n + 4) { grid-column: span 3; }
+}
+
+/* Invite & earn, and a shop's Grow: one slim line. */
+.qstrip {
+  display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--r-lg);
+  background: linear-gradient(100deg, rgba(236, 72, 153, 0.12), var(--surface) 70%); border: 1px solid var(--pink-line);
+  scroll-margin-top: 80px;
+}
+.qstrip__title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.qstrip__title svg { color: var(--pink); }
+.qstrip__stats { display: inline-flex; gap: 10px; font-size: var(--t-xs); color: var(--text-faint); }
+.qstrip__stats b { font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--text); }
+.qstrip__acts { display: inline-flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+
+/* The streak as one row: flame count, the week, the check-in. */
+.qpanel.qstreak { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.qstreak__flame {
+  flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px;
+  background: rgba(255, 159, 67, 0.15); border: 1px solid rgba(255, 159, 67, 0.45); color: var(--q-flame); line-height: 1;
+}
+.qstreak__flame b { font-family: var(--display); font-size: var(--t-md); color: var(--text); }
+.qstreak__body { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.qstreak__head { display: flex; align-items: center; gap: 8px; font-size: var(--t-sm); }
+.qstreak__head .faint { font-size: var(--t-xs); }
+.qstreak .qweek { gap: 4px; }
+.qstreak .qweek__day i { height: 22px; border-radius: 7px; }
+.qstreak__done { flex: none; font-size: var(--t-sm); }
+
+/* A quest row's parts. */
+.qtask__head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.qtask__count { color: var(--text-faint); white-space: nowrap; }
+.qtask__pay { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+.qpay {
+  display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: var(--r-pill);
+  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: var(--w-semi);
+  background: rgba(167, 139, 250, 0.16); color: #C4B5FD;
+}
+.qpay--bump { background: rgba(250, 204, 21, 0.16); color: #FDE047; }
+.qpay--pack { background: rgba(236, 72, 153, 0.16); color: #F9A8D4; }
+.qtag {
+  padding: 0 7px; border-radius: var(--r-pill); font-size: 9.5px; font-weight: var(--w-semi); letter-spacing: 0.04em;
+  text-transform: uppercase; border: 1px solid currentColor; opacity: 0.9;
+}
+.qtag--reviews { color: #C4B5FD; }
+.qtag--popularity { color: #F9A8D4; }
+.qtag--sales { color: #86EFAC; }
+.qtag--marketing { color: #93C5FD; }
+.qtag--upkeep { color: #A39BD0; }
+
+/* A shop's live items, to share or bump. */
+.qitems-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.qitems-list__row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px; border-radius: 12px; background: var(--surface-2); }
+.qitems-list__thumb { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 9px; object-fit: cover; background: var(--surface-hover); }
+.qitems-list__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+.qitems-list__btns { display: flex; gap: 6px; flex: 0 0 auto; }
+
+/* Item rarity as three chips, each with its ⓘ. */
+.qpanel.qrarities { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; }
+.qrarities h3 { margin: 0; font-size: var(--t-sm); }
+.qrarities__list { display: inline-flex; gap: 12px; flex-wrap: wrap; }
+.qrarities__item { display: inline-flex; align-items: center; gap: 4px; }
+
+/* After a Bump with no points left. */
+.qnobump {
+  position: fixed; z-index: 90; left: var(--page-pad); right: var(--page-pad);
+  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-lg);
+  background: linear-gradient(120deg, rgba(255, 90, 95, 0.22), var(--surface) 75%), var(--surface);
+  border: 1px solid rgba(255, 90, 95, 0.5); box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+  animation: qnobump-in 420ms cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+@media (min-width: 720px) {
+  .qnobump { left: 50%; right: auto; width: min(440px, calc(100vw - 32px)); transform: translateX(-50%); bottom: var(--s5); }
+}
+.qnobump__face { font-size: 30px; line-height: 1; animation: qnobump-sag 2.4s ease-in-out infinite; }
+.qnobump__text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.qnobump__text b { font-size: var(--t-sm); }
+.qnobump__text small { color: var(--text-dim); font-size: var(--t-xs); }
+.qnobump__x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: 20px; cursor: pointer; }
+.qnobump__x:hover { color: var(--text); background: var(--surface-hover); }
+@keyframes qnobump-in { from { opacity: 0; translate: 0 16px; scale: 0.97; } }
+@keyframes qnobump-sag { 50% { transform: translateY(2px) rotate(-6deg); } }
+@media (prefers-reduced-motion: reduce) { .qnobump, .qnobump__face, .qinfo__bubble { animation: none; } }
+
+/* Bump on an item's own page, with its ⓘ. */
+.buybox__bump { display: inline-flex; align-items: center; gap: 6px; }
+/* The switch between your own quests and a shop's. */
+.qsides { margin-left: auto; max-width: 100%; overflow-x: auto; padding: 3px; }
+.qsides > button { padding: 5px 14px; min-height: 0; font-size: var(--t-xs); white-space: nowrap; }
 
 /* ── The invite landing page ───────────────────────────────────────────── */
 
@@ -12702,8 +12888,6 @@ button.sk-plan__pick { cursor: pointer; }
 }
 .door--grow:hover { border-color: var(--pink); }
 .door--grow .door__glyph { font-size: 20px; }
-/* A long item name must cut off, not widen the page: every grid track in Grow may shrink. */
-.grow .stack, .grow__items, .grow__tasks { grid-template-columns: minmax(0, 1fr); }
 
 /* ── Posting inside the app, from a share sheet ────────────────────────── */
 

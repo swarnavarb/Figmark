@@ -1,7 +1,9 @@
+import type { StoreGrowthState } from './models.js';
 import {
-  ACTION_CAP, ACTION_XP, MAX_LEVEL, actionXp, levelFor, tierXp, titleFor, titleIn, xpForLevel,
+  ACTION_XP, MAX_LEVEL, actionXp, levelFor, titleFor, titleIn, xpForLevel,
   type StickerTier, type StickerView,
 } from './quest.js';
+import { growthAreas } from './store-growth.js';
 
 /**
  * What a shop's page is graded on, and the two follow addresses an account has.
@@ -40,14 +42,14 @@ export interface StoreFacts {
   ratingCount: number;
   /** Merged ratings at each star, five first. */
   stars: number[];
+  /** Four- and five-star reviews from buyers who ordered - the ones nobody can leave for a friend. */
+  tradeGoodReviews: number;
   listings: number;
   soldOut: number;
   trust: number;
   preOrders: number;
   disputesLost: number;
   ageDays: number;
-  /** XP from growth quests the shop collected. */
-  growthXp?: number;
 }
 
 export interface XpLine { label: string; xp: number; detail: string }
@@ -78,27 +80,18 @@ export const buyerTag = (level: number | undefined): LevelTag => ({ level: level
 export const storeTag = (level: number | undefined): LevelTag => ({ level: level ?? 1, title: storeTitleFor(level ?? 1), shop: true });
 
 /**
- * A shop's XP, on the buyers' scale and at the buyers' rates: one unit per
- * counted action (up to a hundred of each), and the milestone-step amounts
- * for every sticker step. Marketing - bringing people in - comes first.
+ * A shop's XP, on the buyers' scale: everything it earns comes from the shop
+ * quests it collected (see `store-growth.ts`), which pay full for reviews,
+ * popularity, sales and marketing and a token amount for upkeep. Low ratings
+ * and lost disputes still take XP away, so a level says how a shop trades.
  */
-export function storeLevel(facts: StoreFacts): StoreLevel {
-  const line = (label: string, count: number) => ({ label, xp: actionXp(count), detail: `${count} × ${ACTION_XP}, up to ${ACTION_CAP}` });
-  const steps = storeStickers(facts).reduce((sum, sticker) => sum + sticker.reached, 0);
-  const good = (facts.stars[0] ?? 0) + (facts.stars[1] ?? 0);
+export function storeLevel(facts: StoreFacts, growth: StoreGrowthState | undefined): StoreLevel {
   const two = facts.stars[3] ?? 0;
   const one = facts.stars[4] ?? 0;
   const breakdown: XpLine[] = [
-    line('Sales through affiliate links', facts.affiliateSales),
-    line('Items paying affiliates', facts.affiliateItems),
-    line('Followers', facts.followers),
-    line('Channel posts', facts.posts),
-    line('Pre-orders run', facts.preOrders),
-    line('Orders delivered', facts.completedSales),
-    line('Good ratings', good),
-    line('Items sold out', facts.soldOut),
-    { label: 'Growth quests', xp: facts.growthXp ?? 0, detail: 'Quests collected, paid like the buyers\' weekly and monthly ones' },
-    { label: 'Sticker steps', xp: storeStickers(facts).reduce((sum, sticker) => sum + tierXp(sticker.reached), 0), detail: `${steps} steps, paid like milestones` },
+    ...growthAreas(growth, facts).map((area) => ({
+      label: `${area.label} quests`, xp: area.xp, detail: `${area.collected} collected`,
+    })),
     { label: 'Low ratings', xp: -(actionXp(two) + actionXp(one, ACTION_XP * 2)), detail: `${two} two-star × −${ACTION_XP}, ${one} one-star × −${ACTION_XP * 2}` },
     { label: 'Disputes lost', xp: -actionXp(facts.disputesLost, ACTION_XP * 4), detail: `${facts.disputesLost} × −${ACTION_XP * 4}` },
   ].filter((entry) => entry.xp !== 0);

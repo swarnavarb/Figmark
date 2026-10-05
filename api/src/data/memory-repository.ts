@@ -585,9 +585,9 @@ export class MemoryRepository implements Repository {
     this.handles.delete(handleKey(username));
   }
 
-  async listMessages(threadId: string, limit = 200): Promise<Message[]> {
+  async listMessages(threadId: string, limit = 200, before?: string): Promise<Message[]> {
     return [...this.messages.values()]
-      .filter((message) => message.threadId === threadId)
+      .filter((message) => message.threadId === threadId && (!before || message.createdAt <= before))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .slice(-limit);
   }
@@ -857,10 +857,14 @@ export class MemoryRepository implements Repository {
       .slice(0, limit);
   }
 
-  async listPostsForChannels(channelIds: readonly string[], limit = 60): Promise<Post[]> {
+  async listPostsForChannels(
+    channelIds: readonly string[], limit = 60, options: { before?: string; feedOnly?: boolean } = {},
+  ): Promise<Post[]> {
     const wanted = new Set(channelIds);
     return [...this.posts.values()]
-      .filter((post) => wanted.has(post.channelId))
+      .filter((post) => wanted.has(post.channelId)
+        && (!options.before || post.createdAt < options.before)
+        && (!options.feedOnly || (post.reach ?? 'feed') === 'feed'))
       .sort(newestFirst)
       .slice(0, limit);
   }

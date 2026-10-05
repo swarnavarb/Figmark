@@ -15,6 +15,7 @@ import {
 import { LotPhaseBadge, lotLabel } from '../components/LotName';
 import { Ladder } from '../components/Ladder';
 import { ReportButton } from '../components/ReportButton';
+import { ProofPicker } from '../components/ProofPicker';
 import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
@@ -739,6 +740,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       )}
 
       {order.completedAt && <ReviewPanel state={state} onDone={onDone} />}
+      {order.completedAt && state.side === 'buyer' && <UnboxingPanel order={order} onDone={onDone} />}
     </div>
   );
 }
@@ -1811,6 +1813,62 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Show the shop's followers what arrived.
+ *
+ * A photo and a line, posted in the shop's channel with the item attached, so
+ * the next buyer sees it really turned up and can buy one from there. No
+ * rating: that stays in the blind review above.
+ */
+function UnboxingPanel({ order, onDone }: { order: Order; onDone: () => Promise<void> }) {
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (order.unboxingPostId) {
+    return (
+      <div className="card card--pad row">
+        <Icon name="check" size={16} />
+        <span>You shared what arrived.</span>
+        <Link to={`/social/p/${encodeURIComponent(order.sellerId)}/${encodeURIComponent(order.unboxingPostId)}`}>See the post</Link>
+      </div>
+    );
+  }
+
+  async function share(event: FormEvent) {
+    event.preventDefault();
+    if (!photo) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.shareUnboxing(order.id, body.trim(), [photo]);
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not share that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="card card--pad stack" onSubmit={share}>
+      <h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>Show off what arrived</h2>
+      <p className="faint">A photo in the shop&apos;s channel, with the item attached. No rating — that stays in your review.</p>
+      <ProofPicker value={photo} onChange={setPhoto} />
+      <label className="field">
+        <span>A line about it</span>
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} maxLength={1000}
+          placeholder="Optional. How it looks in hand." />
+      </label>
+      {error && <ErrorNotice message={error} />}
+      <button type="submit" className="btn" style={{ justifySelf: 'start' }} disabled={busy || !photo}>
+        {busy ? 'Sharing…' : 'Share to the shop\'s channel'}
+      </button>
+    </form>
   );
 }
 

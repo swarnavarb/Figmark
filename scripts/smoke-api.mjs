@@ -10,6 +10,8 @@ import assert from 'node:assert/strict';
 // Steps are undoable for three minutes in the app; these checks read every
 // step at once, as they were written to, except the one that tests undo.
 process.env.FIGMARK_UNDO_WINDOW_MS = '0';
+// One account here does a day's posting in seconds; the limit has its own check.
+process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse } = await import(new URL('http.js', fns));
@@ -68,7 +70,7 @@ const {
   readPostRoute: readPost, reactRoute: reactTo, reactorsRoute: reactors,
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
-  removePostRoute: removePost, trendingRoute: trending, shareableRoute: shareable, pinPostRoute: pinPost,
+  removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, shareableRoute: shareable, pinPostRoute: pinPost,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
 } = await import(new URL('social-routes.js', fns));
 const {
@@ -82,7 +84,10 @@ const {
 const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
   publicProfileRoute: publicProfile, setUsernameRoute: setUsername, reactToMessageRoute: reactToMessage,
+  blockRoute: blockHandle, muteRoute: muteThread,
 } = await import(new URL('message-routes.js', fns));
+const { unboxingRoute: shareUnboxing } = await import(new URL('order-routes.js', fns));
+const { resetRateLimits } = await import(new URL('../rate-limit.js', fns));
 const {
   payRoute: payOrder, confirmRoute: confirmOrder, reviewRoute: reviewOrder,
   orderStateRoute: orderState, checkoutRoute: checkout,
@@ -543,16 +548,31 @@ await check('publishing requires a session and a valid price', async () => {
   assert.equal(noPrice.status, 400);
 });
 
-await check('bump works once, then is rate-limited', async () => {
+await check('bump spends a bump point, and is refused with none left or within the hour', async () => {
   const id = published.jsonBody.listing.id;
-  assert.equal((await bump(req({ headers: auth, params: { id } }), ctx)).status, 200);
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const owner = await repository.getUserById('usr_demo');
+  const pool = (count) => {
+    if (owner.sellerProfile) owner.sellerProfile.growth = { ...(owner.sellerProfile.growth ?? { claimed: {} }), spotlights: count };
+    else owner.quest = { ...(owner.quest ?? { checkIns: [], claimed: {}, cards: [] }), bumps: count };
+  };
+  pool(0);
+  await repository.updateUser(owner);
+  const none = await bump(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(none.status, 409);
+  assert.equal(none.jsonBody.error, 'no_bumps');
+  pool(2);
+  await repository.updateUser(owner);
+  const done = await bump(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(done.status, 200, JSON.stringify(done.jsonBody));
+  assert.equal(done.jsonBody.bumps, 1);
   const again = await bump(req({ headers: auth, params: { id } }), ctx);
-  assert.equal(again.status, 429, 'a second bump must be refused');
+  assert.equal(again.status, 429, 'a second bump within the hour must be refused');
 });
 
 await check("bumping someone else's listing is refused", async () => {
   const other = await bump(req({ headers: auth, params: { id: 'lst_dragon_knight' } }), ctx);
-  assert.equal(other.status, 429);
+  assert.equal(other.status, 403);
 });
 
 /* ── buying ────────────────────────────────────────────────────────────── */
@@ -1216,10 +1236,20 @@ await check('a repost reaches your followers and points at the original', async 
   const again = await sharePost(req({ headers: auth, params: on(repost.post), body: { mode: 'repost' } }), ctx);
   assert.equal(again.jsonBody.repost.original.post.id, 'pst_tokyo_1');
 
+  // Passing it on again counts once per sharer; somebody new counts.
   const counted = await sharePost(req({ headers: auth, params: { channel: 'usr_tokyoline', id: 'pst_tokyo_1' }, body: { mode: 'link' } }), ctx);
   assert.equal(counted.status, 200);
   assert.equal(counted.jsonBody.repost, null);
-  assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount + 1);
+  assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount, 'the same sharer is counted once');
+  const sharer = await signup(req({
+    body: { displayName: 'Link Sharer', email: 'linksharer@figmark.example', phone: '+919000045833', password: 'longenough1' },
+  }), ctx);
+  const byThem = await sharePost(req({
+    headers: { authorization: `Bearer ${sharer.jsonBody.token}` },
+    params: { channel: 'usr_tokyoline', id: 'pst_tokyo_1' }, body: { mode: 'link' },
+  }), ctx);
+  assert.equal(byThem.jsonBody.shareCount, again.jsonBody.shareCount + 1);
+  assert.equal(byThem.jsonBody.repost, null);
 
   assert.equal((await sharePost(req({ headers: auth, params: on(repost.post), body: { mode: 'tweet' } }), ctx)).status, 400);
 });
@@ -3068,10 +3098,10 @@ await check('answering again replaces it rather than stacking another on', async
 
 await check('an ISO takes photos, and a person and their shop answer separately', async () => {
   const posted = await postWant(req({ headers: auth, body: {
-    title: 'ISO Gundam Wing Zero Ver.Ka', category: 'Model kits', photoUrls: ['https://example.com/wz.jpg'],
+    title: 'ISO Gundam Wing Zero Ver.Ka', category: 'Model kits', photoUrls: ['/api/photos/wz.jpg'],
   } }), ctx);
   assert.equal(posted.status, 201);
-  assert.deepEqual(posted.jsonBody.want.photoUrls, ['https://example.com/wz.jpg']);
+  assert.deepEqual(posted.jsonBody.want.photoUrls, ['/api/photos/wz.jpg']);
   const bad = await postWant(req({ headers: auth, body: {
     title: 'ISO with a script', category: 'Model kits', photoUrls: ['javascript:alert(1)'],
   } }), ctx);
@@ -8007,9 +8037,13 @@ await check('rarity reads sales and saves, and a timer turns the heat up', () =>
 
 await check('levels climb on a widening curve and every level has a title', () => {
   assert.equal(quest.levelFor(0), 1);
-  assert.equal(quest.levelFor(299), 1);
-  assert.equal(quest.levelFor(300), 2);
-  assert.equal(quest.levelFor(900), 3);
+  assert.equal(quest.levelFor(499), 1);
+  assert.equal(quest.levelFor(500), 2);
+  assert.equal(quest.levelFor(1500), 3);
+  for (let level = 2; level < quest.MAX_LEVEL; level += 1) {
+    const step = quest.xpForLevel(level + 1) - quest.xpForLevel(level);
+    assert.ok(step > quest.xpForLevel(level) - quest.xpForLevel(level - 1), `level ${level + 1} asks more than level ${level}`);
+  }
   assert.equal(quest.titleFor(1), 'Rookie');
   assert.equal(quest.titleFor(14), 'Legend');
   assert.equal(quest.titleFor(15), 'Mythic');
@@ -8018,21 +8052,38 @@ await check('levels climb on a widening curve and every level has a title', () =
   assert.equal(quest.titleFor(50), 'Immortal');
 });
 
-await check('buyers and shops level on one scale, at the same rate per action', async () => {
+await check('a shop levels only on quests it collected, upkeep paying a token amount', async () => {
   const shop = await import(new URL('../api/dist/shared/storefront.js', import.meta.url));
-  const facts = {
+  const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
+  const totals = {
     completedSales: 10, affiliateSales: 10, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
-    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], listings: 0, soldOut: 0, trust: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 5, soldOut: 0, trust: 0,
     preOrders: 0, disputesLost: 0, ageDays: 0,
   };
-  const level = shop.storeLevel(facts);
-  const sales = level.breakdown.find((line) => line.label === 'Orders delivered');
-  const referred = level.breakdown.find((line) => line.label === 'Sales through affiliate links');
-  assert.equal(sales.xp, 10 * quest.ACTION_XP);
-  assert.equal(referred.xp, sales.xp, 'every way of earning pays the same per action');
+  assert.equal(shop.storeLevel(totals, undefined).points, 0, 'what a shop did pays nothing until a quest collects it');
+  const facts = {
+    shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+    listed: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+  };
+  const { state, tasks } = growth.claimAllGrowth(facts, undefined);
+  const sales = tasks.find((task) => task.id === 'ms-sales-10');
+  const shelf = tasks.find((task) => task.id === 'ms-shelf-5');
+  assert.ok(tasks.find((task) => task.id === 'ms-sales-1'), 'collecting all climbs a ladder as far as the shop reaches');
+  assert.equal(sales.xp, quest.TIER_XP[1], 'a sales milestone pays full');
+  assert.equal(shelf.xp, Math.round(quest.TIER_XP[0] * growth.UPKEEP_SHARE), 'an upkeep milestone pays a token amount');
+  assert.equal(shelf.bumps, 0);
+  const level = shop.storeLevel(totals, state);
+  assert.equal(level.points, tasks.reduce((sum, task) => sum + task.xp, 0));
+  assert.equal(level.breakdown.find((line) => line.label === 'Sales quests').xp, quest.TIER_XP[0] + quest.TIER_XP[1]);
   assert.equal(level.level, quest.levelFor(level.points), 'the buyer curve');
-  assert.equal(quest.actionXp(500), quest.ACTION_CAP * quest.ACTION_XP, 'capped alike');
-  const stickers = shop.storeStickers({ ...facts, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
+
+  // A follower milestone pays only while the shop keeps the followers.
+  const popular = { ...totals, followers: 12 };
+  const claimed = growth.claimGrowth({ ...facts, totals: popular }, undefined, 'ms-fans-10');
+  assert.equal(shop.storeLevel(popular, claimed.state).points, quest.TIER_XP[0]);
+  assert.equal(shop.storeLevel({ ...popular, followers: 8 }, claimed.state).points, 0, 'unfollowed back below the step');
+
+  const stickers = shop.storeStickers({ ...totals, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
   assert.deepEqual(stickers.slice(0, 2).map((s) => s.id), ['s-trust', 's-rated'], 'Trusted and Top rated lead once earned');
 });
 
@@ -8193,13 +8244,13 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
   const order = await deliveredOrderFor(player, 'lst_kbeauty');
   await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx);
   const repository = await getRepository();
-  // Fifteen days checked in, so there is a level to lose.
-  const days = Array.from({ length: 15 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
+  // Twenty-two days checked in, so there is a level to lose.
+  const days = Array.from({ length: 22 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
   const seeded = await repository.getUserById(player.id);
   await repository.updateUser({ ...seeded, quest: { ...seeded.quest, checkIns: days } });
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   const unit = quest.ACTION_XP;
-  assert.equal(before.xp, unit + quest.TIER_XP[0] + 15 * unit, 'an order, its first milestone, fifteen check-ins');
+  assert.equal(before.xp, unit + quest.TIER_XP[0] + 22 * unit, 'an order, its first milestone, twenty-two check-ins');
   assert.equal(before.level, 2);
 
   const now = new Date().toISOString();
@@ -9310,6 +9361,227 @@ await check('two buyers pressing at once cannot both take the last one', async (
   const refusals = await Promise.all(opened.map((order) => placeOrder(repository, order, 'paid', order.buyerId, { tellSeller: false })));
   assert.equal(refusals.filter((refusal) => refusal === null).length, 1, 'exactly one of them gets it');
   assert.equal((await repository.getListing(id)).quantityAvailable, 0);
+});
+
+await check('the home feed is who you follow, with trending and rising mixed in and badged', async () => {
+  const home = await socialHome(req({ headers: auth }), ctx);
+  assert.equal(home.status, 200);
+  const cards = home.jsonBody.posts;
+  assert.ok(cards.length > 0);
+  assert.ok(cards.some((card) => card.badges?.includes('trending')), 'something is trending');
+  assert.ok(cards.every((card) => card.following || card.post.channelId === 'usr_demo' || card.badges?.length),
+    'a stranger is only here with a reason');
+  assert.equal(new Set(cards.map((card) => card.post.id)).size, cards.length, 'nothing twice');
+  // A forum post put on somebody's wall is read as the forum post, as on the old feed.
+  assert.ok(cards.every((card) => card.post.channel === 'forum' || (card.post.reach ?? 'feed') === 'feed'),
+    'never a shop room message');
+  assert.ok(cards.every((card) => card.post.sharedBy === undefined), 'who shared is not on the wire');
+  assert.equal((await socialHome(req({ headers: auth, query: { as: 'usr_kaiju' } }), ctx)).status, 403);
+});
+
+await check('a new post from a stranger rises to everyone once enough people engage', async () => {
+  const author = await newBuyer('Rising Author');
+  const made = await createPost(req({ headers: author.headers, body: { body: 'Just landed: a sealed box from Osaka.' } }), ctx);
+  assert.equal(made.status, 201);
+  const post = made.jsonBody.post;
+  const fans = [await newBuyer('Rising Fan One'), await newBuyer('Rising Fan Two'), await newBuyer('Rising Fan Three')];
+  for (const fan of fans) {
+    assert.equal((await reactTo(req({ headers: fan.headers, params: on(post), body: { kind: 'fire' } }), ctx)).status, 200);
+  }
+  const cards = (await socialHome(req({ headers: auth }), ctx)).jsonBody.posts;
+  const found = cards.find((card) => card.post.id === post.id);
+  assert.ok(found, 'proven, so shown beyond its followers');
+  assert.ok(found.badges.includes('rising'));
+  assert.equal(found.following, false);
+  // The author's own feed does not offer them their own post as a discovery.
+  const theirs = (await socialHome(req({ headers: author.headers }), ctx)).jsonBody.posts;
+  assert.ok(!theirs.find((card) => card.post.id === post.id)?.badges?.includes('rising'));
+});
+
+await check('what is said in a shop\'s room cannot be touched from outside it', async () => {
+  const room = (await createPost(req({
+    headers: auth, body: { body: 'Followers only: restock at noon.', channelId: 'usr_demo' },
+  }), ctx)).jsonBody.post;
+  const outsider = await newBuyer('Room Outsider');
+  const at = { headers: outsider.headers, params: on(room) };
+  assert.equal((await reactTo(req({ ...at, body: { kind: 'love' } }), ctx)).status, 403);
+  assert.equal((await commentOn(req({ ...at, body: { body: 'hi' } }), ctx)).status, 403);
+  assert.equal((await reactors(req(at), ctx)).status, 403);
+  assert.equal((await sharePost(req({ ...at, body: { mode: 'link' } }), ctx)).status, 403);
+});
+
+await check('posts and hunts only carry photos uploaded here', async () => {
+  const outside = await createPost(req({ headers: auth, body: { body: 'Look', photoUrls: ['https://tracker.example/pixel.gif'] } }), ctx);
+  assert.equal(outside.status, 400);
+  const sneaky = await createPost(req({ headers: auth, body: { body: 'Look', photoUrls: ['/api/photos/../secret'] } }), ctx);
+  assert.equal(sneaky.status, 400);
+  const hunt = await postWant(req({ headers: auth, body: {
+    title: 'ISO outside photo', category: 'Model kits', photoUrls: ['https://tracker.example/a.jpg'],
+  } }), ctx);
+  assert.equal(hunt.status, 400);
+  const longCategory = await postWant(req({ headers: auth, body: { title: 'ISO long category', category: 'x'.repeat(41) } }), ctx);
+  assert.equal(longCategory.status, 400);
+});
+
+await check('posting in a burst is slowed down, and only for whoever is bursting', async () => {
+  process.env.FIGMARK_RATE_LIMITS = 'on';
+  resetRateLimits();
+  try {
+    const burster = await newBuyer('Burst Poster');
+    const statuses = [];
+    for (let index = 0; index < 11; index += 1) {
+      statuses.push((await createPost(req({ headers: burster.headers, body: { body: `Post ${index}` } }), ctx)).status);
+    }
+    assert.deepEqual(statuses.slice(0, 10), Array(10).fill(201));
+    const refused = await createPost(req({ headers: burster.headers, body: { body: 'One more' } }), ctx);
+    assert.equal(refused.status, 429);
+    assert.equal(refused.jsonBody.error, 'slow_down');
+    const calm = await newBuyer('Calm Poster');
+    assert.equal((await createPost(req({ headers: calm.headers, body: { body: 'Hello' } }), ctx)).status, 201);
+  } finally {
+    process.env.FIGMARK_RATE_LIMITS = 'off';
+    resetRateLimits();
+  }
+});
+
+await check('nobody spends the whole forum cap, and names stay short', async () => {
+  const opener = await newBuyer('Room Opener');
+  const tooLong = await createForum(req({ headers: opener.headers, body: { name: 'x'.repeat(61) } }), ctx);
+  assert.equal(tooLong.status, 400);
+  const repository = await getRepository();
+  const now = new Date().toISOString();
+  for (const index of [1, 2]) {
+    await repository.createForum({
+      id: `frm_opener_${index}`, name: `Opener room ${index}`, description: '', createdBy: opener.id,
+      postCount: 0, memberIds: [opener.id], createdAt: now, updatedAt: now,
+    });
+  }
+  const third = await createForum(req({ headers: opener.headers, body: { name: 'Opener room 3' } }), ctx);
+  assert.equal(third.status, 409);
+  assert.equal(third.jsonBody.error, 'forum_limit_reached');
+});
+
+await check('joining a forum says which, so a double tap does not undo it', async () => {
+  const joiner = await newBuyer('Double Tapper');
+  const first = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: true } }), ctx);
+  const second = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: true } }), ctx);
+  assert.equal(first.jsonBody.forum.member, true);
+  assert.equal(second.jsonBody.forum.member, true, 'still in');
+  const left = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: false } }), ctx);
+  assert.equal(left.jsonBody.forum.member, false);
+});
+
+await check('a blocked person cannot write, a muted thread is not counted, and long threads page', async () => {
+  const pest = await newBuyer('Pest Person');
+  const target = await newBuyer('Quiet Person');
+  await setUsername(req({ headers: pest.headers, body: { username: 'pest_person' } }), ctx);
+  await setUsername(req({ headers: target.headers, body: { username: 'quiet_person' } }), ctx);
+  for (let index = 0; index < 62; index += 1) {
+    assert.equal((await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: `hi ${index}` } }), ctx)).status, 201);
+  }
+  const open = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' } }), ctx)).jsonBody;
+  assert.equal(open.messages.length, 60);
+  assert.equal(open.more, true);
+  const earlier = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' }, query: { before: open.messages[0].createdAt } }), ctx)).jsonBody;
+  const shown = new Set(open.messages.map((message) => message.id));
+  assert.equal(earlier.messages.filter((message) => !shown.has(message.id)).length, 2, 'the two before the page, none lost');
+  const since = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' }, query: { since: open.messages.at(-1).createdAt } }), ctx)).jsonBody;
+  assert.ok(since.messages.every((message) => message.createdAt >= open.messages.at(-1).createdAt), 'a refresh only carries what is new');
+
+  assert.equal((await muteThread(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { mute: true } }), ctx)).status, 200);
+  await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'still here' } }), ctx);
+  const muted = (await inbox(req({ headers: target.headers }), ctx)).jsonBody.threads.find((row) => row.them.handle === 'pest_person');
+  assert.equal(muted.muted, true);
+  assert.equal(muted.unread, 0);
+
+  assert.equal((await blockHandle(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { block: true } }), ctx)).status, 200);
+  const refused = await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'let me in' } }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.jsonBody.error, 'blocked');
+  assert.ok(!(await inbox(req({ headers: target.headers }), ctx)).jsonBody.threads.some((row) => row.them.handle === 'pest_person'));
+  const blockedView = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' } }), ctx)).jsonBody;
+  assert.equal(blockedView.blocked, true);
+  await blockHandle(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { block: false } }), ctx);
+  assert.equal((await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'sorry' } }), ctx)).status, 201);
+});
+
+await check('the home feed pages back through followed posts', async () => {
+  const first = (await socialHome(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok('next' in first);
+  if (first.next) {
+    const second = (await socialHome(req({ headers: auth, query: { before: first.next } }), ctx)).jsonBody;
+    assert.ok(second.posts.every((card) => card.post.createdAt < first.next || card.forum));
+  }
+});
+
+await check('a sale post can be bought from, and the post counts what it sold', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const repository = await getRepository();
+  let item = null;
+  for (const entry of stock) {
+    const listing = await repository.getListing(entry.id);
+    if (listing.status === 'active' && !listing.privateFor && !listing.preOrder && listing.quantityAvailable > 1) { item = listing; break; }
+  }
+  assert.ok(item, 'a demo item with stock');
+  const made = (await createPost(req({ headers: auth, body: { body: 'Grab one', storeId: 'usr_demo', listingId: item.id } }), ctx)).jsonBody.post;
+  const card = (await readPost(req({ headers: auth, params: on(made) }), ctx)).jsonBody.card;
+  assert.equal(card.listing.buyable, true);
+  const buyer = await newBuyer('Post Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: item.id, fromPost: { channelId: made.channelId, postId: made.id } } }), ctx);
+  assert.equal(placed.status, 201);
+  assert.deepEqual(placed.jsonBody.order.fromPost, { channelId: made.channelId, postId: made.id });
+  const after = (await readPost(req({ headers: auth, params: on(made) }), ctx)).jsonBody.card;
+  assert.equal(after.post.buyCount, 1);
+  assert.equal(after.post.boughtBy, undefined, 'who bought is not on the wire');
+  // A post that is not selling this item gets no credit.
+  const other = await newBuyer('Other Buyer');
+  const stray = await createOrder(req({ headers: other.headers, body: { listingId: item.id, fromPost: { channelId: 'usr_tokyoline', postId: 'pst_tokyo_1' } } }), ctx);
+  assert.equal(stray.jsonBody.order.fromPost ?? null, null);
+});
+
+await check('a saved item and an answered hunt reach the people who wanted them', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const fan = await newBuyer('Item Fan');
+  await toggleLike(req({ headers: fan.headers, params: { id: stock[0].id } }), ctx);
+  const made = (await createPost(req({ headers: auth, body: { body: 'Restocked', storeId: 'usr_demo', listingId: stock[0].id } }), ctx)).jsonBody.post;
+  const fanFeed = (await socialHome(req({ headers: fan.headers }), ctx)).jsonBody.posts;
+  assert.ok(fanFeed.find((card) => card.post.id === made.id)?.badges?.includes('rising'), 'saved it, so sees the new post');
+
+  const hunter = await newBuyer('Hunter One');
+  const hunt = (await postWant(req({ headers: hunter.headers, body: { title: 'ISO restocked thing', category: 'Model kits' } }), ctx)).jsonBody.want;
+  const answered = await offerOnWant(req({
+    headers: auth, params: { id: hunt.id }, query: { buyer: hunter.id },
+    body: { message: 'Have one right here.', storeId: 'usr_demo', listingId: stock[0].id },
+  }), ctx);
+  assert.equal(answered.status, 201);
+  const hunterFeed = (await socialHome(req({ headers: hunter.headers }), ctx)).jsonBody.posts;
+  const answer = hunterFeed.find((card) => card.post.answersWant?.id === hunt.id);
+  assert.ok(answer, 'the hunter sees the answer on their feed');
+  assert.ok(answer.badges.includes('rising'));
+  assert.equal(answer.post.audience, undefined, 'who it was tried on is not on the wire');
+});
+
+await check('a buyer shows off what arrived in the shop\'s channel, without a rating', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const buyer = await newBuyer('Happy Buyer');
+  const repository = await getRepository();
+  let order = null;
+  for (const entry of stock) {
+    const made = await createOrder(req({ headers: buyer.headers, body: { listingId: entry.id } }), ctx);
+    if (made.status === 201) { order = made.jsonBody.order; break; }
+  }
+  assert.ok(order);
+  const early = await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx);
+  assert.equal(early.status, 409, 'not before it is complete');
+  await repository.updateOrder({ ...(await repository.getOrder(order.id)), completedAt: new Date().toISOString() });
+  assert.equal((await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { body: 'Lovely' } }), ctx)).status, 400, 'needs a photo');
+  assert.equal((await shareUnboxing(req({ headers: auth, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx)).status, 403, 'the buyer only');
+  const shared = await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { body: 'Lovely', photoUrls: ['/api/photos/box.jpg'] } }), ctx);
+  assert.equal(shared.status, 201);
+  assert.equal(shared.jsonBody.post.channelId, 'usr_demo');
+  assert.equal(shared.jsonBody.post.voice, 'visitor');
+  assert.equal(shared.jsonBody.post.delivered.orderId, order.id);
+  assert.equal((await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx)).status, 409, 'once');
 });
 
 console.log(`\n${passed} checks passed`);

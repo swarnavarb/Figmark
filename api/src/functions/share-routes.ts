@@ -1,10 +1,9 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { ShareEvent, User } from '../../../shared/models.js';
-import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { accessFor } from '../../../shared/stores.js';
-import { claimGrowth, emptyGrowth, growthView, tidyGrowth, type GrowthFacts } from '../../../shared/store-growth.js';
-import { buyerTag, storeTag } from '../../../shared/storefront.js';
-import { offersAffiliate } from '../affiliate.js';
+import { claimAllGrowth, claimGrowth, emptyGrowth, growthView, tidyGrowth } from '../../../shared/store-growth.js';
+import { buyerTag, storeLevel, storeTag } from '../../../shared/storefront.js';
+import { shopQuestFacts } from '../store-facts.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import {
@@ -15,7 +14,7 @@ import { error, handler, json } from './http.js';
 
 /**
  * Sharing outside the app: logging a send, invites, and a shop's growth
- * quests with the Spotlights they pay. The link previews WhatsApp and the
+ * quests with the bump points they pay. The link previews WhatsApp and the
  * rest show live in `og-routes.ts`; the counting rules in `../share.ts`.
  */
 
@@ -143,30 +142,6 @@ async function openTarget(repository: Repo, request: HttpRequest, inviter: User)
 
 /* ── A shop's growth quests ─────────────────────────────────────────────── */
 
-async function growthFacts(repository: Repo, owner: User): Promise<GrowthFacts> {
-  const [listings, sales, posts] = await Promise.all([
-    repository.listListings({ sellerId: owner.id, limit: 200, includeHidden: true }),
-    repository.listOrdersForSeller(owner.id),
-    repository.listPosts(owner.id, 200),
-  ]);
-  const now = Date.now();
-  const live = listings.filter((listing) => listing.status === 'active' && !(listing.expiresAt && Date.parse(listing.expiresAt) <= now));
-  const fills = live
-    .filter((listing) => listing.preOrder && listing.preOrder.fillThreshold > 0)
-    .map((listing) => (listing.preOrder!.filledCount + (listing.preOrder!.pledgedCount ?? 0)) / listing.preOrder!.fillThreshold);
-  const growth = owner.sellerProfile?.growth;
-  return {
-    shares: (growth?.shares ?? []).map((entry) => ({ at: entry.at })),
-    opens: (growth?.opens ?? []).map((entry) => ({ at: entry.at })),
-    posts: posts.map((post) => ({ at: post.createdAt })),
-    affiliateItems: live.filter((listing) => offersAffiliate(listing)).length,
-    affiliateSales: sales
-      .filter((order) => order.affiliate && isPlaced(order) && !isCancelledLike(order.status))
-      .map((order) => ({ at: order.placedAt ?? order.createdAt })),
-    bestFill: Math.min(1, Math.max(0, ...fills)),
-  };
-}
-
 /** The shop, when the signed-in person helps run it. */
 async function shopFor(request: HttpRequest, ownerId: string | undefined) {
   const { repository, user } = await signedIn(request);
@@ -177,71 +152,67 @@ async function shopFor(request: HttpRequest, ownerId: string | undefined) {
   return { ok: true, repository, user, owner, access } as const;
 }
 
-/** GET /api/growth/{ownerId} - the shop's growth quests and Spotlights. */
+/** What the shop's page header and level need, from the record just counted. */
+function shopSummary(owner: User, totals: Parameters<typeof storeLevel>[0]) {
+  const shop = owner.sellerProfile!;
+  const level = storeLevel(totals, shop.growth);
+  return {
+    level,
+    handle: shop.username ?? null,
+    name: shop.storefrontName,
+    photoUrl: shop.photoUrl ?? null,
+    levelTag: storeTag(level.level),
+    followers: shop.followerCount ?? 0,
+  };
+}
+
+/** GET /api/growth/{ownerId} - the shop's quests, its level and its bump points. */
 async function growth(request: HttpRequest, _context: InvocationContext) {
   const found = await shopFor(request, request.params.ownerId);
   if (!found.ok) return found.refusal;
   const { repository, owner } = found;
-  const view = growthView(await growthFacts(repository, owner), owner.sellerProfile!.growth);
-  const shop = owner.sellerProfile!;
-  return json(200, {
-    view,
-    handle: shop.username ?? null,
-    name: shop.storefrontName,
-    photoUrl: shop.photoUrl ?? null,
-    levelTag: storeTag(shop.levelCache),
-    followers: shop.followerCount ?? 0,
-  });
+  const { facts, totals } = await shopQuestFacts(repository, owner);
+  return json(200, { view: growthView(facts, owner.sellerProfile!.growth), ...shopSummary(owner, totals) });
 }
 
-/** POST /api/growth/{ownerId}/claim - `{ taskId }`: collect a finished quest's Spotlights. */
+/**
+ * POST /api/growth/{ownerId}/claim - `{ taskId }` collects one finished quest,
+ * `{ all: true }` every one that is ready.
+ */
 async function claim(request: HttpRequest, _context: InvocationContext) {
   const found = await shopFor(request, request.params.ownerId);
   if (!found.ok) return found.refusal;
   const { repository, owner } = found;
-  let body: { taskId?: unknown };
+  let body: { taskId?: unknown; all?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
-  if (typeof body.taskId !== 'string') return error(400, 'invalid_task', 'Say which quest.');
-  const facts = await growthFacts(repository, owner);
-  const result = claimGrowth(facts, owner.sellerProfile!.growth, body.taskId);
-  if ('refusal' in result) return error(409, 'not_claimable', result.refusal);
-  owner.sellerProfile!.growth = tidyGrowth(result.state);
-  await repository.updateUser(owner);
-  return json(200, { view: growthView(facts, result.state), gained: { spotlights: result.task.spotlights, xp: result.task.xp } });
-}
-
-/**
- * POST /api/listings/{id}/spotlight - spend a Spotlight on one of the shop's
- * items: it goes straight back to the top of the feed, bump limit or not.
- */
-async function spotlight(request: HttpRequest, _context: InvocationContext) {
-  const { repository, user } = await signedIn(request);
-  if (!user) return error(404, 'not_found', 'This account no longer exists.');
-  const listing = request.params.id ? await repository.getListing(request.params.id) : null;
-  if (!listing) return error(404, 'not_found', 'No such listing.');
-  const owner = listing.sellerId === user.id ? user : await repository.getUserById(listing.sellerId);
-  const access = owner?.sellerProfile ? accessFor(owner, user.id) : null;
-  if (!owner?.sellerProfile || !access?.permissions.includes('listings')) {
-    return error(403, 'forbidden', 'Only the shop can spotlight its items.');
+  if (body.all !== true && typeof body.taskId !== 'string') return error(400, 'invalid_task', 'Say which quest.');
+  const { facts, totals } = await shopQuestFacts(repository, owner);
+  const shop = owner.sellerProfile!;
+  let gained: { bumps: number; xp: number; quests: number };
+  if (body.all === true) {
+    const result = claimAllGrowth(facts, shop.growth);
+    if (result.tasks.length === 0) return error(409, 'not_claimable', 'Nothing is ready to collect.');
+    shop.growth = tidyGrowth(result.state);
+    gained = {
+      bumps: result.tasks.reduce((sum, task) => sum + task.bumps, 0),
+      xp: result.tasks.reduce((sum, task) => sum + task.xp, 0),
+      quests: result.tasks.length,
+    };
+  } else {
+    const result = claimGrowth(facts, shop.growth, body.taskId as string);
+    if ('refusal' in result) return error(409, 'not_claimable', result.refusal);
+    shop.growth = tidyGrowth(result.state);
+    gained = { bumps: result.task.bumps, xp: result.task.xp, quests: 1 };
   }
-  if (listing.status !== 'active') return error(409, 'not_active', 'Only a live item can be spotlit.');
-  const state = owner.sellerProfile.growth ?? emptyGrowth();
-  if (state.spotlights < 1) return error(409, 'no_spotlights', 'No Spotlights left. Finish a growth quest to earn one.');
-  const now = new Date().toISOString();
-  listing.bumpedAt = now;
-  listing.updatedAt = now;
-  await repository.updateListing(listing);
-  owner.sellerProfile.growth = tidyGrowth({
-    ...state,
-    spotlights: state.spotlights - 1,
-    spotlightLog: [...(state.spotlightLog ?? []), { listingId: listing.id, at: now, by: user.id }],
-  });
+  const summary = shopSummary(owner, totals);
+  // Kept on the account so every name elsewhere wears the new level at once.
+  shop.levelCache = summary.level.level;
   await repository.updateUser(owner);
-  return json(200, { spotlights: owner.sellerProfile.growth.spotlights, bumpedAt: now });
+  return json(200, { view: growthView(facts, shop.growth), ...summary, gained });
 }
 
 export const logShareRoute = handler(logShare);
@@ -249,7 +220,6 @@ export const myInviteRoute = handler(myInvite);
 export const openInviteRoute = handler(openInvite);
 export const growthRoute = handler(growth);
 export const growthClaimRoute = handler(claim);
-export const spotlightRoute = handler(spotlight);
 
 const anon = { authLevel: 'anonymous' } as const;
 app.http('share-log', { ...anon, methods: ['POST'], route: 'share/log', handler: logShareRoute });
@@ -257,4 +227,3 @@ app.http('invite-me', { ...anon, methods: ['GET'], route: 'invite/me', handler: 
 app.http('invite-open', { ...anon, methods: ['GET'], route: 'i/{code}', handler: openInviteRoute });
 app.http('growth', { ...anon, methods: ['GET'], route: 'growth/{ownerId}', handler: growthRoute });
 app.http('growth-claim', { ...anon, methods: ['POST'], route: 'growth/{ownerId}/claim', handler: growthClaimRoute });
-app.http('listing-spotlight', { ...anon, methods: ['POST'], route: 'listings/{id}/spotlight', handler: spotlightRoute });
