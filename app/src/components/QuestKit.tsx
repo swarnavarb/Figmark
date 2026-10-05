@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { BUMPS_FOR } from '@shared/quest';
 import { ApiRequestError, api } from '../api';
 import { Glyph, LevelRing, XpBar } from './Quest';
@@ -19,7 +20,8 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
   const bubble = useRef<HTMLDivElement>(null);
   const id = useId();
 
-  // Fixed to the viewport so a panel with overflow hidden cannot clip it.
+  // Drawn on the page itself, outside every panel: a row with a backdrop blur
+  // or a board with overflow hidden would otherwise trap it underneath.
   useLayoutEffect(() => {
     if (!open || !button.current) return;
     const rect = button.current.getBoundingClientRect();
@@ -55,10 +57,11 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
         onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); }}>
         i
       </button>
-      {open && at && (
+      {open && at && createPortal(
         <div ref={bubble} id={id} role="note" className="qinfo__bubble" style={{ top: at.top, left: at.left, width: at.width }}>
           {children}
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
@@ -90,7 +93,9 @@ export function BumpWallet({ count }: { count: number }) {
   );
 }
 
-export function QuestHero({ eyebrow, title, level, progress, xp, toNext, nextLevel, bumps, side, info }: {
+export function QuestHero({ who, eyebrow, title, level, progress, xp, toNext, nextLevel, bumps, side, info }: {
+  /** Whose board it is, linked to their page. */
+  who: { name: string; href: string };
   eyebrow: string;
   title: string;
   level: number;
@@ -107,7 +112,7 @@ export function QuestHero({ eyebrow, title, level, progress, xp, toNext, nextLev
     <section className={`qhero qhero--${side}`}>
       <LevelRing level={level} progress={progress} size={84} />
       <div className="qhero__body">
-        <p className="qhero__eyebrow">{eyebrow}</p>
+        <p className="qhero__eyebrow"><Link to={who.href} className="qhero__who">{who.name}</Link> · {eyebrow}</p>
         <h2 className="qhero__title">{title} <InfoTip label="How XP and levels work">{info}</InfoTip></h2>
         <p className="qhero__xp">
           <b>{xp.toLocaleString('en-IN')} XP</b>
@@ -218,17 +223,25 @@ export function InviteStrip({ title, stats, actions, info }: {
   );
 }
 
-/** Shown on Quests after a Bump found no points to spend. */
+/**
+ * Shown on Quests after a Bump found no points to spend: a toast floating
+ * near the foot of the screen, so the board it points at stays in view.
+ */
 export function NoBumpsNotice({ onClose }: { onClose: () => void }) {
-  return (
+  useEffect(() => {
+    const timer = window.setTimeout(onClose, 7000);
+    return () => window.clearTimeout(timer);
+  }, [onClose]);
+  return createPortal(
     <div className="qnobump" role="alert">
       <span className="qnobump__face" aria-hidden="true">😞</span>
       <span className="qnobump__text">
         <b>No bump points left</b>
-        <small>That Bump didn't go through. Finish a weekly or monthly quest below to earn more, then try again.</small>
+        <small>That Bump didn't go through. Finish a weekly or monthly quest to earn more, then try again.</small>
       </span>
       <button type="button" className="qnobump__x" aria-label="Dismiss" onClick={onClose}>×</button>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

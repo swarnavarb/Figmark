@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ACTION_CAP, ACTION_XP, CARDS, CARD_SETS, MAX_LEVEL, SET_BONUS_XP, type CardDef, type StickerView, type TaskKind,
@@ -32,6 +32,7 @@ import { useSession } from '../session';
  * page, so there is one place to look for quests.
  */
 export function QuestsPage() {
+  const { user } = useSession();
   const { view, act, refresh } = useQuest();
   const [tab, setTab] = useState<TaskKind>('daily');
   /** Quests cleared on this visit: each one fires a burst in the arcade. */
@@ -50,9 +51,11 @@ export function QuestsPage() {
 
   const shop = stores.find((store) => store.ownerId === params.get('shop')) ?? null;
   const noBumps = params.get('nobump') === '1';
-  const notice = noBumps && (
-    <NoBumpsNotice onClose={() => setParams((current) => { current.delete('nobump'); return current; }, { replace: true })} />
+  const closeNotice = useCallback(
+    () => setParams((current) => { current.delete('nobump'); return current; }, { replace: true }),
+    [setParams],
   );
+  const notice = noBumps && <NoBumpsNotice onClose={closeNotice} />;
   const sides = stores.length > 0 && (
     <div className="seg qsides" role="tablist" aria-label="Whose quests">
       <button type="button" role="tab" aria-selected={!shop} className={!shop ? 'is-on' : ''}
@@ -63,7 +66,7 @@ export function QuestsPage() {
         <button key={store.ownerId} type="button" role="tab" aria-selected={shop?.ownerId === store.ownerId}
           className={shop?.ownerId === store.ownerId ? 'is-on' : ''}
           onClick={() => setParams((current) => { current.set('shop', store.ownerId); return current; }, { replace: true })}>
-          {store.name}
+          {stores.length === 1 ? 'Store' : store.name}
         </button>
       ))}
     </div>
@@ -98,7 +101,8 @@ export function QuestsPage() {
       {notice}
       <div className="qside">
         <QuestHero
-          side="you" eyebrow={`Level ${view.level}`} title={view.title} level={view.level} progress={view.progress}
+          side="you" who={{ name: user?.displayName ?? 'You', href: user?.username ? `/${user.username}` : '/me' }}
+          eyebrow={`Level ${view.level}`} title={view.title} level={view.level} progress={view.progress}
           xp={view.xp} toNext={view.level >= MAX_LEVEL ? null : view.nextLevelXp - view.xp} nextLevel={view.level + 1} bumps={view.bumps}
           info={(
             <>

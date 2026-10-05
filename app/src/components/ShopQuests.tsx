@@ -150,7 +150,8 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
   return (
     <div className="qside">
       <QuestHero
-        side="shop" eyebrow={`Shop level ${level.level}`} title={level.title} level={level.level} progress={level.progress}
+        side="shop" who={{ name: data.name, href: data.handle ? `/${data.handle}` : '/shop' }}
+        eyebrow={`Level ${level.level}`} title={level.title} level={level.level} progress={level.progress}
         xp={level.points} toNext={level.next === null ? null : level.next - level.points} nextLevel={level.level + 1} bumps={view.bumps}
         info={(
           <>
@@ -165,7 +166,7 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
       <ul className="qareas" aria-label="Shop XP by area">
         {view.areas.map((area) => (
           <li key={area.area} className={`qareas__tile qareas__tile--${area.area}`}>
-            <b>{area.xp.toLocaleString('en-IN')}</b>
+            <b>{area.xp.toLocaleString('en-IN')} XP</b>
             <small>{area.label}</small>
           </li>
         ))}
