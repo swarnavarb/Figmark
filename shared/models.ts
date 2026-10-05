@@ -1,4 +1,5 @@
 import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
+import type { DealState } from './deals.js';
 import type { LotRoute } from './routes.js';
 import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
@@ -844,6 +845,11 @@ export interface Listing extends BaseDocument {
    * in the order book, lots and tracking like any other.
    */
   privateFor?: string | null;
+  /**
+   * The item a private deal was made from, and its price then - so the deal
+   * can show what it took off. Only ever one of the same shop's items.
+   */
+  dealFrom?: { listingId: string; priceMinor: number } | null;
   /**
    * Affiliate selling: the shop pays this much per unit sold to whoever
    * brought the buyer through their own link. Absent or null means off.
@@ -2361,6 +2367,8 @@ export interface Message extends BaseDocument {
   readAt: string | null;
   /** A private deal card, when the message carries one. */
   deal?: MessageDeal | null;
+  /** An item this message is about, so both sides know which one. */
+  item?: MessageItem | null;
   /** The message this one answers, as a snapshot so the quote survives. */
   replyTo?: { id: string; name: string; body: string } | null;
   /** One reaction per handle; reacting again changes it. */
@@ -2381,4 +2389,27 @@ export interface MessageDeal {
   priceMinor: number;
   quantity: number;
   photo: string | null;
+  /** When the deal stops being buyable. Read live from the item on the way out. */
+  expiresAt?: string | null;
+  /** What the item it was made from cost, when it was made from one. */
+  wasMinor?: number | null;
+  /** Filled in when the thread is read: where the deal stands now. */
+  state?: DealState;
+}
+
+/**
+ * An item a message is about: a snapshot, so the card still reads after the
+ * item changes, with where it stands now filled in when the thread is read.
+ */
+export interface MessageItem {
+  listingId: string;
+  title: string;
+  photo: string | null;
+  priceMinor: number;
+  currency: string;
+  condition: string;
+  /** Filled in when the thread is read. */
+  state?: DealState;
+  /** The price now, when it has changed since. */
+  nowMinor?: number;
 }

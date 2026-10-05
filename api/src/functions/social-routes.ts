@@ -989,7 +989,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     // Belongs to whoever is being posted as, not to whoever is typing: a
     // manager posts a store's items, not their own. And a visitor cannot
     // advertise in somebody else's channel.
-    if (!listing || listing.sellerId !== channelId || voice === 'visitor') {
+    // A private deal is one buyer's, never something to post.
+    if (!listing || listing.sellerId !== channelId || voice === 'visitor' || listing.privateFor) {
       return error(404, 'not_found', 'No such listing of yours to post about.');
     }
     listingId = listing.id;

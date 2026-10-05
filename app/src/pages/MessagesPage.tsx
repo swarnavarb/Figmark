@@ -6,7 +6,8 @@ import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, LevelChip, useConfirm } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
-import { DealCard, DealForm, useMakeDeal } from '../components/PrivateDeal';
+import { DealCard, DealForm, DealPicker, ItemRefCard, useMakeDeal } from '../components/PrivateDeal';
+import { formatMoney } from '../format';
 import { timeAgo } from '../format';
 import { VoicePicker, VoiceScope } from '../components/SocialVoice';
 import { RoomBar, useLongPress } from '../components/SocialChrome';
@@ -188,7 +189,7 @@ export function ThreadPage() {
   // very chat is open lands on the same page rather than a fresh one.
   const location = useLocation();
   // The buyer's ask-for-a-deal form. A shop makes its deal on the full listing form instead.
-  // A post's "Make me an offer" lands here with `?ask=<what>`, the form open.
+  // `?ask=<what>` opens it prefilled; an item's Message button uses `?about=<item>` instead.
   const askFor = params.get('ask');
   const [asking, setAsking] = useState(askFor !== null);
   const makeDeal = useMakeDeal();
@@ -206,6 +207,30 @@ export function ThreadPage() {
   const newest = useRef<string | null>(null);
   const [menu, setMenu] = useState(false);
   const [older, setOlder] = useState(false);
+  /** The shop's deal picker, open on nothing in particular or on one item. */
+  const [picker, setPicker] = useState<{ focus: string | null } | null>(null);
+  // Arriving from an item's Message button: `?about=<item>` rides on the next message.
+  const aboutId = params.get('about');
+  const [about, setAbout] = useState<AboutItem | null>(null);
+  useEffect(() => {
+    if (!aboutId) { setAbout(null); return; }
+    let cancelled = false;
+    void api.listing(aboutId).then(({ listing }) => {
+      if (cancelled) return;
+      const photo = listing.photos.find((row) => row.isPrimary) ?? listing.photos[0];
+      setAbout({
+        id: listing.id, title: listing.title, photo: photo?.url || null,
+        priceMinor: listing.priceMinor, currency: listing.currency, condition: listing.condition,
+      });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [aboutId]);
+  const dropAbout = () => {
+    setAbout(null);
+    const next = new URLSearchParams(params);
+    next.delete('about');
+    navigate(`${location.pathname}${next.size ? `?${next}` : ''}`, { replace: true });
+  };
   const { confirm, dialog } = useConfirm();
 
   const load = useCallback(async (quiet = false) => {
@@ -319,13 +344,14 @@ export function ThreadPage() {
 
   async function send(event?: FormEvent) {
     event?.preventDefault();
-    if (!handle || !body.trim()) return;
+    if (!handle || (!body.trim() && !about)) return;
     setBusy(true);
     setError(null);
     try {
-      await api.sendMessage(handle, body.trim(), data?.us.handle, undefined, replyTo?.id);
+      await api.sendMessage(handle, body.trim(), data?.us.handle, undefined, replyTo?.id, about?.id);
       setBody('');
       setReplyTo(null);
+      if (about) dropAbout();
       await load();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
@@ -383,6 +409,7 @@ export function ThreadPage() {
       <DirectMessage key={message.id} message={message} thread={data} startsRun={startsRun}
         onReply={() => setReplyTo(message)} onJump={jump} onNotice={setNotice}
         onDeal={(deal) => makeDeal(data.us, data.them, { from: deal })}
+        onDealFrom={(listingId) => setPicker({ focus: listingId })}
         onReactions={(reactions) => patch(message.id, { reactions })}
         handle={handle!} />,
     );
@@ -438,6 +465,10 @@ export function ThreadPage() {
 
         {notice && <p className="chtoast" role="status" onAnimationEnd={() => setNotice(null)}>{notice}</p>}
 
+        {picker && data.us.isStore && (
+          <DealPicker us={data.us} them={data.them} focus={picker.focus} onClose={() => setPicker(null)} />
+        )}
+
         {asking && !data.us.isStore && data.them.isStore && (
           <DealForm us={data.us} them={data.them} initialTitle={askFor ?? ''} onClose={() => setAsking(false)}
             onSent={() => { setAsking(false); void load(); }} />
@@ -452,6 +483,31 @@ export function ThreadPage() {
         ) : (
         <form className="cbar" onSubmit={(event) => void send(event)}>
           {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
+          {about && (
+            <div className="cbar__about">
+              <span className="cbar__aboutitem">
+                {about.photo
+                  ? <img src={about.photo} alt="" />
+                  : <span className="cbar__aboutblank" aria-hidden="true"><Icon name="tag" size={16} /></span>}
+                <span className="cbar__aboutbody">
+                  <small>Asking about</small>
+                  <b>{about.title}</b>
+                  <span>{formatMoney(about.priceMinor, about.currency)} · {about.condition}</span>
+                </span>
+                <button type="button" className="iconbtn" aria-label="Not about this item" onClick={dropAbout}>
+                  <Icon name="close" size={13} />
+                </button>
+              </span>
+              {/* The questions everybody asks, a tap away. Each one fills the
+                  box rather than sending, so it can be changed first. */}
+              <span className="cbar__prompts">
+                {aboutPrompts(about).map((line) => (
+                  <button key={line} type="button" className="cbar__prompt"
+                    onClick={() => { setBody(line); input.current?.focus(); }}>{line}</button>
+                ))}
+              </span>
+            </div>
+          )}
           {replyTo && (
             <div className="cbar__reply">
               <span className="cbar__replybody">
@@ -482,14 +538,14 @@ export function ThreadPage() {
               </VoiceScope>
             )}
             {dealable && (
-              <button type="button" className="cbar__attach" onClick={() => (data.us.isStore ? makeDeal(data.us, data.them) : setAsking(true))}
+              <button type="button" className="cbar__attach" onClick={() => (data.us.isStore ? setPicker({ focus: null }) : setAsking(true))}
                 aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}
                 title={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}>
                 🤝
               </button>
             )}
             <textarea ref={input} className="cbar__input" rows={1} value={body} maxLength={4000}
-              placeholder={replyTo ? 'Write a reply…' : `Message ${data.them.displayName}…`} aria-label="Message"
+              placeholder={replyTo ? 'Write a reply…' : about ? 'Ask a question or name your price…' : `Message ${data.them.displayName}…`} aria-label="Message"
               onChange={(event) => setBody(event.target.value)}
               onKeyDown={(event) => {
                 // Enter sends, shift-enter makes a line: the bargain every messenger makes.
@@ -499,7 +555,7 @@ export function ThreadPage() {
                 }
                 if (event.key === 'Escape') setReplyTo(null);
               }} />
-            <button type="submit" className="cbar__send" disabled={busy || !body.trim()} aria-label="Send">
+            <button type="submit" className="cbar__send" disabled={busy || (!body.trim() && !about)} aria-label="Send">
               {busy ? <span className="writer__spin cbar__spin" /> : <Icon name="send" size={18} />}
             </button>
           </div>
@@ -511,7 +567,7 @@ export function ThreadPage() {
 }
 
 /** One message in a conversation: hold it for the rest. */
-function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, onNotice, onDeal, onReactions }: {
+function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, onNotice, onDeal, onDealFrom, onReactions }: {
   message: Message;
   thread: Thread;
   handle: string;
@@ -520,6 +576,7 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
   onJump: (id: string) => void;
   onNotice: (text: string) => void;
   onDeal: (deal: MessageDeal) => void;
+  onDealFrom: (listingId: string) => void;
   onReactions: (reactions: NonNullable<Message['reactions']>) => void;
 }) {
   const mine = message.from.handle === thread.us.handle;
@@ -589,9 +646,10 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
               <span>{message.replyTo.body}</span>
             </button>
           )}
+          {message.item && <ItemRefCard message={message} mine={mine} us={thread.us} onDealFrom={onDealFrom} />}
           {message.deal ? (
             <DealCard message={message} mine={mine} us={thread.us} onAnswer={onDeal} />
-          ) : (
+          ) : message.item && message.body === `About ${message.item.title}` ? null : (
             <p className="cmsg__body">{message.body}</p>
           )}
           <span className="cmsg__time">
@@ -634,6 +692,29 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
       </div>
     </div>
   );
+}
+
+/** The item a message is about to be about, before it is sent. */
+interface AboutItem {
+  id: string;
+  title: string;
+  photo: string | null;
+  priceMinor: number;
+  currency: string;
+  condition: string;
+}
+
+/** What people ask about an item, ready to tap - the bargain priced off this item. */
+function aboutPrompts(item: AboutItem): string[] {
+  // Ten percent off, rounded to a tidy figure: a first offer, not an insult.
+  const step = item.priceMinor >= 100_000 ? 10_000 : item.priceMinor >= 10_000 ? 1_000 : 100;
+  const offer = Math.max(step, Math.round((item.priceMinor * 0.9) / step) * step);
+  return [
+    'Is this still available?',
+    `Would you take ${formatMoney(offer, item.currency)}?`,
+    'Can you share more photos?',
+    'When can it ship?',
+  ];
 }
 
 function dayOf(iso: string): string {

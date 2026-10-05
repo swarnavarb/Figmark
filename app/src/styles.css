@@ -6112,15 +6112,151 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   border: 1px solid rgba(236, 72, 153, 0.5); background: rgba(236, 72, 153, 0.12);
 }
 .composer__deal:hover { background: rgba(236, 72, 153, 0.22); }
+/* ── Private deals and item references, inside chat bubbles ─────────── */
 .dealcard {
-  display: grid; gap: 4px; justify-items: start; min-width: 200px; padding: 10px 12px; border-radius: 14px;
-  border: 1px solid rgba(251, 191, 36, 0.45); background: rgba(245, 158, 11, 0.08);
+  display: grid; gap: 8px; min-width: min(260px, 70vw); max-width: 320px; padding: 12px;
+  border-radius: 16px; border: 1px solid rgba(251, 191, 36, 0.45);
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.04));
 }
-.dealcard--offer { border-color: rgba(236, 72, 153, 0.55); background: rgba(236, 72, 153, 0.1); }
-.dealcard__tag { font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0.04em; color: #F9A8D4; }
-.dealcard__title { font-size: var(--t-base); overflow-wrap: anywhere; }
-.dealcard__meta { font-size: var(--t-sm); color: var(--text-dim); }
-.dealcard .btn { margin-top: 4px; }
+.dealcard--offer {
+  border-color: var(--pink-line);
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(236, 72, 153, 0.22), transparent 60%),
+    linear-gradient(160deg, rgba(139, 92, 246, 0.14), rgba(236, 72, 153, 0.06));
+  box-shadow: 0 8px 22px -14px rgba(236, 72, 153, 0.7);
+}
+.dealcard__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dealcard__tag { white-space: nowrap; font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0.04em; color: var(--pink-text); text-transform: uppercase; }
+.dealcard--ask .dealcard__tag { color: #FBBF24; }
+.dealcard__clock {
+  flex: none; padding: 3px 8px; border-radius: var(--r-pill); font-size: 11px; font-weight: var(--w-bold);
+  background: var(--pink-soft); color: var(--pink-text); font-variant-numeric: tabular-nums;
+}
+.dealcard__clock.is-done { background: var(--surface-2); color: var(--text-dim); }
+.dealcard.is-urgent .dealcard__clock { background: var(--coral); color: #fff; animation: dealpulse 1.6s ease-in-out infinite; }
+@keyframes dealpulse { 50% { opacity: 0.72; } }
+.dealcard__item { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.dealcard__photo {
+  flex: none; width: 64px; height: 64px; border-radius: 12px; object-fit: cover;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.dealcard__body { display: grid; gap: 2px; min-width: 0; }
+.dealcard__title { font-size: var(--t-base); line-height: 1.25; overflow-wrap: anywhere; }
+.dealcard__price { display: flex; align-items: baseline; gap: 6px; font-size: 1.2rem; font-weight: var(--w-bold); }
+.dealcard__price s { font-size: var(--t-sm); font-weight: var(--w-medium); color: var(--text-faint, var(--text-dim)); }
+.dealcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--text-dim); }
+.dealcard__save { padding: 1px 7px; border-radius: var(--r-pill); background: rgba(163, 230, 53, 0.16); color: var(--lime); font-weight: var(--w-bold); }
+.dealcard__bar { display: block; height: 4px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.dealcard__bar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--pink), #8B5CF6); transition: width 1s linear; }
+.dealcard.is-urgent .dealcard__bar > i { background: var(--coral); }
+.dealcard__go { justify-self: stretch; justify-content: center; }
+.dealcard .btn { margin-top: 2px; }
+.dealcard__ended { font-size: var(--t-xs); color: var(--text-dim); text-align: center; }
+.dealcard.is-expired, .dealcard.is-gone { filter: saturate(0.35); }
+.dealcard.is-expired .dealcard__price, .dealcard.is-gone .dealcard__price { text-decoration: line-through; text-decoration-thickness: 1px; opacity: 0.7; }
+.dealcard.is-bought { border-color: rgba(163, 230, 53, 0.45); }
+
+.itemref { display: grid; gap: 6px; min-width: min(250px, 68vw); max-width: 320px; margin-bottom: 6px; }
+.itemref__item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 8px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text); min-width: 0;
+}
+.itemref__item:hover { border-color: var(--border-strong); }
+.cmsg--mine .itemref__item { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.itemref__photo { flex: none; width: 52px; height: 52px; border-radius: 10px; object-fit: cover; }
+.itemref__body { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.itemref__tag { font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.itemref__title { font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.itemref__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); }
+.itemref__price { display: inline-flex; gap: 5px; align-items: baseline; font-weight: var(--w-bold); }
+.itemref__price s { color: var(--text-dim); font-weight: var(--w-medium); }
+.itemref.is-expired .itemref__photo, .itemref.is-gone .itemref__photo, .itemref.is-bought .itemref__photo { filter: grayscale(0.7); opacity: 0.8; }
+.itemref__deal {
+  padding: 8px 10px; border-radius: 12px; border: 1px dashed var(--pink-line); background: var(--pink-soft);
+  color: var(--pink-text); font-weight: var(--w-bold); font-size: var(--t-sm); cursor: pointer;
+}
+.itemref__deal:hover { border-style: solid; }
+
+.dealstate { padding: 1px 7px; border-radius: var(--r-pill); font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.03em; white-space: nowrap; }
+.dealstate--live { background: rgba(163, 230, 53, 0.16); color: var(--lime); }
+.dealstate--bought { background: var(--surface-2); color: var(--text-dim); }
+.dealstate--expired { background: rgba(251, 191, 36, 0.15); color: #FBBF24; }
+.dealstate--gone { background: rgba(255, 90, 95, 0.14); color: var(--coral); }
+
+/* The shop's picker: what to start a private deal from. */
+.dealpick { display: grid; gap: 10px; }
+.dealpick__fresh {
+  display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; cursor: pointer; text-align: left;
+  border: 1px dashed var(--pink-line); background: var(--pink-soft); color: var(--text);
+}
+.dealpick__fresh span:last-child { display: grid; }
+.dealpick__fresh small { color: var(--text-dim); font-size: var(--t-xs); }
+.dealpick__freshicon {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
+  background: var(--pink); color: var(--pink-ink); font-size: 20px; font-weight: var(--w-bold);
+}
+.dealpick__or { margin: 2px 0 0; font-size: var(--t-xs); color: var(--text-dim); text-align: center; }
+.dealpick__tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.dealpick__list { display: grid; gap: 6px; max-height: min(52vh, 440px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.dealpick__row {
+  display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; cursor: pointer; text-align: left;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.dealpick__row:hover { border-color: var(--pink-line); }
+.dealpick__row.is-expired .dealpick__photo, .dealpick__row.is-bought .dealpick__photo { filter: grayscale(0.6); }
+.dealpick__photo { flex: none; width: 46px; height: 46px; border-radius: 10px; object-fit: cover; }
+.dealpick__body { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.dealpick__body b { font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dealpick__body span { font-size: var(--t-xs); color: var(--text-dim); }
+.dealpick__none { text-align: center; padding: 16px 0; margin: 0; }
+.dealpick__loading { display: grid; gap: 6px; }
+.dealpick__loading .skel { height: 62px; border-radius: 12px; }
+
+/* The deal clock on the listing form. */
+.dealclock { display: flex; flex-wrap: wrap; gap: 6px; }
+.dealclock__pick {
+  min-width: 52px; padding: 8px 12px; border-radius: var(--r-pill); cursor: pointer; font-weight: var(--w-bold);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font-variant-numeric: tabular-nums;
+}
+.dealclock__pick.is-on { background: var(--pink); border-color: var(--pink); color: var(--pink-ink); box-shadow: 0 6px 16px -8px var(--pink); }
+.dealfrom { margin: 8px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--pink-soft); font-size: var(--t-sm); }
+.dealfrom__state { margin-left: 6px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--surface-2); font-size: 11px; font-weight: var(--w-bold); }
+
+/* The item the next message is about, above where it is written. */
+.cbar__about { display: grid; gap: 6px; }
+.cbar__aboutitem {
+  display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 6px; border-radius: 12px;
+  background: var(--surface-2); border-left: 3px solid var(--pink);
+}
+.cbar__aboutitem img, .cbar__aboutblank { flex: none; width: 40px; height: 40px; border-radius: 9px; object-fit: cover; }
+.cbar__aboutblank { display: grid; place-items: center; background: var(--surface); color: var(--text-dim); }
+.cbar__aboutbody { display: grid; min-width: 0; flex: 1; font-size: var(--t-xs); }
+.cbar__aboutbody small { font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pink-text); }
+.cbar__aboutbody b { font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbar__aboutbody span { color: var(--text-dim); }
+.cbar__prompts { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.cbar__prompt {
+  flex: none; padding: 6px 11px; border-radius: var(--r-pill); cursor: pointer; font-size: var(--t-xs);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.cbar__prompt:hover { border-color: var(--pink-line); }
+
+/* The listing page: a private deal says so up top, and any item can be asked about. */
+.lp__private {
+  display: flex; align-items: center; gap: 12px; margin: 10px 0; padding: 12px 14px; border-radius: 16px;
+  border: 1px solid var(--pink-line);
+  background: radial-gradient(120% 120% at 100% 0%, rgba(236, 72, 153, 0.2), transparent 60%), var(--surface);
+}
+.lp__private > span:last-child { display: grid; gap: 2px; }
+.lp__private small { color: var(--text-dim); font-size: var(--t-xs); }
+.lp__privateicon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--pink-soft); font-size: 20px; flex: none; }
+.buybox__ask {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; column-gap: 7px; row-gap: 0;
+  margin-top: 10px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font-weight: var(--w-semi); text-align: center;
+}
+.buybox__ask small { flex-basis: 100%; color: var(--text-dim); font-weight: var(--w-medium); font-size: var(--t-xs); }
+.buybox__ask:hover { border-color: var(--border-strong); }
 
 /* ── Floating calculator (Pro) ─────────────────────────────────────────────
    A button that floats above the tab bar on every screen, and the calculator
@@ -7700,6 +7836,8 @@ body.is-locked { overflow: hidden; }
   transition: none;
 }
 .shell--room .chroom { padding-bottom: 150px; }
+/* The item a message is about makes the bar taller; the last message stays above it. */
+.shell--room .chroom:has(.cbar__about) { padding-bottom: 260px; }
 .shell--room .chnew { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
 
 /* The inbox row, with the pen at its end. */

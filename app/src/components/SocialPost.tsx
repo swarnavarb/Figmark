@@ -190,7 +190,7 @@ function SaleItem({ listing, post, nested, offerTo }: {
   listing: NonNullable<PostCard['listing']>;
   post: PostCard['post'];
   nested: boolean;
-  /** The shop's handle, when this viewer may ask it for a private deal. */
+  /** The shop's handle, when this viewer may message it about the item. */
   offerTo: string | null;
 }) {
   const href = `/listing/${listing.id}?post=${encodeURIComponent(`${post.channelId}:${post.id}`)}`;
@@ -232,8 +232,8 @@ function SaleItem({ listing, post, nested, offerTo }: {
           {sold > 0 && <span><Icon name="tag" size={12} /> {sold} bought from this post</span>}
           {offerTo && (
             <Link className="spost__offer"
-              to={`/messages/${encodeURIComponent(offerTo)}?ask=${encodeURIComponent(listing.title)}`}>
-              🤝 Make me an offer
+              to={`/messages/${encodeURIComponent(offerTo)}?about=${encodeURIComponent(listing.id)}`}>
+              💬 Message about this
             </Link>
           )}
         </span>

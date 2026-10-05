@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
-import type { Listing, Message, MessageDeal, MessageParty, User } from '../../../shared/models.js';
+import type { Listing, Message, MessageDeal, MessageItem, MessageParty, User } from '../../../shared/models.js';
+import type { DealState } from '../../../shared/deals.js';
+import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { reviewRevealed } from '../../../shared/orders.js';
 import {
   buyerTag, mergedRating, personFollowId, reviewSide, storeLevel, storeStickers, storeTag,
@@ -219,11 +221,57 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
   // Every voice the caller has, so the thread can offer a switch rather than
   // making them go back to the inbox to change who is speaking.
   return json(200, {
-    us, them, handles: mine, threadId, messages,
+    us, them, handles: mine, threadId, messages: await withLiveItems(messages, repository),
     /** Whether there is more to page back to. */
     more: !since && page.length === THREAD_PAGE,
     blocked: (me?.messageBlocks ?? []).includes(them.userId),
     muted: (me?.mutedThreads ?? []).includes(threadId),
+  });
+}
+
+/** Where an item stands now, as a deal or an item talked about sees it. */
+function stateOf(listing: Listing | null): DealState {
+  if (!listing || listing.status === 'archived' || listing.status === 'draft') return 'gone';
+  if (isExpired(listing)) return 'expired';
+  if (listing.status === 'sold_out' || (!isMultiple(listing) && listing.quantityAvailable === 0)) return 'bought';
+  return 'live';
+}
+
+/**
+ * The deals and items in a page of messages, with where each stands now.
+ *
+ * The message keeps the snapshot it was sent with - what was offered is what
+ * was offered - but whether it can still be bought, and until when, is read
+ * from the item, so a card never offers something that has gone.
+ */
+async function withLiveItems(messages: Message[], repository: Repo): Promise<Message[]> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (message.deal?.kind === 'offer' && message.deal.listingId) ids.add(message.deal.listingId);
+    if (message.item) ids.add(message.item.listingId);
+  }
+  if (ids.size === 0) return messages;
+  const found = new Map<string, Listing | null>(
+    await Promise.all([...ids].map(async (id) => [id, await repository.getListing(id)] as const)),
+  );
+  return messages.map((message) => {
+    let next = message;
+    if (message.deal?.kind === 'offer' && message.deal.listingId) {
+      const listing = found.get(message.deal.listingId) ?? null;
+      next = { ...next, deal: { ...message.deal, state: stateOf(listing), expiresAt: listing?.expiresAt ?? message.deal.expiresAt ?? null } };
+    }
+    if (message.item) {
+      const listing = found.get(message.item.listingId) ?? null;
+      const state = stateOf(listing);
+      next = {
+        ...next,
+        item: {
+          ...message.item, state,
+          ...(listing && listing.priceMinor !== message.item.priceMinor ? { nowMinor: listing.priceMinor } : {}),
+        },
+      };
+    }
+    return next;
   });
 }
 
@@ -314,7 +362,11 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   const other = request.params.handle;
   if (!other) return error(400, 'invalid_handle', 'Name who this is for.');
 
-  let body: { body?: string; as?: string; deal?: Partial<MessageDeal> | null; replyToId?: string | null };
+  let body: {
+    body?: string; as?: string; deal?: Partial<MessageDeal> | null; replyToId?: string | null;
+    /** An item this message is about: one either side of the chat sells. */
+    itemId?: string | null;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -322,7 +374,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   }
 
   let text = body.body?.trim() ?? '';
-  if (!text && !body.deal) return error(400, 'invalid_message', 'Write something first.');
+  if (!text && !body.deal && !body.itemId) return error(400, 'invalid_message', 'Write something first.');
   if (text.length > 4000) return error(400, 'invalid_message', 'Keep a message under 4000 characters.');
   const slow = tooFast(user.id, 'message');
   if (slow) return slow;
@@ -356,6 +408,8 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     deal = {
       kind: 'offer', listingId: listing.id, title: listing.title, priceMinor: listing.priceMinor,
       quantity: listing.quantityAvailable, photo: photo?.url || null,
+      expiresAt: listing.expiresAt ?? null,
+      wasMinor: listing.dealFrom && listing.dealFrom.priceMinor !== listing.priceMinor ? listing.dealFrom.priceMinor : null,
     };
     text ||= `Private deal for you: ${listing.title}`;
   } else if (body.deal?.kind === 'request') {
@@ -371,6 +425,23 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     text ||= `Asking for a private deal: ${title}`;
   } else if (body.deal) {
     return error(400, 'invalid_deal', 'A deal is an offer or a request.');
+  }
+
+  // An item the message is about: one this chat's shop sells, and that the
+  // writer can see - a private deal is its own buyer's and its shop's only.
+  let item: MessageItem | null = null;
+  if (body.itemId) {
+    const listing = await repository.getListing(String(body.itemId));
+    const sellers = new Set([us.userId, them.userId]);
+    const visible = listing && listing.status !== 'draft' && listing.status !== 'archived'
+      && sellers.has(listing.sellerId) && (!listing.privateFor || sellers.has(listing.privateFor));
+    if (!listing || !visible) return error(404, 'not_found', 'That item is not one of theirs to ask about.');
+    const photo = listing.photos.find((row) => row.isPrimary) ?? listing.photos[0];
+    item = {
+      listingId: listing.id, title: listing.title, photo: photo?.url || null,
+      priceMinor: listing.priceMinor, currency: listing.currency, condition: listing.condition,
+    };
+    text ||= `About ${listing.title}`;
   }
 
   // Answering one message in particular: quoted, so the quote survives.
@@ -396,12 +467,44 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     body: text,
     readAt: null,
     ...(deal ? { deal } : {}),
+    ...(item ? { item } : {}),
     ...(replyTo ? { replyTo } : {}),
     createdAt: now,
     updatedAt: now,
   };
 
-  return json(201, { message: await repository.sendMessage(message) });
+  const [sent] = await withLiveItems([await repository.sendMessage(message)], repository);
+  return json(201, { message: sent });
+}
+
+/**
+ * GET /api/messages/{handle}/items - the shop's own items, to make a deal from.
+ *
+ * Everything it has put up, sold out and expired included: an item that ran
+ * out is exactly the one a buyer asks to have again. Not other buyers' private
+ * deals, which are theirs.
+ */
+async function dealItems(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const mine = await handlesFor(user.id, repository);
+  const asHandle = request.query.get('as')?.toLowerCase();
+  const us = mine.find((party) => party.handle === asHandle);
+  if (!us?.isStore) return error(403, 'forbidden', 'Make deals as one of your shops.');
+  const listings = (await repository.listListings({ sellerId: us.userId, limit: 200, includeHidden: true }))
+    .filter((listing) => (listing.status === 'active' || listing.status === 'sold_out') && !listing.privateFor)
+    .map((listing) => ({ listing, state: stateOf(listing) }))
+    .sort((a, b) => b.listing.createdAt.localeCompare(a.listing.createdAt));
+  return json(200, {
+    items: listings.map(({ listing, state }) => ({
+      id: listing.id, title: listing.title, description: listing.description, category: listing.category,
+      condition: listing.condition, priceMinor: listing.priceMinor, currency: listing.currency,
+      quantityAvailable: listing.quantityAvailable, tags: listing.tags,
+      photos: listing.photos.map((photo) => ({ blobName: photo.blobName, url: photo.url, isPrimary: photo.isPrimary })),
+      state,
+    })),
+  });
 }
 
 /**
@@ -622,6 +725,7 @@ export const sendMessageRoute = handler(send);
 export const reactToMessageRoute = handler(reactToMessage);
 export const blockRoute = handler(block);
 export const muteRoute = handler(mute);
+export const dealItemsRoute = handler(dealItems);
 export const publicProfileRoute = handler(publicProfile);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -630,6 +734,7 @@ app.http('messages-inbox', { ...anon, methods: ['GET'], route: 'messages', handl
 app.http('messages-thread', { ...anon, methods: ['GET'], route: 'messages/{handle}', handler: threadRoute });
 // A distinct template, not just a distinct method: the Functions host treats
 // equivalent templates as a conflict regardless of verb.
+app.http('messages-deal-items', { ...anon, methods: ['GET'], route: 'messages/{handle}/items', handler: dealItemsRoute });
 app.http('messages-send', { ...anon, methods: ['POST'], route: 'messages/{handle}/send', handler: sendMessageRoute });
 app.http('messages-react', { ...anon, methods: ['POST'], route: 'messages/{handle}/react', handler: reactToMessageRoute });
 app.http('messages-block', { ...anon, methods: ['POST'], route: 'messages/{handle}/block', handler: blockRoute });

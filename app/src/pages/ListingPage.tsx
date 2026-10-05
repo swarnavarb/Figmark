@@ -205,6 +205,15 @@ export function ListingPage() {
           </button>
         </div>
       )}
+      {/* A question, a bargain, "is it still there" - asked with the item
+          attached, so the shop knows exactly which one. */}
+      {!data.isOwn && seller?.username && (
+        <Link to={`/messages/${encodeURIComponent(seller.username)}?about=${encodeURIComponent(listing.id)}`}
+          className={`buybox__ask${lock}`} onClick={gate(() => undefined, 'Sign in to message the shop.')}>
+          <Icon name="message" size={15} /> Message about this item
+          <small>Ask a question or make an offer</small>
+        </Link>
+      )}
       <p className="buybox__fine">
         {!user && !data.isOwn ? '🔒 Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
       </p>
@@ -238,19 +247,30 @@ export function ListingPage() {
 
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
             <h1 className="lp__title">{listing.title}</h1>
+            {listing.privateFor && (
+              <div className="lp__private">
+                <span className="lp__privateicon" aria-hidden="true">🤝</span>
+                <span>
+                  <b>Private deal{user?.id === listing.privateFor ? ' - made just for you' : ''}</b>
+                  <small>
+                    {user?.id === listing.privateFor
+                      ? 'Only you can see or buy this, at this price, until the clock runs out. It cannot be shared.'
+                      : 'Only your buyer can see this. It is never in your shop, the feed or anyone\'s share links.'}
+                  </small>
+                </span>
+              </div>
+            )}
             <Urgency listing={listing} />
             {buyBox}
-            <ListingShare spec={shareSpec} onOpen={() => shareSheet.open(shareSpec)} />
-            {data.affiliate && (
+            {/* A price made for one buyer is not a price to pass round. */}
+            {!listing.privateFor && <ListingShare spec={shareSpec} onOpen={() => shareSheet.open(shareSpec)} />}
+            {data.affiliate && !listing.privateFor && (
               <AffiliateCard listingId={listing.id} amountMinor={data.affiliate.amountMinor} offMinor={data.affiliate.buyerOffMinor}
                 canShare={data.affiliate.canShare} currency={listing.currency} isOwn={data.isOwn}
                 onShare={() => shareSheet.open(shareSpec)} />
             )}
             {shareSheet.sheet}
             <DetailBlocks listing={listing} />
-            {listing.privateFor && (
-              <div className="badges"><span className="badge badge--pink">🤝 Private deal - {user?.id === listing.privateFor ? 'made just for you' : 'only your buyer can see this'}</span></div>
-            )}
             <div className="lp__about">
               <span className="dtile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
               <p>{listing.description}</p>
@@ -343,7 +363,7 @@ export function ListingPage() {
                   {/* A question about an item is asked of the shop, not of whoever
                       happens to own it — so the message goes to the shop's handle. */}
                   {seller.username && (
-                    <Link to={`/messages/${encodeURIComponent(seller.username)}`} className={`btn btn--ghost btn--sm${lock}`}
+                    <Link to={`/messages/${encodeURIComponent(seller.username)}?about=${encodeURIComponent(listing.id)}`} className={`btn btn--ghost btn--sm${lock}`}
                       onClick={gate(() => undefined, 'Sign in to message the shop.')}>
                       {lockMark ?? <Icon name="message" size={14} />} Message
                     </Link>
