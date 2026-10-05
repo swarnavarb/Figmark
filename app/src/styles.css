@@ -8059,7 +8059,7 @@ body.is-locked { overflow: hidden; }
 }
 .qsticker-tag--drop { background: var(--coral); color: var(--coral-ink); }
 
-.qloot__body { padding: 10px 11px 11px; display: grid; gap: 5px; }
+.qloot__body { padding: 10px 11px 11px; gap: 5px; }
 .qloot__title {
   font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -8073,7 +8073,10 @@ body.is-locked { overflow: hidden; }
 .qloot__lv { display: flex; align-items: center; gap: 6px; }
 .qloot__lvlabel { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 9.5px; font-weight: var(--w-bold); color: var(--qr-text); white-space: nowrap; }
 .qloot__why { font-size: 10.5px; color: var(--qr-text); font-weight: var(--w-semi); }
-.qloot__foot { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: var(--t-2xs); margin-top: 2px; }
+.qloot__foot {
+  font-size: var(--t-2xs);
+  margin-top: 3px; padding-top: 8px; border-top: 1px dashed rgba(255, 255, 255, 0.09);
+}
 .qtimer { display: inline-flex; align-items: center; gap: 4px; font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
 .qtimer.qhot { color: var(--coral); }
 .qcrest { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -8081,6 +8084,164 @@ body.is-locked { overflow: hidden; }
 .qcrest__mark--gold { color: var(--q-gold); }
 .qcrest__mark--silver { color: #C9D3E3; }
 .qcrest__mark--bronze { color: #D08A4E; }
+
+/* The seller: crest, store name, and the level under the name. */
+.qseller {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 7px; row-gap: 3px; align-items: center; min-width: 0;
+}
+.qseller__crest {
+  grid-row: span 2; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+  background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.qseller__name {
+  font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.qseller__lv { display: flex; min-width: 0; }
+.qseller__lv .lvtag { font-size: 9.5px; }
+/* On a half-width card the shop mark pushed the level title off; the crest already says store. */
+.qseller__lv .lvtag__shop { display: none; }
+.qtimer--ago { color: var(--text-faint); }
+.qloot__body > .qloot__foot { margin-top: auto; }
+.qloot__body > .qloot__price, .qloot__body > .pricerow { margin-top: 1px; }
+.qloot__meta .qtimer { vertical-align: -2px; }
+
+/* The body takes a glow in the card's rarity and a faint pixel grid, so the
+   card is one object rather than a picture on a grey slab. */
+.qloot__body {
+  position: relative; flex: 1 1 auto; display: flex; flex-direction: column;
+  background:
+    radial-gradient(120% 70% at 50% 115%, var(--qb-glow, rgba(124, 58, 237, 0.16)), transparent 70%),
+    radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1.2px) 0 0 / 7px 7px;
+}
+.qloot--legendary { --qb-glow: rgba(245, 197, 66, 0.2); }
+.qloot--epic { --qb-glow: rgba(168, 85, 247, 0.24); }
+.qloot--new { --qb-glow: rgba(163, 230, 53, 0.14); }
+
+/* A tap presses the card in, springs it back, and the stamp wobbles. */
+.qloot { -webkit-tap-highlight-color: transparent; animation: qloot-in 460ms var(--ease) backwards; }
+.qgrid > .qloot:nth-child(2n) { animation-delay: 70ms; }
+.qloot:active { transform: scale(0.965); transition-duration: 90ms; }
+.qloot:active .qgrade { transform: rotate(-2deg) scale(1.12); }
+.qgrade { transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.qheart:active { transform: scale(0.85); }
+.qheart { transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms var(--ease), border-color 160ms var(--ease); }
+@keyframes qloot-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The exclusive drop: a strip of its own under the picture, with a sheen. */
+.qloot__drop {
+  position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 5px 8px; font-size: 9.5px; font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase;
+  white-space: nowrap; color: #1f1300; background: linear-gradient(90deg, #fde68a, #fbbf24 55%, #f59e0b);
+}
+.qloot__drop > span { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 380px) { .qloot__drop { letter-spacing: 0.03em; font-size: 9px; } }
+.qloot__drop svg { flex: none; animation: qdrop-zap 2.4s steps(1) infinite; }
+.qloot__drop::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.65) 48%, transparent 62%);
+  transform: translateX(-100%); animation: qdrop-sheen 3s ease-in-out infinite;
+}
+@keyframes qdrop-sheen { 0%, 55% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+@keyframes qdrop-zap { 0%, 88%, 96% { opacity: 1; } 92%, 100% { opacity: 0.25; } }
+
+/* A ripple, from wherever the finger landed. */
+.qripple {
+  position: absolute; border-radius: 50%; pointer-events: none; z-index: 3;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 40%, transparent 70%);
+  transform: scale(0); animation: qripple 620ms ease-out forwards;
+}
+@keyframes qripple { to { transform: scale(1); opacity: 0; } }
+
+/* ── How it is sold: a tab bar with a lit slot that slides ─────────────── */
+
+.qkinds {
+  position: relative; display: flex; gap: 2px; padding: 4px; width: fit-content; max-width: 100%;
+  overflow-x: auto; scrollbar-width: none;
+  border-radius: var(--r-pill); background: rgba(8, 11, 22, 0.75);
+  box-shadow: inset 0 0 0 1px var(--border), inset 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.qkinds::-webkit-scrollbar { display: none; }
+.qkinds__slot {
+  position: absolute; top: 4px; bottom: 4px; left: 0; border-radius: var(--r-pill); overflow: hidden;
+  background: var(--grad-blue);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset, 0 4px 16px rgba(124, 58, 237, 0.55);
+  transition: transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1), width 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.qkinds__flash {
+  position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.5) 50%, transparent 70%);
+  transform: translateX(-100%); animation: qkinds-flash 700ms 120ms ease-out forwards;
+}
+@keyframes qkinds-flash { to { transform: translateX(100%); } }
+.qkind {
+  position: relative; z-index: 1; flex: none; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px;
+  border: 0; border-radius: var(--r-pill); background: none; cursor: pointer;
+  font: inherit; font-size: var(--t-sm); color: var(--text-dim); white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 200ms var(--ease), transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: qfilter-in 420ms var(--ease) backwards; animation-delay: calc(var(--i, 0) * 50ms);
+}
+.qkind:hover { color: var(--text); }
+.qkind:active { transform: scale(0.92); }
+.qkind.is-on { color: #fff; font-weight: var(--w-semi); }
+.qkind__icon { display: grid; opacity: 0.7; transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 200ms; }
+.qkind.is-on .qkind__icon { opacity: 1; animation: qkind-hop 480ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.qkind:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@keyframes qkind-hop {
+  0% { transform: scale(0.6) rotate(-20deg); }
+  60% { transform: scale(1.25) rotate(8deg); }
+  100% { transform: none; }
+}
+@keyframes qfilter-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── The pickers on the feed: an icon bubble, a pop on every new choice ─── */
+
+.picker { overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.picker--icon { padding-left: 5px; gap: 7px; }
+.qfeed .filters .picker {
+  animation: qfilter-in 420ms var(--ease) backwards;
+  transition: border-color 0.15s, color 0.15s, background 0.15s, transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.qfeed .filters .picker:nth-child(2) { animation-delay: 60ms; }
+.qfeed .filters .picker:nth-child(3) { animation-delay: 120ms; }
+.qfeed .filters .picker:nth-child(4) { animation-delay: 180ms; }
+.qfeed .filters .picker:nth-child(5) { animation-delay: 240ms; }
+.qfeed .filters .picker:active { transform: scale(0.93); }
+.picker__icon {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: rgba(255, 255, 255, 0.07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.picker.is-on .picker__icon { background: rgba(255, 255, 255, 0.22); }
+.picker:focus-within .picker__icon { transform: rotate(-14deg) scale(1.1); }
+.picker::after { transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.picker:focus-within::after { transform: translateY(1px) rotate(225deg); }
+.picker__val { display: inline-block; animation: qpick-pop 380ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes qpick-pop {
+  0% { transform: translateY(6px) scale(0.85); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+/* A chosen picker breathes, so a filter that is on is never missed. */
+.qfeed .filters .picker.is-on { background-size: 180% 180%; animation: qfilter-in 420ms var(--ease) backwards, qpick-glow 3.2s ease-in-out infinite alternate; }
+@keyframes qpick-glow {
+  from { background-position: 0% 50%; box-shadow: 0 2px 10px rgba(124, 58, 237, 0.34); }
+  to { background-position: 100% 50%; box-shadow: 0 2px 16px rgba(59, 130, 246, 0.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qripple, .qkinds__flash { display: none; }
+  .qloot, .qkind, .qkind.is-on .qkind__icon, .picker__val, .qfeed .filters .picker,
+  .qfeed .filters .picker.is-on, .qloot__drop svg, .qloot__drop::after { animation: none; }
+  .qkinds__slot { transition: none; }
+}
 
 /* ── Collectible cards ─────────────────────────────────────────────────── */
 

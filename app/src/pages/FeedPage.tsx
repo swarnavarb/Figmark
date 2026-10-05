@@ -1,9 +1,12 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  type MouseEvent, type PointerEvent, type ReactNode,
+} from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AdvanceStrip, DropTag } from '../components/Buy';
+import { AdvanceStrip } from '../components/Buy';
 import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
 import {
-  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS,
+  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, type CatalogKind,
 } from '@shared/catalog';
 import { sourcingOf } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
@@ -221,27 +224,19 @@ export function FeedPage() {
 
         {/* How it is sold. How rare it is sits with the other one-of-many
             choices below, as a picker rather than a third row of chips. */}
-        <div className="chips">
-          {CATALOG_KINDS.map((entry) => (
-            <button key={entry} type="button"
-              className={`chip${(kind || 'all') === entry ? ' is-on' : ''}`}
-              onClick={() => chooseKind(entry)}>
-              {CATALOG_KIND_LABELS[entry]}
-            </button>
-          ))}
-        </div>
+        <KindTabs value={(kind || 'all') as CatalogKind} onChoose={chooseKind} />
         <div className="filters">
-          <Picker label="Sort" value={sort} onChange={(value) => set('sort', value)}
+          <Picker label="Sort" icon="sort" value={sort} onChange={(value) => set('sort', value)}
             options={CATALOG_SORTS.map((entry) => ({ value: entry, label: CATALOG_SORT_LABELS[entry] }))} />
-          <Picker label="Price" value={maxPrice} onChange={(value) => set('maxPrice', value)}
+          <Picker label="Price" icon="price" value={maxPrice} onChange={(value) => set('maxPrice', value)}
             empty="Any price" options={PRICE_BANDS} />
-          <Picker label="Condition" value={condition} onChange={(value) => set('condition', value)}
+          <Picker label="Condition" icon="condition" value={condition} onChange={(value) => set('condition', value)}
             empty="Any condition" options={CONDITION_TAGS.map((tag) => ({ value: tag, label: tag }))} />
-          <Picker label="Rarity" value={rarityFilter} onChange={(value) => set('rarity', value)}
+          <Picker label="Rarity" icon="rarity" value={rarityFilter} onChange={(value) => set('rarity', value)}
             empty="Any rarity"
             options={RARITY_FILTERS.map((tier) => ({ value: tier, label: `${RARITY_LABELS[tier]} · ${counts[tier]}` }))} />
           {data && data.categories.length > 1 && (
-            <Picker label="Type" value={category} onChange={(value) => set('category', value)}
+            <Picker label="Type" icon="type" value={category} onChange={(value) => set('category', value)}
               empty="Any type" options={data.categories.map((entry) => ({ value: entry, label: entry }))} />
           )}
           {(activeFilters > 0 || rarityFilter || feedView) && (
@@ -478,19 +473,24 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
   }
 
   return (
-    <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}${listing.affiliate ? ' is-affiliate' : ''}`}>
+    <Link to={`/listing/${listing.id}`} onPointerDown={tapFx}
+      className={`qloot qloot--${tier ?? 'plain'}${listing.affiliate ? ' is-affiliate' : ''}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
         {tier && <RarityRibbon tier={tier} />}
         <span className="qgrade" title="Condition">{listing.condition}</span>
         <button type="button" className={`qheart${liked ? ' is-on' : ''}`} onClick={toggleSave}
+          onPointerDown={(event) => event.stopPropagation()}
           aria-label={liked ? 'Remove from your saves' : 'Save'} aria-pressed={liked}>
           <PixelHeart full={liked} />
           {pop && <HeartPop key={pop.id} gain={pop.gain} />}
         </button>
         {rarity.priceDropPercent && <span className="qsticker-tag qsticker-tag--drop">−{rarity.priceDropPercent}%</span>}
         {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
-        <DropTag on={listing.channelDrop} />
       </Thumb>
+      {/* Under the picture rather than on it: on the picture it sat on the condition stamp. */}
+      {listing.channelDrop && (
+        <span className="qloot__drop" title="Exclusive channel drop"><Glyph name="bolt" size={11} /><span>Channel exclusive</span></span>
+      )}
       <AdvanceStrip percent={listing.advancePercent} />
 
       <div className="qloot__body">
@@ -503,6 +503,14 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
           <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
         </span>
         <span className="qloot__meta">
+          {rarity.hoursLeft !== null ? (
+            <span className={`qtimer${rarity.hoursLeft <= 24 ? ' qhot' : ''}`}>
+              <Glyph name="clock" size={11} />{countdown(rarity.hoursLeft)}
+            </span>
+          ) : (
+            <span className="qtimer qtimer--ago"><Glyph name="clock" size={11} />{timeAgo(listing.bumpedAt ?? listing.createdAt)}</span>
+          )}
+          {' · '}
           <b className={sourcingOf(listing) === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[sourcingOf(listing)]}</b>
           {' · '}{listing.category}
           {left !== null && left > 0 && left <= 5 && <> · <b className="qhot">{left} left</b></>}
@@ -520,22 +528,14 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
           <span className="qloot__why">{rarity.reasons.slice(0, 2).join(' · ')}</span>
         )}
 
-        <span className="qloot__foot">
-          {rarity.hoursLeft !== null ? (
-            <span className={`qtimer${rarity.hoursLeft <= 24 ? ' qhot' : ''}`}>
-              <Glyph name="clock" size={12} />{countdown(rarity.hoursLeft)}
-            </span>
-          ) : (
-            <span className="faint">{timeAgo(listing.bumpedAt ?? listing.createdAt)}</span>
-          )}
-          {listing.seller && (
-            <span className="qcrest" title={`Trust ${listing.seller.trustScore} of 100`}>
-              <span className={`qcrest__mark qcrest__mark--${crestFor(listing.seller.trustScore)}`}><Glyph name="crest" size={11} /></span>
-              {listing.seller.storefrontName}
-              <LevelChip tag={listing.seller.level} inline />
-            </span>
-          )}
-        </span>
+        {/* The store, then its level under it: side by side they never fit a phone's half-width card. */}
+        {listing.seller && (
+          <span className="qloot__foot qseller" title={`Trust ${listing.seller.trustScore} of 100`}>
+            <span className={`qseller__crest qcrest__mark--${crestFor(listing.seller.trustScore)}`}><Glyph name="crest" size={13} /></span>
+            <span className="qseller__name">{listing.seller.storefrontName}</span>
+            <span className="qseller__lv"><LevelChip tag={listing.seller.level} /></span>
+          </span>
+        )}
       </div>
     </Link>
   );
@@ -572,18 +572,21 @@ function untilMidnight(now: number): string {
  * reachable by keyboard and screen reader without a line of code. The chevron
  * and the pill are ours; the list is the operating system's.
  */
-export function Picker({ label, value, onChange, options, empty }: {
+export function Picker({ label, value, onChange, options, empty, icon }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: readonly { value: string; label: string }[];
   /** The "no choice" row. Omitted when one of the options is always on. */
   empty?: string;
+  icon?: PickerIcon;
 }) {
   const chosen = options.find((option) => option.value === value);
   return (
-    <label className={`picker${value ? ' is-on' : ''}`}>
-      <span>{chosen ? chosen.label : (empty ?? label)}</span>
+    <label className={`picker${value ? ' is-on' : ''}${icon ? ' picker--icon' : ''}`} onPointerDown={tapFx}>
+      {icon && <span className="picker__icon" aria-hidden="true">{PICKER_ICONS[icon]}</span>}
+      {/* Keyed on the value, so a new choice lands with a pop. */}
+      <span key={value} className="picker__val">{chosen ? chosen.label : (empty ?? label)}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>
         {empty && <option value="">{empty}</option>}
         {options.map((option) => (
@@ -592,4 +595,86 @@ export function Picker({ label, value, onChange, options, empty }: {
       </select>
     </label>
   );
+}
+
+type PickerIcon = 'sort' | 'price' | 'condition' | 'rarity' | 'type';
+
+const icon = (path: ReactNode) => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+    strokeLinecap="round" strokeLinejoin="round">{path}</svg>
+);
+
+const PICKER_ICONS: Record<PickerIcon, ReactNode> = {
+  sort: icon(<><path d="M7 4v16M3 16l4 4 4-4" /><path d="M17 20V4M13 8l4-4 4 4" /></>),
+  price: icon(<><path d="M6 4h12M6 9h12M9 4c5 0 5 10 0 10H6l9 7" /></>),
+  condition: icon(<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z" />),
+  rarity: icon(<path d="M6 3h12l3 6-9 12L3 9z M3 9h18" />),
+  type: icon(<><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" /></>),
+};
+
+const KIND_ICONS: Record<CatalogKind, ReactNode> = {
+  all: icon(<><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></>),
+  pre_order: icon(<path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9" />),
+  mixed_lot: icon(<><path d="M3 8l9-5 9 5v8l-9 5-9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></>),
+  in_hand: icon(<><path d="M20 6 9 17l-5-5" /></>),
+};
+
+/**
+ * How it is sold, as a game's tab bar: a lit slot slides under the one
+ * chosen, overshooting a touch as it lands, and every tap ripples.
+ */
+function KindTabs({ value, onChoose }: { value: CatalogKind; onChoose: (kind: string) => void }) {
+  const track = useRef<HTMLDivElement>(null);
+  const [slot, setSlot] = useState<{ x: number; w: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const row = track.current;
+    const on = row?.querySelector<HTMLElement>('.qkind.is-on');
+    if (!row || !on) return;
+    const measure = () => setSlot({ x: on.offsetLeft, w: on.offsetWidth });
+    measure();
+    // On a narrow phone the row scrolls: bring the chosen tab into view.
+    if (row.scrollWidth > row.clientWidth) {
+      row.scrollTo({ left: on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2, behavior: 'smooth' });
+    }
+    const watch = new ResizeObserver(measure);
+    watch.observe(row);
+    return () => watch.disconnect();
+  }, [value]);
+
+  return (
+    <div className="qkinds" role="tablist" aria-label="How it is sold" ref={track}>
+      {slot && (
+        <span className="qkinds__slot" aria-hidden="true"
+          style={{ transform: `translateX(${slot.x}px)`, width: slot.w }}>
+          <span key={value} className="qkinds__flash" />
+        </span>
+      )}
+      {CATALOG_KINDS.map((entry, i) => (
+        <button key={entry} type="button" role="tab" aria-selected={value === entry}
+          className={`qkind${value === entry ? ' is-on' : ''}`} style={{ ['--i' as string]: i }}
+          onPointerDown={tapFx} onClick={() => onChoose(entry)}>
+          <span className="qkind__icon">{KIND_ICONS[entry]}</span>
+          {CATALOG_KIND_LABELS[entry]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A ripple from where the finger landed. Added straight to the element rather
+ * than through state: it is decoration, and a re-render per tap would be waste.
+ */
+function tapFx(event: PointerEvent<HTMLElement>) {
+  const host = event.currentTarget;
+  const box = host.getBoundingClientRect();
+  const size = Math.max(box.width, box.height) * 2;
+  const wave = document.createElement('span');
+  wave.className = 'qripple';
+  wave.style.cssText = `width:${size}px;height:${size}px;left:${event.clientX - box.left - size / 2}px;top:${event.clientY - box.top - size / 2}px`;
+  host.appendChild(wave);
+  wave.addEventListener('animationend', () => wave.remove(), { once: true });
+  // Reduced motion runs no animation, so nothing would fire animationend.
+  window.setTimeout(() => wave.remove(), 800);
 }
