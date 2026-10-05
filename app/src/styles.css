@@ -12704,3 +12704,26 @@ button.sk-plan__pick { cursor: pointer; }
 .door--grow .door__glyph { font-size: 20px; }
 /* A long item name must cut off, not widen the page: every grid track in Grow may shrink. */
 .grow .stack, .grow__items, .grow__tasks { grid-template-columns: minmax(0, 1fr); }
+
+/* ── Posting inside the app, from a share sheet ────────────────────────── */
+
+.shs__act--in { grid-column: 1 / -1; }
+.shs__act--in.is-on { border-color: var(--violet-text); }
+.sharesheet__tile.is-on { background: var(--surface-2); color: var(--text); }
+.sharesheet__glyph--room { background: var(--grad-hero); }
+.pif { display: grid; gap: 10px; }
+.pif__places { display: flex; gap: 6px; flex-wrap: wrap; }
+.pif__place {
+  flex: 1; min-height: 38px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-dim);
+  font: inherit; font-size: var(--t-sm); font-weight: 600; cursor: pointer;
+}
+.pif__place.is-on { background: var(--grad-hero); border-color: transparent; color: #fff; }
+.pif__room, .pif__text {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-sm);
+}
+.pif__text { resize: vertical; }
+.pif__hint { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.pif--done { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ok); font-weight: 600; font-size: var(--t-sm); }
+.spost__link { color: var(--violet-text); text-decoration: underline; text-underline-offset: 2px; word-break: break-all; }

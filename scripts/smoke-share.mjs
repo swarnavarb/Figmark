@@ -156,6 +156,15 @@ await check('a send pays the daily quest, and only a known kind and channel is a
   assert.ok(claimed.jsonBody.gained > 0);
 });
 
+await check('a post inside Figmark counts as a send', async () => {
+  const before = (await repository.getUserById(sharer.id)).shareLog.length;
+  const ok = await logShare(req({ headers: sharer.headers, body: { kind: 'item', via: 'post', target: listing.id } }), ctx);
+  assert.equal(ok.status, 200);
+  const log = (await repository.getUserById(sharer.id)).shareLog;
+  assert.equal(log.length, before + 1);
+  assert.equal(log.at(-1).via, 'post');
+});
+
 await check('a send for a shop counts for its growth only when the sender helps run it', async () => {
   await logShare(req({ headers: sharer.headers, body: { kind: 'shop', via: 'native', storeId: shop.id } }), ctx);
   assert.equal((await repository.getUserById(shop.id)).sellerProfile.growth.shares?.length ?? 0, 0);

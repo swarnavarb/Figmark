@@ -5,6 +5,7 @@ import { useSession } from '../session';
 import { useToast } from './Feedback';
 import { useQuest } from './Quest';
 import { Modal } from './ui';
+import { PostInFigmark } from './PostInFigmark';
 import { renderMoment, themeOf, type Moment, type MomentBadge } from './momentCard';
 
 /*
@@ -12,10 +13,12 @@ import { renderMoment, themeOf, type Moment, type MomentBadge } from './momentCa
  *
  * Anything worth showing off - a spot booked in a pre-order, a haul, a
  * delivery, a sale, a level, a pull, a shop, an invite - opens the same sheet:
- * a picture drawn for it on the spot, and four ways out. Share hands the phone
+ * a picture drawn for it on the spot, and ways out. Share hands the phone
  * the picture and the message with the link together, so a WhatsApp chat gets
  * both; WhatsApp sends the message alone, and its link unfolds into a preview
  * card with the item's photo; Save keeps the picture; Copy takes the link.
+ * Post in Figmark puts the picture and the link on your feed, in a forum or
+ * in a shop's channel, without leaving the app.
  * Every link carries the sharer's invite or affiliate code, so whoever it
  * reaches - and whatever they buy - counts for them.
  */
@@ -133,6 +136,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
   const [picture, setPicture] = useState<{ blob: Blob; url: string } | null>(null);
   const [failed, setFailed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [posting, setPosting] = useState(false);
   const urls = useRef<string[]>([]);
   const files = useMemo(canShareFiles, []);
 
@@ -211,6 +215,20 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
     }
   };
 
+  // The picture goes up once, however many times the sharer posts it.
+  const uploaded = useRef<Promise<string> | null>(null);
+  const upload = useCallback(() => {
+    if (!picture) return Promise.resolve(null);
+    uploaded.current ??= new Promise<string>((done, fail) => {
+      const reader = new FileReader();
+      reader.onload = () => done(String(reader.result));
+      reader.onerror = () => fail(reader.error);
+      reader.readAsDataURL(picture.blob);
+    }).then((dataUrl) => api.uploadPhoto(dataUrl)).then((stored) => stored.url);
+    uploaded.current.catch(() => { uploaded.current = null; });
+    return uploaded.current;
+  }, [picture]);
+
   const theme = themeOf(spec.kind);
 
   return (
@@ -239,7 +257,16 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
           <button type="button" className="shs__act" disabled={!link} onClick={() => void copy()}>
             {copied ? '✓ Copied' : 'Copy link'}
           </button>
+          {user && (
+            <button type="button" className={`shs__act shs__act--in${posting ? ' is-on' : ''}`} aria-expanded={posting}
+              onClick={() => setPosting((open) => !open)}>
+              Post in Figmark: feed, forum or channel
+            </button>
+          )}
         </div>
+        {user && posting && (
+          <PostInFigmark text={text} photo={picture ? upload : undefined} onPosted={() => sent('post')} />
+        )}
         {user ? (
           <p className="shs__note">Sharing counts toward today's quest. Every friend who opens your link, joins or buys earns you more.</p>
         ) : (

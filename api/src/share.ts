@@ -135,7 +135,7 @@ const KINDS: readonly ShareKind[] = [
   'item', 'fill', 'booked', 'purchased', 'delivered', 'sold', 'filled',
   'level', 'card', 'set', 'shop', 'invite', 'invite_seller', 'profile',
 ];
-const VIAS: readonly ShareEvent['via'][] = ['whatsapp', 'native', 'download', 'copy'];
+const VIAS: readonly ShareEvent['via'][] = ['whatsapp', 'native', 'download', 'copy', 'post'];
 
 export function isShareKind(value: unknown): value is ShareKind {
   return typeof value === 'string' && (KINDS as readonly string[]).includes(value);
