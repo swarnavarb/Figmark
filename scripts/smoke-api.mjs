@@ -84,7 +84,7 @@ const {
 const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
   publicProfileRoute: publicProfile, setUsernameRoute: setUsername, reactToMessageRoute: reactToMessage,
-  blockRoute: blockHandle, muteRoute: muteThread,
+  blockRoute: blockHandle, muteRoute: muteThread, dealItemsRoute: dealItems,
 } = await import(new URL('message-routes.js', fns));
 const { unboxingRoute: shareUnboxing } = await import(new URL('order-routes.js', fns));
 const { resetRateLimits } = await import(new URL('../rate-limit.js', fns));
@@ -8860,6 +8860,90 @@ const withCookies = (headers, setCookies) => ({
 });
 const cookiesOf = (response) => [...(response.headers?.entries?.() ?? [])]
   .filter(([name]) => name.toLowerCase() === 'set-cookie').map(([, value]) => value);
+
+await check('a private deal never pays commission and runs on a clock of at most a day', async () => {
+  const buyer = await newBuyer('Clock Buyer');
+  const before = Date.now();
+  const plain = (await createListing(req({ headers: auth, body: {
+    title: 'Two Hour Deal', priceMinor: 9_000, privateFor: buyer.id, affiliateMinor: 2_000, affiliateOffMinor: 500,
+  } }), ctx)).jsonBody.listing;
+  assert.equal(plain.affiliate, null, 'no commission on a private deal');
+  const left = Date.parse(plain.expiresAt) - before;
+  assert.ok(left > 1.9 * 3_600_000 && left < 2.1 * 3_600_000, `two hours by default, got ${left}`);
+  assert.equal((await affiliateLink(req({ headers: buyer.headers, params: { id: plain.id } }), ctx)).status, 409, 'no link to share');
+
+  const long = (await createListing(req({ headers: auth, body: {
+    title: 'Too Long Deal', priceMinor: 9_000, privateFor: buyer.id,
+    expiresAt: new Date(Date.now() + 72 * 3_600_000).toISOString(),
+  } }), ctx)).jsonBody.listing;
+  assert.ok(Date.parse(long.expiresAt) <= Date.now() + 24 * 3_600_000 + 1_000, 'held to a day');
+
+  const edited = (await editListing(req({ headers: auth, params: { id: plain.id }, body: {
+    affiliateMinor: 3_000, expiresAt: new Date(Date.now() + 100 * 3_600_000).toISOString(),
+  } }), ctx)).jsonBody.listing;
+  assert.equal(edited.affiliate, null, 'an edit cannot turn commission on');
+  assert.ok(Date.parse(edited.expiresAt) <= Date.now() + 24 * 3_600_000 + 1_000, 'a new clock is a day at most');
+
+  const posted = await createPost(req({ headers: auth, body: { body: 'Look', storeId: 'usr_demo', listingId: plain.id } }), ctx);
+  assert.equal(posted.status, 404, 'a private deal is never posted');
+});
+
+await check('a deal made from an item shows what it took off', async () => {
+  const buyer = await newBuyer('From Item Buyer');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'from_item_buyer' } }), ctx);
+  const source = (await createListing(req({ headers: auth, body: { title: 'Shelf Figure', priceMinor: 20_000, quantityAvailable: 1 } }), ctx)).jsonBody.listing;
+  const other = (await (await getRepository()).listListings({ limit: 200 })).find((listing) => listing.sellerId !== 'usr_demo');
+  const made = (await createListing(req({ headers: auth, body: {
+    title: 'Shelf Figure', priceMinor: 17_000, privateFor: buyer.id, dealFromId: source.id,
+  } }), ctx)).jsonBody.listing;
+  assert.deepEqual(made.dealFrom, { listingId: source.id, priceMinor: 20_000 });
+  const stranger = (await createListing(req({ headers: auth, body: {
+    title: 'Not Yours', priceMinor: 17_000, privateFor: buyer.id, dealFromId: other.id,
+  } }), ctx)).jsonBody.listing;
+  assert.equal(stranger.dealFrom, null, "another shop's item is not a source");
+
+  const offer = (await sendMessage(req({ headers: auth, params: { handle: 'from_item_buyer' },
+    body: { as: 'arjun_collects', deal: { kind: 'offer', listingId: made.id } } }), ctx)).jsonBody.message;
+  assert.equal(offer.deal.wasMinor, 20_000);
+  assert.ok(offer.deal.expiresAt, 'the card carries its clock');
+  assert.equal(offer.deal.state, 'live');
+
+  const items = await dealItems(req({ headers: auth, params: { handle: 'from_item_buyer' }, query: { as: 'arjun_collects' } }), ctx);
+  assert.equal(items.status, 200);
+  assert.ok(items.jsonBody.items.some((item) => item.id === source.id));
+  assert.ok(!items.jsonBody.items.some((item) => item.id === made.id), 'not other private deals');
+  assert.equal((await dealItems(req({ headers: auth, params: { handle: 'from_item_buyer' }, query: { as: 'arjun' } }), ctx)).status, 403,
+    'a person has no items to deal from');
+
+  // Sold out still counts: it is what buyers ask for again.
+  await editListing(req({ headers: auth, params: { id: source.id }, body: { quantityAvailable: 0 } }), ctx);
+  const again = (await dealItems(req({ headers: auth, params: { handle: 'from_item_buyer' }, query: { as: 'arjun_collects' } }), ctx)).jsonBody.items;
+  assert.equal(again.find((item) => item.id === source.id)?.state, 'bought');
+});
+
+await check('a message can be about an item, and says where it stands', async () => {
+  const buyer = await newBuyer('Item Asker');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'item_asker' } }), ctx);
+  const item = (await createListing(req({ headers: auth, body: { title: 'Ask Me', priceMinor: 5_000, quantityAvailable: 2 } }), ctx)).jsonBody.listing;
+  const sent = await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun_collects' }, body: { body: '', itemId: item.id } }), ctx);
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  assert.equal(sent.jsonBody.message.item.title, 'Ask Me');
+  assert.equal(sent.jsonBody.message.body, 'About Ask Me');
+
+  const other = (await (await getRepository()).listListings({ limit: 200 })).find((listing) => listing.sellerId !== 'usr_demo');
+  assert.equal((await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun_collects' },
+    body: { body: 'this?', itemId: other.id } }), ctx)).status, 404, "only this shop's items");
+  const someoneElse = await newBuyer('Not The Buyer');
+  const secret = (await createListing(req({ headers: auth, body: { title: 'Secret', priceMinor: 5_000, privateFor: someoneElse.id } }), ctx)).jsonBody.listing;
+  assert.equal((await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun_collects' },
+    body: { body: 'this?', itemId: secret.id } }), ctx)).status, 404, "nobody else's private deal");
+
+  await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 4_500 } }), ctx);
+  const seen = (await thread(req({ headers: auth, params: { handle: 'item_asker' }, query: { as: 'arjun_collects' } }), ctx)).jsonBody;
+  const card = seen.messages.find((message) => message.item?.listingId === item.id).item;
+  assert.equal(card.state, 'live');
+  assert.equal(card.nowMinor, 4_500, 'a changed price is shown');
+});
 
 await check('an item on affiliate pays a fixed amount, and anyone but the shop gets a short link', async () => {
   assert.deepEqual(affListed.affiliate, { amountMinor: 2_000 });

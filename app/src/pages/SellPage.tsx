@@ -13,7 +13,8 @@ import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
-import { AdvanceStrip, TermsFields, termsBody, termsDraft } from '../components/Buy';
+import { AdvanceStrip, DealClock, TermsFields, termsBody, termsDraft } from '../components/Buy';
+import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
   LBox, OptionTiles, PreOrderBox, SHAPE_OPTIONS, Switch, ToggleRow, isoInDays, type Shape,
 } from '../components/ListingForm';
@@ -148,6 +149,9 @@ export function SellPage() {
     quantity?: number; description?: string;
     /** A private deal, made from a chat: who it is for, and the chat to go back to. */
     privateDeal?: { userId: string; handle: string; displayName: string; as: string };
+    /** The shop's own item a private deal starts from - sold out and expired ones too. */
+    fromItem?: { id: string; title: string; priceMinor: number; state: string };
+    category?: string; condition?: string; tags?: string[]; photos?: PhotoDraft[];
   } | null;
   const deal = prefill?.privateDeal ?? null;
 
@@ -159,8 +163,8 @@ export function SellPage() {
 
   const [title, setTitle] = useState(restored?.title ?? prefill?.title ?? '');
   const [description, setDescription] = useState(restored?.description ?? prefill?.description ?? '');
-  const [category, setCategory] = useState<string>(restored?.category ?? CATEGORIES[0]!);
-  const [condition, setCondition] = useState<string>(restored?.condition ?? CONDITION_TAGS[0]);
+  const [category, setCategory] = useState<string>(restored?.category ?? prefill?.category ?? CATEGORIES[0]!);
+  const [condition, setCondition] = useState<string>(restored?.condition ?? prefill?.condition ?? CONDITION_TAGS[0]);
   const [price, setPrice] = useState(() => restored?.price ?? (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
   const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(restored ? restored.costSheet : prefill?.costSheet ?? null);
   const [terms, setTerms] = useState(() => restored?.terms ? { ...termsDraft(), ...restored.terms }
@@ -171,7 +175,10 @@ export function SellPage() {
   const [fillThreshold, setFillThreshold] = useState(restored?.fillThreshold ?? '20');
   /** Days until bookings close - also the item's expiry, so a pre-order has one date, not two. */
   const [preOrderDays, setPreOrderDays] = useState(restored?.preOrderDays ?? '14');
-  const [tags, setTags] = useState(restored?.tags ?? '');
+  const [tags, setTags] = useState(restored?.tags ?? prefill?.tags?.join(', ') ?? '');
+  /** A private deal's clock, in hours. */
+  const [dealHours, setDealHours] = useState<number>(DEAL_DEFAULT_HOURS);
+  const fromItem = deal ? prefill?.fromItem ?? null : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The saved calculation this listing is made from, marked with the item once it is published. */
@@ -182,10 +189,11 @@ export function SellPage() {
      a shop lists forty of the same kind of thing a month and typing the same
      category, tags and two lines each time is how a listing screen becomes a
      chore. Everything it fills in stays editable. */
-  const [quickPost, setQuickPost] = useState(restored?.quickPost ?? true);
+  // Off when the form starts from an existing item: that item is the template.
+  const [quickPost, setQuickPost] = useState(restored?.quickPost ?? !prefill?.fromItem);
   const [templates, setTemplates] = useState<PostTemplate[]>([]);
   const [templateId, setTemplateId] = useState<string>(() => restored?.templateId ?? lastTemplate() ?? '');
-  const [photos, setPhotos] = useState<PhotoDraft[]>(restored?.photos ?? []);
+  const [photos, setPhotos] = useState<PhotoDraft[]>(restored?.photos ?? prefill?.photos ?? []);
   const [preLot, setPreLot] = useState<RouteStep[] | null>(restored?.preLot ?? null);
   const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
   const [lots, setLots] = useState<LotSummary[]>([]);
@@ -265,7 +273,7 @@ export function SellPage() {
         const remembered = result.templates.find((row) => row.id === lastTemplate());
         const chosen = remembered ?? result.templates[0];
         // Coming back to a form already filled in: leave it as it was.
-        if (chosen && !restored) {
+        if (chosen && !restored && !prefill?.fromItem) {
           setTemplateId(chosen.id);
           applyTemplate(chosen, true);
         }
@@ -350,7 +358,13 @@ export function SellPage() {
         // A private deal is never announced: only its buyer ever sees it.
         shareToChannel: deal ? false : shareToChannel,
         shareToFeed: deal ? false : shareToFeed,
-        ...(deal ? { privateFor: deal.userId } : {}),
+        // Never a commission item, and on a clock of hours rather than days.
+        ...(deal ? {
+          privateFor: deal.userId,
+          affiliateMinor: null, affiliateOffMinor: null,
+          expiresAt: new Date(Date.now() + dealHours * 3_600_000).toISOString(),
+          ...(fromItem ? { dealFromId: fromItem.id } : {}),
+        } : {}),
         costSheet,
         preOrder: preOrderMode && !deal
           ? {
@@ -438,6 +452,13 @@ export function SellPage() {
               ? `Only ${deal.displayName} can see and buy this. It never appears in your shop, channel or the feed - once bought it is a normal order.`
               : 'About a minute. You can edit it any time.'}
           </p>
+          {fromItem && (
+            <p className="dealfrom">
+              Made from <b>{fromItem.title}</b>
+              {fromItem.state !== 'live' && <span className="dealfrom__state">{fromItem.state === 'bought' ? 'sold out' : fromItem.state}</span>}
+              {' '}· was {formatMoney(fromItem.priceMinor)}. Change anything below - the original stays as it is.
+            </p>
+          )}
         </div>
       </div>
 
@@ -557,7 +578,8 @@ export function SellPage() {
               closes={preOrderDays} onCloses={setPreOrderDays} />
           )}
 
-          <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} />
+          <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} />
+          {deal && <DealClock hours={dealHours} onChange={setDealHours} />}
 
           {/* Telling people is part of listing, not a second job to remember
               afterwards. Both on unless the seller says otherwise. */}

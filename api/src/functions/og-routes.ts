@@ -175,7 +175,7 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
   if (kind === 'r' && first) {
     const target = await resolveShortCode(repository, first);
     const listing = target ? await repository.getListing(target.listingId) : null;
-    if (!target || !listing) return fallbackMeta;
+    if (!target || !listing || listing.privateFor) return fallbackMeta;
     const sharer = await repository.getUserById(target.referrerId);
     return listingMeta(repository, origin, listing, sharer, url.searchParams.get('m'), `/listing/${encodeURIComponent(listing.id)}`, first);
   }

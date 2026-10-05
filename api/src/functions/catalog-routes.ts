@@ -10,6 +10,7 @@ import type { Listing, ListingComment, Order, StageEvent, User } from '../../../
 import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, isReaction, type ReactionKind } from '../../../shared/social.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
+import { dealEndsAt } from '../../../shared/deals.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
 import { BUMP_GUARD_MS, emptyQuestState, tidyQuestState } from '../../../shared/quest.js';
 import { emptyGrowth, tidyGrowth } from '../../../shared/store-growth.js';
@@ -337,6 +338,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     /** The before-lot ladder from the Quick Post template, if it had one. */
     preLotSteps?: { id?: string; name?: string; description?: string }[];
     preLotName?: string;
+    /** A private deal made from one of the shop's items: which one. */
+    dealFromId?: string | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -378,6 +381,13 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     const buyer = await repository.getUserById(body.privateFor);
     if (!buyer || buyer.id === sellerId) return error(400, 'invalid_listing', 'Pick who this private deal is for.');
     privateFor = buyer.id;
+  }
+  // Made from one of this shop's own items: remembered with its price, so the
+  // deal can show what it took off. Anybody else's item is simply not it.
+  let dealFrom: Listing['dealFrom'] = null;
+  if (privateFor && body.dealFromId) {
+    const source = await repository.getListing(body.dealFromId);
+    if (source && source.sellerId === sellerId) dealFrom = { listingId: source.id, priceMinor: source.priceMinor };
   }
 
   // What it cost to bring in (Pro), when the seller filled it in while listing.
@@ -477,7 +487,11 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     bumpedAt: null,
     costSheet,
     // Private: out of the catalog, the shop's grid, channels and the feed.
-    ...(privateFor ? { privateFor, unlisted: true } : {}),
+    // Never an affiliate item - a price made for one buyer is not a price to
+    // hand round for commission - and always on a clock of at most a day.
+    ...(privateFor
+      ? { privateFor, unlisted: true, affiliate: null, expiresAt: dealEndsAt(body.expiresAt), dealFrom }
+      : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -1055,6 +1069,11 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
 
   const price = body.priceMinor !== undefined && body.priceMinor > 0 ? Math.round(body.priceMinor) : listing.priceMinor;
   const next: Listing = { ...listing, ...listingTerms(body, price, listing.affiliate), updatedAt: new Date().toISOString() };
+  // A private deal stays one: no commission, and a new clock is at most a day from now.
+  if (listing.privateFor) {
+    next.affiliate = null;
+    if (body.expiresAt !== undefined) next.expiresAt = dealEndsAt(body.expiresAt);
+  }
   // A cheaper price can leave an old commission bigger than the item; it is
   // brought back under the new price rather than left owing more than it took.
   if (next.affiliate?.amountMinor && body.affiliateMinor === undefined && body.affiliateOffMinor === undefined) {

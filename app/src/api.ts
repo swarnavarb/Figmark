@@ -8,6 +8,7 @@ import type {
   MeResponse,
 } from '@shared/contracts';
 import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
+import type { DealState } from '@shared/deals';
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
@@ -896,6 +897,8 @@ export interface NewListing {
   costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
   /** A private deal for this one buyer: never in the catalog, channels or feed. */
   privateFor?: string | null;
+  /** The shop's own item a private deal was made from. */
+  dealFromId?: string | null;
   title: string;
   description: string;
   category: string;
@@ -1626,6 +1629,21 @@ export interface ItemGroup {
 /* ── Quick Post templates and photos ───────────────────────────────────── */
 
 /** A photo as the manager holds it: uploaded, or a link somebody pasted. */
+/** One of a shop's items, as the private-deal picker lists it. */
+export interface DealItem {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  condition: string;
+  priceMinor: number;
+  currency: string;
+  quantityAvailable: number;
+  tags: string[];
+  photos: PhotoDraft[];
+  state: DealState;
+}
+
 export interface PhotoDraft {
   blobName: string;
   url: string;
@@ -2340,10 +2358,13 @@ export const api = {
     post<{ blocked: boolean }>(`/messages/${encodeURIComponent(handle)}/block`, { block }),
   muteThread: (handle: string, mute: boolean, as?: string) =>
     post<{ muted: boolean }>(`/messages/${encodeURIComponent(handle)}/mute`, { mute, as }),
-  sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>, replyToId?: string) =>
+  sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>, replyToId?: string, itemId?: string) =>
     post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, {
-      body, as, ...(deal ? { deal } : {}), ...(replyToId ? { replyToId } : {}),
+      body, as, ...(deal ? { deal } : {}), ...(replyToId ? { replyToId } : {}), ...(itemId ? { itemId } : {}),
     }),
+  /** The shop's own items, sold out and expired too, to make a private deal from. */
+  dealItems: (handle: string, as: string) =>
+    request<{ items: DealItem[] }>(`/messages/${encodeURIComponent(handle)}/items?as=${encodeURIComponent(as)}`),
   reactToMessage: (handle: string, messageId: string, kind: ReactionKind | null, as?: string) =>
     post<{ reactions: { handle: string; kind: ReactionKind }[] }>(
       `/messages/${encodeURIComponent(handle)}/react`, { messageId, kind, as },

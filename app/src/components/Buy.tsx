@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { CreditRecord, Listing, Order } from '@shared/models';
 import { affiliateUnitMinor, linkDiscountMinor } from '@shared/affiliate';
+import { DEAL_DEFAULT_HOURS, DEAL_HOUR_CHOICES, DEAL_MAX_HOURS } from '@shared/deals';
 import {
   PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, REFUND_ORIGIN_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
   isMultiple, methodOf, orderMoney, timeLeft,
@@ -213,12 +214,14 @@ export function termsBody(draft: TermsDraft) {
  * date is its expiry, so both questions step aside rather than being asked
  * twice.
  */
-export function TermsFields({ value, onChange, preOrder = false, publicLater = false }: {
+export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false }: {
   value: TermsDraft;
   onChange: (next: TermsDraft) => void;
   preOrder?: boolean;
   /** A power sale item: the deal clock starts when it goes public, after the member price. */
   publicLater?: boolean;
+  /** A private deal: no commission to offer, and its own clock in hours instead of days. */
+  privateDeal?: boolean;
 }) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
   return (
@@ -252,7 +255,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
       </LBox>
 
       {/* Not on a power sale: its items are made by the sale, which sets its own terms. */}
-      {!publicLater && <LBox icon="🤝" title="Affiliate commission"
+      {!publicLater && !privateDeal && <LBox icon="🤝" title="Affiliate commission"
         hint={value.affiliate
           ? `Anyone can share their own link to this item and earns ₹${value.affiliateAmount || '—'} for every unit it sells.`
           : 'Off: nobody earns for sharing this item.'}
@@ -287,7 +290,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
         )}
       </LBox>}
 
-      {!preOrder && (
+      {!preOrder && !privateDeal && (
         <LBox icon="⏳" title="Limited time deal" hint={publicLater
             ? `For the public listing: starts when the member price ends${value.limited ? `, lasts ${value.days || '—'} days` : ''}.`
             : value.limited ? `Comes off sale in ${value.days || '—'} days.` : 'Off: stays up until you take it down.'}
@@ -302,6 +305,45 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
       )}
     </>
   );
+}
+
+/**
+ * How long a private deal stays open: a row of hour choices, two hours unless
+ * the shop picks another, never more than a day.
+ *
+ * `hours` null means leave the clock as it is - only an edit has one already.
+ */
+export function DealClock({ hours, onChange, endsAt = null }: {
+  hours: number | null;
+  onChange: (hours: number) => void;
+  /** The clock the deal already has, when editing one. */
+  endsAt?: string | null;
+}) {
+  const ending = hours != null ? new Date(Date.now() + hours * 3_600_000).toISOString() : endsAt;
+  const past = Boolean(ending && Date.parse(ending) <= Date.now());
+  return (
+    <LBox icon="⏱️" title="Deal clock"
+      hint={ending && !past
+        ? `Open until ${formatClock(ending)}. After that the buyer can no longer buy it.`
+        : 'Ran out. Pick a new clock to open it again.'}>
+      <div className="dealclock" role="radiogroup" aria-label="How long the deal is open">
+        {DEAL_HOUR_CHOICES.map((choice) => (
+          <button key={choice} type="button" role="radio" aria-checked={hours === choice}
+            className={`dealclock__pick${hours === choice ? ' is-on' : ''}`} onClick={() => onChange(choice)}>
+            {choice < 1 ? `${choice * 60}m` : `${choice}h`}
+          </button>
+        ))}
+      </div>
+      <span className="lbox__hint">Up to {DEAL_MAX_HOURS} hours. Commission links never apply to a private deal.</span>
+    </LBox>
+  );
+}
+
+/** "6:40 pm", or "tomorrow 9:10 am" past midnight. */
+export function formatClock(iso: string): string {
+  const at = new Date(iso);
+  const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return at.toDateString() === new Date().toDateString() ? time : `tomorrow ${time}`;
 }
 
 /**
@@ -321,6 +363,9 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const expired = isExpired(listing);
+  const privateDeal = Boolean(listing.privateFor);
+  /** A private deal's new clock; null keeps the one it has, unless that ran out. */
+  const [dealHours, setDealHours] = useState<number | null>(privateDeal && expired ? DEAL_DEFAULT_HOURS : null);
 
   async function run(fn: () => Promise<Listing | null>) {
     setBusy(true);
@@ -338,6 +383,11 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
     event.preventDefault();
     void run(async () => (await api.editListing(listing.id, {
       title: title.trim(), priceMinor: Math.round(Number(price) * 100), ...termsBody(terms),
+      // A deal keeps its clock unless a new one was picked.
+      ...(privateDeal ? {
+        affiliateMinor: null, affiliateOffMinor: null,
+        expiresAt: dealHours != null ? new Date(Date.now() + dealHours * 3_600_000).toISOString() : listing.expiresAt ?? null,
+      } : {}),
     })).listing);
   }
 
@@ -346,7 +396,9 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
       <form className="stack" onSubmit={save}>
         {expired && (
           <p className="notice notice--warn">
-            This expired, so buyers cannot purchase it. Clear the expiry or set a new one to put it back on sale.
+            {privateDeal
+              ? 'This deal ran out, so the buyer cannot buy it. Pick a new clock to open it again.'
+              : 'This expired, so buyers cannot purchase it. Clear the expiry or set a new one to put it back on sale.'}
           </p>
         )}
         <LBox icon="🏷️" title="The item">
@@ -359,7 +411,8 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
             <input type="number" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
           </label>
         </LBox>
-        <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} />
+        <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} privateDeal={privateDeal} />
+        {privateDeal && <DealClock hours={dealHours} onChange={setDealHours} endsAt={listing.expiresAt} />}
         {error && <ErrorNotice message={error} />}
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button className="btn btn--lg" disabled={busy}>
