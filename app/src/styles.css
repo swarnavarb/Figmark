@@ -4057,7 +4057,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 @keyframes ocard-shimmer { to { background-position: -200% 0; } }
 .ocard__extra { color: #F0ABFC; font-weight: var(--w-semi); }
 
-.ocard__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ocard__chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .ocard__chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 9px; border-radius: 999px;
@@ -10888,25 +10888,33 @@ a.ocust__name:hover { color: var(--accent-text); }
  * quiet after that - and the lot's moves wear their own aqua so a seller can
  * tell "press for this item" from "move the whole crate" without reading.
  */
-.serial { display: grid; gap: 8px; }
+.serial { display: grid; gap: 8px; min-width: 0; }
 .serial__head {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: var(--t-2xs); font-weight: var(--w-semi); text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-faint);
 }
 .serial__count { font-family: var(--mono); letter-spacing: 0; color: var(--text-dim); }
-.serial__list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.serial__list > li { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
-/* The arrow leads into each button from the one before it. */
-.serial__arrow { flex: none; font-size: var(--t-sm); line-height: 1; color: var(--text-faint); }
-.serial__list > li:has(.serial__btn--done) + li > .serial__arrow { color: var(--ok); }
+.serial__count--all { color: var(--ok); font-family: inherit; letter-spacing: inherit; }
+/* An even grid, so every row starts on the same edge however long the labels. */
+.serial__list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 6px;
+}
+.serial__list > li {
+  display: flex; min-width: 0;
+  animation: serial-in var(--dur-2) var(--ease) both;
+  animation-delay: calc(var(--s, 0) * 45ms);
+}
 .serial__btn {
-  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%;
-  height: 32px; padding: 0 11px 0 4px; border-radius: 999px; border: 0; cursor: pointer;
-  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); text-decoration: none;
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
+  min-height: 36px; padding: 4px 12px 4px 5px; border-radius: 18px; border: 0; cursor: pointer;
+  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 1.2;
+  text-align: left; text-decoration: none;
   color: var(--text-dim); background: rgba(255, 255, 255, 0.04);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
-  transition: transform var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  transition: transform var(--dur-1) var(--ease), background var(--dur-2) var(--ease),
+    color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
 .serial__btn:active:not(:disabled) { transform: scale(0.96); }
 .serial__btn:disabled { cursor: default; }
@@ -10915,7 +10923,10 @@ a.ocust__name:hover { color: var(--accent-text); }
   font-family: var(--mono); font-size: var(--t-2xs); font-weight: var(--w-bold);
   background: rgba(255, 255, 255, 0.08); color: var(--text-faint);
 }
-.serial__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.serial__label {
+  min-width: 0; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .serial__btn--lot { box-shadow: inset 0 0 0 1px var(--aqua-line); }
 .serial__btn--done { color: var(--ok); background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.3); }
 .serial__btn--done .serial__n { background: var(--ok); color: #06261b; }
@@ -10931,6 +10942,35 @@ a.ocust__name:hover { color: var(--accent-text); }
   box-shadow: 0 6px 16px -8px rgba(6, 214, 231, 0.85);
 }
 .serial__btn--later { opacity: 0.8; }
+
+/* Each stop rises in after the one before; a tick pops when its step lands
+   (on first paint, staggered, and again whenever it is pressed); the next
+   stop breathes so the eye finds it. */
+.serial__btn--done .serial__n {
+  animation: serial-tick 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: calc(var(--s, 0) * 45ms + 120ms);
+}
+.serial__btn--next { animation: serial-next 2.4s var(--ease) infinite; }
+.serial__btn--next.serial__btn--lot { animation-name: serial-next-lot; }
+@keyframes serial-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes serial-tick {
+  0% { transform: scale(0.4); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes serial-next {
+  0%, 100% { box-shadow: 0 6px 16px -8px rgba(124, 58, 237, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 0 0 rgba(124, 58, 237, 0.45); }
+  50% { box-shadow: 0 6px 16px -8px rgba(124, 58, 237, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 0 5px rgba(124, 58, 237, 0); }
+}
+@keyframes serial-next-lot {
+  0%, 100% { box-shadow: 0 6px 16px -8px rgba(6, 214, 231, 0.85), 0 0 0 0 rgba(6, 214, 231, 0.45); }
+  50% { box-shadow: 0 6px 16px -8px rgba(6, 214, 231, 0.85), 0 0 0 5px rgba(6, 214, 231, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .serial__list > li, .serial__btn--done .serial__n, .serial__btn--next { animation: none; }
+}
 
 /*
  * A lot at a glance, above its customers. Counts first, then the money with
@@ -10996,7 +11036,12 @@ a.ocust__name:hover { color: var(--accent-text); }
 .lpulse__courier b { font-family: var(--mono); color: var(--text); }
 
 /* The lot chip on an order card: which lot, and - quieter - where that lot is. */
-.ocard__chipstep { font-weight: 400; opacity: 0.8; }
+/* One line: name and number hold, the step gives way with an ellipsis. */
+.ocard__chip--lot { max-width: 100%; min-width: 0; gap: 6px; white-space: nowrap; }
+.ocard__chipname { flex: none; }
+.ocard__chip--lot .lotname__no { flex: none; }
+.ocard__chipstep { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; opacity: 0.8; }
+.ocard__chipstep--ok { color: var(--ok); font-weight: var(--w-semi); opacity: 1; }
 
 .lpulse__title {
   margin: 0; font-size: var(--t-2xs); font-weight: var(--w-semi);

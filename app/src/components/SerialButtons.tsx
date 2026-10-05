@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import type { SerialButton } from '@shared/buttons';
 import { Modal } from './ui';
@@ -11,7 +11,8 @@ type Entry =
   | { kind: 'lot'; done: boolean; step: string };
 
 /**
- * An item's buttons in a lot, one after another with arrows between them.
+ * An item's buttons in a lot, one after another on an even grid, read left
+ * to right: done ones carry a tick, the rest their place on the line.
  *
  * Only the item's own presses are buttons here (received, packed, ready,
  * dispatched, delivered and the shop's custom ones). The lot's moves happen
@@ -68,25 +69,29 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
     <div className="serial">
       <div className="serial__head">
         <span>{stepOf ? `Step ${Math.min(stepOf.at + 1, stepOf.of)} of ${stepOf.of}` : 'Route'}</span>
-        <span className="serial__count" title="Buttons pressed">
-          {doneCount} of {entries.length} {entries.length === 1 ? 'button' : 'buttons'} done
-        </span>
+        {doneCount === entries.length
+          ? <span className="serial__count serial__count--all">✓ All done</span>
+          : (
+            <span className="serial__count" title="Buttons pressed">
+              {doneCount} of {entries.length} {entries.length === 1 ? 'button' : 'buttons'} done
+            </span>
+          )}
       </div>
       <ol className="serial__list">
         {entries.map((entry, index) => {
           const done = doneOf(entry);
           const state = done ? 'done' : index === nextAt ? 'next' : 'later';
           const className = `serial__btn serial__btn--${state} serial__btn--${entry.kind}`;
-          const arrow = index > 0 && <span className="serial__arrow" aria-hidden="true">→</span>;
+          /* Each stop comes in after the one before it. */
+          const style = { '--s': index } as CSSProperties;
 
           if (entry.kind === 'lot') {
             return (
-              <li key="lot">
-                {arrow}
+              <li key="lot" style={style}>
                 <button type="button" className={className}
                   title={done ? 'The lot has done its part — open its Tracking' : `Open the lot's Tracking to move it — next: ${entry.step}`}
                   onClick={onLot}>
-                  <span className="serial__n" aria-hidden="true">{done ? '✓' : '🚢'}</span>
+                  <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
                   <span className="serial__label">Lot</span>
                 </button>
               </li>
@@ -96,15 +101,14 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
           const { button } = entry;
           const body = (
             <>
-              <span className="serial__n" aria-hidden="true">{done ? '✓' : '⚡'}</span>
+              <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
               <span className="serial__label">{button.label}</span>
             </>
           );
           /* Dispatched is pressed on the order, where the courier and AWB go in. */
           if (button.lastMile === 'dispatched' && !done && orderLink) {
             return (
-              <li key={button.key}>
-                {arrow}
+              <li key={button.key} style={style}>
                 <Link to={orderLink.to} state={{ ...(orderLink.state as object | undefined), act: 'dispatched' }}
                   className={className} title="Opens the order for the courier and AWB">
                   {body}
@@ -113,8 +117,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
             );
           }
           return (
-            <li key={button.key}>
-              {arrow}
+            <li key={button.key} style={style}>
               <button type="button" className={className} disabled={busy}
                 title={done ? `Done — press to undo: ${button.step}` : `Moves this item to: ${button.step}`}
                 onClick={() => setAsking({ button, on: !done })}>

@@ -1827,8 +1827,12 @@ function OrderRow({
           {lotHref
             ? (
               <Link to={lotHref} className="ocard__chip ocard__chip--lot">
-                📦 {row.lotName ?? `LOT ${lotNo(row.lotNumber)}`}{row.lotName && row.lotNumber ? <span className="lotname__no"> LOT {lotNo(row.lotNumber)}</span> : null}
-                {row.lotStep && <span className="ocard__chipstep"> · {row.lotStep}</span>}
+                <span className="ocard__chipname">📦 {row.lotName ?? `LOT ${lotNo(row.lotNumber)}`}</span>
+                {row.lotName && row.lotNumber ? <span className="lotname__no">LOT {lotNo(row.lotNumber)}</span> : null}
+                {/* Delivered is where this item ended, whatever the crate did after. */}
+                {isCompleted(row)
+                  ? <span className="ocard__chipstep ocard__chipstep--ok">· ✓ Delivered</span>
+                  : row.lotStep && <span className="ocard__chipstep">· {row.lotStep}</span>}
               </Link>
             )
             : <span className="ocard__chip ocard__chip--none">No lot yet</span>}
