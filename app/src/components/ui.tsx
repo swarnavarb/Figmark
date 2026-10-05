@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import type { StepState } from '@shared/routes';
@@ -211,6 +211,62 @@ export function Modal({ title, onClose, children }: {
     </div>,
     document.body,
   );
+}
+
+/** What a confirmation asks, and what its two buttons say. */
+export interface ConfirmAsk {
+  title: string;
+  body?: ReactNode;
+  /** The button that does it. */
+  action: string;
+  /** Red, for something that cannot be undone. */
+  danger?: boolean;
+}
+
+/**
+ * "Are you sure?", drawn by the app rather than the browser.
+ *
+ * `window.confirm` on a phone is the browser's own box - the site's address
+ * across the top, buttons in the system's words, nothing of the app around
+ * it. This is the same question in the app's own dialog. `confirm(...)`
+ * resolves true for the action, false for cancel, Escape or a tap outside;
+ * render `dialog` anywhere in the component.
+ */
+export function useConfirm() {
+  const [asking, setAsking] = useState<ConfirmAsk | null>(null);
+  const settle = useRef<((yes: boolean) => void) | null>(null);
+
+  const confirm = useCallback((ask: ConfirmAsk) => new Promise<boolean>((resolve) => {
+    settle.current?.(false);
+    settle.current = resolve;
+    setAsking(ask);
+  }), []);
+
+  const answer = useCallback((yes: boolean) => {
+    settle.current?.(yes);
+    settle.current = null;
+    setAsking(null);
+  }, []);
+
+  // Leaving with the question open answers it "no", so nothing waits forever.
+  useEffect(() => () => settle.current?.(false), []);
+
+  const dialog = asking ? (
+    <Modal title={asking.title} onClose={() => answer(false)}>
+      <div className="confirm">
+        {asking.body && <p className="confirm__body">{asking.body}</p>}
+        <div className="confirm__actions">
+          <button type="button" className="btn btn--ghost" onClick={() => answer(false)}>Cancel</button>
+          <button type="button" className={`btn${asking.danger ? ' btn--danger' : ''}`} autoFocus
+            onClick={() => answer(true)}>
+            {asking.action}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  ) : null;
+
+  return { confirm, dialog };
 }
 
 /**

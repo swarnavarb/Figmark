@@ -9,7 +9,7 @@ import {
 } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
-import { Avatar, Modal, PersonLink, Thumb } from './ui';
+import { Avatar, Modal, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { useVoice, VoiceAvatar } from './SocialVoice';
 import { OpeningCard } from './Showcase';
@@ -274,6 +274,7 @@ export function SocialPostCard({
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [burst, setBurst] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   useEffect(() => {
     setCard(initial);
@@ -310,7 +311,10 @@ export function SocialPostCard({
 
   async function remove() {
     setMenu(false);
-    if (!window.confirm('Delete this post? Its reactions and comments go with it.')) return;
+    const sure = await confirm({
+      title: 'Delete this post?', body: 'Its reactions and comments go with it.', action: 'Delete', danger: true,
+    });
+    if (!sure) return;
     try {
       await api.deletePost(post.channelId, post.id);
       onRemoved?.(post.id);
@@ -345,12 +349,31 @@ export function SocialPostCard({
   return (
     <article className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {!nested && <span className="spost__glow" aria-hidden="true" />}
+      {dialog}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
           <span className="spost__byline">
             <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
+            {/* Right by the name, for anyone not yet followed. A shop does not
+                follow anybody, so speaking as one still follows as the person. */}
+            {!nested && !social.mine && !following && post.channel === 'seller' && voice.storeId !== post.channelId && (
+              <button type="button" className="spost__follow" disabled={followBusy}
+                title={voice.storeId ? 'Shops do not follow - this follows as you' : undefined}
+                onClick={async () => {
+                  setFollowBusy(true);
+                  try {
+                    setFollowing((await api.follow(post.channelId)).following);
+                  } catch (err) {
+                    setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
+                  } finally {
+                    setFollowBusy(false);
+                  }
+                }}>
+                <Icon name="plus" size={11} /> Follow
+              </button>
+            )}
             {card.forum && !inForum && (
               <>
                 <Icon name="right" size={12} className="spost__in" />
@@ -377,22 +400,6 @@ export function SocialPostCard({
             {kindLine}
           </span>
         </div>
-        {/* People follow; a shop does not, so the button is not offered to one. */}
-        {!nested && !social.mine && !following && post.channel === 'seller' && !voice.storeId && (
-          <button type="button" className="followbtn" disabled={followBusy}
-            onClick={async () => {
-              setFollowBusy(true);
-              try {
-                setFollowing((await api.follow(post.channelId)).following);
-              } catch (err) {
-                setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
-              } finally {
-                setFollowBusy(false);
-              }
-            }}>
-            <Icon name="plus" size={12} /> Follow
-          </button>
-        )}
         {!nested && (
           <div className="spost__menuwrap">
             <button type="button" className="iconbtn" aria-label="More" aria-expanded={menu}
@@ -1122,6 +1129,8 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
     setLikes(comment.likeCount);
   }, [comment.likedByMe, comment.likeCount]);
 
+  const { confirm, dialog } = useConfirm();
+
   async function like() {
     setLiked(!liked);
     setLikes(likes + (liked ? -1 : 1));
@@ -1136,7 +1145,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   }
 
   async function remove() {
-    if (!window.confirm('Delete this comment?')) return;
+    if (!(await confirm({ title: 'Delete this comment?', body: 'Replies to it go with it.', action: 'Delete', danger: true }))) return;
     try {
       onChanged(await api.deletePostComment(channelId, id, comment.id, voice.storeId));
     } catch {
@@ -1146,6 +1155,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
 
   return (
     <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}`}>
+      {dialog}
       <Avatar name={comment.authorName} size={small ? 26 : 32} />
       <div className="cmt__main">
         <div className="cmt__bubble">

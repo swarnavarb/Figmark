@@ -5,7 +5,7 @@ import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
-import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb } from './ui';
+import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
 import { DropCard, Lightbox, copyLink, withReaction } from './SocialPost';
@@ -607,6 +607,8 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
     }
   }
 
+  const { confirm, dialog } = useConfirm();
+
   async function pin() {
     try {
       const { pinned } = await api.pinPost(post.channelId, post.id);
@@ -620,7 +622,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
 
   async function remove() {
     setOpen(false);
-    if (!window.confirm('Delete this message?')) return;
+    if (!(await confirm({ title: 'Delete this message?', action: 'Delete', danger: true }))) return;
     try {
       await api.deletePost(post.channelId, post.id);
       onChange(() => null);
@@ -634,6 +636,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
   return (
     <div id={`msg-${post.id}`} ref={box}
       className={`cmsg cmsg--${side}${startsRun ? ' is-first' : ''}${announced ? ' cmsg--announce' : ''}${open ? ' is-open' : ''}`}>
+      {dialog}
       {!mine && (
         <span className="cmsg__avatar">{startsRun ? <Avatar name={post.authorName} size={32} /> : null}</span>
       )}

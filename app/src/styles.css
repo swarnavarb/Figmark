@@ -2440,6 +2440,11 @@ code, kbd, samp, pre {
    so it never reads as "the primary button here happens to be red". */
 .btn--danger { background: var(--danger-solid); border-color: var(--danger-solid); color: var(--danger-ink); font-weight: var(--w-bold); box-shadow: 0 2px 10px rgba(225, 29, 72, 0.36); }
 .btn--danger:hover:not(:disabled) { filter: brightness(1.08); }
+/* The app's own "are you sure?". */
+.confirm { display: grid; gap: 16px; }
+.confirm__body { margin: 0; color: var(--text-dim); }
+.confirm__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm__actions .btn { min-width: 96px; justify-content: center; }
 .btn--danger:disabled { opacity: 0.45; }
 
 /* Accept gets the same treatment, in green: a decision this consequential
@@ -4577,6 +4582,19 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .spost__kind--poll { background: var(--aqua-soft); color: var(--aqua); }
 .spost__kind--hot { background: var(--grad-warm); color: #fff; }
 
+/* Follow, beside the name of whoever is not followed yet. */
+.spost__follow {
+  display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto;
+  padding: 2px 9px; margin-left: 2px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-pill);
+  background: var(--accent-soft); color: var(--accent-text);
+  font-size: var(--t-2xs); font-weight: var(--w-bold); line-height: 1.5; cursor: pointer;
+  transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.spost__follow:hover { background: var(--accent); color: var(--accent-ink); }
+.spost__follow:active { transform: scale(0.95); }
+.spost__follow:disabled { opacity: 0.6; cursor: default; }
+
 /* Why the home feed shows a post: an icon that explains itself in a bubble above it. */
 .boost { position: relative; display: inline-flex; }
 .boost__icon {
@@ -6664,7 +6682,9 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 /* ── The composer: a line forever running round it ─────────────────────── */
 
-.social .writer { isolation: isolate; border-color: transparent; }
+/* Above the posts that follow it: the voice menu opens out of it and down
+   over them, and each post is a layer of its own (its entrance animation). */
+.social .writer { isolation: isolate; border-color: transparent; z-index: 5; }
 .social .writer::before {
   content: '';
   position: absolute; inset: 0; z-index: -1;
@@ -7113,7 +7133,8 @@ body.is-locked { overflow: hidden; }
      over the page. The stripe clips itself instead. */
   position: relative; z-index: 50; isolation: isolate;
   color: #fff;
-  border-radius: 0 0 28px 28px;
+  /* Square along the bottom: the header is the top edge of the screen, not a card on it. */
+  border-radius: 0;
   padding-top: env(safe-area-inset-top, 0px);
   background:
     linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.22) 100%),
@@ -7203,9 +7224,14 @@ body.is-locked { overflow: hidden; }
 .soccompact {
   position: fixed; top: 0; left: 0; right: 0; z-index: 60;
   padding-top: env(safe-area-inset-top, 0px);
-  border-radius: 0 0 20px 20px;
-  background: var(--sx-grad);
-  box-shadow: 0 8px 26px rgba(255, 60, 90, 0.3);
+  /* Square, and see-through: the feed scrolls on underneath, blurred, so
+     the bar reads as glass over the page rather than a lid on it. */
+  border-radius: 0;
+  background: linear-gradient(115deg, rgba(255, 91, 31, 0.72) 0%, rgba(255, 46, 126, 0.72) 58%, rgba(192, 38, 211, 0.72) 100%);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 26px rgba(255, 60, 90, 0.18);
   color: #fff;
   transform: translateY(-110%);
   transition: transform 300ms var(--ease);
@@ -7296,7 +7322,7 @@ body.is-locked { overflow: hidden; }
 .roombar {
   position: sticky; top: 0; z-index: 30;
   padding-top: env(safe-area-inset-top, 0px);
-  border-radius: 0 0 20px 20px;
+  border-radius: 0;
   background: var(--sx-grad);
   box-shadow: 0 8px 24px rgba(255, 60, 90, 0.26);
   color: #fff;

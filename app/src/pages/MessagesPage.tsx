@@ -4,7 +4,7 @@ import type { Message, MessageDeal } from '@shared/models';
 import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, LevelChip } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, LevelChip, useConfirm } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
 import { DealCard, DealForm, useMakeDeal } from '../components/PrivateDeal';
 import { timeAgo } from '../format';
@@ -206,6 +206,7 @@ export function ThreadPage() {
   const newest = useRef<string | null>(null);
   const [menu, setMenu] = useState(false);
   const [older, setOlder] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   const load = useCallback(async (quiet = false) => {
     if (!handle) return;
@@ -282,7 +283,11 @@ export function ThreadPage() {
   async function toggleBlock() {
     if (!handle || !data) return;
     setMenu(false);
-    if (!data.blocked && !window.confirm(`Block @${data.them.handle}? Neither of you can write to the other until you unblock.`)) return;
+    if (!data.blocked && !(await confirm({
+      title: `Block @${data.them.handle}?`,
+      body: 'Neither of you can write to the other until you unblock. The conversation leaves your inbox.',
+      action: 'Block', danger: true,
+    }))) return;
     try {
       const { blocked } = await api.blockHandle(handle, !data.blocked);
       setData((current) => current && { ...current, blocked });
@@ -416,6 +421,7 @@ export function ThreadPage() {
           </span>
         )} />
 
+      {dialog}
       <main className="page social chroom dmroom">
         <div className="chthread">
           {data.more && (
