@@ -556,6 +556,10 @@ export class MemoryRepository implements Repository {
     return [...this.follows.values()].filter((follow) => follow.followerId === followerId);
   }
 
+  async listFollowsOf(sellerId: string): Promise<Follow[]> {
+    return [...this.follows.values()].filter((f) => f.sellerId === sellerId);
+  }
+
   async listFollowerIds(sellerId: string): Promise<string[]> {
     return [...this.follows.values()].filter((f) => f.sellerId === sellerId).map((f) => f.followerId);
   }

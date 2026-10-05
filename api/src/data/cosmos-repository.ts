@@ -1906,6 +1906,16 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listFollowsOf(sellerId: string): Promise<Follow[]> {
+    const { resources } = await this.container('follows')
+      .items.query<Follow>({
+        query: 'SELECT * FROM c WHERE c.sellerId = @sellerId',
+        parameters: [{ name: '@sellerId', value: sellerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async listFollowerIds(sellerId: string): Promise<string[]> {
     const { resources } = await this.container('follows')
       .items.query<string>({

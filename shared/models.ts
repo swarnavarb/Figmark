@@ -242,8 +242,8 @@ export interface ShareEvent {
   at: string;
   /** What the picture or link was about. */
   kind: ShareKind;
-  /** Where it went: WhatsApp, the phone's share sheet, a saved picture, a copied link. */
-  via: 'whatsapp' | 'native' | 'download' | 'copy';
+  /** Where it went: WhatsApp, the phone's share sheet, a saved picture, a copied link, a post in Figmark. */
+  via: 'whatsapp' | 'native' | 'download' | 'copy' | 'post';
   target: string | null;
 }
 

@@ -29,3 +29,6 @@ npm-debug.log*
 # graphify local/machine state — never shared across clones
 .graphify/branch.json
 .graphify/worktree.json
+
+# TypeScript incremental build cache
+*.tsbuildinfo

@@ -50,6 +50,8 @@ export interface GrowthFacts {
   goodReviews: Stamp[];
   /** Hearts other people put on the shop's items. */
   hearts: Stamp[];
+  /** People who follow the shop now, stamped when they followed. */
+  follows: Stamp[];
   /** Items put up for sale. */
   listed: Stamp[];
   /** Pre-orders opened. */
@@ -138,9 +140,15 @@ const DEFS: readonly Def[] = [
   { key: 'hearts15', kind: 'weekly', area: 'popularity', title: 'Fifteen hearts',
     blurb: 'Fifteen hearts from shoppers on your items this week.',
     goal: 15, action: 'share_item', measure: (f, inPeriod) => within(f.hearts, inPeriod) },
+  { key: 'follows3', kind: 'weekly', area: 'popularity', title: 'Three new followers',
+    blurb: 'Three people follow the shop this week. Share it where your buyers are.',
+    goal: 3, action: 'share_shop', measure: (f, inPeriod) => within(f.follows, inPeriod) },
   { key: 'sales3', kind: 'weekly', area: 'sales', title: 'Three sales',
     blurb: 'Three orders placed with the shop this week.',
     goal: 3, action: 'share_item', measure: (f, inPeriod) => within(f.sales, inPeriod) },
+  { key: 'deliver3', kind: 'weekly', area: 'sales', title: 'Deliver three orders',
+    blurb: 'Three orders go all the way to delivered this week.',
+    goal: 3, action: 'orders', measure: (f, inPeriod) => within(f.delivered, inPeriod) },
   { key: 'share2', kind: 'weekly', area: 'marketing', title: 'Share your shop twice',
     blurb: 'Send your shop or a drop to WhatsApp, a story or a group - twice this week.',
     goal: 2, action: 'share_shop', measure: (f, inPeriod) => within(f.shares, inPeriod) },
@@ -164,6 +172,9 @@ const DEFS: readonly Def[] = [
   { key: 'hearts60', kind: 'monthly', area: 'popularity', title: 'Sixty hearts',
     blurb: 'Sixty hearts from shoppers on your items this month.',
     goal: 60, action: 'share_item', measure: (f, inPeriod) => within(f.hearts, inPeriod) },
+  { key: 'follows10', kind: 'monthly', area: 'popularity', title: 'Ten new followers',
+    blurb: 'Ten people follow the shop this month.',
+    goal: 10, action: 'share_shop', measure: (f, inPeriod) => within(f.follows, inPeriod) },
   { key: 'sales15', kind: 'monthly', area: 'sales', title: 'Fifteen sales',
     blurb: 'Fifteen orders placed with the shop this month.',
     goal: 15, action: 'share_item', measure: (f, inPeriod) => within(f.sales, inPeriod) },
@@ -212,6 +223,9 @@ const LADDERS: readonly Ladder[] = [
   { key: 'flawless', name: 'Flawless', area: 'reviews', steps: [10, 50], undoable: true,
     blurb: (n) => `Deliver ${n} orders without losing a dispute.`,
     action: 'orders', have: (t) => (t.disputesLost === 0 ? t.completedSales : 0) },
+  { key: 'trusted', name: 'Trusted', area: 'reviews', steps: [50, 80, 95], undoable: true,
+    blurb: (n) => `Reach a trust score of ${n}. It rises with every order completed without a dispute.`,
+    action: 'orders', have: (t) => t.trust },
   { key: 'fans', name: 'Following', area: 'popularity', steps: [10, 50, 250, 1000], undoable: true,
     blurb: (n) => `Reach ${n} followers.`, action: 'share_shop', have: (t) => t.followers },
   { key: 'hearts', name: 'Crowd favourite', area: 'popularity', steps: [10, 100, 500, 2000], undoable: true,
@@ -231,6 +245,9 @@ const LADDERS: readonly Ladder[] = [
   { key: 'voice', name: 'Broadcaster', area: 'marketing', steps: [1, 20, 100],
     blurb: (n) => (n === 1 ? 'Post in your shop\'s channel.' : `Post ${n} times in your shop's channel.`),
     action: 'post', have: (t) => t.posts },
+  { key: 'stickers', name: 'Sticker book', area: 'popularity', steps: [3, 10, 20, 30], undoable: true,
+    blurb: (n) => `Earn ${n} sticker steps on your shop's page. Each sticker has its own milestone quest.`,
+    action: null, have: (t) => t.stickerSteps ?? 0 },
   { key: 'shelf', name: 'Full shelf', area: 'upkeep', steps: [5, 25, 75],
     blurb: (n) => `List ${n} items.`, action: 'list', have: (t) => t.listings },
   { key: 'launch', name: 'Launcher', area: 'upkeep', steps: [1, 5, 15],

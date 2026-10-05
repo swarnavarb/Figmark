@@ -12,6 +12,7 @@ import { formatMoney, timeAgo } from '../format';
 import { Avatar, Modal, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { useVoice, VoiceAvatar } from './SocialVoice';
+import { PostInFigmark } from './PostInFigmark';
 import { OpeningCard } from './Showcase';
 
 /**
@@ -540,11 +541,45 @@ function Body({ text, long }: { text: string; long: boolean }) {
   const big = long && text.length < 90 && !text.includes('\n');
   return (
     <div className={`spost__body${big ? ' spost__body--big' : ''}${folds && !open ? ' is-folded' : ''}`}>
-      <p>{text}</p>
+      <p><Linked text={text} /></p>
       {folds && !open && (
         <button type="button" className="spost__more" onClick={() => setOpen(true)}>See more</button>
       )}
     </div>
+  );
+}
+
+/**
+ * Links in a post's words, made pressable. One into Figmark opens in place;
+ * anything else opens in a new tab, and is never vouched for.
+ */
+export function Linked({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s<>"']+)/g);
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (index % 2 === 0) return part;
+        // A sentence's full stop or closing bracket is not part of the address.
+        const url = part.replace(/[.,!?;:)\]]+$/, '');
+        const tail = part.slice(url.length);
+        let inside: string | null = null;
+        try {
+          const parsed = new URL(url);
+          if (parsed.origin === window.location.origin) inside = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        } catch {
+          return part;
+        }
+        const shown = url.replace(/^https?:\/\//, '').replace(/[?#].*$/, '');
+        return (
+          <span key={index}>
+            {inside
+              ? <Link className="spost__link" to={inside} onClick={(event) => event.stopPropagation()}>{shown}</Link>
+              : <a className="spost__link" href={url} target="_blank" rel="noopener noreferrer nofollow ugc" onClick={(event) => event.stopPropagation()}>{shown}</a>}
+            {tail}
+          </span>
+        );
+      })}
+    </>
   );
 }
 
@@ -1261,6 +1296,7 @@ function ShareSheet({ card, onClose, onShared }: {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [elsewhere, setElsewhere] = useState(false);
   // Share the original when this is a repost: that is what the link should open.
   const target = card.original?.post ?? card.post;
   const canRepost = (target.reach ?? 'feed') === 'feed';
@@ -1330,7 +1366,17 @@ function ShareSheet({ card, onClose, onShared }: {
             <span className="sharesheet__glyph sharesheet__glyph--dm"><Icon name="mail" size={20} /></span>
             Message
           </Link>
+          <button type="button" className={`sharesheet__tile${elsewhere ? ' is-on' : ''}`} aria-expanded={elsewhere}
+            onClick={() => setElsewhere((open) => !open)}>
+            <span className="sharesheet__glyph sharesheet__glyph--room"><Icon name="repost" size={20} /></span>
+            Forum or channel
+          </button>
         </div>
+        {elsewhere && (
+          <PostInFigmark feed={false} asStore={Boolean(voice.storeId)}
+            text={`${thought.trim() ? `${thought.trim()}\n` : ''}${window.location.origin}${postHref(target)}`}
+            onPosted={() => void count('link').catch(() => undefined)} />
+        )}
         {done && <p className="sharesheet__done" role="status">{done}</p>}
         {error && <p className="notice notice--error">{error}</p>}
       </div>
