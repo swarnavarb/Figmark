@@ -9,7 +9,7 @@ import { offersAffiliate, resolveShortCode } from '../affiliate.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore, ownPhotoName } from '../storage/index.js';
 import { resolveInvite } from '../share.js';
-import { handler } from './http.js';
+import { error, handler } from './http.js';
 import { cardSvg, renderCard } from '../og-card.js';
 import { THEMES, type CardSpec } from '../../../shared/shareCard.js';
 
@@ -523,9 +523,46 @@ async function og(request: HttpRequest, _context: InvocationContext) {
   };
 }
 
+/**
+ * GET /api/link-preview?u=<path> - the same card, for a link posted inside
+ * Figmark. A post carries the link alone and the app draws the card from
+ * this, the way a chat app would, so a picture is not stored again for every
+ * share. Only Figmark's own share addresses (and an item's page) are read,
+ * and only by path: what it answers is what `/api/og` tells anybody already.
+ */
+async function linkPreview(request: HttpRequest, _context: InvocationContext) {
+  let path: URL;
+  try {
+    const parsed = new URL(request.query.get('u') ?? '', RELATIVE);
+    path = new URL(`${parsed.pathname}${parsed.search}`, RELATIVE);
+  } catch {
+    return error(400, 'invalid_url', 'Not a link.');
+  }
+  const item = /^\/listing\/([^/]+)\/?$/.exec(path.pathname);
+  if (item) path = new URL(`/s/l/${item[1]}${path.search}`, RELATIVE);
+  if (!/^\/(r|i|s\/l|s\/p)\/[^/]+\/?$/.test(path.pathname)) {
+    return error(404, 'no_preview', 'Nothing to show for that link.');
+  }
+  const origin = originOf(request, null);
+  const meta = await metaFor(await getRepository(), origin, path);
+  if (meta.fallback === '/') {
+    return error(404, 'no_preview', 'Nothing to show for that link.');
+  }
+  // Same-origin pictures go back as paths, so the app loads them from wherever it runs.
+  const image = meta.image.startsWith(origin) ? meta.image.slice(origin.length) : meta.image;
+  return {
+    status: 200,
+    headers: { 'Cache-Control': 'public, max-age=300' },
+    jsonBody: { title: meta.title, description: meta.description, image, href: meta.fallback, wide: meta.large },
+  };
+}
+
 export const ogRoute = handler(og);
 
 export const ogCardRoute = handler(ogCard);
 
+export const linkPreviewRoute = handler(linkPreview);
+
 app.http('og', { authLevel: 'anonymous', methods: ['GET'], route: 'og', handler: ogRoute });
 app.http('og-card', { authLevel: 'anonymous', methods: ['GET'], route: 'og/card/{kind}/{name}', handler: ogCardRoute });
+app.http('link-preview', { authLevel: 'anonymous', methods: ['GET'], route: 'link-preview', handler: linkPreviewRoute });

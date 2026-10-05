@@ -26,7 +26,7 @@ const {
   logShareRoute: logShare, myInviteRoute: myInvite, openInviteRoute: openInvite,
   growthRoute: growth, growthClaimRoute: claimGrowth,
 } = await import(new URL('share-routes.js', fns));
-const { ogRoute: og, ogCardRoute: ogCard, injectMeta } = await import(new URL('og-routes.js', fns));
+const { ogRoute: og, ogCardRoute: ogCard, linkPreviewRoute: linkPreview, injectMeta } = await import(new URL('og-routes.js', fns));
 const { questMeRoute: questMe, questClaimRoute: questClaim } = await import(new URL('quest-routes.js', fns));
 const { questView, emptyQuestState } = await import(new URL('quest.js', shared));
 const { growthView, claimGrowth: claimRule } = await import(new URL('store-growth.js', shared));
@@ -440,6 +440,22 @@ await check('a shop and a person without a photo get drawn pictures too', async 
   await cardAt(shopImage);
   const person = await repository.getUserById(sharer.id);
   if (person.username) await cardAt(tag(await preview(`/s/p/${person.username}`), 'og:image'));
+});
+
+await check('a Figmark link posted inside the app reads as its card, with no picture stored for it', async () => {
+  const ask = (u) => linkPreview(req({ headers: { host: 'figmark.example' }, query: { u } }), ctx);
+  const item = await ask(`https://figmark.example/s/l/${deal.id}?m=fill`);
+  assert.equal(item.status, 200);
+  assert.equal(item.jsonBody.href, `/listing/${deal.id}`);
+  assert.match(item.jsonBody.title, /Deal Figure/);
+  assert.match(item.jsonBody.image, /^\/api\/og\/card\/l\//, 'a drawn card, as a path on this site');
+  assert.equal((await ask(`/listing/${deal.id}`)).jsonBody.href, `/listing/${deal.id}`, 'an item\'s own page too');
+  assert.match((await ask(`/r/${dealCode}`)).jsonBody.title, /off/, 'an affiliate link leads with its discount');
+  const owner = await repository.getUserById(shop.id);
+  assert.match((await ask(`/s/p/${owner.sellerProfile.username}`)).jsonBody.title, /on Figmark$/);
+  assert.equal((await ask('/s/l/nope')).status, 404, 'nothing behind it, no card');
+  assert.equal((await ask('/orders/abc')).status, 404, 'only share addresses are read');
+  assert.equal((await ask('https://evil.example/s/l/x')).status, 404);
 });
 
 await check('a buyer through the link pays less; anybody else pays the price', async () => {

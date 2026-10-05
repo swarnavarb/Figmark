@@ -68,6 +68,17 @@ import type {
  * contracts, so a server change this code does not handle fails the build.
  */
 
+/** What a Figmark link is about, for drawing it as a card. */
+export interface LinkPreview {
+  title: string;
+  description: string;
+  /** A path on this site, or an address elsewhere. */
+  image: string;
+  /** Where the card opens, inside the app. */
+  href: string;
+  wide: boolean;
+}
+
 export class ApiRequestError extends Error {
   constructor(
     readonly status: number,
@@ -2243,6 +2254,8 @@ export const api = {
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
   uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
+  /** The card for a Figmark link inside a post - the same one a chat app shows. */
+  linkPreview: (path: string) => request<LinkPreview>(`/link-preview?u=${encodeURIComponent(path)}`),
   /** File one order into a lot - an existing one, or one opened here. */
   assignOrderToLot: (id: string, body: { lotId?: string; newLot?: Record<string, unknown>; note?: string }) =>
     post<{ order: Order; lot: Lot }>(`/orders/${encodeURIComponent(id)}/lot`, body),

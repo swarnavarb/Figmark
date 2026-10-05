@@ -4832,9 +4832,9 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .carousel__slide {
   flex: 0 0 100%; scroll-snap-align: center; scroll-snap-stop: always;
   padding: 0; border: 0; background: none; cursor: zoom-in;
-  aspect-ratio: 4 / 5; max-height: 560px;
+  /* Every post's photos sit in the same square; a tap opens them whole. */
+  aspect-ratio: 1;
 }
-.carousel--single .carousel__slide { aspect-ratio: 4 / 3; }
 .carousel__slide img { width: 100%; height: 100%; object-fit: cover; user-select: none; -webkit-user-drag: none; }
 .carousel__count {
   position: absolute; top: 10px; right: 10px;
@@ -7119,11 +7119,8 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .cmsg__time { justify-self: end; font-size: var(--t-2xs); opacity: 0.6; }
 .cmsg__photos { display: grid; gap: 3px; width: min(300px, 64vw); border-radius: 12px; overflow: hidden; }
 .cmsg__photos--2, .cmsg__photos--4 { grid-template-columns: 1fr 1fr; }
-.cmsg__photos--3 { grid-template-columns: 1fr 1fr; }
-.cmsg__photos--3 .cmsg__photo:first-child { grid-column: span 2; }
+.cmsg__photos--3 { grid-template-columns: 1fr 1fr 1fr; }
 .cmsg__photo { position: relative; display: block; padding: 0; border: 0; background: #000; cursor: zoom-in; aspect-ratio: 1; }
-.cmsg__photos--1 .cmsg__photo { aspect-ratio: 4 / 5; }
-.cmsg__photos--3 .cmsg__photo:first-child { aspect-ratio: 16 / 9; }
 .cmsg__photo img { width: 100%; height: 100%; object-fit: cover; }
 .cmsg__more {
   position: absolute; inset: 0; display: grid; place-items: center;
@@ -13049,3 +13046,25 @@ button.sk-plan__pick { cursor: pointer; }
 .pif__hint { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
 .pif--done { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ok); font-weight: 600; font-size: var(--t-sm); }
 .spost__link { color: var(--violet-text); text-decoration: underline; text-underline-offset: 2px; word-break: break-all; }
+
+/* ── A Figmark link, drawn as its card ─────────────────────────────────── */
+
+.linkcard {
+  display: grid; overflow: hidden; color: inherit; text-decoration: none;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2);
+  transition: border-color var(--dur-1) var(--ease);
+}
+.linkcard:hover { border-color: var(--lime); }
+.linkcard__img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--surface-3, var(--surface)); }
+.linkcard__text { display: grid; gap: 3px; padding: 10px 12px 12px; min-width: 0; }
+.linkcard__title { font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.3; }
+.linkcard__desc {
+  font-size: var(--t-xs); color: var(--text-dim); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.linkcard__host { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.linkcard--loading { aspect-ratio: 1; background: var(--surface-2); }
+/* In a chat bubble or a quoted post: the picture beside the words, as WhatsApp does. */
+.linkcard--compact { grid-template-columns: 84px minmax(0, 1fr); width: min(300px, 64vw); }
+.linkcard--compact .linkcard__img { height: 100%; min-height: 84px; }
+.linkcard--compact.linkcard--loading { aspect-ratio: auto; height: 84px; }

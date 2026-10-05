@@ -9,6 +9,7 @@ import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb, useConfirm } from '
 import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
 import { DropCard, Lightbox, Linked, copyLink, withReaction } from './SocialPost';
+import { figmarkLink, LinkCard } from './LinkCard';
 import { PersonVoice, useVoice } from './SocialVoice';
 import { RoomBar, useLongPress, useScrolledPast } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
@@ -592,6 +593,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
   const fromShop = !isForum && (post.voice ?? 'store') === 'store';
   const announced = !isForum && isAnnouncement(post) && fromShop;
   const photos = photosOf(card);
+  const linked = photos.length === 0 && !post.drop ? figmarkLink(post.body) : null;
 
   async function react(kind: ReactionKind) {
     const before = social.reactions;
@@ -675,7 +677,8 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
               ))}
             </div>
           )}
-          {post.body && !(listing && post.drop) && <p className="cmsg__body"><Linked text={post.body} /></p>}
+          {(linked ? linked.rest : post.body) && !(listing && post.drop) && <p className="cmsg__body"><Linked text={linked ? linked.rest : post.body} /></p>}
+          {linked && <LinkCard path={linked.path} compact />}
           {post.opening && (
             <OpeningCard sellerId={post.opening.sellerId} saleId={post.opening.saleId}
               startsAt={post.opening.startsAt} saleName={post.opening.saleName} itemCount={post.opening.itemCount} />

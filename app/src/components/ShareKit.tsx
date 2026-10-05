@@ -17,8 +17,10 @@ import { renderMoment, themeOf, type Moment, type MomentBadge } from './momentCa
  * the picture and the message with the link together, so a WhatsApp chat gets
  * both; WhatsApp sends the message alone, and its link unfolds into a preview
  * card with the item's photo; Save keeps the picture; Copy takes the link.
- * Post in Figmark puts the picture and the link on your feed, in a forum or
- * in a shop's channel, without leaving the app.
+ * Post in Figmark puts it on your feed, in a forum or in a shop's channel,
+ * without leaving the app: an item or a page goes as its link alone, drawn
+ * there as its card (see `LinkCard`) rather than stored again as a picture;
+ * a level or a pull, which no card can show, goes with its picture.
  * Every link carries the sharer's invite or affiliate code, so whoever it
  * reaches - and whatever they buy - counts for them.
  */
@@ -215,6 +217,9 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
     }
   };
 
+  // An item or a page is posted as its link, which the post draws as a card;
+  // only a share with nothing behind its link to draw carries the picture.
+  const carded = spec.link.to === 'item' || spec.link.to === 'page';
   // The picture goes up once, however many times the sharer posts it.
   const uploaded = useRef<Promise<string> | null>(null);
   const upload = useCallback(() => {
@@ -265,7 +270,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
           )}
         </div>
         {user && posting && (
-          <PostInFigmark text={text} photo={picture ? upload : undefined} onPosted={() => sent('post')} />
+          <PostInFigmark text={text} photo={picture && !carded ? upload : undefined} onPosted={() => sent('post')} />
         )}
         {user ? (
           <p className="shs__note">Sharing counts toward today's quest. Every friend who opens your link, joins or buys earns you more.</p>

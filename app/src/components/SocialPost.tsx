@@ -13,6 +13,7 @@ import { Avatar, Modal, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { useVoice, VoiceAvatar } from './SocialVoice';
 import { PostInFigmark } from './PostInFigmark';
+import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
 
 /**
@@ -284,6 +285,8 @@ export function SocialPostCard({
 
   const { post, listing, author, social } = card;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
+  // A Figmark link is drawn as its card, unless the post brought its own pictures.
+  const linked = !post.vibe && photos.length === 0 ? figmarkLink(post.body) : null;
   const badges = nested ? [] : card.badges ?? [];
   // The lightning already says it louder; two flames for one post is noise.
   const hot = !badges.includes('trending') && social.reactions.total >= HOT_REACTIONS
@@ -429,8 +432,10 @@ export function SocialPostCard({
       {post.vibe ? (
         <div className={`vibe vibe--${post.vibe}`}><p>{post.body}</p></div>
       ) : (
-        post.body && <Body text={post.body} long={!nested && photos.length === 0} />
+        (linked ? linked.rest : post.body) && <Body text={linked ? linked.rest : post.body} long={!nested && photos.length === 0 && !linked} />
       )}
+
+      {linked && <LinkCard path={linked.path} compact={nested} />}
 
       {photos.length > 0 && (
         <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
