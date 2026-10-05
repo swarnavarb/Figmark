@@ -33,6 +33,17 @@ import type { LearnDoc } from '@shared/learn';
 import type { AffiliateEarningStatus } from '@shared/affiliate';
 
 /** Somebody named on a screen, and the page their name opens. */
+
+/** A shop's quests with its level, as the Grow tab and the Quests page show them. */
+export interface ShopQuestBoard {
+  view: GrowthView;
+  level: StoreLevel;
+  handle: string | null;
+  name: string;
+  photoUrl: string | null;
+  levelTag: LevelTag;
+  followers: number;
+}
 export interface PartyRef {
   name: string;
   handle: string | null;
@@ -1977,11 +1988,12 @@ export const api = {
     const suffix = query.toString();
     return request<InviteOpen>(`/i/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`);
   },
-  growth: (ownerId: string) => request<{
-    view: GrowthView; handle: string | null; name: string; photoUrl: string | null; levelTag: LevelTag; followers: number;
-  }>(`/growth/${encodeURIComponent(ownerId)}`),
-  claimGrowth: (ownerId: string, taskId: string) =>
-    post<{ view: GrowthView; gained: { spotlights: number; xp: number } }>(`/growth/${encodeURIComponent(ownerId)}/claim`, { taskId }),
+  growth: (ownerId: string) => request<ShopQuestBoard>(`/growth/${encodeURIComponent(ownerId)}`),
+  /** One quest by id, or every one that is ready with `'all'`. */
+  claimGrowth: (ownerId: string, taskId: string | 'all') =>
+    post<ShopQuestBoard & { gained: { spotlights: number; xp: number; quests: number } }>(
+      `/growth/${encodeURIComponent(ownerId)}/claim`, taskId === 'all' ? { all: true } : { taskId },
+    ),
   spotlight: (listingId: string) =>
     post<{ spotlights: number; bumpedAt: string }>(`/listings/${encodeURIComponent(listingId)}/spotlight`, {}),
   markAffiliatePaid: (orderId: string, reference?: string) =>

@@ -202,9 +202,36 @@ await check('an invite that was never issued leads nowhere', async () => {
 /* ── A shop's growth quests ────────────────────────────────────────────── */
 console.log('\ngrowth quests');
 
+const blankTotals = () => ({
+  completedSales: 0, affiliateSales: 0, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
+  ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 0, soldOut: 0, trust: 0,
+  preOrders: 0, disputesLost: 0, ageDays: 0,
+});
+const blankFacts = () => ({
+  shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+  listed: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals: blankTotals(),
+});
+
+await check('reviews, popularity, sales and marketing pay full; upkeep pays a token and no Spotlight', async () => {
+  const now = new Date().toISOString();
+  const stamps = (n) => Array.from({ length: n }, () => ({ at: now }));
+  const facts = { ...blankFacts(), goodReviews: stamps(2), hearts: stamps(15), sales: stamps(3), listed: stamps(3) };
+  const tasks = growthView(facts, undefined).tasks;
+  const weekly = (key) => tasks.find((task) => task.id === `weekly-${key}`);
+  for (const key of ['good2', 'hearts15', 'sales3']) {
+    assert.equal(weekly(key).claimable, true, key);
+    assert.equal(weekly(key).focus, true, key);
+    assert.equal(weekly(key).spotlights, 1, key);
+  }
+  assert.equal(weekly('list3').area, 'upkeep');
+  assert.ok(weekly('list3').xp < weekly('sales3').xp, 'upkeep pays less than a focus quest of the same size');
+  assert.equal(weekly('list3').spotlights, 0);
+  assert.equal(tasks.find((task) => task.id === 'daily-sale1').spotlights, 0, 'daily quests pay XP only');
+});
+
 await check('growth quests count only what the server saw, and pay once per period', async () => {
   const now = new Date().toISOString();
-  const facts = { shares: [{ at: now }, { at: now }], opens: [], posts: [], affiliateItems: 0, affiliateSales: [], bestFill: 0 };
+  const facts = { ...blankFacts(), shares: [{ at: now }, { at: now }] };
   const view = growthView(facts, undefined);
   assert.equal(view.tasks.find((task) => task.id === 'weekly-share2').claimable, true);
   assert.equal(view.tasks.find((task) => task.id === 'weekly-visits5').claimable, false);
@@ -233,11 +260,21 @@ await check('a finished quest pays a Spotlight, and a Spotlight puts an item bac
   const again = await claimGrowth(req({ headers: shop.headers, params: { ownerId: shop.id }, body: { taskId: 'weekly-share2' } }), ctx);
   assert.equal(again.status, 409);
 
+  assert.ok(claimed.jsonBody.level.points >= claimed.jsonBody.gained.xp, 'a collected quest counts on the shop level');
+
+  const all = await claimGrowth(req({ headers: shop.headers, params: { ownerId: shop.id }, body: { all: true } }), ctx);
+  assert.equal(all.status, 200, JSON.stringify(all.jsonBody));
+  assert.ok(all.jsonBody.gained.quests >= 1, 'the day\'s share is still waiting');
+  assert.equal(all.jsonBody.view.tasks.some((task) => task.claimable), false, 'collect all leaves nothing ready');
+  assert.equal((await repository.getUserById(shop.id)).sellerProfile.levelCache, all.jsonBody.level.level, 'the level every name wears');
+  const nothing = await claimGrowth(req({ headers: shop.headers, params: { ownerId: shop.id }, body: { all: true } }), ctx);
+  assert.equal(nothing.status, 409);
+
   const stranger = await spotlight(req({ headers: sharer.headers, params: { id: listing.id }, body: {} }), ctx);
   assert.equal(stranger.status, 403);
   const lit = await spotlight(req({ headers: shop.headers, params: { id: listing.id }, body: {} }), ctx);
   assert.equal(lit.status, 200);
-  assert.equal(lit.jsonBody.spotlights, 0);
+  assert.equal(lit.jsonBody.spotlights, all.jsonBody.view.spotlights - 1);
   assert.equal((await repository.getListing(listing.id)).bumpedAt, lit.jsonBody.bumpedAt);
 });
 

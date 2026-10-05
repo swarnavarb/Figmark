@@ -8007,9 +8007,13 @@ await check('rarity reads sales and saves, and a timer turns the heat up', () =>
 
 await check('levels climb on a widening curve and every level has a title', () => {
   assert.equal(quest.levelFor(0), 1);
-  assert.equal(quest.levelFor(299), 1);
-  assert.equal(quest.levelFor(300), 2);
-  assert.equal(quest.levelFor(900), 3);
+  assert.equal(quest.levelFor(499), 1);
+  assert.equal(quest.levelFor(500), 2);
+  assert.equal(quest.levelFor(1500), 3);
+  for (let level = 2; level < quest.MAX_LEVEL; level += 1) {
+    const step = quest.xpForLevel(level + 1) - quest.xpForLevel(level);
+    assert.ok(step > quest.xpForLevel(level) - quest.xpForLevel(level - 1), `level ${level + 1} asks more than level ${level}`);
+  }
   assert.equal(quest.titleFor(1), 'Rookie');
   assert.equal(quest.titleFor(14), 'Legend');
   assert.equal(quest.titleFor(15), 'Mythic');
@@ -8018,21 +8022,38 @@ await check('levels climb on a widening curve and every level has a title', () =
   assert.equal(quest.titleFor(50), 'Immortal');
 });
 
-await check('buyers and shops level on one scale, at the same rate per action', async () => {
+await check('a shop levels only on quests it collected, upkeep paying a token amount', async () => {
   const shop = await import(new URL('../api/dist/shared/storefront.js', import.meta.url));
-  const facts = {
+  const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
+  const totals = {
     completedSales: 10, affiliateSales: 10, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
-    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], listings: 0, soldOut: 0, trust: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 5, soldOut: 0, trust: 0,
     preOrders: 0, disputesLost: 0, ageDays: 0,
   };
-  const level = shop.storeLevel(facts);
-  const sales = level.breakdown.find((line) => line.label === 'Orders delivered');
-  const referred = level.breakdown.find((line) => line.label === 'Sales through affiliate links');
-  assert.equal(sales.xp, 10 * quest.ACTION_XP);
-  assert.equal(referred.xp, sales.xp, 'every way of earning pays the same per action');
+  assert.equal(shop.storeLevel(totals, undefined).points, 0, 'what a shop did pays nothing until a quest collects it');
+  const facts = {
+    shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+    listed: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+  };
+  const { state, tasks } = growth.claimAllGrowth(facts, undefined);
+  const sales = tasks.find((task) => task.id === 'ms-sales-10');
+  const shelf = tasks.find((task) => task.id === 'ms-shelf-5');
+  assert.ok(tasks.find((task) => task.id === 'ms-sales-1'), 'collecting all climbs a ladder as far as the shop reaches');
+  assert.equal(sales.xp, quest.TIER_XP[1], 'a sales milestone pays full');
+  assert.equal(shelf.xp, Math.round(quest.TIER_XP[0] * growth.UPKEEP_SHARE), 'an upkeep milestone pays a token amount');
+  assert.equal(shelf.spotlights, 0);
+  const level = shop.storeLevel(totals, state);
+  assert.equal(level.points, tasks.reduce((sum, task) => sum + task.xp, 0));
+  assert.equal(level.breakdown.find((line) => line.label === 'Sales quests').xp, quest.TIER_XP[0] + quest.TIER_XP[1]);
   assert.equal(level.level, quest.levelFor(level.points), 'the buyer curve');
-  assert.equal(quest.actionXp(500), quest.ACTION_CAP * quest.ACTION_XP, 'capped alike');
-  const stickers = shop.storeStickers({ ...facts, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
+
+  // A follower milestone pays only while the shop keeps the followers.
+  const popular = { ...totals, followers: 12 };
+  const claimed = growth.claimGrowth({ ...facts, totals: popular }, undefined, 'ms-fans-10');
+  assert.equal(shop.storeLevel(popular, claimed.state).points, quest.TIER_XP[0]);
+  assert.equal(shop.storeLevel({ ...popular, followers: 8 }, claimed.state).points, 0, 'unfollowed back below the step');
+
+  const stickers = shop.storeStickers({ ...totals, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
   assert.deepEqual(stickers.slice(0, 2).map((s) => s.id), ['s-trust', 's-rated'], 'Trusted and Top rated lead once earned');
 });
 
@@ -8193,13 +8214,13 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
   const order = await deliveredOrderFor(player, 'lst_kbeauty');
   await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx);
   const repository = await getRepository();
-  // Fifteen days checked in, so there is a level to lose.
-  const days = Array.from({ length: 15 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
+  // Twenty-two days checked in, so there is a level to lose.
+  const days = Array.from({ length: 22 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
   const seeded = await repository.getUserById(player.id);
   await repository.updateUser({ ...seeded, quest: { ...seeded.quest, checkIns: days } });
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   const unit = quest.ACTION_XP;
-  assert.equal(before.xp, unit + quest.TIER_XP[0] + 15 * unit, 'an order, its first milestone, fifteen check-ins');
+  assert.equal(before.xp, unit + quest.TIER_XP[0] + 22 * unit, 'an order, its first milestone, twenty-two check-ins');
   assert.equal(before.level, 2);
 
   const now = new Date().toISOString();

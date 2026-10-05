@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
 import type { Listing, Message, MessageDeal, MessageParty, User } from '../../../shared/models.js';
-import { isCancelledLike, isPlaced, reviewRevealed } from '../../../shared/orders.js';
+import { reviewRevealed } from '../../../shared/orders.js';
 import {
-  buyerTag, mergedRating, personFollowId, reviewSide, storeLevel, storeStickers, storeTag, type StoreFacts,
+  buyerTag, mergedRating, personFollowId, reviewSide, storeLevel, storeStickers, storeTag,
 } from '../../../shared/storefront.js';
 import { moderation } from '../moderation.js';
 import { accessFor } from '../../../shared/stores.js';
@@ -13,7 +13,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
-import { growthXp } from '../../../shared/store-growth.js';
+import { storeFactsFrom } from '../store-facts.js';
 
 /**
  * The handle namespace, and the messages addressed through it.
@@ -402,25 +402,16 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
   const count = (state: string) => listings.filter((entry) => entry.state === state).length;
   const followerCount = isStore ? (shop?.followerCount ?? 0) : (user.followerCount ?? 0);
 
-  const facts: StoreFacts = {
-    completedSales: user.sellerTrust.completedTransactions,
-    affiliateSales: sales.filter((order) => order.affiliate && isPlaced(order) && !isCancelledLike(order.status)).length,
-    affiliateItems: listings.filter(({ listing, state }) => state === 'active' && listing.affiliate).length,
-    posts: posts.length,
-    followers: followerCount,
-    likes: listings.reduce((sum, { listing }) => sum + listing.likeCount, 0),
-    ratingAverage: rating.average,
-    ratingCount: rating.count,
-    stars: rating.stars,
-    listings: listings.length,
-    soldOut: count('sold'),
-    trust: user.sellerTrust.score,
-    preOrders: all.filter((listing) => listing.preOrder).length,
-    disputesLost: user.sellerTrust.disputesLost,
-    ageDays: Math.floor((now - Date.parse(user.createdAt)) / 86_400_000),
-    growthXp: growthXp(shop?.growth),
-  };
-  const level = isStore ? storeLevel(facts) : null;
+  const facts = storeFactsFrom({
+    user,
+    all,
+    sales,
+    posts,
+    rating,
+    buyerReviews: tradeReviews.filter((review) => review.direction === 'buyer_to_seller' && reviewRevealed(review, false)),
+    now,
+  });
+  const level = isStore ? storeLevel(facts, shop?.growth) : null;
   // Kept on the account so every name elsewhere can wear it without a recount.
   if (level && shop && shop.levelCache !== level.level) {
     shop.levelCache = level.level;

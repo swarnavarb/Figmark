@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   CARDS, CARD_SETS, SET_BONUS_XP, type CardDef, type StickerView, type TaskKind, type TaskView,
 } from '@shared/quest';
+import type { StoreAccess } from '@shared/stores';
 import { api, type InviteSummary, type LeaderRow } from '../api';
 import { useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { SkeletonText } from '../components/Feedback';
@@ -11,6 +12,7 @@ import {
 } from '../components/Quest';
 import { Avatar } from '../components/ui';
 import { QuestShooter } from '../components/QuestShooter';
+import { ShopQuests } from '../components/ShopQuests';
 import { useSession } from '../session';
 
 /**
@@ -21,6 +23,12 @@ import { useSession } from '../session';
  * collected, what to do next, what you have collected, and how you compare.
  * The XP breakdown at the foot is there so the number can be checked: every
  * point of it names the thing that earned it.
+ *
+ * Somebody who runs a shop gets a switch at the top between their own quests
+ * and the shop's. The two stay separate games - a person levels on what they
+ * buy and share, a shop on its reviews, popularity, sales and marketing, and
+ * everyone who runs the shop plays its board together - but they live on one
+ * page, so there is one place to look for quests.
  */
 export function QuestsPage() {
   const { view, act, refresh } = useQuest();
@@ -30,11 +38,43 @@ export function QuestsPage() {
   const [openCard, setOpenCard] = useState<CardDef | null>(null);
   const [openSticker, setOpenSticker] = useState<StickerView | null>(null);
   const [board, setBoard] = useState<{ top: LeaderRow[]; me: LeaderRow | null; total: number } | null>(null);
+  const [stores, setStores] = useState<StoreAccess[]>([]);
+  const [params, setParams] = useSearchParams();
 
   useEffect(() => {
     void refresh();
     void api.leaderboard().then(setBoard).catch(() => setBoard(null));
+    void api.stores().then(({ stores: mine }) => setStores(mine)).catch(() => setStores([]));
   }, [refresh]);
+
+  const shop = stores.find((store) => store.ownerId === params.get('shop')) ?? null;
+  const sides = stores.length > 0 && (
+    <div className="seg qsides" role="tablist" aria-label="Whose quests">
+      <button type="button" role="tab" aria-selected={!shop} className={!shop ? 'is-on' : ''}
+        onClick={() => setParams((current) => { current.delete('shop'); return current; }, { replace: true })}>
+        You
+      </button>
+      {stores.map((store) => (
+        <button key={store.ownerId} type="button" role="tab" aria-selected={shop?.ownerId === store.ownerId}
+          className={shop?.ownerId === store.ownerId ? 'is-on' : ''}
+          onClick={() => setParams((current) => { current.set('shop', store.ownerId); return current; }, { replace: true })}>
+          {store.name}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (shop) {
+    return (
+      <main className="page qpage">
+        <div className="qbar">
+          <h1 className="qpage__title">Quests</h1>
+          {sides}
+        </div>
+        <ShopQuests key={shop.ownerId} store={shop} />
+      </main>
+    );
+  }
 
   if (!view) {
     return <main className="page qpage"><SkeletonText lines={6} /></main>;
@@ -48,6 +88,7 @@ export function QuestsPage() {
     <main className="page qpage">
       <div className="qbar">
         <h1 className="qpage__title">Quests</h1>
+        {sides}
       </div>
 
       <section className="qhero">

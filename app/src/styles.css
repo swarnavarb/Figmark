@@ -12641,6 +12641,27 @@ button.sk-plan__pick { cursor: pointer; }
 .grow__thumb { width: 48px; height: 48px; flex: 0 0 auto; border-radius: 10px; object-fit: cover; background: var(--surface-2); }
 .grow__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
 .grow__btns { display: flex; gap: 6px; flex: 0 0 auto; }
+/* The shop's level and where its XP came from. */
+.grow__level { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.grow__level > div { display: grid; gap: 4px; min-width: 0; }
+.grow__areas { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.grow__area { display: grid; gap: 2px; padding: 10px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border); min-width: 0; }
+.grow__area b { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: var(--t-md); }
+.grow__area small { color: var(--text-faint); font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grow__area.is-minor { opacity: 0.7; }
+@media (max-width: 340px) { .grow__areas { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.grow__title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.grow__tag {
+  padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase; background: var(--surface-2); color: var(--text-dim);
+}
+.grow__tag--reviews { color: var(--violet-text); }
+.grow__tag--popularity { color: var(--pink-text); }
+.grow__tag--sales { color: var(--ok); }
+.grow__tag--marketing { color: var(--blue-text); }
+.grow__pay { color: var(--text-faint); font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+/* The switch between your own quests and a shop's. */
+.qsides { margin-left: auto; max-width: 100%; overflow-x: auto; }
 
 /* ── The invite landing page ───────────────────────────────────────────── */
 

@@ -171,10 +171,12 @@ export const MAX_LEVEL = 50;
 
 /**
  * One scale for buyers and shops, so a level 6 buyer and a level 6 shop did
- * about the same amount: 0, 300, 900, 1800, 3000, …
+ * about the same amount: 0, 500, 1500, 3000, 5000, … Each level asks 500 XP
+ * more than the one before it, so the top of the ladder stays rare.
  */
+export const LEVEL_STEP_XP = 250;
 export function xpForLevel(level: number): number {
-  return 150 * level * (level - 1);
+  return LEVEL_STEP_XP * level * (level - 1);
 }
 
 /*
