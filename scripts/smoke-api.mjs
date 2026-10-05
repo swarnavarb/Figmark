@@ -8063,7 +8063,7 @@ await check('a shop levels only on quests it collected, upkeep paying a token am
   assert.equal(shop.storeLevel(totals, undefined).points, 0, 'what a shop did pays nothing until a quest collects it');
   const facts = {
     shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
-    listed: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+    listed: [], follows: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
   };
   const { state, tasks } = growth.claimAllGrowth(facts, undefined);
   const sales = tasks.find((task) => task.id === 'ms-sales-10');
@@ -8085,6 +8085,50 @@ await check('a shop levels only on quests it collected, upkeep paying a token am
 
   const stickers = shop.storeStickers({ ...totals, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
   assert.deepEqual(stickers.slice(0, 2).map((s) => s.id), ['s-trust', 's-rated'], 'Trusted and Top rated lead once earned');
+});
+
+await check('every sticker, follower, sale and review count has a quest that pays for it', async () => {
+  const shop = await import(new URL('../api/dist/shared/storefront.js', import.meta.url));
+  const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
+  const totals = {
+    completedSales: 0, affiliateSales: 0, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 0, soldOut: 0, trust: 0,
+    preOrders: 0, disputesLost: 0, ageDays: 0,
+  };
+  const now = Date.now();
+  const at = new Date(now).toISOString();
+  const facts = {
+    shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+    listed: [], follows: [{ at }, { at }, { at }], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+  };
+  const view = growth.growthView(facts, undefined, now);
+  const ids = view.tasks.map((task) => task.id.replace(/-\d+$/, ''));
+  // Each sticker on a shop's page, and the milestone ladder that leads to it.
+  const ladderFor = {
+    's-trust': 'ms-trusted', 's-rated': 'ms-rated', 's-mouth': 'ms-mouth', 's-partner': 'ms-partner', 's-fans': 'ms-fans',
+    's-voice': 'ms-voice', 's-hearts': 'ms-hearts', 's-launch': 'ms-launch', 's-sales': 'ms-sales', 's-soldout': 'ms-soldout',
+    's-shelf': 'ms-shelf', 's-clean': 'ms-flawless', 's-year': 'ms-year',
+  };
+  for (const sticker of shop.storeStickers(totals)) {
+    assert.ok(ladderFor[sticker.id], `${sticker.id} is mapped to a quest`);
+    assert.ok(ids.includes(ladderFor[sticker.id]), `${sticker.id} has its quest`);
+  }
+  assert.ok(ids.includes('ms-stickers'), 'collecting stickers is a quest of its own');
+  for (const id of ['weekly-follows3', 'monthly-follows10', 'weekly-deliver3', 'weekly-good2', 'weekly-sales3']) {
+    assert.ok(ids.includes(id), `${id} is offered`);
+  }
+  const follows = view.tasks.find((task) => task.id === 'weekly-follows3');
+  assert.equal(follows.claimable, true, 'three follows this week finish it');
+  assert.equal(follows.xp, quest.TASK_XP.weekly);
+
+  // Trust and the sticker book pay only while they still stand.
+  const trusted = { ...totals, trust: 82 };
+  const t = growth.claimGrowth({ ...facts, totals: trusted }, undefined, 'ms-trusted-50');
+  assert.equal(shop.storeLevel(trusted, t.state).points, quest.TIER_XP[0]);
+  assert.equal(shop.storeLevel({ ...trusted, trust: 40 }, t.state).points, 0, 'trust fell back below the step');
+  const book = { ...totals, stickerSteps: 4 };
+  const b = growth.claimGrowth({ ...facts, totals: book }, undefined, 'ms-stickers-3');
+  assert.ok(!('refusal' in b), 'four sticker steps finish the first page of the book');
 });
 
 await check('a pack always holds the same card, never below its floor', () => {

@@ -50,6 +50,8 @@ export interface StoreFacts {
   preOrders: number;
   disputesLost: number;
   ageDays: number;
+  /** Sticker steps the shop has earned, all told - filled in once the rest is known. */
+  stickerSteps?: number;
 }
 
 export interface XpLine { label: string; xp: number; detail: string }

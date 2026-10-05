@@ -313,6 +313,8 @@ export interface Repository {
    * rare and deliberate - not on any page render.
    */
   listFollowerIds(sellerId: string): Promise<string[]>;
+  /** Who follows this shop or person, with when they started. */
+  listFollowsOf(sellerId: string): Promise<Follow[]>;
 
   /** A page the operators write (the Learn guide), or null before anybody has saved one. */
   getSiteContent(id: string): Promise<SiteContent | null>;

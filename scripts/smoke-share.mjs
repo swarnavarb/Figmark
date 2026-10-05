@@ -218,7 +218,7 @@ const blankTotals = () => ({
 });
 const blankFacts = () => ({
   shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
-  listed: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals: blankTotals(),
+  listed: [], follows: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals: blankTotals(),
 });
 
 await check('reviews, popularity, sales and marketing pay full; upkeep pays a token and no bump point', async () => {

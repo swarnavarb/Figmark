@@ -1,7 +1,7 @@
 import type { Listing, Order, Post, Review, User } from '../../shared/models.js';
 import { isCancelledLike, isPlaced, reviewRevealed } from '../../shared/orders.js';
 import type { GrowthFacts } from '../../shared/store-growth.js';
-import { mergedRating, reviewSide, type MergedRating, type StoreFacts } from '../../shared/storefront.js';
+import { mergedRating, reviewSide, storeStickers, type MergedRating, type StoreFacts } from '../../shared/storefront.js';
 import { accessFor } from '../../shared/stores.js';
 import { offersAffiliate } from './affiliate.js';
 import type { getRepository } from './data/index.js';
@@ -38,7 +38,7 @@ const counts = (order: Order) => isPlaced(order) && !isCancelledLike(order.statu
 
 export function storeFactsFrom({ user, all, sales, posts, rating, buyerReviews, now = Date.now() }: ShopRecord): StoreFacts {
   const shelf = shelfOf(all);
-  return {
+  const facts: StoreFacts = {
     completedSales: user.sellerTrust.completedTransactions,
     affiliateSales: sales.filter((order) => order.affiliate && counts(order)).length,
     affiliateItems: shelf.filter((listing) => isLive(listing, now) && offersAffiliate(listing)).length,
@@ -56,6 +56,8 @@ export function storeFactsFrom({ user, all, sales, posts, rating, buyerReviews, 
     disputesLost: user.sellerTrust.disputesLost,
     ageDays: Math.floor((now - Date.parse(user.createdAt)) / 86_400_000),
   };
+  facts.stickerSteps = storeStickers(facts).reduce((sum, sticker) => sum + sticker.reached, 0);
+  return facts;
 }
 
 /** The shop's ratings: the after-trade ones from buyers, and the ones left on its page. */
@@ -78,11 +80,12 @@ export async function shopRatings(repository: Repo, owner: User) {
 
 /** Everything the shop's quest board counts, with when each thing happened. */
 export async function shopQuestFacts(repository: Repo, owner: User): Promise<{ facts: GrowthFacts; totals: StoreFacts }> {
-  const [all, sales, posts, ratings] = await Promise.all([
+  const [all, sales, posts, ratings, follows] = await Promise.all([
     repository.listListings({ sellerId: owner.id, limit: 200, includeHidden: true }),
     repository.listOrdersForSeller(owner.id),
     repository.listPosts(owner.id, 200),
     shopRatings(repository, owner),
+    repository.listFollowsOf(owner.id),
   ]);
   const now = Date.now();
   // Hearts from the people running the shop are not popularity.
@@ -107,6 +110,8 @@ export async function shopQuestFacts(repository: Repo, owner: User): Promise<{ f
         .map((order) => ({ at: order.completedAt ?? order.updatedAt })),
       goodReviews: ratings.buyerReviews.filter((review) => review.rating >= 4).map((review) => ({ at: review.createdAt })),
       hearts: likes.map((like) => ({ at: like.createdAt })),
+      // The shop's own people following it is not popularity either.
+      follows: follows.filter((follow) => !accessFor(owner, follow.followerId)).map((follow) => ({ at: follow.createdAt })),
       listed: all.filter((listing) => listing.status !== 'draft').map((listing) => ({ at: listing.createdAt })),
       preOrdersRun: all.filter((listing) => listing.preOrder).map((listing) => ({ at: listing.createdAt })),
       affiliateItems: totals.affiliateItems,
