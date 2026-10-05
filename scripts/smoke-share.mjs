@@ -448,4 +448,11 @@ await check('a buyer through the link pays less; anybody else pays the price', a
   assert.equal(full.jsonBody.order.unitPriceMinor, 30_000);
 });
 
+await check('a typed ?u= picks the page, never the server the page comes from', async () => {
+  const response = await og(req({ headers: { host: 'figmark.example' }, query: { u: 'https://evil.example/tokyo-line' } }), ctx);
+  assert.equal(response.status, 200);
+  assert.ok(!response.body.includes('evil.example'), 'nothing of the other origin is used');
+  assert.match(tag(response.body, 'og:url'), /^https:\/\/figmark\.example\/tokyo-line$/);
+});
+
 console.log(`\n${passed} checks passed`);

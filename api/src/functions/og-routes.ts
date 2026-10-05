@@ -66,10 +66,15 @@ function originOf(request: HttpRequest, original: URL | null): string {
 
 /** The address the visitor actually asked for, before the rewrite. */
 function originalUrl(request: HttpRequest): URL | null {
-  const raw = request.headers.get('x-ms-original-url') ?? request.headers.get('x-original-url') ?? request.query.get('u');
+  const header = request.headers.get('x-ms-original-url') ?? request.headers.get('x-original-url');
+  const raw = header ?? request.query.get('u');
   if (!raw) return null;
   try {
-    return new URL(raw, RELATIVE);
+    const parsed = new URL(raw, RELATIVE);
+    // `?u=` is anybody's to type, so only its path counts. Its origin would
+    // decide where the page shell is fetched from, and a shell from somebody
+    // else's server served on this one is their script running as us.
+    return header ? parsed : new URL(`${parsed.pathname}${parsed.search}`, RELATIVE);
   } catch {
     return null;
   }

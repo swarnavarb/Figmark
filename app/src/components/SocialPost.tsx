@@ -2,7 +2,7 @@ import { ReportButton } from './ReportButton';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { ApiRequestError, api, type PostCard } from '../api';
+import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
 import {
   REACTIONS, REACTION_META,
   type CommentThread, type CommentView, type PollView, type ReactionKind, type ReactionSummary, type ReactorRow,
@@ -122,6 +122,62 @@ export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['lis
   );
 }
 
+/** What each badge says when tapped: the name first, then why the post is in front of you. */
+const BOOSTS: Record<PostBoost, { icon: 'bolt' | 'rising'; title: string; line: string }> = {
+  trending: { icon: 'bolt', title: 'Trending', line: 'One of the most talked-about posts on Figmark right now.' },
+  rising: { icon: 'rising', title: 'Rising', line: 'A new post picking up fast. You are seeing it early.' },
+};
+
+const TIP_MS = 2600;
+
+/**
+ * Why the home feed is showing a post: a small icon that, tapped, says so in a
+ * bubble right above itself.
+ *
+ * Above the icon rather than at the foot of the screen, because the question
+ * is "what is this mark" and the answer belongs where the eye already is. It
+ * goes by itself after a moment, on a second tap, on Escape, or on a tap
+ * anywhere else.
+ */
+function BoostBadge({ kind }: { kind: PostBoost }) {
+  const meta = BOOSTS[kind];
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => setOpen(false), TIP_MS);
+    const away = (event: Event) => {
+      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', escape);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+
+  return (
+    <span className="boost" ref={wrap}>
+      <button type="button" className={`boost__icon boost__icon--${kind}`} aria-label={meta.title}
+        aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name={meta.icon} size={12} />
+      </button>
+      {open && (
+        <span className={`boost__tip boost__tip--${kind}`} role="status">
+          <strong><Icon name={meta.icon} size={13} /> {meta.title}</strong>
+          <span>{meta.line}</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
 function reduceMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
@@ -162,7 +218,9 @@ export function SocialPostCard({
 
   const { post, listing, author, social } = card;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
-  const hot = social.reactions.total >= HOT_REACTIONS
+  const badges = nested ? [] : card.badges ?? [];
+  // The lightning already says it louder; two flames for one post is noise.
+  const hot = !badges.includes('trending') && social.reactions.total >= HOT_REACTIONS
     && Date.now() - new Date(post.createdAt).getTime() < HOT_WINDOW_MS;
 
   const react = useCallback(async (kind: ReactionKind | null) => {
@@ -238,6 +296,7 @@ export function SocialPostCard({
           </span>
           <span className="spost__meta">
             <Link to={postHref(post)} className="spost__time">{timeAgo(post.createdAt)}</Link>
+            {badges.map((kind) => <BoostBadge key={kind} kind={kind} />)}
             {card.shop && !nested && (
               <>
                 <span aria-hidden="true">·</span>

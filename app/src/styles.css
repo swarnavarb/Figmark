@@ -4577,6 +4577,49 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .spost__kind--poll { background: var(--aqua-soft); color: var(--aqua); }
 .spost__kind--hot { background: var(--grad-warm); color: #fff; }
 
+/* Why the home feed shows a post: an icon that explains itself in a bubble above it. */
+.boost { position: relative; display: inline-flex; }
+.boost__icon {
+  display: inline-grid; place-items: center;
+  width: 20px; height: 20px; padding: 0;
+  border: 1px solid transparent; border-radius: 50%;
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease);
+}
+.boost__icon:active { transform: scale(0.9); }
+.boost__icon:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.boost__icon--trending { background: var(--warn-soft); color: var(--warn); border-color: rgba(251, 191, 36, 0.4); }
+.boost__icon--rising { background: var(--aqua-soft); color: var(--aqua); border-color: var(--aqua-line); }
+.boost__tip {
+  position: absolute; z-index: 30;
+  left: -8px; bottom: calc(100% + 8px);
+  display: grid; gap: 2px;
+  width: max-content; max-width: min(240px, 70vw);
+  padding: 8px 11px;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+  font-size: var(--t-xs); line-height: 1.35;
+  transform-origin: 18px 100%;
+  animation: boost-tip var(--dur-1) var(--ease) both;
+}
+.boost__tip strong { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-sm); }
+.boost__tip > span { color: var(--text-dim); }
+.boost__tip--trending strong { color: var(--warn); }
+.boost__tip--rising strong { color: var(--aqua); }
+/* The point of the bubble sits over the icon it explains. */
+.boost__tip::after {
+  content: ''; position: absolute; left: 14px; top: 100%;
+  width: 8px; height: 8px; margin-top: -4px;
+  background: inherit; border: inherit; border-width: 0 1px 1px 0;
+  transform: rotate(45deg);
+}
+@keyframes boost-tip {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .boost__tip { animation: none; } }
+
 .spost__menuwrap { position: relative; flex: 0 0 auto; }
 .spost__menuwrap .iconbtn { width: 34px; height: 34px; border-color: transparent; background: transparent; }
 .spost__menuwrap .iconbtn:hover { background: var(--surface-2); }

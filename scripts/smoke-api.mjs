@@ -68,7 +68,7 @@ const {
   readPostRoute: readPost, reactRoute: reactTo, reactorsRoute: reactors,
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
-  removePostRoute: removePost, trendingRoute: trending, shareableRoute: shareable, pinPostRoute: pinPost,
+  removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, shareableRoute: shareable, pinPostRoute: pinPost,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
 } = await import(new URL('social-routes.js', fns));
 const {
@@ -1231,10 +1231,20 @@ await check('a repost reaches your followers and points at the original', async 
   const again = await sharePost(req({ headers: auth, params: on(repost.post), body: { mode: 'repost' } }), ctx);
   assert.equal(again.jsonBody.repost.original.post.id, 'pst_tokyo_1');
 
+  // Passing it on again counts once per sharer; somebody new counts.
   const counted = await sharePost(req({ headers: auth, params: { channel: 'usr_tokyoline', id: 'pst_tokyo_1' }, body: { mode: 'link' } }), ctx);
   assert.equal(counted.status, 200);
   assert.equal(counted.jsonBody.repost, null);
-  assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount + 1);
+  assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount, 'the same sharer is counted once');
+  const sharer = await signup(req({
+    body: { displayName: 'Link Sharer', email: 'linksharer@figmark.example', phone: '+919000045833', password: 'longenough1' },
+  }), ctx);
+  const byThem = await sharePost(req({
+    headers: { authorization: `Bearer ${sharer.jsonBody.token}` },
+    params: { channel: 'usr_tokyoline', id: 'pst_tokyo_1' }, body: { mode: 'link' },
+  }), ctx);
+  assert.equal(byThem.jsonBody.shareCount, again.jsonBody.shareCount + 1);
+  assert.equal(byThem.jsonBody.repost, null);
 
   assert.equal((await sharePost(req({ headers: auth, params: on(repost.post), body: { mode: 'tweet' } }), ctx)).status, 400);
 });
@@ -9346,6 +9356,53 @@ await check('two buyers pressing at once cannot both take the last one', async (
   const refusals = await Promise.all(opened.map((order) => placeOrder(repository, order, 'paid', order.buyerId, { tellSeller: false })));
   assert.equal(refusals.filter((refusal) => refusal === null).length, 1, 'exactly one of them gets it');
   assert.equal((await repository.getListing(id)).quantityAvailable, 0);
+});
+
+await check('the home feed is who you follow, with trending and rising mixed in and badged', async () => {
+  const home = await socialHome(req({ headers: auth }), ctx);
+  assert.equal(home.status, 200);
+  const cards = home.jsonBody.posts;
+  assert.ok(cards.length > 0);
+  assert.ok(cards.some((card) => card.badges?.includes('trending')), 'something is trending');
+  assert.ok(cards.every((card) => card.following || card.post.channelId === 'usr_demo' || card.badges?.length),
+    'a stranger is only here with a reason');
+  assert.equal(new Set(cards.map((card) => card.post.id)).size, cards.length, 'nothing twice');
+  // A forum post put on somebody's wall is read as the forum post, as on the old feed.
+  assert.ok(cards.every((card) => card.post.channel === 'forum' || (card.post.reach ?? 'feed') === 'feed'),
+    'never a shop room message');
+  assert.ok(cards.every((card) => card.post.sharedBy === undefined), 'who shared is not on the wire');
+  assert.equal((await socialHome(req({ headers: auth, query: { as: 'usr_kaiju' } }), ctx)).status, 403);
+});
+
+await check('a new post from a stranger rises to everyone once enough people engage', async () => {
+  const author = await newBuyer('Rising Author');
+  const made = await createPost(req({ headers: author.headers, body: { body: 'Just landed: a sealed box from Osaka.' } }), ctx);
+  assert.equal(made.status, 201);
+  const post = made.jsonBody.post;
+  const fans = [await newBuyer('Rising Fan One'), await newBuyer('Rising Fan Two'), await newBuyer('Rising Fan Three')];
+  for (const fan of fans) {
+    assert.equal((await reactTo(req({ headers: fan.headers, params: on(post), body: { kind: 'fire' } }), ctx)).status, 200);
+  }
+  const cards = (await socialHome(req({ headers: auth }), ctx)).jsonBody.posts;
+  const found = cards.find((card) => card.post.id === post.id);
+  assert.ok(found, 'proven, so shown beyond its followers');
+  assert.ok(found.badges.includes('rising'));
+  assert.equal(found.following, false);
+  // The author's own feed does not offer them their own post as a discovery.
+  const theirs = (await socialHome(req({ headers: author.headers }), ctx)).jsonBody.posts;
+  assert.ok(!theirs.find((card) => card.post.id === post.id)?.badges?.includes('rising'));
+});
+
+await check('what is said in a shop\'s room cannot be touched from outside it', async () => {
+  const room = (await createPost(req({
+    headers: auth, body: { body: 'Followers only: restock at noon.', channelId: 'usr_demo' },
+  }), ctx)).jsonBody.post;
+  const outsider = await newBuyer('Room Outsider');
+  const at = { headers: outsider.headers, params: on(room) };
+  assert.equal((await reactTo(req({ ...at, body: { kind: 'love' } }), ctx)).status, 403);
+  assert.equal((await commentOn(req({ ...at, body: { body: 'hi' } }), ctx)).status, 403);
+  assert.equal((await reactors(req(at), ctx)).status, 403);
+  assert.equal((await sharePost(req({ ...at, body: { mode: 'link' } }), ctx)).status, 403);
 });
 
 console.log(`\n${passed} checks passed`);

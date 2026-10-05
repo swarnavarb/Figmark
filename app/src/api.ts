@@ -968,7 +968,11 @@ export interface PostCard {
   alsoIn?: { id: string; name: string }[];
   /** Said by a shop in its own name, so it has a channel to open. */
   shop?: boolean;
+  /** Why the home feed shows it: trending anywhere, or new and rising past its followers. */
+  badges?: PostBoost[];
 }
+
+export type PostBoost = 'trending' | 'rising';
 
 /** One post read in full, with everything said under it. */
 export interface PostDetail {
@@ -2380,6 +2384,8 @@ export const api = {
 
   socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
   trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
+  /** Who you follow, with trending and rising posts mixed in and badged. */
+  socialHome: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/home${voice(as)}`),
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
   channelThread: (id: string, as?: string | null) =>

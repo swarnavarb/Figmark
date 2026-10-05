@@ -1933,6 +1933,12 @@ export interface Post extends BaseDocument {
   comments?: StoredComment[];
   /** How many times it was passed on - reposted, or sent out as a link. */
   shareCount?: number;
+  /**
+   * Actor keys that have been counted for sharing it, so passing it on twice
+   * counts once. Shares weigh most in trending; an uncapped tap would be a way
+   * to put anything at the top.
+   */
+  sharedBy?: string[];
   /** A question with a few answers to pick from. */
   poll?: StoredPoll | null;
   /** Set when this post is somebody else's, passed on to the reposter's followers. */
