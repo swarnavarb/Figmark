@@ -1991,11 +1991,9 @@ export const api = {
   growth: (ownerId: string) => request<ShopQuestBoard>(`/growth/${encodeURIComponent(ownerId)}`),
   /** One quest by id, or every one that is ready with `'all'`. */
   claimGrowth: (ownerId: string, taskId: string | 'all') =>
-    post<ShopQuestBoard & { gained: { spotlights: number; xp: number; quests: number } }>(
+    post<ShopQuestBoard & { gained: { bumps: number; xp: number; quests: number } }>(
       `/growth/${encodeURIComponent(ownerId)}/claim`, taskId === 'all' ? { all: true } : { taskId },
     ),
-  spotlight: (listingId: string) =>
-    post<{ spotlights: number; bumpedAt: string }>(`/listings/${encodeURIComponent(listingId)}/spotlight`, {}),
   markAffiliatePaid: (orderId: string, reference?: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
@@ -2050,7 +2048,8 @@ export const api = {
   collectionRemove: (orderId: string) => post<CollectionShelf>('/me/collection/remove', { orderId }),
   collectionGroups: (action: 'create' | 'rename' | 'delete', body: { id?: string; name?: string }) =>
     post<CollectionShelf>('/me/collection/groups', { action, ...body }),
-  bump: (id: string) => post<{ bumped: boolean }>(`/listings/${encodeURIComponent(id)}/bump`),
+  /** Spends a bump point. Out of points, it fails with 409 `no_bumps`. */
+  bump: (id: string) => post<{ bumped: boolean; bumpedAt: string; bumps: number; shop: number; own: number; spent: 'shop' | 'own' }>(`/listings/${encodeURIComponent(id)}/bump`),
   comment: (id: string, body: string, replyToId?: string) =>
     post<{ comment: ListingPost }>(`/listings/${encodeURIComponent(id)}/comments`, { body, replyToId }),
   reactToComment: (id: string, commentId: string, kind: ReactionKind | null) =>

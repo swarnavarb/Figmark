@@ -29,7 +29,7 @@ const {
 } = await import(new URL('catalog-routes.js', apiRoot));
 const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affiliate-routes.js', apiRoot));
 const {
-  logShareRoute, myInviteRoute, openInviteRoute, growthRoute, growthClaimRoute, spotlightRoute,
+  logShareRoute, myInviteRoute, openInviteRoute, growthRoute, growthClaimRoute,
 } = await import(new URL('share-routes.js', apiRoot));
 const { ogRoute, ogCardRoute } = await import(new URL('og-routes.js', apiRoot));
 const {
@@ -144,7 +144,6 @@ const routes = [
   ['GET', '/api/i/:code', openInviteRoute],
   ['GET', '/api/growth/:ownerId', growthRoute],
   ['POST', '/api/growth/:ownerId/claim', growthClaimRoute],
-  ['POST', '/api/listings/:id/spotlight', spotlightRoute],
   ['GET', '/api/og', ogRoute],
   ['GET', '/api/og/card/:kind/:name', ogCardRoute],
   ['POST', '/api/listings/:id/like', toggleLikeRoute],

@@ -1,5 +1,5 @@
 import type { StoreGrowthState } from './models.js';
-import { TASK_XP, TIER_XP, dayKey, monthKey, weekKey } from './quest.js';
+import { BUMPS_FOR, TASK_XP, TIER_XP, dayKey, monthKey, weekKey } from './quest.js';
 import type { StoreFacts } from './storefront.js';
 
 /**
@@ -7,14 +7,14 @@ import type { StoreFacts } from './storefront.js';
  *
  * A buyer plays for cards; a shop plays for buyers. So the weekly and monthly
  * quests also pay in the one thing a shop actually wants more of - reach. Each
- * pays a Spotlight: one tap that puts an item back at the top of the feed,
- * without waiting out the usual bump limit.
+ * pays bump points, and every Bump on one of the shop's items spends one to put
+ * it back at the top of the feed. (Stored as `spotlights`, their old name.)
  *
  * Every quest belongs to one area. Four are what a shop is graded on - its
  * reviews, how popular it is, what it sells, and how it markets itself - and
  * those pay full XP. Keeping the shop stocked and tidy matters too, but it is
  * what any shop does anyway, so upkeep quests pay a token amount and no
- * Spotlights. Like the buyers' game, nothing is counted from a number somebody
+ * bump points. Like the buyers' game, nothing is counted from a number somebody
  * wrote - only from rows the server recorded.
  */
 
@@ -77,8 +77,8 @@ export interface GrowthTask {
   done: boolean;
   claimed: boolean;
   claimable: boolean;
-  /** Spotlights it pays. */
-  spotlights: number;
+  /** Bump points it pays. */
+  bumps: number;
   xp: number;
   /** What to press to work on it, in the app's own terms. */
   action: GrowthAction;
@@ -88,7 +88,8 @@ export interface GrowthTask {
 
 export interface GrowthView {
   tasks: GrowthTask[];
-  spotlights: number;
+  /** Bump points saved up to spend. */
+  bumps: number;
   /** XP the collected quests are worth on the shop's level. */
   xp: number;
   /** That XP split by area, focus areas first. */
@@ -240,14 +241,13 @@ const LADDERS: readonly Ladder[] = [
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 
-const SPOTLIGHTS: Record<GrowthKind, number> = { daily: 0, weekly: 1, monthly: 2, milestone: 0 };
 
 function xpOf(kind: GrowthKind, area: GrowthArea, stepIndex = 0): number {
   const base = kind === 'milestone' ? TIER_XP[stepIndex] ?? 0 : TASK_XP[kind];
   return isFocus(area) ? base : Math.round(base * UPKEEP_SHARE);
 }
 
-const spotlightsOf = (kind: GrowthKind, area: GrowthArea) => (isFocus(area) ? SPOTLIGHTS[kind] : 0);
+const bumpsOf = (kind: GrowthKind, area: GrowthArea) => (isFocus(area) ? BUMPS_FOR[kind] : 0);
 
 function periodOf(kind: GrowthKind, now: number): string {
   if (kind === 'daily') return dayKey(now);
@@ -314,7 +314,7 @@ function periodicTask(def: Def, facts: GrowthFacts, state: StoreGrowthState, now
   return {
     id, kind: def.kind, area: def.area, focus: isFocus(def.area), title: def.title, blurb: def.blurb,
     progress, goal: def.goal, done, claimed, claimable: done && !claimed,
-    spotlights: spotlightsOf(def.kind, def.area), xp: xpOf(def.kind, def.area), action: def.action,
+    bumps: bumpsOf(def.kind, def.area), xp: xpOf(def.kind, def.area), action: def.action,
   };
 }
 
@@ -337,7 +337,7 @@ function ladderTask(ladder: Ladder, facts: GrowthFacts, state: StoreGrowthState)
     blurb: ladder.blurb(goal),
     progress: Math.min(goal, have), goal, done,
     claimed: finished, claimable: done && !finished && !state.claimed[`ms-${ladder.key}-${goal}:once`],
-    spotlights: 0, xp: xpOf('milestone', ladder.area, index), action: ladder.action,
+    bumps: 0, xp: xpOf('milestone', ladder.area, index), action: ladder.action,
     step: { index: index + 1, of: ladder.steps.length },
   };
 }
@@ -357,7 +357,7 @@ export function growthView(facts: GrowthFacts, stored: StoreGrowthState | undefi
   const thisWeek = inPeriodOf('weekly', now);
   return {
     tasks,
-    spotlights: state.spotlights,
+    bumps: state.spotlights,
     xp: areas.reduce((sum, area) => sum + area.xp, 0),
     areas,
     week: {
@@ -391,7 +391,7 @@ export function claimGrowth(
     state: {
       ...state,
       claimed: { ...state.claimed, [claimKeyOf(task, now)]: new Date(now).toISOString() },
-      spotlights: state.spotlights + task.spotlights,
+      spotlights: state.spotlights + task.bumps,
     },
   };
 }

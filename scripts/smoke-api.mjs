@@ -543,16 +543,31 @@ await check('publishing requires a session and a valid price', async () => {
   assert.equal(noPrice.status, 400);
 });
 
-await check('bump works once, then is rate-limited', async () => {
+await check('bump spends a bump point, and is refused with none left or within the hour', async () => {
   const id = published.jsonBody.listing.id;
-  assert.equal((await bump(req({ headers: auth, params: { id } }), ctx)).status, 200);
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const owner = await repository.getUserById('usr_demo');
+  const pool = (count) => {
+    if (owner.sellerProfile) owner.sellerProfile.growth = { ...(owner.sellerProfile.growth ?? { claimed: {} }), spotlights: count };
+    else owner.quest = { ...(owner.quest ?? { checkIns: [], claimed: {}, cards: [] }), bumps: count };
+  };
+  pool(0);
+  await repository.updateUser(owner);
+  const none = await bump(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(none.status, 409);
+  assert.equal(none.jsonBody.error, 'no_bumps');
+  pool(2);
+  await repository.updateUser(owner);
+  const done = await bump(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(done.status, 200, JSON.stringify(done.jsonBody));
+  assert.equal(done.jsonBody.bumps, 1);
   const again = await bump(req({ headers: auth, params: { id } }), ctx);
-  assert.equal(again.status, 429, 'a second bump must be refused');
+  assert.equal(again.status, 429, 'a second bump within the hour must be refused');
 });
 
 await check("bumping someone else's listing is refused", async () => {
   const other = await bump(req({ headers: auth, params: { id: 'lst_dragon_knight' } }), ctx);
-  assert.equal(other.status, 429);
+  assert.equal(other.status, 403);
 });
 
 /* ── buying ────────────────────────────────────────────────────────────── */
@@ -8041,7 +8056,7 @@ await check('a shop levels only on quests it collected, upkeep paying a token am
   assert.ok(tasks.find((task) => task.id === 'ms-sales-1'), 'collecting all climbs a ladder as far as the shop reaches');
   assert.equal(sales.xp, quest.TIER_XP[1], 'a sales milestone pays full');
   assert.equal(shelf.xp, Math.round(quest.TIER_XP[0] * growth.UPKEEP_SHARE), 'an upkeep milestone pays a token amount');
-  assert.equal(shelf.spotlights, 0);
+  assert.equal(shelf.bumps, 0);
   const level = shop.storeLevel(totals, state);
   assert.equal(level.points, tasks.reduce((sum, task) => sum + task.xp, 0));
   assert.equal(level.breakdown.find((line) => line.label === 'Sales quests').xp, quest.TIER_XP[0] + quest.TIER_XP[1]);

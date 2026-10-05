@@ -20,11 +20,11 @@ const shared = new URL('../api/dist/shared/', import.meta.url);
 const { loginRoute: login, signupRoute: signup } = await import(new URL('auth-routes.js', fns));
 const {
   createListingRoute: createListing, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,
-  createOrderRoute: createOrder, editListingRoute: editListing,
+  createOrderRoute: createOrder, editListingRoute: editListing, bumpListingRoute: bump,
 } = await import(new URL('catalog-routes.js', fns));
 const {
   logShareRoute: logShare, myInviteRoute: myInvite, openInviteRoute: openInvite,
-  growthRoute: growth, growthClaimRoute: claimGrowth, spotlightRoute: spotlight,
+  growthRoute: growth, growthClaimRoute: claimGrowth,
 } = await import(new URL('share-routes.js', fns));
 const { ogRoute: og, ogCardRoute: ogCard, injectMeta } = await import(new URL('og-routes.js', fns));
 const { questMeRoute: questMe, questClaimRoute: questClaim } = await import(new URL('quest-routes.js', fns));
@@ -212,7 +212,7 @@ const blankFacts = () => ({
   listed: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals: blankTotals(),
 });
 
-await check('reviews, popularity, sales and marketing pay full; upkeep pays a token and no Spotlight', async () => {
+await check('reviews, popularity, sales and marketing pay full; upkeep pays a token and no bump point', async () => {
   const now = new Date().toISOString();
   const stamps = (n) => Array.from({ length: n }, () => ({ at: now }));
   const facts = { ...blankFacts(), goodReviews: stamps(2), hearts: stamps(15), sales: stamps(3), listed: stamps(3) };
@@ -221,12 +221,12 @@ await check('reviews, popularity, sales and marketing pay full; upkeep pays a to
   for (const key of ['good2', 'hearts15', 'sales3']) {
     assert.equal(weekly(key).claimable, true, key);
     assert.equal(weekly(key).focus, true, key);
-    assert.equal(weekly(key).spotlights, 1, key);
+    assert.equal(weekly(key).bumps, 1, key);
   }
   assert.equal(weekly('list3').area, 'upkeep');
   assert.ok(weekly('list3').xp < weekly('sales3').xp, 'upkeep pays less than a focus quest of the same size');
-  assert.equal(weekly('list3').spotlights, 0);
-  assert.equal(tasks.find((task) => task.id === 'daily-sale1').spotlights, 0, 'daily quests pay XP only');
+  assert.equal(weekly('list3').bumps, 0);
+  assert.equal(tasks.find((task) => task.id === 'daily-sale1').bumps, 0, 'daily quests pay XP only');
 });
 
 await check('growth quests count only what the server saw, and pay once per period', async () => {
@@ -248,15 +248,16 @@ await check('only the people running a shop see its growth quests', async () => 
   assert.ok(mine.jsonBody.view.tasks.some((task) => task.id === 'weekly-affiliate3'));
 });
 
-await check('a finished quest pays a Spotlight, and a Spotlight puts an item back on top', async () => {
+await check('a finished quest pays a bump point, and Bump spends it to put an item back on top', async () => {
   // A second send this week finishes "Share your shop twice".
   await logShare(req({ headers: shop.headers, body: { kind: 'item', via: 'whatsapp', target: listing.id, storeId: shop.id } }), ctx);
-  const none = await spotlight(req({ headers: shop.headers, params: { id: listing.id }, body: {} }), ctx);
-  assert.equal(none.status, 409, 'no Spotlights yet');
+  const none = await bump(req({ headers: shop.headers, params: { id: listing.id }, body: {} }), ctx);
+  assert.equal(none.status, 409, 'no bump points yet');
+  assert.equal(none.jsonBody.error, 'no_bumps', 'the app sends the seller to the quests on this code');
 
   const claimed = await claimGrowth(req({ headers: shop.headers, params: { ownerId: shop.id }, body: { taskId: 'weekly-share2' } }), ctx);
   assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
-  assert.equal(claimed.jsonBody.view.spotlights, 1);
+  assert.equal(claimed.jsonBody.view.bumps, 1);
   const again = await claimGrowth(req({ headers: shop.headers, params: { ownerId: shop.id }, body: { taskId: 'weekly-share2' } }), ctx);
   assert.equal(again.status, 409);
 
@@ -270,12 +271,44 @@ await check('a finished quest pays a Spotlight, and a Spotlight puts an item bac
   const nothing = await claimGrowth(req({ headers: shop.headers, params: { ownerId: shop.id }, body: { all: true } }), ctx);
   assert.equal(nothing.status, 409);
 
-  const stranger = await spotlight(req({ headers: sharer.headers, params: { id: listing.id }, body: {} }), ctx);
+  const stranger = await bump(req({ headers: sharer.headers, params: { id: listing.id }, body: {} }), ctx);
   assert.equal(stranger.status, 403);
-  const lit = await spotlight(req({ headers: shop.headers, params: { id: listing.id }, body: {} }), ctx);
-  assert.equal(lit.status, 200);
-  assert.equal(lit.jsonBody.spotlights, all.jsonBody.view.spotlights - 1);
+  const lit = await bump(req({ headers: shop.headers, params: { id: listing.id }, body: {} }), ctx);
+  assert.equal(lit.status, 200, JSON.stringify(lit.jsonBody));
+  assert.equal(lit.jsonBody.bumps, all.jsonBody.view.bumps - 1);
   assert.equal((await repository.getListing(listing.id)).bumpedAt, lit.jsonBody.bumpedAt);
+  const soon = await bump(req({ headers: shop.headers, params: { id: listing.id }, body: {} }), ctx);
+  if (lit.jsonBody.bumps > 0) {
+    assert.equal(soon.status, 429, 'a second Bump within the hour is refused');
+    assert.equal((await repository.getUserById(shop.id)).sellerProfile.growth.spotlights, lit.jsonBody.bumps, 'and costs nothing');
+  }
+});
+
+await check('with the shop out of points, Bump spends those of whoever pressed it', async () => {
+  const owner = await repository.getUserById(shop.id);
+  owner.sellerProfile.growth = { ...owner.sellerProfile.growth, spotlights: 0 };
+  owner.quest = { ...(owner.quest ?? emptyQuestState()), bumps: 1 };
+  await repository.updateUser(owner);
+  const fresh = await repository.getListing(listing.id);
+  fresh.bumpedAt = null;
+  await repository.updateListing(fresh);
+  const done = await bump(req({ headers: shop.headers, params: { id: listing.id }, body: {} }), ctx);
+  assert.equal(done.status, 200, JSON.stringify(done.jsonBody));
+  assert.equal(done.jsonBody.spent, 'own');
+  assert.equal(done.jsonBody.bumps, 0);
+  assert.equal((await repository.getUserById(shop.id)).quest.bumpLog.length, 1);
+  fresh.bumpedAt = null;
+  await repository.updateListing(fresh);
+  const empty = await bump(req({ headers: shop.headers, params: { id: listing.id }, body: {} }), ctx);
+  assert.equal(empty.jsonBody.error, 'no_bumps');
+});
+
+await check('a person\'s weekly and monthly quests pay bump points too', async () => {
+  const tasks = (await questMe(req({ headers: sharer.headers }), ctx)).jsonBody.view.tasks;
+  for (const task of tasks) {
+    const want = task.kind === 'weekly' ? 1 : task.kind === 'monthly' ? 2 : 0;
+    assert.equal(task.bumps, want, task.id);
+  }
 });
 
 /* ── Link previews ─────────────────────────────────────────────────────── */

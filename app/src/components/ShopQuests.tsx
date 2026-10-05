@@ -7,30 +7,33 @@ import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
 import { ErrorNotice, leadPhoto } from './ui';
-import { LevelRing, XpBar } from './Quest';
+import { Glyph } from './Quest';
+import { QuestShooter } from './QuestShooter';
+import { BoardHead, InfoTip, InviteStrip, QuestHero, QuestRow, QuestTabs, useBump } from './QuestKit';
 import { shopBadge, useShareSheet, type ShareSpec } from './ShareKit';
 import { SkeletonText, useToast } from './Feedback';
 
 /**
- * A shop's quest board: the only way a shop earns XP.
+ * A shop's quest board: the only way a shop earns XP, laid out like a
+ * person's so the two read as one game.
  *
- * Reviews, popularity, sales and marketing pay full XP, and the weekly and
- * monthly ones pay Spotlights too - an item back at the top of the feed,
- * without waiting out the bump limit, because reach is the reward a shop
- * actually wants. Upkeep quests pay a token amount. Each quest says what to do,
- * and the buttons to do it are right here: a picture of the shop, a picture of
- * each item, an invite for another seller.
+ * Reviews, popularity, sales and marketing pay full XP, and their weekly and
+ * monthly quests pay bump points too, because reach is the reward a shop
+ * actually wants. Upkeep quests pay a token amount. The buttons to do each
+ * quest are right here: a picture of the shop, of each item, an invite for
+ * another seller - and Bump on every live item, spending the shop's points.
  *
- * The same board sits on the Shop's Grow tab and on the Quests page, so the
- * people running a shop find it wherever they look for quests.
+ * The same board sits on the Shop's Grow tab and on the Quests page.
  */
 export function ShopQuests({ store }: { store: StoreAccess }) {
   const toast = useToast();
+  const bumpItem = useBump();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.growth>> | null>(null);
   const [items, setItems] = useState<Listing[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState<GrowthKind>('daily');
+  const [cleared, setCleared] = useState(0);
   const { open, sheet } = useShareSheet();
 
   const load = useCallback(() => {
@@ -93,10 +96,10 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
     caption: 'Selling imports? Run your pre-orders on Figmark - manifests, tracking your buyers can see, Buyer Protection, and affiliates who sell for you. Open a shop with my invite:',
   };
 
-  function gainedToast(gained: { spotlights: number; xp: number; quests: number }) {
-    const spots = gained.spotlights ? ` · +${gained.spotlights} Spotlight${gained.spotlights === 1 ? '' : 's'}` : '';
+  function gainedToast(gained: { bumps: number; xp: number; quests: number }) {
+    const bumps = gained.bumps ? ` · +${gained.bumps} bump point${gained.bumps === 1 ? '' : 's'}` : '';
     const many = gained.quests > 1 ? `${gained.quests} quests · ` : '';
-    toast(`${many}+${gained.xp} shop XP${spots}`, 'ok');
+    toast(`${many}+${gained.xp} shop XP${bumps}`, 'ok');
   }
 
   async function claim(taskId: string | 'all') {
@@ -104,6 +107,7 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
     try {
       const result = await api.claimGrowth(store.ownerId, taskId);
       setData((current) => (current ? { ...current, ...result } : current));
+      setCleared((n) => n + (result.gained.quests || 1));
       gainedToast(result.gained);
     } catch (err) {
       toast(err instanceof ApiRequestError ? err.message : 'Could not collect that.', 'error');
@@ -112,144 +116,160 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
     }
   }
 
-  async function spotlight(listing: Listing) {
+  async function bump(listing: Listing) {
     setBusy(listing.id);
     try {
-      const result = await api.spotlight(listing.id);
-      setData((current) => (current ? { ...current, view: { ...current.view, spotlights: result.spotlights } } : current));
+      const result = await bumpItem(listing);
+      if (!result) return;
+      setData((current) => (current ? { ...current, view: { ...current.view, bumps: result.bumps } } : current));
       toast(`${listing.title} is back at the top of the feed.`, 'ok');
     } catch (err) {
-      toast(err instanceof ApiRequestError ? err.message : 'Could not spotlight that.', 'error');
+      toast(err instanceof ApiRequestError ? err.message : 'Could not bump that.', 'error');
     } finally {
       setBusy(null);
     }
   }
 
-  const doIt = (task: GrowthTask) => {
+  const go = (task: GrowthTask) => {
     const shop = shopSpec();
-    if (task.action === 'share_shop' && shop) return <button type="button" className="btn btn--sm btn--quiet" onClick={() => open(shop)}>Share shop</button>;
+    if (task.action === 'share_shop' && shop) return <button type="button" className="btn btn--sm btn--quiet" onClick={() => open(shop)}>Share</button>;
     if (task.action === 'post') return <Link to={`/social/c/${encodeURIComponent(store.ownerId)}`} className="btn btn--sm btn--quiet">Post</Link>;
     if (task.action === 'affiliate') return <Link to="/shop?tab=items" className="btn btn--sm btn--quiet">Items</Link>;
     if (task.action === 'list') return <Link to="/sell" className="btn btn--sm btn--quiet">List</Link>;
     if (task.action === 'orders') return <Link to="/shop?tab=payments" className="btn btn--sm btn--quiet">Orders</Link>;
     if (task.action === null) return null;
-    return <a href="#grow-items" className="btn btn--sm btn--quiet">Share an item</a>;
+    return <a href="#shop-items" className="btn btn--sm btn--quiet">Share</a>;
   };
 
   const ready = (kind: GrowthKind) => view.tasks.filter((task) => task.kind === kind && task.claimable).length;
   const readyAll = view.tasks.filter((task) => task.claimable).length;
   const tasks = view.tasks.filter((task) => task.kind === tab);
   const shop = shopSpec();
-  return (
-    <div className="grow">
-      <section className="grow__hero">
-        <div className="grow__level">
-          <LevelRing level={level.level} progress={level.progress} size={72} />
-          <div>
-            <p className="grow__eyebrow">Shop level {level.level}</p>
-            <h2>{level.title}</h2>
-            <p>
-              {level.points.toLocaleString('en-IN')} XP
-              {level.next !== null && ` · ${(level.next - level.points).toLocaleString('en-IN')} to level ${level.level + 1}`}
-            </p>
-            <XpBar progress={level.progress} />
-          </div>
-        </div>
-        <div className="grow__spot" title="Spotlights to spend">
-          <span><b>{view.spotlights}</b><small>Spotlights</small></span>
-        </div>
-      </section>
+  const upkeep = `${Math.round(UPKEEP_SHARE * 100)}%`;
 
-      <ul className="grow__areas" aria-label="Shop XP by area">
+  return (
+    <div className="qside">
+      <QuestHero
+        side="shop" eyebrow={`Shop level ${level.level}`} title={level.title} level={level.level} progress={level.progress}
+        xp={level.points} toNext={level.next === null ? null : level.next - level.points} nextLevel={level.level + 1} bumps={view.bumps}
+        info={(
+          <>
+            <b>How a shop levels</b>
+            <p>A shop earns XP only from the quests it collects. Reviews, popularity, sales and marketing pay full XP; upkeep (listing, pre-orders, time open) pays {upkeep}.</p>
+            <p>Low ratings take XP away: −20 for two stars, −40 for one. A lost dispute takes −80.</p>
+            <p>Everybody who runs the shop plays this board together.</p>
+          </>
+        )}
+      />
+
+      <ul className="qareas" aria-label="Shop XP by area">
         {view.areas.map((area) => (
-          <li key={area.area} className={`grow__area${area.area === 'upkeep' ? ' is-minor' : ''}`}>
+          <li key={area.area} className={`qareas__tile qareas__tile--${area.area}`}>
             <b>{area.xp.toLocaleString('en-IN')}</b>
             <small>{area.label}</small>
           </li>
         ))}
       </ul>
 
-      <div className="grow__stats">
-        <span className="grow__stat"><b>{view.week.goodReviews}</b><small>good reviews this week</small></span>
-        <span className="grow__stat"><b>{view.week.sales}</b><small>sales this week</small></span>
-        <span className="grow__stat"><b>{view.week.opens}</b><small>visitors from links</small></span>
-      </div>
-
-      <div className="grow__share">
-        {shop && <button type="button" className="btn mshare__go" onClick={() => open(shop)}>Share your shop</button>}
-        <button type="button" className="btn btn--quiet" onClick={() => open(sellerInvite)}>Invite a seller</button>
-        {readyAll > 0 && (
-          <button type="button" className="btn qbtn-gold" disabled={busy === 'all'} onClick={() => void claim('all')}>
-            Collect all · {readyAll}
-          </button>
+      <InviteStrip
+        title="Grow"
+        stats={[
+          { value: view.week.sales, label: 'sales' },
+          { value: view.week.goodReviews, label: 'good reviews' },
+          { value: view.week.opens, label: 'link visits' },
+        ]}
+        actions={(
+          <>
+            {shop && <button type="button" className="btn btn--sm mshare__go" onClick={() => open(shop)}>Share shop</button>}
+            <button type="button" className="btn btn--sm btn--quiet" onClick={() => open(sellerInvite)}>Invite a seller</button>
+          </>
         )}
-      </div>
+        info={(
+          <>
+            <b>Grow</b>
+            <p>The numbers are this week's: sales, four- and five-star reviews, and visitors who arrived through a shared link to the shop or its items.</p>
+            <p>Share the shop to WhatsApp, a story or a group - every person who opens it counts toward the marketing quests.</p>
+          </>
+        )}
+      />
 
-      <div className="stack">
-        <div className="tabs qtabs">
-          {(['daily', 'weekly', 'monthly', 'milestone'] as const).map((kind) => (
-            <button key={kind} type="button" className={`tab${tab === kind ? ' is-on' : ''}`} onClick={() => setTab(kind)}>
-              {kind === 'daily' ? 'Daily' : kind === 'weekly' ? 'Weekly' : kind === 'monthly' ? 'Monthly' : 'Milestones'}
-              {ready(kind) > 0 && <span className="qdot">{ready(kind)}</span>}
+      <section className="qpanel qarcade">
+        <div className="qworld" aria-hidden="true"><QuestShooter volley={cleared} /></div>
+        <BoardHead info={(
+          <>
+            <b>Shop quests</b>
+            <p>Daily quests reset at midnight, India time; weekly ones on Monday; monthly ones on the 1st.</p>
+            <p>Each weekly quest pays 1 bump point and each monthly one pays 2. Upkeep pays {upkeep} of the XP and no bump points.</p>
+            <p>Milestones pay once a step, then a bigger step appears. Followers, hearts and ratings only count while you keep them.</p>
+          </>
+        )}>
+          {readyAll > 0 && (
+            <button type="button" className="btn btn--sm qbtn-gold" disabled={busy === 'all'} onClick={() => void claim('all')}>
+              Collect all · {readyAll}
             </button>
-          ))}
-        </div>
-        <ul className="grow__tasks">
+          )}
+        </BoardHead>
+        <QuestTabs tab={tab} onTab={setTab} ready={ready} />
+        <ul className="qtasks">
           {tasks.map((task) => (
-            <li key={task.id} className={`grow__task${task.claimable ? ' is-ready' : ''}${task.claimed ? ' is-claimed' : ''}`}>
-              <span className="grow__body">
-                <span className="grow__title">
-                  <b>{task.title}</b>
-                  <span className={`grow__tag grow__tag--${task.area}`}>{AREA_SHORT[task.area]}</span>
-                </span>
-                <small>{task.blurb}</small>
-                <span className="grow__bar">
-                  <span className="grow__track"><span className="grow__fill" style={{ width: `${(task.progress / task.goal) * 100}%` }} /></span>
-                  <span className="grow__count">{task.id.endsWith('fill60') ? `${task.progress}%` : `${task.progress}/${task.goal}`}</span>
-                </span>
-                <small className="grow__pay">+{task.xp} XP{task.spotlights ? ` · +${task.spotlights} ✦` : ''}</small>
-              </span>
-              <span className="grow__act">
-                {task.claimed ? <span className="grow__ok">✓ Collected</span>
-                  : task.claimable ? (
-                    <button type="button" className="btn btn--sm qbtn-gold" disabled={busy === task.id} onClick={() => void claim(task.id)}>
-                      Claim
-                    </button>
-                  ) : doIt(task)}
-              </span>
-            </li>
+            <QuestRow key={task.id}
+              title={task.title} blurb={task.blurb} step={task.step}
+              tag={{ area: task.area, label: AREA_SHORT[task.area] }}
+              progress={task.progress} goal={task.goal} count={task.id.endsWith('fill60') ? `${task.progress}%` : undefined}
+              xp={task.xp} bumps={task.bumps} claimed={task.claimed} claimable={task.claimable}
+              busy={busy === task.id} onClaim={() => void claim(task.id)} action={go(task)} />
           ))}
         </ul>
-        <p className="faint qtasks__note">
-          {tab === 'milestone'
-            ? 'Each step pays once, then the next, bigger one appears. Followers, hearts and ratings only count while you keep them.'
-            : `Reviews, popularity, sales and marketing pay full XP. Upkeep pays ${Math.round(UPKEEP_SHARE * 100)}% and no Spotlights.`}
-        </p>
-      </div>
+      </section>
 
-      <div className="stack" id="grow-items">
-        <h3 className="grow__head">Share or spotlight an item</h3>
+      <section className="qpanel" id="shop-items">
+        <div className="qpanel__head">
+          <h3><Glyph name="bolt" size={15} /> Share or bump an item</h3>
+          <InfoTip label="About sharing and bumping">
+            <b>Share or bump</b>
+            <p>Share sends a picture of the item with a link. Bump spends one of the shop's bump points to put it back at the top of the feed - the same as Bump on the item's own page.</p>
+          </InfoTip>
+        </div>
         {!items ? <SkeletonText lines={3} /> : items.length === 0 ? (
-          <p className="faint">Nothing live to share yet. List an item and it shows up here.</p>
+          <p className="faint" style={{ margin: 0 }}>Nothing live yet. List an item and it shows up here.</p>
         ) : (
-          <ul className="grow__items">
+          <ul className="qitems-list">
             {items.map((listing) => (
-              <li key={listing.id} className="grow__item">
-                {leadPhoto(listing)?.url ? <img className="grow__thumb" src={leadPhoto(listing)!.url} alt="" /> : <span className="grow__thumb" aria-hidden="true" />}
-                <span className="grow__name">{listing.title}</span>
-                <span className="grow__btns">
+              <li key={listing.id} className="qitems-list__row">
+                {leadPhoto(listing)?.url ? <img className="qitems-list__thumb" src={leadPhoto(listing)!.url} alt="" /> : <span className="qitems-list__thumb" aria-hidden="true" />}
+                <span className="qitems-list__name">{listing.title}</span>
+                <span className="qitems-list__btns">
                   <button type="button" className="btn btn--sm btn--quiet" onClick={() => open(itemSpec(listing))}>Share</button>
-                  <button type="button" className="btn btn--sm" disabled={view.spotlights < 1 || busy === listing.id || !store.permissions.includes('listings')}
-                    title={view.spotlights < 1 ? 'Finish a weekly or monthly quest to earn a Spotlight' : 'Back to the top of the feed'}
-                    onClick={() => void spotlight(listing)}>
-                    ✦ Spotlight
+                  <button type="button" className="btn btn--sm" disabled={busy === listing.id || !store.permissions.includes('listings')}
+                    onClick={() => void bump(listing)}>
+                    <Glyph name="bolt" size={12} /> Bump
                   </button>
                 </span>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </section>
+
+      <section className="qpanel">
+        <div className="qpanel__head"><h3>Where the shop's XP came from</h3></div>
+        {level.breakdown.length === 0 ? (
+          <p className="faint" style={{ margin: 0 }}>Nothing yet. Collect a quest to start.</p>
+        ) : (
+          <dl className="qbreak">
+            {[...level.breakdown].sort((a, b) => Number(a.xp < 0) - Number(b.xp < 0)).map((line) => (
+              <div key={line.label} className={`qbreak__row${line.xp < 0 ? ' is-loss' : ''}`}>
+                <dt>{line.label}{line.detail && <small>{line.detail}</small>}</dt>
+                <dd>{line.xp > 0 ? '+' : ''}{line.xp.toLocaleString('en-IN')} XP</dd>
+              </div>
+            ))}
+            <div className="qbreak__row qbreak__total">
+              <dt>Total</dt>
+              <dd>{level.points.toLocaleString('en-IN')} XP</dd>
+            </div>
+          </dl>
+        )}
+      </section>
       {sheet}
     </div>
   );

@@ -244,16 +244,16 @@ export type ShareKind =
   | 'level' | 'card' | 'set' | 'shop' | 'invite' | 'invite_seller' | 'profile';
 
 /**
- * A shop's growth quests: which it collected, and the Spotlights they paid.
+ * A shop's growth quests: which it collected, and the bump points they paid.
  * Kept on the shop's profile because the shop - not whichever manager pressed
  * Claim - earned them.
  */
 export interface StoreGrowthState {
   /** `taskId:period` -> when it was claimed. */
   claimed: Record<string, string>;
-  /** Spotlights earned and not yet spent. */
+  /** Bump points earned and not yet spent. The name is from when they were called Spotlights. */
   spotlights: number;
-  /** Spent ones, newest last. */
+  /** Bumps spent, newest last. */
   spotlightLog?: { listingId: string; at: string; by: string }[];
   /** Times somebody on the shop sent it out of the app. */
   shares?: { at: string; kind: ShareKind; by: string }[];
@@ -318,6 +318,13 @@ export interface QuestState {
   claimed: Record<string, string>;
   /** Every card pulled, one per opened pack. */
   cards: OwnedCard[];
+  /**
+   * Bump points earned from weekly and monthly quests and not yet spent. Bump
+   * on a shop's item spends the shop's points first, then these.
+   */
+  bumps?: number;
+  /** Bumps spent, newest last. */
+  bumpLog?: { listingId: string; at: string }[];
   /** The last XP and level worked out, so a leaderboard is a scan, not a recount. */
   xpCache?: number;
   levelCache?: number;
@@ -399,7 +406,7 @@ export interface SellerProfile {
   tags?: string[];
   /** The shop's level as last worked out, so names elsewhere can show it without a recount. */
   levelCache?: number;
-  /** Growth quests and the Spotlights they earned. Absent until the shop first plays. */
+  /** Growth quests and the bump points they earned. Absent until the shop first plays. */
   growth?: StoreGrowthState;
 }
 

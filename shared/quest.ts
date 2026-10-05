@@ -190,6 +190,16 @@ export const ACTION_CAP = 100;
 export const TASK_XP = { daily: 20, weekly: 60, monthly: 180 } as const;
 export const TIER_XP = [60, 150, 300, 500, 800, 1200] as const;
 
+/*
+ * Bump points: what a weekly or monthly quest pays on top of XP, on either
+ * side. One Bump on an item spends one and puts it back at the top of the
+ * feed: the shop's points first, then those of whoever pressed it - so
+ * bumping is earned by taking part, not by tapping a button.
+ */
+export const BUMPS_FOR: Record<'daily' | 'weekly' | 'monthly' | 'milestone', number> = { daily: 0, weekly: 1, monthly: 2, milestone: 0 };
+/** A Bump this soon after the last one would spend a point for nothing, so it is refused. */
+export const BUMP_GUARD_MS = 60 * 60 * 1000;
+
 /** One kind of counted action, capped like every other. */
 export function actionXp(count: number, each = ACTION_XP): number {
   return Math.min(Math.max(count, 0), ACTION_CAP) * each;
@@ -447,6 +457,8 @@ export interface TaskView {
   title: string;
   blurb: string;
   xp: number;
+  /** Bump points it pays. */
+  bumps: number;
   progress: number;
   goal: number;
   done: boolean;
@@ -714,7 +726,8 @@ function view(
   const key = `${id}:${periodOf(kind, context.now)}`;
   const claimed = auto ? done : Boolean(context.state.claimed[key]) && claimStands(key, context);
   return {
-    id, kind, title: template.title, blurb: template.blurb, xp: kind === 'milestone' ? 0 : TASK_XP[kind], progress, goal: template.goal,
+    id, kind, title: template.title, blurb: template.blurb, xp: kind === 'milestone' ? 0 : TASK_XP[kind], bumps: BUMPS_FOR[kind],
+    progress, goal: template.goal,
     done, claimed, claimable: done && !claimed, href: template.href, pack: false,
   };
 }
@@ -739,7 +752,7 @@ function tasksFor(context: MeasureContext): TaskView[] {
   const revealed = state.cards.some((card) => card.packId === `daily-${dayKey(now)}`);
   tasks.push({
     id: 'daily-reveal', kind: 'daily', title: 'Reveal today\'s loot', blurb: 'Flip the daily drop for a free card.',
-    xp: 15, progress: revealed ? 1 : 0, goal: 1, done: revealed, claimed: revealed, claimable: false, href: null, pack: false,
+    xp: ACTION_XP, bumps: 0, progress: revealed ? 1 : 0, goal: 1, done: revealed, claimed: revealed, claimable: false, href: null, pack: false,
   });
   tasks.push(view(context, 'daily', SHARE_DAILY));
   for (const template of pick(DAILY_POOL, 2, `daily|${dayKey(now)}`)) tasks.push(view(context, 'daily', template));
@@ -768,6 +781,7 @@ function tasksFor(context: MeasureContext): TaskView[] {
       title: `${ladder.name} ${ladder.steps.length > 1 ? ROMAN[index] ?? '' : ''}`.trim(),
       blurb: ladder.blurb(goal),
       xp: TIER_XP[index] ?? 0,
+      bumps: 0,
       progress: Math.min(goal, progress),
       goal,
       done,
@@ -963,6 +977,8 @@ export interface QuestView {
   breakdown: XpLine[];
   /** The losses on their own, as a positive number (0 when there are none). */
   penalty: number;
+  /** Bump points saved up to spend on the person's own listings. */
+  bumps: number;
 }
 
 /**
@@ -1070,6 +1086,7 @@ export function questView(
     dailyRevealed: state.cards.some((card) => card.packId === `daily-${dayKey(now)}`),
     breakdown,
     penalty,
+    bumps: state.bumps ?? 0,
   };
 }
 
@@ -1090,5 +1107,8 @@ export function tidyQuestState(state: QuestState): QuestState {
     seenPacks.add(card.packId);
     return true;
   });
-  return { ...state, checkIns: [...new Set(state.checkIns)].sort(), cards };
+  return {
+    ...state, checkIns: [...new Set(state.checkIns)].sort(), cards,
+    ...(state.bumpLog ? { bumpLog: state.bumpLog.slice(-100) } : {}),
+  };
 }
