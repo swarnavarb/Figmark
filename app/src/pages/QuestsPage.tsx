@@ -6,7 +6,7 @@ import {
 import { api, type LeaderRow } from '../api';
 import { SkeletonText } from '../components/Feedback';
 import {
-  CardFace, CardSheet, CardSlot, DesignSwitch, Glyph, LevelRing, Sticker, StickerSheet, XpBar, useQuest,
+  CardFace, CardSheet, CardSlot, Glyph, LevelRing, Sticker, StickerSheet, XpBar, useQuest,
 } from '../components/Quest';
 import { Avatar } from '../components/ui';
 import { useSession } from '../session';
@@ -44,8 +44,6 @@ export function QuestsPage() {
     <main className="page qpage">
       <div className="qbar">
         <h1 className="qpage__title">Quests</h1>
-        <span className="qbar__spacer" />
-        <DesignSwitch />
       </div>
 
       <section className="qhero">

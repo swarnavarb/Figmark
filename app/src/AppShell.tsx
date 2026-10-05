@@ -20,8 +20,12 @@ export function AppShell() {
   const { user, warning, sessionsInsecure, missingContainers, signOut, authPrompt, closeAuth, promptAuth } = useSession();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const [term, setTerm] = useState(params.get('q') ?? '');
+  const query = params.get('q') ?? '';
+  const [term, setTerm] = useState(query);
   const { pathname } = useLocation();
+  // The box shows what is being searched, however the search was started -
+  // a tag tapped on an item, the back button, a shared link.
+  useEffect(() => setTerm(query), [query]);
   const social = pathname.startsWith('/social') || pathname.startsWith('/messages/');
   // A room you write in: the tab bar steps aside for the bar you write from.
   const room = pathname.startsWith('/social/c/') || pathname.startsWith('/messages/');
@@ -35,7 +39,13 @@ export function AppShell() {
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
-    navigate(term.trim() ? `/?q=${encodeURIComponent(term.trim())}` : '/');
+    // On the catalogue a search narrows what is already filtered rather than
+    // throwing the filters away; from anywhere else it starts fresh.
+    const next = new URLSearchParams(pathname === '/' ? params : undefined);
+    if (term.trim()) next.set('q', term.trim());
+    else next.delete('q');
+    const suffix = next.toString();
+    navigate(suffix ? `/?${suffix}` : '/');
   }
 
   return (

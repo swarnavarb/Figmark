@@ -339,10 +339,6 @@ code, kbd, samp, pre {
  * run to the glass while the text around them keeps its inset. Named after
  * what it does rather than where it is used, because six screens want it.
  */
-.bleed {
-  margin-inline: calc(var(--page-pad) * -1);
-  width: calc(100% + var(--page-pad) * 2);
-}
 
 /* ── Colour blocks ─────────────────────────────────────────────────────────
  *
@@ -361,7 +357,6 @@ code, kbd, samp, pre {
   padding: var(--s5) var(--s4);
   color: #fff;
 }
-.bleed.block { border-radius: 0; }
 .block::before {
   content: '';
   position: absolute;
@@ -385,35 +380,8 @@ code, kbd, samp, pre {
 .block--warm { --block-grad: var(--grad-warm); }
 .block--sea  { --block-grad: var(--grad-sea); }
 .block--play { --block-grad: var(--grad-play); color: var(--lime-ink); }
-.block__title {
-  font-size: var(--t-xl);
-  font-weight: var(--w-bold);
-  letter-spacing: -0.03em;
-  line-height: 1.08;
-  text-wrap: balance;
-}
-.block__sub { margin-top: var(--s2); font-size: var(--t-base); opacity: 0.92; max-width: 52ch; }
-.block__acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s4); }
 /* On colour, the button borrows the surface rather than the accent: an
    accent-coloured button on an accent-coloured field is invisible. */
-.block .btn--oncolour {
-  background: #fff;
-  color: #10131C;
-  border-color: transparent;
-  font-weight: var(--w-bold);
-}
-.block .btn--oncolour:hover { background: rgba(255, 255, 255, 0.88); }
-.block .btn--onglass {
-  /* A dark scrim, not a light one: white on a white-ish veil over coral was
-     about 2:1. Darkening the button instead keeps the label readable
-     wherever it lands on the ramp. */
-  background: rgba(0, 0, 0, 0.28);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(8px);
-  box-shadow: none;
-}
-.block .btn--onglass:hover { background: rgba(0, 0, 0, 0.4); border-color: #fff; }
 
 /* ── App shell ─────────────────────────────────────────────────────────── */
 
@@ -698,26 +666,12 @@ code, kbd, samp, pre {
   position: absolute; inset: auto 8px 8px 8px;
   display: flex; gap: 6px; align-items: center; justify-content: space-between;
 }
-.thumb__like {
-  position: absolute; top: 8px; right: 8px;
-  width: 30px; height: 30px;
-  display: grid; place-items: center;
-  border: none; border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  color: #fff; cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.thumb__like:hover { background: rgba(0, 0, 0, 0.65); }
-.thumb__like.is-on { color: var(--coral); background: rgba(0, 0, 0, 0.6); }
 /* A saved item gets one quick beat of feedback. Scale only, 220ms, once. */
-.thumb__like.is-on svg { animation: like-pop var(--dur-2) var(--ease); }
 @keyframes like-pop {
   0% { transform: scale(1); }
   45% { transform: scale(1.32); }
   100% { transform: scale(1); }
 }
-@media (prefers-reduced-motion: reduce) { .thumb__like.is-on svg { animation: none; } }
 
 .listing__body { padding: 12px 14px 14px; display: grid; gap: 7px; }
 .listing__title {
@@ -733,7 +687,6 @@ code, kbd, samp, pre {
 /* The quick read under the price: sourcing, category, stock. Wraps rather than
    overflowing, since two of these sit side by side on a phone. */
 .listing__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
-.listing__foot { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 
 /* ── Chips, badges, pills ──────────────────────────────────────────────── */
 
@@ -844,66 +797,11 @@ code, kbd, samp, pre {
    scrolling rail rather than a wrapping set, so the row stays one line on a
    phone and the order of the headings stays learnable. */
 
-.cats {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  /* The page's side padding, cancelled so the rail bleeds to both edges and
-     reads as scrollable, then given back so nothing starts under the edge. */
-  margin: 0 calc(var(--page-pad) * -1);
-  padding: 2px var(--page-pad) 6px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-.cats::-webkit-scrollbar { display: none; }
-
-.cat {
-  flex: none;
-  display: grid;
-  justify-items: center;
-  /* A fixed glyph row, so every glyph sits on the same line however many lines
-     the label below it takes. Centring the pair instead left the two-line
-     headings half a line higher than their neighbours, which reads as a row
-     that was not thought about. */
-  grid-template-rows: 22px auto;
-  align-content: start;
-  gap: 5px;
-  width: 74px;
-  padding: 10px 4px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  color: var(--text-dim);
-  font-size: var(--t-xs);
-  font-weight: var(--w-semi);
-  line-height: 1.25;
-  text-align: center;
-  cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
-    background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease),
-    box-shadow var(--dur-1) var(--ease);
-}
-.cat:hover { color: var(--text); border-color: var(--border-strong); transform: translateY(-1px); }
 .cat__glyph { display: block; color: var(--cat-hue, var(--text-dim)); transition: color var(--dur-1) var(--ease); }
 
 /* Each heading owns a hue. Resting, only the mark carries it, so the row reads
    as six colours over one surface rather than six coloured boxes. Chosen, the
    whole tile fills with that hue's gradient and the mark turns to its ink. */
-.cat--violet { --cat-hue: var(--violet-text); --cat-grad: var(--grad-blue); --cat-ink: var(--violet-ink); --cat-glow: rgba(124, 58, 237, 0.42); }
-.cat--coral  { --cat-hue: var(--coral);  --cat-grad: var(--grad-warm); --cat-ink: #fff;             --cat-glow: rgba(255, 90, 95, 0.4); }
-.cat--aqua   { --cat-hue: var(--aqua);   --cat-grad: var(--grad-sea);  --cat-ink: var(--aqua-ink);  --cat-glow: rgba(6, 214, 231, 0.36); }
-.cat--blue   { --cat-hue: var(--blue-text); --cat-grad: var(--grad-sea); --cat-ink: var(--aqua-ink); --cat-glow: rgba(59, 130, 246, 0.4); }
-.cat--pink   { --cat-hue: var(--pink-text); --cat-grad: var(--grad-warm); --cat-ink: #fff;          --cat-glow: rgba(236, 72, 153, 0.42); }
-.cat--lime   { --cat-hue: var(--lime);   --cat-grad: var(--grad-play); --cat-ink: var(--lime-ink);  --cat-glow: rgba(163, 230, 53, 0.34); }
-
-.cat.is-on {
-  background: var(--cat-grad, var(--grad-blue));
-  border-color: transparent;
-  color: var(--cat-ink, #fff);
-  font-weight: var(--w-bold);
-  box-shadow: 0 4px 16px var(--cat-glow, rgba(124, 58, 237, 0.4));
-}
-.cat.is-on .cat__glyph { color: var(--cat-ink, #fff); }
 
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1449,11 +1347,9 @@ code, kbd, samp, pre {
   .listing__meta { gap: 4px; }
   .listing__meta .badge, .listing__meta .faint { font-size: var(--t-2xs); padding: 2px 6px; }
   .thumb { font-size: 22px; }
-  .thumb__like { width: 26px; height: 26px; top: 6px; right: 6px; }
   .thumb__badges { inset: auto 6px 6px 6px; }
   /* The seller's trust chip is the first thing worth dropping at this width:
      the seller name is the identity, the score is a detail for the item page. */
-  .listing__foot .badge { display: none; }
 }
 
 /* ── Bottom tabs ───────────────────────────────────────────────────────── */
@@ -2716,12 +2612,9 @@ code, kbd, samp, pre {
 .storefront__who { display: grid; gap: 4px; min-width: 0; padding-top: 38px; }
 .storefront__who h1 { margin: 0; font-size: var(--t-lg); }
 
-
 /* A chip that states a fact rather than filtering by one. */
 .chips--tight { gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
 .chip--static { cursor: default; background: var(--surface-2); }
-
-
 
 /* What a review was written about, under the review. */
 .review__item {
@@ -3803,7 +3696,6 @@ a.order__name:hover { color: var(--accent-text); }
 /* A listing's own picture, where one was uploaded. */
 .thumb__img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-
 /* ── The catalogue hero ─────────────────────────────────────────────────────
  *
  * The loudest thing in the app, and deliberately the only one of its size.
@@ -3812,38 +3704,6 @@ a.order__name:hover { color: var(--accent-text); }
  * is suppressed the moment a search or filter is on, because somebody
  * looking for a thing does not want a poster in the way.
  */
-.hero {
-  margin-bottom: var(--s5);
-  /* Sized so the category rail and the top of the first product row still
-     clear the fold on a 390x844 phone. Impact matters, but a first viewport
-     with no product in it is a poster, not a marketplace. */
-  padding: var(--s5) var(--s4);
-  display: flex;
-  align-items: flex-end;
-}
-.hero__body { max-width: 40ch; }
-.hero__eyebrow {
-  font-size: var(--t-xs);
-  font-weight: var(--w-bold);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  opacity: 0.86;
-  margin-bottom: var(--s2);
-}
-.hero .block__title { font-size: clamp(23px, 5.6vw, 40px); }
-.hero .block__sub { font-size: var(--t-sm); margin-top: var(--s1); }
-.hero .block__acts { margin-top: var(--s3); }
-
-@media (min-width: 720px) {
-  .hero {
-    border-radius: var(--r-lg);
-    margin-inline: 0;
-    width: 100%;
-    padding: var(--s7) var(--s6);
-    min-height: 240px;
-  }
-  .hero .block__sub { font-size: var(--t-base); }
-}
 
 /* ── Skeletons ─────────────────────────────────────────────────────────────
  *
@@ -4437,7 +4297,6 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .composer__send:hover:not(:disabled) { filter: brightness(1.12) saturate(1.1); }
 .composer__send:active:not(:disabled) { transform: scale(0.94); }
 .composer__send:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
-
 
 @media (min-width: 720px) {
   .chat__head, .chat__body, .composer { padding-inline: var(--s5); }
@@ -7839,19 +7698,6 @@ body.is-locked { overflow: hidden; }
 
 /* ── Design switch ─────────────────────────────────────────────────────── */
 
-.qswitch {
-  display: inline-flex; padding: 3px; gap: 2px;
-  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
-  background: var(--surface);
-}
-.qswitch button {
-  border: 0; background: transparent; color: var(--text-dim);
-  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi);
-  padding: 5px 11px; border-radius: var(--r-pill); cursor: pointer;
-}
-.qswitch button.is-on { background: var(--violet); color: #fff; }
-.qswitchrow { display: flex; justify-content: flex-end; margin: 10px 0; }
-
 /* ── Top bar: level chip, check-in, switch ─────────────────────────────── */
 
 .qbar { display: flex; align-items: center; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
@@ -7975,149 +7821,25 @@ body.is-locked { overflow: hidden; }
 
 /* Dark in both themes: a little arcade cabinet set into the page. The quests
    sit in a HUD; the game plays underneath, slow enough to ignore. */
-.qarcade {
-  --strip: 60px;
-  position: relative; overflow: hidden; margin-bottom: 14px; padding: 10px 12px var(--strip);
-  border-radius: var(--r-lg); color: #EDE9FE;
-  background:
-    radial-gradient(120% 80% at 100% 0%, rgba(124,58,237,.28), transparent 60%),
-    radial-gradient(90% 70% at 0% 100%, rgba(8,145,178,.2), transparent 60%),
-    #0B0820;
-  border: 1px solid rgba(167,139,250,.3);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
-}
-.qarcade > :not(.qworld) { position: relative; z-index: 1; }
 
-.qworld { position: absolute; inset: 0; pointer-events: none; }
 /* Two layers of stars falling past at different speeds. */
-.qworld::before, .qworld::after {
-  content: ''; position: absolute; inset: 0;
-  background-image:
-    radial-gradient(1px 1px at 20px 30px, #fff 99%, transparent),
-    radial-gradient(1px 1px at 90px 80px, #C4B5FD 99%, transparent),
-    radial-gradient(1px 1px at 160px 20px, #fff 99%, transparent),
-    radial-gradient(1px 1px at 230px 110px, #A5F3FC 99%, transparent),
-    radial-gradient(1px 1px at 60px 150px, #fff 99%, transparent);
-  background-size: 260px 180px; opacity: .55;
-  animation: qworld-stars 26s linear infinite;
-}
-.qworld::after {
-  background-size: 190px 140px; background-position: 70px 40px; opacity: .3;
-  animation-duration: 44s;
-}
-@keyframes qworld-stars { to { background-position-y: 180px; } }
 
 /* The game itself is drawn on a canvas that fills the board. */
-.qworld__game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
 /* Title, reset clock beside it, View all on the right. */
-.qarcade__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.qarcade__title, .qarcade__reset b, .qarcade__label, .qmission__stamp, .qmission__count, .qmission__xp, .qmission__claim {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
-}
-.qarcade__title {
-  display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: var(--t-sm);
-  text-transform: uppercase; letter-spacing: .1em; color: #fff; text-shadow: 0 0 10px rgba(167,139,250,.7);
-}
-.qarcade__title svg { color: #FDE047; filter: drop-shadow(0 0 4px rgba(253,224,71,.7)); }
-.qarcade__reset {
-  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 6px; border-radius: 999px;
-  font-size: var(--t-2xs); color: #A78BFA; background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.28);
-}
-.qarcade__reset svg { flex: none; }
-.qarcade__reset b { font-weight: 700; color: #E9D5FF; }
-.qarcade__all {
-  margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px;
-  padding: 5px 11px; border-radius: 999px; font-size: var(--t-xs); font-weight: 700; color: #fff; text-decoration: none;
-  background: rgba(124,58,237,.55); border: 1px solid rgba(196,181,253,.5); box-shadow: 0 0 12px rgba(124,58,237,.45);
-}
-.qarcade__all:hover { background: rgba(124,58,237,.8); }
-.qarcade__all .qdot { margin-right: 2px; }
 
 /* Today's XP, and what it adds up to toward the level on the chip above. */
-.qarcade__today {
-  display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 3px 10px; margin-bottom: 8px;
-}
-.qarcade__label { font-size: var(--t-2xs); font-weight: 700; color: #C4B5FD; text-transform: uppercase; letter-spacing: .06em; }
-.qarcade__label b { color: #FDE047; font-size: var(--t-xs); }
-.qarcade__label i { font-style: normal; color: #8B7FC7; }
-.qarcade__bar {
-  position: relative; height: 6px; border-radius: 999px; background: rgba(255,255,255,.08);
-}
-.qarcade__bar > span {
-  display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #22D3EE, #A78BFA, #F472B6);
-  box-shadow: 0 0 8px rgba(167,139,250,.7); transition: width .9s cubic-bezier(.2,.8,.2,1);
-}
-.qarcade__gain {
-  position: absolute; right: 0; top: -14px; font-style: normal; font-weight: 800; font-size: 10px;
-  color: #FDE047; text-shadow: 0 0 6px rgba(253,224,71,.8); opacity: 0; pointer-events: none;
-  animation: qarcade-gain 1.6s .7s ease-out both;
-}
 @keyframes qarcade-gain {
   0% { opacity: 0; transform: translateY(4px); }
   20% { opacity: 1; transform: translateY(-2px) scale(1.2); }
   100% { opacity: 0; transform: translateY(-14px); }
 }
-.qarcade__next { grid-column: 1 / -1; font-size: 10.5px; color: #8B7FC7; }
-@media (min-width: 640px) {
-  .qarcade__today { grid-template-columns: auto minmax(0,1fr) auto; }
-  .qarcade__next { grid-column: auto; }
-}
-.qarcade__next b { color: #FDE047; }
 
 /* One line per quest, two columns where there is room. */
-.qarcade__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 5px 6px; }
-.qmission {
-  display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 3px 6px 3px 4px; border-radius: 8px;
-  background: rgba(255,255,255,.05); border: 1px solid rgba(167,139,250,.18);
-  font-size: var(--t-xs); backdrop-filter: blur(2px);
-}
-.qmission__icon {
-  flex: none; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px;
-  color: #C4B5FD; background: rgba(124,58,237,.3);
-}
-.qmission__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: #F5F3FF; }
-.qmission__count { font-size: 10px; color: #8B7FC7; }
-.qmission__xp {
-  padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; color: #FDE047;
-  background: rgba(250,204,21,.1); border: 1px solid rgba(250,204,21,.3);
-}
-.qmission__claim {
-  border: 0; cursor: pointer; padding: 4px 9px; border-radius: 6px; font-size: 10px; font-weight: 800; color: #1E1B4B;
-  background: linear-gradient(180deg, #FDE68A, #FACC15); box-shadow: 0 0 10px rgba(250,204,21,.6);
-  animation: qmission-ready 1.2s ease-in-out infinite;
-}
-.qmission__claim:active { transform: translateY(1px); }
-.qmission__claim:disabled { cursor: default; }
-@keyframes qmission-ready { 50% { box-shadow: 0 0 18px rgba(250,204,21,1); } }
-.qmission.is-ready { border-color: rgba(250,204,21,.6); }
-.qmission.is-clear { background: rgba(34,197,94,.08); border-color: rgba(74,222,128,.3); }
-.qmission.is-clear .qmission__title { color: #86EFAC; text-decoration: line-through; text-decoration-color: rgba(134,239,172,.45); }
-.qmission.is-clear .qmission__icon { color: #4ADE80; background: rgba(34,197,94,.18); }
-.qmission__stamp {
-  font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #4ADE80;
-  text-shadow: 0 0 8px rgba(74,222,128,.6);
-  animation: qmission-stamp .45s cubic-bezier(.3,1.6,.5,1) both;
-}
-@keyframes qmission-stamp { from { transform: scale(2.2) rotate(-8deg); opacity: 0; } }
 
 /* The coins thrown from a claim button to the XP bar. */
-.qcoins { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
-.qcoin {
-  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; opacity: 0;
-  background: radial-gradient(circle at 35% 30%, #FEF9C3, #FACC15 45%, #B45309);
-  box-shadow: 0 0 8px rgba(250,204,21,.9), inset 0 0 0 1.5px rgba(146,64,14,.6);
-  animation: qcoin-fly .95s cubic-bezier(.5,0,.6,1) both;
-}
-@keyframes qcoin-fly {
-  0% { opacity: 0; transform: translate(0,0) scale(.4); }
-  12% { opacity: 1; }
-  38% { transform: translate(var(--sx), var(--sy)) scale(1.1); }
-  100% { opacity: .2; transform: translate(var(--dx), var(--dy)) scale(.5); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .qarcade__bar > span { transition: none; }
-  .qworld::before, .qworld::after, .qmission__claim, .qarcade__gain, .qmission__stamp, .qchip.is-gain, .qchip.is-loss, .qchip__gain { animation: none; }
+  .qchip.is-gain, .qchip.is-loss, .qchip__gain { animation: none; }
   .qchip__gain { display: none; }
 }
 
@@ -8152,17 +7874,6 @@ body.is-locked { overflow: hidden; }
 
 /* ── Rarity chips ──────────────────────────────────────────────────────── */
 
-.qrchip {
-  padding: 6px 12px; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
-  font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi);
-  background: var(--surface); border: 1px solid var(--qr-line); color: var(--qr-text);
-}
-.qrchip span { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); opacity: 0.75; margin-left: 3px; }
-.qrchip--legendary { --qr-line: var(--q-gold-line); --qr-text: var(--q-gold); --qr-fill: var(--q-gold); --qr-ink: var(--q-gold-ink); }
-.qrchip--epic { --qr-line: var(--q-epic-line); --qr-text: var(--q-epic-text); --qr-fill: var(--q-epic); --qr-ink: #fff; }
-.qrchip--new { --qr-line: var(--lime-line); --qr-text: var(--lime); --qr-fill: var(--lime); --qr-ink: var(--lime-ink); }
-.qrchip.is-on { background: var(--qr-fill); color: var(--qr-ink); border-color: var(--qr-fill); }
-
 /* A rarity as an inline word, wherever one is named in text. */
 .qrarity {
   display: inline-block; padding: 1px 7px; border-radius: 5px;
@@ -8174,40 +7885,19 @@ body.is-locked { overflow: hidden; }
 .qrarity--rare { background: var(--blue); color: #fff; }
 .qrarity--common { background: var(--surface-hover); color: var(--text-dim); }
 
+/* Where the next cards are drawn from: invisible, the width of the grid. */
+.qgrid__more { grid-column: 1 / -1; height: 1px; }
+
 /* ── Rows: filling now, ending soon ────────────────────────────────────── */
 
-.qrow { margin-bottom: 16px; }
 .qrow__head { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0 10px; }
 .qrow__head h2 { font-size: var(--t-md); display: inline-flex; align-items: center; gap: 6px; }
 .qrow__head h2 svg { color: var(--coral); }
-.qrow__more { border: 0; background: none; color: var(--violet-text); font: inherit; font-size: var(--t-xs); cursor: pointer; }
-.qrow__scroll { display: flex; gap: 10px; overflow-x: auto; padding: 8px 2px 4px; scrollbar-width: none; }
-.qrow__scroll::-webkit-scrollbar { display: none; }
 
-.qboard {
-  position: relative; flex: none; width: 168px; display: flex; gap: 10px; align-items: center;
-  padding: 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
-  color: var(--text); text-decoration: none;
-}
-.qboard:hover { border-color: var(--border-strong); }
-.qboard__rank {
-  position: absolute; top: -8px; left: -4px; padding: 1px 6px; border-radius: 6px;
-  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: var(--w-bold); color: var(--q-gold-ink); background: var(--surface-hover);
-}
 .qboard__rank--1 { background: var(--q-gold); }
 .qboard__rank--2 { background: #C9D3E3; }
 .qboard__rank--3 { background: #D08A4E; }
 .qboard__rank--4 { background: var(--surface-hover); color: var(--text-dim); }
-.qboard__ring { width: 44px; height: 44px; flex: none; }
-.qboard__ring text { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 600; fill: var(--text); }
-.qboard__text { display: grid; min-width: 0; line-height: 1.25; }
-.qboard__text b {
-  font-size: var(--t-xs); font-weight: var(--w-semi);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.qboard__text small { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10.5px; color: var(--text-faint); }
-.qboard--ending { width: 200px; }
-.thumb.qboard__thumb { width: 44px; height: 44px; aspect-ratio: 1; border-radius: 10px; overflow: hidden; flex: none; font-size: 12px; }
 
 /* ── The loot card ─────────────────────────────────────────────────────── */
 
@@ -8267,17 +7957,6 @@ body.is-locked { overflow: hidden; }
   0% { transform: scale(1) rotate(0); }
   40% { transform: scale(1.35) rotate(-10deg); }
   100% { transform: scale(1) rotate(0); }
-}
-.qfloat.qfloat--loss { color: #F87171; }
-.qfloat {
-  position: absolute; top: 38px; right: 0; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 11px; font-weight: var(--w-bold); color: var(--q-gold);
-  animation: q-float 900ms var(--ease) forwards;
-}
-@keyframes q-float {
-  0% { opacity: 0; transform: translateY(6px); }
-  25% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-18px); }
 }
 
 .qsticker-tag {
@@ -8511,7 +8190,6 @@ body.is-locked { overflow: hidden; }
 
 @media (min-width: 720px) {
   .qstats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .qboard { width: 200px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -8519,7 +8197,7 @@ body.is-locked { overflow: hidden; }
   .qcardface--legendary::after, .qcardface--epic::after { animation: none; display: none; }
   .qflip__inner, .qloot, .qxp > span { transition: none; }
   .qloot:hover { transform: none; }
-  .qheart.is-on svg, .qfloat { animation: none; }
+  .qheart.is-on svg { animation: none; }
 }
 
 /* ── Collector game, part two: sheets, tiers, ratings, collection ──────── */
@@ -8582,7 +8260,6 @@ body.is-locked { overflow: hidden; }
 /* Profile additions. */
 .qprofile__penalty { margin: -6px 0 10px; font-size: var(--t-xs); color: var(--coral); }
 .qme__facts { display: grid; gap: 8px; margin: 14px 0; }
-
 
 .qshowcase { display: grid; gap: 0; width: 100%; text-align: left; }
 .qshowcase:hover { border-color: var(--border-strong); }
@@ -8911,7 +8588,6 @@ a.ohead__thumb:hover { transform: scale(1.04); }
   display: flex; justify-content: space-between; gap: 10px; margin: 0; padding: 8px 10px; border-radius: 10px;
   font-size: var(--t-xs); background: rgba(255, 255, 255, 0.03);
 }
-
 
 /* The milestones as boxes across the top of a timeline - order placed, the
    warehouse, on to delivered - each ticked once reached and locked until the
@@ -9652,6 +9328,18 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 .buybox__adv { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
 .buybox__adv svg { color: var(--pink-text); flex: none; }
 .buybox__acts { display: flex; gap: 8px; }
+/* How many, beside Buy: a pill of minus, count, plus. */
+.qtystep {
+  display: inline-flex; align-items: center; flex: none;
+  border-radius: var(--r-pill); background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.qtystep button {
+  width: 36px; height: 100%; min-height: 44px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--t-md); color: var(--text);
+}
+.qtystep button:disabled { color: var(--text-faint); cursor: default; }
+.qtystep b { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; }
 .buybox__buy {
   flex: 1; border: 0; color: #fff; font-weight: var(--w-bold); background: var(--grad-hero);
   box-shadow: 0 8px 22px rgba(236, 72, 153, 0.3); transition: transform 220ms var(--bounce), box-shadow 220ms;
@@ -9680,7 +9368,6 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 
 /* Reviews. */
 .starrow { display: inline-flex; gap: 1px; }
-@keyframes lp-grow { from { transform: scaleX(0); } }
 .revhead { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; }
 .revlist { display: grid; gap: 10px; }
 .revcard { display: grid; gap: 8px; padding: 14px; animation: lp-rise 500ms var(--spring) both; animation-delay: calc(var(--i, 0) * 60ms); }

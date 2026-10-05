@@ -21,67 +21,6 @@ import { Modal } from './ui';
  * quest view, and the celebration when it moves) is held in one place.
  */
 
-/* ── Which design ──────────────────────────────────────────────────────── */
-
-export type Design = 'quest' | 'classic';
-const DESIGN_KEY = 'figmark.design';
-const DESIGN_EVENT = 'figmark:design';
-
-function readDesign(): Design {
-  try {
-    return window.localStorage.getItem(DESIGN_KEY) === 'classic' ? 'classic' : 'quest';
-  } catch {
-    return 'quest';
-  }
-}
-
-/**
- * The new design or the old one, per browser.
- *
- * Both are kept while the choice is being made, and the switch is a
- * preference rather than a setting on the account: it is a question about the
- * app, not about the person. Every mounted screen hears a change at once, so
- * flipping it on the feed also flips the profile behind it.
- */
-export function useDesign(): [Design, (next: Design) => void] {
-  const [design, setDesign] = useState<Design>(readDesign);
-  useEffect(() => {
-    const sync = () => setDesign(readDesign());
-    window.addEventListener(DESIGN_EVENT, sync);
-    window.addEventListener('storage', sync);
-    return () => {
-      window.removeEventListener(DESIGN_EVENT, sync);
-      window.removeEventListener('storage', sync);
-    };
-  }, []);
-  const choose = useCallback((next: Design) => {
-    try {
-      window.localStorage.setItem(DESIGN_KEY, next);
-    } catch {
-      // Private mode: the choice lasts as long as the page does.
-    }
-    setDesign(next);
-    window.dispatchEvent(new Event(DESIGN_EVENT));
-  }, []);
-  return [design, choose];
-}
-
-export function DesignSwitch() {
-  const [design, choose] = useDesign();
-  return (
-    <div className="qswitch" role="radiogroup" aria-label="Design">
-      <button type="button" role="radio" aria-checked={design === 'quest'}
-        className={design === 'quest' ? 'is-on' : ''} onClick={() => choose('quest')}>
-        Quest
-      </button>
-      <button type="button" role="radio" aria-checked={design === 'classic'}
-        className={design === 'classic' ? 'is-on' : ''} onClick={() => choose('classic')}>
-        Classic
-      </button>
-    </div>
-  );
-}
-
 /* ── Your own quest state ──────────────────────────────────────────────── */
 
 interface Celebration {

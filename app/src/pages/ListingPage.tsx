@@ -1,8 +1,10 @@
 import { ReportButton } from '../components/ReportButton';
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { Avatar, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { SkeletonText } from '../components/Feedback';
+import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
 import { ListingPosts } from '../components/ListingPosts';
 import { RarityRibbon } from '../components/Quest';
@@ -26,6 +28,7 @@ export function ListingPage() {
   const { id = '' } = useParams();
   const { user, gate } = useSession();
   const navigate = useNavigate();
+  const location = useLocation();
   // Anything here a guest reaches for opens the sign-in popup; they stay on this item.
   const lock = user ? '' : ' is-locked';
   const lockMark = user ? null : <span className="lockmark" aria-hidden="true">🔒</span>;
@@ -40,13 +43,18 @@ export function ListingPage() {
 
   const [data, setData] = useState<ListingDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [action, setAction] = useState<string | null>(null);
+  /** What the last press said, and whether it went through. */
+  const [action, setAction] = useState<{ text: string; ok: boolean } | null>(null);
+  const [quantity, setQuantity] = useState(1);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setData(null);
+    setError(null);
+    setAction(null);
+    setQuantity(1);
     void api
       .listing(id, ref)
       .then((result) => !cancelled && setData(result))
@@ -56,8 +64,22 @@ export function ListingPage() {
     };
   }, [id, ref]);
 
+  const onSaved = useCallback((liked: boolean) => setData((prev) => (prev ? { ...prev, liked } : prev)), []);
+  const [liked, toggleLike] = useSave(id, data?.liked ?? false, onSaved);
+
   if (error) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!data) {
+    return (
+      <main className="page lp" role="status" aria-label="Loading the item">
+        <div className="detail">
+          <div>
+            <div className="skel skel-thumb" style={{ borderRadius: 18 }} />
+            <div style={{ marginTop: 18 }}><SkeletonText lines={5} /></div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   const { listing, seller, comments } = data;
   // The primary photo first, then the rest in the order they were added.
@@ -72,9 +94,9 @@ export function ListingPage() {
     setAction(null);
     try {
       await fn();
-      setAction(label);
+      if (label) setAction({ text: label, ok: true });
     } catch (err) {
-      setAction(err instanceof ApiRequestError ? err.message : 'Something went wrong.');
+      setAction({ text: err instanceof ApiRequestError ? err.message : 'Something went wrong.', ok: false });
     } finally {
       setBusy(false);
     }
@@ -88,14 +110,8 @@ export function ListingPage() {
   // looking like a completed one.
   const buy = () =>
     run('', async () => {
-      const placed = await api.order(listing.id, 1, via, ref);
+      const placed = await api.order(listing.id, quantity, via, ref);
       navigate(`/order/${placed.order.id}`);
-    });
-
-  const toggleLike = () =>
-    run('', async () => {
-      const result = await api.like(listing.id);
-      setData((prev) => (prev ? { ...prev, liked: result.liked } : prev));
     });
 
   const toggleFollow = () =>
@@ -109,6 +125,9 @@ export function ListingPage() {
     run('Bumped to the top of the feed.', async () => {
       await api.bump(listing.id);
     });
+
+  // A pre-order books one place at a time; anything else up to what is left.
+  const maxQuantity = listing.preOrder ? 1 : isMultiple(listing) ? 20 : Math.min(20, listing.quantityAvailable);
 
   const buyBox = (
     <div className="buybox rise" style={{ ['--i' as string]: 1 }}>
@@ -126,7 +145,7 @@ export function ListingPage() {
         </p>
       ) : null}
 
-      {action && <p className={`notice ${action.includes('—') || action.includes('Bumped') ? 'notice--ok' : 'notice--error'}`}>{action}</p>}
+      {action && <p className={`notice ${action.ok ? 'notice--ok' : 'notice--error'}`}>{action.text}</p>}
 
       {data.isOwn ? (
         <div className="buybox__acts">
@@ -139,13 +158,23 @@ export function ListingPage() {
         <p className="notice notice--warn">This item has expired and can no longer be bought.</p>
       ) : (
         <div className="buybox__acts">
+          {/* More than one to be had: how many, before the checkout opens. */}
+          {maxQuantity > 1 && (
+            <span className="qtystep" role="group" aria-label="Quantity">
+              <button type="button" onClick={() => setQuantity((n) => Math.max(1, n - 1))}
+                disabled={busy || quantity <= 1} aria-label="One fewer">−</button>
+              <b aria-live="polite">{quantity}</b>
+              <button type="button" onClick={() => setQuantity((n) => Math.min(maxQuantity, n + 1))}
+                disabled={busy || quantity >= maxQuantity} aria-label="One more">+</button>
+            </span>
+          )}
           {/* No purchase on an expired item. The server refuses it too. */}
           <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
             disabled={busy || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
             {busy ? <span className="buybox__opening">Opening checkout</span> : <>{lockMark}{listing.preOrder ? 'Book a place' : 'Buy now'}</>}
           </button>
-          <button className={`btn btn--ghost buybox__save${data.liked ? ' is-on' : ''}${lock}`} aria-label={data.liked ? 'Saved' : 'Save'}
-            onClick={gate(() => toggleLike(), 'Sign in to save items.')} disabled={busy}>
+          <button className={`btn btn--ghost buybox__save${liked ? ' is-on' : ''}${lock}`} aria-label={liked ? 'Saved' : 'Save'}
+            aria-pressed={liked} onClick={gate(() => void toggleLike(), 'Sign in to save items.')} disabled={busy}>
             <Icon name="heart" size={18} />
           </button>
         </div>
@@ -159,7 +188,13 @@ export function ListingPage() {
 
   return (
     <main className="page lp">
-      <Link to="/" className="btn btn--quiet lp__back">
+      {/* Back to where they were - filters, search and scroll - when they came
+          from inside the app; a link opened cold goes to the catalogue. */}
+      <Link to="/" className="btn btn--quiet lp__back" onClick={(event) => {
+        if (location.key === 'default') return;
+        event.preventDefault();
+        navigate(-1);
+      }}>
         <Icon name="back" size={14} /> Back to browse
       </Link>
 
@@ -536,4 +571,3 @@ function Roster({ roster }: { roster: PreOrderRoster }) {
   );
 }
 
-export { EmptyState };
