@@ -487,11 +487,19 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
         {rarity.priceDropPercent && <span className="qsticker-tag qsticker-tag--drop">−{rarity.priceDropPercent}%</span>}
         {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
       </Thumb>
-      {/* Under the picture rather than on it: on the picture it sat on the condition stamp. */}
-      {listing.channelDrop && (
+      {/* Under the picture rather than on it: on the picture it sat on the
+          condition stamp. With a booking amount too, the two share one strip
+          rather than stacking into two bands of different heights. */}
+      {listing.channelDrop && listing.advancePercent ? (
+        <span className="qloot__strips">
+          <span className="qloot__drop" title="Exclusive channel drop"><Glyph name="bolt" size={11} /><span>Exclusive</span></span>
+          <span className="qloot__book" title={`Book with ${listing.advancePercent}% of the price`}>Book {listing.advancePercent}%</span>
+        </span>
+      ) : listing.channelDrop ? (
         <span className="qloot__drop" title="Exclusive channel drop"><Glyph name="bolt" size={11} /><span>Channel exclusive</span></span>
+      ) : (
+        <AdvanceStrip percent={listing.advancePercent} />
       )}
-      <AdvanceStrip percent={listing.advancePercent} />
 
       <div className="qloot__body">
         <span className="qloot__title">{listing.title}</span>

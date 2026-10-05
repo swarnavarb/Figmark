@@ -8148,6 +8148,17 @@ body.is-locked { overflow: hidden; }
 @keyframes qdrop-sheen { 0%, 55% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 @keyframes qdrop-zap { 0%, 88%, 96% { opacity: 1; } 92%, 100% { opacity: 0.25; } }
 
+/* Drop and booking amount together: one strip, split, the same height. */
+.qloot__strips { display: flex; }
+.qloot__strips .qloot__drop { flex: 1 1 auto; min-width: 0; gap: 4px; padding: 5px 6px; letter-spacing: 0.03em; }
+.qloot__book {
+  flex: none; display: flex; align-items: center; padding: 5px 8px;
+  font-size: 9.5px; font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
+  color: var(--lime-ink); background: linear-gradient(90deg, var(--lime), #4ade80);
+  clip-path: polygon(7px 0, 100% 0, 100% 100%, 0 100%);
+  margin-left: -7px; padding-left: 12px; letter-spacing: 0.03em;
+}
+
 /* A ripple, from wherever the finger landed. */
 .qripple {
   position: absolute; border-radius: 50%; pointer-events: none; z-index: 3;
