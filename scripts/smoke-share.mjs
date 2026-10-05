@@ -26,7 +26,7 @@ const {
   logShareRoute: logShare, myInviteRoute: myInvite, openInviteRoute: openInvite,
   growthRoute: growth, growthClaimRoute: claimGrowth, spotlightRoute: spotlight,
 } = await import(new URL('share-routes.js', fns));
-const { ogRoute: og, injectMeta } = await import(new URL('og-routes.js', fns));
+const { ogRoute: og, ogCardRoute: ogCard, injectMeta } = await import(new URL('og-routes.js', fns));
 const { questMeRoute: questMe, questClaimRoute: questClaim } = await import(new URL('quest-routes.js', fns));
 const { questView, emptyQuestState } = await import(new URL('quest.js', shared));
 const { growthView, claimGrowth: claimRule } = await import(new URL('store-growth.js', shared));
@@ -251,7 +251,7 @@ const preview = async (path) => {
   assert.match(response.headers['Content-Type'], /text\/html/);
   return response.body;
 };
-const tag = (html, property) => html.match(new RegExp(`<meta property="${property}" content="([^"]*)"`))?.[1] ?? null;
+const tag = (html, property) => html.match(new RegExp(`<meta property="${property}" content="([^"]*)"`))?.[1]?.replace(/&amp;/g, '&') ?? null;
 
 await check('the app\'s own page gets the link\'s tags in place of its defaults', async () => {
   const html = injectMeta(shell, { title: 'A & "B"', description: 'd', image: 'https://x/y.jpg', large: true, fallback: '/' }, 'https://x/r/abc');
@@ -328,6 +328,37 @@ await check('the link preview leads with the discount', async () => {
   assert.match(tag(html, 'og:description'), /₹50 off with Sharer's link: ₹250 instead of ₹300/);
   assert.match(tag(html, 'og:description'), /Level \d+/, 'the shop and its level');
   assert.equal(tag(await preview(`/s/l/${deal.id}`), 'og:title'), 'Deal Figure · ₹300', 'a plain link takes nothing off');
+});
+
+const cardAt = async (image) => {
+  const url = new URL(image);
+  const [, , , , kind, name] = url.pathname.split('/');
+  const response = await ogCard(req({ query: Object.fromEntries(url.searchParams), params: { kind, name } }), ctx);
+  assert.equal(response.status, 200, `card for ${image}`);
+  assert.equal(response.headers['Content-Type'], 'image/jpeg');
+  assert.ok(response.body[0] === 0xff && response.body[1] === 0xd8, 'a real JPEG');
+  assert.ok(response.body.byteLength < 300_000, `small enough for a chat preview: ${response.body.byteLength}`);
+  return response.body;
+};
+
+await check('an item with no photo gets its own drawn picture, not the Figmark banner', async () => {
+  const plain = tag(await preview(`/s/l/${deal.id}`), 'og:image');
+  assert.match(plain, new RegExp(`^https://figmark\\.example/api/og/card/l/${deal.id}\\.jpg\\?v=`));
+  const viaLink = tag(await preview(`/r/${dealCode}`), 'og:image');
+  assert.match(viaLink, new RegExp(`&r=${dealCode}$`), 'the link\'s picture carries its discount');
+  assert.notEqual(Buffer.compare(await cardAt(plain), await cardAt(viaLink)), 0, 'and draws it');
+  const forged = await ogCard(req({ query: { r: 'nope1234' }, params: { kind: 'l', name: `${deal.id}.jpg` } }), ctx);
+  assert.equal(forged.status, 200, 'a made-up code just draws the plain card');
+  assert.equal((await ogCard(req({ params: { kind: 'l', name: 'nope.jpg' } }), ctx)).status, 404);
+});
+
+await check('a shop and a person without a photo get drawn pictures too', async () => {
+  const owner = await repository.getUserById(shop.id);
+  const shopImage = tag(await preview(`/s/p/${owner.sellerProfile.username}`), 'og:image');
+  assert.match(shopImage, /\/api\/og\/card\/p\//);
+  await cardAt(shopImage);
+  const person = await repository.getUserById(sharer.id);
+  if (person.username) await cardAt(tag(await preview(`/s/p/${person.username}`), 'og:image'));
 });
 
 await check('a buyer through the link pays less; anybody else pays the price', async () => {

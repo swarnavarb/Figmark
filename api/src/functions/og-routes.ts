@@ -9,6 +9,7 @@ import { offersAffiliate, resolveShortCode } from '../affiliate.js';
 import { getRepository } from '../data/index.js';
 import { resolveInvite } from '../share.js';
 import { handler } from './http.js';
+import { listingSvg, personSvg, renderCard, type ListingCard, type PersonCard } from '../og-card.js';
 
 /**
  * Link previews for everything people share out of the app.
@@ -30,6 +31,10 @@ import { handler } from './http.js';
  *   /i/<code>[?as=seller]     an invite to Figmark, or to sell on it
  *   /s/l/<id>?m=&i=           an item, as a moment (booked, delivered, ...)
  *   /s/p/<handle>?i=          a shop or a person's page
+ *
+ * The picture is the item's lead photo. Something with no photo gets a card
+ * drawn for it instead (`/api/og/card/...`, below) - its tile, price and shop -
+ * rather than the Figmark banner, which said nothing about what was shared.
  */
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -109,9 +114,10 @@ function shopLine(user: User | null): string {
 
 async function listingMeta(
   repository: Repo, origin: string, listing: Listing, sharer: User | null, moment: string | null, fallback: string,
-  /** True for an affiliate link: the one kind of link that can take money off. */
-  viaLink = false,
+  /** The affiliate link's code: the one kind of link that can take money off. */
+  code: string | null = null,
 ): Promise<Meta> {
+  const viaLink = code !== null;
   const now = Date.now();
   const seller = await repository.getUserById(listing.sellerId);
   const price = rupees(listing.priceMinor);
@@ -143,7 +149,7 @@ async function listingMeta(
       : 'Buyer Protection on Figmark.',
   ].filter(Boolean);
   const photo = absolute(origin, leadPhoto(listing));
-  return { title, description: parts.join(' · '), image: photo ?? `${origin}${DEFAULT_IMAGE}`, large: true, fallback };
+  return { title, description: parts.join(' · '), image: photo ?? listingCardUrl(origin, listing, seller, offMinor, code), large: true, fallback };
 }
 
 async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta> {
@@ -166,7 +172,7 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
     const listing = target ? await repository.getListing(target.listingId) : null;
     if (!target || !listing) return fallbackMeta;
     const sharer = await repository.getUserById(target.referrerId);
-    return listingMeta(repository, origin, listing, sharer, url.searchParams.get('m'), `/listing/${encodeURIComponent(listing.id)}`, true);
+    return listingMeta(repository, origin, listing, sharer, url.searchParams.get('m'), `/listing/${encodeURIComponent(listing.id)}`, first);
   }
   if (kind === 'i' && first) {
     const inviter = await resolveInvite(repository, first);
@@ -208,16 +214,161 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
         shop.bio?.trim().slice(0, 120) || null,
       ].filter(Boolean);
       const photo = absolute(origin, shop.photoUrl);
-      return { title: `${shop.storefrontName} on Figmark`, description: bits.join(' · '), image: photo ?? `${origin}${DEFAULT_IMAGE}`, large: !photo, fallback: back };
+      return { title: `${shop.storefrontName} on Figmark`, description: bits.join(' · '), image: photo ?? personCardUrl(origin, second, user), large: !photo, fallback: back };
     }
     const level = user.quest?.levelCache ?? 1;
     return {
       title: `${user.displayName} on Figmark`,
       description: [`Level ${level} ${titleFor(level)}`, `${(user.collection ?? []).length} in their collection`, user.bio?.trim().slice(0, 120)].filter(Boolean).join(' · '),
-      image: `${origin}${DEFAULT_IMAGE}`, large: true, fallback: back,
+      image: personCardUrl(origin, second, user), large: true, fallback: back,
     };
   }
   return fallbackMeta;
+}
+
+/* ── Drawn previews ─────────────────────────────────────────────────────── */
+
+/** Short and stable: changes when anything the card shows does, so a chat app's cached copy is replaced. */
+function versionOf(...parts: unknown[]): string {
+  let hash = 2166136261 >>> 0;
+  for (const char of parts.map(String).join('|')) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function listingCardUrl(origin: string, listing: Listing, seller: User | null, offMinor: number, code: string | null): string {
+  const v = versionOf(listing.updatedAt, listing.title, listing.priceMinor, listing.preOrder?.filledCount, listing.preOrder?.pledgedCount,
+    seller?.sellerProfile?.levelCache, seller?.sellerProfile?.storefrontName, seller?.sellerProfile?.photoUrl?.length, offMinor);
+  const via = offMinor > 0 && code ? `&r=${encodeURIComponent(code)}` : '';
+  return `${origin}/api/og/card/l/${encodeURIComponent(listing.id)}.jpg?v=${v}${via}`;
+}
+
+function personCardUrl(origin: string, handle: string, user: User): string {
+  const shop = user.sellerProfile;
+  const v = versionOf(user.updatedAt, user.displayName, user.quest?.levelCache, shop?.storefrontName, shop?.levelCache, shop?.followerCount, (user.collection ?? []).length);
+  return `${origin}/api/og/card/p/${encodeURIComponent(handle)}.jpg?v=${v}`;
+}
+
+/**
+ * A photo the card can embed: a data URL as it is, a link fetched (briefly)
+ * and inlined, since the renderer cannot reach the network itself.
+ */
+async function inlinePhoto(origin: string, url: string | null | undefined): Promise<string | null> {
+  if (!url) return null;
+  if (/^data:image\/(png|jpe?g|gif|webp)[;,]/i.test(url)) return url;
+  const full = absolute(origin, url);
+  if (!full) return null;
+  try {
+    const response = await fetch(full, { signal: AbortSignal.timeout(1500) });
+    const type = response.headers.get('content-type') ?? '';
+    if (!response.ok || !/^image\/(png|jpe?g|gif|webp)/i.test(type)) return null;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength > 2_000_000) return null;
+    return `data:${type.split(';')[0]};base64,${bytes.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+async function listingCard(repository: Repo, origin: string, listing: Listing, code: string | null): Promise<ListingCard> {
+  const seller = await repository.getUserById(listing.sellerId);
+  let offMinor = 0;
+  if (code) {
+    const target = await resolveShortCode(repository, code);
+    if (target?.listingId === listing.id && offersAffiliate(listing)) offMinor = linkDiscountMinor(listing.affiliate);
+  }
+  const pre = listing.preOrder;
+  const fill = fillLine(listing, Date.now());
+  const level = seller?.sellerProfile ? seller.sellerProfile.levelCache ?? 1 : null;
+  return {
+    id: listing.id,
+    title: listing.title,
+    price: rupees(Math.max(100, listing.priceMinor - offMinor)),
+    was: offMinor > 0 ? rupees(listing.priceMinor) : null,
+    off: offMinor > 0 ? rupees(offMinor) : null,
+    condition: listing.condition || null,
+    preOrder: Boolean(pre) || (listing.tags ?? []).includes('pre-order'),
+    fill: pre && fill && pre.fillThreshold > 0
+      ? { joined: Math.min(pre.fillThreshold, pre.filledCount + (pre.pledgedCount ?? 0)), total: pre.fillThreshold, line: fill.line.split(' · ')[0]! }
+      : null,
+    shop: {
+      name: shopName(seller),
+      level,
+      title: level ? storeTitleFor(level) : null,
+      photo: await inlinePhoto(origin, seller?.sellerProfile?.photoUrl),
+    },
+  };
+}
+
+async function personCard(origin: string, user: User, isStore: boolean): Promise<PersonCard> {
+  const shop = isStore ? user.sellerProfile : null;
+  if (shop) {
+    const level = shop.levelCache ?? 1;
+    return {
+      id: user.id,
+      name: shop.storefrontName,
+      kicker: 'Shop',
+      level,
+      title: storeTitleFor(level),
+      lines: [
+        [shop.followerCount ? `${shop.followerCount.toLocaleString('en-IN')} followers` : null, user.sellerTrust.score >= 80 ? 'Trusted seller' : null, 'Buyer Protection']
+          .filter(Boolean).join(' · '),
+        shop.bio?.trim() ?? '',
+      ].filter(Boolean),
+      photo: await inlinePhoto(origin, shop.photoUrl),
+    };
+  }
+  const level = user.quest?.levelCache ?? 1;
+  const owned = (user.collection ?? []).length;
+  return {
+    id: user.id,
+    name: user.displayName,
+    kicker: 'Collector',
+    level,
+    title: titleFor(level),
+    lines: [owned ? `${owned} in their collection` : '', user.bio?.trim() ?? ''].filter(Boolean),
+    photo: null,
+  };
+}
+
+const cardCache = new Map<string, Buffer>();
+const CARD_CACHE_SIZE = 200;
+
+/** GET /api/og/card/{l|p}/{id}.jpg - the drawn preview for something with no photo. */
+async function ogCard(request: HttpRequest, _context: InvocationContext) {
+  const kind = request.params.kind;
+  const name = (request.params.name ?? '').replace(/\.jpe?g$/i, '');
+  if (!name || (kind !== 'l' && kind !== 'p')) return { status: 404, body: 'Not found' };
+  const key = `${kind}/${name}?${request.query.get('v') ?? ''}&${request.query.get('r') ?? ''}`;
+  let bytes = cardCache.get(key);
+  if (!bytes) {
+    const repository = await getRepository();
+    const origin = originOf(request, null);
+    let svg: string | null = null;
+    if (kind === 'l') {
+      const listing = await repository.getListing(name);
+      if (listing && !listing.privateFor) svg = listingSvg(await listingCard(repository, origin, listing, request.query.get('r')));
+    } else {
+      const found = await repository.getByHandle(name);
+      if (found) svg = personSvg(await personCard(origin, found.user, found.isStore));
+    }
+    if (!svg) return { status: 404, body: 'Not found' };
+    try {
+      bytes = await renderCard(svg);
+    } catch {
+      // A photo the renderer could not read: draw it again with initials instead.
+      bytes = await renderCard(svg.replace(/<image [^>]*\/>/g, ''));
+    }
+    if (cardCache.size >= CARD_CACHE_SIZE) cardCache.delete(cardCache.keys().next().value!);
+    cardCache.set(key, bytes);
+  }
+  return {
+    status: 200,
+    headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' },
+    body: bytes,
+  };
 }
 
 /* ── Writing the page ───────────────────────────────────────────────────── */
@@ -323,4 +474,7 @@ async function og(request: HttpRequest, _context: InvocationContext) {
 
 export const ogRoute = handler(og);
 
+export const ogCardRoute = handler(ogCard);
+
 app.http('og', { authLevel: 'anonymous', methods: ['GET'], route: 'og', handler: ogRoute });
+app.http('og-card', { authLevel: 'anonymous', methods: ['GET'], route: 'og/card/{kind}/{name}', handler: ogCardRoute });

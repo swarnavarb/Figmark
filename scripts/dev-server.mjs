@@ -31,7 +31,7 @@ const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affil
 const {
   logShareRoute, myInviteRoute, openInviteRoute, growthRoute, growthClaimRoute, spotlightRoute,
 } = await import(new URL('share-routes.js', apiRoot));
-const { ogRoute } = await import(new URL('og-routes.js', apiRoot));
+const { ogRoute, ogCardRoute } = await import(new URL('og-routes.js', apiRoot));
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
@@ -146,6 +146,7 @@ const routes = [
   ['POST', '/api/growth/:ownerId/claim', growthClaimRoute],
   ['POST', '/api/listings/:id/spotlight', spotlightRoute],
   ['GET', '/api/og', ogRoute],
+  ['GET', '/api/og/card/:kind/:name', ogCardRoute],
   ['POST', '/api/listings/:id/like', toggleLikeRoute],
   ['POST', '/api/listings/:id/edit', editListingRoute],
   ['POST', '/api/listings/:id/delete', deleteListingRoute],

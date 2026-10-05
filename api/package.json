@@ -16,7 +16,9 @@
     "@azure/cosmos": "^4.2.0",
     "@azure/functions": "^4.6.0",
     "@azure/identity": "^4.5.0",
-    "@azure/storage-blob": "^12.26.0"
+    "@azure/storage-blob": "^12.26.0",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "jpeg-js": "^0.4.4"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
