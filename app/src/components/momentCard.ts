@@ -669,7 +669,8 @@ function foot(ctx: Ctx, m: Moment, avatar: HTMLImageElement | null, t: Theme, x:
     roundRect(ctx, tx, cy, cw, ch, ch / 2);
     ctx.fill();
     // Gold is too light for white: level ten's chip is inked dark, as the app's own is.
-    ctx.fillStyle = badge.level >= 10 && badge.level < 15 ? '#2B1D00' : '#FFFFFF';
+    const lv = badge.level ?? 1;
+    ctx.fillStyle = lv >= 10 && lv < 15 ? '#2B1D00' : '#FFFFFF';
     ctx.textBaseline = 'middle';
     ctx.fillText(lvText, tx + chipSize * 0.55, cy + ch / 2 + 1);
     const rest = [badge.title, badge.shop ? 'Shop' : null].filter(Boolean).join(' · ');
