@@ -272,7 +272,7 @@ export function CoverSection({ draft, set }: SectionProps) {
     <div className="stack">
       <p className="sf-lede">
         Plans buyers can add to their own item when a shop books you and turns cover on. The premium is
-        paid with the order — held by an escrow or sent direct, same as the goods — and the shop settles
+        paid with the order — held by Buyer Protection or sent direct, same as the goods — and the shop settles
         it with you alongside the freight.
       </p>
       {plans.map((plan) => {
@@ -476,7 +476,7 @@ export function PortfolioSection({ draft, set }: SectionProps) {
           placeholder="Where shops send a piece to be worked on. Shown only once a commission is paid." /></label>
       <div className="field">
         <span>Direct payment details</span>
-        <span className="field__hint">Optional. Without them, buyers can only pay you with protection (held by an escrow).</span>
+        <span className="field__hint">Optional. Without them, buyers can only pay you with Buyer Protection.</span>
         <div className="field-row">
           <input value={payment.upiId ?? ''} onChange={(e) => pay({ upiId: e.target.value })} placeholder="UPI ID" aria-label="UPI ID" />
           <input value={payment.accountName ?? ''} onChange={(e) => pay({ accountName: e.target.value })} placeholder="Account name" aria-label="Account name" />

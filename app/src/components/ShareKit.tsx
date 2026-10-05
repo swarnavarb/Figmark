@@ -5,18 +5,19 @@ import { useSession } from '../session';
 import { useToast } from './Feedback';
 import { useQuest } from './Quest';
 import { Modal } from './ui';
-import { renderMoment, sizeOf, themeOf, type Moment, type MomentFormat } from './momentCard';
+import { renderMoment, sizeOf, themeOf, type Moment, type MomentBadge, type MomentFormat } from './momentCard';
 
 /*
  * Sharing out of the app, in one place.
  *
- * Anything worth showing off - a spot booked in a group buy, a haul, a
+ * Anything worth showing off - a spot booked in a pre-order, a haul, a
  * delivery, a sale, a level, a pull, a shop, an invite - opens the same sheet:
- * a picture drawn for it on the spot, and four ways out. WhatsApp sends the
- * link, which unfolds into a preview card in the chat; Share picture hands the
- * image to the phone for a Status or a story; Save keeps it; Copy takes the
- * link alone. Every link carries the sharer's invite or affiliate code, so
- * whoever it reaches - and whatever they buy - counts for them.
+ * a picture drawn for it on the spot, and four ways out. Share hands the phone
+ * the picture and the message with the link together, so a WhatsApp chat gets
+ * both; WhatsApp sends the message alone, and its link unfolds into a preview
+ * card with the item's photo; Save keeps the picture; Copy takes the link.
+ * Every link carries the sharer's invite or affiliate code, so whoever it
+ * reaches - and whatever they buy - counts for them.
  */
 
 /** Where the link should lead. */
@@ -27,8 +28,11 @@ export type ShareLink =
 
 export interface ShareSpec {
   kind: ShareKind;
-  /** Everything the picture says except the link and, optionally, the byline. */
-  moment: Omit<Moment, 'link' | 'byline' | 'kind'> & { byline?: string };
+  /**
+   * Everything the picture says. The byline and the badge at its foot default
+   * to the sharer and their level; an item's picture passes its shop instead.
+   */
+  moment: Omit<Moment, 'byline' | 'kind'> & { byline?: string };
   link: ShareLink;
   /** What WhatsApp and the share sheet send with it; the link is added at the end. */
   caption: string;
@@ -87,6 +91,29 @@ function bylineFor(kind: ShareKind, name: string | null, view: { level: number; 
   return `${name} · Level ${view.level} ${view.title}`;
 }
 
+/** The picture as drawn: the spec's own words, with the sharer filled in where it names nobody. */
+function momentFor(spec: ShareSpec, user: { displayName: string } | null, view: { level: number; title: string } | null): Moment {
+  const badge: MomentBadge | null = spec.moment.badge
+    ?? (user ? { name: user.displayName, level: view?.level ?? null, title: view?.title ?? null } : null);
+  // When the badge already says who, the byline under the headline names the sharer only if it is somebody else.
+  const byline = spec.moment.byline ?? (spec.moment.badge ? bylineFor(spec.kind, user?.displayName ?? null, view) : '');
+  return { ...spec.moment, kind: spec.kind, byline: byline === 'On Figmark' ? '' : byline, badge };
+}
+
+/** The shop at the foot of an item's picture: its name, picture and level. */
+export function shopBadge(
+  seller: { storefrontName?: string | null; photoUrl?: string | null; level?: { level: number; title: string } | null } | null | undefined,
+  fallback: string,
+): MomentBadge {
+  return {
+    name: seller?.storefrontName || fallback,
+    photo: seller?.photoUrl ?? null,
+    level: seller?.level?.level ?? null,
+    title: seller?.level?.title ?? null,
+    shop: true,
+  };
+}
+
 /* ── The sheet ──────────────────────────────────────────────────────────── */
 
 function canShareFiles(): boolean {
@@ -118,7 +145,9 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
   const urls = useRef<string[]>([]);
   const files = useMemo(canShareFiles, []);
 
-  const byline = spec.moment.byline ?? bylineFor(spec.kind, user?.displayName ?? null, view);
+  // Redrawn only when what it shows changes - not when a share refreshes the quest view.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const moment = useMemo(() => momentFor(spec, user, view), [spec, user?.displayName, view?.level, view?.title]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,14 +158,13 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
   // The chosen shape first, then the other in the background, so switching
   // is instant. Each is drawn once per opening.
   useEffect(() => {
-    if (!link) return;
     let cancelled = false;
     const order: MomentFormat[] = format === 'story' ? ['story', 'post'] : ['post', 'story'];
     void (async () => {
       for (const shape of order) {
         if (cancelled) return;
         try {
-          const blob = await renderMoment({ ...spec.moment, kind: spec.kind, byline, link }, shape);
+          const blob = await renderMoment(moment, shape);
           if (cancelled) return;
           const url = URL.createObjectURL(blob);
           urls.current.push(url);
@@ -149,7 +177,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
     return () => { cancelled = true; };
     // `format` only orders the work; the pictures do not depend on it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link, byline, spec]);
+  }, [moment]);
 
   useEffect(() => () => urls.current.forEach((url) => URL.revokeObjectURL(url)), []);
 
@@ -197,7 +225,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
     anchor.download = fileName;
     anchor.click();
     sent('download');
-    toast('Saved. Post it to your Status or story - the link is printed on it.', 'ok');
+    toast('Saved. Post it to your Status or story, and send the link with it.', 'ok');
   };
 
   const copy = async () => {
@@ -238,14 +266,14 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
         <p className="shs__caption">{spec.caption}{link && <><br /><span className="shs__link">{link.replace(/^https?:\/\//, '')}</span></>}</p>
 
         <div className="shs__acts">
-          <button type="button" className="shs__act shs__act--wa" disabled={!link} onClick={whatsapp}>
-            <WhatsAppMark /> WhatsApp
-          </button>
           {files && (
-            <button type="button" className="shs__act shs__act--go" disabled={!picture} onClick={() => void sharePicture()}>
-              Share picture
+            <button type="button" className="shs__act shs__act--go" disabled={!picture || !link} onClick={() => void sharePicture()}>
+              Share picture + link
             </button>
           )}
+          <button type="button" className="shs__act shs__act--wa" disabled={!link} onClick={whatsapp}>
+            <WhatsAppMark /> {files ? 'WhatsApp link' : 'WhatsApp'}
+          </button>
           <button type="button" className="shs__act" disabled={!picture} onClick={save}>Save picture</button>
           <button type="button" className="shs__act" disabled={!link} onClick={() => void copy()}>
             {copied ? '✓ Copied' : 'Copy link'}
@@ -310,8 +338,7 @@ export function MomentBanner({ spec, title, note }: { spec: ShareSpec; title: st
     let url: string | null = null;
     // Drawn when the page is idle, so it never slows the screen it sits on.
     const start = () => {
-      const byline = spec.moment.byline ?? bylineFor(spec.kind, user?.displayName ?? null, view);
-      void renderMoment({ ...spec.moment, kind: spec.kind, byline, link: `${window.location.host}` }, 'post')
+      void renderMoment(momentFor(spec, user, view), 'post')
         .then((blob) => {
           if (cancelled) return;
           url = URL.createObjectURL(blob);

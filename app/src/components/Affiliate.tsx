@@ -20,11 +20,20 @@ export function earnOf(listing: { affiliate?: { amountMinor?: number; percent?: 
  * it does not change what they pay, so it sits small under the button with a
  * lock rather than as a field.
  */
-export function ReferredBy({ party, className = '' }: { party: PartyRef; className?: string }) {
+export function ReferredBy({ party, offLabel, className = '' }: {
+  party: PartyRef;
+  /** The discount their link gives, already formatted, when the shop offers one. */
+  offLabel?: string | null;
+  className?: string;
+}) {
+  const who = party.handle ? `@${party.handle}` : party.name;
   return (
-    <p className={`refby ${className}`} title="Set by the link you followed. It does not change your price.">
-      <span className="refby__lock" aria-hidden="true">🔒</span>
-      <span>Referred by <b>{party.handle ? `@${party.handle}` : party.name}</b></span>
+    <p className={`refby${offLabel ? ' refby--off' : ''} ${className}`}
+      title={offLabel ? `Set by the link you followed. It takes ${offLabel} off each one.` : 'Set by the link you followed. It does not change your price.'}>
+      <span className="refby__lock" aria-hidden="true">{offLabel ? '🎁' : '🔒'}</span>
+      {offLabel
+        ? <span><b>{offLabel} off</b> with {who}'s link</span>
+        : <span>Referred by <b>{who}</b></span>}
     </p>
   );
 }
@@ -36,9 +45,11 @@ export function ReferredBy({ party, className = '' }: { party: PartyRef; classNa
  * share, so there is nothing in it to edit or trim. A guest sees the offer and
  * is asked to sign in when they reach for it.
  */
-export function AffiliateCard({ listingId, amountMinor, currency, canShare, isOwn, onShare }: {
+export function AffiliateCard({ listingId, amountMinor, offMinor = 0, currency, canShare, isOwn, onShare }: {
   listingId: string;
   amountMinor: number;
+  /** What a buyer through a link saves per unit, in paise. */
+  offMinor?: number;
   currency: string;
   canShare: boolean;
   isOwn: boolean;
@@ -51,14 +62,18 @@ export function AffiliateCard({ listingId, amountMinor, currency, canShare, isOw
   const [shown, setShown] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const earn = formatMoney(amountMinor, currency);
+  const off = offMinor > 0 ? formatMoney(offMinor, currency) : null;
 
   if (isOwn) {
     return (
       <section className="affcard affcard--own rise">
         <span className="affcard__icon" aria-hidden="true">🤝</span>
         <div className="affcard__text">
-          <b>Affiliate on · {earn} per sale</b>
-          <span>Anyone who shares this item earns {earn} for every unit their link sells. You pay it once the item is delivered.</span>
+          <b>Affiliate on · {earn} per sale{off ? ` · ${off} off for buyers` : ''}</b>
+          <span>
+            Anyone who shares this item earns {earn} for every unit their link sells. You pay it once the item is delivered.
+            {off && ` Buyers who come through a link pay ${off} less.`}
+          </span>
         </div>
       </section>
     );
@@ -100,8 +115,11 @@ export function AffiliateCard({ listingId, amountMinor, currency, canShare, isOw
     <section className="affcard rise">
       <span className="affcard__icon" aria-hidden="true">💸</span>
       <div className="affcard__text">
-        <b>Earn {earn} per sale</b>
-        <span>Share your own link. Whenever somebody buys through it, {earn} goes to your wallet once it is delivered.</span>
+        <b>Earn {earn} per sale{off ? ` · friends save ${off}` : ''}</b>
+        <span>
+          Share your own link. Whenever somebody buys through it, {earn} goes to your wallet once it is delivered.
+          {off && ` Your link takes ${off} off for them - it is on the picture you share.`}
+        </span>
         {shown && <code className="affcard__url">{shown}</code>}
         {problem && <span className="affcard__problem">{problem}</span>}
       </div>

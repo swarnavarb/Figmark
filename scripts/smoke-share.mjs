@@ -20,6 +20,7 @@ const shared = new URL('../api/dist/shared/', import.meta.url);
 const { loginRoute: login, signupRoute: signup } = await import(new URL('auth-routes.js', fns));
 const {
   createListingRoute: createListing, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,
+  createOrderRoute: createOrder, editListingRoute: editListing,
 } = await import(new URL('catalog-routes.js', fns));
 const {
   logShareRoute: logShare, myInviteRoute: myInvite, openInviteRoute: openInvite,
@@ -294,6 +295,54 @@ await check('a moment link names it, and an unknown link still gets the brand ca
   assert.equal(tag(await preview(`/s/l/${listing.id}?m=delivered&i=${code}`), 'og:title'), 'Sharer\'s Shared Figure just arrived');
   assert.equal(tag(await preview(`/s/l/${listing.id}?m=delivered`), 'og:title'), 'Shared Figure · ₹300', 'nobody to name, so the item speaks');
   assert.equal(tag(await preview('/s/l/nope'), 'og:image'), 'https://figmark.example/og/figmark.jpg');
+});
+
+/* ── A discount through a link ─────────────────────────────────────────── */
+console.log('\nlink discount');
+
+const deal = (await createListing(req({
+  headers: shop.headers,
+  body: { title: 'Deal Figure', priceMinor: 30_000, quantityAvailable: 5, affiliateMinor: 3_000, affiliateOffMinor: 5_000, category: 'Figures', tags: ['figure'] },
+}), ctx)).jsonBody.listing;
+const { code: dealCode } = (await affiliateLink(req({ headers: sharer.headers, params: { id: deal.id }, body: {} }), ctx)).jsonBody;
+
+await check('a shop can give buyers money off through a link, never more than leaves it a rupee', async () => {
+  assert.deepEqual(deal.affiliate, { amountMinor: 3_000, buyerOffMinor: 5_000 });
+  const greedy = (await createListing(req({
+    headers: shop.headers,
+    body: { title: 'Greedy', priceMinor: 30_000, quantityAvailable: 1, affiliateMinor: 3_000, affiliateOffMinor: 29_000, category: 'Figures', tags: [] },
+  }), ctx)).jsonBody.listing;
+  assert.equal(greedy.affiliate.buyerOffMinor, 30_000 - 3_000 - 100);
+  const plain = (await createListing(req({
+    headers: shop.headers,
+    body: { title: 'No commission', priceMinor: 30_000, quantityAvailable: 1, affiliateMinor: null, affiliateOffMinor: 5_000, category: 'Figures', tags: [] },
+  }), ctx)).jsonBody.listing;
+  assert.equal(plain.affiliate ?? null, null, 'no commission, no link, no link discount');
+  const edited = (await editListing(req({ headers: shop.headers, params: { id: greedy.id }, body: { affiliateOffMinor: null } }), ctx)).jsonBody.listing;
+  assert.deepEqual(edited.affiliate, { amountMinor: 3_000 }, 'turning the discount off keeps the commission');
+});
+
+await check('the link preview leads with the discount', async () => {
+  const html = await preview(`/r/${dealCode}`);
+  assert.equal(tag(html, 'og:title'), 'Get ₹50 off · Deal Figure · ₹300');
+  assert.match(tag(html, 'og:description'), /₹50 off with Sharer's link: ₹250 instead of ₹300/);
+  assert.match(tag(html, 'og:description'), /Level \d+/, 'the shop and its level');
+  assert.equal(tag(await preview(`/s/l/${deal.id}`), 'og:title'), 'Deal Figure · ₹300', 'a plain link takes nothing off');
+});
+
+await check('a buyer through the link pays less; anybody else pays the price', async () => {
+  const friend = await newPerson('Deal Friend');
+  await openShortLink(req({ headers: { ...friend.headers, 'user-agent': BROWSER }, params: { code: dealCode } }), ctx);
+  const viaLink = await createOrder(req({ headers: friend.headers, body: { listingId: deal.id } }), ctx);
+  assert.equal(viaLink.status, 201, JSON.stringify(viaLink.jsonBody));
+  assert.equal(viaLink.jsonBody.order.unitPriceMinor, 25_000);
+  assert.equal(viaLink.jsonBody.order.affiliate.buyerOffMinor, 5_000);
+  assert.equal(viaLink.jsonBody.order.affiliate.amountMinor, 3_000, 'the sharer still earns the full commission');
+  const again = await createOrder(req({ headers: friend.headers, body: { listingId: deal.id, quantity: 2 } }), ctx);
+  assert.equal(again.jsonBody.order.unitPriceMinor, 25_000, 'going back to the checkout does not take it off twice');
+  const stranger = await newPerson('No Link');
+  const full = await createOrder(req({ headers: stranger.headers, body: { listingId: deal.id } }), ctx);
+  assert.equal(full.jsonBody.order.unitPriceMinor, 30_000);
 });
 
 console.log(`\n${passed} checks passed`);

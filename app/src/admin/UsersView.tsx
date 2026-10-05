@@ -86,7 +86,7 @@ export function UsersView() {
               {row.store && <span className="badge">store</span>}
               {row.escrowRights && (
                 <span className="badge badge--ok">
-                  escrow · {(row.escrowRights.feeBasisPoints / 100).toFixed(1)}%
+                  Buyer Protection · {(row.escrowRights.feeBasisPoints / 100).toFixed(1)}%
                 </span>
               )}
             </div>
@@ -313,7 +313,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
 
   return (
     <div className="card card--pad stack">
-      <span className="card__title">Escrow</span>
+      <span className="card__title">Buyer Protection</span>
       {user.escrowRights ? (
         <p className="faint">
           Approved {formatDate(user.escrowRights.grantedAt)} at{' '}
@@ -350,7 +350,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
 
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <button className="btn" disabled={busy} onClick={() => void save(true)}>
-          {user.escrowRights ? 'Update' : 'Approve as an escrow'}
+          {user.escrowRights ? 'Update' : 'Approve for Buyer Protection'}
         </button>
         {user.escrowRights && (
           <button className="btn btn--quiet" disabled={busy} onClick={() => setConfirming(true)}>
@@ -361,7 +361,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
 
       {confirming && (
         <Confirm
-          title="Remove them as an escrow?"
+          title="Remove them as a Buyer Protection agent?"
           confirmLabel="Remove"
           busy={busy}
           onCancel={() => setConfirming(false)}

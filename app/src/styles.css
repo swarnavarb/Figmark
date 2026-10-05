@@ -9595,6 +9595,7 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 .buybox { display: grid; gap: 10px; padding: 14px; }
 .buybox__top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .buybox__price { font-family: var(--display); font-size: 30px; font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1; }
+.buybox__was { font-size: 16px; font-weight: var(--w-medium); color: var(--text-faint); letter-spacing: 0; }
 .buybox__adv { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
 .buybox__adv svg { color: var(--pink-text); flex: none; }
 .buybox__acts { display: flex; gap: 8px; }
@@ -10307,6 +10308,8 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 }
 .refby b { color: var(--text-dim); font-weight: var(--w-semi); }
 .refby__lock { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; background: rgba(255, 255, 255, 0.06); }
+.refby--off { color: var(--text); background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.45); }
+.refby--off b { color: #FBBF24; font-weight: var(--w-bold); }
 
 .card.is-affiliate { box-shadow: 0 0 0 1px var(--lime-line), 0 6px 22px rgba(163, 230, 53, 0.14); }
 .card.is-affiliate .thumb::after {

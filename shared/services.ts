@@ -95,8 +95,8 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
   },
   escrow: {
     kind: 'escrow',
-    label: 'Escrow',
-    plural: 'Escrow agents',
+    label: 'Buyer Protection',
+    plural: 'Buyer Protection agents',
     glyph: '🔒',
     icon: 'lock',
     blurb: 'Holds the money until the buyer has the thing.',

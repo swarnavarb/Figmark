@@ -16,7 +16,7 @@ import { isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
 import { AffiliateCard, ReferredBy, SimilarItems } from '../components/Affiliate';
 import { AFFILIATE_PARAM } from '@shared/affiliate';
-import { useShareSheet, type ShareSpec } from '../components/ShareKit';
+import { shopBadge, useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { themeOf } from '../components/momentCard';
 
 /** What each verification tier means, in a line. */
@@ -130,6 +130,8 @@ export function ListingPage() {
     });
 
   const shareSpec = listingShareSpec(data);
+  // A link that takes money off is the price this reader pays.
+  const linkOff = data.affiliate?.referredBy && !data.isOwn ? data.affiliate.buyerOffMinor ?? 0 : 0;
 
   // A pre-order books one place at a time; anything else up to what is left.
   const maxQuantity = listing.preOrder ? 1 : isMultiple(listing) ? 20 : Math.min(20, listing.quantityAvailable);
@@ -137,7 +139,12 @@ export function ListingPage() {
   const buyBox = (
     <div className="buybox rise" style={{ ['--i' as string]: 1 }}>
       <div className="buybox__top">
-        <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        {linkOff > 0 ? (
+          <span className="buybox__price">
+            {formatMoney(Math.max(100, listing.priceMinor - linkOff), listing.currency)}{' '}
+            <s className="buybox__was">{formatMoney(listing.priceMinor, listing.currency)}</s>
+          </span>
+        ) : <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>}
         {isMultiple(listing) || listing.quantityAvailable > 0
           ? <StockChip listing={listing} />
           : <span className="badge badge--danger">Sold out</span>}
@@ -187,7 +194,8 @@ export function ListingPage() {
       <p className="buybox__fine">
         {!user && !data.isOwn ? '🔒 Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
       </p>
-      {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy} />}
+      {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy}
+        offLabel={linkOff > 0 ? formatMoney(linkOff, listing.currency) : null} />}
     </div>
   );
 
@@ -220,7 +228,7 @@ export function ListingPage() {
             {buyBox}
             <ListingShare spec={shareSpec} onOpen={() => shareSheet.open(shareSpec)} />
             {data.affiliate && (
-              <AffiliateCard listingId={listing.id} amountMinor={data.affiliate.amountMinor}
+              <AffiliateCard listingId={listing.id} amountMinor={data.affiliate.amountMinor} offMinor={data.affiliate.buyerOffMinor}
                 canShare={data.affiliate.canShare} currency={listing.currency} isOwn={data.isOwn}
                 onShare={() => shareSheet.open(shareSpec)} />
             )}
@@ -471,7 +479,7 @@ function PreOrderPanel({
         <div className="stack" style={{ gap: 10 }}>
           <div className="row">
             <button className={`btn${mine?.pledged ? ' btn--ghost' : ''}${user ? '' : ' is-locked'}`} style={{ flex: 1 }}
-              onClick={gate(() => change(), 'Sign in to join this group buy.')} disabled={busy}>
+              onClick={gate(() => change(), 'Sign in to join this pre-order.')} disabled={busy}>
               {!user && <span className="lockmark" aria-hidden="true">🔒</span>}
               {mine?.pledged ? (
                 <><Icon name="check" size={14} /> You&rsquo;re in</>
@@ -581,9 +589,10 @@ function Roster({ roster }: { roster: PreOrderRoster }) {
 
 
 /**
- * The item as a picture to share. A group buy still filling asks for help
+ * The item as a picture to share. A pre-order still filling asks for help
  * filling it - the reason a friend would open it; the shop's own item reads
- * as a new drop; anything else as a find.
+ * as a new drop; anything else as a find. When the shop gives buyers money
+ * off through a link, the sharer's picture and message lead with it.
  */
 function listingShareSpec(data: ListingDetail): ShareSpec {
   const { listing, seller } = data;
@@ -594,28 +603,32 @@ function listingShareSpec(data: ListingDetail): ShareSpec {
   const filling = Boolean(pre && left > 0);
   const shop = seller?.storefrontName ?? 'Figmark';
   const price = formatMoney(listing.priceMinor, listing.currency);
+  // Only a sharer's own affiliate link takes money off; the shop sharing its own item sends a plain one.
+  const viaLink = Boolean(data.affiliate?.canShare) && !data.isOwn;
+  const off = viaLink && data.affiliate?.buyerOffMinor ? formatMoney(data.affiliate.buyerOffMinor, listing.currency) : null;
+  const caption = filling
+    ? `${left} spot${left === 1 ? '' : 's'} left in this pre-order: ${listing.title} at ${price}. It ships when it fills 👇`
+    : data.isOwn ? `New drop: ${listing.title} at ${price} 🔥` : `Found this on Figmark: ${listing.title} at ${price} ✨`;
   return {
     kind: filling ? 'fill' : 'item',
     moment: {
       photo: lead,
       title: listing.title,
-      detail: `from ${shop}`,
+      detail: pre ? 'Pre-order · Buyer Protection' : 'Buyer Protection on Figmark',
       price,
       fill: pre ? { joined, threshold: pre.fillThreshold } : null,
-      headline: filling ? 'Help fill this group buy' : data.isOwn ? 'New drop' : 'Look what I found',
-      cta: filling ? 'Book a spot before it fills' : data.isOwn ? 'Shop it on Figmark' : 'See it on Figmark',
-      ...(data.isOwn ? { byline: shop } : {}),
+      headline: filling ? 'Help fill this pre-order' : data.isOwn ? 'New drop' : off ? 'Grab this with me' : 'Look what I found',
+      discount: off,
+      badge: shopBadge(seller, shop),
     },
-    link: { to: 'item', listingId: listing.id, moment: filling ? 'fill' : undefined, affiliate: Boolean(data.affiliate?.canShare), own: data.isOwn },
-    caption: filling
-      ? `${left} spot${left === 1 ? '' : 's'} left in this group buy: ${listing.title} at ${price}. It ships when it fills 👇`
-      : data.isOwn ? `New drop: ${listing.title} at ${price} 🔥` : `Found this on Figmark: ${listing.title} at ${price} ✨`,
+    link: { to: 'item', listingId: listing.id, moment: filling ? 'fill' : undefined, affiliate: viaLink, own: data.isOwn },
+    caption: off ? `🎁 Get ${off} off with my link! ${caption}` : caption,
     target: listing.id,
     storeId: data.isOwn ? listing.sellerId : null,
   };
 }
 
-/** A share bar under the buy box: WhatsApp-first, because that is where group buys fill. */
+/** A share bar under the buy box: WhatsApp-first, because that is where pre-orders fill. */
 function ListingShare({ spec, onOpen }: { spec: ShareSpec; onOpen: () => void }) {
   const theme = themeOf(spec.kind);
   const filling = spec.kind === 'fill';

@@ -171,7 +171,7 @@ export function seedUsers(): User[] {
         grantedBy: 'usr_ops',
         feeBasisPoints: 250,
         displayName: 'Arjun M.',
-        note: 'Long-standing member. Holds for the Mumbai group buys.',
+        note: 'Long-standing member. Holds for the Mumbai pre-orders.',
       },
       suspended: false,
       createdAt: iso(-120),
@@ -198,8 +198,8 @@ export function seedUsers(): User[] {
         grantedAt: iso(-90),
         grantedBy: 'usr_ops',
         feeBasisPoints: 150,
-        displayName: 'Meera I. — community escrow',
-        note: 'Runs escrow for three of the larger Bengaluru group buys. No complaints.',
+        displayName: 'Meera I. — Buyer Protection',
+        note: 'Runs Buyer Protection for three of the larger Bengaluru pre-orders. No complaints.',
       },
       suspended: false,
       createdAt: iso(-200),
@@ -230,7 +230,7 @@ export function seedUsers(): User[] {
        accounts you can sign in as. */
     withEscrow(
       storefront('usr_kaiju', 'Kaiju Imports', 'Ravi Krishnan', 'kaiju-imports', 'Bengaluru, KA', 91, 148, 0.96,
-        'Weekly group-buys from Guangzhou. Scale figures and garage kits.'),
+        'Weekly pre-orders from Guangzhou. Scale figures and garage kits.'),
       200,
       'High volume, long record, no unresolved disputes.',
     ),
@@ -690,7 +690,7 @@ const LISTINGS: ListingSeed[] = [
   },
   {
     id: 'lst_iem_audio', sellerId: 'usr_gadgetgrid', title: 'Planar IEM — Shenzhen direct',
-    description: 'Group-buy slot against the October Shenzhen consolidation. Balanced cable included.',
+    description: 'Pre-order slot against the October Shenzhen consolidation. Balanced cable included.',
     category: 'Electronics', condition: 'MISB', priceMinor: 54_000,
     quantity: 22, lotId: 'lot_sz_oct', tags: ['audio', 'iem', 'planar', 'preorder'],
     preOrder: { fillThreshold: 12, cutoffDays: 16 },
@@ -887,7 +887,7 @@ export function seedOrders(): Order[] {
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_demo' }],
       protection: {
-        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — community escrow',
+        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — Buyer Protection',
         feeMinor: 4_350, feeBasisPoints: 150, boughtAt: iso(-5), refundedAt: null,
       },
       escrow: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
@@ -906,7 +906,7 @@ export function seedOrders(): Order[] {
         { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
       ],
       protection: {
-        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — community escrow',
+        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — Buyer Protection',
         feeMinor: 480, feeBasisPoints: 150, boughtAt: iso(-30), refundedAt: null,
       },
       escrow: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
@@ -1279,7 +1279,7 @@ export function seedForums(): Forum[] {
     },
     {
       id: 'frm_deals', name: 'Deal spotting',
-      description: 'Price drops and group-buys worth joining.',
+      description: 'Price drops and pre-orders worth joining.',
       createdBy: 'usr_b_sana', postCount: 1,
       memberIds: ['usr_b_sana', 'usr_b_karan', 'usr_b_aisha'],
       createdAt: iso(-18), updatedAt: iso(-1),
@@ -1424,7 +1424,7 @@ const POSTS: PostSeed[] = [
   {
     id: 'pst_kaiju_pin', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
     authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
-    body: '📌 How our group-buys work: book a slot, pay the deposit when the lot fills, balance when it lands in India. Questions go right here.',
+    body: '📌 How our pre-orders work: book a slot, pay the deposit when the lot fills, balance when it lands in India. Questions go right here.',
     likeCount: 9, replyCount: 0, ageDays: -12, reach: 'channel', announcement: true, pinned: true,
   },
   {

@@ -91,7 +91,7 @@ const DEFS: readonly Def[] = [
     blurb: 'Twenty-five people arrive through shared links this month.',
     goal: 25, action: 'share_shop', measure: (f, inPeriod) => f.opens.filter((o) => inPeriod(o.at)).length },
   { key: 'fill60', kind: 'monthly', title: 'Fill a pre-order past 60%',
-    blurb: 'Share a pre-order until it is more than half full. Group buys travel on WhatsApp.',
+    blurb: 'Share a pre-order until it is more than half full. Pre-orders travel on WhatsApp.',
     goal: 60, action: 'preorder', measure: (f) => Math.round(f.bestFill * 100) },
 ];
 

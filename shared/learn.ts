@@ -195,7 +195,7 @@ const BUY: LearnTab = {
         step('Check the seller', 'The seller card shows their trust score, on-time dispatch rate and followers. Tap their name to see reviews from earlier buyers.'),
         step('Tap Buy now', 'On a pre-order the button says **Book a place** instead. This opens checkout - it does not charge you.'),
         step('Full or advance', 'If the seller accepts an advance you can pay a percentage now and the rest later from **My Purchases**, with the same payment method.'),
-        step('Choose how to pay', '- **Buy directly from the seller**: you pay them yourself (UPI, bank transfer - whatever they list). Nothing is held, so anything that goes wrong is between the two of you.\n- **Add buyer protection**: the payment is held by an approved escrow until you confirm the item arrived, and settled by Figmark if you disagree. A small fee is added.\n- **Book**: reserve it now and pay the moment the seller confirms it is available. Booking is not payment.', '/learn/buy-checkout.jpg', 'The three ways to pay, with the total for each.'),
+        step('Choose how to pay', '- **Buy directly from the seller**: you pay them yourself (UPI, bank transfer - whatever they list). Nothing is held, so anything that goes wrong is between the two of you.\n- **Add Buyer Protection**: the payment is held by an approved Buyer Protection agent until you confirm the item arrived, and settled by Figmark if you disagree. A small fee is added.\n- **Book**: reserve it now and pay the moment the seller confirms it is available. Booking is not payment.', '/learn/buy-checkout.jpg', 'The three ways to pay, with the total for each.'),
         step('Pay and show it went through', 'Pay using the details shown, then enter the payment reference and, if you like, a screenshot of the confirmation. The seller confirms the money arrived before the order moves on.'),
         step('Done', 'Your order is in **My Purchases** (profile menu). You will get a notification at every step.'),
       ],
@@ -203,7 +203,7 @@ const BUY: LearnTab = {
     {
       id: 'pre-orders',
       title: 'Pre-orders',
-      body: 'A pre-order is a group buy: the seller only orders the item from abroad once enough people want it. That is how rare imports become affordable.',
+      body: 'A pre-order is how a shop buys together with its buyers: the seller only orders the item from abroad once enough people want it. That is how rare imports become affordable.',
       steps: [
         step('Read the bar', 'The LV bar and the pre-order panel on the listing show how many places are taken out of the goal, who is in, and when it closes.', '/learn/buy-preorder.jpg', 'A pre-order panel with its fill bar and the people in it.'),
         step('Book or pledge', '**Book a place** pays (or books) a unit now. **+ I\'m in** is a free pledge: you are counted, and only asked to pay - within a day - once the pre-order fills.'),
@@ -284,12 +284,12 @@ const SERVICES: LearnTab = {
   title: 'Services',
   icon: '🧭',
   hidden: false,
-  intro: 'Forwarders, handlers, packers and escrows - the people who move things between countries and keep payments safe. A full guide is on its way.',
+  intro: 'Forwarders, handlers, packers and Buyer Protection agents - the people who move things between countries and keep payments safe. A full guide is on its way.',
   sections: [
     {
       id: 'overview',
       title: 'What Services are for',
-      body: '- **Forwarders** consolidate shipments abroad and send them on.\n- **Handlers** receive lots in India and get parcels to buyers.\n- **Escrows** hold payments for buyer protection.\n- Browse them in the **Services** tab and see their routes, trust and reviews.',
+      body: '- **Forwarders** consolidate shipments abroad and send them on.\n- **Handlers** receive lots in India and get parcels to buyers.\n- **Buyer Protection agents** hold payments until the buyer has the item.\n- Browse them in the **Services** tab and see their routes, trust and reviews.',
       steps: [],
     },
   ],

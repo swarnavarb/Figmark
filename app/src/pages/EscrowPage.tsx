@@ -44,7 +44,7 @@ export function EscrowPage() {
     <main className="page tab-view">
       <div className="page__head">
         <div>
-          <h1>Escrow</h1>
+          <h1>Buyer Protection</h1>
           <p className="muted">Payments in your name, and the ones that need a decision.</p>
         </div>
       </div>
@@ -58,7 +58,7 @@ export function EscrowPage() {
 
       {data.holdings.length === 0 ? (
         <EmptyState title="Nothing in your name yet">
-          Buyers choose an escrow at checkout. Anything they pick you for lands here.
+          Buyers choose who holds their Buyer Protection at checkout. Anything they pick you for lands here.
         </EmptyState>
       ) : (
         <div className="stack">

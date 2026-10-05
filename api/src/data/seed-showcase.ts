@@ -99,7 +99,7 @@ export function seedShowcaseListings(base = Date.now()): Listing[] {
     sourcing: 'import' as const,
     bundle: false,
     photos: [],
-    tags: ['import', 'group buy'],
+    tags: ['import', 'pre-order'],
     likeCount: 4 + index * 3,
     viewCount: 60 + index * 25,
     soldCount: lot.buyers.filter((_, at) => at % lot.items.length === index).length,

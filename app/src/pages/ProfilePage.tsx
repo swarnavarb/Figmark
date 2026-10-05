@@ -241,7 +241,7 @@ export function ProfilePage() {
           <div className="card table-scroll">
             <table className="table">
               <thead>
-                <tr><th>Item</th><th>Qty</th><th>Total</th><th>Tracking</th><th>Payment</th><th>Escrow</th><th>Ordered</th></tr>
+                <tr><th>Item</th><th>Qty</th><th>Total</th><th>Tracking</th><th>Payment</th><th>Protection</th><th>Ordered</th></tr>
               </thead>
               <tbody>
                 {(tab === 'sales' ? data.sales : data.orders).map((order) => (

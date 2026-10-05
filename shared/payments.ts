@@ -181,5 +181,5 @@ export function creditIsLive(credit: Pick<CreditRecord, 'status'>): boolean {
 
 export const PAYMENT_METHOD_LABELS = {
   direct: 'Direct to seller (UPI / bank)',
-  protected: 'Buyer protection (escrow)',
+  protected: 'Buyer Protection',
 } as const;

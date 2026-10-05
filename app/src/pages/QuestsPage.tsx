@@ -243,21 +243,21 @@ function InvitePanel({ level, title }: { level: number; title: string }) {
   const friend: ShareSpec = {
     kind: 'invite',
     moment: {
-      level: { level, title }, title: 'Join me on Figmark', detail: 'Group buys · escrow · card packs',
-      headline: 'Come shop with me', cta: 'Join with my invite',
+      level: { level, title }, title: 'Join me on Figmark', detail: 'Pre-orders · Buyer Protection · card packs',
+      headline: 'Come shop with me',
     },
     link: { to: 'invite' },
-    caption: 'Join me on Figmark - group buys from import resellers, escrow-protected, and you collect cards as you shop. Here is my invite:',
+    caption: 'Join me on Figmark - pre-orders from import resellers with Buyer Protection, and you collect cards as you shop. Here is my invite:',
     target: summary?.code ?? null,
   };
   const seller: ShareSpec = {
     kind: 'invite_seller',
     moment: {
-      title: 'Open your shop', detail: 'Group buys · tracking · escrow · affiliates',
-      headline: 'Sell with me on Figmark', cta: 'Open a shop with my invite',
+      title: 'Open your shop', detail: 'Pre-orders · tracking · Buyer Protection · affiliates',
+      headline: 'Sell with me on Figmark',
     },
     link: { to: 'invite', seller: true },
-    caption: 'Selling imports? Run your group buys on Figmark - order manifests, tracking your buyers can see, escrow, and people who share your items for a commission. Open a shop with my invite:',
+    caption: 'Selling imports? Run your pre-orders on Figmark - order manifests, tracking your buyers can see, Buyer Protection, and people who share your items for a commission. Open a shop with my invite:',
     target: summary?.code ?? null,
   };
 

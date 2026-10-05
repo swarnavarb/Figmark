@@ -24,6 +24,24 @@ export function cleanAffiliateMinor(value: unknown, priceMinor: number): number 
   return Math.min(amount, Math.max(AFFILIATE_MIN_MINOR, priceMinor - 100));
 }
 
+/**
+ * A discount for buyers who come through somebody's link, as the API takes
+ * it: at least ₹1, and small enough that the commission and the discount
+ * together leave the shop at least ₹1 of the price. Null turns it off.
+ */
+export function cleanBuyerOffMinor(value: unknown, priceMinor: number, commissionMinor: number): number | null {
+  const amount = Math.round(Number(value));
+  if (!Number.isFinite(amount) || amount < AFFILIATE_MIN_MINOR) return null;
+  const room = priceMinor - commissionMinor - 100;
+  if (room < AFFILIATE_MIN_MINOR) return null;
+  return Math.min(amount, room);
+}
+
+/** What a buyer saves per unit through a link to this item, in paise. Zero when the shop offers none. */
+export function linkDiscountMinor(terms: { buyerOffMinor?: number | null } | null | undefined): number {
+  return terms?.buyerOffMinor && terms.buyerOffMinor > 0 ? terms.buyerOffMinor : 0;
+}
+
 /** What a shop's commission pays per unit, in paise. Older items stored a percentage. */
 export function affiliateUnitMinor(
   terms: { amountMinor?: number | null; percent?: number | null } | null | undefined,

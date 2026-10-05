@@ -25,7 +25,7 @@ import { ItemCard, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
-import { MomentBanner, type ShareSpec } from '../components/ShareKit';
+import { MomentBanner, shopBadge, type ShareSpec } from '../components/ShareKit';
 
 /**
  * One order, as the buyer sees it.
@@ -169,7 +169,8 @@ export function OrderPage() {
         )}
         {order.affiliate && (seller
           ? <AffiliateOwed order={order} onDone={load} />
-          : <ReferredBy party={{ name: order.affiliate.referrerName, handle: order.affiliate.referrerHandle }} />)}
+          : <ReferredBy party={{ name: order.affiliate.referrerName, handle: order.affiliate.referrerHandle }}
+            offLabel={order.affiliate.buyerOffMinor ? formatMoney(order.affiliate.buyerOffMinor, order.currency) : null} />)}
         {data.listing && (
           <Link to={`/listing/${data.listing.id}`} className="icard__open">
             View listing <Svg name="open" size={14} />
@@ -323,7 +324,7 @@ export function OrderPage() {
                 <dt>Payment</dt>
                 <dd>{order.paymentStatus.replace(/_/g, ' ')}</dd>
               </div>
-              <div className="kv"><dt>Escrow</dt><dd>{order.escrow.state}</dd></div>
+              <div className="kv"><dt>Buyer Protection</dt><dd>{order.escrow.state}</dd></div>
               {liveAddOns(order).map((addOn) => (
                 <div key={addOn.id} className="kv"><dt>🛡 {addOn.planName}</dt><dd>{formatMoney(addOn.premiumMinor, order.currency)}</dd></div>
               ))}
@@ -361,7 +362,7 @@ export function OrderPage() {
                 explaining a hold that had already been released. */}
             {order.escrow.state === 'held' && (
               <p className="notice notice--info">
-                {order.protection?.escrowName ?? 'An escrow'} is holding this, and passes it to the seller
+                {order.protection?.escrowName ?? 'Buyer Protection'} is holding this, and passes it to the seller
                 when you confirm delivery — or on its own{' '}
                 {order.escrow.autoReleaseAt
                   ? <>on <strong>{formatDate(order.escrow.autoReleaseAt)}</strong></>
@@ -537,7 +538,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
           would tell somebody who has actually paid that they have not. */}
       {state.simulatedPayment && order.protection != null && (
         <p className="notice notice--warn">
-          The escrow hold is simulated while no provider is connected — nothing is charged.
+          The Buyer Protection hold is simulated while no provider is connected — nothing is charged.
         </p>
       )}
 
@@ -745,7 +746,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
 /** Delivered to the buyer: the nudge to put it on a collection shelf. */
 /**
  * The moment worth showing off on this order, with its picture: a spot booked
- * in a group buy, a purchase, a delivery - or, for the shop, a sale. Shared
+ * in a pre-order, a purchase, a delivery - or, for the shop, a sale. Shared
  * from the moment it happens, when it feels best, which is when it travels.
  */
 function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }) {
@@ -753,12 +754,18 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
   if (order.placedAt === null || !listing || isCancelledLike(order.status) || order.status === 'dispute_raised') return null;
   const pre = listing.preOrder && listing.preOrder.threshold > 0 ? listing.preOrder : null;
   const left = pre ? Math.max(0, pre.threshold - pre.joined) : 0;
+  const badge = shopBadge(data.sellerBadge ? {
+    storefrontName: data.sellerName, photoUrl: data.sellerBadge.photoUrl,
+    level: { level: data.sellerBadge.level, title: data.sellerBadge.title },
+  } : null, data.sellerName);
   const base = {
     photo: listing.photoUrl,
     title: order.itemName,
-    detail: `from ${data.sellerName}`,
-    price: formatMoney(order.unitPriceMinor, order.currency),
+    detail: pre ? 'Pre-order · Buyer Protection' : 'Buyer Protection on Figmark',
+    // The item's own price: a discount this buyer had through somebody's link is theirs, not the item's.
+    price: formatMoney(order.unitPriceMinor + (order.affiliate?.buyerOffMinor ?? 0), order.currency),
     fill: pre ? { joined: Math.min(pre.joined, pre.threshold), threshold: pre.threshold } : null,
+    badge,
   };
 
   if (state.side === 'seller') {
@@ -768,14 +775,13 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
       kind,
       moment: {
         ...base,
-        byline: data.sellerName,
-        detail: filled ? 'Group buy full - it ships' : 'More drops on the shop',
-        headline: filled ? 'Group buy filled' : 'Another one sold',
-        cta: filled ? 'Catch the next drop' : 'Shop the next drop',
+        price: null,
+        detail: filled ? 'Pre-order full - it ships' : 'More drops on the shop',
+        headline: filled ? 'Pre-order filled' : 'Another one sold',
       },
       link: { to: 'item', listingId: listing.id, moment: kind, own: true },
       caption: filled
-        ? `Group buy full: ${order.itemName} 🏁 Thank you! Follow the shop for the next drop.`
+        ? `Pre-order full: ${order.itemName} 🏁 Thank you! Follow the shop for the next drop.`
         : `Just sold: ${order.itemName} 🔥 More drops coming - follow the shop.`,
       target: listing.id,
       storeId: order.sellerId,
@@ -784,32 +790,34 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
       note="A sale is the best advert you have. Post it to your Status - it brings the next buyer, and counts for your Grow quests." />;
   }
 
+  // A friend saves through the buyer's own link, when the shop gives money off for one.
+  const off = listing.affiliate && listing.buyerOffMinor ? formatMoney(listing.buyerOffMinor, order.currency) : null;
   const delivered = order.status === 'delivered';
   const kind = delivered ? 'delivered' as const : pre ? 'booked' as const : 'purchased' as const;
   const words = {
     delivered: {
-      headline: 'Finally landed', cta: 'Find yours on Figmark',
+      headline: 'Finally landed',
       caption: `It's here! 📦 ${order.itemName} just arrived - bought on Figmark.`,
       title: 'It arrived. Show it off', note: 'An unboxing picture is the best thing you can post. Friends who open your link count for your quests.',
     },
     booked: {
-      headline: 'I\'m in on this group buy', cta: left > 0 ? 'Join me before it fills' : 'It filled - next drop soon',
+      headline: 'I\'m in on this pre-order',
       caption: left > 0
-        ? `I just booked a spot in this group buy on Figmark - ${left} spot${left === 1 ? '' : 's'} left. Join me before it fills 👇`
-        : `I'm in on this group buy on Figmark 🎟`,
-      title: 'You\'re in! Help it fill', note: 'Group buys ship when they fill. Every friend who joins gets it moving - and counts for your quests.',
+        ? `I just booked a spot in this pre-order on Figmark - ${left} spot${left === 1 ? '' : 's'} left. Join me before it fills 👇`
+        : `I'm in on this pre-order on Figmark 🎟`,
+      title: 'You\'re in! Help it fill', note: 'Pre-orders ship when they fill. Every friend who joins gets it moving - and counts for your quests.',
     },
     purchased: {
-      headline: 'Just got mine', cta: 'Get yours on Figmark',
+      headline: 'Just got mine',
       caption: `Just picked up ${order.itemName} on Figmark 🛍`,
       title: 'Secured. Show it off', note: 'Share the picture - friends who open your link, join or buy all count for your quests.',
     },
   }[kind];
   const spec: ShareSpec = {
     kind,
-    moment: { ...base, headline: words.headline, cta: words.cta },
+    moment: { ...base, headline: words.headline, discount: off },
     link: { to: 'item', listingId: listing.id, moment: kind, affiliate: Boolean(listing.affiliate) },
-    caption: words.caption,
+    caption: off ? `${words.caption} 🎁 Get ${off} off with my link:` : words.caption,
     target: listing.id,
   };
   return <MomentBanner spec={spec} title={words.title} note={words.note} />;
@@ -1061,8 +1069,8 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
           if (!chosen) setPicking(true);
         }}>
         <span className="buyway__icon"><Svg name="shield" size={22} /></span>
-        <span className="buyway__title">Add buyer protection</span>
-        <span className="buyway__tag">Escrow: Community Manager</span>
+        <span className="buyway__title">Add Buyer Protection</span>
+        <span className="buyway__tag">Held by: Community Manager</span>
         <span className="buyway__note">
           {canProtect
             ? 'The payment is considered held by Figmark until you confirm the item arrived, and settled if the two of you disagree. Their fee is on top.'
@@ -1098,15 +1106,15 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
           </div>
           <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
             onClick={() => setPicking(true)}>
-            Choose a different escrow
+            Choose who holds it
           </button>
 
           {/* Said before the button rather than after it is pressed: the escrow
               is chosen and priced, and the part that moves the money is not
               built. Offering a live Pay here would be the screen lying. */}
           <p className="notice notice--warn" style={{ marginBottom: 0 }}>
-            <strong>Work in progress.</strong> Choosing an escrow and pricing their fee works;
-            paying into one does not yet. Buy directly from the seller in the meantime.
+            <strong>Work in progress.</strong> Choosing who holds it and pricing their fee works;
+            paying into Buyer Protection does not yet. Buy directly from the seller in the meantime.
           </p>
           <button className="btn btn--lg" disabled>
             Pay {formatMoney(dueNow + chosen.feeMinor, quote.currency)}
@@ -1296,7 +1304,7 @@ function EscrowPicker({ quote, chosenId, onPick, onClose }: {
   return (
     <Modal title="Who should hold your payment?" onClose={onClose}>
       <p className="faint" style={{ marginTop: 0 }}>
-        An escrow holds {formatMoney(quote.itemMinor, quote.currency)} until you confirm the item
+        Buyer Protection holds {formatMoney(quote.itemMinor, quote.currency)} until you confirm the item
         arrived, and decides if you and <PersonLink party={quote.seller} /> cannot agree. Their fee is on top.
       </p>
 
@@ -1346,7 +1354,7 @@ function EscrowPicker({ quote, chosenId, onPick, onClose }: {
                     {/* The arrow is the commitment, separate from reading about
                         them. Labelled for anybody not seeing the glyph. */}
                     <button type="button" className="escrow__add"
-                      aria-label={`Use ${option.name} as the escrow`}
+                      aria-label={`Use ${option.name} for Buyer Protection`}
                       onClick={() => onPick(option)}>
                       →
                     </button>

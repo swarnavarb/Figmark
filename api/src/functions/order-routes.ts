@@ -173,15 +173,15 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   let agent = null;
   if (body.protection) {
     if (!body.escrowAgentId) {
-      return error(400, 'no_escrow', 'Choose an escrow to hold the payment.');
+      return error(400, 'no_escrow', 'Choose who holds the payment for Buyer Protection.');
     }
     agent = await repository.getUserById(body.escrowAgentId);
     if (!agent?.escrowRights) {
-      return error(409, 'protection_unavailable', 'That escrow is not approved to hold payments.');
+      return error(409, 'protection_unavailable', 'That Buyer Protection agent is not approved to hold payments.');
     }
     // Neither end of a trade can be the neutral party in it.
     if (agent.id === order.buyerId || agent.id === order.sellerId) {
-      return error(400, 'invalid_escrow', 'An escrow cannot be the buyer or the seller.');
+      return error(400, 'invalid_escrow', 'The buyer or the seller cannot hold their own Buyer Protection.');
     }
   }
 
@@ -232,7 +232,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       // pay the seller for a box still with their supplier.
       autoReleaseAt: null,
     };
-    note(order, `Paid with buyer protection. ${order.protection.escrowName} is holding it.`, user.id);
+    note(order, `Paid with Buyer Protection. ${order.protection.escrowName} is holding it.`, user.id);
   } else {
     order.protection = null;
     order.escrow = { ...order.escrow, state: 'none', heldAt: null, autoReleaseAt: null };

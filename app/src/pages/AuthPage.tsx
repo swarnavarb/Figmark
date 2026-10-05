@@ -31,7 +31,7 @@ function AuthBrand() {
       <span className="brand__mark" style={{ width: 44, height: 44, borderRadius: 13 }} aria-hidden="true" />
       <div>
         <h1>Figmark</h1>
-        <p className="auth__tag">Group-buy lots, verified sellers, escrow-held payments.</p>
+        <p className="auth__tag">Pre-orders, verified sellers, Buyer Protection on payments.</p>
       </div>
     </div>
   );

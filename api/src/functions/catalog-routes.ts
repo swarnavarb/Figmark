@@ -22,7 +22,9 @@ import {
   resolveShortCode, shortCodeFor, verifyAffiliateToken,
 } from '../affiliate.js';
 import { recordOpen } from '../share.js';
-import { AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor } from '../../../shared/affiliate.js';
+import {
+  AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor, cleanBuyerOffMinor, linkDiscountMinor,
+} from '../../../shared/affiliate.js';
 import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -197,6 +199,8 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     affiliate: affiliateOn ? {
       /** What one sale through a link pays, in paise. */
       amountMinor: affiliateUnitMinor(listing.affiliate, listing.priceMinor),
+      /** What a buyer through somebody's link saves per unit, in paise; 0 when the shop offers none. */
+      buyerOffMinor: linkDiscountMinor(listing.affiliate),
       /** Whether the reader may have a link of their own: anybody signed in but the shop. */
       canShare: Boolean(viewer && viewer.id !== listing.sellerId),
       referredBy: referredBy && !referredBy.suspended ? personRef(referredBy) : null,
@@ -323,6 +327,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     expiresAt?: string | null;
     advancePercent?: number | null;
     affiliateMinor?: number | null;
+    affiliateOffMinor?: number | null;
     /** Announce it in the shop's channel, to its followers. */
     shareToChannel?: boolean;
     /** Announce it in the feed, to everyone. */
@@ -728,8 +733,15 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     const open = (await repository.listOrdersForBuyer(user.id)).find((entry) =>
       entry.listingId === listing.id && entry.placedAt === null && entry.status === 'pending_payment');
     if (open) {
-      if (affiliate && open.affiliate?.referrerId !== affiliate.referrerId) open.affiliate = affiliate;
+      if (affiliate && open.affiliate?.referrerId !== affiliate.referrerId) {
+        // Nothing is paid at a checkout, so its price can still follow the
+        // link that brought the buyer: the old link's discount back on, the new one's off.
+        const base = open.unitPriceMinor + (open.affiliate?.buyerOffMinor ?? 0);
+        open.affiliate = affiliate;
+        open.unitPriceMinor = Math.max(100, base - (affiliate.buyerOffMinor ?? 0));
+      }
       open.quantity = quantity;
+      open.escrow = { ...open.escrow, amountMinor: open.unitPriceMinor * quantity };
       open.buyClicks = (open.buyClicks ?? 1) + 1;
       open.updatedAt = new Date().toISOString();
       return json(200, { order: await repository.updateOrder(open) });
@@ -743,7 +755,9 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   }
 
   const now = new Date().toISOString();
-  const amountMinor = listing.priceMinor * quantity;
+  // A buyer who came through somebody's link pays the shop's link price.
+  const unitPriceMinor = Math.max(100, listing.priceMinor - (affiliate?.buyerOffMinor ?? 0));
+  const amountMinor = unitPriceMinor * quantity;
   const now2 = new Date().toISOString();
 
   /*
@@ -788,7 +802,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     condition: listing.condition,
     quantity,
     unitWeightGrams: 0,
-    unitPriceMinor: listing.priceMinor,
+    unitPriceMinor,
     currency: listing.currency,
     status: 'pending_payment',
     paymentStatus: 'unpaid',
@@ -905,11 +919,18 @@ function listingTerms(body: {
   advancePercent?: number | null;
   /** Commission per unit sold, in paise; null or 0 turns it off. */
   affiliateMinor?: number | null;
-}, priceMinor: number): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> {
+  /** What a buyer through a link saves per unit, in paise; null or 0 turns it off. */
+  affiliateOffMinor?: number | null;
+}, priceMinor: number, previous?: Listing['affiliate']): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> {
   const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> = {};
-  if (body.affiliateMinor !== undefined) {
-    const amountMinor = cleanAffiliateMinor(body.affiliateMinor, priceMinor);
-    terms.affiliate = amountMinor ? { amountMinor } : null;
+  if (body.affiliateMinor !== undefined || body.affiliateOffMinor !== undefined) {
+    const amountMinor = body.affiliateMinor !== undefined
+      ? cleanAffiliateMinor(body.affiliateMinor, priceMinor)
+      : cleanAffiliateMinor(affiliateUnitMinor(previous, priceMinor), priceMinor);
+    // The discount rides on the commission: with no link to earn from, there is no link to save through.
+    const offAsked = body.affiliateOffMinor !== undefined ? body.affiliateOffMinor : previous?.buyerOffMinor;
+    const buyerOffMinor = amountMinor ? cleanBuyerOffMinor(offAsked, priceMinor, amountMinor) : null;
+    terms.affiliate = amountMinor ? { amountMinor, ...(buyerOffMinor ? { buyerOffMinor } : {}) } : null;
   }
   if (body.quantityMode !== undefined) {
     terms.quantityMode = body.quantityMode === 'multiple' ? 'multiple' : 'fixed';
@@ -962,6 +983,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     title?: string; description?: string; priceMinor?: number; quantityAvailable?: number;
     quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
     affiliateMinor?: number | null;
+    affiliateOffMinor?: number | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -970,12 +992,13 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
 
   const price = body.priceMinor !== undefined && body.priceMinor > 0 ? Math.round(body.priceMinor) : listing.priceMinor;
-  const next: Listing = { ...listing, ...listingTerms(body, price), updatedAt: new Date().toISOString() };
+  const next: Listing = { ...listing, ...listingTerms(body, price, listing.affiliate), updatedAt: new Date().toISOString() };
   // A cheaper price can leave an old commission bigger than the item; it is
   // brought back under the new price rather than left owing more than it took.
-  if (next.affiliate?.amountMinor && body.affiliateMinor === undefined) {
+  if (next.affiliate?.amountMinor && body.affiliateMinor === undefined && body.affiliateOffMinor === undefined) {
     const kept = cleanAffiliateMinor(next.affiliate.amountMinor, price);
-    next.affiliate = kept ? { amountMinor: kept } : null;
+    const off = kept ? cleanBuyerOffMinor(next.affiliate.buyerOffMinor, price, kept) : null;
+    next.affiliate = kept ? { amountMinor: kept, ...(off ? { buyerOffMinor: off } : {}) } : null;
   }
   if (body.title !== undefined) {
     if (!body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');

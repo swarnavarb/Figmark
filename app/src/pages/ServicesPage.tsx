@@ -160,7 +160,7 @@ function MyServicesStrip({ mine, signedIn }: { mine: MyServicesView | null; sign
         {mine?.escrow && (
           <Link to="/escrow" className="ms-tile">
             <span className="ms-tile__icon"><Icon name="lock" size={18} /></span>
-            <span className="ms-tile__name">Escrow</span>
+            <span className="ms-tile__name">Buyer Protection</span>
             <span className="ms-tile__meta">Held payments</span>
           </Link>
         )}
@@ -421,7 +421,7 @@ export function MyServicesPage() {
             <Link to="/escrow" className="svc">
               <span className="svc__glyph"><Icon name="lock" size={22} /></span>
               <span className="svc__body">
-                <span className="svc__name">Escrow</span>
+                <span className="svc__name">Buyer Protection</span>
                 <span className="faint">Payments you are holding, and disputes waiting on you.</span>
               </span>
             </Link>

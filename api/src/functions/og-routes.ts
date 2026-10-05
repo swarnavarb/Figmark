@@ -4,7 +4,8 @@ import type { Listing, User } from '../../../shared/models.js';
 import { rupees } from '../../../shared/payments.js';
 import { storeTitleFor } from '../../../shared/storefront.js';
 import { titleFor } from '../../../shared/quest.js';
-import { resolveShortCode } from '../affiliate.js';
+import { linkDiscountMinor } from '../../../shared/affiliate.js';
+import { offersAffiliate, resolveShortCode } from '../affiliate.js';
 import { getRepository } from '../data/index.js';
 import { resolveInvite } from '../share.js';
 import { handler } from './http.js';
@@ -96,15 +97,26 @@ function fillLine(listing: Listing, now: number): { line: string; left: number }
   const left = Math.max(0, pre.fillThreshold - joined);
   const days = Math.ceil((Date.parse(pre.cutoffAt) - now) / 86_400_000);
   const clock = days > 1 ? ` · closes in ${days} days` : days === 1 ? ' · closes tomorrow' : '';
-  return { line: left > 0 ? `${joined} of ${pre.fillThreshold} joined, ${left} spot${left === 1 ? '' : 's'} left${clock}` : 'Group buy full', left };
+  return { line: left > 0 ? `${joined} of ${pre.fillThreshold} joined, ${left} spot${left === 1 ? '' : 's'} left${clock}` : 'Pre-order full', left };
+}
+
+/** The shop with its standing: "Kaiju Imports (Level 7 Trusted Importer)". */
+function shopLine(user: User | null): string {
+  const name = shopName(user);
+  const level = user?.sellerProfile ? user.sellerProfile.levelCache ?? 1 : null;
+  return level ? `${name} (Level ${level} ${storeTitleFor(level)})` : name;
 }
 
 async function listingMeta(
   repository: Repo, origin: string, listing: Listing, sharer: User | null, moment: string | null, fallback: string,
+  /** True for an affiliate link: the one kind of link that can take money off. */
+  viaLink = false,
 ): Promise<Meta> {
   const now = Date.now();
   const seller = await repository.getUserById(listing.sellerId);
   const price = rupees(listing.priceMinor);
+  const offMinor = viaLink && offersAffiliate(listing) ? linkDiscountMinor(listing.affiliate) : 0;
+  const off = offMinor > 0 ? rupees(offMinor) : null;
   const fill = fillLine(listing, now);
   const who = firstName(sharer);
   const titles: Record<string, string> = {
@@ -113,16 +125,22 @@ async function listingMeta(
     purchased: `${who} just got ${listing.title}`,
     delivered: `${who}'s ${listing.title} just arrived`,
     sold: `Just sold: ${listing.title}`,
-    filled: `Group buy full: ${listing.title}`,
+    filled: `Pre-order full: ${listing.title}`,
   };
   // "Somebody booked a spot" needs a somebody: without a sharer, the item speaks for itself.
   const personal = moment === 'booked' || moment === 'purchased' || moment === 'delivered';
-  const title = (moment && (!personal || sharer) && titles[moment]) || `${listing.title} · ${price}`;
+  const base = (moment && (!personal || sharer) && titles[moment]) || `${listing.title} · ${price}`;
+  // A discount is the reason to tap, so it leads.
+  const title = off ? `Get ${off} off · ${base}` : base;
   const parts = [
-    price,
+    off
+      ? `🎁 ${off} off with ${sharer ? `${who}'s` : 'this'} link: ${rupees(Math.max(100, listing.priceMinor - offMinor))} instead of ${price}`
+      : price,
     fill?.line,
-    `from ${shopName(seller)}`,
-    moment === 'booked' || moment === 'fill' ? 'Join the group buy - it ships when it fills.' : 'Escrow-protected checkout on Figmark.',
+    `from ${shopLine(seller)}`,
+    moment === 'booked' || moment === 'fill' || (listing.preOrder && !moment)
+      ? 'Join the pre-order - it ships when it fills. Buyer Protection on Figmark.'
+      : 'Buyer Protection on Figmark.',
   ].filter(Boolean);
   const photo = absolute(origin, leadPhoto(listing));
   return { title, description: parts.join(' · '), image: photo ?? `${origin}${DEFAULT_IMAGE}`, large: true, fallback };
@@ -135,8 +153,8 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
     return code ? resolveInvite(repository, code) : null;
   };
   const fallbackMeta: Meta = {
-    title: 'Figmark - import group buys, escrow and real reviews',
-    description: 'Join group buys from import resellers, track every stage, and pay through escrow. Collect cards and level up as you shop.',
+    title: 'Figmark - import pre-orders, Buyer Protection and real reviews',
+    description: 'Join pre-orders from import resellers, track every stage, and pay with Buyer Protection. Collect cards and level up as you shop.',
     image: `${origin}${DEFAULT_IMAGE}`,
     large: true,
     fallback: '/',
@@ -148,7 +166,7 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
     const listing = target ? await repository.getListing(target.listingId) : null;
     if (!target || !listing) return fallbackMeta;
     const sharer = await repository.getUserById(target.referrerId);
-    return listingMeta(repository, origin, listing, sharer, url.searchParams.get('m'), `/listing/${encodeURIComponent(listing.id)}`);
+    return listingMeta(repository, origin, listing, sharer, url.searchParams.get('m'), `/listing/${encodeURIComponent(listing.id)}`, true);
   }
   if (kind === 'i' && first) {
     const inviter = await resolveInvite(repository, first);
@@ -158,12 +176,12 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
     return seller
       ? {
           title: `${name} invited you to sell on Figmark`,
-          description: 'Run group buys with order manifests, tracking buyers can see, escrow and affiliates who sell for you. Opening a shop takes a minute.',
+          description: 'Run pre-orders with order manifests, tracking buyers can see, Buyer Protection and affiliates who sell for you. Opening a shop takes a minute.',
           image: `${origin}${SELLER_IMAGE}`, large: true, fallback: `/?i=${encodeURIComponent(first)}`,
         }
       : {
           title: `${name} invited you to Figmark`,
-          description: 'Group buys from import resellers, escrow-held payments and reviews only real buyers can leave. Collect cards and level up as you shop.',
+          description: 'Pre-orders from import resellers, Buyer Protection on payments and reviews only real buyers can leave. Collect cards and level up as you shop.',
           image: `${origin}${INVITE_IMAGE}`, large: true, fallback: `/?i=${encodeURIComponent(first)}`,
         };
   }
@@ -290,7 +308,7 @@ async function og(request: HttpRequest, _context: InvocationContext) {
     meta = await metaFor(await getRepository(), origin, url);
   } catch {
     meta = {
-      title: 'Figmark', description: 'Import group buys, escrow and real reviews.',
+      title: 'Figmark', description: 'Import pre-orders, Buyer Protection and real reviews.',
       image: `${origin}${DEFAULT_IMAGE}`, large: true, fallback: '/',
     };
   }

@@ -834,8 +834,10 @@ export interface Listing extends BaseDocument {
    * Affiliate selling: the shop pays this much per unit sold to whoever
    * brought the buyer through their own link. Absent or null means off.
    * `percent` is only on items set up before the amount was in rupees.
+   * `buyerOffMinor` is what the buyer saves per unit for coming through
+   * somebody's link - the shop's way of making the link worth sending.
    */
-  affiliate?: { amountMinor?: number; percent?: number } | null;
+  affiliate?: { amountMinor?: number; percent?: number; buyerOffMinor?: number | null } | null;
 }
 
 /**
@@ -1380,6 +1382,8 @@ export interface OrderAffiliate {
   amountMinor?: number;
   /** Orders from before the amount was in rupees carry a percentage instead. */
   percent?: number;
+  /** Per unit, in paise: what the buyer saved for coming through the link. Already off `unitPriceMinor`. */
+  buyerOffMinor?: number | null;
   /** When the shop says it paid the commission out. */
   paidAt?: string | null;
   paidReference?: string | null;

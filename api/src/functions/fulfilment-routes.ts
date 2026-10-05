@@ -28,6 +28,8 @@ import {
 } from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
 import { offersAffiliate } from '../affiliate.js';
+import { linkDiscountMinor } from '../../../shared/affiliate.js';
+import { storeTag } from '../../../shared/storefront.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
@@ -914,6 +916,11 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
     /** True while it is sold, bound for a lot, and not in one. */
     awaitingLot: awaitingLot(order),
     sellerName: sellers[0]?.sellerProfile?.storefrontName ?? sellers[0]?.displayName ?? 'Seller',
+    /** The shop as a shared picture signs it: its picture and level. */
+    sellerBadge: sellers[0] ? {
+      photoUrl: sellers[0].sellerProfile?.photoUrl ?? null,
+      ...storeTag(sellers[0].sellerProfile?.levelCache ?? 1),
+    } : null,
     // The only two things the lot contributes to the buyer's view.
     trackingReference: lot?.forwarder?.trackingReference ?? (order.shipment?.awb || null),
     estimatedDispatchAt: lot?.estimatedDispatchAt ?? null,
@@ -929,6 +936,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
         cutoffAt: listing.preOrder.cutoffAt,
       } : null,
       affiliate: offersAffiliate(listing),
+      /** What a friend saves through the sharer's link, in paise; 0 when the shop offers none. */
+      buyerOffMinor: offersAffiliate(listing) ? linkDiscountMinor(listing.affiliate) : 0,
     } : null,
   });
 }

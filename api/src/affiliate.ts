@@ -1,6 +1,6 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import type { HttpRequest } from '@azure/functions';
-import { affiliateUnitMinor } from '../../shared/affiliate.js';
+import { affiliateUnitMinor, linkDiscountMinor } from '../../shared/affiliate.js';
 import type { Listing, Order, OrderAffiliate, User } from '../../shared/models.js';
 import { config } from './config.js';
 import type { getRepository } from './data/index.js';
@@ -79,6 +79,7 @@ export async function affiliateFor(repository: Repo, buyerId: string, listing: L
     referrerName: referrer.displayName,
     referrerHandle: referrer.username ?? null,
     amountMinor: affiliateUnitMinor(listing.affiliate, listing.priceMinor),
+    buyerOffMinor: linkDiscountMinor(listing.affiliate) || null,
     paidAt: null,
     paidReference: null,
   };

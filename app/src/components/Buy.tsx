@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import type { CreditRecord, Listing, Order } from '@shared/models';
-import { affiliateUnitMinor } from '@shared/affiliate';
+import { affiliateUnitMinor, linkDiscountMinor } from '@shared/affiliate';
 import {
   PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, REFUND_ORIGIN_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
   isMultiple, methodOf, orderMoney, timeLeft,
@@ -169,10 +169,15 @@ export interface TermsDraft {
   affiliate: boolean;
   /** In rupees, per unit sold. */
   affiliateAmount: string;
+  /** Give buyers who come through a link a discount, so the link is worth sending. */
+  affiliateOff: boolean;
+  /** In rupees, per unit. */
+  affiliateOffAmount: string;
 }
 
 export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePercent' | 'affiliate' | 'priceMinor'>>): TermsDraft {
   const commission = affiliateUnitMinor(listing?.affiliate, listing?.priceMinor ?? 0);
+  const off = commission > 0 ? linkDiscountMinor(listing?.affiliate) : 0;
   return {
     quantityMode: listing?.quantityMode === 'multiple' ? 'multiple' : 'fixed',
     quantity: String(listing?.quantityAvailable ?? 1),
@@ -183,6 +188,8 @@ export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePerce
     advancePercent: String(listing?.advancePercent ?? 20),
     affiliate: commission > 0,
     affiliateAmount: commission > 0 ? String(commission / 100) : '50',
+    affiliateOff: off > 0,
+    affiliateOffAmount: off > 0 ? String(off / 100) : '50',
   };
 }
 
@@ -194,6 +201,8 @@ export function termsBody(draft: TermsDraft) {
     expiresAt: !draft.limited ? null : draft.was && draft.was.days === draft.days ? draft.was.at : isoInDays(draft.days),
     advancePercent: draft.advance ? Math.min(99, Math.max(1, Number(draft.advancePercent) || 20)) : null,
     affiliateMinor: draft.affiliate ? Math.max(100, Math.round((Number(draft.affiliateAmount) || 0) * 100)) : null,
+    affiliateOffMinor: draft.affiliate && draft.affiliateOff
+      ? Math.max(100, Math.round((Number(draft.affiliateOffAmount) || 0) * 100)) : null,
   };
 }
 
@@ -256,6 +265,23 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
             <span className="field__hint">
               A fixed amount, less than the price. Owed once the item is delivered; you pay it to the
               affiliate and mark it paid on the order.
+            </span>
+          </label>
+        )}
+        {value.affiliate && (
+          <ToggleRow icon="🎁" title="Discount through a link"
+            hint={value.affiliateOff
+              ? `Buyers who come through somebody's link pay ₹${value.affiliateOffAmount || '—'} less. It is printed on every picture and preview they share.`
+              : "Off: a link earns its sharer, but the buyer pays the usual price."}
+            checked={value.affiliateOff} onChange={(affiliateOff) => set({ affiliateOff })} />
+        )}
+        {value.affiliate && value.affiliateOff && (
+          <label className="field">
+            <span>Buyer's discount per unit (₹)</span>
+            <input type="number" min="1" step="1" value={value.affiliateOffAmount}
+              onChange={(e) => set({ affiliateOffAmount: e.target.value })} />
+            <span className="field__hint">
+              Comes off what you are paid. With the commission, it must leave you at least ₹1 of the price.
             </span>
           </label>
         )}

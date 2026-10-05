@@ -974,8 +974,8 @@ async function commissionAct(request: HttpRequest, _context: InvocationContext) 
       if (!price) return error(409, 'no_quote', 'There is no agreed price yet.');
       if (input?.method === 'protected') {
         const agent = input.escrowAgentId ? await repository.getUserById(input.escrowAgentId) : null;
-        if (!agent?.escrowRights || agent.suspended) return error(409, 'protection_unavailable', 'Choose an escrow approved to hold payments.');
-        if (agent.id === order.buyerId || agent.id === job.artistId) return error(400, 'invalid_escrow', 'An escrow cannot be either side of the commission.');
+        if (!agent?.escrowRights || agent.suspended) return error(409, 'protection_unavailable', 'Choose a Buyer Protection agent approved to hold payments.');
+        if (agent.id === order.buyerId || agent.id === job.artistId) return error(400, 'invalid_escrow', 'Neither side of the commission can hold its Buyer Protection.');
         job.method = 'protected';
         job.escrowAgentId = agent.id;
         job.escrowName = agent.escrowRights.displayName || agent.displayName;
@@ -983,7 +983,7 @@ async function commissionAct(request: HttpRequest, _context: InvocationContext) 
         job.heldMinor = price + job.protectionFeeMinor;
         job.payments = [...job.payments, { at: now, amountMinor: job.heldMinor, method: 'protected', reference: null, confirmedAt: now }];
         job.status = 'paid';
-        jobEvent(job, user.id, `Paid with buyer protection. ${job.escrowName} is holding it.`);
+        jobEvent(job, user.id, `Paid with Buyer Protection. ${job.escrowName} is holding it.`);
       } else {
         const artist = await repository.getUserById(job.artistId);
         if (!artist?.artistProfile?.payment) return error(409, 'no_details', 'This artist has not set up direct payment. Pay with protection instead.');

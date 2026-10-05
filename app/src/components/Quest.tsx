@@ -146,7 +146,7 @@ function celebrationSpec(party: Celebration, view: QuestView | null): ShareSpec 
     if (set?.complete && firstCopy) {
       return {
         kind: 'set',
-        moment: { card, title: `${set.name} complete`, detail: `All ${set.total} cards · ${SET_BONUS_XP} XP bonus`, headline: 'Set complete!', cta: 'Start your collection' },
+        moment: { card, title: `${set.name} complete`, detail: `All ${set.total} cards · ${SET_BONUS_XP} XP bonus`, headline: 'Set complete!' },
         link: { to: 'invite' },
         caption: `Just finished the ${set.name} set on Figmark 🏆 Come collect with me.`,
         target: card.set,
@@ -157,7 +157,7 @@ function celebrationSpec(party: Celebration, view: QuestView | null): ShareSpec 
       kind: 'card',
       moment: {
         card, title: `From the ${setName(card.set)} set`, detail: `${RARITY_LABELS_CARD[card.rarity]} · only ${CARD_ODDS[card.rarity]}% of packs`,
-        headline: big ? `${RARITY_LABELS_CARD[card.rarity]} pull!` : 'New card pulled', cta: 'Play on Figmark',
+        headline: big ? `${RARITY_LABELS_CARD[card.rarity]} pull!` : 'New card pulled',
       },
       link: { to: 'invite' },
       caption: `Pulled ${card.rarity === 'epic' ? 'an' : 'a'} ${card.rarity} ${card.name} on Figmark 🃏 Only ${CARD_ODDS[card.rarity]}% of packs have one.`,
@@ -170,10 +170,10 @@ function celebrationSpec(party: Celebration, view: QuestView | null): ShareSpec 
       kind: 'level',
       moment: {
         level: { level: party.levelAfter, title }, title: `Level ${party.levelAfter} · ${title}`,
-        detail: 'Collector on Figmark', headline: 'Level up!', cta: 'Join me on Figmark',
+        detail: 'Collector on Figmark', headline: 'Level up!',
       },
       link: { to: 'invite' },
-      caption: `Just hit level ${party.levelAfter} (${title}) on Figmark ⭐ Come play - group buys, card packs and quests.`,
+      caption: `Just hit level ${party.levelAfter} (${title}) on Figmark ⭐ Come play - pre-orders, card packs and quests.`,
       target: String(party.levelAfter),
     };
   }

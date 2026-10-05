@@ -51,7 +51,7 @@ import {
 import { ItemHead } from '../components/ItemHead';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
-import { useShareSheet, type ShareSpec } from '../components/ShareKit';
+import { shopBadge, useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { SkeletonText, useToast } from '../components/Feedback';
 import type { GrowthTask } from '@shared/store-growth';
 import { InsightsPanel } from './InsightsPanel';
@@ -256,7 +256,7 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
           for a new seller. */}
       {user?.escrowRights && (
         <Link to="/escrow" className="btn btn--quiet" style={{ justifySelf: 'center', marginTop: 18 }}>
-          {<Icon name="lock" size={13} />} Open the escrow console instead
+          {<Icon name="lock" size={13} />} Open the Buyer Protection console instead
         </Link>
       )}
     </main>
@@ -318,7 +318,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           where you are. */}
       {user?.escrowRights && (
         <Link to="/escrow" className="btn btn--ghost btn--sm" style={{ justifySelf: 'end', marginBottom: 10 }}>
-          {<Icon name="lock" size={13} />} Escrow
+          {<Icon name="lock" size={13} />} Buyer Protection
         </Link>
       )}
 
@@ -477,15 +477,16 @@ function Grow({ store }: { store: StoreAccess }) {
   if (!data) return <SkeletonText lines={6} />;
   const { view } = data;
 
+  const badge = shopBadge({ storefrontName: data.name, photoUrl: data.photoUrl, level: data.levelTag }, data.name);
   const shopSpec = (): ShareSpec | null => data.handle ? {
     kind: 'shop',
     moment: {
       photo: data.photoUrl, title: data.name,
       detail: `Level ${data.levelTag.level} ${data.levelTag.title}${data.followers ? ` · ${data.followers.toLocaleString('en-IN')} followers` : ''}`,
-      headline: 'Shop with us', cta: 'Follow for the next drop', byline: `@${data.handle} on Figmark`,
+      headline: 'Shop with us', byline: `@${data.handle} on Figmark`, badge,
     },
     link: { to: 'page', handle: data.handle },
-    caption: `We're on Figmark 🏪 Follow ${data.name} for group buys and new drops.`,
+    caption: `We're on Figmark 🏪 Follow ${data.name} for pre-orders and new drops.`,
     target: data.handle,
     storeId: store.ownerId,
   } : null;
@@ -499,14 +500,14 @@ function Grow({ store }: { store: StoreAccess }) {
     return {
       kind: filling ? 'fill' : 'item',
       moment: {
-        photo: leadPhoto(listing)?.url ?? null, title: listing.title, detail: `from ${data.name}`, price,
+        photo: leadPhoto(listing)?.url ?? null, title: listing.title,
+        detail: pre ? 'Pre-order · Buyer Protection' : 'Buyer Protection on Figmark', price,
         fill: pre ? { joined, threshold: pre.fillThreshold } : null,
-        headline: filling ? 'Join our group buy' : 'New drop',
-        cta: filling ? 'Book a spot before it fills' : 'Shop it on Figmark', byline: data.name,
+        headline: filling ? 'Join our pre-order' : 'New drop', byline: '', badge,
       },
       link: { to: 'item', listingId: listing.id, moment: filling ? 'fill' : undefined, own: true },
       caption: filling
-        ? `${left} spot${left === 1 ? '' : 's'} left in our group buy: ${listing.title} at ${price}. It ships when it fills 👇`
+        ? `${left} spot${left === 1 ? '' : 's'} left in our pre-order: ${listing.title} at ${price}. It ships when it fills 👇`
         : `New drop: ${listing.title} at ${price} 🔥`,
       target: listing.id,
       storeId: store.ownerId,
@@ -516,11 +517,11 @@ function Grow({ store }: { store: StoreAccess }) {
   const sellerInvite: ShareSpec = {
     kind: 'invite_seller',
     moment: {
-      title: 'Open your shop', detail: 'Group buys · tracking · escrow · affiliates',
-      headline: 'Sell with me on Figmark', cta: 'Open a shop with my invite', byline: data.name,
+      title: 'Open your shop', detail: 'Pre-orders · tracking · Buyer Protection · affiliates',
+      headline: 'Sell with me on Figmark', byline: '', badge,
     },
     link: { to: 'invite', seller: true },
-    caption: 'Selling imports? Run your group buys on Figmark - manifests, tracking your buyers can see, escrow, and affiliates who sell for you. Open a shop with my invite:',
+    caption: 'Selling imports? Run your pre-orders on Figmark - manifests, tracking your buyers can see, Buyer Protection, and affiliates who sell for you. Open a shop with my invite:',
   };
 
   async function claim(taskId: string) {
@@ -564,7 +565,7 @@ function Grow({ store }: { store: StoreAccess }) {
         <div>
           <p className="grow__eyebrow">Grow</p>
           <h2>Bring buyers in from outside</h2>
-          <p>Group buys fill on WhatsApp. Share your shop and your drops, finish quests, and spend Spotlights to put an item back at the top of the feed.</p>
+          <p>Pre-orders fill on WhatsApp. Share your shop and your drops, finish quests, and spend Spotlights to put an item back at the top of the feed.</p>
         </div>
         <div className="grow__spot" title="Spotlights to spend">
           <span><b>{view.spotlights}</b><small>Spotlights</small></span>

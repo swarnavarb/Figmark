@@ -306,6 +306,8 @@ export interface ListingDetail {
 export interface ListingAffiliate {
   /** What one sale through a link pays, in paise. */
   amountMinor: number;
+  /** What a buyer through somebody's link saves per unit, in paise; 0 when the shop offers none. */
+  buyerOffMinor?: number;
   /** Whether the reader may have a link of their own: anybody signed in but the shop. */
   canShare: boolean;
   /** Whose link brought the reader here, if anybody's. */
@@ -462,6 +464,8 @@ export interface OrderTracking {
   /** Sold, bound for a lot, not in one - so the timeline stops early. */
   awaitingLot: boolean;
   sellerName: string;
+  /** The shop as a shared picture signs it. */
+  sellerBadge?: { photoUrl: string | null; level: number; title: string; shop?: boolean } | null;
   trackingReference: string | null;
   estimatedDispatchAt: string | null;
   /** The item bought, as it is now - for the Details tab's product card. */
@@ -469,6 +473,8 @@ export interface OrderTracking {
     id: string; title: string; photoUrl: string | null;
     preOrder?: { joined: number; threshold: number; cutoffAt: string } | null;
     affiliate?: boolean;
+    /** What a friend saves through the sharer's link, in paise. */
+    buyerOffMinor?: number;
   } | null;
 }
 
@@ -890,6 +896,8 @@ export interface NewListing {
   advancePercent?: number | null;
   /** Commission per unit sold, in paise; null turns it off. */
   affiliateMinor?: number | null;
+  /** What a buyer through a link saves per unit, in paise; null turns it off. */
+  affiliateOffMinor?: number | null;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
@@ -1721,7 +1729,7 @@ export interface PublicProfile {
   listings: {
     id: string; title: string; priceMinor: number; currency: string; condition: string;
     quantityAvailable: number; likeCount: number; state: ShelfState;
-    affiliate?: { amountMinor?: number; percent?: number } | null;
+    affiliate?: { amountMinor?: number; percent?: number; buyerOffMinor?: number | null } | null;
     photos?: { url?: string; isPrimary?: boolean }[];
   }[];
 }

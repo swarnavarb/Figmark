@@ -591,7 +591,7 @@ async function settleAsEscrow(request: HttpRequest, _context: InvocationContext)
   const { dispute, order } = found;
 
   if (order.protection?.escrowAgentId !== user.id) {
-    return error(403, 'forbidden', 'You are not the escrow on this order.');
+    return error(403, 'forbidden', 'You do not hold the Buyer Protection on this order.');
   }
   if (dispute.resolvedAt) return error(409, 'already_resolved', 'That dispute is already settled.');
   if (dispute.status !== 'under_mediation' && !responseOverdue(dispute)) {

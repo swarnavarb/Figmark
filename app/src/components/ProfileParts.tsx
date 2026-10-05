@@ -88,12 +88,11 @@ function profileShareSpec(profile: SharedProfile, isMe: boolean): ShareSpec {
         title: profile.displayName,
         detail: `${level}${followers}`,
         headline: isMe ? 'Shop with us' : 'My go-to shop',
-        cta: 'Follow for the next drop',
         ...(isMe ? { byline: `@${profile.handle} on Figmark` } : {}),
       },
       link: { to: 'page', handle: profile.handle },
       caption: isMe
-        ? `We're on Figmark 🏪 Follow ${profile.displayName} for group buys and new drops.`
+        ? `We're on Figmark 🏪 Follow ${profile.displayName} for pre-orders and new drops.`
         : `Check out ${profile.displayName} on Figmark - my go-to for imports 🏪`,
       target: profile.handle,
       storeId: isMe ? profile.sellerId : null,
@@ -106,7 +105,6 @@ function profileShareSpec(profile: SharedProfile, isMe: boolean): ShareSpec {
       title: profile.displayName,
       detail: `@${profile.handle}${followers}`,
       headline: isMe ? 'My collection' : `Meet ${profile.displayName.split(/\s+/)[0]}`,
-      cta: 'Collect with me on Figmark',
     },
     link: { to: 'page', handle: profile.handle },
     caption: isMe ? `My collection on Figmark 💎 Come see - and collect with me.` : `${profile.displayName}'s collection on Figmark 💎`,

@@ -119,7 +119,7 @@ function CoverCard({ orderId, view, onChanged, onError }: {
           {!current && (
             <p className="os-card__lede">
               If it is lost or damaged between the warehouse and India, the forwarder pays out. The premium is added to
-              this order and paid the same way — held by an escrow or direct.
+              this order and paid the same way — held by Buyer Protection or direct.
             </p>
           )}
           <div className="os-plans">
@@ -352,7 +352,7 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
           </div>
           {method === 'protected' ? (
             <>
-              <p className="faint">An escrow holds the money until you mark the finished piece received.</p>
+              <p className="faint">Buyer Protection holds the money until you mark the finished piece received.</p>
               <div className="os-escrows">
                 {commission.escrows.map((row) => (
                   <button key={row.id} type="button" className={`os-escrow${row.id === escrowId ? ' is-on' : ''}`} onClick={() => setEscrowId(row.id)}>

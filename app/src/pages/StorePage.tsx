@@ -165,7 +165,7 @@ export function StorePage() {
               <ul className="sp-steps">
                 <li>Ask from your order, with a brief and references.</li>
                 <li>The artist quotes a price and a time.</li>
-                <li>Pay held by an escrow, or direct.</li>
+                <li>Pay with Buyer Protection, or direct.</li>
                 <li>The finished piece ships back to you.</li>
               </ul>
             )}
