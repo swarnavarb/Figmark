@@ -8131,6 +8131,48 @@ await check('every sticker, follower, sale and review count has a quest that pay
   assert.ok(!('refusal' in b), 'four sticker steps finish the first page of the book');
 });
 
+await check('the follower quests ask a bigger shop for more new followers', async () => {
+  const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
+  const totals = {
+    completedSales: 0, affiliateSales: 0, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 0, soldOut: 0, trust: 0,
+    preOrders: 0, disputesLost: 0, ageDays: 0,
+  };
+  const now = Date.now();
+  const at = new Date(now).toISOString();
+  const base = {
+    shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+    listed: [], follows: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+  };
+  const goals = (facts, state) => {
+    const tasks = growth.growthView(facts, state, now).tasks;
+    const pick = (id) => tasks.find((task) => task.id === id);
+    return { week: pick('weekly-follows3'), month: pick('monthly-follows10') };
+  };
+  const small = goals(base);
+  assert.equal(small.week.goal, 3);
+  assert.equal(small.week.title, 'Three new followers');
+  assert.equal(small.month.goal, 10);
+
+  const big = goals({ ...base, totals: { ...totals, followers: 120 } });
+  assert.equal(big.week.goal, 10, 'a hundred followers asks for ten a week');
+  assert.equal(big.week.title, 'Ten new followers');
+  assert.equal(big.month.goal, 40);
+  assert.equal(goals({ ...base, totals: { ...totals, followers: 5000 } }).week.goal, 50, 'the top size');
+
+  // Followers gained this week do not raise the goal while the shop works on it.
+  const growing = goals({ ...base, follows: [{ at }, { at }, { at }], totals: { ...totals, followers: 26 } });
+  assert.equal(growing.week.goal, 3);
+  assert.equal(growing.week.claimable, true);
+
+  // A shop that levelled up is asked for more too - by the quests it collected before this period.
+  const old = '2020-01-06T00:00:00.000Z';
+  const claimed = Object.fromEntries(Array.from({ length: 90 }, (_, index) => [`weekly-sales3:old-${index}`, old]));
+  assert.equal(goals(base, { claimed, spotlights: 0 }).week.goal, 5, 'level 5 asks for five');
+  const fresh = Object.fromEntries(Object.keys(claimed).map((key) => [key, at]));
+  assert.equal(goals(base, { claimed: fresh, spotlights: 0 }).week.goal, 3, 'quests collected this week wait for next week');
+});
+
 await check('a pack always holds the same card, never below its floor', () => {
   const first = quest.drawCard('usr_x', 'level-2', 'rare');
   assert.deepEqual(quest.drawCard('usr_x', 'level-2', 'rare'), first);

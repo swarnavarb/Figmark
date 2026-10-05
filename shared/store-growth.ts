@@ -1,5 +1,5 @@
 import type { StoreGrowthState } from './models.js';
-import { BUMPS_FOR, TASK_XP, TIER_XP, dayKey, monthKey, weekKey } from './quest.js';
+import { BUMPS_FOR, TASK_XP, TIER_XP, dayKey, levelFor, monthKey, weekKey } from './quest.js';
 import type { StoreFacts } from './storefront.js';
 
 /**
@@ -107,6 +107,11 @@ interface Def {
   title: string;
   blurb: string;
   goal: number;
+  /**
+   * Goals that grow with the shop, by size (see `shopSize`); `goal` is the
+   * first. The title and blurb then say the goal in words.
+   */
+  grows?: readonly number[];
   action: GrowthAction;
   /** Counted from stamps inside the period, or read off how the shop stands now. */
   measure: (facts: GrowthFacts, inPeriod: (at: string) => boolean) => number;
@@ -140,9 +145,9 @@ const DEFS: readonly Def[] = [
   { key: 'hearts15', kind: 'weekly', area: 'popularity', title: 'Fifteen hearts',
     blurb: 'Fifteen hearts from shoppers on your items this week.',
     goal: 15, action: 'share_item', measure: (f, inPeriod) => within(f.hearts, inPeriod) },
-  { key: 'follows3', kind: 'weekly', area: 'popularity', title: 'Three new followers',
-    blurb: 'Three people follow the shop this week. Share it where your buyers are.',
-    goal: 3, action: 'share_shop', measure: (f, inPeriod) => within(f.follows, inPeriod) },
+  { key: 'follows3', kind: 'weekly', area: 'popularity', title: '{N} new followers',
+    blurb: '{N} people follow the shop this week. Share it where your buyers are.',
+    goal: 3, grows: [3, 5, 10, 25, 50], action: 'share_shop', measure: (f, inPeriod) => within(f.follows, inPeriod) },
   { key: 'sales3', kind: 'weekly', area: 'sales', title: 'Three sales',
     blurb: 'Three orders placed with the shop this week.',
     goal: 3, action: 'share_item', measure: (f, inPeriod) => within(f.sales, inPeriod) },
@@ -172,9 +177,9 @@ const DEFS: readonly Def[] = [
   { key: 'hearts60', kind: 'monthly', area: 'popularity', title: 'Sixty hearts',
     blurb: 'Sixty hearts from shoppers on your items this month.',
     goal: 60, action: 'share_item', measure: (f, inPeriod) => within(f.hearts, inPeriod) },
-  { key: 'follows10', kind: 'monthly', area: 'popularity', title: 'Ten new followers',
-    blurb: 'Ten people follow the shop this month.',
-    goal: 10, action: 'share_shop', measure: (f, inPeriod) => within(f.follows, inPeriod) },
+  { key: 'follows10', kind: 'monthly', area: 'popularity', title: '{N} new followers',
+    blurb: '{N} people follow the shop this month. A bigger shop is asked for more.',
+    goal: 10, grows: [10, 20, 40, 100, 200], action: 'share_shop', measure: (f, inPeriod) => within(f.follows, inPeriod) },
   { key: 'sales15', kind: 'monthly', area: 'sales', title: 'Fifteen sales',
     blurb: 'Fifteen orders placed with the shop this month.',
     goal: 15, action: 'share_item', measure: (f, inPeriod) => within(f.sales, inPeriod) },
@@ -323,14 +328,42 @@ export function growthXp(state: StoreGrowthState | undefined, totals?: StoreFact
   return growthAreas(state, totals).reduce((sum, area) => sum + area.xp, 0);
 }
 
+/*
+ * How big a shop is, 0-4, by its followers or its level - whichever is
+ * further along - so a quest that grows asks a big shop for more. Both are
+ * read as they stood when the period began: followers gained this period and
+ * quests collected in it do not move the goal while the shop works on it.
+ */
+const SIZE_FOLLOWERS = [25, 100, 500, 2000] as const;
+const SIZE_LEVELS = [5, 10, 20, 30] as const;
+
+export function shopSize(facts: GrowthFacts, state: StoreGrowthState, inPeriod: (at: string) => boolean): number {
+  const followers = Math.max(0, facts.totals.followers - within(facts.follows, inPeriod));
+  const before = Object.fromEntries(Object.entries(state.claimed).filter(([, at]) => !inPeriod(at)));
+  const level = levelFor(growthXp({ ...state, claimed: before }, facts.totals));
+  const step = (floors: readonly number[], have: number) => floors.filter((floor) => have >= floor).length;
+  return Math.max(step(SIZE_FOLLOWERS, followers), step(SIZE_LEVELS, level));
+}
+
+const WORDS: Record<number, string> = {
+  3: 'three', 5: 'five', 10: 'ten', 20: 'twenty', 25: 'twenty-five', 40: 'forty', 50: 'fifty', 100: 'a hundred', 200: 'two hundred',
+};
+/** Puts a goal into a title or blurb, as a word that starts it. */
+const say = (text: string, goal: number) => {
+  const word = WORDS[goal] ?? String(goal);
+  return text.replace('{N}', word.charAt(0).toUpperCase() + word.slice(1));
+};
+
 function periodicTask(def: Def, facts: GrowthFacts, state: StoreGrowthState, now: number): GrowthTask {
   const id = `${def.kind}-${def.key}`;
-  const progress = Math.min(def.goal, def.measure(facts, inPeriodOf(def.kind, now)));
-  const done = progress >= def.goal;
+  const inPeriod = inPeriodOf(def.kind, now);
+  const goal = def.grows?.[Math.min(shopSize(facts, state, inPeriod), def.grows.length - 1)] ?? def.goal;
+  const progress = Math.min(goal, def.measure(facts, inPeriod));
+  const done = progress >= goal;
   const claimed = Boolean(state.claimed[`${id}:${periodOf(def.kind, now)}`]);
   return {
-    id, kind: def.kind, area: def.area, focus: isFocus(def.area), title: def.title, blurb: def.blurb,
-    progress, goal: def.goal, done, claimed, claimable: done && !claimed,
+    id, kind: def.kind, area: def.area, focus: isFocus(def.area), title: say(def.title, goal), blurb: say(def.blurb, goal),
+    progress, goal, done, claimed, claimable: done && !claimed,
     bumps: bumpsOf(def.kind, def.area), xp: xpOf(def.kind, def.area), action: def.action,
   };
 }
