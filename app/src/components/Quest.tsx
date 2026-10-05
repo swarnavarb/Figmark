@@ -309,6 +309,33 @@ export function CollectorChip() {
   );
 }
 
+/** The first shop you run, as the same chip: its level and XP, one tap from its quests. */
+export function StoreChip() {
+  const [shop, setShop] = useState<{ id: string; name: string; level: Awaited<ReturnType<typeof api.growth>>['level'] } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.stores().then(async ({ stores }) => {
+      const first = stores[0];
+      if (!first) return;
+      const board = await api.growth(first.ownerId);
+      if (live) setShop({ id: first.ownerId, name: board.name, level: board.level });
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
+  if (!shop) return null;
+  const { level } = shop;
+  return (
+    <Link to={`/quests?shop=${encodeURIComponent(shop.id)}`} className="qchip qchip--store"
+      aria-label={`${shop.name}: level ${level.level} ${level.title}, open shop quests`}>
+      <LevelRing level={level.level} progress={level.progress} size={30} />
+      <span className="qchip__text">
+        <small>{shop.name}</small>
+        <span>{level.points.toLocaleString('en-IN')}{level.next === null ? '' : `/${level.next.toLocaleString('en-IN')}`} XP</span>
+      </span>
+    </Link>
+  );
+}
+
 /* ── Glyphs ────────────────────────────────────────────────────────────── */
 
 export type GlyphName = CardDef['glyph'] | StickerView['glyph'] | 'clock' | 'crown' | 'gift';

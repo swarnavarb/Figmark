@@ -7943,6 +7943,13 @@ body.is-locked { overflow: hidden; }
 
 .qbar { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; flex-wrap: wrap; }
 .qbar__spacer { flex: 1; }
+/* Buy tab: your chip, your shop's chip and Quests share one line on a phone. */
+.qbar--buy { flex-wrap: nowrap; gap: 6px; }
+.qbar--buy .qchip { min-width: 0; padding-right: 10px; }
+.qbar--buy .qchip__text { min-width: 0; }
+.qbar--buy .qchip__text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qbar--buy .qbar__spacer { flex: 0 0 0; margin-left: auto; }
+.qbar--buy > .btn { flex: 0 0 auto; }
 .qpage__title { margin: 0; font-size: var(--t-lg); }
 
 .qchip {
@@ -13015,14 +13022,6 @@ button.sk-plan__pick { cursor: pointer; }
   flex: 0 0 auto; padding: 7px 14px; border-radius: var(--r-pill); font-weight: 700; font-size: var(--t-sm);
   color: #fff; background: linear-gradient(135deg, var(--lshare-from), var(--lshare-to));
 }
-
-.door--grow {
-  width: 100%;
-  border-color: var(--pink-line);
-  background: linear-gradient(160deg, var(--pink-soft), rgba(124, 58, 237, 0.10) 55%, transparent 80%);
-}
-.door--grow:hover { border-color: var(--pink); }
-.door--grow .door__glyph { font-size: 20px; }
 
 /* ── Posting inside the app, from a share sheet ────────────────────────── */
 

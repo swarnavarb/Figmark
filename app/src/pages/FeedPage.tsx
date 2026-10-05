@@ -20,7 +20,7 @@ import {
 } from '../components/FeedRails';
 import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
-import { CardFace, CollectorChip, Glyph, RarityRibbon, XpBar, useQuest } from '../components/Quest';
+import { CardFace, CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
 import { EmptyState, ErrorNotice, LevelChip, Thumb, leadPhoto } from '../components/ui';
 import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
@@ -312,16 +312,12 @@ function useProgressive(total: number, resetKey: string) {
 /* ── The top bar ───────────────────────────────────────────────────────── */
 
 function QuestBar() {
-  const { view, act } = useQuest();
+  const { view } = useQuest();
   const waiting = view ? view.tasks.filter((task) => task.claimable).length + view.packs.length : 0;
   return (
-    <div className="qbar">
+    <div className="qbar qbar--buy">
       <CollectorChip />
-      {view && !view.streak.checkedInToday && (
-        <button type="button" className="btn btn--sm qcheckin" onClick={() => void act(api.questCheckIn)}>
-          <Glyph name="flame" size={14} /> Check in
-        </button>
-      )}
+      <StoreChip />
       <span className="qbar__spacer" />
       {view && (
         <Link to="/quests" className="btn btn--sm btn--ghost">

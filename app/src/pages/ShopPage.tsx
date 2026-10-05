@@ -51,7 +51,6 @@ import {
 import { ItemHead } from '../components/ItemHead';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
-import { ShopQuests } from '../components/ShopQuests';
 import { SkeletonText, useToast } from '../components/Feedback';
 import { InsightsPanel } from './InsightsPanel';
 import { ProfitCalculator } from './ProfitCalculator';
@@ -66,7 +65,7 @@ import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 
-type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people' | 'grow';
+type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -88,8 +87,6 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
-  // The shop's quests - its only source of XP - with Spotlights and pictures to share.
-  { id: 'grow', label: 'Grow' },
 ];
 
 /** Sections that are Pro: they wear the gold chip and the PRO badge. */
@@ -106,7 +103,6 @@ const SECTION_GROUPS: Record<string, Section[]> = {
   lots: ['lots'],
   routes: ['routes'],
   analytics: ['analytics'],
-  grow: ['grow'],
 };
 
 function groupOf(section: Section): string {
@@ -371,7 +367,6 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
-          {active === 'grow' && <ShopQuests store={store} />}
         </div>
       )}
     </main>
@@ -407,13 +402,6 @@ function SellHome({ active, onGo }: { active: Section | null; onGo: (section: Se
           <span className="door__note">Your storefront, your team, and packing.</span>
         </button>
       </div>
-
-      <button type="button" className={`door door--card door--grow${on('grow') ? ' is-on' : ''}`}
-        onClick={() => onGo('grow')}>
-        <span className="door__glyph" aria-hidden="true">🚀</span>
-        <span className="door__title">Grow</span>
-        <span className="door__note">Share your shop, finish growth quests, earn Spotlights to the top of the feed.</span>
-      </button>
 
       <div className="workflow">
         <span className="workflow__label">Workflow</span>
