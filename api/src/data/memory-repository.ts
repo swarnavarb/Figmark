@@ -29,6 +29,7 @@ import {
   seedListings,
   seedLotBuyers,
   seedLotOrders,
+  seedOrderMix,
   seedLots,
   seedOpenLot,
   seedShippedLot,
@@ -90,7 +91,7 @@ export class MemoryRepository implements Repository {
     // The Buy tab's demo lots and drops, timed off the real clock.
     for (const lot of seedShowcaseLots()) this.lots.set(lot.id, lot);
     for (const listing of [...seedListings(), ...seedShowcaseListings()]) this.listings.set(listing.id, listing);
-    for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]) {
+    for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedOrderMix(), ...seedShowcaseOrders()]) {
       this.orders.set(order.id, order);
     }
     for (const sale of seedShowcaseSales()) this.powerSales.set(sale.id, sale);

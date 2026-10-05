@@ -12,13 +12,14 @@ import type {
   Post,
   Review,
   SellerTrustSignals,
+  StageEvent,
   TrustSignals,
   User,
   VerificationState,
   Want,
   WantOffer,
 } from '../../../shared/models.js';
-import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import type { ReactionKind, StoredComment } from '../../../shared/social.js';
 import { hashPassword } from '../auth/passwords.js';
@@ -754,7 +755,7 @@ const LISTINGS: ListingSeed[] = [
  * is lying and the reader cannot tell which.
  */
 function seededCounts(listingId: string): { filledCount: number; pledgedCount: number } {
-  const orders = [...seedOrders(), seedLiveSale(), ...seedLotOrders()];
+  const orders = [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedOrderMix()];
   return {
     filledCount: orders
       .filter((order) => order.listingId === listingId && !isCancelledLike(order.status))
@@ -1857,4 +1858,190 @@ export function seedOpenLot(): Lot {
     },
     createdAt: iso(-14), updatedAt: iso(-1),
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* A mix of orders                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The demo shop's orders in the shapes the seller console has to handle.
+ *
+ * Every other sale fixture is either paid in full or the one disputed order,
+ * so a seller signing in never sees a booking to accept, a payment to check,
+ * an advance with a balance left, or an item that ships without a lot. Half
+ * of these are in a lot and half are not, because the two take different
+ * roads: a lot item reads the lot's ladder, a direct one the short domestic
+ * one, and an import sold before its run is opened waits on the fill screen.
+ */
+export function seedOrderMix(): Order[] {
+  type Mix = Pick<Order, 'id' | 'lotId' | 'buyerId' | 'itemName' | 'condition' | 'unitPriceMinor' | 'status' | 'paymentStatus' | 'stage'>
+    & Partial<Order> & { days: number; grams?: number };
+
+  const paid = (kind: 'full' | 'advance', amountMinor: number, days: number, by: string, reference: string | null = null) => ({
+    id: `pay_mix_${kind}_${days}_${amountMinor}`,
+    at: iso(days), kind, method: 'direct' as const, amountMinor,
+    batchId: null, batchTotalMinor: null, reference, recordedBy: by,
+  });
+
+  const order = ({ days, grams = 500, ...entry }: Mix): Order => ({
+    sellerId: 'usr_demo',
+    listingId: entry.lotId === DIRECT_LOT_ID ? 'lst_my_cards' : 'lst_my_statue',
+    quantity: 1,
+    unitWeightGrams: grams,
+    currency: 'INR',
+    escrow: {
+      state: 'none', amountMinor: entry.unitPriceMinor, heldAt: null,
+      releasedAt: null, autoReleaseAt: null, disputeId: null,
+    },
+    stageHistory: [{ stage: entry.stage, enteredAt: iso(days), note: 'Order placed.', recordedBy: entry.buyerId }],
+    accepted: true,
+    acceptedAt: iso(days),
+    placedAt: iso(days),
+    payments: [],
+    credits: [],
+    completedAt: null,
+    createdAt: iso(days),
+    updatedAt: iso(days),
+    ...entry,
+  });
+
+  const shipped: StageEvent[] = [
+    { stage: 'ordering', enteredAt: iso(-30), note: 'Order placed.', recordedBy: 'usr_demo' },
+    { stage: 'china_wh_received', enteredAt: iso(-22), note: null, recordedBy: 'usr_demo' },
+    { stage: 'dispatched_from_china', enteredAt: iso(-9), note: 'Handed to the forwarder.', recordedBy: 'usr_demo' },
+  ];
+  const inTransit = { china_received: iso(-22), china_packed: iso(-12) };
+
+  return [
+    /* In a lot: Lot 23, already in the air. Until now it had no items in it. */
+    order({
+      id: 'ord_mix_01', lotId: 'lot_ship_23', buyerId: 'usr_b_nikhil', days: -30, grams: 450,
+      itemName: 'SHF Vegeta — Ultra Ego', condition: 'MISB', unitPriceMinor: 3_20_000,
+      status: 'in_fulfilment', paymentStatus: 'paid', stage: 'dispatched_from_china',
+      stageHistory: shipped, checkpoints: inTransit,
+      paymentPlan: 'full', paymentMethod: 'direct',
+      payments: [paid('full', 3_20_000, -30, 'usr_b_nikhil', 'UTR 4021 7781 0933')],
+      updatedAt: iso(-9),
+    }),
+    order({
+      // An advance down and the balance still owed, due before it is handed over.
+      id: 'ord_mix_02', lotId: 'lot_ship_23', buyerId: 'usr_b_meghna', days: -28, grams: 300,
+      itemName: 'Nendoroid Anya Forger', condition: 'MISB', unitPriceMinor: 1_60_000,
+      status: 'in_fulfilment', paymentStatus: 'partially_paid', stage: 'dispatched_from_china',
+      stageHistory: shipped, checkpoints: inTransit,
+      paymentPlan: 'advance', paymentMethod: 'direct', advancePercent: 30,
+      payments: [paid('advance', 48_000, -28, 'usr_b_meghna')],
+      updatedAt: iso(-9),
+    }),
+    order({
+      // Paid under Buyer Protection, so the money is with Meera until it lands.
+      id: 'ord_mix_03', lotId: 'lot_ship_23', buyerId: 'usr_b_farah', days: -26, grams: 1_400,
+      itemName: '1/7 Makima scale figure', condition: 'MISB', unitPriceMinor: 4_40_000,
+      status: 'in_fulfilment', paymentStatus: 'paid', stage: 'dispatched_from_china',
+      stageHistory: shipped, checkpoints: inTransit,
+      paymentPlan: 'full', paymentMethod: 'protected',
+      payments: [{ ...paid('full', 4_40_000, -26, 'usr_b_farah'), method: 'protected' }],
+      protection: {
+        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — Buyer Protection',
+        feeMinor: 6_600, feeBasisPoints: 150, boughtAt: iso(-26), refundedAt: null,
+      },
+      escrow: { state: 'held', amountMinor: 4_40_000, heldAt: iso(-26), releasedAt: null, autoReleaseAt: null, disputeId: null },
+      updatedAt: iso(-9),
+    }),
+
+    /* In a lot: the Mumbai dispatch, still taking orders. */
+    order({
+      // Booked, not paid: the buyer's word, waiting on the shop to accept it.
+      id: 'ord_mix_04', lotId: 'lot_my_batch', buyerId: 'usr_b_karan', days: -1, grams: 700,
+      itemName: 'Garage kit bust — unpainted resin', condition: 'MISB', unitPriceMinor: 65_000,
+      status: 'pending_payment', paymentStatus: 'unpaid', stage: 'ordering',
+      bookingOnly: true, accepted: false, acceptedAt: null,
+    }),
+    order({
+      // The buyer says they paid directly; the shop has not checked it yet.
+      id: 'ord_mix_05', lotId: 'lot_my_batch', buyerId: 'usr_b_ipsita', days: -2, grams: 900,
+      itemName: 'Garage kit statue — third cast', condition: 'LOOSE', unitPriceMinor: 1_15_000,
+      status: 'pending_payment', paymentStatus: 'claimed', stage: 'ordering',
+      paymentPlan: 'full', paymentMethod: 'direct',
+      paymentClaim: {
+        claimedAt: iso(-1, -4), reference: 'UPI 6150 2219 8843', screenshot: null,
+        decision: null, decidedAt: null, decidedReason: null, plan: 'full', amountMinor: 1_15_000,
+      },
+      stageHistory: [
+        { stage: 'ordering', enteredAt: iso(-2), note: 'Order placed.', recordedBy: 'usr_b_ipsita' },
+        { stage: 'ordering', enteredAt: iso(-1, -4), note: 'Buyer paid directly — reference UPI 6150 2219 8843.', recordedBy: 'usr_b_ipsita' },
+      ],
+      updatedAt: iso(-1, -4),
+    }),
+    order({
+      // Called off by the shop before any money moved.
+      id: 'ord_mix_06', lotId: 'lot_my_batch', buyerId: 'usr_b_tanmay', days: -5, grams: 900,
+      itemName: 'Garage kit statue — test cast', condition: 'LOOSE', unitPriceMinor: 90_000,
+      status: 'cancelled', paymentStatus: 'unpaid', stage: 'ordering',
+      cancelReason: 'The cast came out with bubbles in the face. Not something I will sell.',
+      stageHistory: [
+        { stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_b_tanmay' },
+        { stage: 'ordering', enteredAt: iso(-3), note: 'Cancelled by the seller.', recordedBy: 'usr_demo' },
+      ],
+      updatedAt: iso(-3),
+    }),
+
+    /* Without a lot: off the shelf, on the short domestic ladder. */
+    order({
+      id: 'ord_mix_07', lotId: DIRECT_LOT_ID, buyerId: 'usr_b_dev', days: -1, grams: 250,
+      itemName: 'Card sleeves and top-loaders — 200 pack', condition: 'MISB', unitPriceMinor: 6_500,
+      status: 'confirmed', paymentStatus: 'paid', stage: 'preparing',
+      paymentPlan: 'full', paymentMethod: 'direct',
+      payments: [paid('full', 6_500, -1, 'usr_b_dev', 'UPI 7710 3382 0045')],
+    }),
+    order({
+      // Out with a courier, with the AWB the buyer tracks it by.
+      id: 'ord_mix_08', lotId: DIRECT_LOT_ID, buyerId: 'usr_b_priyanka', days: -4, grams: 1_100,
+      itemName: 'Holo rare binder page — 9 cards', condition: 'LOOSE', unitPriceMinor: 22_000,
+      status: 'shipped', paymentStatus: 'paid', stage: 'dispatched',
+      paymentPlan: 'full', paymentMethod: 'direct',
+      payments: [paid('full', 22_000, -4, 'usr_b_priyanka')],
+      shipment: { courier: 'Delhivery', awb: '1490 2231 7781', at: iso(-2) },
+      stageHistory: [
+        { stage: 'preparing', enteredAt: iso(-4), note: 'Order placed.', recordedBy: 'usr_b_priyanka' },
+        { stage: 'dispatched', enteredAt: iso(-2), note: 'Delhivery 1490 2231 7781.', recordedBy: 'usr_demo' },
+      ],
+      updatedAt: iso(-2),
+    }),
+    order({
+      // Accepted and waiting on the buyer to pay.
+      id: 'ord_mix_09', lotId: DIRECT_LOT_ID, buyerId: 'usr_b_vikram', days: 0, grams: 400,
+      itemName: 'Playmat — stitched edge, unused', condition: 'MIB', unitPriceMinor: 14_000,
+      status: 'pending_payment', paymentStatus: 'unpaid', stage: 'preparing',
+    }),
+    order({
+      // Turned down before it was accepted.
+      id: 'ord_mix_10', lotId: DIRECT_LOT_ID, buyerId: 'usr_b_aisha', days: -6, grams: 1_400,
+      itemName: 'Card binder — 200+ commons and rares', condition: 'LOOSE', unitPriceMinor: 15_000,
+      status: 'rejected', paymentStatus: 'unpaid', stage: 'preparing',
+      bookingOnly: true, accepted: false, acceptedAt: null,
+      stageHistory: [
+        { stage: 'preparing', enteredAt: iso(-6), note: 'Order placed.', recordedBy: 'usr_b_aisha' },
+        { stage: 'preparing', enteredAt: iso(-5), note: 'Declined by the seller — already promised to someone else.', recordedBy: 'usr_demo' },
+      ],
+      updatedAt: iso(-5),
+    }),
+
+    /* Without a lot yet: imports sold before their run is opened. */
+    order({
+      id: 'ord_mix_11', lotId: AWAITING_LOT_ID, buyerId: 'usr_b_sourav', days: -3, grams: 900,
+      itemName: 'Bandai RG Nu Gundam', condition: 'MISB', unitPriceMinor: 3_60_000,
+      status: 'confirmed', paymentStatus: 'paid', stage: 'ordering',
+      paymentPlan: 'full', paymentMethod: 'direct',
+      payments: [paid('full', 3_60_000, -3, 'usr_b_sourav', 'UTR 9932 1180 4471')],
+    }),
+    order({
+      id: 'ord_mix_12', lotId: AWAITING_LOT_ID, buyerId: 'usr_b_neha', days: -2, grams: 380,
+      itemName: 'Prize figure — Frieren', condition: 'MIB', unitPriceMinor: 1_10_000,
+      status: 'confirmed', paymentStatus: 'partially_paid', stage: 'ordering',
+      paymentPlan: 'advance', paymentMethod: 'direct', advancePercent: 50,
+      payments: [paid('advance', 55_000, -2, 'usr_b_neha')],
+    }),
+  ];
 }
