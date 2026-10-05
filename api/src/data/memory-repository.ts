@@ -10,7 +10,7 @@ import type {
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
-import { matchesKind, matchesSearch, popularity } from '../../../shared/catalog.js';
+import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import {
@@ -334,27 +334,21 @@ export class MemoryRepository implements Repository {
     if (query.search) items = items.filter((l) => matchesSearch(l, query.search!));
 
     const followed = new Set(query.followedSellerIds ?? []);
-    items.sort((a, b) => {
-      // Followed sellers first - the seed of the personalised feed - but only
-      // while the reader has not asked for an order of their own. Someone who
-      // picked "cheapest first" wants the cheapest, not the cheapest among the
-      // people they follow.
-      if (!query.sort || query.sort === 'newest') {
-        const followRank = Number(followed.has(b.sellerId)) - Number(followed.has(a.sellerId));
-        if (followRank !== 0) return followRank;
-      }
-      switch (query.sort) {
-        case 'price_asc':
-          return a.priceMinor - b.priceMinor;
-        case 'price_desc':
-          return b.priceMinor - a.priceMinor;
-        case 'popular':
-          return popularity(b) - popularity(a);
-        default:
-          // Recency, with a bump counting as recency.
-          return freshness(b).localeCompare(freshness(a));
-      }
-    });
+    switch (query.sort) {
+      case 'price_asc':
+        items.sort((a, b) => a.priceMinor - b.priceMinor);
+        break;
+      case 'price_desc':
+        items.sort((a, b) => b.priceMinor - a.priceMinor);
+        break;
+      case 'popular':
+        items.sort((a, b) => popularity(b) - popularity(a));
+        break;
+      default:
+        // Fresh bumps, then followed sellers, then recency. Someone who picked
+        // "cheapest first" wants the cheapest, so only "newest" is personalised.
+        items.sort(newestOrder(followed));
+    }
 
     return query.limit ? items.slice(0, query.limit) : items;
   }
@@ -919,11 +913,6 @@ export class MemoryRepository implements Repository {
 
 /** Newest first, by creation time. */
 const newestFirst = (a: Post, b: Post) => (a.createdAt < b.createdAt ? 1 : -1);
-
-/** A bump counts as recency without rewriting createdAt. */
-function freshness(listing: Listing): string {
-  return listing.bumpedAt && listing.bumpedAt > listing.createdAt ? listing.bumpedAt : listing.createdAt;
-}
 
 export function normaliseIdentifier(identifier: string): string {
   const trimmed = identifier.trim().toLowerCase();

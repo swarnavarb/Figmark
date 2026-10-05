@@ -570,6 +570,39 @@ await check('bump spends a bump point, and is refused with none left or within t
   assert.equal(again.status, 429, 'a second bump within the hour must be refused');
 });
 
+await check('a bumped item goes to the top of the Buy tab, ahead of followed shops', async () => {
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const before = (await feed(req({ headers: auth }), ctx)).jsonBody.listings;
+  const oldest = [...before].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  assert.notEqual(before[0].id, oldest.id, 'the test needs an item that is not already first');
+  const row = await repository.getListing(oldest.id);
+  const saved = row.bumpedAt;
+  row.bumpedAt = new Date().toISOString();
+  await repository.updateListing(row);
+  try {
+    for (const headers of [auth, {}]) {
+      const after = (await feed(req({ headers }), ctx)).jsonBody.listings;
+      assert.equal(after[0].id, oldest.id, 'the item bumped a moment ago must lead the feed');
+    }
+    // A day on, the bump is plain recency again and followed shops lead.
+    row.bumpedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    await repository.updateListing(row);
+    const { newestOrder } = await import(new URL('../api/dist/shared/catalog.js', import.meta.url));
+    const now = Date.now();
+    const at = (h) => new Date(now - h * 3600_000).toISOString();
+    const items = [
+      { id: 'followed', sellerId: 'a', createdAt: at(50), bumpedAt: null },
+      { id: 'stale_bump', sellerId: 'b', createdAt: at(90), bumpedAt: at(30) },
+      { id: 'fresh', sellerId: 'b', createdAt: at(1), bumpedAt: null },
+      { id: 'bumped', sellerId: 'b', createdAt: at(80), bumpedAt: at(2) },
+    ];
+    assert.deepEqual(items.sort(newestOrder(new Set(['a']), now)).map((l) => l.id), ['bumped', 'followed', 'fresh', 'stale_bump']);
+  } finally {
+    row.bumpedAt = saved;
+    await repository.updateListing(row);
+  }
+});
+
 await check("bumping someone else's listing is refused", async () => {
   const other = await bump(req({ headers: auth, params: { id: 'lst_dragon_knight' } }), ctx);
   assert.equal(other.status, 403);

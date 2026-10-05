@@ -11,7 +11,7 @@ import type {
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
-import { matchesSearch, popularity } from '../../../shared/catalog.js';
+import { matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -1521,23 +1521,22 @@ export class CosmosRepository implements Repository {
     // the reader, not the row - and it is only wanted while the reader has not
     // asked for an order of their own.
     const ranked = !query.sort || query.sort === 'newest';
-    const spec = {
-      query:
-        // The operations console passes @all, because it deletes what an
-        // account made and cannot do that from a filtered list. Everybody else
-        // gets the catalog: active, and not hidden behind a members' window.
-        'SELECT * FROM c WHERE (@all = true OR c.status = "active")' +
-        ' AND (@all = true OR NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)' +
-        ' AND (@seller = "" OR c.sellerId = @seller)' +
-        ' AND (@cat = "" OR c.category = @cat)' +
-        ' AND (IS_NULL(@cats) OR ARRAY_CONTAINS(@cats, c.category))' +
-        ' AND (@cond = "" OR c.condition = @cond)' +
-        ' AND (@price = 0 OR c.priceMinor <= @price)' +
-        ' AND (@kind = "" OR (@kind = "pre_order" AND IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder))' +
-        ' OR (@kind = "mixed_lot" AND c.bundle = true)' +
-        ' OR (@kind = "in_hand" AND (c.sourcing = "in_hand" OR (NOT IS_DEFINED(c.sourcing) AND NOT IS_DEFINED(c.lotId))))' +
-        ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))' +
-        catalogOrder(query.sort),
+    const where =
+      // The operations console passes @all, because it deletes what an
+      // account made and cannot do that from a filtered list. Everybody else
+      // gets the catalog: active, and not hidden behind a members' window.
+      'SELECT * FROM c WHERE (@all = true OR c.status = "active")' +
+      ' AND (@all = true OR NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)' +
+      ' AND (@seller = "" OR c.sellerId = @seller)' +
+      ' AND (@cat = "" OR c.category = @cat)' +
+      ' AND (IS_NULL(@cats) OR ARRAY_CONTAINS(@cats, c.category))' +
+      ' AND (@cond = "" OR c.condition = @cond)' +
+      ' AND (@price = 0 OR c.priceMinor <= @price)' +
+      ' AND (@kind = "" OR (@kind = "pre_order" AND IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder))' +
+      ' OR (@kind = "mixed_lot" AND c.bundle = true)' +
+      ' OR (@kind = "in_hand" AND (c.sourcing = "in_hand" OR (NOT IS_DEFINED(c.sourcing) AND NOT IS_DEFINED(c.lotId))))' +
+      ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))';
+    const bound = {
       parameters: [
         { name: '@all', value: query.includeHidden === true },
         { name: '@seller', value: query.sellerId ?? '' },
@@ -1551,10 +1550,21 @@ export class CosmosRepository implements Repository {
         { name: '@limit', value: limit },
       ],
     };
+    const options = query.sellerId ? { partitionKey: query.sellerId } : undefined;
+    const read = (sql: string) =>
+      this.container('listings').items.query<Listing>({ query: sql, parameters: bound.parameters }, options).fetchAll();
 
-    const { resources } = await this.container('listings')
-      .items.query<Listing>(spec, query.sellerId ? { partitionKey: query.sellerId } : undefined)
-      .fetchAll();
+    // A bump is recency without rewriting createdAt, and Cosmos cannot ORDER BY
+    // "the later of two fields". So "newest" also reads the latest bumps and
+    // merges: the freshest N are always among the newest N listed plus the N
+    // most recently bumped.
+    const [listed, bumped] = await Promise.all([
+      read(where + catalogOrder(query.sort)),
+      ranked
+        ? read(where + ' AND IS_DEFINED(c.bumpedAt) AND NOT IS_NULL(c.bumpedAt) ORDER BY c.bumpedAt DESC OFFSET 0 LIMIT @limit')
+        : Promise.resolve({ resources: [] as Listing[] }),
+    ]);
+    const resources = [...new Map([...listed.resources, ...bumped.resources].map((l) => [l.id, l])).values()];
 
     const matched = query.search
       ? resources.filter((listing) => matchesSearch(listing, query.search!))
@@ -1564,11 +1574,9 @@ export class CosmosRepository implements Repository {
       return [...matched].sort((a, b) => popularity(b) - popularity(a)).slice(0, query.limit ?? 100);
     }
 
-    const followed = new Set(query.followedSellerIds ?? []);
-    if (!ranked || followed.size === 0) return matched;
-    return [...matched].sort(
-      (a, b) => Number(followed.has(b.sellerId)) - Number(followed.has(a.sellerId)),
-    );
+    if (!ranked) return matched;
+    // Fresh bumps, then followed sellers, then recency.
+    return [...matched].sort(newestOrder(new Set(query.followedSellerIds ?? []))).slice(0, limit);
   }
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
