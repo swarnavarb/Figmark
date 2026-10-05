@@ -10,6 +10,8 @@ import assert from 'node:assert/strict';
 // Steps are undoable for three minutes in the app; these checks read every
 // step at once, as they were written to, except the one that tests undo.
 process.env.FIGMARK_UNDO_WINDOW_MS = '0';
+// One account here does a day's posting in seconds; the limit has its own check.
+process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse } = await import(new URL('http.js', fns));
@@ -3093,10 +3095,10 @@ await check('answering again replaces it rather than stacking another on', async
 
 await check('an ISO takes photos, and a person and their shop answer separately', async () => {
   const posted = await postWant(req({ headers: auth, body: {
-    title: 'ISO Gundam Wing Zero Ver.Ka', category: 'Model kits', photoUrls: ['https://example.com/wz.jpg'],
+    title: 'ISO Gundam Wing Zero Ver.Ka', category: 'Model kits', photoUrls: ['/api/photos/wz.jpg'],
   } }), ctx);
   assert.equal(posted.status, 201);
-  assert.deepEqual(posted.jsonBody.want.photoUrls, ['https://example.com/wz.jpg']);
+  assert.deepEqual(posted.jsonBody.want.photoUrls, ['/api/photos/wz.jpg']);
   const bad = await postWant(req({ headers: auth, body: {
     title: 'ISO with a script', category: 'Model kits', photoUrls: ['javascript:alert(1)'],
   } }), ctx);

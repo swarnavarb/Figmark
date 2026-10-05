@@ -10,6 +10,7 @@ import { moderation } from '../moderation.js';
 import { accessFor } from '../../../shared/stores.js';
 import { isReaction } from '../../../shared/social.js';
 import { getAuthService } from '../auth/index.js';
+import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
@@ -121,7 +122,12 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
 
   const mine = await handlesFor(user.id, repository);
   const byHandle = new Map(mine.map((party) => [party.handle, party]));
-  const messages = await repository.listMessagesForHandles([...byHandle.keys()]);
+  const [messages, me] = await Promise.all([
+    repository.listMessagesForHandles([...byHandle.keys()]),
+    repository.getUserById(user.id),
+  ]);
+  const blocked = new Set(me?.messageBlocks ?? []);
+  const muted = new Set(me?.mutedThreads ?? []);
 
   // Newest message per thread wins the row; the rest are history.
   const threads = new Map<string, { message: Message; unread: number }>();
@@ -139,6 +145,7 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
   const rows = [...threads.values()].map(({ message, unread }) => {
     // "Us" is whichever end of this thread is one of ours.
     const usIsSender = byHandle.has(message.from.handle);
+    const isMuted = muted.has(message.threadId);
     return {
       threadId: message.threadId,
       us: usIsSender ? message.from : message.to,
@@ -146,9 +153,11 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
       lastMessage: message.body,
       lastAt: message.createdAt,
       lastFromUs: usIsSender,
-      unread,
+      // A muted conversation is kept, not counted.
+      unread: isMuted ? 0 : unread,
+      muted: isMuted,
     };
-  });
+  }).filter((row) => !blocked.has(row.them.userId));
 
   rows.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
   // The names are snapshots; their levels are read fresh, in one batch.
@@ -194,12 +203,105 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
   if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
 
   const threadId = threadIdFor(us.handle, them.handle);
-  const messages = await repository.listMessages(threadId);
-  await repository.markThreadRead(threadId, us.handle);
+  // `before` pages back through a long conversation; `since` is the refresh
+  // while it is open, and only carries what is new.
+  const before = request.query.get('before') || undefined;
+  const since = request.query.get('since') || null;
+  const page = await repository.listMessages(threadId, THREAD_PAGE, before);
+  const messages = since ? page.filter((message) => message.createdAt > since) : page;
+  // Writing read receipts is a write per message; only when there is one to write.
+  if (!before && page.some((message) => message.to.handle === us.handle && !message.readAt)) {
+    await repository.markThreadRead(threadId, us.handle);
+  }
+  const me = await repository.getUserById(user.id);
 
   // Every voice the caller has, so the thread can offer a switch rather than
   // making them go back to the inbox to change who is speaking.
-  return json(200, { us, them, handles: mine, threadId, messages });
+  return json(200, {
+    us, them, handles: mine, threadId, messages,
+    /** Whether there is more to page back to. */
+    more: !since && page.length === THREAD_PAGE,
+    blocked: (me?.messageBlocks ?? []).includes(them.userId),
+    muted: (me?.mutedThreads ?? []).includes(threadId),
+  });
+}
+
+/** How many messages a conversation opens with, and each page back adds. */
+const THREAD_PAGE = 60;
+
+/**
+ * Whether `from` may write to `to` at all: neither end has blocked the other.
+ *
+ * Checked by account, both ways round. Blocking somebody also stops you
+ * writing to them - a conversation where only one side can speak is not one.
+ */
+async function blockedBetween(fromUserId: string, to: MessageParty, repository: Repo): Promise<'you' | 'them' | null> {
+  const [sender, recipient] = await Promise.all([repository.getUserById(fromUserId), repository.getUserById(to.userId)]);
+  if ((sender?.messageBlocks ?? []).includes(to.userId)) return 'you';
+  if ((recipient?.messageBlocks ?? []).includes(fromUserId)) return 'them';
+  return null;
+}
+
+/**
+ * POST /api/messages/{handle}/block - stop, or start again, taking messages from them.
+ *
+ * `{ block: true | false }`. By account, so their shop is blocked with them.
+ */
+async function block(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const them = request.params.handle ? await partyFor(request.params.handle, repository) : null;
+  if (!them) return error(404, 'not_found', 'Nobody holds that handle.');
+  if (them.userId === user.id) return error(400, 'invalid_handle', 'You cannot block yourself.');
+  let body: { block?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (typeof body.block !== 'boolean') return error(400, 'invalid_body', 'Say block: true or false.');
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  const blocks = new Set(me.messageBlocks ?? []);
+  if (body.block) blocks.add(them.userId);
+  else blocks.delete(them.userId);
+  await repository.updateUser({ ...me, messageBlocks: [...blocks], updatedAt: new Date().toISOString() });
+  return json(200, { blocked: body.block });
+}
+
+/**
+ * POST /api/messages/{handle}/mute?as=<handle> - keep the conversation, stop counting it.
+ *
+ * `{ mute: true | false }`. Per conversation, so muting a shop's thread with
+ * somebody leaves your own one with them alone.
+ */
+async function mute(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const them = request.params.handle ? await partyFor(request.params.handle, repository) : null;
+  if (!them) return error(404, 'not_found', 'Nobody holds that handle.');
+  let body: { mute?: unknown; as?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (typeof body.mute !== 'boolean') return error(400, 'invalid_body', 'Say mute: true or false.');
+  const mine = await handlesFor(user.id, repository);
+  const us = typeof body.as === 'string'
+    ? mine.find((party) => party.handle === (body.as as string).toLowerCase())
+    : await defaultVoice(mine, them.handle, repository);
+  if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
+  const threadId = threadIdFor(us.handle, them.handle);
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  const muted = new Set(me.mutedThreads ?? []);
+  if (body.mute) muted.add(threadId);
+  else muted.delete(threadId);
+  await repository.updateUser({ ...me, mutedThreads: [...muted], updatedAt: new Date().toISOString() });
+  return json(200, { muted: body.mute });
 }
 
 /** POST /api/messages/{handle}/send - say something, as one of your handles. */
@@ -221,6 +323,8 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   let text = body.body?.trim() ?? '';
   if (!text && !body.deal) return error(400, 'invalid_message', 'Write something first.');
   if (text.length > 4000) return error(400, 'invalid_message', 'Keep a message under 4000 characters.');
+  const slow = tooFast(user.id, 'message');
+  if (slow) return slow;
 
   const mine = await handlesFor(user.id, repository);
   if (mine.length === 0) return error(409, 'no_handle', 'Pick a username before messaging.');
@@ -233,6 +337,10 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     : await defaultVoice(mine, them.handle, repository);
   if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
   if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
+  const wall = await blockedBetween(user.id, them, repository);
+  if (wall === 'you') return error(403, 'blocked', `You blocked @${them.handle}. Unblock them to write.`);
+  // Not saying who blocked whom: being told is its own message.
+  if (wall === 'them') return error(403, 'blocked', `@${them.handle} is not taking messages from you.`);
 
   // A private deal, either way round. An offer is the shop's: an item made
   // for this buyer alone, bought like any other. A request is the buyer's:
@@ -511,6 +619,8 @@ export const setUsernameRoute = handler(setUsername);
 export const threadRoute = handler(thread);
 export const sendMessageRoute = handler(send);
 export const reactToMessageRoute = handler(reactToMessage);
+export const blockRoute = handler(block);
+export const muteRoute = handler(mute);
 export const publicProfileRoute = handler(publicProfile);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -521,5 +631,7 @@ app.http('messages-thread', { ...anon, methods: ['GET'], route: 'messages/{handl
 // equivalent templates as a conflict regardless of verb.
 app.http('messages-send', { ...anon, methods: ['POST'], route: 'messages/{handle}/send', handler: sendMessageRoute });
 app.http('messages-react', { ...anon, methods: ['POST'], route: 'messages/{handle}/react', handler: reactToMessageRoute });
+app.http('messages-block', { ...anon, methods: ['POST'], route: 'messages/{handle}/block', handler: blockRoute });
+app.http('messages-mute', { ...anon, methods: ['POST'], route: 'messages/{handle}/mute', handler: muteRoute });
 app.http('public-profile', { ...anon, methods: ['GET'], route: 'u/{handle}', handler: publicProfileRoute });
 app.http('me-username', { ...anon, methods: ['POST'], route: 'me/username', handler: setUsernameRoute });

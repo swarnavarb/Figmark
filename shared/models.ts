@@ -110,6 +110,13 @@ export interface User extends BaseDocument {
    */
   username?: string;
   /**
+   * Accounts this one will not take messages from. By account rather than
+   * handle, so a blocked person cannot come back as their shop.
+   */
+  messageBlocks?: string[];
+  /** Conversations this account keeps but is not told about: no unread count. */
+  mutedThreads?: string[];
+  /**
    * Platform administration: verification queue, dispute console, payouts.
    * A real assigned role, not a capability derived from verification, so it is
    * stored rather than computed.

@@ -24,6 +24,7 @@ export async function loadReports(repository: Repo): Promise<ContentReport[]> {
 }
 
 export async function saveReports(repository: Repo, reports: ContentReport[], by: string): Promise<void> {
+  indexCache.delete(repository);
   let kept = reports;
   if (kept.length > KEEP) {
     // Open reports and standing decisions (removed / validated) are never the
@@ -45,7 +46,23 @@ export async function saveReports(repository: Repo, reports: ContentReport[], by
   });
 }
 
+/**
+ * How long one instance reuses the index before reading the reports again.
+ *
+ * Every feed load, reaction and comment needs it, and it is one document read
+ * whole. A decision made on this instance clears it at once (see
+ * `saveReports`); one made on another shows here within this long.
+ */
+const INDEX_TTL_MS = 10_000;
+const indexCache = new WeakMap<object, { at: number; index: Promise<ReturnType<typeof moderationIndex>> }>();
+
 /** The index the review and comment readers use to hide and mark content. */
 export async function moderation(repository: Repo) {
-  return moderationIndex(await loadReports(repository));
+  const cached = indexCache.get(repository);
+  if (cached && Date.now() - cached.at < INDEX_TTL_MS) return cached.index;
+  const index = loadReports(repository).then(moderationIndex);
+  indexCache.set(repository, { at: Date.now(), index });
+  // A failed read is not kept: the next caller tries again.
+  index.catch(() => indexCache.delete(repository));
+  return index;
 }

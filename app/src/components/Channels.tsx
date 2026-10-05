@@ -285,10 +285,11 @@ function Room() {
   const load = useCallback(async (quiet = false) => {
     if (!id) return;
     try {
-      const next = await api.channelThread(id, voice.storeId);
+      const next = await api.channelThread(id, voice.storeId, quiet);
       const arrived = next.posts.filter((card) => !known.current.has(card.post.id));
       const wasNear = nearBottom();
-      setData(next);
+      // A light refresh leaves the item list out; keep the one already here.
+      setData((current) => (quiet && current ? { ...next, shareable: current.shareable } : next));
       setFollowing(Boolean(next.channel.following));
       next.posts.forEach((card) => known.current.add(card.post.id));
       if (quiet && arrived.length > 0 && !wasNear) setFresh((count) => count + arrived.length);

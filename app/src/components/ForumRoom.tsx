@@ -59,7 +59,7 @@ function Forum() {
     if (!id || !data) return;
     setJoining(true);
     try {
-      const { forum } = await api.joinForum(id);
+      const { forum } = await api.joinForum(id, !data.channel.member);
       setData((current) => current && {
         ...current,
         channel: { ...current.channel, member: forum.member, memberCount: forum.memberCount },

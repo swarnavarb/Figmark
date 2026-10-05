@@ -141,6 +141,7 @@ export function MessagesView() {
                     {row.lastFromUs && <strong>You: </strong>}
                     {row.lastMessage}
                   </span>
+                  {row.muted && <span className="chrow__muted" aria-label="Muted"><Icon name="bell" size={12} /></span>}
                   {row.unread > 0 && <span className="chrow__badge">{row.unread > 9 ? '9+' : row.unread}</span>}
                 </span>
                 {/* Which of your voices this thread belongs to - said only in
@@ -200,7 +201,9 @@ export function ThreadPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key, us?.handle, them?.handle]);
   const input = useRef<HTMLTextAreaElement>(null);
-  const count = useRef(0);
+  const newest = useRef<string | null>(null);
+  const [menu, setMenu] = useState(false);
+  const [older, setOlder] = useState(false);
 
   const load = useCallback(async (quiet = false) => {
     if (!handle) return;
@@ -212,26 +215,83 @@ export function ThreadPage() {
   }, [handle, as]);
 
   useEffect(() => {
+    newest.current = null;
     void load();
   }, [load]);
 
-  // Live while it is on screen, like a room.
+  // Live while it is on screen, like a room - asking only for what arrived
+  // since the newest message here, rather than the whole conversation again.
+  const latest = data?.messages.at(-1)?.createdAt;
   useEffect(() => {
-    const tick = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load(true);
+    if (!handle || !data) return;
+    const tick = window.setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const fresh = await api.thread(handle, as, latest ? { since: latest } : {});
+        if (fresh.messages.length === 0) return;
+        setData((current) => {
+          if (!current) return fresh;
+          const known = new Set(current.messages.map((message) => message.id));
+          return { ...current, messages: [...current.messages, ...fresh.messages.filter((message) => !known.has(message.id))] };
+        });
+      } catch {
+        // A missed refresh is caught by the next one.
+      }
     }, 10_000);
     return () => window.clearInterval(tick);
-  }, [load]);
+  }, [handle, as, latest, Boolean(data)]);
+
+  /** The page before the first message here, kept in place on screen. */
+  async function loadOlder() {
+    const first = data?.messages[0];
+    if (!handle || !first) return;
+    setOlder(true);
+    try {
+      const page = await api.thread(handle, as, { before: first.createdAt });
+      const height = document.documentElement.scrollHeight;
+      setData((current) => current && { ...current, more: page.more, messages: [...page.messages, ...current.messages] });
+      // Hold the reader where they were rather than jumping to the top.
+      requestAnimationFrame(() => window.scrollBy(0, document.documentElement.scrollHeight - height));
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load earlier messages.');
+    } finally {
+      setOlder(false);
+    }
+  }
+
+  async function toggleMute() {
+    if (!handle || !data) return;
+    setMenu(false);
+    try {
+      const { muted } = await api.muteThread(handle, !data.muted, data.us.handle);
+      setData((current) => current && { ...current, muted });
+      setNotice(muted ? 'Muted. It stays here without counting as unread.' : 'Unmuted.');
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not change that.');
+    }
+  }
+
+  async function toggleBlock() {
+    if (!handle || !data) return;
+    setMenu(false);
+    if (!data.blocked && !window.confirm(`Block @${data.them.handle}? Neither of you can write to the other until you unblock.`)) return;
+    try {
+      const { blocked } = await api.blockHandle(handle, !data.blocked);
+      setData((current) => current && { ...current, blocked });
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not change that.');
+    }
+  }
 
   // A conversation is read at the bottom - and taken there again when
-  // something new arrives.
+  // something new arrives at the end. Earlier pages land at the top and do not.
   useLayoutEffect(() => {
-    const now = data?.messages.length ?? 0;
-    if (now !== count.current) {
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: count.current ? 'smooth' : 'auto' });
-      count.current = now;
+    const last = data?.messages.at(-1)?.id ?? null;
+    if (last !== newest.current) {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: newest.current ? 'smooth' : 'auto' });
+      newest.current = last;
     }
-  }, [data?.messages.length]);
+  }, [data?.messages]);
 
   useEffect(() => {
     const field = input.current;
@@ -323,12 +383,38 @@ export function ThreadPage() {
         avatar={<Avatar name={data.them.displayName} size={34} />}
         title={<>{data.them.displayName}<LevelChip tag={data.them.level} inline />{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
         sub={<>@{data.them.handle} · you as @{data.us.handle}</>}
-        action={<Link to={`/${data.them.handle}`} className="roombar__btn">
-          <Icon name={data.them.isStore ? 'tag' : 'users'} size={13} /> {data.them.isStore ? 'Shop' : 'Profile'}
-        </Link>} />
+        action={(
+          <span className="dmactions">
+            <Link to={`/${data.them.handle}`} className="roombar__btn">
+              <Icon name={data.them.isStore ? 'tag' : 'users'} size={13} /> {data.them.isStore ? 'Shop' : 'Profile'}
+            </Link>
+            <span className="spost__menuwrap">
+              <button type="button" className="iconbtn" aria-label="Conversation options" aria-expanded={menu}
+                onClick={() => setMenu(!menu)}>
+                <Icon name="more" size={18} />
+              </button>
+              {menu && (
+                <span className="spost__menu" role="menu" onMouseLeave={() => setMenu(false)}>
+                  <button type="button" role="menuitem" onClick={() => void toggleMute()}>
+                    <Icon name="bell" size={15} /> {data.muted ? 'Unmute' : 'Mute'}
+                  </button>
+                  <button type="button" role="menuitem" className={data.blocked ? undefined : 'is-danger'}
+                    onClick={() => void toggleBlock()}>
+                    <Icon name="lock" size={15} /> {data.blocked ? 'Unblock' : `Block @${data.them.handle}`}
+                  </button>
+                </span>
+              )}
+            </span>
+          </span>
+        )} />
 
       <main className="page social chroom dmroom">
         <div className="chthread">
+          {data.more && (
+            <button type="button" className="chmore" disabled={older} onClick={() => void loadOlder()}>
+              {older ? 'Loading…' : 'Load earlier messages'}
+            </button>
+          )}
           {data.messages.length === 0 ? (
             <EmptyState icon={<Icon name="message" size={26} />} title="Say hello">
               Start the conversation with {data.them.displayName}.
@@ -343,6 +429,13 @@ export function ThreadPage() {
             onSent={() => { setAsking(false); void load(); }} />
         )}
 
+        {data.blocked ? (
+          <div className="cbar cbar--blocked">
+            {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
+            <p>You blocked @{data.them.handle}. Neither of you can write here.</p>
+            <button type="button" className="followbtn" onClick={() => void toggleBlock()}>Unblock</button>
+          </div>
+        ) : (
         <form className="cbar" onSubmit={(event) => void send(event)}>
           {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
           {replyTo && (
@@ -397,6 +490,7 @@ export function ThreadPage() {
             </button>
           </div>
         </form>
+        )}
       </main>
     </div>
   );

@@ -341,7 +341,8 @@ export interface Repository {
 
   /* Messages. */
 
-  listMessages(threadId: string, limit?: number): Promise<Message[]>;
+  /** Oldest first. `before` pages back: only messages written before that time. */
+  listMessages(threadId: string, limit?: number, before?: string): Promise<Message[]>;
   /** Every message touching any of these handles, for the inbox. */
   listMessagesForHandles(handles: readonly string[], limit?: number): Promise<Message[]>;
   sendMessage(message: Message): Promise<Message>;
@@ -362,7 +363,14 @@ export interface Repository {
   /** One channel or forum, newest first. */
   listPosts(channelId: string, limit?: number): Promise<Post[]>;
   /** The feed: posts across many channels, newest first. */
-  listPostsForChannels(channelIds: readonly string[], limit?: number): Promise<Post[]>;
+  /**
+   * Newest first across several channels. `before` pages back; `feedOnly`
+   * leaves out messages that stay in their room, so they cannot crowd a feed
+   * page out.
+   */
+  listPostsForChannels(
+    channelIds: readonly string[], limit?: number, options?: { before?: string; feedOnly?: boolean },
+  ): Promise<Post[]>;
   createPost(post: Post): Promise<Post>;
   getPost(channelId: string, id: string): Promise<Post | null>;
   /**

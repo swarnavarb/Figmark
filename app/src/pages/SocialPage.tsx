@@ -94,17 +94,39 @@ function FollowingFeed() {
   const { voice } = useVoice();
   const as = voice.storeId;
   const [posts, setPosts] = useState<PostCard[] | null>(null);
+  const [next, setNext] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FeedFilter>('all');
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      setPosts((await api.socialHome(as)).posts);
+      const page = await api.socialHome(as);
+      setPosts(page.posts);
+      setNext(page.next);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your feed.');
     }
   }, [as]);
+
+  /** The next page of followed posts, under what is already here. */
+  async function loadMore() {
+    if (!next) return;
+    setMore(true);
+    try {
+      const page = await api.socialHome(as, next);
+      setPosts((current) => {
+        const known = new Set((current ?? []).map((card) => card.post.id));
+        return [...(current ?? []), ...page.posts.filter((card) => !known.has(card.post.id))];
+      });
+      setNext(page.next);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load more.');
+    } finally {
+      setMore(false);
+    }
+  }
 
   useEffect(() => {
     setPosts(null);
@@ -144,6 +166,12 @@ function FollowingFeed() {
             onRemoved={(id) => setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null)}
             onReposted={(repost) => setPosts((all) => [repost, ...(all ?? [])])} />
         ))
+      )}
+
+      {posts && next && (
+        <button type="button" className="chmore" disabled={more} onClick={() => void loadMore()}>
+          {more ? 'Loading…' : 'Show older posts'}
+        </button>
       )}
     </div>
   );
@@ -376,7 +404,7 @@ function ForumCard({ row, tone, onChange }: { row: ForumRow; tone: number; onCha
             setBusy(true);
             setError(null);
             try {
-              onChange((await api.joinForum(row.id)).forum);
+              onChange((await api.joinForum(row.id, !row.member)).forum);
             } catch (err) {
               setError(err instanceof ApiRequestError ? err.message : 'Could not join.');
             } finally {

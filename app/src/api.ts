@@ -1691,6 +1691,8 @@ export interface ThreadRow {
   lastAt: string;
   lastFromUs: boolean;
   unread: number;
+  /** Kept, but its messages are not counted. */
+  muted?: boolean;
 }
 
 export interface Inbox {
@@ -1705,6 +1707,12 @@ export interface Thread {
   handles: MessageParty[];
   threadId: string;
   messages: Message[];
+  /** More to page back to, before the first of `messages`. */
+  more?: boolean;
+  /** You blocked them: nothing goes either way until you unblock. */
+  blocked?: boolean;
+  /** Kept, but not counted as unread. */
+  muted?: boolean;
 }
 
 /** Which of an account's two pages: its shop, or the person behind it. */
@@ -2309,8 +2317,18 @@ export const api = {
     ),
 
   inbox: () => request<Inbox>('/messages'),
-  thread: (handle: string, as?: string) =>
-    request<Thread>(`/messages/${encodeURIComponent(handle)}${as ? `?as=${encodeURIComponent(as)}` : ''}`),
+  thread: (handle: string, as?: string, page: { since?: string; before?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (as) query.set('as', as);
+    if (page.since) query.set('since', page.since);
+    if (page.before) query.set('before', page.before);
+    const tail = query.toString();
+    return request<Thread>(`/messages/${encodeURIComponent(handle)}${tail ? `?${tail}` : ''}`);
+  },
+  blockHandle: (handle: string, block: boolean) =>
+    post<{ blocked: boolean }>(`/messages/${encodeURIComponent(handle)}/block`, { block }),
+  muteThread: (handle: string, mute: boolean, as?: string) =>
+    post<{ muted: boolean }>(`/messages/${encodeURIComponent(handle)}/mute`, { mute, as }),
   sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>, replyToId?: string) =>
     post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, {
       body, as, ...(deal ? { deal } : {}), ...(replyToId ? { replyToId } : {}),
@@ -2385,11 +2403,20 @@ export const api = {
   socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
   trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
   /** Who you follow, with trending and rising posts mixed in and badged. */
-  socialHome: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/home${voice(as)}`),
+  socialHome: (as?: string | null, before?: string) => {
+    const query = new URLSearchParams();
+    if (as) query.set('as', as);
+    if (before) query.set('before', before);
+    const tail = query.toString();
+    return request<{ posts: PostCard[]; next: string | null }>(`/social/home${tail ? `?${tail}` : ''}`);
+  },
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
-  channelThread: (id: string, as?: string | null) =>
-    request<ChannelThread>(`/social/channels/${encodeURIComponent(id)}${voice(as)}`),
+  /** `light` is the refresh while a room is open: the posts only, without the shop's item list. */
+  channelThread: (id: string, as?: string | null, light = false) => {
+    const base = `/social/channels/${encodeURIComponent(id)}${voice(as)}`;
+    return request<ChannelThread>(light ? `${base}${base.includes('?') ? '&' : '?'}light=1` : base);
+  },
   pinPost: (channelId: string, id: string) =>
     post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
   createPost: (body: {
@@ -2422,7 +2449,8 @@ export const api = {
   deletePost: (channelId: string, id: string) =>
     post<{ deleted: string }>(`${postPath(channelId, id)}/delete`),
   forums: () => request<ForumsResponse>('/social/forums'),
-  joinForum: (id: string) => post<{ forum: ForumRow }>(`/social/forums/${encodeURIComponent(id)}/join`),
+  joinForum: (id: string, join: boolean) =>
+    post<{ forum: ForumRow }>(`/social/forums/${encodeURIComponent(id)}/join`, { join }),
   socialSearch: (q: string) => request<SocialSearchResult>(`/social/search?q=${encodeURIComponent(q)}`),
 
   wants: (options: { category?: string; q?: string } = {}) => {

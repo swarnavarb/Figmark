@@ -6863,6 +6863,18 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 .chthread { display: grid; gap: 3px; padding-bottom: 8px; }
 .chday { display: flex; justify-content: center; margin: 14px 0 8px; }
+/* Paging back through a long conversation. */
+.chmore {
+  display: block; margin: 6px auto 4px; padding: 6px 14px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text-dim);
+  font-size: var(--t-xs); cursor: pointer;
+}
+.chmore:disabled { opacity: 0.6; cursor: default; }
+.dmactions { display: inline-flex; align-items: center; gap: 6px; }
+.dmactions .iconbtn { width: 34px; height: 34px; border-color: transparent; background: rgba(255, 255, 255, 0.16); color: inherit; }
+.chrow__muted { display: inline-grid; place-items: center; color: var(--text-faint); opacity: 0.8; }
+.cbar--blocked { display: grid; justify-items: center; gap: 8px; padding: 14px; text-align: center; color: var(--text-dim); font-size: var(--t-sm); }
 .chday span {
   padding: 3px 12px; border-radius: var(--r-pill);
   background: var(--surface-2); color: var(--text-dim);

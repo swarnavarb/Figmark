@@ -12,6 +12,8 @@ import { can } from '../../../shared/stores.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { ownPhotos } from '../storage/index.js';
+import { tooFast } from '../rate-limit.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { notify } from './notify.js';
@@ -328,24 +330,6 @@ function gist(text: string): string {
   return line.length > 60 ? `${line.slice(0, 57)}…` : line || 'your post';
 }
 
-/**
- * Photo addresses a post may carry.
- *
- * Only what the upload route hands back, or a plain https link. Anything else
- * - a data URL, a javascript: link - is somebody putting something in an
- * <img> that the upload route exists to have vetted.
- */
-function cleanPhotos(value: unknown): string[] | null {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) return null;
-  const urls = value.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean);
-  if (urls.length > POST_MAX_PHOTOS) return null;
-  const ok = urls.every(
-    (url) => url.length <= 500 && (/^\/api\/photos\/[\w.-]+$/.test(url) || /^https:\/\/[^\s"'<>]+$/.test(url)),
-  );
-  return ok ? urls : null;
-}
-
 /** The viewer speaking as themselves, for reads that have no voice to choose. */
 function personActor(user: Viewer): Actor {
   return { userId: user.id, storeId: null, key: user.id, name: user.displayName };
@@ -369,6 +353,10 @@ async function withoutShops(posts: Post[], repository: Repo): Promise<Post[]> {
 
 /** Said when a shop tries to take part in a forum. */
 const MAX_ALSO_FORUMS = 2;
+/** Forums one person may open while the total is capped. */
+const FORUMS_PER_PERSON = 2;
+const FORUM_NAME_MAX = 60;
+const FORUM_ABOUT_MAX = 200;
 const shopsStayOut = () => error(403, 'people_only', 'Forums are for people. Switch to your profile to take part.');
 /** A shop has one room - its own. In anybody else's channel you are a customer. */
 const shopsStayHome = () => error(403, 'people_only', 'Only people read and write in other shops\' channels. Switch to your profile.');
@@ -386,7 +374,7 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
 
   const followed = await repository.listFollowedSellerIds(user.id);
   const channelIds = [...new Set([...followed, user.id])];
-  const posts = await repository.listPostsForChannels(channelIds);
+  const posts = await repository.listPostsForChannels(channelIds, 60, { feedOnly: true });
   // Channel messages stay in their channel. A post written before the two were
   // separate carries no reach and was a broadcast, so absent reads as 'feed'.
   const broadcast = posts.filter((post) => (post.reach ?? 'feed') === 'feed');
@@ -451,6 +439,8 @@ const RISING_WINDOW_MS = 48 * 3_600_000;
 const RISING_SEED_PERCENT = 15;
 /** Different people engaging before a new post is shown to everyone. */
 const RISING_GRADUATE = 3;
+/** Followed posts per page of the home feed. */
+const HOME_PAGE = 40;
 /** One followed post, then one found post, in this rhythm. */
 const DISCOVER_EVERY = 3;
 
@@ -506,11 +496,14 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   const actor = await actorFor(request, user, repository);
   if (!actor) return notYours();
 
+  // `before` is the next page: older followed posts only. What is catching on
+  // is chosen once, on the first page, so it is not offered twice.
+  const before = request.query?.get('before') || undefined;
   const followed = await repository.listFollowedSellerIds(user.id);
   const followedSet = new Set(followed);
   const [ownFeed, recent] = await Promise.all([
-    repository.listPostsForChannels([...new Set([...followed, user.id])]),
-    repository.listRecentPosts(200),
+    repository.listPostsForChannels([...new Set([...followed, user.id])], HOME_PAGE, { before, feedOnly: true }),
+    before ? Promise.resolve([] as Post[]) : repository.listRecentPosts(200),
   ]);
   const now = Date.now();
   const scores = new Map(recent.map((post) => [post.id, heat(post, now)]));
@@ -543,7 +536,7 @@ async function home(request: HttpRequest, _context: InvocationContext) {
     if (proven || tried) risingIds.add(post.id);
   }
 
-  const followedPosts = ownFeed.filter((post) => (post.reach ?? 'feed') === 'feed');
+  const followedPosts = ownFeed;
   const inFeed = new Set(followedPosts.map((post) => post.id));
   // Trending first, hottest first; then rising, proven before merely tried.
   const found = [
@@ -563,6 +556,8 @@ async function home(request: HttpRequest, _context: InvocationContext) {
 
   const cards = await decorate(merged, repository, actor, { followed: followedSet });
   return json(200, {
+    /** Pass back as `before` for the next page; null when there is none. */
+    next: ownFeed.length === HOME_PAGE ? ownFeed.at(-1)!.createdAt : null,
     posts: cards.map((card) => {
       const badges: Boost[] = [];
       if (trendingIds.has(card.post.id)) badges.push('trending');
@@ -656,10 +651,7 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   // would fill this list with rooms nobody has any reason to open.
   const shops = candidates.filter((account: User) => account.sellerProfile);
 
-  const rowFor = async (seller: User) => {
-    // The newest few, not one: the app counts what arrived since you last
-    // looked, and it needs the times to do it without a read receipt per room.
-    const posts = await repository.listPosts(seller.id, 20);
+  const rowFrom = (seller: User, posts: Post[]) => {
     const latest = posts[0] ?? null;
     return {
       sellerId: seller.id,
@@ -680,7 +672,9 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
     };
   };
 
-  const rows = await Promise.all(shops.map(rowFor));
+  // The newest few per room, not one: the app counts what arrived since you
+  // last looked, and it needs the times to do it without a read receipt per room.
+  const rows = await Promise.all(shops.map(async (seller) => rowFrom(seller, await repository.listPosts(seller.id, 20))));
   // Yours on top, then whoever spoke most recently.
   rows.sort(
     (a, b) => Number(b.mine) - Number(a.mine) || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''),
@@ -688,9 +682,21 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
 
   // Rooms you are not in yet, busiest first: a channel list that only ever
   // shows what you already chose never grows.
-  const strangers = owners.filter((owner) => owner.sellerProfile && !mineToo.includes(owner.id));
-  const discover = (await Promise.all(strangers.map(rowFor)))
-    .filter((row) => row.lastPostAt)
+  // Read from the newest posts anywhere - one shared, cached window - rather
+  // than a query per shop on the platform: a room nobody has spoken in lately
+  // is not one to recommend anyway.
+  const strangers = new Map(owners
+    .filter((owner) => owner.sellerProfile && !mineToo.includes(owner.id))
+    .map((owner) => [owner.id, owner]));
+  const byRoom = new Map<string, Post[]>();
+  for (const post of await repository.listRecentPosts(200)) {
+    if (post.channel !== 'seller' || !strangers.has(post.channelId)) continue;
+    const list = byRoom.get(post.channelId) ?? [];
+    if (list.length < 20) list.push(post);
+    byRoom.set(post.channelId, list);
+  }
+  const discover = [...byRoom.entries()]
+    .map(([id, posts]) => rowFrom(strangers.get(id)!, posts))
     .sort((a, b) => b.recent.length - a.recent.length || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''))
     .slice(0, 8);
 
@@ -734,7 +740,8 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
   // What the shop could put in front of its followers without leaving the
   // channel to go and find it. Only for whoever runs it - nobody else has a
   // reason to see an unsorted list of somebody's stock.
-  const shareable = mine
+  const light = request.query?.get('light') === '1';
+  const shareable = mine && !light
     ? (await repository.listListings({ sellerId: channelId, limit: 30 })).map((listing) => ({
         id: listing.id,
         title: listing.title,
@@ -808,7 +815,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const photoUrls = cleanPhotos(body.photoUrls);
+  const photoUrls = await ownPhotos(body.photoUrls, POST_MAX_PHOTOS);
   if (!photoUrls) {
     return error(400, 'invalid_post', `Up to ${POST_MAX_PHOTOS} photos, uploaded here first.`);
   }
@@ -816,6 +823,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   const text = body.body?.trim() ?? '';
   if (!text && photoUrls.length === 0) return error(400, 'invalid_post', 'Write something first.');
   if (text.length > 2000) return error(400, 'invalid_post', 'Keep a post under 2000 characters.');
+  const slow = tooFast(user.id, 'post');
+  if (slow) return slow;
 
   let poll: StoredPoll | null = null;
   if (body.poll) {
@@ -1137,6 +1146,8 @@ async function react(request: HttpRequest, _context: InvocationContext) {
   if (body.kind !== null && !isReaction(body.kind)) {
     return error(400, 'invalid_reaction', 'No such reaction.');
   }
+  const slow = tooFast(user.id, 'react');
+  if (slow) return slow;
 
   let firstTime = false;
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
@@ -1209,6 +1220,8 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   if (text.length > COMMENT_MAX_CHARS) {
     return error(400, 'invalid_comment', `Keep a comment under ${COMMENT_MAX_CHARS} characters.`);
   }
+  const slow = tooFast(user.id, 'comment');
+  if (slow) return slow;
 
   let parent: StoredComment | null = null;
   let answering: StoredComment | null = null;
@@ -1283,6 +1296,8 @@ async function likeComment(request: HttpRequest, _context: InvocationContext) {
   if (!post.comments?.some((comment) => comment.id === commentId)) {
     return error(404, 'not_found', 'That comment is not there any more.');
   }
+  const slow = tooFast(user.id, 'react');
+  if (slow) return slow;
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => ({
     ...current,
@@ -1348,6 +1363,8 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
   if (body.mode !== 'repost' && body.mode !== 'link') {
     return error(400, 'invalid_share', 'Share as a repost or as a link.');
   }
+  const slow = tooFast(user.id, body.mode === 'repost' ? 'post' : 'share');
+  if (slow) return slow;
 
   // A repost of a repost passes on the original, not the wrapper around it.
   const source = post.repostOf ? await repository.getPost(post.repostOf.channelId, post.repostOf.postId) : post;
@@ -1430,6 +1447,8 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
   if (post.poll.closesAt && post.poll.closesAt < new Date().toISOString()) {
     return error(409, 'poll_closed', 'Voting on this one has closed.');
   }
+  const slow = tooFast(user.id, 'react');
+  if (slow) return slow;
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
     if (!current.poll) return null;
@@ -1527,9 +1546,14 @@ async function joinForum(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const forum = request.params.id ? await repository.getForum(request.params.id) : null;
   if (!forum) return error(404, 'not_found', 'No such forum.');
+  // Say which: `{ join: true }` or `{ join: false }`, so a double tap cannot
+  // join and leave again. A bare call still toggles, for older clients.
+  const wanted = (await readJson<{ join?: unknown }>(request))?.join;
   const members = new Set(forum.memberIds ?? []);
-  if (members.has(user.id)) members.delete(user.id);
-  else members.add(user.id);
+  const join = typeof wanted === 'boolean' ? wanted : !members.has(user.id);
+  if (join === members.has(user.id)) return json(200, { forum: forumRow(forum, user.id) });
+  if (join) members.add(user.id);
+  else members.delete(user.id);
   forum.memberIds = [...members];
   forum.updatedAt = new Date().toISOString();
   const saved = await repository.saveForum(forum);
@@ -1612,12 +1636,23 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const name = body.name?.trim();
+  const name = body.name?.trim().replace(/\s+/g, ' ');
   if (!name) return error(400, 'invalid_forum', 'Give the forum a name.');
+  if (name.length > FORUM_NAME_MAX) return error(400, 'invalid_forum', `Keep the name under ${FORUM_NAME_MAX} characters.`);
+  const description = body.description?.trim() ?? '';
+  if (description.length > FORUM_ABOUT_MAX) {
+    return error(400, 'invalid_forum', `Keep the description under ${FORUM_ABOUT_MAX} characters.`);
+  }
   if (request.query?.get('as')) return shopsStayOut();
 
   const repository = await getRepository();
   const existing = await repository.listForums();
+  // The cap is everybody's, so nobody gets to spend all of it. Operators
+  // seed the rooms and are not counted.
+  if (!user.capabilities?.isAdmin
+    && existing.filter((forum) => forum.createdBy === user.id).length >= FORUMS_PER_PERSON) {
+    return error(409, 'forum_limit_reached', `You can open ${FORUMS_PER_PERSON} forums while they are being built out.`);
+  }
   if (existing.length >= FORUM_CAP) {
     return error(
       409,
@@ -1633,7 +1668,7 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
   const forum: Forum = {
     id: `frm_${randomUUID().slice(0, 12)}`,
     name,
-    description: body.description?.trim() ?? '',
+    description,
     createdBy: user.id,
     postCount: 0,
     // Whoever opens a room is in it.
