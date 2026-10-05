@@ -14,7 +14,9 @@ const postHref = (post: { channelId: string; id: string }) =>
 
 export type Destination = 'feed' | 'forum' | 'channel';
 
-export function PostInFigmark({ text, photo, feed = true, asStore = false, onPosted }: {
+interface Speaker { storeId: string | null; name: string }
+
+export function PostInFigmark({ text, photo, feed = true, asStore = false, store = null, onPosted }: {
   /** What the post says to start with; the sharer can change it. */
   text: string;
   /** Uploads the picture that goes with it, if there is one, and says where it went. */
@@ -23,18 +25,36 @@ export function PostInFigmark({ text, photo, feed = true, asStore = false, onPos
   feed?: boolean;
   /** Speaking as a shop: shops stay out of forums and other shops' rooms. */
   asStore?: boolean;
+  /** On the feed, the shop to speak as at first - the sharer can switch to themselves. */
+  store?: string | null;
   onPosted?: (where: Destination) => void;
 }) {
   const [where, setWhere] = useState<Destination>(feed ? 'feed' : asStore ? 'channel' : 'forum');
   const [forums, setForums] = useState<ForumRow[] | null>(null);
   const [channels, setChannels] = useState<ChannelRow[] | null>(null);
   const [room, setRoom] = useState('');
+  // Who the feed post is from: you, or a shop you post for.
+  const [shops, setShops] = useState<Speaker[]>([]);
+  const [speaker, setSpeaker] = useState<string | null>(store);
   const [body, setBody] = useState(text);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [posted, setPosted] = useState<{ href: string; label: string } | null>(null);
 
   useEffect(() => setBody(text), [text]);
+
+  useEffect(() => {
+    if (!feed) return undefined;
+    let live = true;
+    void api.stores()
+      .then((result) => {
+        if (live) setShops(result.stores.filter((row) => row.permissions.includes('posts')).map((row) => ({ storeId: row.ownerId, name: row.name })));
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [feed]);
+  // A shop you no longer post for falls back to you.
+  const from = shops.some((shop) => shop.storeId === speaker) ? speaker : null;
 
   // The rooms are only asked for once somebody picks that kind of place.
   useEffect(() => {
@@ -65,9 +85,9 @@ export function PostInFigmark({ text, photo, feed = true, asStore = false, onPos
       const { post } = await api.createPost({
         body: body.trim(),
         photoUrls: url ? [url] : [],
-        ...(where === 'forum' ? { forumId: picked } : where === 'channel' ? { channelId: picked } : {}),
+        ...(where === 'forum' ? { forumId: picked } : where === 'channel' ? { channelId: picked } : from ? { storeId: from } : {}),
       });
-      const label = where === 'feed' ? 'your feed' : options.find((option) => option.id === picked)?.label.replace(/ \(yours\)$/, '') ?? 'there';
+      const label = where === 'feed' ? (from ? `the feed as ${shops.find((shop) => shop.storeId === from)?.name ?? 'the shop'}` : 'your feed') : options.find((option) => option.id === picked)?.label.replace(/ \(yours\)$/, '') ?? 'there';
       setPosted({ href: postHref(post), label });
       onPosted?.(where);
     } catch (err) {
@@ -87,7 +107,7 @@ export function PostInFigmark({ text, photo, feed = true, asStore = false, onPos
   }
 
   const places: { id: Destination; label: string }[] = [
-    ...(feed ? [{ id: 'feed' as const, label: 'My feed' }] : []),
+    ...(feed ? [{ id: 'feed' as const, label: shops.length > 0 ? 'Feed' : 'My feed' }] : []),
     ...(asStore ? [] : [{ id: 'forum' as const, label: 'A forum' }]),
     { id: 'channel', label: 'A channel' },
   ];
@@ -102,6 +122,17 @@ export function PostInFigmark({ text, photo, feed = true, asStore = false, onPos
           </button>
         ))}
       </div>
+      {where === 'feed' && shops.length > 0 && (
+        <div className="pif__as" role="radiogroup" aria-label="Post as">
+          <span className="pif__aslabel">Post as</span>
+          {[{ storeId: null, name: 'Me' } as Speaker, ...shops].map((option) => (
+            <button key={option.storeId ?? 'me'} type="button" role="radio" aria-checked={from === option.storeId}
+              className={`pif__place${from === option.storeId ? ' is-on' : ''}`} onClick={() => setSpeaker(option.storeId)}>
+              {option.storeId ? option.name : 'Me'}
+            </button>
+          ))}
+        </div>
+      )}
       {where !== 'feed' && (
         rooms === null ? (
           <p className="pif__hint">Finding your {where === 'forum' ? 'forums' : 'channels'}…</p>
@@ -121,7 +152,7 @@ export function PostInFigmark({ text, photo, feed = true, asStore = false, onPos
       <textarea className="pif__text" rows={3} maxLength={2000} value={body}
         aria-label="What the post says" onChange={(event) => setBody(event.target.value)} />
       <button type="button" className="btn btn--block" disabled={busy || !picked || (!body.trim() && !photo)} onClick={() => void submit()}>
-        {busy ? 'Posting…' : where === 'feed' ? 'Post to my feed' : where === 'forum' ? 'Post in the forum' : 'Post in the channel'}
+        {busy ? 'Posting…' : where === 'feed' ? (from ? 'Post as the shop' : 'Post to my feed') : where === 'forum' ? 'Post in the forum' : 'Post in the channel'}
       </button>
       {error && <p className="notice notice--error">{error}</p>}
     </div>

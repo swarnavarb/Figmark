@@ -13032,6 +13032,8 @@ button.sk-plan__pick { cursor: pointer; }
 .sharesheet__glyph--room { background: var(--grad-hero); }
 .pif { display: grid; gap: 10px; }
 .pif__places { display: flex; gap: 6px; flex-wrap: wrap; }
+.pif__as { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pif__aslabel { font-size: var(--t-xs); color: var(--text-dim); margin-right: 2px; }
 .pif__place {
   flex: 1; min-height: 38px; padding: 0 10px; border-radius: 999px;
   border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-dim);

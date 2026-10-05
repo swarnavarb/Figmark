@@ -270,7 +270,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
           )}
         </div>
         {user && posting && (
-          <PostInFigmark text={text} photo={picture && !carded ? upload : undefined} onPosted={() => sent('post')} />
+          <PostInFigmark text={text} photo={picture && !carded ? upload : undefined} store={spec.storeId ?? null} onPosted={() => sent('post')} />
         )}
         {user ? (
           <p className="shs__note">Sharing counts toward today's quest. Every friend who opens your link, joins or buys earns you more.</p>
