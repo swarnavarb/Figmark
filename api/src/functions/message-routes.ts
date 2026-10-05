@@ -13,6 +13,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
+import { growthXp } from '../../../shared/store-growth.js';
 
 /**
  * The handle namespace, and the messages addressed through it.
@@ -417,6 +418,7 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     preOrders: all.filter((listing) => listing.preOrder).length,
     disputesLost: user.sellerTrust.disputesLost,
     ageDays: Math.floor((now - Date.parse(user.createdAt)) / 86_400_000),
+    growthXp: growthXp(shop?.growth),
   };
   const level = isStore ? storeLevel(facts) : null;
   // Kept on the account so every name elsewhere can wear it without a recount.

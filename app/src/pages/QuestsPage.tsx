@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   CARDS, CARD_SETS, SET_BONUS_XP, type CardDef, type StickerView, type TaskKind, type TaskView,
 } from '@shared/quest';
-import { api, type LeaderRow } from '../api';
+import { api, type InviteSummary, type LeaderRow } from '../api';
+import { useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { SkeletonText } from '../components/Feedback';
 import {
   CardFace, CardSheet, CardSlot, Glyph, LevelRing, Sticker, StickerSheet, XpBar, useQuest,
@@ -100,6 +101,8 @@ export function QuestsPage() {
         </section>
       )}
 
+      <InvitePanel level={view.level} title={view.title} />
+
       {/* The quest board as an arcade cabinet: the tasks are the HUD, and a
           little space shooter plays underneath. Clearing one fires a burst. */}
       <section className="qpanel qarcade">
@@ -125,11 +128,11 @@ export function QuestsPage() {
         </ul>
         <p className="faint qtasks__note">
           {tab === 'daily'
-            ? 'Check in and Reveal are there every day; the other two change daily. They reset at midnight, India time.'
+            ? 'Check in, Reveal and Share a find are there every day; the other two change daily. They reset at midnight, India time.'
             : tab === 'weekly'
-              ? 'Five check-ins every week, plus three that change each Monday.'
+              ? 'Five check-ins and two people opening your links every week, plus three that change each Monday.'
               : tab === 'monthly'
-                ? 'Bigger goals, bigger rewards. A new three on the 1st of every month.'
+                ? 'Bring a friend every month, plus three bigger goals that change on the 1st.'
                 : 'Each milestone pays once and comes with a card pack - then the next, bigger step appears.'}
         </p>
       </section>
@@ -222,6 +225,82 @@ export function QuestsPage() {
       )}
       {openSticker && <StickerSheet sticker={openSticker} whose="mine" onClose={() => setOpenSticker(null)} />}
     </main>
+  );
+}
+
+/**
+ * Invite & earn: the two people worth bringing - a friend who will buy, and a
+ * seller who will open a shop - each with a picture made to send them.
+ */
+function InvitePanel({ level, title }: { level: number; title: string }) {
+  const [summary, setSummary] = useState<InviteSummary | null>(null);
+  const { open, sheet } = useShareSheet();
+
+  useEffect(() => {
+    void api.myInvite().then(setSummary).catch(() => setSummary(null));
+  }, []);
+
+  const friend: ShareSpec = {
+    kind: 'invite',
+    moment: {
+      level: { level, title }, title: 'Join me on Figmark', detail: 'Group buys · escrow · card packs',
+      headline: 'Come shop with me', cta: 'Join with my invite',
+    },
+    link: { to: 'invite' },
+    caption: 'Join me on Figmark - group buys from import resellers, escrow-protected, and you collect cards as you shop. Here is my invite:',
+    target: summary?.code ?? null,
+  };
+  const seller: ShareSpec = {
+    kind: 'invite_seller',
+    moment: {
+      title: 'Open your shop', detail: 'Group buys · tracking · escrow · affiliates',
+      headline: 'Sell with me on Figmark', cta: 'Open a shop with my invite',
+    },
+    link: { to: 'invite', seller: true },
+    caption: 'Selling imports? Run your group buys on Figmark - order manifests, tracking your buyers can see, escrow, and people who share your items for a commission. Open a shop with my invite:',
+    target: summary?.code ?? null,
+  };
+
+  return (
+    <section className="qpanel qinv" id="invite">
+      <div className="qpanel__head">
+        <h3><Glyph name="gift" size={15} /> Invite &amp; earn</h3>
+        {summary && <span className="faint">{summary.joined} joined · {summary.sellers} shops</span>}
+      </div>
+      <p className="qinv__lead">
+        Every friend who joins with your link climbs Ambassador; every seller who opens a shop climbs Talent Scout.
+        Anybody opening what you share counts for Promoter and this week's quest.
+      </p>
+      <div className="qinv__cards">
+        <button type="button" className="qinv__card qinv__card--friend" onClick={() => open(friend)}>
+          <span className="qinv__emoji" aria-hidden="true">💌</span>
+          <b>Invite a friend</b>
+          <small>WhatsApp, Status or a story · XP when they join</small>
+        </button>
+        <button type="button" className="qinv__card qinv__card--seller" onClick={() => open(seller)}>
+          <span className="qinv__emoji" aria-hidden="true">🚀</span>
+          <b>Invite a seller</b>
+          <small>They open a shop, you level up</small>
+        </button>
+      </div>
+      {summary && (
+        <div className="qinv__stats">
+          <span className="qinv__stat"><b>{summary.opens}</b><small>link opens</small></span>
+          <span className="qinv__stat"><b>{summary.joined}</b><small>friends joined</small></span>
+          <span className="qinv__stat"><b>{summary.sellers}</b><small>shops opened</small></span>
+        </div>
+      )}
+      {summary && summary.recent.length > 0 && (
+        <ul className="qinv__recent">
+          {summary.recent.map((person) => (
+            <li key={`${person.name}-${person.at}`} className={person.seller ? 'is-seller' : undefined}>
+              {person.handle ? <Link to={`/${person.handle}`}>{person.name}</Link> : person.name}{person.seller ? ' · shop' : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+      {sheet}
+    </section>
   );
 }
 

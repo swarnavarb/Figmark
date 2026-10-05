@@ -5,12 +5,18 @@ import { getAuthService } from '../auth/index.js';
 import { error, handler, json } from './http.js';
 import { getRepository } from '../data/index.js';
 import { claimCookieReferrals } from '../affiliate.js';
+import { claimInvite } from '../share.js';
 
-/** A referral link followed before signing in now belongs to this account. */
+/**
+ * A referral link followed before signing in now belongs to this account, and
+ * a brand-new account is filed under whoever invited it.
+ */
 async function claimReferrals(request: HttpRequest, userId: string | undefined): Promise<void> {
   if (!userId) return;
   try {
-    await claimCookieReferrals(await getRepository(), request, userId);
+    const repository = await getRepository();
+    await claimCookieReferrals(repository, request, userId);
+    await claimInvite(repository, request, userId);
   } catch {
     // Never let a referral stand between somebody and their account.
   }

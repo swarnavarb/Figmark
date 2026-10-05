@@ -57,6 +57,9 @@ const QuestsPage = page(() => import('./pages/QuestsPage'), 'QuestsPage');
 const LearnPage = page(() => import('./pages/LearnPage'), 'LearnPage');
 const ProfileByHandlePage = page(() => import('./pages/ProfileByHandlePage'), 'ProfileByHandlePage');
 const ShortLinkPage = page(() => import('./pages/ShortLinkPage'), 'ShortLinkPage');
+const InvitePage = page(() => import('./pages/InvitePage'), 'InvitePage');
+const SharedItem = page(() => import('./pages/InvitePage'), 'SharedItem');
+const SharedPage = page(() => import('./pages/InvitePage'), 'SharedPage');
 const PowerSaleBuilderPage = page(() => import('./components/PowerSale'), 'PowerSaleBuilderPage');
 
 /**
@@ -87,6 +90,10 @@ function App() {
         <Route path="/listing/:id" element={<ListingPage />} />
         {/* A short affiliate link: resolved, remembered, then the item. */}
         <Route path="/r/:code" element={<ShortLinkPage />} />
+        {/* Shared from the app: an invite, and items and pages that carry one. */}
+        <Route path="/i/:code" element={<InvitePage />} />
+        <Route path="/s/l/:id" element={<SharedItem />} />
+        <Route path="/s/p/:handle" element={<SharedPage />} />
         <Route path="/sell" element={members(<SellPage />)} />
         <Route path="/shop" element={members(<ShopPage />)} />
         <Route path="/shop/power-sale" element={members(<PowerSaleBuilderPage />)} />

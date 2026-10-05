@@ -15,6 +15,18 @@
     {
       "route": "/admin*",
       "rewrite": "/admin.html"
+    },
+    {
+      "route": "/r/*",
+      "rewrite": "/api/og"
+    },
+    {
+      "route": "/i/*",
+      "rewrite": "/api/og"
+    },
+    {
+      "route": "/s/*",
+      "rewrite": "/api/og"
     }
   ],
   "globalHeaders": {

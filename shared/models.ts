@@ -202,6 +202,63 @@ export interface User extends BaseDocument {
   affiliateOrderIds?: string[];
   /** This person's short link code for each item, so sharing twice gives the same link. */
   affiliateLinks?: Record<string, string>;
+  /** This person's invite code, for `/i/<code>`: made the first time they invite anybody. */
+  inviteCode?: string;
+  /** Who brought this account to Figmark, if anybody did. Set once, at sign-up. */
+  invitedBy?: { userId: string; at: string; asSeller?: boolean } | null;
+  /** Accounts that signed up through this person's invite, newest last. */
+  invitees?: { userId: string; at: string }[];
+  /**
+   * Other people opening what this person shared - one row per visitor per
+   * link, so a friend tapping the same link ten times is one open. Counted by
+   * the quests, because a share that reaches nobody is not marketing.
+   */
+  shareOpens?: ShareOpen[];
+  /** Times this person sent something out of the app (WhatsApp, a story, a copied link). */
+  shareLog?: ShareEvent[];
+}
+
+/** Somebody else opening a link this person shared. */
+export interface ShareOpen {
+  at: string;
+  /** What the link was for: an item, an invite, a shop or a person's page. */
+  kind: 'item' | 'invite' | 'shop' | 'profile';
+  /** The item id, shop owner id or handle it pointed at. */
+  target: string;
+  /** A short hash of who opened it, only to keep one visitor one open. */
+  visitor: string;
+}
+
+/** Something this person sent out of the app. */
+export interface ShareEvent {
+  at: string;
+  /** What the picture or link was about. */
+  kind: ShareKind;
+  /** Where it went: WhatsApp, the phone's share sheet, a saved picture, a copied link. */
+  via: 'whatsapp' | 'native' | 'download' | 'copy';
+  target: string | null;
+}
+
+export type ShareKind =
+  | 'item' | 'fill' | 'booked' | 'purchased' | 'delivered' | 'sold' | 'filled'
+  | 'level' | 'card' | 'set' | 'shop' | 'invite' | 'invite_seller' | 'profile';
+
+/**
+ * A shop's growth quests: which it collected, and the Spotlights they paid.
+ * Kept on the shop's profile because the shop - not whichever manager pressed
+ * Claim - earned them.
+ */
+export interface StoreGrowthState {
+  /** `taskId:period` -> when it was claimed. */
+  claimed: Record<string, string>;
+  /** Spotlights earned and not yet spent. */
+  spotlights: number;
+  /** Spent ones, newest last. */
+  spotlightLog?: { listingId: string; at: string; by: string }[];
+  /** Times somebody on the shop sent it out of the app. */
+  shares?: { at: string; kind: ShareKind; by: string }[];
+  /** Visitors who arrived through any shared link to the shop or its items. */
+  opens?: { at: string; visitor: string; target: string }[];
 }
 
 /** One affiliate link somebody arrived through. */
@@ -342,6 +399,8 @@ export interface SellerProfile {
   tags?: string[];
   /** The shop's level as last worked out, so names elsewhere can show it without a recount. */
   levelCache?: number;
+  /** Growth quests and the Spotlights they earned. Absent until the shop first plays. */
+  growth?: StoreGrowthState;
 }
 
 /**

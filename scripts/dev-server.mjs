@@ -15,6 +15,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const staticRoot = join(root, 'app', 'dist');
+// Shared links answer with the built index.html plus their preview tags; read
+// it from disk rather than fetching it from this very server.
+process.env.FIGMARK_SHELL_FILE ??= join(staticRoot, 'index.html');
 const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
@@ -25,6 +28,10 @@ const {
   editListingRoute, deleteListingRoute, similarListingsRoute, affiliateLinkRoute, openShortLinkRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affiliate-routes.js', apiRoot));
+const {
+  logShareRoute, myInviteRoute, openInviteRoute, growthRoute, growthClaimRoute, spotlightRoute,
+} = await import(new URL('share-routes.js', apiRoot));
+const { ogRoute } = await import(new URL('og-routes.js', apiRoot));
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
@@ -132,6 +139,13 @@ const routes = [
   ['GET', '/api/r/:code', openShortLinkRoute],
   ['GET', '/api/me/affiliate', myAffiliateRoute],
   ['POST', '/api/orders/:id/affiliate-paid', markAffiliatePaidRoute],
+  ['POST', '/api/share/log', logShareRoute],
+  ['GET', '/api/invite/me', myInviteRoute],
+  ['GET', '/api/i/:code', openInviteRoute],
+  ['GET', '/api/growth/:ownerId', growthRoute],
+  ['POST', '/api/growth/:ownerId/claim', growthClaimRoute],
+  ['POST', '/api/listings/:id/spotlight', spotlightRoute],
+  ['GET', '/api/og', ogRoute],
   ['POST', '/api/listings/:id/like', toggleLikeRoute],
   ['POST', '/api/listings/:id/edit', editListingRoute],
   ['POST', '/api/listings/:id/delete', deleteListingRoute],
@@ -435,6 +449,21 @@ const server = createServer((request, response) => {
       if (binary) response.end(Buffer.from(result.body));
       else if (result.jsonBody === undefined && typeof result.body === 'string') response.end(result.body);
       else response.end(JSON.stringify(result.jsonBody ?? null));
+      return;
+    }
+
+    // Shared links answer with the app plus their preview tags, the way the
+    // rewrites in staticwebapp.config.json send them to /api/og - and with
+    // the original address in the header Static Web Apps uses for it.
+    if (/^\/(r|i|s)\//.test(url.pathname)) {
+      const headers = new Headers(Object.entries(request.headers).map(([k, v]) => [k, String(v)]));
+      headers.set('x-ms-original-url', `http://${request.headers.host ?? 'localhost'}${url.pathname}${url.search}`);
+      const result = await ogRoute(
+        { headers, query: new URLSearchParams(), params: {}, json: async () => ({}), text: async () => '' },
+        { error: console.error, log: () => {}, warn: console.warn, info: () => {} },
+      );
+      response.writeHead(result.status ?? 200, result.headers ?? {});
+      response.end(result.body);
       return;
     }
 

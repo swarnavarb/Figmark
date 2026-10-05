@@ -21,6 +21,7 @@ import {
   affiliateFor, claimCookieReferrals, offersAffiliate, recordReferral, referralCookie, referralsInCookie,
   resolveShortCode, shortCodeFor, verifyAffiliateToken,
 } from '../affiliate.js';
+import { recordOpen } from '../share.js';
 import { AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor } from '../../../shared/affiliate.js';
 import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
 
@@ -294,7 +295,10 @@ async function openShortLink(request: HttpRequest, _context: InvocationContext) 
     if (account) await recordReferral(repository, account, listing, target.referrerId);
   }
   const cookies = self || !offersAffiliate(listing) ? [] : [referralCookie(request, listing.id, target.referrerId)];
-  return json(200, { listingId: listing.id }, cookies);
+  // Somebody else opening the link is what the sharer's quests count.
+  const counted = await recordOpen(repository, request, target.referrerId,
+    { kind: 'item', target: listing.id, storeOwnerId: listing.sellerId }, viewer?.id ?? null);
+  return json(200, { listingId: listing.id }, [...cookies, ...counted]);
 }
 
 /** Whether this person may manage the shop a listing belongs to. */

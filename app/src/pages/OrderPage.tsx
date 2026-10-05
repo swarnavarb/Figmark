@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex } from '@shared/routes';
-import { REVIEW_REVEAL_DAYS, type OrderSide } from '@shared/orders';
+import { REVIEW_REVEAL_DAYS, isCancelledLike, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
 import type { Order, SellerPaymentDetails } from '@shared/models';
@@ -25,6 +25,7 @@ import { ItemCard, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
+import { MomentBanner, type ShareSpec } from '../components/ShareKit';
 
 /**
  * One order, as the buyer sees it.
@@ -185,6 +186,7 @@ export function OrderPage() {
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
       {acts.dialogs}
+      <OrderMoment data={data} state={state} />
       <CollectionPrompt state={state} />
       <DisputePanel state={state} />
       {/* Cover from the forwarder flying it, and a commission with an artist:
@@ -741,6 +743,78 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
 }
 
 /** Delivered to the buyer: the nudge to put it on a collection shelf. */
+/**
+ * The moment worth showing off on this order, with its picture: a spot booked
+ * in a group buy, a purchase, a delivery - or, for the shop, a sale. Shared
+ * from the moment it happens, when it feels best, which is when it travels.
+ */
+function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }) {
+  const { order, listing } = data;
+  if (order.placedAt === null || !listing || isCancelledLike(order.status) || order.status === 'dispute_raised') return null;
+  const pre = listing.preOrder && listing.preOrder.threshold > 0 ? listing.preOrder : null;
+  const left = pre ? Math.max(0, pre.threshold - pre.joined) : 0;
+  const base = {
+    photo: listing.photoUrl,
+    title: order.itemName,
+    detail: `from ${data.sellerName}`,
+    price: formatMoney(order.unitPriceMinor, order.currency),
+    fill: pre ? { joined: Math.min(pre.joined, pre.threshold), threshold: pre.threshold } : null,
+  };
+
+  if (state.side === 'seller') {
+    const filled = Boolean(pre && left === 0);
+    const kind = filled ? 'filled' as const : 'sold' as const;
+    const spec: ShareSpec = {
+      kind,
+      moment: {
+        ...base,
+        byline: data.sellerName,
+        detail: filled ? 'Group buy full - it ships' : 'More drops on the shop',
+        headline: filled ? 'Group buy filled' : 'Another one sold',
+        cta: filled ? 'Catch the next drop' : 'Shop the next drop',
+      },
+      link: { to: 'item', listingId: listing.id, moment: kind, own: true },
+      caption: filled
+        ? `Group buy full: ${order.itemName} 🏁 Thank you! Follow the shop for the next drop.`
+        : `Just sold: ${order.itemName} 🔥 More drops coming - follow the shop.`,
+      target: listing.id,
+      storeId: order.sellerId,
+    };
+    return <MomentBanner spec={spec} title={filled ? 'It filled! Tell everyone' : 'Sold! Tell your buyers'}
+      note="A sale is the best advert you have. Post it to your Status - it brings the next buyer, and counts for your Grow quests." />;
+  }
+
+  const delivered = order.status === 'delivered';
+  const kind = delivered ? 'delivered' as const : pre ? 'booked' as const : 'purchased' as const;
+  const words = {
+    delivered: {
+      headline: 'Finally landed', cta: 'Find yours on Figmark',
+      caption: `It's here! 📦 ${order.itemName} just arrived - bought on Figmark.`,
+      title: 'It arrived. Show it off', note: 'An unboxing picture is the best thing you can post. Friends who open your link count for your quests.',
+    },
+    booked: {
+      headline: 'I\'m in on this group buy', cta: left > 0 ? 'Join me before it fills' : 'It filled - next drop soon',
+      caption: left > 0
+        ? `I just booked a spot in this group buy on Figmark - ${left} spot${left === 1 ? '' : 's'} left. Join me before it fills 👇`
+        : `I'm in on this group buy on Figmark 🎟`,
+      title: 'You\'re in! Help it fill', note: 'Group buys ship when they fill. Every friend who joins gets it moving - and counts for your quests.',
+    },
+    purchased: {
+      headline: 'Just got mine', cta: 'Get yours on Figmark',
+      caption: `Just picked up ${order.itemName} on Figmark 🛍`,
+      title: 'Secured. Show it off', note: 'Share the picture - friends who open your link, join or buy all count for your quests.',
+    },
+  }[kind];
+  const spec: ShareSpec = {
+    kind,
+    moment: { ...base, headline: words.headline, cta: words.cta },
+    link: { to: 'item', listingId: listing.id, moment: kind, affiliate: Boolean(listing.affiliate) },
+    caption: words.caption,
+    target: listing.id,
+  };
+  return <MomentBanner spec={spec} title={words.title} note={words.note} />;
+}
+
 function CollectionPrompt({ state }: { state: OrderState }) {
   if (state.side !== 'buyer' || state.order.status !== 'delivered') return null;
   const received = state.order.receivedAt;

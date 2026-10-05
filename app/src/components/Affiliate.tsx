@@ -36,12 +36,14 @@ export function ReferredBy({ party, className = '' }: { party: PartyRef; classNa
  * share, so there is nothing in it to edit or trim. A guest sees the offer and
  * is asked to sign in when they reach for it.
  */
-export function AffiliateCard({ listingId, amountMinor, currency, canShare, isOwn }: {
+export function AffiliateCard({ listingId, amountMinor, currency, canShare, isOwn, onShare }: {
   listingId: string;
   amountMinor: number;
   currency: string;
   canShare: boolean;
   isOwn: boolean;
+  /** Open the share sheet instead of copying the bare link: the picture, WhatsApp and the rest. */
+  onShare?: () => void;
 }) {
   const { gate } = useSession();
   const [busy, setBusy] = useState(false);
@@ -104,7 +106,7 @@ export function AffiliateCard({ listingId, amountMinor, currency, canShare, isOw
         {problem && <span className="affcard__problem">{problem}</span>}
       </div>
       <button type="button" className={`btn btn--sm affcard__btn${canShare ? '' : ' is-locked'}`} disabled={busy}
-        onClick={gate(() => share(), 'Sign in to get your own link and earn from sharing it.')}>
+        onClick={gate(() => (onShare ? onShare() : share()), 'Sign in to get your own link and earn from sharing it.')}>
         {!canShare && <span className="lockmark" aria-hidden="true">🔒</span>}
         {busy ? 'Making your link…' : copied ? '✓ Link copied' : '🔗 Share & earn'}
       </button>

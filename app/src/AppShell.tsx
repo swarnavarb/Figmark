@@ -9,6 +9,7 @@ import { Avatar, Icon } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
 import { AuthModal } from './pages/AuthPage';
+import { inviteCodeFor } from './components/ShareKit';
 
 /**
  * Persistent chrome: brand, search, and the Sell action.
@@ -29,6 +30,11 @@ export function AppShell() {
   const social = pathname.startsWith('/social') || pathname.startsWith('/messages/');
   // A room you write in: the tab bar steps aside for the bar you write from.
   const room = pathname.startsWith('/social/c/') || pathname.startsWith('/messages/');
+
+  useInviteParam();
+  // The invite code goes on every link this person shares; ask for it early
+  // so the share sheet never waits on it.
+  useEffect(() => { void inviteCodeFor(user?.id); }, [user?.id]);
 
   // The phone's own status bar takes the social tab's colour, so the header
   // reads as running to the very top of the screen.
@@ -226,4 +232,35 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
       )}
     </div>
   );
+}
+
+/**
+ * A page opened from a shared link carries the sharer's invite as `?i=`.
+ *
+ * The server counts the open for them, and a guest keeps the invite until
+ * they sign up. Then the code comes off the address, so it is not copied on
+ * by accident and does not count twice.
+ */
+function useInviteParam() {
+  const [params] = useSearchParams();
+  const { pathname, state } = useLocation();
+  const navigate = useNavigate();
+  const code = params.get('i');
+
+  useEffect(() => {
+    // `/s/...` is about to become the page itself; count it once it has.
+    if (!code || pathname.startsWith('/i/') || pathname.startsWith('/s/')) return;
+    const item = pathname.match(/^\/listing\/([^/]+)$/);
+    const handle = pathname.match(/^\/([A-Za-z0-9_.]+)$/);
+    const page = item ? { t: 'item' as const, id: decodeURIComponent(item[1]!) }
+      : handle ? { t: 'profile' as const, id: handle[1]! }
+        : null;
+    void api.openInvite(code, page).catch(() => undefined);
+    const rest = new URLSearchParams(params);
+    rest.delete('i');
+    const suffix = rest.toString();
+    navigate(`${pathname}${suffix ? `?${suffix}` : ''}`, { replace: true, state });
+    // Only the code arriving somewhere it can be counted is an event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, pathname.startsWith('/s/')]);
 }

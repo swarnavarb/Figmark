@@ -4,13 +4,14 @@ import {
 import { Link } from 'react-router-dom';
 import {
   CARDS, CARD_ODDS, CARD_SETS, CARD_XP, RARITY_LABELS, SET_BONUS_XP, STICKER_TIER_NAMES,
-  type CardDef, type CardRarity, type QuestView, type RarityTier, type StickerView,
+  titleFor, type CardDef, type CardRarity, type QuestView, type RarityTier, type StickerView,
 } from '@shared/quest';
 import { ApiRequestError, api, type QuestResult } from '../api';
 import { useSession } from '../session';
 import { useToast } from './Feedback';
 import { Confetti } from './Confetti';
 import { Modal } from './ui';
+import { useShareSheet, type ShareSpec } from './ShareKit';
 
 /*
  * The collector game's shared pieces.
@@ -136,7 +137,55 @@ export function QuestProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** What a celebration looks like as a picture to share: the pull, the set it finished, or the level. */
+function celebrationSpec(party: Celebration, view: QuestView | null): ShareSpec | null {
+  const card = party.card;
+  if (card) {
+    const set = view?.sets.find((entry) => entry.id === card.set);
+    const firstCopy = (view?.cards.filter((mine) => mine.id === card.id).length ?? 0) <= 1;
+    if (set?.complete && firstCopy) {
+      return {
+        kind: 'set',
+        moment: { card, title: `${set.name} complete`, detail: `All ${set.total} cards · ${SET_BONUS_XP} XP bonus`, headline: 'Set complete!', cta: 'Start your collection' },
+        link: { to: 'invite' },
+        caption: `Just finished the ${set.name} set on Figmark 🏆 Come collect with me.`,
+        target: card.set,
+      };
+    }
+    const big = card.rarity === 'legendary' || card.rarity === 'epic';
+    return {
+      kind: 'card',
+      moment: {
+        card, title: `From the ${setName(card.set)} set`, detail: `${RARITY_LABELS_CARD[card.rarity]} · only ${CARD_ODDS[card.rarity]}% of packs`,
+        headline: big ? `${RARITY_LABELS_CARD[card.rarity]} pull!` : 'New card pulled', cta: 'Play on Figmark',
+      },
+      link: { to: 'invite' },
+      caption: `Pulled ${card.rarity === 'epic' ? 'an' : 'a'} ${card.rarity} ${card.name} on Figmark 🃏 Only ${CARD_ODDS[card.rarity]}% of packs have one.`,
+      target: card.id,
+    };
+  }
+  if (party.levelAfter > party.levelBefore) {
+    const title = titleFor(party.levelAfter);
+    return {
+      kind: 'level',
+      moment: {
+        level: { level: party.levelAfter, title }, title: `Level ${party.levelAfter} · ${title}`,
+        detail: 'Collector on Figmark', headline: 'Level up!', cta: 'Join me on Figmark',
+      },
+      link: { to: 'invite' },
+      caption: `Just hit level ${party.levelAfter} (${title}) on Figmark ⭐ Come play - group buys, card packs and quests.`,
+      target: String(party.levelAfter),
+    };
+  }
+  return null;
+}
+
+const RARITY_LABELS_CARD: Record<CardRarity, string> = { common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
+
 function CelebrationModal({ party, onClose }: { party: Celebration; onClose: () => void }) {
+  const { view } = useQuest();
+  const { open, sheet } = useShareSheet();
+  const spec = celebrationSpec(party, view);
   const [flipped, setFlipped] = useState(false);
   useEffect(() => {
     const timer = window.setTimeout(() => setFlipped(true), 350);
@@ -172,10 +221,12 @@ function CelebrationModal({ party, onClose }: { party: Celebration; onClose: () 
         )}
         {party.gained > 0 && <p className="qparty__xp">+{party.gained} XP</p>}
         <div className="row" style={{ justifyContent: 'center' }}>
-          {levelled && <Link to="/quests" className="btn" onClick={onClose}>Open Quests</Link>}
+          {spec && <button type="button" className="btn mshare__go" onClick={() => open(spec)}>Share it</button>}
+          {levelled && <Link to="/quests" className="btn btn--quiet" onClick={onClose}>Open Quests</Link>}
           <button type="button" className="btn btn--quiet" onClick={onClose}>Nice</button>
         </div>
       </div>
+      {sheet}
     </Modal>
   );
 }

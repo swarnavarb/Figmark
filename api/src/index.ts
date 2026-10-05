@@ -33,3 +33,5 @@ import './functions/learn-routes.js';
 import './functions/settings-routes.js';
 import './functions/report-routes.js';
 import './functions/affiliate-routes.js';
+import './functions/share-routes.js';
+import './functions/og-routes.js';

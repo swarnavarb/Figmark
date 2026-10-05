@@ -347,10 +347,18 @@ export interface QuestFacts {
   collection: { addedAt: string }[];
   hasBio: boolean;
   hasTags: boolean;
-  /** Items this person made an affiliate link for: sharing is marketing. */
+  /** Items this person made an affiliate link for. Making a link is not sharing it, so this earns nothing on its own. */
   shares: number;
   /** Orders other people placed through their links. */
   referredSales: number;
+  /** Other people opening what this person shared, one per visitor per link. */
+  shareOpens: { createdAt: string }[];
+  /** Times this person sent something out of the app - WhatsApp, a story, a copied link. */
+  sharesSent: { createdAt: string }[];
+  /** Friends who signed up through this person's invite. */
+  invites: { createdAt: string }[];
+  /** Of those, how many opened a shop. */
+  invitedSellers: number;
 }
 
 /** XP for finishing a card set - the reward that gives a set its point. */
@@ -451,7 +459,8 @@ export interface TaskView {
   step?: { index: number; of: number };
 }
 
-type Metric = 'order' | 'preorder' | 'review' | 'save' | 'follow' | 'post' | 'want' | 'collect' | 'checkin';
+type Metric = 'order' | 'preorder' | 'review' | 'save' | 'follow' | 'post' | 'want' | 'collect' | 'checkin'
+  | 'open' | 'sent' | 'invite';
 
 interface MeasureContext {
   facts: QuestFacts;
@@ -472,6 +481,9 @@ function stampsFor(metric: Metric, { facts, state }: MeasureContext): string[] {
     case 'want': return facts.wants.map((want) => want.createdAt);
     case 'collect': return facts.collection.map((item) => item.addedAt);
     case 'checkin': return state.checkIns.map((day) => `${day}T12:00:00+05:30`);
+    case 'open': return facts.shareOpens.map((open) => open.createdAt);
+    case 'sent': return facts.sharesSent.map((sent) => sent.createdAt);
+    case 'invite': return facts.invites.map((invite) => invite.createdAt);
   }
 }
 
@@ -536,10 +548,29 @@ const CHECKIN5: Template = {
   metric: 'checkin', goal: 5, href: null,
 };
 
+/*
+ * Marketing, there every period rather than drawn from a pool: bringing other
+ * people in is what a marketplace runs on, so it is never a week off. Sending
+ * is the daily habit; the weekly and monthly ones only count what actually
+ * reached somebody - a link opened by another person, a friend who joined.
+ */
+const SHARE_DAILY: Template = {
+  key: 'share1', title: 'Share a find', blurb: 'Send an item, a haul or your shop to WhatsApp, a story or a friend.',
+  metric: 'sent', goal: 1, href: '/',
+};
+const OPENS_WEEKLY: Template = {
+  key: 'opens2', title: 'Two people opened your links', blurb: 'Share something good enough that two people tap it this week.',
+  metric: 'open', goal: 2, href: '/',
+};
+const INVITE_MONTHLY: Template = {
+  key: 'invite1', title: 'Bring a friend', blurb: 'Someone joins Figmark with your invite link this month.',
+  metric: 'invite', goal: 1, href: '/quests#invite',
+};
+
 interface Ladder {
   key: string;
   name: string;
-  metric: Metric | 'streak' | 'profile' | 'share' | 'refer';
+  metric: Metric | 'streak' | 'profile' | 'refer' | 'scout';
   steps: number[];
   blurb: (goal: number) => string;
   href: string | null;
@@ -548,10 +579,15 @@ interface Ladder {
 /* Milestones repeat with bigger numbers: finish one step and the next appears. */
 const LADDERS: readonly Ladder[] = [
   // Marketing first: bringing other people in is what a marketplace runs on.
-  { key: 'shares', name: 'Promoter', metric: 'share', steps: [1, 5, 15, 40],
-    blurb: (n) => (n === 1 ? 'Copy an affiliate link for an item and share it.' : `Share ${n} items with your affiliate link.`), href: '/?view=earn' },
+  // The key stays `shares` so steps collected before opens were counted keep their XP.
+  { key: 'shares', name: 'Promoter', metric: 'open', steps: [1, 5, 15, 40],
+    blurb: (n) => (n === 1 ? 'Share a link that somebody else opens.' : `${n} people open links you shared.`), href: '/?view=earn' },
   { key: 'referrals', name: 'Rainmaker', metric: 'refer', steps: [1, 5, 15, 40],
     blurb: (n) => (n === 1 ? 'Get someone to buy through your link.' : `${n} sales through your links.`), href: '/?view=earn' },
+  { key: 'invites', name: 'Ambassador', metric: 'invite', steps: [1, 5, 15, 40],
+    blurb: (n) => (n === 1 ? 'A friend joins Figmark with your invite.' : `${n} friends join with your invite.`), href: '/quests#invite' },
+  { key: 'scouts', name: 'Talent Scout', metric: 'scout', steps: [1, 3, 10],
+    blurb: (n) => (n === 1 ? 'Invite a seller who opens a shop here.' : `${n} sellers you invited open shops.`), href: '/quests#invite' },
   { key: 'orders', name: 'Haul Hunter', metric: 'order', steps: [1, 5, 10, 25, 50, 100],
     blurb: (n) => (n === 1 ? 'Place your first order.' : `Place ${n} orders in total.`), href: '/' },
   { key: 'preorders', name: 'Backer', metric: 'preorder', steps: [1, 5, 10, 25],
@@ -582,7 +618,7 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
  */
 interface KnownTask { kind: TaskKind; xp: number; title: string; pack: boolean }
 const KNOWN = new Map<string, KnownTask>();
-for (const [kind, pool] of [['daily', DAILY_POOL], ['weekly', [...WEEKLY_POOL, CHECKIN5]], ['monthly', MONTHLY_POOL]] as const) {
+for (const [kind, pool] of [['daily', [...DAILY_POOL, SHARE_DAILY]], ['weekly', [...WEEKLY_POOL, CHECKIN5, OPENS_WEEKLY]], ['monthly', [...MONTHLY_POOL, INVITE_MONTHLY]]] as const) {
   for (const template of pool) KNOWN.set(`${kind}-${template.key}`, { kind, xp: TASK_XP[kind], title: template.title, pack: false });
 }
 for (const ladder of LADDERS) {
@@ -627,7 +663,7 @@ function known(taskId: string): KnownTask | null {
 const UNDOABLE: ReadonlySet<Ladder['metric']> = new Set(['save', 'follow']);
 
 const TEMPLATE_BY_ID = new Map<string, { kind: TaskKind; template: Template }>();
-for (const [kind, pool] of [['daily', DAILY_POOL], ['weekly', [...WEEKLY_POOL, CHECKIN5]], ['monthly', MONTHLY_POOL]] as const) {
+for (const [kind, pool] of [['daily', [...DAILY_POOL, SHARE_DAILY]], ['weekly', [...WEEKLY_POOL, CHECKIN5, OPENS_WEEKLY]], ['monthly', [...MONTHLY_POOL, INVITE_MONTHLY]]] as const) {
   for (const template of pool) TEMPLATE_BY_ID.set(`${kind}-${template.key}`, { kind, template });
 }
 
@@ -684,8 +720,8 @@ function view(
 function ladderProgress(ladder: Ladder, context: MeasureContext): number {
   if (ladder.metric === 'streak') return context.streak.best;
   if (ladder.metric === 'profile') return Number(context.facts.hasBio) + Number(context.facts.hasTags);
-  if (ladder.metric === 'share') return context.facts.shares;
   if (ladder.metric === 'refer') return context.facts.referredSales;
+  if (ladder.metric === 'scout') return context.facts.invitedSellers;
   return countIn(ladder.metric, 'milestone', context);
 }
 
@@ -703,11 +739,14 @@ function tasksFor(context: MeasureContext): TaskView[] {
     id: 'daily-reveal', kind: 'daily', title: 'Reveal today\'s loot', blurb: 'Flip the daily drop for a free card.',
     xp: 15, progress: revealed ? 1 : 0, goal: 1, done: revealed, claimed: revealed, claimable: false, href: null, pack: false,
   });
+  tasks.push(view(context, 'daily', SHARE_DAILY));
   for (const template of pick(DAILY_POOL, 2, `daily|${dayKey(now)}`)) tasks.push(view(context, 'daily', template));
 
   tasks.push(view(context, 'weekly', CHECKIN5));
+  tasks.push(view(context, 'weekly', OPENS_WEEKLY));
   for (const template of pick(WEEKLY_POOL, 3, `weekly|${weekKey(now)}`)) tasks.push(view(context, 'weekly', template));
 
+  tasks.push(view(context, 'monthly', INVITE_MONTHLY));
   for (const template of pick(MONTHLY_POOL, 3, `monthly|${monthKey(now)}`)) tasks.push(view(context, 'monthly', template));
 
   // Milestones: the lowest step on each ladder not yet collected.
@@ -781,6 +820,14 @@ interface StickerDef {
 }
 
 const STICKERS: readonly StickerDef[] = [
+  { id: 'ambassador', name: 'Ambassador', hue: 'pink', glyph: 'heart', tiers: [1, 10, 40],
+    meaning: 'Brings people to Figmark: friends and shops joined through their invite.',
+    how: 'Friends who sign up with your invite: bronze at 1, silver at 10, gold at 40.',
+    have: ({ facts }) => facts.invites.length },
+  { id: 'promoter', name: 'Promoter', hue: 'aqua', glyph: 'bolt', tiers: [5, 50, 250],
+    meaning: 'Shares finds people actually open - the reason half the market hears about a drop.',
+    how: 'People opening links you shared: bronze at 5, silver at 50, gold at 250.',
+    have: ({ facts }) => facts.shareOpens.length },
   { id: 'haul', name: 'Haul Hunter', hue: 'gold', glyph: 'bag', tiers: [1, 10, 50],
     meaning: 'A real, active buyer. Sellers can see this person actually buys, not just browses.',
     how: 'Place orders: bronze at 1, silver at 10, gold at 50.',
@@ -931,8 +978,10 @@ function recordXp(facts: QuestFacts): XpLine[] {
   const line = (label: string, count: number) => ({ label, xp: actionXp(count), detail: `${count} × ${ACTION_XP}, up to ${ACTION_CAP}` });
 
   return [
-    line('Items shared with your link', facts.shares),
+    line('People who opened your links', facts.shareOpens.length),
     line('Sales through your links', facts.referredSales),
+    line('Friends who joined with your invite', facts.invites.length),
+    { label: 'Shops you brought in', xp: actionXp(facts.invitedSellers, ACTION_XP * 5), detail: `${facts.invitedSellers} × ${ACTION_XP * 5}, up to ${ACTION_CAP}` },
     line('Orders placed', facts.orders.length),
     line('Pre-orders joined', preOrders),
     line('Reviews written', facts.reviewsWritten.length),

@@ -14,7 +14,8 @@ import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CardButton, SerialButton } from '@shared/buttons';
-import type { MergedRating, StoreLevel } from '@shared/storefront';
+import type { LevelTag, MergedRating, StoreLevel } from '@shared/storefront';
+import type { GrowthView } from '@shared/store-growth';
 import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { LotBuyerPhase } from '@shared/fulfilment';
@@ -27,7 +28,7 @@ import type {
 import type { DisputeAction } from '@shared/disputes';
 import type { Allocation, OrderMoney } from '@shared/payments';
 import type { CardDef, QuestView, StickerView } from '@shared/quest';
-import type { CollectionGroup, CollectionItem } from '@shared/models';
+import type { CollectionGroup, CollectionItem, ShareEvent, ShareKind } from '@shared/models';
 import type { LearnDoc } from '@shared/learn';
 import type { AffiliateEarningStatus } from '@shared/affiliate';
 
@@ -414,6 +415,27 @@ export interface LotContents {
   totals: { lines: number; units: number; weightGrams: number; valueMinor: number };
 }
 
+export interface InviteSummary {
+  code: string;
+  path: string;
+  sellerPath: string;
+  joined: number;
+  sellers: number;
+  opens: number;
+  recent: { name: string; handle: string | null; seller: boolean; at: string }[];
+}
+
+export interface InviteOpen {
+  inviter: {
+    name: string;
+    handle: string | null;
+    shop: { name: string; handle: string | null } | null;
+    levelTag: LevelTag;
+  };
+  asSeller: boolean;
+  self: boolean;
+}
+
 export interface OrderTracking {
   order: Order;
   stages: FulfilmentStage[];
@@ -443,7 +465,11 @@ export interface OrderTracking {
   trackingReference: string | null;
   estimatedDispatchAt: string | null;
   /** The item bought, as it is now - for the Details tab's product card. */
-  listing: { id: string; title: string; photoUrl: string | null } | null;
+  listing: {
+    id: string; title: string; photoUrl: string | null;
+    preOrder?: { joined: number; threshold: number; cutoffAt: string } | null;
+    affiliate?: boolean;
+  } | null;
 }
 
 /* ── The order lifecycle ───────────────────────────────────────────────── */
@@ -1932,6 +1958,24 @@ export const api = {
     post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),
   openShortLink: (code: string) => request<{ listingId: string }>(`/r/${encodeURIComponent(code)}`),
   myAffiliate: () => request<{ earnings: AffiliateEarning[] }>('/me/affiliate'),
+  /** Tell the server something went out of the app, so the share quests count it. */
+  logShare: (body: { kind: ShareKind; via: ShareEvent['via']; target?: string | null; storeId?: string | null }) =>
+    post<{ ok: true }>('/share/log', body),
+  myInvite: () => request<InviteSummary>('/invite/me'),
+  openInvite: (code: string, page?: { t: 'item' | 'shop' | 'profile'; id: string } | null, asSeller = false) => {
+    const query = new URLSearchParams();
+    if (page) { query.set('t', page.t); query.set('id', page.id); }
+    if (asSeller) query.set('as', 'seller');
+    const suffix = query.toString();
+    return request<InviteOpen>(`/i/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`);
+  },
+  growth: (ownerId: string) => request<{
+    view: GrowthView; handle: string | null; name: string; photoUrl: string | null; levelTag: LevelTag; followers: number;
+  }>(`/growth/${encodeURIComponent(ownerId)}`),
+  claimGrowth: (ownerId: string, taskId: string) =>
+    post<{ view: GrowthView; gained: { spotlights: number; xp: number } }>(`/growth/${encodeURIComponent(ownerId)}/claim`, { taskId }),
+  spotlight: (listingId: string) =>
+    post<{ spotlights: number; bumpedAt: string }>(`/listings/${encodeURIComponent(listingId)}/spotlight`, {}),
   markAffiliatePaid: (orderId: string, reference?: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),

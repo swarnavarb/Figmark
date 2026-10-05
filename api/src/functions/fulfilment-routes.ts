@@ -27,6 +27,7 @@ import {
   afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, syncLotDelivery, undeliver,
 } from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
+import { offersAffiliate } from '../affiliate.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 
@@ -918,7 +919,17 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
     estimatedDispatchAt: lot?.estimatedDispatchAt ?? null,
     // For the Details tab's product card - the listing as it is now, not the
     // order's own frozen snapshot, so a photo added after the sale still shows.
-    listing: listing ? { id: listing.id, title: listing.title, photoUrl: leadPhoto?.url ?? null } : null,
+    listing: listing ? {
+      id: listing.id, title: listing.title, photoUrl: leadPhoto?.url ?? null,
+      // What a shared picture of this order says: how full the group buy is,
+      // and whether a link to it pays whoever shares it.
+      preOrder: listing.preOrder ? {
+        joined: listing.preOrder.filledCount + (listing.preOrder.pledgedCount ?? 0),
+        threshold: listing.preOrder.fillThreshold,
+        cutoffAt: listing.preOrder.cutoffAt,
+      } : null,
+      affiliate: offersAffiliate(listing),
+    } : null,
   });
 }
 

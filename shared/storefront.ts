@@ -46,6 +46,8 @@ export interface StoreFacts {
   preOrders: number;
   disputesLost: number;
   ageDays: number;
+  /** XP from growth quests the shop collected. */
+  growthXp?: number;
 }
 
 export interface XpLine { label: string; xp: number; detail: string }
@@ -95,6 +97,7 @@ export function storeLevel(facts: StoreFacts): StoreLevel {
     line('Orders delivered', facts.completedSales),
     line('Good ratings', good),
     line('Items sold out', facts.soldOut),
+    { label: 'Growth quests', xp: facts.growthXp ?? 0, detail: 'Quests collected, paid like the buyers\' weekly and monthly ones' },
     { label: 'Sticker steps', xp: storeStickers(facts).reduce((sum, sticker) => sum + tierXp(sticker.reached), 0), detail: `${steps} steps, paid like milestones` },
     { label: 'Low ratings', xp: -(actionXp(two) + actionXp(one, ACTION_XP * 2)), detail: `${two} two-star × −${ACTION_XP}, ${one} one-star × −${ACTION_XP * 2}` },
     { label: 'Disputes lost', xp: -actionXp(facts.disputesLost, ACTION_XP * 4), detail: `${facts.disputesLost} × −${ACTION_XP * 4}` },

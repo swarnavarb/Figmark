@@ -51,6 +51,9 @@ import {
 import { ItemHead } from '../components/ItemHead';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
+import { useShareSheet, type ShareSpec } from '../components/ShareKit';
+import { SkeletonText, useToast } from '../components/Feedback';
+import type { GrowthTask } from '@shared/store-growth';
 import { InsightsPanel } from './InsightsPanel';
 import { ProfitCalculator } from './ProfitCalculator';
 import { SalesPanel } from './SalesPanel';
@@ -64,7 +67,7 @@ import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 
-type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people' | 'grow';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -86,6 +89,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
+  // Bringing buyers in from outside: growth quests, Spotlights, and pictures to share.
+  { id: 'grow', label: 'Grow' },
 ];
 
 /** Sections that are Pro: they wear the gold chip and the PRO badge. */
@@ -102,6 +107,7 @@ const SECTION_GROUPS: Record<string, Section[]> = {
   lots: ['lots'],
   routes: ['routes'],
   analytics: ['analytics'],
+  grow: ['grow'],
 };
 
 function groupOf(section: Section): string {
@@ -366,6 +372,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
+          {active === 'grow' && <Grow store={store} />}
         </div>
       )}
     </main>
@@ -402,6 +409,13 @@ function SellHome({ active, onGo }: { active: Section | null; onGo: (section: Se
         </button>
       </div>
 
+      <button type="button" className={`door door--card door--grow${on('grow') ? ' is-on' : ''}`}
+        onClick={() => onGo('grow')}>
+        <span className="door__glyph" aria-hidden="true">🚀</span>
+        <span className="door__title">Grow</span>
+        <span className="door__note">Share your shop, finish growth quests, earn Spotlights to the top of the feed.</span>
+      </button>
+
       <div className="workflow">
         <span className="workflow__label">Workflow</span>
         <div className="workflow__row">
@@ -427,6 +441,199 @@ function SellHome({ active, onGo }: { active: Section | null; onGo: (section: Se
           Items are added → items become part of a lot → lots follow a route.
         </p>
       </div>
+    </div>
+  );
+}
+
+/* ── Grow ───────────────────────────────────────────────────────────────── */
+
+/**
+ * Bringing buyers in from outside the app.
+ *
+ * Growth quests pay in Spotlights - an item back at the top of the feed,
+ * without waiting out the bump limit - because reach is the reward a shop
+ * actually wants. Each quest says what to do, and the buttons to do it are
+ * right here: a picture of the shop, a picture of each item, an invite for
+ * another seller.
+ */
+function Grow({ store }: { store: StoreAccess }) {
+  const toast = useToast();
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.growth>> | null>(null);
+  const [items, setItems] = useState<Listing[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const { open, sheet } = useShareSheet();
+
+  const load = useCallback(() => {
+    void api.growth(store.ownerId).then(setData)
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your growth quests.'));
+    void api.myListings()
+      .then(({ listings }) => setItems(listings.filter((listing) => listing.sellerId === store.ownerId && listing.status === 'active' && !isExpired(listing))))
+      .catch(() => setItems([]));
+  }, [store.ownerId]);
+  useEffect(load, [load]);
+
+  if (error) return <ErrorNotice message={error} />;
+  if (!data) return <SkeletonText lines={6} />;
+  const { view } = data;
+
+  const shopSpec = (): ShareSpec | null => data.handle ? {
+    kind: 'shop',
+    moment: {
+      photo: data.photoUrl, title: data.name,
+      detail: `Level ${data.levelTag.level} ${data.levelTag.title}${data.followers ? ` · ${data.followers.toLocaleString('en-IN')} followers` : ''}`,
+      headline: 'Shop with us', cta: 'Follow for the next drop', byline: `@${data.handle} on Figmark`,
+    },
+    link: { to: 'page', handle: data.handle },
+    caption: `We're on Figmark 🏪 Follow ${data.name} for group buys and new drops.`,
+    target: data.handle,
+    storeId: store.ownerId,
+  } : null;
+
+  const itemSpec = (listing: Listing): ShareSpec => {
+    const pre = listing.preOrder && listing.preOrder.fillThreshold > 0 ? listing.preOrder : null;
+    const joined = pre ? Math.min(pre.fillThreshold, pre.filledCount + (pre.pledgedCount ?? 0)) : 0;
+    const left = pre ? pre.fillThreshold - joined : 0;
+    const price = formatMoney(listing.priceMinor, listing.currency);
+    const filling = Boolean(pre && left > 0);
+    return {
+      kind: filling ? 'fill' : 'item',
+      moment: {
+        photo: leadPhoto(listing)?.url ?? null, title: listing.title, detail: `from ${data.name}`, price,
+        fill: pre ? { joined, threshold: pre.fillThreshold } : null,
+        headline: filling ? 'Join our group buy' : 'New drop',
+        cta: filling ? 'Book a spot before it fills' : 'Shop it on Figmark', byline: data.name,
+      },
+      link: { to: 'item', listingId: listing.id, moment: filling ? 'fill' : undefined, own: true },
+      caption: filling
+        ? `${left} spot${left === 1 ? '' : 's'} left in our group buy: ${listing.title} at ${price}. It ships when it fills 👇`
+        : `New drop: ${listing.title} at ${price} 🔥`,
+      target: listing.id,
+      storeId: store.ownerId,
+    };
+  };
+
+  const sellerInvite: ShareSpec = {
+    kind: 'invite_seller',
+    moment: {
+      title: 'Open your shop', detail: 'Group buys · tracking · escrow · affiliates',
+      headline: 'Sell with me on Figmark', cta: 'Open a shop with my invite', byline: data.name,
+    },
+    link: { to: 'invite', seller: true },
+    caption: 'Selling imports? Run your group buys on Figmark - manifests, tracking your buyers can see, escrow, and affiliates who sell for you. Open a shop with my invite:',
+  };
+
+  async function claim(taskId: string) {
+    setBusy(taskId);
+    try {
+      const result = await api.claimGrowth(store.ownerId, taskId);
+      setData((current) => (current ? { ...current, view: result.view } : current));
+      toast(`+${result.gained.spotlights} Spotlight${result.gained.spotlights === 1 ? '' : 's'} · +${result.gained.xp} shop XP`, 'ok');
+    } catch (err) {
+      toast(err instanceof ApiRequestError ? err.message : 'Could not collect that.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function spotlight(listing: Listing) {
+    setBusy(listing.id);
+    try {
+      const result = await api.spotlight(listing.id);
+      setData((current) => (current ? { ...current, view: { ...current.view, spotlights: result.spotlights } } : current));
+      toast(`${listing.title} is back at the top of the feed.`, 'ok');
+    } catch (err) {
+      toast(err instanceof ApiRequestError ? err.message : 'Could not spotlight that.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const doIt = (task: GrowthTask) => {
+    const shop = shopSpec();
+    if (task.action === 'share_shop' && shop) return <button type="button" className="btn btn--sm btn--quiet" onClick={() => open(shop)}>Share shop</button>;
+    if (task.action === 'post') return <Link to={`/social/c/${encodeURIComponent(store.ownerId)}`} className="btn btn--sm btn--quiet">Post</Link>;
+    if (task.action === 'affiliate') return <Link to="/shop?tab=items" className="btn btn--sm btn--quiet">Items</Link>;
+    return <a href="#grow-items" className="btn btn--sm btn--quiet">Share an item</a>;
+  };
+
+  const shop = shopSpec();
+  return (
+    <div className="grow">
+      <section className="grow__hero">
+        <div>
+          <p className="grow__eyebrow">Grow</p>
+          <h2>Bring buyers in from outside</h2>
+          <p>Group buys fill on WhatsApp. Share your shop and your drops, finish quests, and spend Spotlights to put an item back at the top of the feed.</p>
+        </div>
+        <div className="grow__spot" title="Spotlights to spend">
+          <span><b>{view.spotlights}</b><small>Spotlights</small></span>
+        </div>
+      </section>
+
+      <div className="grow__stats">
+        <span className="grow__stat"><b>{view.week.shares}</b><small>shares this week</small></span>
+        <span className="grow__stat"><b>{view.week.opens}</b><small>visitors from links</small></span>
+        <span className="grow__stat"><b>{view.week.affiliateSales}</b><small>sales by sharers</small></span>
+      </div>
+
+      <div className="grow__share">
+        {shop && <button type="button" className="btn mshare__go" onClick={() => open(shop)}>Share your shop</button>}
+        <button type="button" className="btn btn--quiet" onClick={() => open(sellerInvite)}>Invite a seller</button>
+      </div>
+
+      {(['weekly', 'monthly'] as const).map((kind) => (
+        <div key={kind} className="stack">
+          <h3 className="grow__head">{kind === 'weekly' ? 'This week' : 'This month'}</h3>
+          <ul className="grow__tasks">
+            {view.tasks.filter((task) => task.kind === kind).map((task) => (
+              <li key={task.id} className={`grow__task${task.claimable ? ' is-ready' : ''}${task.claimed ? ' is-claimed' : ''}`}>
+                <span className="grow__body">
+                  <b>{task.title}</b>
+                  <small>{task.blurb}</small>
+                  <span className="grow__bar">
+                    <span className="grow__track"><span className="grow__fill" style={{ width: `${(task.progress / task.goal) * 100}%` }} /></span>
+                    <span className="grow__count">{task.goal === 60 && task.id.endsWith('fill60') ? `${task.progress}%` : `${task.progress}/${task.goal}`}</span>
+                  </span>
+                </span>
+                <span className="grow__act">
+                  {task.claimed ? <span className="grow__ok">✓ Collected</span>
+                    : task.claimable ? (
+                      <button type="button" className="btn btn--sm qbtn-gold" disabled={busy === task.id} onClick={() => void claim(task.id)}>
+                        Claim +{task.spotlights} ✦
+                      </button>
+                    ) : doIt(task)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+
+      <div className="stack" id="grow-items">
+        <h3 className="grow__head">Share or spotlight an item</h3>
+        {!items ? <SkeletonText lines={3} /> : items.length === 0 ? (
+          <p className="faint">Nothing live to share yet. List an item and it shows up here.</p>
+        ) : (
+          <ul className="grow__items">
+            {items.map((listing) => (
+              <li key={listing.id} className="grow__item">
+                {leadPhoto(listing)?.url ? <img className="grow__thumb" src={leadPhoto(listing)!.url} alt="" /> : <span className="grow__thumb" aria-hidden="true" />}
+                <span className="grow__name">{listing.title}</span>
+                <span className="grow__btns">
+                  <button type="button" className="btn btn--sm btn--quiet" onClick={() => open(itemSpec(listing))}>Share</button>
+                  <button type="button" className="btn btn--sm" disabled={view.spotlights < 1 || busy === listing.id || !store.permissions.includes('listings')}
+                    title={view.spotlights < 1 ? 'Finish a growth quest to earn a Spotlight' : 'Back to the top of the feed'}
+                    onClick={() => void spotlight(listing)}>
+                    ✦ Spotlight
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {sheet}
     </div>
   );
 }

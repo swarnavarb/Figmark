@@ -8107,9 +8107,9 @@ await check('there are daily, weekly, monthly and milestone quests, and the week
   const player = await newBuyer('Quest Calendar');
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   const kinds = (kind) => view.tasks.filter((task) => task.kind === kind).length;
-  assert.equal(kinds('daily'), 4, 'check in, reveal and two from the pool');
-  assert.equal(kinds('weekly'), 4);
-  assert.equal(kinds('monthly'), 3);
+  assert.equal(kinds('daily'), 5, 'check in, reveal, share a find and two from the pool');
+  assert.equal(kinds('weekly'), 5, 'five check-ins, two opens and three from the pool');
+  assert.equal(kinds('monthly'), 4, 'bring a friend and three from the pool');
   assert.ok(kinds('milestone') >= 8);
   assert.equal(view.streak.week.length, 7);
   const monday = new Date(`${view.streak.week[0].day}T12:00:00Z`).getUTCDay();
@@ -8639,6 +8639,7 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
   const facts = (saves) => ({
     orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], follows: [], posts: [], wants: [],
     pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false, shares: 0, referredSales: 0,
+    shareOpens: [], sharesSent: [], invites: [], invitedSellers: 0,
     likes: Array.from({ length: saves }, () => ({ createdAt: at })),
   });
   const key = claimKey('daily-save3', now);

@@ -10,6 +10,7 @@ import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { EarnPill, earnOf } from './Affiliate';
 import { SkeletonText, useToast } from './Feedback';
+import { useShareSheet, type ShareSpec } from './ShareKit';
 import { Icon } from './Icon';
 import { StarRow } from './ListingBlocks';
 import { LevelRing, Sticker, StickerSheet, XpBar } from './Quest';
@@ -70,28 +71,64 @@ export function MessagePill({ handle }: { handle: string }) {
   );
 }
 
-function ShareButton({ title }: { title: string }) {
-  const toast = useToast();
-  async function share() {
-    const url = window.location.href;
-    try {
-      if (navigator.share) await navigator.share({ title, url });
-      else {
-        await navigator.clipboard.writeText(url);
-        toast('Link copied', 'ok');
-      }
-    } catch { /* closed the share sheet */ }
+type SharedProfile = Pick<PublicProfile, 'sellerId' | 'isStore' | 'handle' | 'displayName' | 'photoUrl' | 'followerCount' | 'levelTag' | 'counts'>;
+
+/**
+ * The page as a picture to share: a shop's photo and standing, or a
+ * collector's level - with the sharer's invite on the link either way.
+ */
+function profileShareSpec(profile: SharedProfile, isMe: boolean): ShareSpec {
+  const level = `Level ${profile.levelTag.level} ${profile.levelTag.title}`;
+  const followers = profile.followerCount > 0 ? ` · ${profile.followerCount.toLocaleString('en-IN')} followers` : '';
+  if (profile.isStore) {
+    return {
+      kind: 'shop',
+      moment: {
+        photo: profile.photoUrl,
+        title: profile.displayName,
+        detail: `${level}${followers}`,
+        headline: isMe ? 'Shop with us' : 'My go-to shop',
+        cta: 'Follow for the next drop',
+        ...(isMe ? { byline: `@${profile.handle} on Figmark` } : {}),
+      },
+      link: { to: 'page', handle: profile.handle },
+      caption: isMe
+        ? `We're on Figmark 🏪 Follow ${profile.displayName} for group buys and new drops.`
+        : `Check out ${profile.displayName} on Figmark - my go-to for imports 🏪`,
+      target: profile.handle,
+      storeId: isMe ? profile.sellerId : null,
+    };
   }
+  return {
+    kind: 'profile',
+    moment: {
+      level: { level: profile.levelTag.level, title: profile.levelTag.title },
+      title: profile.displayName,
+      detail: `@${profile.handle}${followers}`,
+      headline: isMe ? 'My collection' : `Meet ${profile.displayName.split(/\s+/)[0]}`,
+      cta: 'Collect with me on Figmark',
+    },
+    link: { to: 'page', handle: profile.handle },
+    caption: isMe ? `My collection on Figmark 💎 Come see - and collect with me.` : `${profile.displayName}'s collection on Figmark 💎`,
+    target: profile.handle,
+  };
+}
+
+function ShareProfileButton({ profile, isMe }: { profile: SharedProfile; isMe: boolean }) {
+  const { open, sheet } = useShareSheet();
   return (
-    <button type="button" className="pbtn pbtn--icon" aria-label="Share this page" onClick={() => void share()}>
-      <Icon name="share" size={16} />
-    </button>
+    <>
+      <button type="button" className="pbtn pbtn--icon" aria-label="Share this page" onClick={() => open(profileShareSpec(profile, isMe))}>
+        <Icon name="share" size={16} />
+      </button>
+      {sheet}
+    </>
   );
 }
 
 /** Follow then Message, or Edit on your own page; Share either way. */
 export function PageActions({ profile, isMe, edit, onFollow }: {
-  profile: Pick<PublicProfile, 'sellerId' | 'isStore' | 'handle' | 'displayName' | 'following'>;
+  profile: SharedProfile & Pick<PublicProfile, 'following'>;
   isMe: boolean;
   edit: ReactNode;
   onFollow: (following: boolean, followers?: number) => void;
@@ -105,7 +142,7 @@ export function PageActions({ profile, isMe, edit, onFollow }: {
           <MessagePill handle={profile.handle} />
         </>
       )}
-      <ShareButton title={profile.displayName} />
+      <ShareProfileButton profile={profile} isMe={isMe} />
     </div>
   );
 }

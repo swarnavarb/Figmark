@@ -8,6 +8,7 @@ import {
 } from '../../../shared/quest.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { invitedSellerCount } from '../share.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -25,7 +26,7 @@ type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** Everything the rules count, read from the rows rather than from a tally. */
 async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
-  const [allOrders, likes, follows, posts, wants, pledged, reviewsAbout, pageReviews] = await Promise.all([
+  const [allOrders, likes, follows, posts, wants, pledged, reviewsAbout, pageReviews, invitedSellers] = await Promise.all([
     repository.listOrdersForBuyer(user.id),
     repository.listLikesBy(user.id),
     repository.listFollowsBy(user.id),
@@ -34,6 +35,7 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
     repository.listPledgedListingIds(user.id),
     repository.listReviewsAbout(user.id),
     repository.listStoreReviews(user.id),
+    invitedSellerCount(repository, user),
   ]);
 
   // Pressing Buy is not an order, and an order called off is not one either.
@@ -76,6 +78,10 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
     shares: Object.keys(user.affiliateLinks ?? {}).length,
     referredSales: (user.affiliateOrderIds ?? []).length,
     hasTags: (user.tags ?? []).length > 0,
+    shareOpens: (user.shareOpens ?? []).map((open) => ({ createdAt: open.at })),
+    sharesSent: (user.shareLog ?? []).map((sent) => ({ createdAt: sent.at })),
+    invites: (user.invitees ?? []).map((invite) => ({ createdAt: invite.at })),
+    invitedSellers,
   };
 }
 

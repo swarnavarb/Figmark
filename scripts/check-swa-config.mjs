@@ -88,4 +88,19 @@ check('both bundles are reachable: one served, one fallen back to', () => {
   );
 });
 
+check('shared links answer with their preview, not the bare app', () => {
+  // WhatsApp and the rest read a link's preview from the HTML it first
+  // answers with and never run the app. Lose one of these rewrites and that
+  // kind of link goes back to unfolding into the word "Figmark", with every
+  // check still green - the app itself still opens it fine.
+  const routes = config.routes ?? [];
+  const api = routes.findIndex((route) => route.route === '/api/*');
+  for (const prefix of ['/r/*', '/i/*', '/s/*']) {
+    const index = routes.findIndex((route) => route.route === prefix);
+    assert.notEqual(index, -1, `${prefix} needs a route`);
+    assert.equal(routes[index].rewrite, '/api/og', `${prefix} must be answered by /api/og`);
+    assert.ok(index > api, `${prefix} must come after /api/*`);
+  }
+});
+
 console.log(`\n${passed} checks passed`);
