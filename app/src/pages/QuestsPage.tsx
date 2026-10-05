@@ -9,6 +9,7 @@ import {
   CardFace, CardSheet, CardSlot, Glyph, LevelRing, Sticker, StickerSheet, XpBar, useQuest,
 } from '../components/Quest';
 import { Avatar } from '../components/ui';
+import { QuestShooter } from '../components/QuestShooter';
 import { useSession } from '../session';
 
 /**
@@ -23,6 +24,8 @@ import { useSession } from '../session';
 export function QuestsPage() {
   const { view, act, refresh } = useQuest();
   const [tab, setTab] = useState<TaskKind>('daily');
+  /** Quests cleared on this visit: each one fires a burst in the arcade. */
+  const [cleared, setCleared] = useState(0);
   const [openCard, setOpenCard] = useState<CardDef | null>(null);
   const [openSticker, setOpenSticker] = useState<StickerView | null>(null);
   const [board, setBoard] = useState<{ top: LeaderRow[]; me: LeaderRow | null; total: number } | null>(null);
@@ -97,7 +100,13 @@ export function QuestsPage() {
         </section>
       )}
 
-      <section className="qpanel">
+      {/* The quest board as an arcade cabinet: the tasks are the HUD, and a
+          little space shooter plays underneath. Clearing one fires a burst. */}
+      <section className="qpanel qarcade">
+        <div className="qworld" aria-hidden="true"><QuestShooter volley={cleared} /></div>
+        <div className="qarcade__head">
+          <span className="qarcade__title"><Glyph name="shield" size={14} /> Quest board</span>
+        </div>
         <div className="tabs qtabs">
           {(['daily', 'weekly', 'monthly', 'milestone'] as const).map((kind) => (
             <button key={kind} type="button" className={`tab${tab === kind ? ' is-on' : ''}`} onClick={() => setTab(kind)}>
@@ -107,7 +116,12 @@ export function QuestsPage() {
           ))}
         </div>
         <ul className="qtasks">
-          {tasks.map((task) => <TaskRow key={task.id} task={task} onClaim={() => void act(() => api.questClaim(task.id))} />)}
+          {tasks.map((task) => (
+            <TaskRow key={task.id} task={task} onClaim={() => {
+              setCleared((n) => n + 1);
+              void act(() => api.questClaim(task.id));
+            }} />
+          ))}
         </ul>
         <p className="faint qtasks__note">
           {tab === 'daily'

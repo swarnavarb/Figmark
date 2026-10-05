@@ -421,6 +421,36 @@ function PixelHeart({ full }: { full: boolean }) {
   );
 }
 
+/** Where each little heart of a save's burst flies to, and how big it is. */
+// The button sits in the card's top-right corner, so the burst spills down
+// and to the left, into the photo, where none of it is cut off by the edge.
+const HEART_BURST = [
+  { x: -30, y: -12, s: 0.9, r: -18 }, { x: -40, y: 10, s: 1.1, r: -6 }, { x: -24, y: 30, s: 0.9, r: 12 },
+  { x: 0, y: 38, s: 0.75, r: 20 }, { x: 14, y: 24, s: 0.6, r: 28 }, { x: -52, y: -4, s: 0.6, r: -26 },
+  { x: -46, y: 34, s: 0.65, r: 8 },
+];
+
+/**
+ * The save's reward, in the card's own pixel art: little hearts burst out of
+ * the button and blink out as they rise, over a quick square ring. Taking a
+ * save back drops one grey, broken-looking heart instead.
+ */
+function HeartPop({ gain }: { gain: boolean }) {
+  return (
+    <span className={`qpop${gain ? '' : ' qpop--loss'}`} aria-hidden="true">
+      {gain && <span className="qpop__ring" />}
+      {(gain ? HEART_BURST : [{ x: 0, y: 26, s: 0.9, r: 14 }]).map((spot, i) => (
+        <span key={i} className="qpop__heart" style={{
+          ['--x' as string]: `${spot.x}px`, ['--y' as string]: `${spot.y}px`,
+          ['--s' as string]: spot.s, ['--r' as string]: `${spot.r}deg`, ['--d' as string]: `${i * 25}ms`,
+        }}>
+          <svg width="9" height="8" viewBox="0 0 9 8" shapeRendering="crispEdges"><path d={HEART_FULL} fill="currentColor" /></svg>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /**
  * A listing as a collectible: a frame in its rarity, the condition stamped on
  * like a stamp, the save button as a chest, and a pre-order's fill as a level.
@@ -429,6 +459,8 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
   const { refresh } = useQuest();
   // Saves count towards quests, so the level chip is re-read after one.
   const [liked, toggle] = useSave(listing.id, listing.liked, refresh);
+  // A save throws a burst of pixel hearts; taking one back drops a grey one.
+  const [pop, setPop] = useState<{ id: number; gain: boolean } | null>(null);
   const { rarity } = listing;
   const tier = rarity.tier;
   const view = listing.preOrder ? preOrderView(listing.preOrder) : null;
@@ -441,6 +473,7 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
     // The card is a link; the heart must not navigate.
     event.preventDefault();
     event.stopPropagation();
+    setPop({ id: Date.now(), gain: !liked });
     void toggle();
   }
 
@@ -452,6 +485,7 @@ const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
         <button type="button" className={`qheart${liked ? ' is-on' : ''}`} onClick={toggleSave}
           aria-label={liked ? 'Remove from your saves' : 'Save'} aria-pressed={liked}>
           <PixelHeart full={liked} />
+          {pop && <HeartPop key={pop.id} gain={pop.gain} />}
         </button>
         {rarity.priceDropPercent && <span className="qsticker-tag qsticker-tag--drop">−{rarity.priceDropPercent}%</span>}
         {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
