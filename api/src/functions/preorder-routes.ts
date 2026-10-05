@@ -4,7 +4,7 @@ import type { Listing, Pledge } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
-import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
+import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
 
 /**
  * Joining a group-buy without paying for it yet.
@@ -102,7 +102,11 @@ async function pledge(request: HttpRequest, _context: InvocationContext) {
     // A bare second tap is leaving.
     await repository.deletePledge(existing.id, listing.id);
   } else {
-    const units = Math.min(MAX_UNITS, Math.max(1, Math.round(body.units ?? existing?.units ?? 1)));
+    const asked = body.units ?? existing?.units ?? 1;
+    if (typeof asked !== 'number' || !Number.isFinite(asked)) {
+      return error(400, 'invalid_units', 'Units must be a number.');
+    }
+    const units = Math.min(MAX_UNITS, Math.max(1, Math.round(asked)));
     const row: Pledge = {
       id: existing?.id ?? `pdg_${randomUUID().slice(0, 12)}`,
       listingId: listing.id,
@@ -113,7 +117,7 @@ async function pledge(request: HttpRequest, _context: InvocationContext) {
       // Credit is recorded once, when they first join. Re-reading a card
       // through somebody else's link later does not move it: whoever actually
       // brought them in is a fact about that moment.
-      broughtBy: existing?.broughtBy ?? referrer(body.via, user.id, listing.sellerId),
+      broughtBy: existing?.broughtBy ?? await verifiedReferrer(repository, body.via, user.id, listing),
       convertedOrderId: null,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,

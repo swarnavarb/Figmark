@@ -191,10 +191,31 @@ export async function reconcilePreOrder(
  * campaign: both would turn the count into something to be gamed rather than
  * something to be proud of.
  */
-export function referrer(via: string | undefined, selfId: string, sellerId: string): string | null {
-  const id = via?.trim();
-  if (!id || id === selfId || id === sellerId) return null;
+export function referrer(via: unknown, selfId: string, sellerId: string): string | null {
+  const id = typeof via === 'string' ? via.trim() : '';
+  if (!id || id.length > 100 || id === selfId || id === sellerId) return null;
   return id;
+}
+
+/**
+ * The same, checked against the record: a link only credits somebody who is
+ * actually in the thing they are recommending - pledged to it or ordered it.
+ * Otherwise anybody could put any id in `?via=` and hand out credit.
+ */
+export async function verifiedReferrer(
+  repository: Repo,
+  via: unknown,
+  selfId: string,
+  listing: Pick<Listing, 'id' | 'sellerId'>,
+): Promise<string | null> {
+  const id = referrer(via, selfId, listing.sellerId);
+  if (!id) return null;
+  const [pledges, orders] = await Promise.all([
+    repository.listPledges(listing.id),
+    repository.listOrdersForListing(listing.id),
+  ]);
+  const inIt = pledges.some((entry) => entry.userId === id) || orders.some((entry) => entry.buyerId === id);
+  return inIt ? id : null;
 }
 
 /**

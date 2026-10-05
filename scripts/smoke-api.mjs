@@ -500,6 +500,24 @@ await check('empty comments are refused', async () => {
   assert.equal(empty.status, 400);
 });
 
+await check('saving a listing that does not exist is refused, so saves cannot be farmed', async () => {
+  assert.equal((await toggleLike(req({ headers: auth, params: { id: 'lst_made_up_1' } }), ctx)).status, 404);
+});
+
+await check('a comment has a length limit and a listing behind it', async () => {
+  const long = await addComment(req({ headers: auth, params: { id: 'lst_handheld' }, body: { body: 'x'.repeat(2001) } }), ctx);
+  assert.equal(long.status, 400);
+  const nowhere = await addComment(req({ headers: auth, params: { id: 'lst_made_up_1' }, body: { body: 'Hello?' } }), ctx);
+  assert.equal(nowhere.status, 404);
+});
+
+await check('a quantity that is not a whole number is refused, not coerced', async () => {
+  for (const quantity of ['abc', 0, -2, 1.5, 1e9]) {
+    const opened = await openCheckout(req({ headers: auth, body: { listingId: 'lst_handheld', quantity } }), ctx);
+    assert.equal(opened.status, 400, `quantity ${JSON.stringify(quantity)}`);
+  }
+});
+
 /* ── selling ───────────────────────────────────────────────────────────── */
 console.log('\nselling');
 
@@ -3758,6 +3776,13 @@ await check('whoever brought someone in gets the credit, and cannot give it to t
 
   const own = (await readPreOrder(req({ headers: selfMade.headers, params: { id } }), ctx)).jsonBody;
   assert.deepEqual(own.brought, []);
+
+  // Nor can a link credit somebody who is not in it at all.
+  const outsider = await newBuyer('Outsider');
+  const lured = await newBuyer('Lured');
+  await pledge(req({ headers: lured.headers, params: { id }, body: { via: outsider.id } }), ctx);
+  const outsiders = (await readPreOrder(req({ headers: outsider.headers, params: { id } }), ctx)).jsonBody;
+  assert.deepEqual(outsiders.brought, [], 'only somebody in the group buy can bring people in');
 });
 
 await check('the credit follows a pledge into the order it becomes', async () => {
@@ -3765,6 +3790,8 @@ await check('the credit follows a pledge into the order it becomes', async () =>
   const recruiter = await newBuyer('Credit Recruiter');
   const recruited = await newBuyer('Credit Recruited');
 
+  // The recruiter is in it themselves: a link only credits somebody who is.
+  await pledge(req({ headers: recruiter.headers, params: { id } }), ctx);
   await pledge(req({ headers: recruited.headers, params: { id }, body: { via: recruiter.id } }), ctx);
   const bought = await createOrder(req({ headers: recruited.headers, body: { listingId: id } }), ctx);
   assert.equal(bought.jsonBody.order.broughtBy, recruiter.id, 'paying does not lose the recruiter their credit');
@@ -9269,6 +9296,19 @@ await check('paid direct, a commission waits for the artist to say the money cam
   const confirmed = (await artistAct(req({ headers: inkwellTeam, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action: 'confirm_payment' } }), ctx)).jsonBody.job;
   assert.equal(confirmed.status, 'paid');
   assert.ok(confirmed.payments[0].confirmedAt);
+});
+
+await check('two buyers pressing at once cannot both take the last one', async () => {
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const base = await repository.getListing('lst_handheld');
+  const id = 'lst_last_one';
+  await repository.createListing({ ...base, id, quantityMode: 'single', quantityAvailable: 1, status: 'active', preOrder: null });
+  const [first, second] = [await newBuyer('Racer One'), await newBuyer('Racer Two')];
+  const opened = await Promise.all([first, second].map(async (who) =>
+    (await openCheckout(req({ headers: who.headers, body: { listingId: id } }), ctx)).jsonBody.order));
+  const refusals = await Promise.all(opened.map((order) => placeOrder(repository, order, 'paid', order.buyerId, { tellSeller: false })));
+  assert.equal(refusals.filter((refusal) => refusal === null).length, 1, 'exactly one of them gets it');
+  assert.equal((await repository.getListing(id)).quantityAvailable, 0);
 });
 
 console.log(`\n${passed} checks passed`);

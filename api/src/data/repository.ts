@@ -160,8 +160,14 @@ export interface Repository {
    * held by an escrow - leaves checkouts out: pressing Buy is not an order.
    */
   createOrder(order: Order): Promise<Order>;
-  /** Moves stock and pre-order fill for a checkout the buyer has just placed. */
-  takeStock(order: Order): Promise<void>;
+  /**
+   * Moves stock and pre-order fill for a checkout the buyer has just placed.
+   * False when there is not enough left - checked in the same write, so two
+   * buyers cannot both take the last one.
+   */
+  takeStock(order: Order): Promise<boolean>;
+  /** One more look at a listing's page. */
+  countView(listing: Listing): Promise<void>;
   /** A seller's checkouts nobody went ahead with - for insights, never for the order book. */
   listCheckoutDrafts(sellerId: string): Promise<Order[]>;
   /** Every save of any of these items. */

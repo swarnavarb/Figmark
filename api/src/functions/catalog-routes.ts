@@ -22,7 +22,7 @@ import {
   resolveShortCode, shortCodeFor, verifyAffiliateToken,
 } from '../affiliate.js';
 import { AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor } from '../../../shared/affiliate.js';
-import { reconcilePreOrder, referrer, rosterOf } from './preorder.js';
+import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
 function toSellerCard(user: User) {
@@ -78,13 +78,15 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   // Expired is read off the clock, so it is filtered here rather than stored.
   })).filter((listing) => !isExpired(listing));
 
+  // Only the lots these listings ride in, not every lot on the site.
+  const lotKeys = [...new Map(listings.filter((l) => l.lotId).map((l) => [l.lotId!, l.sellerId])).entries()];
   const [sellers, lots] = await Promise.all([
     repository.listUsersByIds([...new Set(listings.map((l) => l.sellerId))]),
-    repository.listLots(),
+    Promise.all(lotKeys.map(([lotId, sellerId]) => repository.getLot(sellerId, lotId))),
   ]);
   const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
   // The lot contributes exactly one buyer-visible fact: when it ships.
-  const dispatchByLot = new Map(lots.map((l) => [l.id, l.estimatedDispatchAt]));
+  const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
 
   return json(200, {
     listings: listings.map((listing) => ({
@@ -103,6 +105,15 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** GET /api/listings/{id} - detail, with seller, lot, comments and like state. */
+/**
+ * Whether this reader may see the listing at all. A private deal is the
+ * buyer's it was made for and the shop's, and nobody else's - so nobody else
+ * can save it, comment on it or buy it either.
+ */
+async function canSee(repository: Awaited<ReturnType<typeof getRepository>>, listing: Listing, viewerId: string | undefined) {
+  return !listing.privateFor || viewerId === listing.privateFor || await mayManage(repository, listing, viewerId);
+}
+
 /** A listing as anyone outside the shop may see it: without what it cost the shop. */
 function withoutCosts(listing: Listing): Listing {
   const { costSheet: _cost, costSheetPrevious: _history, ...rest } = listing;
@@ -120,9 +131,9 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   const viewer = await auth.getCurrentUser(request);
   // A private deal is visible to the buyer it was made for and the shop that
   // made it, and to nobody else - not even as "sold".
-  if (listing.privateFor && viewer?.id !== listing.privateFor && !(await mayManage(repository, listing, viewer?.id))) {
-    return error(404, 'not_found', 'No such listing.');
-  }
+  if (!(await canSee(repository, listing, viewer?.id))) return error(404, 'not_found', 'No such listing.');
+  // The shop's own visits are not interest in it.
+  if (viewer?.id !== listing.sellerId) void repository.countView(listing);
   const [sellers, rawComments, likedIds, followed] = await Promise.all([
     repository.listUsersByIds([listing.sellerId]),
     repository.listComments(id),
@@ -510,6 +521,10 @@ async function toggleLike(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A listing id is required.');
   const repository = await getRepository();
+  // Only a real listing this person can see: saves count towards quests and
+  // stickers, so saving made-up ids must not be a way to farm them.
+  const listing = await repository.getListing(id);
+  if (!listing || !(await canSee(repository, listing, user.id))) return error(404, 'not_found', 'No such listing.');
   return json(200, { liked: await repository.toggleLike(user.id, id) });
 }
 
@@ -528,6 +543,9 @@ async function bumpListing(request: HttpRequest, _context: InvocationContext) {
   return json(200, { bumped: true });
 }
 
+const COMMENT_MAX = 2000;
+const COMMENTS_PER_MINUTE = 5;
+
 /** POST /api/listings/{id}/comments - public Q&A on a listing. */
 async function addComment(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -541,8 +559,12 @@ async function addComment(request: HttpRequest, _context: InvocationContext) {
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
-  const text = body.body?.trim();
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
   if (!text) return error(400, 'invalid_comment', 'Comment cannot be empty.');
+  if (text.length > COMMENT_MAX) return error(400, 'invalid_comment', `Keep it under ${COMMENT_MAX} characters.`);
+  if (body.replyToId !== undefined && typeof body.replyToId !== 'string') {
+    return error(400, 'invalid_comment', 'Reply to a post by its id.');
+  }
 
   const now = new Date().toISOString();
   const comment: ListingComment = {
@@ -558,10 +580,18 @@ async function addComment(request: HttpRequest, _context: InvocationContext) {
   // Returned in the shape the read path uses, so the page can append it as-is:
   // a comment that came back without its author's address rendered nameless.
   const repository = await getRepository();
+  const listing = await repository.getListing(id);
+  if (!listing || !(await canSee(repository, listing, user.id))) return error(404, 'not_found', 'No such listing.');
+  const existing = await repository.listComments(id);
+  // A few a minute is a conversation; more is somebody flooding the page.
+  const recent = existing.filter((c) => c.authorId === user.id && Date.parse(c.createdAt) > Date.now() - 60_000);
+  if (recent.length >= COMMENTS_PER_MINUTE) {
+    return error(429, 'too_many_comments', 'Slow down a little - try again in a minute.');
+  }
   // A reply always hangs off the post that started the thread, so a reply to
   // a reply still lands in the right place and threads never nest deeper.
   if (comment.replyToId) {
-    const parent = (await repository.listComments(id)).find((c) => c.id === comment.replyToId);
+    const parent = existing.find((c) => c.id === comment.replyToId);
     if (!parent) return error(404, 'not_found', 'That post is gone.');
     comment.replyToId = parent.replyToId ?? parent.id;
   }
@@ -638,6 +668,8 @@ async function toggleFollow(request: HttpRequest, _context: InvocationContext) {
   return json(200, { following, followerCount: person ? target.followerCount : target.sellerProfile!.followerCount });
 }
 
+const MAX_ORDER_QUANTITY = 100;
+
 /** POST /api/orders - buy an in-stock item, or join a group-buy lot. */
 async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -664,7 +696,13 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   if (isExpired(listing)) return error(409, 'expired', 'This item has expired and cannot be bought.');
   if (listing.status !== 'active') return error(409, 'unavailable', 'This item is not for sale.');
 
-  const quantity = Math.max(1, Math.round(body.quantity ?? 1));
+  // A whole number from 1 up, or nothing at all - anything else is refused
+  // rather than coerced, because NaN passes every comparison below it.
+  const asked = body.quantity ?? 1;
+  if (typeof asked !== 'number' || !Number.isInteger(asked) || asked < 1 || asked > MAX_ORDER_QUANTITY) {
+    return error(400, 'invalid_quantity', `Quantity must be a whole number from 1 to ${MAX_ORDER_QUANTITY}.`);
+  }
+  const quantity = asked;
   if (!isMultiple(listing) && quantity > listing.quantityAvailable) {
     return error(409, 'insufficient_stock', `Only ${listing.quantityAvailable} left.`);
   }
@@ -692,6 +730,12 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
       open.updatedAt = new Date().toISOString();
       return json(200, { order: await repository.updateOrder(open) });
     }
+  } else {
+    // Booking again while the last booking still waits on the shop is the
+    // same booking: the shop is not told twice.
+    const waiting = (await repository.listOrdersForBuyer(user.id)).find((entry) =>
+      entry.listingId === listing.id && entry.bookingOnly && !entry.accepted && entry.status === 'pending_payment');
+    if (waiting) return json(200, { order: waiting });
   }
 
   const now = new Date().toISOString();
@@ -773,7 +817,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // Whoever brought them in, if they arrived through a share link - or
     // whoever brought them in when they first pledged, because the credit
     // belongs to that moment rather than to the click that finally paid.
-    broughtBy: referrer(body.via, user.id, listing.sellerId),
+    broughtBy: await verifiedReferrer(repository, body.via, user.id, listing),
     affiliate,
     completedAt: null,
     createdAt: now,

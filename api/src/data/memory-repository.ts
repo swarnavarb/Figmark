@@ -362,7 +362,6 @@ export class MemoryRepository implements Repository {
   async getListing(id: string): Promise<Listing | null> {
     const listing = this.listings.get(id);
     if (!listing) return null;
-    listing.viewCount += 1;
     return listing;
   }
 
@@ -426,10 +425,12 @@ export class MemoryRepository implements Repository {
     return [...this.likes.values()].filter((like) => wanted.has(like.listingId));
   }
 
-  async takeStock(order: Order): Promise<void> {
+  async takeStock(order: Order): Promise<boolean> {
     const listing = this.listings.get(order.listingId);
+    if (!listing) return false;
+    if (listing.quantityMode !== 'multiple' && listing.quantityAvailable < order.quantity) return false;
     // A "multiple" item has no count to run down, so it never sells out.
-    if (listing && listing.quantityMode !== 'multiple') {
+    if (listing.quantityMode !== 'multiple') {
       listing.quantityAvailable = Math.max(0, listing.quantityAvailable - order.quantity);
       if (listing.quantityAvailable === 0) listing.status = 'sold_out';
     }
@@ -439,6 +440,12 @@ export class MemoryRepository implements Repository {
       if (listing.preOrder) listing.preOrder.filledCount += order.quantity;
       listing.soldCount = (listing.soldCount ?? 0) + order.quantity;
     }
+    return true;
+  }
+
+  async countView(listing: Listing): Promise<void> {
+    const stored = this.listings.get(listing.id);
+    if (stored) stored.viewCount += 1;
   }
 
   async getOrder(id: string): Promise<Order | null> {

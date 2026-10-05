@@ -1663,7 +1663,7 @@ export class CosmosRepository implements Repository {
   async createOrder(order: Order): Promise<Order> {
     const { resource } = await this.container('orders').items.create(order);
     const saved = resource ?? order;
-    if (isPlaced(order)) await this.takeStock(order);
+    if (isPlaced(order)) await this.takeStock(order).catch(() => false);
     return saved;
   }
 
@@ -1688,30 +1688,63 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
-  async takeStock(order: Order): Promise<void> {
-    try {
-      const listing = await this.getListing(order.listingId);
-      if (listing) {
-        // A "multiple" item has no count to run down, so it never sells out.
-        const quantityAvailable = listing.quantityMode === 'multiple'
-          ? listing.quantityAvailable
-          : Math.max(0, listing.quantityAvailable - order.quantity);
-        await this.container('listings')
-          .item(listing.id, listing.sellerId)
-          .replace({
-            ...listing,
-            quantityAvailable,
-            status: quantityAvailable === 0 && listing.quantityMode !== 'multiple' ? 'sold_out' : listing.status,
-            preOrder: listing.preOrder
-              ? { ...listing.preOrder, filledCount: listing.preOrder.filledCount + order.quantity }
-              : null,
-            soldCount: (listing.soldCount ?? 0) + order.quantity,
-            updatedAt: new Date().toISOString(),
-          });
+  async takeStock(order: Order): Promise<boolean> {
+    const listing = await this.getListing(order.listingId);
+    if (!listing) return false;
+    const taken = await this.mutateListing(listing.id, listing.sellerId, (current) => {
+      // A "multiple" item has no count to run down, so it never sells out.
+      const counted = current.quantityMode !== 'multiple';
+      if (counted && current.quantityAvailable < order.quantity) return null;
+      const quantityAvailable = counted ? current.quantityAvailable - order.quantity : current.quantityAvailable;
+      return {
+        ...current,
+        quantityAvailable,
+        status: counted && quantityAvailable === 0 ? 'sold_out' : current.status,
+        preOrder: current.preOrder
+          ? { ...current.preOrder, filledCount: current.preOrder.filledCount + order.quantity }
+          : null,
+        soldCount: (current.soldCount ?? 0) + order.quantity,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+    return taken !== null;
+  }
+
+  /**
+   * Changes one listing only if nobody else wrote it in between, and on
+   * losing that race reads again and redoes the change against what won -
+   * which is what stops two buyers both taking the last one. `change`
+   * returns null to refuse, and then nothing is written.
+   */
+  private async mutateListing(id: string, sellerId: string, change: (listing: Listing) => Listing | null): Promise<Listing | null> {
+    const item = this.container('listings').item(id, sellerId);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const { resource, etag } = await item.read<Listing>().catch((error: unknown) => {
+        if (isNotFound(error)) return { resource: undefined, etag: undefined };
+        throw error;
+      });
+      if (!resource) return null;
+      const next = change(resource);
+      if (!next) return null;
+      try {
+        const { resource: saved } = await item.replace<Listing>(next, {
+          accessCondition: { type: 'IfMatch', condition: etag ?? '' },
+        });
+        return saved ?? next;
+      } catch (error) {
+        if ((error as { code?: number }).code === 412) continue;
+        throw error;
       }
-    } catch {
-      // See above: the order stands.
     }
+    throw new Error('That item is too busy to change right now. Try again.');
+  }
+
+  async countView(listing: Listing): Promise<void> {
+    // An increment rather than a read and a write: views never conflict, and
+    // a count that misses one under load costs nothing.
+    await this.container('listings').item(listing.id, listing.sellerId)
+      .patch([{ op: 'incr', path: '/viewCount', value: 1 }])
+      .catch(() => undefined);
   }
 
   async listComments(listingId: string): Promise<ListingComment[]> {
@@ -1739,15 +1772,26 @@ export class CosmosRepository implements Repository {
 
   async toggleLike(userId: string, listingId: string): Promise<boolean> {
     const id = `${userId}__${listingId}`;
+    let liked = true;
     try {
       await this.container('likes').item(id, userId).delete();
-      return false;
+      liked = false;
     } catch (error) {
       if (!isNotFound(error)) throw error;
     }
-    const now = new Date().toISOString();
-    await this.container('likes').items.create({ id, userId, listingId, createdAt: now, updatedAt: now } satisfies Like);
-    return true;
+    if (liked) {
+      const now = new Date().toISOString();
+      await this.container('likes').items.create({ id, userId, listingId, createdAt: now, updatedAt: now } satisfies Like);
+    }
+    // The count on the listing is what rarity and "N saved" read, so it moves
+    // with the save rather than being counted on every feed.
+    const listing = await this.getListing(listingId);
+    if (listing) {
+      await this.container('listings').item(listing.id, listing.sellerId)
+        .patch([{ op: 'incr', path: '/likeCount', value: liked ? 1 : -1 }])
+        .catch(() => undefined);
+    }
+    return liked;
   }
 
   async listLikedListingIds(userId: string): Promise<string[]> {

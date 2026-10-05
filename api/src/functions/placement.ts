@@ -48,6 +48,11 @@ export async function placeOrder(
     return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
   }
   if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
+  // Stock comes off first, in one checked write: the check above can be beaten
+  // by another buyer pressing at the same moment, and this cannot.
+  if (!(await repository.takeStock(order))) {
+    return isMultiple(listing) ? 'This item is no longer for sale.' : 'This item has just sold out.';
+  }
   if (listing.privateFor) order.privateDeal = true;
 
   // Whoever's link brought the buyer, if the checkout opened before they
@@ -80,7 +85,6 @@ export async function placeOrder(
   if (!order.bookingOnly) await adjustHeldCredit(repository, order, actorId);
 
   await repository.updateOrder(order);
-  await repository.takeStock(order);
 
   if (listing.preOrder) {
     // Re-read: taking stock moved the fill counter.
