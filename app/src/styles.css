@@ -7872,6 +7872,44 @@ body.is-locked { overflow: hidden; }
   min-height: calc(100dvh - var(--roombar-h));
 }
 .dmroom .chthread { flex: 1; min-height: 0; }
+
+/* ── A conversation pins nothing to the screen ──────────────────────────────
+ *
+ * Header, messages, composer: three rows of a column exactly the height of
+ * the page, with only the middle one scrolling. Nothing is position: fixed
+ * or sticky, because that is what an iPhone home-screen app gets wrong - after
+ * the keyboard, or woken by a notification tap, it can draw pinned things a
+ * keyboard's height up the screen while the page itself is laid out right.
+ * Things in the flow of a page that does not scroll have nowhere to drift.
+ */
+html:has(.dmscreen), html:has(.dmscreen) body, html:has(.dmscreen) #root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.shell:has(.dmscreen) { height: 100%; min-height: 0; }
+.dmscreen {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.dmscreen > .roombar { position: relative; top: auto; flex: none; }
+.shell--room .dmscreen > .dmroom {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 12px;
+  /* Full width, so a wheel or a thumb anywhere scrolls it; the messages keep
+     their column inside. */
+  max-width: none;
+  padding-inline: max(var(--page-pad), calc((100% - 720px) / 2 + var(--page-pad)));
+}
+/* Fills the list when there is little to read, so the messages sit just
+   above the bar, and grows past it when there is more, to be scrolled. */
+.dmscreen .dmroom .chthread { flex: 1 0 auto; min-height: auto; }
+:root .shell--room .dmscreen > .cbar,
+:root[data-bars='hidden'] .shell--room .dmscreen > .cbar {
+  position: relative; bottom: auto; flex: none;
+}
 .chstrip { box-shadow: 0 10px 12px -8px var(--bg); }
 
 /* Holding a message opens its actions; it should not also start selecting

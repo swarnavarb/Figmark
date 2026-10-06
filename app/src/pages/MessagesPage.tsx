@@ -205,6 +205,8 @@ export function ThreadPage() {
   }, [location.key, us?.handle, them?.handle]);
   const input = useRef<HTMLTextAreaElement>(null);
   const newest = useRef<string | null>(null);
+  /** The list of messages, which scrolls on its own between the header and the bar. */
+  const scroller = useRef<HTMLElement>(null);
   const [menu, setMenu] = useState(false);
   const [older, setOlder] = useState(false);
   /** The shop's deal picker, open on nothing in particular or on one item. */
@@ -276,7 +278,7 @@ export function ThreadPage() {
     setOlder(true);
     try {
       const page = await api.thread(handle, as, { before: first.createdAt });
-      const height = document.documentElement.scrollHeight;
+      const height = scroller.current?.scrollHeight ?? 0;
       setData((current) => {
         if (!current) return current;
         // The page edge is inclusive, so the first message here comes back too.
@@ -285,7 +287,10 @@ export function ThreadPage() {
         return { ...current, more: page.more && fresh.length > 0, messages: [...fresh, ...current.messages] };
       });
       // Hold the reader where they were rather than jumping to the top.
-      requestAnimationFrame(() => window.scrollBy(0, document.documentElement.scrollHeight - height));
+      requestAnimationFrame(() => {
+        const list = scroller.current;
+        if (list) list.scrollTop += list.scrollHeight - height;
+      });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load earlier messages.');
     } finally {
@@ -325,36 +330,42 @@ export function ThreadPage() {
   // something new arrives at the end. Earlier pages land at the top and do not.
   useLayoutEffect(() => {
     const last = data?.messages.at(-1)?.id ?? null;
-    if (last !== newest.current) {
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: newest.current ? 'smooth' : 'auto' });
+    const list = scroller.current;
+    if (list && last !== newest.current) {
+      list.scrollTo({ top: list.scrollHeight, behavior: newest.current ? 'smooth' : 'auto' });
       newest.current = last;
     }
   }, [data?.messages]);
 
-  // Somebody reading the newest messages stays at them when the page lays
-  // itself out again - brought back by a notification tap, or the keyboard
-  // going away - rather than being left part way up the conversation.
+  // Somebody reading the newest messages stays at them when the list
+  // changes size - the keyboard coming or going, the bar growing a line, the
+  // app brought back by a notification tap - rather than being left part way
+  // up the conversation.
+  const ready = Boolean(data);
   useEffect(() => {
-    const atEnd = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 240;
+    const list = scroller.current;
+    if (!list) return;
+    const atEnd = () => list.scrollTop + list.clientHeight >= list.scrollHeight - 240;
     let reading = true;
     const onScroll = () => { reading = atEnd(); };
     const settle = () => {
       if (document.visibilityState !== 'visible' || !reading) return;
-      const end = () => window.scrollTo({ top: document.documentElement.scrollHeight });
+      const end = () => list.scrollTo({ top: list.scrollHeight });
       window.requestAnimationFrame(end);
       window.setTimeout(end, 300);
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
+    const resized = new ResizeObserver(settle);
+    resized.observe(list);
+    list.addEventListener('scroll', onScroll, { passive: true });
     document.addEventListener('visibilitychange', settle);
     window.addEventListener('pageshow', settle);
-    window.visualViewport?.addEventListener('resize', settle);
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      resized.disconnect();
+      list.removeEventListener('scroll', onScroll);
       document.removeEventListener('visibilitychange', settle);
       window.removeEventListener('pageshow', settle);
-      window.visualViewport?.removeEventListener('resize', settle);
     };
-  }, []);
+  }, [ready]);
 
   useEffect(() => {
     const field = input.current;
@@ -443,7 +454,7 @@ export function ThreadPage() {
   const dealable = data.us.isStore !== data.them.isStore;
 
   return (
-    <div className="social">
+    <div className="social dmscreen">
       <RoomBar tone="chat" onBack={back}
         avatar={<Avatar name={data.them.displayName} size={34} />}
         title={<>{data.them.displayName}<LevelChip tag={data.them.level} inline />{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
@@ -474,7 +485,7 @@ export function ThreadPage() {
         )} />
 
       {dialog}
-      <main className="page social chroom dmroom">
+      <main className="page social chroom dmroom" ref={scroller}>
         <div className="chthread">
           {data.more && (
             <button type="button" className="chmore" disabled={older} onClick={() => void loadOlder()}>
@@ -499,94 +510,95 @@ export function ThreadPage() {
             onSent={() => { setAsking(false); void load(); }} />
         )}
 
-        {data.blocked ? (
-          <div className="cbar cbar--blocked">
-            {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
-            <p>You blocked @{data.them.handle}. Neither of you can write here.</p>
-            <button type="button" className="followbtn" onClick={() => void toggleBlock()}>Unblock</button>
-          </div>
-        ) : (
-        <form className="cbar" onSubmit={(event) => void send(event)}>
+      </main>
+
+      {data.blocked ? (
+        <div className="cbar cbar--blocked">
           {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
-          {about && (
-            <div className="cbar__about">
-              <span className="cbar__aboutitem">
-                {about.photo
-                  ? <img src={about.photo} alt="" />
-                  : <span className="cbar__aboutblank" aria-hidden="true"><Icon name="tag" size={16} /></span>}
-                <span className="cbar__aboutbody">
-                  <small>Asking about</small>
-                  <b>{about.title}</b>
-                  <span>{formatMoney(about.priceMinor, about.currency)} · {about.condition}</span>
-                </span>
-                <button type="button" className="iconbtn" aria-label="Not about this item" onClick={dropAbout}>
-                  <Icon name="close" size={13} />
-                </button>
+          <p>You blocked @{data.them.handle}. Neither of you can write here.</p>
+          <button type="button" className="followbtn" onClick={() => void toggleBlock()}>Unblock</button>
+        </div>
+      ) : (
+      <form className="cbar" onSubmit={(event) => void send(event)}>
+        {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
+        {about && (
+          <div className="cbar__about">
+            <span className="cbar__aboutitem">
+              {about.photo
+                ? <img src={about.photo} alt="" />
+                : <span className="cbar__aboutblank" aria-hidden="true"><Icon name="tag" size={16} /></span>}
+              <span className="cbar__aboutbody">
+                <small>Asking about</small>
+                <b>{about.title}</b>
+                <span>{formatMoney(about.priceMinor, about.currency)} · {about.condition}</span>
               </span>
-              {/* The questions everybody asks, a tap away. Each one fills the
-                  box rather than sending, so it can be changed first. */}
-              <span className="cbar__prompts">
-                {aboutPrompts(about).map((line) => (
-                  <button key={line} type="button" className="cbar__prompt"
-                    onClick={() => { setBody(line); input.current?.focus(); }}>{line}</button>
-                ))}
-              </span>
-            </div>
-          )}
-          {replyTo && (
-            <div className="cbar__reply">
-              <span className="cbar__replybody">
-                <strong>Replying to {replyTo.from.handle === data.us.handle ? 'yourself' : replyTo.from.displayName}</strong>
-                <span>{replyTo.body}</span>
-              </span>
-              <button type="button" className="iconbtn" aria-label="Cancel reply" onClick={() => setReplyTo(null)}>
+              <button type="button" className="iconbtn" aria-label="Not about this item" onClick={dropAbout}>
                 <Icon name="close" size={13} />
               </button>
-            </div>
-          )}
-          <div className="cbar__row">
-            {/* Whose voice you are writing in, switched from where you write.
-                Each voice is its own conversation, so switching opens that one. */}
-            {data.handles.length > 1 && (
-              <VoiceScope
-                voice={{ storeId: data.us.isStore ? data.us.handle : null, name: data.us.displayName, handle: data.us.handle }}
-                voices={data.handles.map((party) => ({
-                  storeId: party.isStore ? party.handle : null, name: party.displayName, handle: party.handle,
-                }))}
-                choose={(storeId) => {
-                  const party = data.handles.find((entry) => (storeId ? entry.handle === storeId : !entry.isStore));
-                  if (party && party.handle !== data.us.handle) {
-                    navigate(`/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(party.handle)}`, { replace: true });
-                  }
-                }}>
-                <VoicePicker size={36} title="Write as" />
-              </VoiceScope>
-            )}
-            {dealable && (
-              <button type="button" className="cbar__attach" onClick={() => (data.us.isStore ? setPicker({ focus: null }) : setAsking(true))}
-                aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}
-                title={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}>
-                🤝
-              </button>
-            )}
-            <textarea ref={input} className="cbar__input" rows={1} value={body} maxLength={4000}
-              placeholder={replyTo ? 'Write a reply…' : about ? 'Ask a question or name your price…' : `Message ${data.them.displayName}…`} aria-label="Message"
-              onChange={(event) => setBody(event.target.value)}
-              onKeyDown={(event) => {
-                // Enter sends, shift-enter makes a line: the bargain every messenger makes.
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  void send();
-                }
-                if (event.key === 'Escape') setReplyTo(null);
-              }} />
-            <button type="submit" className="cbar__send" disabled={busy || (!body.trim() && !about)} aria-label="Send">
-              {busy ? <span className="writer__spin cbar__spin" /> : <Icon name="send" size={18} />}
+            </span>
+            {/* The questions everybody asks, a tap away. Each one fills the
+                box rather than sending, so it can be changed first. */}
+            <span className="cbar__prompts">
+              {aboutPrompts(about).map((line) => (
+                <button key={line} type="button" className="cbar__prompt"
+                  onClick={() => { setBody(line); input.current?.focus(); }}>{line}</button>
+              ))}
+            </span>
+          </div>
+        )}
+        {replyTo && (
+          <div className="cbar__reply">
+            <span className="cbar__replybody">
+              <strong>Replying to {replyTo.from.handle === data.us.handle ? 'yourself' : replyTo.from.displayName}</strong>
+              <span>{replyTo.body}</span>
+            </span>
+            <button type="button" className="iconbtn" aria-label="Cancel reply" onClick={() => setReplyTo(null)}>
+              <Icon name="close" size={13} />
             </button>
           </div>
-        </form>
         )}
-      </main>
+        <div className="cbar__row">
+          {/* Whose voice you are writing in, switched from where you write.
+              Each voice is its own conversation, so switching opens that one. */}
+          {data.handles.length > 1 && (
+            <VoiceScope
+              voice={{ storeId: data.us.isStore ? data.us.handle : null, name: data.us.displayName, handle: data.us.handle }}
+              voices={data.handles.map((party) => ({
+                storeId: party.isStore ? party.handle : null, name: party.displayName, handle: party.handle,
+              }))}
+              choose={(storeId) => {
+                const party = data.handles.find((entry) => (storeId ? entry.handle === storeId : !entry.isStore));
+                if (party && party.handle !== data.us.handle) {
+                  navigate(`/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(party.handle)}`, { replace: true });
+                }
+              }}>
+              <VoicePicker size={36} title="Write as" />
+            </VoiceScope>
+          )}
+          {dealable && (
+            <button type="button" className="cbar__attach" onClick={() => (data.us.isStore ? setPicker({ focus: null }) : setAsking(true))}
+              aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}
+              title={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}>
+              🤝
+            </button>
+          )}
+          <textarea ref={input} className="cbar__input" rows={1} value={body} maxLength={4000}
+            placeholder={replyTo ? 'Write a reply…' : about ? 'Ask a question or name your price…' : `Message ${data.them.displayName}…`} aria-label="Message"
+            onChange={(event) => setBody(event.target.value)}
+            onKeyDown={(event) => {
+              // Enter sends, shift-enter makes a line: the bargain every messenger makes.
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void send();
+              }
+              if (event.key === 'Escape') setReplyTo(null);
+            }} />
+          <button type="submit" className="cbar__send" disabled={busy || (!body.trim() && !about)} aria-label="Send">
+            {busy ? <span className="writer__spin cbar__spin" /> : <Icon name="send" size={18} />}
+          </button>
+        </div>
+      </form>
+      )}
     </div>
   );
 }
