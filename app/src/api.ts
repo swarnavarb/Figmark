@@ -2557,6 +2557,8 @@ export const api = {
     post<{ ok: true; devices: number }>('/push/subscribe', subscription),
   pushUnsubscribe: (endpoint: string) => post<{ ok: true }>('/push/unsubscribe', { endpoint }),
   pushTest: () => post<{ sent: number }>('/push/test'),
+  reportDevice: (body: { id: string; platform: string; browser: string; installed: boolean; push: string }) =>
+    post<{ ok: true }>('/me/device', body),
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   forumMembers: (id: string) => request<ForumMembers>(`/social/forums/${encodeURIComponent(id)}/members`),

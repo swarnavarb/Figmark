@@ -398,9 +398,12 @@ code, kbd, samp, pre {
   align-items: center;
   gap: 18px;
   /* Opened from an iPhone's home screen the page can reach under the clock;
-     the header starts below it, as the social header does. */
+     the header starts below it, as the social header does. The strip under
+     the clock is solid and the frosted glass begins where the header does. */
   padding: env(safe-area-inset-top, 0px) 20px 0;
-  background: rgba(18, 18, 21, 0.85);
+  background:
+    linear-gradient(var(--bg), var(--bg)) top / 100% env(safe-area-inset-top, 0px) no-repeat,
+    rgba(18, 18, 21, 0.85);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
@@ -3774,7 +3777,7 @@ a.order__name:hover { color: var(--accent-text); }
   z-index: 80;
   left: var(--page-pad);
   right: var(--page-pad);
-  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + 17px);
   display: grid;
   gap: var(--s2);
   justify-items: stretch;
@@ -11363,7 +11366,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .undobar {
   position: fixed; z-index: 85;
   left: var(--page-pad); right: var(--page-pad);
-  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + 17px);
   display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px;
   padding: 10px 10px 10px 12px;
   border-radius: var(--r-md);
@@ -12972,7 +12975,7 @@ button.sk-plan__pick { cursor: pointer; }
 /* After a Bump with no points left. */
 .qnobump {
   position: fixed; z-index: 90; left: var(--page-pad); right: var(--page-pad);
-  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + 17px);
   display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-lg);
   background: linear-gradient(120deg, rgba(255, 90, 95, 0.22), var(--surface) 75%), var(--surface);
   border: 1px solid rgba(255, 90, 95, 0.5); box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
@@ -13137,3 +13140,122 @@ button.sk-plan__pick { cursor: pointer; }
 .is-gone { opacity: .5; }
 .streams--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .streams--3 .streams__tab { gap: 5px; white-space: nowrap; }
+
+/* ── Admin: installs & devices ─────────────────────────────────────────── */
+.devstats__headline { margin: 0; font-size: var(--t-md); }
+.devstats__headline strong { font-size: var(--t-xl); margin-right: 4px; }
+.devstats__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.devstats__tile { display: grid; gap: 4px; }
+.devstats__value { font-size: var(--t-2xl); font-weight: var(--w-bold); line-height: 1.1; }
+.devstats__table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.devstats__table th, .devstats__table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.devstats__table thead th { font-weight: var(--w-semi); color: var(--text-faint); }
+.devstats__table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.devstats__meter { display: flex; align-items: center; gap: 8px; min-width: 160px; }
+.devstats__track { flex: 1; height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.devstats__fill { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.devstats__label { font-variant-numeric: tabular-nums; min-width: 64px; }
+
+/* ── Notifications: the floating prompt and the steps sheet ─────────────── */
+.pushnudge {
+  position: fixed; z-index: 85;
+  left: 50%; translate: -50% 0;
+  bottom: calc(var(--tabbar-h) + 12px);
+  width: min(440px, calc(100vw - 24px));
+  display: grid; grid-template-columns: auto 1fr; gap: 10px 12px; align-items: start;
+  padding: 14px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  animation: pushnudge-in 320ms var(--ease) both;
+}
+.pushnudge__icon { font-size: 22px; line-height: 1; padding-top: 2px; }
+.pushnudge__text { display: grid; gap: 2px; font-size: var(--t-sm); }
+.pushnudge__text span { color: var(--text-faint); }
+.pushnudge__actions { grid-column: 2; display: flex; gap: 6px; }
+@keyframes pushnudge-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pushnudge { animation: none; } }
+
+.pushguide {
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; align-items: end; justify-items: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.pushguide__sheet {
+  width: min(520px, 100vw);
+  max-height: 88vh; overflow-y: auto;
+  display: grid; gap: 14px;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  border: 1px solid var(--border-strong); border-bottom: 0;
+  background: var(--surface);
+  animation: pushguide-up 280ms var(--ease) both;
+}
+@media (min-width: 600px) {
+  .pushguide { align-items: center; }
+  .pushguide__sheet { border-radius: var(--r-md); border-bottom: 1px solid var(--border-strong); padding-bottom: 18px; }
+}
+@keyframes pushguide-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pushguide__sheet { animation: none; } }
+.pushguide__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pushguide__head h2 { margin: 0; font-size: var(--t-lg, 20px); }
+.pushguide__close {
+  width: 32px; height: 32px; border-radius: 50%; flex: none;
+  border: 1px solid var(--border); background: var(--surface-2); color: inherit;
+  font-size: 20px; line-height: 1; cursor: pointer;
+}
+.pushguide__body { display: grid; gap: 10px; font-size: var(--t-sm); }
+.pushguide__body p { margin: 0; }
+.pushguide__steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 10px; }
+.pushguide__steps li {
+  /* The number hangs in the margin so the step itself is one flowing line of
+     text, icons and bold words included. */
+  counter-increment: step;
+  position: relative; min-height: 26px;
+  padding: 2px 0 0 38px;
+}
+.pushguide__steps li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 0;
+  width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--text, inherit);
+  font-weight: var(--w-bold); font-size: var(--t-xs);
+}
+.pushguide__glyph { width: 18px; height: 18px; vertical-align: -3px; color: var(--accent); }
+.pushguide__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* The strip under an iPhone's clock and notch stays solid even while the
+   header slides away on scroll, so the page never shows through behind the
+   time. Zero high everywhere else. */
+body::before {
+  content: '';
+  position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+  height: env(safe-area-inset-top, 0px);
+  background: var(--bg);
+  pointer-events: none;
+}
+/* The social header runs its own colour up under the clock on purpose. */
+body:has(.shell--social)::before { display: none; }
+
+/* ── Pull to refresh (home-screen copy only) ──────────────────────────────── */
+/* No rubber band at the top: the indicator is the bounce. */
+html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
+.ptr {
+  position: fixed; z-index: 70;
+  left: 50%; top: calc(var(--nav-h) - 36px);
+  width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.ptr.is-caught { color: var(--accent); border-color: var(--accent); }
+.ptr__icon { width: 20px; height: 20px; }
+.ptr.is-refreshing .ptr__icon { animation: ptr-spin 700ms linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ptr.is-refreshing .ptr__icon { animation: none; } }
+.ptr__label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}

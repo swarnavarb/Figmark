@@ -62,6 +62,7 @@ const {
 } = await import(new URL('want-routes.js', apiRoot));
 const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } =
   await import(new URL('push-routes.js', apiRoot));
+const { deviceReportRoute, deviceFiguresRoute } = await import(new URL('device-routes.js', apiRoot));
 const { notificationsRoute, notificationsReadRoute } =
   await import(new URL('notification-routes.js', apiRoot));
 const { preOrderReadRoute, preOrderPledgeRoute } =
@@ -363,6 +364,8 @@ const routes = [
   ['POST', '/api/push/subscribe', pushSubscribeRoute],
   ['POST', '/api/push/unsubscribe', pushUnsubscribeRoute],
   ['POST', '/api/push/test', pushTestRoute],
+  ['POST', '/api/me/device', deviceReportRoute],
+  ['GET', '/api/ops/devices', deviceFiguresRoute],
   ['GET', '/api/users/:id/reviews', tradeReviewsRoute],
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],

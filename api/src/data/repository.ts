@@ -3,6 +3,7 @@ import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
+  ClientDevice,
   Dispute, Follow, Forum, SiteContent, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
@@ -265,6 +266,8 @@ export interface Repository {
   listHeldNotificationsDue(from: string, until: string): Promise<Notification[]>;
   /** Accounts holding this push endpoint: a browser belongs to whoever signed in on it last. */
   listUsersByPushEndpoint(endpoint: string): Promise<User[]>;
+  /** Every account's reported devices, for the operators' install figures. */
+  listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>>;
   saveWantOffer(offer: WantOffer): Promise<WantOffer>;
   listStoreReviews(subjectId: string): Promise<StoreReview[]>;
   saveStoreReview(review: StoreReview): Promise<StoreReview>;
