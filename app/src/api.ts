@@ -2555,7 +2555,8 @@ export const api = {
   moderateForum: (id: string, body: { action: ForumModAction; user?: string; note?: string; description?: string; rules?: string }) =>
     post<{ forum: ForumRow; member?: ForumMember }>(`/social/forums/${encodeURIComponent(id)}/moderate`, body),
   shopFeed: (id: string) => request<{ posts: PostCard[] }>(`/social/shops/${encodeURIComponent(id)}/feed`),
-  follows: (id: string) => request<{ followers: FollowRow[]; following: FollowRow[] }>(`/users/${encodeURIComponent(id)}/follows`),
+  follows: (id: string, kind: 'person' | 'store') =>
+    request<{ followers: FollowRow[]; following: FollowRow[] }>(`/users/${encodeURIComponent(id)}/follows?kind=${kind}`),
   blocked: () => request<{ blocked: BlockedRow[] }>('/me/blocked'),
   unblock: (id: string) => post<{ blocked: boolean }>(`/me/blocked/${encodeURIComponent(id)}/unblock`, {}),
   saved: () => request<{ listings: (FeedListing & { gone: boolean })[] }>('/me/saved'),

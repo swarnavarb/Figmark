@@ -11,6 +11,7 @@ import {
 import { can } from '../../../shared/stores.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
+import { PERSON_FOLLOW } from '../../../shared/storefront.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { ownPhotos } from '../storage/index.js';
@@ -1934,30 +1935,44 @@ async function shopFeed(request: HttpRequest, _context: InvocationContext) {
   return json(200, { posts: await decorate(broadcast, repository, actor) });
 }
 
-/** A person or shop as a follower list shows them. */
-function followRow(person: User) {
-  const shop = person.sellerProfile;
+/** A follower, or somebody followed: a person by their own name, a shop by its storefront's. */
+function followRow(person: User, asStore: boolean) {
+  const shop = asStore ? person.sellerProfile : undefined;
   return {
     id: person.id,
     name: shop?.storefrontName ?? person.displayName,
-    handle: shop?.username ?? person.username ?? null,
+    handle: (shop ? shop.username : person.username) ?? null,
     isStore: Boolean(shop),
   };
 }
 
-/** GET /api/users/{id}/follows - who follows them, and who they follow. */
+/**
+ * GET /api/users/{id}/follows?kind=person|store - who follows them, and who they follow.
+ *
+ * A person and their shop share an id but not followers: following somebody's
+ * page is `person:<id>`, following their shop is the bare id. Only people
+ * follow, so a shop's `following` is always empty.
+ */
 async function follows(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const id = request.params.id;
   if (!id) return error(400, 'invalid_user', 'Say whose.');
-  const [followerIds, followingIds] = await Promise.all([
-    repository.listFollowerIds(id),
-    repository.listFollowedSellerIds(id),
+  const store = request.query?.get('kind') === 'store';
+  const [followerIds, followed] = await Promise.all([
+    repository.listFollowerIds(store ? id : `${PERSON_FOLLOW}${id}`),
+    store ? Promise.resolve([] as string[]) : repository.listFollowedSellerIds(id),
   ]);
-  const people = new Map((await repository.listUsersByIds([...new Set([...followerIds, ...followingIds])])).map((p) => [p.id, p]));
-  const rows = (ids: string[]) => ids.map((entry) => people.get(entry)).filter((p): p is User => Boolean(p) && !p!.suspended).map(followRow);
-  // A follower is a person; whoever they follow is shown as the shop they followed.
-  return json(200, { followers: rows(followerIds).map((row) => ({ ...row, isStore: false })), following: rows(followingIds) });
+  const targets = followed.map((entry) => ({ id: entry.startsWith(PERSON_FOLLOW) ? entry.slice(PERSON_FOLLOW.length) : entry, asStore: !entry.startsWith(PERSON_FOLLOW) }));
+  const people = new Map((await repository.listUsersByIds([...new Set([...followerIds, ...targets.map((t) => t.id)])])).map((p) => [p.id, p]));
+  const live = (person: User | undefined): person is User => Boolean(person) && !person!.suspended;
+  return json(200, {
+    // Followers are always people, whoever they follow.
+    followers: followerIds.map((entry) => people.get(entry)).filter(live).map((person) => followRow(person, false)),
+    following: targets.flatMap(({ id: target, asStore }) => {
+      const person = people.get(target);
+      return live(person) && (!asStore || person.sellerProfile) ? [followRow(person, asStore)] : [];
+    }),
+  });
 }
 
 export const socialFeedRoute = handler(socialFeed);

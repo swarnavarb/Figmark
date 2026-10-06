@@ -98,7 +98,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
               )}
             </div>
             <p className="faint" style={{ margin: 0 }}>
-              {page && <FollowCounts userId={page.sellerId} followerCount={page.followerCount} />}
+              {page && <FollowCounts userId={page.sellerId} followerCount={page.followerCount} isStore={false} />}
               {page && person.memberSince && ' · '}
               {person.memberSince && `here since ${formatDate(person.memberSince)}`}
               {person.lastSeenAt && ` · seen ${timeAgo(person.lastSeenAt)}`}

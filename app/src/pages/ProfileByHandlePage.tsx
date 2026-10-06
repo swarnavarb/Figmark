@@ -143,7 +143,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
           edit={<Link to="/shop" className="pbtn pbtn--follow">Edit shop</Link>} />
 
         <div className="pstats">
-          <span className="pstats__follows"><FollowCounts userId={data.sellerId} followerCount={data.followerCount} /></span>
+          <span className="pstats__follows"><FollowCounts userId={data.sellerId} followerCount={data.followerCount} isStore /></span>
           <span><b>{data.counts.onSale}</b><small>live</small></span>
           <span><b>{data.counts.sold}</b><small>sold out</small></span>
           <span><b className={`ptrust ptrust--${trustTone(data.trustScore)}`}>{data.trustScore ?? '—'}</b><small>trust</small></span>

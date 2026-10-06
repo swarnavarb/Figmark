@@ -7929,9 +7929,12 @@ await check('the admin moderates with up to two moderators, who cannot touch the
   assert.equal(people.warnings.length, 1);
 });
 
-await check('followers and following are listed', async () => {
-  const body = (await follows(req({ params: { id: 'usr_demo' } }), ctx)).jsonBody;
-  assert.ok(Array.isArray(body.followers) && Array.isArray(body.following));
+await check('a person and their shop have separate followers, and only people follow', async () => {
+  const shop = (await follows(req({ params: { id: 'usr_demo' }, query: { kind: 'store' } }), ctx)).jsonBody;
+  assert.ok(Array.isArray(shop.followers));
+  assert.deepEqual(shop.following, [], 'a shop follows nobody');
+  const person = (await follows(req({ params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(person.followers.every((row) => !row.isStore), 'followers are people');
 });
 
 await check('joining a forum is for people, and posting needs it', async () => {
