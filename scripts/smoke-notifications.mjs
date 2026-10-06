@@ -152,12 +152,22 @@ await check('opening the conversation reads its notices, and only its own', asyn
   assert.equal(rows.find((entry) => entry.link.endsWith('as=arjun')).read, false);
 });
 
-await check('the next message after reading is news again, on a row of its own', async () => {
+await check('the next message after reading reopens the same row, counting from one', async () => {
   await send(req({ headers: sana.auth, params: { handle: 'arjun_collects' }, body: { body: 'Still there?' } }), ctx);
   const rows = (await bell(arjun)).notifications.filter((entry) => entry.link === '/messages/sana_t?as=arjun_collects');
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 1);
   assert.equal(rows[0].title, 'Sana Tiwari messaged Arjun Collects');
+  assert.equal(rows[0].count, 1);
   assert.equal(rows[0].read, false);
+});
+
+await check('the conversation opens at the first unread message', async () => {
+  const opened = await thread(req({ headers: arjun.auth, params: { handle: 'sana_t' }, query: { as: 'arjun_collects' } }), ctx);
+  const first = opened.jsonBody.messages.find((message) => message.id === opened.jsonBody.firstUnreadId);
+  assert.equal(first?.body, 'Still there?');
+  assert.equal(opened.jsonBody.unread, 1);
+  const again = await thread(req({ headers: arjun.auth, params: { handle: 'sana_t' }, query: { as: 'arjun_collects' } }), ctx);
+  assert.equal(again.jsonBody.firstUnreadId, null, 'read once opened');
 });
 
 await check('a muted conversation stays quiet', async () => {
