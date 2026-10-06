@@ -222,10 +222,15 @@
 
   /* The header's colour, one per section (set as data-tone on the root by
      the shell). The tab bar's hues, taken deep enough to carry white: the
-     header is a field of colour under icons and text, not a pill. `soft` is
-     the same ramp at 40%, for the header once the page scrolls under it. */
+     header is a field of colour under icons and text, not a pill.
+     `rgb` is one solid colour from the middle of the ramp. The header's top
+     edge is that colour all the way across, and so is the phone's status bar
+     (theme-color, and Safari's own sampling of the bar pinned at the top),
+     so the two meet without a seam; the ramp opens up below it. Scrolled,
+     the header is that colour at 40%. Keep these in step with TONES in
+     AppShell.tsx. */
   --top-grad: linear-gradient(115deg, #3B82F6 0%, #7C3AED 100%);
-  --top-grad-soft: linear-gradient(115deg, rgba(59, 130, 246, 0.4) 0%, rgba(124, 58, 237, 0.4) 100%);
+  --top-rgb: 91 94 241;
   --top-ink: #A5B4FC;
 
   /* One type scale */
@@ -409,15 +414,27 @@ code, kbd, samp, pre {
      the header's colour goes with it: the padding keeps what is in the header
      below the clock, the gradient runs to the very top of the screen. */
   padding: env(safe-area-inset-top, 0px) 20px 0;
-  background: transparent;
+  /* Solid under the gradient: this is the colour Safari reads for its status
+     bar, which ignores a gradient. */
+  background-color: rgb(var(--top-rgb));
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   color: #fff;
+  transition: background-color 240ms var(--ease);
 }
-/* The section's gradient, on a layer of its own so it can fade: solid at the
-   top of the page, 40% once the page is scrolled under it. */
+/* The header's top edge in its one colour, fading into the gradient below.
+   Declared on the headers, not the root, so it takes the --top-rgb of the
+   header it is drawn in. */
+.nav, .soctop {
+  --top-band: linear-gradient(180deg,
+    rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) env(safe-area-inset-top, 0px),
+    rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
+}
+/* The section's gradient, on a layer of its own so it can fade out once the
+   page scrolls under it, leaving the header's colour at 40%. */
 .nav::before {
   content: ''; position: absolute; inset: 0; z-index: -1;
   background:
+    var(--top-band),
     linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.18) 100%),
     var(--top-grad);
   transition: opacity 240ms var(--ease);
@@ -434,7 +451,8 @@ code, kbd, samp, pre {
   transition: opacity 240ms var(--ease);
   pointer-events: none;
 }
-:root[data-scrolled] .nav::before { opacity: 0.4; }
+:root[data-scrolled] .nav { background-color: rgb(var(--top-rgb) / 0.4); }
+:root[data-scrolled] .nav::before { opacity: 0; }
 :root[data-scrolled] .nav::after { opacity: 1; }
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
@@ -451,7 +469,6 @@ code, kbd, samp, pre {
 .nav .brand__mark { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); }
 .brand__name { font-size: var(--t-md); font-weight: var(--w-bold); letter-spacing: -0.02em; }
 
-.nav__search { flex: 1; max-width: 560px; }
 .nav__links { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 
 .nav__link {
@@ -524,17 +541,17 @@ code, kbd, samp, pre {
 
 :root[data-tone='sell'] {
   --top-grad: linear-gradient(115deg, #0891B2 0%, #2563EB 100%);
-  --top-grad-soft: linear-gradient(115deg, rgba(8, 145, 178, 0.4) 0%, rgba(37, 99, 235, 0.4) 100%);
+  --top-rgb: 23 122 206;
   --top-ink: #67E8F9;
 }
 :root[data-tone='services'] {
   --top-grad: linear-gradient(115deg, #65A30D 0%, #0E7490 100%);
-  --top-grad-soft: linear-gradient(115deg, rgba(101, 163, 13, 0.4) 0%, rgba(14, 116, 144, 0.4) 100%);
+  --top-rgb: 58 140 78;
   --top-ink: #BEF264;
 }
 :root[data-tone='social'] {
   --top-grad: linear-gradient(115deg, #FF5B1F 0%, #FF2E7E 58%, #C026D3 100%);
-  --top-grad-soft: linear-gradient(115deg, rgba(255, 91, 31, 0.4) 0%, rgba(255, 46, 126, 0.4) 58%, rgba(192, 38, 211, 0.4) 100%);
+  --top-rgb: 255 52 113;
   --top-ink: #FF8A65;
 }
 
@@ -1356,7 +1373,6 @@ code, kbd, samp, pre {
 
 @media (max-width: 860px) {
   .detail { grid-template-columns: 1fr; }
-  .nav__search { order: 3; flex-basis: 100%; max-width: none; }
   .nav { height: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; flex-wrap: wrap; gap: 10px; }
   .field-row { grid-template-columns: 1fr; }
   .nav__link { padding: 7px 9px; }
@@ -6525,6 +6541,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   --sx-wash: linear-gradient(115deg, rgba(255, 91, 31, 0.14) 0%, rgba(255, 46, 126, 0.08) 55%, rgba(192, 38, 211, 0.04) 100%);
   --sx-line: rgba(255, 110, 60, 0.3);
   --sx-glow: 0 10px 30px rgba(255, 70, 80, 0.28);
+  --top-rgb: 255 52 113;
 }
 
 /* ── The header: a banner, not a heading ───────────────────────────────── */
@@ -7419,16 +7436,20 @@ body.is-locked { overflow: hidden; }
   /* Square along the bottom: the header is the top edge of the screen, not a card on it. */
   border-radius: 0;
   padding-top: env(safe-area-inset-top, 0px);
-  background:
+  /* One colour along the top edge, the status bar's, as the marketplace
+     header has; the drifting gradient opens up below it. */
+  background-color: rgb(var(--top-rgb));
+  background-image:
+    var(--top-band),
     linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.22) 100%),
     var(--sx-grad);
-  background-size: 100% 100%, 180% 180%;
+  background-size: 100% 100%, 100% 100%, 180% 180%;
   animation: soctop-drift 14s ease-in-out infinite alternate;
   box-shadow: 0 14px 40px rgba(255, 60, 90, 0.26);
 }
 @keyframes soctop-drift {
-  from { background-position: 0 0, 0% 30%; }
-  to { background-position: 0 0, 100% 70%; }
+  from { background-position: 0 0, 0 0, 0% 30%; }
+  to { background-position: 0 0, 0 0, 100% 70%; }
 }
 .soctop__in {
   display: grid; gap: 12px;
@@ -7510,7 +7531,7 @@ body.is-locked { overflow: hidden; }
   /* Square, and see-through: the feed scrolls on underneath, blurred, so
      the bar reads as glass over the page rather than a lid on it. */
   border-radius: 0;
-  background: linear-gradient(115deg, rgba(255, 91, 31, 0.4) 0%, rgba(255, 46, 126, 0.4) 58%, rgba(192, 38, 211, 0.4) 100%);
+  background: rgb(var(--top-rgb) / 0.4);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   border-bottom: 1px solid rgba(255, 255, 255, 0.18);
@@ -7602,26 +7623,20 @@ body.is-locked { overflow: hidden; }
 
 /* ── The marketplace header's search, and its sheet ────────────────────── */
 
-/* The social header's glass, on whichever section's colour is behind it. */
-.navfind {
-  width: 100%; height: 40px;
-  display: flex; align-items: center; gap: 9px;
-  padding: 0 40px 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.34); border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.16); color: #fff;
-  font: inherit; font-size: var(--t-sm); text-align: left; cursor: pointer;
+/* The social header's search icon, on whichever section's colour is behind
+   it. A dot while a search is on, since the words themselves are not shown. */
+.navsearch {
+  position: relative; display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.34); border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16); color: #fff; cursor: pointer;
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
-.navfind:hover { background: rgba(255, 255, 255, 0.26); }
-.navfind:active { transform: scale(0.985); }
-.navfind__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255, 255, 255, 0.8); }
-.navfind.is-set .navfind__text { color: #fff; font-weight: var(--w-semi); }
-.nav__search { position: relative; }
-.navfind__clear {
-  position: absolute; top: 50%; right: 7px; translate: 0 -50%;
-  display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
-  border: 0; border-radius: 50%; background: rgba(0, 0, 0, 0.22); color: #fff; cursor: pointer;
+.navsearch:hover { background: rgba(255, 255, 255, 0.28); }
+.navsearch:active { transform: scale(0.94); }
+.navsearch.is-set::after {
+  content: ''; position: absolute; top: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 2px rgb(var(--top-rgb));
 }
 .nav .navcart, .nav .bell__button {
   border-color: rgba(255, 255, 255, 0.34); background: rgba(255, 255, 255, 0.16); color: #fff;
@@ -13473,7 +13488,7 @@ body::before {
   content: '';
   position: fixed; top: 0; left: 0; right: 0; z-index: 60;
   height: env(safe-area-inset-top, 0px);
-  background: var(--top-grad-soft);
+  background: rgb(var(--top-rgb) / 0.4);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   opacity: 0;

@@ -14,7 +14,7 @@ import { AuthModal } from './pages/AuthPage';
 import { inviteCodeFor } from './components/ShareKit';
 
 /**
- * Persistent chrome: brand, search, and the Sell action.
+ * Persistent chrome: brand, search, the cart and who you are.
  *
  * Search and "+ Sell" stay reachable from every page - the Xianyu pattern
  * where listing something is never more than one tap away.
@@ -71,27 +71,16 @@ export function AppShell() {
           <span className="brand__name">Figmark</span>
         </NavLink>
 
-        {/* The social tab's search, with items in it: a glass field on the
-            header's colour that opens the search sheet. It shows what is being
-            searched, however the search was started - a tag tapped on an item,
-            the back button, a shared link. */}
-        <div className="nav__search">
-          <button type="button" className={`navfind${query ? ' is-set' : ''}`} onClick={() => setSearching(true)}
-            aria-label={query ? `Searching for ${query}. Change the search` : 'Search items, shops, people and forums'}>
-            <Icon name="search" size={17} />
-            <span className="navfind__text">{query || 'Search items, shops, people…'}</span>
-          </button>
-          {query && (
-            <button type="button" className="navfind__clear" aria-label="Clear search" onClick={() => submitSearch('')}>
-              <Icon name="close" size={13} />
-            </button>
-          )}
-        </div>
-
         {/* Buy, sell and social moved to the tab bar; what belongs up here is
             the things that are not a section - search, who you are, and the
             way out. */}
         <nav className="nav__links">
+          {/* The social tab's search, with items in it: a glass icon that
+              opens the search sheet, marked while a search is on. */}
+          <button type="button" className={`navsearch${query ? ' is-set' : ''}`} onClick={() => setSearching(true)}
+            aria-label={query ? `Searching for ${query}. Change the search` : 'Search items, shops, people and forums'}>
+            <Icon name="search" size={18} />
+          </button>
           {/* The cart: every Buy not yet paid or booked. Forwarders, which
               used to sit here, are under Services now. */}
           {user && <CartButton />}
@@ -161,14 +150,14 @@ export function AppShell() {
 /**
  * The colour each section's header runs in, keyed in the stylesheet by
  * `data-tone` on the root, in the order of the tabs. `status` is the phone's
- * status bar under the clock: the middle of the header's gradient, which a
- * single colour matches across its width better than either end.
+ * status bar under the clock, and the same colour as the header's top edge
+ * (--top-rgb in the stylesheet), so the two read as one block.
  */
 const TONES = [
-  { id: 'buy', status: '#5A5EF2' },
-  { id: 'sell', status: '#1777D0' },
-  { id: 'services', status: '#3C8248' },
-  { id: 'social', status: '#FF3A5C' },
+  { id: 'buy', status: '#5B5EF1' },
+  { id: 'sell', status: '#177ACE' },
+  { id: 'services', status: '#3A8C4E' },
+  { id: 'social', status: '#FF3471' },
 ] as const;
 
 /**
