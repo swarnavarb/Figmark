@@ -6,6 +6,7 @@ import { Icon, type IconName } from './Icon';
 import { PushRow, usePush } from './PushControls';
 import { timeAgo } from '../format';
 import { setBadge } from '../push';
+import { isStale } from '../freshness';
 
 /**
  * What happened while you were not looking.
@@ -272,15 +273,79 @@ export function Notifications() {
 export function NotificationLinks() {
   const navigate = useNavigate();
   useEffect(() => {
+    const go = (raw: unknown) => {
+      const link = typeof raw === 'string' && raw.startsWith('/') ? raw : '/';
+      const here = `${window.location.pathname}${window.location.search}`;
+      if (link !== here) navigate(link);
+    };
+
     const onMessage = (event: MessageEvent) => {
       const data = event.data as { type?: string; link?: unknown } | null;
       if (data?.type !== 'figmark:open') return;
       event.ports[0]?.postMessage({ ok: true });
-      const link = typeof data.link === 'string' && data.link.startsWith('/') ? data.link : '/';
-      navigate(link);
+      void forgetHandoff();
+      go(data.link);
     };
+
+    /* The same tap, left by the worker for a page that missed the message:
+       frozen in the background, or reloaded onto a new version on the way. */
+    const pickUp = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const left = await readHandoff();
+      if (left) go(left);
+    };
+
     navigator.serviceWorker?.addEventListener('message', onMessage);
-    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+    document.addEventListener('visibilitychange', pickUp);
+    void pickUp();
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', onMessage);
+      document.removeEventListener('visibilitychange', pickUp);
+    };
   }, [navigate]);
+  return null;
+}
+
+const HANDOFF_CACHE = 'figmark-open';
+const HANDOFF_KEY = '/__figmark-open';
+/** A tap older than this was handled some other way, or is not news any more. */
+const HANDOFF_FRESH_MS = 2 * 60_000;
+
+async function readHandoff(): Promise<string | null> {
+  try {
+    if (!('caches' in window)) return null;
+    const cache = await caches.open(HANDOFF_CACHE);
+    const found = await cache.match(HANDOFF_KEY);
+    if (!found) return null;
+    await cache.delete(HANDOFF_KEY);
+    const { link, at } = (await found.json()) as { link?: unknown; at?: unknown };
+    return typeof link === 'string' && typeof at === 'number' && Date.now() - at < HANDOFF_FRESH_MS ? link : null;
+  } catch {
+    return null;
+  }
+}
+
+async function forgetHandoff(): Promise<void> {
+  try {
+    if ('caches' in window) await (await caches.open(HANDOFF_CACHE)).delete(HANDOFF_KEY);
+  } catch {
+    // Expires on its own.
+  }
+}
+
+/**
+ * When a newer version went live while somebody was using the page, their
+ * next move to another page loads it, at the page they were going to.
+ */
+export function FreshOnNavigate() {
+  const location = useLocation();
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (isStale()) window.location.assign(`${location.pathname}${location.search}${location.hash}`);
+  }, [location.pathname, location.search, location.hash]);
   return null;
 }

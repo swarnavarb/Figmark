@@ -1,7 +1,7 @@
 /*
  * Figmark's service worker: lock-screen notifications, and nothing else.
  *
- * Deliberately no fetch handler and no cache. The site is always loaded fresh
+ * Deliberately no fetch handler and no page cache. The site is always loaded fresh
  * from the network exactly as before; this file only wakes when a push
  * arrives or a notification is tapped. A caching worker is a different piece
  * of work with its own way of serving yesterday's site, and nothing here
@@ -50,6 +50,11 @@ self.addEventListener('push', (event) => {
   event.waitUntil(Promise.all([shown, badge, told]));
 });
 
+/* Where a tapped notification is going, for the page to pick up. One entry,
+   read and deleted by the page; the only thing this worker ever stores. */
+const HANDOFF_CACHE = 'figmark-open';
+const HANDOFF_KEY = '/__figmark-open';
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const { id, link } = event.notification.data || {};
@@ -84,6 +89,12 @@ self.addEventListener('notificationclick', (event) => {
     } catch {
       // Focus can be refused; the message still lands.
     }
+    // Left where the page looks when it comes to the front, too: a page
+    // frozen in the background, or reloaded onto a newer version on the way,
+    // misses the message but still finds this.
+    await caches.open(HANDOFF_CACHE)
+      .then((cache) => cache.put(HANDOFF_KEY, new Response(JSON.stringify({ link: path, at: Date.now() }))))
+      .catch(() => undefined);
     const answered = new Promise((resolve) => {
       const channel = new MessageChannel();
       channel.port1.onmessage = () => resolve(true);

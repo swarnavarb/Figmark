@@ -10,7 +10,8 @@ import { GuestWall } from './components/GuestWall';
 import { registerServiceWorker } from './push';
 import { listenForInstallPrompt } from './device';
 import { PushHost } from './components/PushControls';
-import { NotificationLinks } from './components/Notifications';
+import { FreshOnNavigate, NotificationLinks } from './components/Notifications';
+import { keepFresh } from './freshness';
 import { PullToRefresh } from './components/PullToRefresh';
 import './styles.css';
 
@@ -92,6 +93,7 @@ function App() {
     {/* Notifications: the floating prompt, the steps, and where this copy is used. */}
     <PushHost />
     <NotificationLinks />
+    <FreshOnNavigate />
     <PullToRefresh />
     <Routes>
       <Route element={<AppShell />}>
@@ -165,6 +167,8 @@ function App() {
 registerServiceWorker();
 // Android's install prompt can arrive at any moment; keep it for the guide.
 listenForInstallPrompt();
+// A home-screen app resumes from memory for days; pick up new deploys.
+keepFresh();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element #root is missing from index.html.');
