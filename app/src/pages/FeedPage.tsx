@@ -316,8 +316,11 @@ function QuestBar() {
   const waiting = view ? view.tasks.filter((task) => task.claimable).length + view.packs.length : 0;
   return (
     <div className="qbar qbar--buy">
-      <CollectorChip />
-      <StoreChip />
+      {/* You and your shop as one pill; the shop half only when you run one. */}
+      <div className="qduo">
+        <CollectorChip />
+        <StoreChip />
+      </div>
       <span className="qbar__spacer" />
       {view && (
         <Link to="/quests" className="btn btn--sm btn--ghost">

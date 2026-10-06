@@ -7946,6 +7946,16 @@ body.is-locked { overflow: hidden; }
 /* Buy tab: your chip, your shop's chip and Quests share one line on a phone. */
 .qbar--buy { flex-wrap: nowrap; gap: 6px; }
 .qbar--buy .qchip { min-width: 0; padding-right: 10px; }
+.qduo {
+  display: inline-flex; align-items: center; min-width: 0;
+  border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border-strong);
+}
+.qduo:hover { border-color: var(--accent-line); }
+.qduo > .qchip, .qduo > .qchip:hover { border-color: transparent; background: transparent; }
+.qduo > .qchip + .qchip { position: relative; padding-left: 6px; }
+.qduo > .qchip + .qchip::before {
+  content: ''; position: absolute; left: 0; top: 22%; bottom: 22%; width: 1px; background: var(--border-strong);
+}
 .qbar--buy .qchip__text { min-width: 0; }
 .qbar--buy .qchip__text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qbar--buy .qbar__spacer { flex: 0 0 0; margin-left: auto; }
