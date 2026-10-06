@@ -419,12 +419,12 @@ code, kbd, samp, pre {
   background-color: rgb(var(--top-rgb));
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   color: #fff;
-  transition: background-color 240ms var(--ease);
+  transition: background-color 240ms var(--ease), border-color 240ms var(--ease);
 }
 /* The header's top edge in its one colour, fading into the gradient below.
    Declared on the headers, not the root, so it takes the --top-rgb of the
    header it is drawn in. */
-.nav, .soctop {
+.nav, .soctop, .roombar {
   --top-band: linear-gradient(180deg,
     rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) env(safe-area-inset-top, 0px),
     rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
@@ -440,18 +440,26 @@ code, kbd, samp, pre {
   transition: opacity 240ms var(--ease);
   pointer-events: none;
 }
-/* The frost under it, there only while the page is passing beneath: at 40%
-   the gradient alone would leave every line of the page sharp behind the
-   search and the icons. */
-.nav::after {
-  content: ''; position: absolute; inset: 0; z-index: -2;
+/*
+ * The header once the page scrolls under it: glass that is the status bar's
+ * colour at the top, so the two meet without a joint, thins to 40% by the
+ * header's foot, and then dissolves into the page over a short blurred tail
+ * rather than stopping at a line. The social tab's slim bar is the same glass.
+ */
+:root { --glass-tail: 18px; }
+.nav::after, .soccompact::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--glass-tail)); z-index: -2;
+  background: linear-gradient(180deg,
+    rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) env(safe-area-inset-top, 0px),
+    rgb(var(--top-rgb) / 0.4) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  opacity: 0;
-  transition: opacity 240ms var(--ease);
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - var(--glass-tail)), transparent 100%);
+  mask-image: linear-gradient(180deg, #000 calc(100% - var(--glass-tail)), transparent 100%);
   pointer-events: none;
 }
-:root[data-scrolled] .nav { background-color: rgb(var(--top-rgb) / 0.4); }
+.nav::after { opacity: 0; transition: opacity 240ms var(--ease); }
+:root[data-scrolled] .nav { background-color: transparent; border-bottom-color: transparent; }
 :root[data-scrolled] .nav::before { opacity: 0; }
 :root[data-scrolled] .nav::after { opacity: 1; }
 
@@ -7003,8 +7011,9 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 /* ── Bars that step aside while you read ───────────────────────────────── */
 
-.nav, .tabbar { transition: transform 280ms var(--ease); }
-:root[data-bars='hidden'] .nav { transform: translateY(-100%); }
+.nav { transition: transform 280ms var(--ease), background-color 240ms var(--ease), border-color 240ms var(--ease); }
+.tabbar { transition: transform 280ms var(--ease); }
+:root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail))); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(100%); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7529,15 +7538,11 @@ body.is-locked { overflow: hidden; }
   position: fixed; top: 0; left: 0; right: 0; z-index: 60;
   padding-top: env(safe-area-inset-top, 0px);
   /* Square, and see-through: the feed scrolls on underneath, blurred, so
-     the bar reads as glass over the page rather than a lid on it. */
+     the bar reads as glass over the page rather than a lid on it. The glass
+     is its ::before, shared with the marketplace header. */
   border-radius: 0;
-  background: rgb(var(--top-rgb) / 0.4);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 8px 26px rgba(255, 60, 90, 0.18);
   color: #fff;
-  transform: translateY(-110%);
+  transform: translateY(calc(-100% - var(--glass-tail) - 4px));
   transition: transform 300ms var(--ease);
   pointer-events: none;
 }
@@ -7679,11 +7684,15 @@ body.is-locked { overflow: hidden; }
   position: sticky; top: 0; z-index: 30;
   padding-top: env(safe-area-inset-top, 0px);
   border-radius: 0;
-  background: var(--sx-grad);
+  background-color: rgb(var(--top-rgb));
+  background-image: var(--top-band), var(--sx-grad);
   box-shadow: 0 8px 24px rgba(255, 60, 90, 0.26);
   color: #fff;
 }
-.roombar--forum { background: linear-gradient(115deg, #7C3AED 0%, #C026D3 45%, #FF2E7E 100%); }
+.roombar--forum {
+  --top-rgb: 198 39 203;
+  background-image: var(--top-band), linear-gradient(115deg, #7C3AED 0%, #C026D3 45%, #FF2E7E 100%);
+}
 .roombar__in {
   display: flex; align-items: center; gap: 10px;
   max-width: 720px; height: 56px; margin: 0 auto;
@@ -13480,24 +13489,39 @@ button.sk-plan__pick { cursor: pointer; }
 .pushguide__glyph { width: 18px; height: 18px; vertical-align: -3px; color: var(--accent); }
 .pushguide__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* The strip under an iPhone's clock and notch. While the header is showing
-   it is the header's own top; once the header slides away on scroll the
-   strip stays behind in the header's scrolled glass, so the time never sits
-   on bare page. Zero high everywhere else. */
-body::before {
-  content: '';
-  position: fixed; top: 0; left: 0; right: 0; z-index: 60;
-  height: env(safe-area-inset-top, 0px);
-  background: rgb(var(--top-rgb) / 0.4);
+/*
+ * The strip under the clock, in the section's colour, on every screen.
+ *
+ * Two jobs. On an iPhone opened from the home screen it is the colour under
+ * the clock and notch, staying put when the header slides away. And in
+ * Safari, which ignores theme-color and colours its status bar from a fixed
+ * or sticky bar at the top of the page, it is that bar: the social header
+ * scrolls with the page, so without this Safari fell back to the page's dark
+ * background there. A real element rather than body::before, because Safari
+ * finds the bar by hit-testing and a pseudo-element answers as <body>. One
+ * pixel high where there is no notch, under a header whose top edge is the
+ * same colour.
+ */
+.topstrip {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 61;
+  height: max(env(safe-area-inset-top, 0px), 1px);
+  background-color: rgb(var(--top-rgb));
+}
+:root:has(.roombar--forum:not(.roombar--reveal)) .topstrip { --top-rgb: 198 39 203; }
+/* With the marketplace header slid away, the strip trails the same blurred
+   tail the header has, so the page passes under it rather than meeting an edge. */
+.topstrip::after {
+  content: ''; position: absolute; top: 100%; left: 0; right: 0; height: var(--glass-tail);
+  background: linear-gradient(180deg, rgb(var(--top-rgb) / 0.6), rgb(var(--top-rgb) / 0));
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent);
+  mask-image: linear-gradient(180deg, #000, transparent);
   opacity: 0;
   transition: opacity 280ms var(--ease);
   pointer-events: none;
 }
-:root[data-bars='hidden'] body::before { opacity: 1; }
-/* The social header runs its own colour up under the clock on purpose. */
-body:has(.shell--social)::before { display: none; }
+:root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
 
 /* ── Pull to refresh (home-screen copy only) ──────────────────────────────── */
 /* No rubber band at the top: the indicator is the bounce. */

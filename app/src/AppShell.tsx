@@ -62,6 +62,9 @@ export function AppShell() {
     // The social screens bring their own header - one gradient block with the
     // brand, the bell and you on it - so the marketplace one steps aside there.
     <div className={`shell shell--tabbed${social ? ' shell--social' : ''}${room ? ' shell--room' : ''}`}>
+      {/* The colour under the clock, and what Safari reads for its status
+          bar (see .topstrip in the stylesheet). */}
+      <div className="topstrip" aria-hidden="true" />
       <ScrollManager />
       <ScrollBars />
       <ViewportSync />
