@@ -78,6 +78,14 @@ Checked by `scripts/smoke-push.mjs` (part of `npm test`).
 Each signed-in copy of the site reports its device, browser, whether it was
 opened from the home screen, and its notification state, once a day or when
 one changes (`POST /api/me/device`, kept on the account as `clientDevices`).
+Websites are never told when a home-screen icon is deleted, so a home-screen
+copy counts as installed only while it is used: one not opened for 14 days is
+taken as removed. The admin figures then stop counting it (they show "ever
+added" beside "on the home screen now"), and the person's browser starts
+offering "Add to Home Screen" again. On an iPhone, deleting the app also
+deletes its notification subscription; Apple reports it gone on the next
+push and the server forgets that device.
+
 The admin console's **Installs & devices** tab shows the totals by person:
 e.g. "38% of iPhone users added Figmark to their home screen", plus browsers,
 notifications on, and active in the last 7 days.

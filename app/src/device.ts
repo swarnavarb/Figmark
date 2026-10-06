@@ -124,6 +124,14 @@ function write(key: string, value: string): void {
   }
 }
 
+function forget(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Nothing kept to forget.
+  }
+}
+
 let sessionId: string | null = null;
 function deviceId(): string {
   const kept = read(ID_KEY);
@@ -171,7 +179,10 @@ export async function reportDevice(userId: string, push: ClientPushState): Promi
   try {
     const { onHomeScreen } = await api.reportDevice(body);
     write(SENT_KEY, JSON.stringify({ signature, at: Date.now() }));
+    // Either way: a home-screen copy that has since been deleted (unused for
+    // two weeks) turns this back off, and the prompt offers it again.
     if (onHomeScreen) write(HOME_KEY, userId);
+    else forget(HOME_KEY);
     return onHomeScreen ?? null;
   } catch {
     // Figures, not function: the next visit tries again.

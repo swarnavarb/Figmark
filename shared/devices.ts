@@ -33,12 +33,29 @@ export function groupOf(platform: ClientPlatform): PlatformGroup {
   return 'other';
 }
 
+/**
+ * How long a home-screen copy counts as still there without being opened.
+ *
+ * A website is never told its icon was deleted - there is no uninstall event
+ * on the web - so "still installed" can only mean "still being used". A copy
+ * that has not been opened in this long is treated as gone: the figures stop
+ * counting it, and the person's browser starts offering it again.
+ */
+export const INSTALL_FRESH_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** This copy was opened from the home screen, recently enough to still be there. */
+export function stillInstalled(device: Pick<ClientDevice, 'installed' | 'lastSeen'>, now = Date.now()): boolean {
+  return device.installed && now - Date.parse(device.lastSeen) < INSTALL_FRESH_MS;
+}
+
 export interface PlatformFigures {
   group: PlatformGroup;
   /** People who used it on this kind of device. */
   people: number;
-  /** ...of whom have ever opened it from the home screen / as an installed app. */
+  /** ...of whom have it on the home screen now: opened from there in the last 14 days. */
   installed: number;
+  /** ...of whom have ever opened it from the home screen, including those who since removed it. */
+  everInstalled: number;
   /** ...of whom have notifications on on at least one such device. */
   pushOn: number;
   /** ...of whom used it on this kind of device in the last 7 days. */
@@ -56,6 +73,7 @@ export interface DeviceFigures {
   /** People who have reported at least one device. */
   people: number;
   installed: number;
+  everInstalled: number;
   pushOn: number;
   active7d: number;
   platforms: PlatformFigures[];
@@ -70,13 +88,14 @@ export function deviceFigures(
 ): DeviceFigures {
   const platforms = new Map<PlatformGroup, PlatformFigures>();
   const browsers = new Map<string, BrowserFigures>();
-  const totals = { people: 0, installed: 0, pushOn: 0, active7d: 0 };
+  const totals = { people: 0, installed: 0, everInstalled: 0, pushOn: 0, active7d: 0 };
 
   for (const account of accounts) {
     const devices = account.clientDevices ?? [];
     if (devices.length === 0) continue;
     totals.people += 1;
-    if (devices.some((device) => device.installedAt)) totals.installed += 1;
+    if (devices.some((device) => stillInstalled(device, now))) totals.installed += 1;
+    if (devices.some((device) => device.installedAt)) totals.everInstalled += 1;
     if (devices.some((device) => device.push === 'on')) totals.pushOn += 1;
     if (devices.some((device) => now - Date.parse(device.lastSeen) < WEEK_MS)) totals.active7d += 1;
 
@@ -86,9 +105,10 @@ export function deviceFigures(
       byGroup.set(group, [...(byGroup.get(group) ?? []), device]);
     }
     for (const [group, mine] of byGroup) {
-      const row = platforms.get(group) ?? { group, people: 0, installed: 0, pushOn: 0, active7d: 0 };
+      const row = platforms.get(group) ?? { group, people: 0, installed: 0, everInstalled: 0, pushOn: 0, active7d: 0 };
       row.people += 1;
-      if (mine.some((device) => device.installedAt)) row.installed += 1;
+      if (mine.some((device) => stillInstalled(device, now))) row.installed += 1;
+      if (mine.some((device) => device.installedAt)) row.everInstalled += 1;
       if (mine.some((device) => device.push === 'on')) row.pushOn += 1;
       if (mine.some((device) => now - Date.parse(device.lastSeen) < WEEK_MS)) row.active7d += 1;
       platforms.set(group, row);

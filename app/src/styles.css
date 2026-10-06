@@ -398,16 +398,11 @@ code, kbd, samp, pre {
   align-items: center;
   gap: 18px;
   /* Opened from an iPhone's home screen the page can reach under the clock;
-     the header starts below it, as the social header does. The strip under
-     the clock is solid, and the header below it is the same colour, nearly
-     opaque, with only a light frost: a heavy blur read as a smudge under the
-     clock, and a different shade made a visible band between the two. */
+     the header starts below it, as the social header does. Solid, with no
+     frosted glass at all: any blur showed as a smudge under the clock, and
+     the strip under the clock is the same colour so the two read as one bar. */
   padding: env(safe-area-inset-top, 0px) 20px 0;
-  background:
-    linear-gradient(var(--bg), var(--bg)) top / 100% env(safe-area-inset-top, 0px) no-repeat,
-    rgba(8, 11, 18, 0.94);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 

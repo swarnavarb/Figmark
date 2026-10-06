@@ -153,7 +153,7 @@ async function test(request: HttpRequest, _context: InvocationContext) {
   const sent = await pushToUser(repository, user.id, {
     id: `tst_${randomUUID().slice(0, 12)}`,
     title: 'Notifications are on',
-    body: 'This is how Figmark will tell you when something happens.',
+    body: 'This is how you will hear the moment something happens.',
     link: '/',
   });
   return json(200, { sent });

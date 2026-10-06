@@ -53,30 +53,50 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const { id, link } = event.notification.data || {};
-  const target = new URL(link || '/', self.location.origin).href;
+  const path = typeof link === 'string' && link.startsWith('/') ? link : '/';
+  const target = new URL(path, self.location.origin).href;
 
-  event.waitUntil((async () => {
-    // Tapping it is acting on it, which is when the bell counts it read.
-    if (id && !String(id).startsWith('tst_')) {
-      await fetch('/api/notifications/read', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      }).catch(() => undefined);
-    }
+  // Tapping it is acting on it, which is when the bell counts it read. Not
+  // waited on: getting to the page comes first.
+  const read = id && !String(id).startsWith('tst_')
+    ? fetch('/api/notifications/read', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => undefined)
+    : Promise.resolve();
 
+  event.waitUntil(Promise.all([read, (async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
-    if (open) {
-      await open.focus();
-      if ('navigate' in open) {
-        await open.navigate(target).catch(() => open.postMessage({ type: 'figmark:open', link }));
-      }
+    if (!open) {
+      await self.clients.openWindow(target);
       return;
     }
+    /* Already open (often just in the background, as a home-screen app is):
+       bring it forward and tell it where to go. The page moves itself, in
+       place, which works everywhere - unlike navigating the window from here,
+       which iPhones refuse for a page this worker did not load. A page that
+       has not heard within a moment is navigated the old way as a fallback. */
+    try {
+      await open.focus();
+    } catch {
+      // Focus can be refused; the message still lands.
+    }
+    const answered = new Promise((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => resolve(true);
+      open.postMessage({ type: 'figmark:open', link: path }, [channel.port2]);
+      setTimeout(() => resolve(false), 1500);
+    });
+    if (await answered) return;
+    if ('navigate' in open) {
+      const moved = await open.navigate(target).catch(() => null);
+      if (moved) return;
+    }
     await self.clients.openWindow(target);
-  })());
+  })()]));
 });
 
 /*

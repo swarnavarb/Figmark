@@ -1,5 +1,5 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { deviceFigures } from '../../../shared/devices.js';
+import { deviceFigures, stillInstalled } from '../../../shared/devices.js';
 import {
   CLIENT_BROWSERS, CLIENT_PLATFORMS, CLIENT_PUSH_STATES,
   type ClientBrowser, type ClientDevice, type ClientPlatform, type ClientPushState,
@@ -57,8 +57,11 @@ async function report(request: HttpRequest, _context: InvocationContext) {
   // Whether this person has Figmark on the home screen of this kind of phone,
   // from another copy. A browser tab on an iPhone cannot see its home-screen
   // twin, so this is how it knows to stop asking for something already done.
+  // Only one still in use counts: there is no telling when an icon is
+  // deleted, so a home-screen copy unopened for two weeks is taken as gone
+  // and the browser goes back to offering it.
   const onHomeScreen = installed || devices.some((device) =>
-    device.id !== id && device.platform === platform && device.installedAt !== null);
+    device.id !== id && device.platform === platform && stillInstalled(device));
 
   const unchanged = before && before.platform === platform && before.browser === browser
     && before.installed === installed && before.push === push
