@@ -12,7 +12,23 @@
         document.querySelector('meta[name="viewport"]').content += ', maximum-scale=1';
       }
     </script>
-    <meta name="theme-color" content="#080B12" />
+    <meta name="theme-color" content="#5B5EF1" />
+    <!-- The section's colour before the first paint. Safari takes its status
+         bar colour from the first frame, so waiting for the app to load and
+         set it left every section in Buy's. Keep in step with TONES in
+         src/AppShell.tsx and the tabs' paths in src/components/TabBar.tsx. -->
+    <script>
+      (function () {
+        var path = location.pathname;
+        var starts = function (list) { return list.some(function (p) { return path.indexOf(p) === 0; }); };
+        var tone = starts(['/social', '/messages']) ? ['social', '#FF3471']
+          : starts(['/services', '/forwarders', '/escrow', '/packing']) ? ['services', '#3A8C4E']
+          : starts(['/shop', '/sell', '/lots', '/lot/', '/routes']) ? ['sell', '#177ACE']
+          : ['buy', '#5B5EF1'];
+        document.documentElement.setAttribute('data-tone', tone[0]);
+        document.querySelector('meta[name="theme-color"]').content = tone[1];
+      })();
+    </script>
     <title>Figmark</title>
     <!-- Installable: on a phone's home screen it opens like an app, and on an
          iPhone that is what lets it show notifications at all. -->

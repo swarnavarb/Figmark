@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FloatingCalc } from './components/FloatingCalcFab';
 import { Notifications } from './components/Notifications';
@@ -38,12 +38,19 @@ export function AppShell() {
   // Each section's header carries that section's hue, the same one its pill
   // in the tab bar does; a page outside the four reads as Buy, as the bar does.
   const tone = TONES[Math.max(0, TABS.findIndex((tab) => tab.match(pathname)))] ?? TONES[0];
-  useEffect(() => {
+  // Before paint: Safari picks its status bar colour from the first frame it
+  // sees, so a frame in the wrong tone sticks. (index.html sets the first
+  // page's tone before any of this loads.)
+  useLayoutEffect(() => {
     document.documentElement.dataset.tone = tone.id;
     // The phone's own status bar takes the header's colour, so the header
-    // reads as running to the very top of the screen.
-    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (meta) meta.content = tone.status;
+    // reads as running to the very top of the screen. A new tag rather than
+    // a changed one: Safari does not always notice an edited theme-color.
+    const meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    meta.content = tone.status;
+    document.querySelectorAll('meta[name="theme-color"]').forEach((old) => old.remove());
+    document.head.append(meta);
   }, [tone]);
 
   const closeSearch = useCallback(() => setSearching(false), []);
@@ -63,8 +70,10 @@ export function AppShell() {
     // brand, the bell and you on it - so the marketplace one steps aside there.
     <div className={`shell shell--tabbed${social ? ' shell--social' : ''}${room ? ' shell--room' : ''}`}>
       {/* The colour under the clock, and what Safari reads for its status
-          bar (see .topstrip in the stylesheet). */}
-      <div className="topstrip" aria-hidden="true" />
+          bar (see .topstrip in the stylesheet). A new element for each
+          section: Safari samples its status bar colour again when the bar
+          at the top is replaced, but not when its colour changes. */}
+      <div key={tone.id} className="topstrip" aria-hidden="true" />
       <ScrollManager />
       <ScrollBars />
       <ViewportSync />
@@ -154,7 +163,8 @@ export function AppShell() {
  * The colour each section's header runs in, keyed in the stylesheet by
  * `data-tone` on the root, in the order of the tabs. `status` is the phone's
  * status bar under the clock, and the same colour as the header's top edge
- * (--top-rgb in the stylesheet), so the two read as one block.
+ * (--top-rgb in the stylesheet), so the two read as one block. index.html
+ * repeats the paths and colours, to set the first page's tone before paint.
  */
 const TONES = [
   { id: 'buy', status: '#5B5EF1' },
