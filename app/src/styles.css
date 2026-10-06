@@ -13118,3 +13118,5 @@ button.sk-plan__pick { cursor: pointer; }
 .forummod__warnform { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
 .pstats__follows { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .is-gone { opacity: .5; }
+.streams--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.streams--3 .streams__tab { gap: 5px; white-space: nowrap; }

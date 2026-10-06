@@ -70,6 +70,9 @@ function autoSeedEnabled(): boolean {
 /** How long one instance reuses the newest-posts window and the forum list. */
 const RECENT_TTL_MS = 15_000;
 const FORUM_TTL_MS = 60_000;
+/** Forums made up to here predate admins, and go to the site owner. */
+const FORUM_OWNER_CUTOFF = '2026-10-07T00:00:00.000Z';
+
 export class CosmosRepository implements Repository {
   readonly backend: BackendKind = 'cosmos';
 
@@ -249,6 +252,36 @@ export class CosmosRepository implements Repository {
   }
 
   /**
+   * Makes the site owner the admin of every forum that existed before forums
+   * had admins. Forums opened after the cutoff keep whoever opened them, so
+   * this is safe to run on every start. The owner's handle comes from
+   * FORUM_OWNER_HANDLE (default `swarnava`), matched by handle, else by first name.
+   */
+  private async assignForumOwner(): Promise<string> {
+    const wanted = (process.env.FORUM_OWNER_HANDLE ?? 'swarnava').trim().toLowerCase();
+    const users = await this.listAllUsers();
+    const byHandle = users.filter((user) => (user.username ?? '').toLowerCase() === wanted);
+    const byName = users.filter((user) => (user.displayName ?? '').trim().toLowerCase().split(/\s+/)[0] === wanted);
+    // One account, or nobody: never guess between two people of the same name.
+    const owner = byHandle.length === 1 ? byHandle[0] : byName.length === 1 ? byName[0] : null;
+    if (!owner) return '';
+    let moved = 0;
+    for (const forum of await this.listForums()) {
+      if (forum.createdBy === owner.id || forum.createdAt > FORUM_OWNER_CUTOFF) continue;
+      await this.saveForum({
+        ...forum,
+        createdBy: owner.id,
+        memberIds: [...new Set([...(forum.memberIds ?? []), owner.id])],
+        moderatorIds: (forum.moderatorIds ?? []).filter((id) => id !== owner.id),
+        bannedIds: (forum.bannedIds ?? []).filter((id) => id !== owner.id),
+        updatedAt: new Date().toISOString(),
+      });
+      moved += 1;
+    }
+    return moved ? ` Made @${owner.username ?? owner.displayName} admin of ${moved} forum(s).` : '';
+  }
+
+  /**
    * Gives a handle to any account that has none.
    *
    * A row written before handles existed carries no username, and nothing
@@ -344,7 +377,9 @@ export class CosmosRepository implements Repository {
       // After the rows are in place, so anything the top-up just added is
       // considered too.
       const handles = await this.backfillHandles();
-      outcome = `${repaired}${toppedUp}${handles}` || ' Fixtures were already up to date.';
+      // Never lets a failure here stop the start-up repairs reporting.
+      const forums = await this.assignForumOwner().catch((error) => ` Forum owner pass failed: ${describeError(error)}.`);
+      outcome = `${repaired}${toppedUp}${handles}${forums}` || ' Fixtures were already up to date.';
     } catch (error) {
       outcome = ` Preparing the database failed: ${describeError(error)}.`;
     }

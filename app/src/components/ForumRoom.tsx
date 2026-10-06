@@ -149,17 +149,17 @@ function Forum() {
         )}
 
         <div className="feed">
-          {member && channel && (
-            <Composer forum={{ id: channel.id, name: channel.name }} onPosted={load} />
-          )}
-
-          {data && (data.posts.length > 1 || needle) && (
+          {data && data.posts.length > 0 && (
             <input className="forumsearch" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="Search this forum" aria-label="Search this forum" />
           )}
 
+          {member && channel && (
+            <Composer forum={{ id: channel.id, name: channel.name }} onPosted={load} />
+          )}
+
           {data && data.posts.length > 1 && (
-            <div className="streams" role="tablist" aria-label="Order">
+            <div className="streams streams--3" role="tablist" aria-label="Order">
               {([['latest', 'Latest', 'spark'], ['top', 'Top', 'bolt'], ['media', 'Photos', 'image']] as const).map(([key, label, icon]) => (
                 <button key={key} type="button" role="tab" aria-selected={order === key}
                   className={`streams__tab${order === key ? ' is-on' : ''}`} onClick={() => setOrder(key)}>
