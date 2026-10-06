@@ -120,7 +120,7 @@ await check('the arithmetic', async () => {
   const seen = (days) => new Date(now - days * 86_400_000).toISOString();
   const row = (over) => ({ id: 'd', platform: 'ios', browser: 'safari', installed: false, installedAt: null, push: 'off', firstSeen: seen(30), lastSeen: seen(1), ...over });
   const figures = deviceFigures([
-    { clientDevices: [row({ installedAt: seen(2) })] },
+    { clientDevices: [row({ installed: true, installedAt: seen(2) })] },
     { clientDevices: [row({})] },
     { clientDevices: [row({ lastSeen: seen(20) })] },
     { clientDevices: [] },
@@ -128,9 +128,38 @@ await check('the arithmetic', async () => {
   ], now);
   assert.equal(figures.people, 3, 'accounts that never reported are not people here');
   assert.equal(figures.installed, 1);
+  assert.equal(figures.everInstalled, 1);
   assert.equal(figures.active7d, 2);
   assert.equal(percent(1, 3), '33%');
   assert.equal(percent(0, 0), '-');
+});
+
+await check('a home-screen copy unused for two weeks counts as removed', async () => {
+  const now = Date.parse('2026-10-06T00:00:00Z');
+  const seen = (days) => new Date(now - days * 86_400_000).toISOString();
+  const home = (days) => ({ id: 'h', platform: 'ios', browser: 'safari', installed: true, installedAt: seen(40), push: 'on', firstSeen: seen(40), lastSeen: seen(days) });
+  const figures = deviceFigures([{ clientDevices: [home(3)] }, { clientDevices: [home(15)] }], now);
+  assert.equal(figures.installed, 1, 'only the one still opened');
+  assert.equal(figures.everInstalled, 2);
+  const ios = figures.platforms.find((entry) => entry.group === 'ios');
+  assert.equal(ios.installed, 1);
+  assert.equal(ios.everInstalled, 2);
+});
+
+await check('a browser stops being told "already installed" once that copy goes quiet', async () => {
+  const sam = await person('Sam', '+919000072003');
+  await report(req({ headers: sam.auth, body: device({ id: 'dev_samhome_01', installed: true, push: 'on' }) }), ctx);
+  let answer = await report(req({ headers: sam.auth, body: device({ id: 'dev_samtab_001' }) }), ctx);
+  assert.equal(answer.jsonBody.onHomeScreen, true);
+  // Three weeks without opening it: deleted, as far as anybody can tell.
+  const stored = await repository.getUserById(sam.id);
+  const old = new Date(Date.now() - 21 * 86_400_000).toISOString();
+  await repository.updateUser({
+    ...stored,
+    clientDevices: stored.clientDevices.map((entry) => (entry.id === 'dev_samhome_01' ? { ...entry, lastSeen: old } : entry)),
+  });
+  answer = await report(req({ headers: sam.auth, body: device({ id: 'dev_samtab_001', push: 'unsupported' }) }), ctx);
+  assert.equal(answer.jsonBody.onHomeScreen, false);
 });
 
 console.log(`${passed} checks passed`);

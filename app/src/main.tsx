@@ -10,6 +10,7 @@ import { GuestWall } from './components/GuestWall';
 import { registerServiceWorker } from './push';
 import { listenForInstallPrompt } from './device';
 import { PushHost } from './components/PushControls';
+import { NotificationLinks } from './components/Notifications';
 import { PullToRefresh } from './components/PullToRefresh';
 import './styles.css';
 
@@ -90,6 +91,7 @@ function App() {
     <QuestProvider>
     {/* Notifications: the floating prompt, the steps, and where this copy is used. */}
     <PushHost />
+    <NotificationLinks />
     <PullToRefresh />
     <Routes>
       <Route element={<AppShell />}>

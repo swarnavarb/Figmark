@@ -260,3 +260,27 @@ export function Notifications() {
     </div>
   );
 }
+
+/**
+ * Where a tapped lock-screen notification goes, when the app is already open.
+ *
+ * The service worker brings the open window forward and posts the link here;
+ * this answers so it knows not to fall back, and moves within the app - no
+ * reload, and it works on an iPhone's home-screen app, where the worker may
+ * not navigate a window it did not load. Mounted once, inside the router.
+ */
+export function NotificationLinks() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; link?: unknown } | null;
+      if (data?.type !== 'figmark:open') return;
+      event.ports[0]?.postMessage({ ok: true });
+      const link = typeof data.link === 'string' && data.link.startsWith('/') ? data.link : '/';
+      navigate(link);
+    };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+  }, [navigate]);
+  return null;
+}

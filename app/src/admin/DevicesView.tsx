@@ -45,8 +45,11 @@ export function DevicesView() {
           {phones.map((row) => (
             <p key={row.group} className="devstats__headline">
               <strong>{percent(row.installed, row.people)}</strong> of {PLATFORM_GROUP_LABELS[row.group]} users
-              added Figmark to their home screen
+              have Figmark on their home screen
               <span className="faint"> · {row.installed} of {row.people}</span>
+              {row.everInstalled > row.installed && (
+                <span className="faint"> · {row.everInstalled - row.installed} more added it and stopped using it</span>
+              )}
             </p>
           ))}
         </div>
@@ -54,7 +57,8 @@ export function DevicesView() {
 
       <div className="devstats__tiles">
         <Tile label="People counted" value={String(figures.people)} hint="signed in since this was added" />
-        <Tile label="On the home screen" value={percent(figures.installed, figures.people)} hint={people(figures.installed)} />
+        <Tile label="On the home screen now" value={percent(figures.installed, figures.people)}
+          hint={`${people(figures.installed)} · ${figures.everInstalled} ever added`} />
         <Tile label="Notifications on" value={percent(figures.pushOn, figures.people)} hint={people(figures.pushOn)} />
         <Tile label="Active, last 7 days" value={percent(figures.active7d, figures.people)} hint={people(figures.active7d)} />
       </div>
@@ -67,7 +71,8 @@ export function DevicesView() {
               <tr>
                 <th scope="col">Device</th>
                 <th scope="col" className="num">People</th>
-                <th scope="col">Home screen</th>
+                <th scope="col">Home screen now</th>
+                <th scope="col" className="num">Ever added</th>
                 <th scope="col">Notifications on</th>
                 <th scope="col" className="num">Active 7 days</th>
               </tr>
@@ -79,6 +84,8 @@ export function DevicesView() {
         </div>
         <p className="field__hint">
           A person on two kinds of device counts once in each row. On a computer, "home screen" means installed as an app.
+          Websites are never told when an icon is deleted, so "home screen" counts copies opened from it in the last
+          14 days; one unused for longer is taken as removed.
         </p>
       </div>
 
@@ -128,6 +135,7 @@ function PlatformRow({ row }: { row: PlatformFigures }) {
       <th scope="row">{PLATFORM_GROUP_LABELS[row.group]}</th>
       <td className="num">{row.people}</td>
       <td><Meter value={row.installed} max={row.people} label={`${percent(row.installed, row.people)} · ${row.installed}`} /></td>
+      <td className="num">{row.everInstalled}</td>
       <td><Meter value={row.pushOn} max={row.people} label={`${percent(row.pushOn, row.people)} · ${row.pushOn}`} /></td>
       <td className="num">{row.active7d}</td>
     </tr>
