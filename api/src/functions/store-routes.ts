@@ -20,7 +20,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { forwarderTookLot } from '../service-access.js';
 import { ownedLot } from './fulfilment-routes.js';
-import { notify } from './notify.js';
+import { notify, orderNames } from './notify.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -1006,10 +1006,11 @@ async function commissionAct(request: HttpRequest, _context: InvocationContext) 
   const saved = await repository.updateOrder(order);
   const artist = await repository.getUserById(job.artistId);
   if (artist) {
+    const buyer = (await orderNames(repository, order)).buyer;
     await notify(repository, crewOf(artist, 'artist'), {
       kind: 'commission',
-      title: `${order.itemName}: ${job.history[job.history.length - 1]!.note}`,
-      body: job.offeringName,
+      title: `${buyer}: ${job.history[job.history.length - 1]!.note}`,
+      body: `${job.offeringName} · ${order.itemName}`,
       link: `/services/store/artist/${artist.id}`,
     });
   }

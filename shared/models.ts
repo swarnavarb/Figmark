@@ -1,5 +1,6 @@
 import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
+import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
@@ -156,6 +157,8 @@ export interface User extends BaseDocument {
    * is enough to put a message on that person's screen.
    */
   pushEndpoints?: PushEndpoint[];
+  /** What reaches their phone; absent means everything, with sound. */
+  notificationPrefs?: NotificationPrefs;
   /**
    * Where this account uses Figmark: one row per browser or home-screen copy,
    * as that copy reports itself. Kept for the operators' install figures and
@@ -2152,6 +2155,27 @@ export interface Notification extends BaseDocument {
    * how the clock knows what is still owed.
    */
   pushedAt?: string;
+  /**
+   * Notices about the same thing collapse into one while unread: a third
+   * message from Arjun is "Arjun sent you 3 messages", not a third row. This
+   * is that thing - a conversation, a post's reactions - and the lock screen
+   * replaces rather than stacks on it too.
+   */
+  group?: string;
+  /** How many events this row stands for. Absent means one. */
+  count?: number;
+  /** Who did them, newest first and each once, for "Arjun and 3 others". */
+  actors?: string[];
+}
+
+/** What reaches somebody's phone, set from the notifications card. */
+export interface NotificationPrefs {
+  /** Categories that stay in the bell and do not go to the lock screen. */
+  pushOff: NotificationCategory[];
+  /** Between 22:00 and 07:00 where they are, pushes arrive without sound. */
+  quietHours: boolean;
+  /** Their IANA time zone, as their device reported it. */
+  timeZone: string | null;
 }
 
 export const CLIENT_PLATFORMS = ['ios', 'android', 'mac', 'windows', 'linux', 'other'] as const;
@@ -2198,6 +2222,20 @@ export interface PushEndpoint {
 }
 
 export type NotificationKind =
+  /** A direct message, to you or a store you speak for. */
+  | 'message'
+  /** Somebody reacted to a message you or your store sent. */
+  | 'message_reacted'
+  /** A customer wrote in your store's channel. */
+  | 'channel_message'
+  /** A store you follow announced something in its channel. */
+  | 'channel_announcement'
+  /** Somebody liked a comment you or your store wrote. */
+  | 'comment_liked'
+  /** Somebody followed you, or your store. */
+  | 'followed'
+  /** A review was left for you, your store, or an order. */
+  | 'review_received'
   /** A forum's founder or a moderator warned, removed or appointed you. */
   | 'forum_moderation'
   | 'want_answered'

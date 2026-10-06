@@ -18,7 +18,8 @@ import { ownPhotos } from '../storage/index.js';
 import { tooFast } from '../rate-limit.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
-import { notify } from './notify.js';
+import { notify, storeCrew } from './notify.js';
+import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
 import { levelOf } from './quest-routes.js';
 
 /**
@@ -362,6 +363,50 @@ function linkTo(post: Pick<Post, 'channelId' | 'id'>): string {
 function gist(text: string): string {
   const line = text.replace(/\s+/g, ' ').trim();
   return line.length > 60 ? `${line.slice(0, 57)}…` : line || 'your post';
+}
+
+/**
+ * Whose a post or comment is, as the notices about it say it: a person's
+ * ("your post") or a store's ("Kaiju Imports' post"), and so who hears about
+ * it - the person, or everybody who speaks for the store.
+ */
+interface Owner {
+  audience: string[];
+  /** The store's name, or null when it is the person's own. */
+  store: string | null;
+  storeId: string | null;
+}
+
+/**
+ * Who to tell, minus the voice that did it: a shop reacting under its own
+ * post is not news to the people who run the shop.
+ */
+const listeners = (owner: Owner, actor: Actor) =>
+  (owner.storeId && owner.storeId === actor.storeId ? [] : owner.audience);
+
+async function storeOwner(storeId: string, repository: Repo): Promise<Owner | null> {
+  const owner = await repository.getUserById(storeId);
+  if (!owner?.sellerProfile) return null;
+  return { audience: storeCrew(owner, 'posts'), store: owner.sellerProfile.storefrontName, storeId: owner.id };
+}
+
+async function postOwner(post: Post, repository: Repo): Promise<Owner> {
+  // Said in a shop's own voice, under the shop's name. A person's post on
+  // their own wall shares the channel, so the name is what tells them apart -
+  // as `withoutShops` reads it.
+  if (post.channel === 'seller' && post.voice !== 'visitor') {
+    const owner = await repository.getUserById(post.channelId);
+    const name = owner?.sellerProfile?.storefrontName;
+    if (owner && name && post.authorName === name && !(post.authorId === owner.id && owner.displayName === name)) {
+      return { audience: storeCrew(owner, 'posts'), store: name, storeId: owner.id };
+    }
+  }
+  return { audience: [post.authorId], store: null, storeId: null };
+}
+
+async function commentOwner(comment: StoredComment, repository: Repo): Promise<Owner> {
+  return (comment.asStore ? await storeOwner(comment.asStore, repository) : null)
+    ?? { audience: [comment.authorId], store: null, storeId: null };
 }
 
 /** The viewer speaking as themselves, for reads that have no voice to choose. */
@@ -827,6 +872,77 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
  * voice, so the id is taken from the session rather than the body and there is
  * no way to write into someone else's. A forum takes posts from anyone.
  */
+/**
+ * The news of a new post in a room:
+ *
+ * - whoever it answers hears they were answered - "Arjun replied to you", or
+ *   "to Kaiju Imports" when it was the shop that was answered;
+ * - a customer writing in a shop's channel tells whoever runs the shop;
+ * - a shop announcing something in its own channel tells its followers.
+ *
+ * Ordinary conversation in a room is not broadcast to followers: only what
+ * the shop marked as an announcement, which is the point of marking it.
+ */
+async function announcePost(post: Post, answered: Post | null, writerId: string, forumName: string | null, repository: Repo) {
+  const writer = actorName(post.authorName);
+  const room = post.channel === 'forum'
+    ? `/social/f/${encodeURIComponent(post.channelId)}`
+    : `/social/c/${encodeURIComponent(post.channelId)}`;
+  const toldOfReply = new Set<string>();
+
+  if (answered) {
+    const owner = await postOwner(answered, repository);
+    // The shop answering its own message is the shop talking, not news to it.
+    const spokeAsShop = post.channel === 'seller' && post.voice !== 'visitor';
+    const audience = spokeAsShop && owner.storeId === post.channelId ? [] : owner.audience;
+    audience.forEach((id) => toldOfReply.add(id));
+    await notify(repository, audience, {
+      kind: 'comment_replied',
+      title: `${writer} replied to ${toWhom(owner.store)}${forumName ? ` in ${forumName}` : ''}`,
+      body: gistOf(post.body, 'Sent a photo'),
+      link: room,
+    }, { except: writerId });
+  }
+
+  if (post.channel !== 'seller' || post.reach !== 'channel') return;
+  const shop = await storeOwner(post.channelId, repository);
+  if (!shop) return;
+
+  if (post.voice === 'visitor') {
+    const where = `${whose(shop.store)} channel`;
+    await notify(repository, shop.audience.filter((id) => !toldOfReply.has(id)), {
+      kind: 'channel_message',
+      title: `${writer} wrote in ${where}`,
+      body: gistOf(post.body, 'Sent a photo'),
+      link: room,
+      group: {
+        key: `chan:${post.channelId}`,
+        actor: writer,
+        title: ({ count, actors }) => (actors.length > 1
+          ? `${andOthers(actors)} wrote in ${where}`
+          : count > 1 ? `${writer} sent ${count} messages in ${where}` : `${writer} wrote in ${where}`),
+      },
+    }, { except: writerId });
+    return;
+  }
+
+  if (post.announcement) {
+    const name = actorName(shop.store ?? post.authorName);
+    const followers = await repository.listFollowerIds(post.channelId);
+    await notify(repository, followers.filter((id) => !shop.audience.includes(id)), {
+      kind: 'channel_announcement',
+      title: `${name} posted an announcement`,
+      body: gistOf(post.body, 'Shared a photo'),
+      link: room,
+      group: {
+        key: `ann:${post.channelId}`,
+        actor: name,
+        title: ({ count }) => (count === 1 ? `${name} posted an announcement` : `${name} posted ${count} announcements`),
+      },
+    }, { except: writerId });
+  }
+}
+
 async function createPost(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -1002,14 +1118,14 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
 
   // Answering something: only in a room, and only something said in the same one.
   let replyTo: Post['replyTo'] = null;
-  let answeredAuthor: string | null = null;
+  let answered: Post | null = null;
   if (typeof body.replyToId === 'string' && body.replyToId) {
     const original = await repository.getPost(channelId, body.replyToId);
     if (!original || reach !== 'channel') {
       return error(404, 'not_found', 'That message is not in this room any more.');
     }
     replyTo = { postId: original.id, authorName: original.authorName, body: gist(original.body || 'Photo') };
-    answeredAuthor = original.authorId;
+    answered = original;
   }
 
   const now = new Date().toISOString();
@@ -1083,14 +1199,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
       wallOf: { forumId: channelId, forumName, postId: post.id },
     });
   }
-  if (answeredAuthor) {
-    await notify(repository, [answeredAuthor], {
-      kind: 'comment_replied',
-      title: `${authorName} replied to you`,
-      body: gist(text || 'Photo'),
-      link: `/social/c/${encodeURIComponent(channelId)}`,
-    }, { except: user.id });
-  }
+  await announcePost(saved, answered, user.id, forumName, repository);
   return json(201, { post: saved });
 }
 
@@ -1209,11 +1318,21 @@ async function react(request: HttpRequest, _context: InvocationContext) {
   // second thing to tell anybody about.
   if (firstTime) {
     const kind = body.kind as StoredReaction['kind'];
-    await notify(repository, [post.authorId], {
+    const owner = await postOwner(post, repository);
+    const who = actorName(actor.name);
+    const what = `${whose(owner.store)} post`;
+    await notify(repository, listeners(owner, actor), {
       kind: 'post_reacted',
-      title: `${actor.name} reacted ${REACTION_META[kind].emoji}`,
+      title: `${who} reacted ${REACTION_META[kind].emoji} to ${what}`,
       body: gist(post.body),
       link: linkTo(post),
+      group: {
+        key: `react:${post.id}`,
+        actor: who,
+        title: ({ actors }) => (actors.length > 1
+          ? `${andOthers(actors)} reacted to ${what}`
+          : `${who} reacted ${REACTION_META[kind].emoji} to ${what}`),
+      },
     }, { except: user.id });
   }
 
@@ -1303,20 +1422,32 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
 
   // The author hears about comments; whoever was answered hears about the
   // reply. Somebody who is both hears once.
-  const answered = answering?.authorId ?? null;
-  if (answered && answered !== post.authorId) {
-    await notify(repository, [answered], {
+  const who = actorName(actor.name);
+  const owner = await postOwner(post, repository);
+  const replied = new Set<string>();
+  if (answering) {
+    const them = await commentOwner(answering, repository);
+    listeners(them, actor).forEach((id) => replied.add(id));
+    await notify(repository, listeners(them, actor), {
       kind: 'comment_replied',
-      title: `${actor.name} replied to you`,
+      title: `${who} replied to ${whose(them.store)} comment`,
       body: gist(text),
       link: linkTo(post),
     }, { except: user.id });
   }
-  await notify(repository, [post.authorId], {
-    kind: answered === post.authorId ? 'comment_replied' : 'post_commented',
-    title: answered === post.authorId ? `${actor.name} replied to you` : `${actor.name} commented`,
+  const what = `${whose(owner.store)} post`;
+  await notify(repository, listeners(owner, actor).filter((id) => !replied.has(id)), {
+    kind: 'post_commented',
+    title: `${who} commented on ${what}`,
     body: gist(text),
     link: linkTo(post),
+    group: {
+      key: `cmt:${post.id}`,
+      actor: who,
+      title: ({ count, actors }) => (actors.length > 1
+        ? `${andOthers(actors)} commented on ${what}`
+        : count > 1 ? `${who} left ${count} comments on ${what}` : `${who} commented on ${what}`),
+    },
   }, { except: user.id });
 
   return json(201, {
@@ -1356,7 +1487,26 @@ async function likeComment(request: HttpRequest, _context: InvocationContext) {
   }));
   if (!saved) return noPost();
   const liked = saved.comments?.find((comment) => comment.id === commentId);
-  return json(200, { liked: Boolean(liked?.likedBy.includes(actor.key)), likeCount: liked?.likedBy.length ?? 0 });
+  const nowLiked = Boolean(liked?.likedBy.includes(actor.key));
+
+  // A like is news to the comment's writer; taking it back is not.
+  if (liked && nowLiked) {
+    const them = await commentOwner(liked, repository);
+    const who = actorName(actor.name);
+    const what = `${whose(them.store)} comment`;
+    await notify(repository, listeners(them, actor), {
+      kind: 'comment_liked',
+      title: `${who} liked ${what}`,
+      body: gist(liked.body),
+      link: linkTo(post),
+      group: {
+        key: `clike:${liked.id}`,
+        actor: who,
+        title: ({ actors }) => (actors.length > 1 ? `${andOthers(actors)} liked ${what}` : `${who} liked ${what}`),
+      },
+    }, { except: user.id });
+  }
+  return json(200, { liked: nowLiked, likeCount: liked?.likedBy.length ?? 0 });
 }
 
 /**
@@ -1459,11 +1609,19 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
   if (!saved) return noPost();
 
   if (repost) {
-    await notify(repository, [source.authorId], {
+    const owner = await postOwner(source, repository);
+    const who = actorName(actor.name);
+    const what = `${whose(owner.store)} post`;
+    await notify(repository, listeners(owner, actor), {
       kind: 'post_shared',
-      title: `${actor.name} shared your post`,
+      title: `${who} shared ${what}`,
       body: gist(source.body),
       link: linkTo(source),
+      group: {
+        key: `share:${source.id}`,
+        actor: who,
+        title: ({ actors }) => (actors.length > 1 ? `${andOthers(actors)} shared ${what}` : `${who} shared ${what}`),
+      },
     }, { except: user.id });
   }
 

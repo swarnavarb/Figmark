@@ -22,8 +22,24 @@ import { personRef, sellerRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { countCompleted, dropFromCollection } from '../delivery.js';
-import { notify } from './notify.js';
+import { capital, notifySides, type OrderNames } from './notify.js';
+import { whose } from '../../../shared/notifications.js';
 import { error, handler, json } from './http.js';
+
+/** Both sides told a dispute ended, each in their own words. */
+async function tellSettled(
+  repository: Awaited<ReturnType<typeof getRepository>>,
+  order: Order,
+  disputeId: string,
+  how: 'settled' | 'withdrawn',
+  decidedBy: string,
+): Promise<void> {
+  const settled = (title: string) => ({ kind: 'dispute_settled' as const, title, body: order.itemName, link: `/dispute/${disputeId}` });
+  await notifySides(repository, order, {
+    buyer: (n) => settled(`Your dispute with ${n.shop} was ${how}`),
+    seller: (n) => settled(`${capital(whose(n.forShop))} dispute with ${n.buyer} was ${how}`),
+  }, { except: decidedBy });
+}
 
 /**
  * Contested orders, worked by both sides.
@@ -159,12 +175,7 @@ export async function settleDispute(
     note(order, `Dispute ${outcome === 'withdrawn' ? 'withdrawn' : 'settled'}: ${noteText}`, decidedBy);
     const settled = await repository.updateDispute(dispute);
     const saved = await repository.updateOrder(order);
-    await notify(repository, [order.buyerId, order.sellerId], {
-      kind: 'dispute_settled',
-      title: outcome === 'withdrawn' ? 'A dispute was withdrawn' : 'A dispute was settled',
-      body: order.itemName,
-      link: `/dispute/${dispute.id}`,
-    }, { except: decidedBy });
+    await tellSettled(repository, order, dispute.id, outcome === 'withdrawn' ? 'withdrawn' : 'settled', decidedBy);
     return { dispute: settled, order: saved };
   }
 
@@ -228,12 +239,7 @@ export async function settleDispute(
 
   // Here rather than in each of the four routes that settle one, so a new way
   // to end a dispute cannot quietly end it without telling anybody.
-  await notify(repository, [order.buyerId, order.sellerId], {
-    kind: 'dispute_settled',
-    title: 'A dispute was settled',
-    body: order.itemName,
-    link: `/dispute/${dispute.id}`,
-  }, { except: decidedBy });
+  await tellSettled(repository, order, dispute.id, 'settled', decidedBy);
 
   return { dispute: settled, order: saved };
 }
@@ -293,11 +299,12 @@ export async function openDisputeRecord(
 
   // The other end of the trade, and whoever is holding the money: a dispute
   // nobody was told about is one that runs down its clock unanswered.
-  await notify(repository, [record.againstUserId, holdsMoney(record) ? order.protection?.escrowAgentId : undefined], {
-    kind: 'dispute_opened',
-    title: `A dispute was opened on ${order.itemName}`,
-    body: input.reason,
-    link: `/dispute/${id}`,
+  const opened = (title: string) => ({ kind: 'dispute_opened' as const, title, body: `${order.itemName}: ${input.reason}`, link: `/dispute/${id}` });
+  await notifySides(repository, { ...order, protection: holdsMoney(record) ? order.protection : null }, {
+    ...(record.againstUserId === order.sellerId
+      ? { seller: (n: OrderNames) => opened(`${n.buyer} opened a dispute with ${n.forShop}`) }
+      : { buyer: (n: OrderNames) => opened(`${n.shop} opened a dispute with you`) }),
+    agent: (n) => opened(`Dispute opened: ${n.buyer} and ${n.shop}`),
   }, { except: input.raisedBy });
 
   return record;
@@ -436,11 +443,16 @@ async function reply(request: HttpRequest, _context: InvocationContext) {
   dispute.updatedAt = new Date().toISOString();
   const saved = await repository.updateDispute(dispute);
 
-  await notify(repository, [order.buyerId, order.sellerId, order.protection?.escrowAgentId], {
-    kind: 'dispute_replied',
-    title: 'Somebody answered on a dispute',
-    body: order.itemName,
+  const replied = (title: string) => ({
+    kind: 'dispute_replied' as const, title, body: `${order.itemName}: ${text || 'Added evidence'}`.slice(0, 160),
     link: `/dispute/${dispute.id}`,
+  });
+  await notifySides(repository, order, {
+    buyer: (n) => replied(user.id === order.sellerId
+      ? `${n.shop} answered on your dispute`
+      : `The escrow agent answered on your dispute with ${n.shop}`),
+    seller: (n) => replied(`${user.id === order.buyerId ? n.buyer : 'The escrow agent'} answered on ${whose(n.forShop)} dispute`),
+    agent: (n) => replied(`${user.id === order.buyerId ? n.buyer : n.shop} answered on a dispute`),
   }, { except: user.id });
 
   return json(200, { dispute: saved });

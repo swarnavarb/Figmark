@@ -5,7 +5,7 @@ import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { affiliateCommissionMinor } from '../../../shared/affiliate.js';
 import { affiliateFor, creditAffiliate } from '../affiliate.js';
 import type { getRepository } from '../data/index.js';
-import { notify } from './notify.js';
+import { notify, orderNames } from './notify.js';
 import { reconcilePreOrder } from './preorder.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -114,10 +114,11 @@ export async function placeOrder(
   }
 
   if (options.tellSeller !== false) {
+    const named = await orderNames(repository, order);
     await notify(repository, [order.sellerId], {
       kind: 'order_placed',
-      title: `New order — the buyer chose ${HOW_TEXT[how]}`,
-      body: order.itemName,
+      title: `${named.buyer} ordered from ${named.forShop}`,
+      body: `${order.itemName} · chose ${HOW_TEXT[how]}`,
       link: `/order/${order.id}`,
     });
   }

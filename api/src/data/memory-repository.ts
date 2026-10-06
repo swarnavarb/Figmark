@@ -721,9 +721,9 @@ export class MemoryRepository implements Repository {
     return sale;
   }
 
-  async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
+  async listNotifications(userId: string, limit = 40, before?: string): Promise<Notification[]> {
     return [...this.notifications.values()]
-      .filter((entry) => entry.userId === userId)
+      .filter((entry) => entry.userId === userId && (!before || entry.createdAt < before))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
   }

@@ -10,7 +10,9 @@ import {
 } from '../../../shared/storefront.js';
 import { moderation } from '../moderation.js';
 import { accessFor } from '../../../shared/stores.js';
-import { isReaction } from '../../../shared/social.js';
+import { isReaction, REACTION_META } from '../../../shared/social.js';
+import { actorName, gistOf, toWhom, whose } from '../../../shared/notifications.js';
+import { notify, readGroup, storeCrew } from './notify.js';
 import { getAuthService } from '../auth/index.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
@@ -216,6 +218,8 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
   if (!before && page.some((message) => message.to.handle === us.handle && !message.readAt)) {
     await repository.markThreadRead(threadId, us.handle);
   }
+  // Reading the conversation is reading the news of it.
+  if (!before && !since) await readGroup(repository, user.id, messageGroup(threadId));
   const me = await repository.getUserById(user.id);
 
   // Every voice the caller has, so the thread can offer a switch rather than
@@ -382,6 +386,53 @@ async function mute(request: HttpRequest, _context: InvocationContext) {
   return json(200, { muted: body.mute });
 }
 
+/**
+ * Who hears about a message to `party`: the person, or everybody who speaks
+ * for the store - minus anybody who muted this conversation.
+ */
+async function listenersFor(party: MessageParty, threadId: string, repository: Repo): Promise<string[]> {
+  let ids = [party.userId];
+  if (party.isStore) {
+    const owner = await repository.getUserById(party.userId);
+    if (owner?.sellerProfile) ids = storeCrew(owner, 'posts');
+  }
+  const people = await repository.listUsersByIds(ids);
+  return people.filter((person) => !(person.mutedThreads ?? []).includes(threadId)).map((person) => person.id);
+}
+
+/** One conversation's notices, folded together: see `notify`. */
+const messageGroup = (threadId: string) => `msg:${threadId}`;
+
+/**
+ * Tell whoever a message went to. Says which of their voices it reached -
+ * "Arjun messaged you" and "Arjun messaged Kaiju Imports" are different
+ * conversations to someone who runs a shop - and folds a run of them into
+ * "Arjun sent Kaiju Imports 3 messages".
+ */
+async function announceMessage(message: Message, senderId: string, repository: Repo): Promise<void> {
+  const { from, to } = message;
+  const sender = actorName(from.displayName, from.handle);
+  const recipient = toWhom(to.isStore ? to.displayName : null);
+  const first = message.deal?.kind === 'offer'
+    ? `${sender} sent ${recipient} a private deal`
+    : message.deal?.kind === 'request'
+      ? `${sender} asked ${recipient} for a private deal`
+      : `${sender} messaged ${recipient}`;
+  const photo = /^\s*$/.test(message.body) ? 'Sent a photo' : '';
+  await notify(repository, await listenersFor(to, message.threadId, repository), {
+    kind: 'message',
+    title: first,
+    body: gistOf(message.body, photo || 'New message'),
+    // Opens the conversation in the voice it reached, not whichever is default.
+    link: `/messages/${encodeURIComponent(from.handle)}?as=${encodeURIComponent(to.handle)}`,
+    group: {
+      key: messageGroup(message.threadId),
+      actor: sender,
+      title: ({ count }) => (count === 1 ? first : `${sender} sent ${recipient} ${count} messages`),
+    },
+  }, { except: senderId });
+}
+
 /** POST /api/messages/{handle}/send - say something, as one of your handles. */
 async function send(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -503,6 +554,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   };
 
   const [sent] = await withLiveItems([await repository.sendMessage(message)], repository);
+  await announceMessage(message, user.id, repository);
   return json(201, { message: sent });
 }
 
@@ -574,6 +626,27 @@ async function reactToMessage(request: HttpRequest, _context: InvocationContext)
   message.reactions = body.kind && body.kind !== had ? [...others, { handle: us.handle, kind: body.kind }] : others;
   message.updatedAt = new Date().toISOString();
   const saved = await repository.updateMessage(message);
+
+  // A first reaction to somebody else's message is news to them; changing it
+  // or taking it back is not.
+  if (body.kind && !had && message.from.handle !== us.handle) {
+    const reactor = actorName(us.displayName, us.handle);
+    const theirs = whose(message.from.isStore ? message.from.displayName : null);
+    const emoji = REACTION_META[body.kind].emoji;
+    await notify(repository, await listenersFor(message.from, message.threadId, repository), {
+      kind: 'message_reacted',
+      title: `${reactor} reacted ${emoji} to ${theirs} message`,
+      body: gistOf(message.body, 'A message'),
+      link: `/messages/${encodeURIComponent(us.handle)}?as=${encodeURIComponent(message.from.handle)}`,
+      group: {
+        key: `msgr:${message.threadId}`,
+        actor: reactor,
+        title: ({ count }) => (count === 1
+          ? `${reactor} reacted ${emoji} to ${theirs} message`
+          : `${reactor} reacted to ${count} of ${theirs} messages`),
+      },
+    }, { except: user.id });
+  }
   return json(200, { reactions: saved.reactions ?? [] });
 }
 

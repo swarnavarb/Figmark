@@ -1218,13 +1218,18 @@ export class CosmosRepository implements Repository {
     return resource!;
   }
 
-  async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
+  async listNotifications(userId: string, limit = 40, before?: string): Promise<Notification[]> {
     const { resources } = await this.container('notifications')
       .items.query<Notification>(
-        {
-          query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
-          parameters: [{ name: '@limit', value: limit }],
-        },
+        before
+          ? {
+            query: 'SELECT * FROM c WHERE c.createdAt < @before ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+            parameters: [{ name: '@before', value: before }, { name: '@limit', value: limit }],
+          }
+          : {
+            query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+            parameters: [{ name: '@limit', value: limit }],
+          },
         { partitionKey: userId },
       )
       .fetchAll();
