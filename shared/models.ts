@@ -149,6 +149,14 @@ export interface User extends BaseDocument {
   /** Calculations kept to list later (Pro). Kept beside the calculators, for the same reason. */
   savedCalcs?: SavedCalc[];
   /**
+   * The browsers and installed copies of the site that asked to be woken when
+   * something happens to this account. Kept on the account for the same reason
+   * as the calculators: a person has a handful, they are read all at once, and
+   * the database is at its container ceiling. Never sent to anyone - each one
+   * is enough to put a message on that person's screen.
+   */
+  pushEndpoints?: PushEndpoint[];
+  /**
    * Freight forwarders share the same account base rather than living in a
    * separate system; this extension is what puts one in the directory.
    */
@@ -2132,6 +2140,26 @@ export interface Notification extends BaseDocument {
   undoId?: string;
   /** Taken back because what it reported was undone. Never shown. */
   withdrawn?: boolean;
+  /**
+   * When it went out to the person's devices. Set as it is written for an
+   * ordinary notice; left off a held one until the clock sends it, which is
+   * how the clock knows what is still owed.
+   */
+  pushedAt?: string;
+}
+
+/**
+ * One device that agreed to be woken: a browser's Web Push subscription.
+ *
+ * The endpoint is the push service's address for that one browser, and the two
+ * keys are what the message is encrypted to, so only that browser can read it.
+ */
+export interface PushEndpoint {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  /** A rough name for the device, so the list can be told apart. Not trusted for anything. */
+  device: string;
+  createdAt: string;
 }
 
 export type NotificationKind =

@@ -256,6 +256,15 @@ export interface Repository {
   /** Everything waiting for one person, newest first. */
   listNotifications(userId: string, limit?: number): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;
+  /**
+   * Held notices whose hold ended between `from` and `until`, not yet sent to
+   * anybody's devices and not taken back - across everybody, for the clock
+   * that sends them. Bounded below so a notice from before push existed is
+   * never sent late.
+   */
+  listHeldNotificationsDue(from: string, until: string): Promise<Notification[]>;
+  /** Accounts holding this push endpoint: a browser belongs to whoever signed in on it last. */
+  listUsersByPushEndpoint(endpoint: string): Promise<User[]>;
   saveWantOffer(offer: WantOffer): Promise<WantOffer>;
   listStoreReviews(subjectId: string): Promise<StoreReview[]>;
   saveStoreReview(review: StoreReview): Promise<StoreReview>;

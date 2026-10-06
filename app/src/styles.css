@@ -2800,6 +2800,14 @@ code, kbd, samp, pre {
 /* Unread reads as unread without a second colour to learn. */
 .bell__row.is-unread { background: var(--accent-soft); }
 .bell__title { font-size: var(--t-sm); font-weight: var(--w-semi); }
+/* Lock-screen notifications for this device: one line and the one thing to do. */
+.bell__push {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  font-size: var(--t-sm);
+}
+.bell__push-actions { display: flex; gap: 4px; flex: none; }
+.bell__push > .btn { flex: none; white-space: nowrap; }
 
 /* +Me and how many others, on one row under the post. */
 .alsome {

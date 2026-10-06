@@ -1,6 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { isVisibleNotice, sendHeldPushesSoon } from '../push.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -22,8 +23,11 @@ async function list(request: HttpRequest, _context: InvocationContext) {
      no longer be undone. Sorted by when they became visible, so a held notice
      lands at the top when it appears rather than three minutes down. */
   const now = Date.now();
+  // Every open copy of the site asks this once a minute, which makes it the
+  // clock for held pushes on a host without timers (see push.ts).
+  await sendHeldPushesSoon(repository, now);
   const rows = (await repository.listNotifications(user.id, 40))
-    .filter((row) => !row.withdrawn && !(row.notBefore && Date.parse(row.notBefore) > now))
+    .filter((row) => isVisibleNotice(row, now))
     .map((row) => (row.notBefore ? { ...row, createdAt: row.notBefore } : row))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -62,7 +66,7 @@ async function markRead(request: HttpRequest, _context: InvocationContext) {
 
   // Only what the reader could have seen: a held notice is not read yet.
   const rows = (await repository.listNotifications(user.id, 100))
-    .filter((row) => !row.withdrawn && !(row.notBefore && Date.parse(row.notBefore) > Date.now()));
+    .filter((row) => isVisibleNotice(row));
   const target = body.id ? rows.filter((row) => row.id === body.id) : rows;
   if (body.id && target.length === 0) return error(404, 'not_found', 'No such notification.');
 
