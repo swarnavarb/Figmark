@@ -415,6 +415,9 @@ code, kbd, samp, pre {
   background: var(--grad-hero);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset, 0 3px 12px rgba(124, 58, 237, 0.42);
 }
+/* In the header the mark sits flat: its glow spread up under the clock and
+   read as a blur at the top of the screen. */
+.nav .brand__mark { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset; }
 .brand__name { font-size: var(--t-md); font-weight: var(--w-bold); letter-spacing: -0.02em; }
 
 .nav__search { flex: 1; max-width: 560px; }
