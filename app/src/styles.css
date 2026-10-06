@@ -13523,6 +13523,17 @@ button.sk-plan__pick { cursor: pointer; }
   pointer-events: none;
 }
 :root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
+/* Opened from the home screen the header itself runs up under the clock, and
+   iOS has to see that header as the bar at the top: with the strip there in
+   its place, iOS took the strip for the header and laid its own blur and
+   dimming over everything under it - the real header, icons and all. So in
+   the app the strip only stands in while the marketplace header is slid away. */
+@media (display-mode: standalone) {
+  .topstrip { display: none; }
+  :root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip { display: block; }
+}
+html.is-installed .topstrip { display: none; }
+html.is-installed[data-bars='hidden'] .shell:not(.shell--social) > .topstrip { display: block; }
 
 /* ── Pull to refresh (home-screen copy only) ──────────────────────────────── */
 /* No rubber band at the top: the indicator is the bounce. */
