@@ -301,7 +301,7 @@ export function CollectorChip() {
       )}
       <LevelRing level={view.level} progress={view.progress} size={30} />
       <span className="qchip__text">
-        <small>{view.title}</small>
+        <small>You</small>
         <span>{view.xp - view.levelFloor}/{view.nextLevelXp - view.levelFloor} XP</span>
       </span>
       {gain ? <em className={`qchip__gain${gain.xp < 0 ? ' qchip__gain--loss' : ''}`}>{gain.xp > 0 ? `+${gain.xp}` : `−${-gain.xp}`} XP</em> : null}
@@ -329,7 +329,7 @@ export function StoreChip() {
       aria-label={`${shop.name}: level ${level.level} ${level.title}, open shop quests`}>
       <LevelRing level={level.level} progress={level.progress} size={30} />
       <span className="qchip__text">
-        <small>{shop.name}</small>
+        <small>Store</small>
         <span>{level.points.toLocaleString('en-IN')}{level.next === null ? '' : `/${level.next.toLocaleString('en-IN')}`} XP</span>
       </span>
     </Link>
