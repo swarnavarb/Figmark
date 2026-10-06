@@ -1,10 +1,11 @@
-import { Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FloatingCalc } from './components/FloatingCalcFab';
 import { Notifications } from './components/Notifications';
 import { ScrollBars } from './components/ScrollBars';
 import { ScrollManager } from './components/ScrollManager';
-import { TabBar } from './components/TabBar';
+import { TABS, TabBar } from './components/TabBar';
+import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon } from './components/ui';
 import { api } from './api';
@@ -23,11 +24,8 @@ export function AppShell() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const query = params.get('q') ?? '';
-  const [term, setTerm] = useState(query);
+  const [searching, setSearching] = useState(false);
   const { pathname } = useLocation();
-  // The box shows what is being searched, however the search was started -
-  // a tag tapped on an item, the back button, a shared link.
-  useEffect(() => setTerm(query), [query]);
   const social = pathname.startsWith('/social') || pathname.startsWith('/messages/');
   // A room you write in: the tab bar steps aside for the bar you write from.
   const room = pathname.startsWith('/social/c/') || pathname.startsWith('/messages/');
@@ -37,23 +35,28 @@ export function AppShell() {
   // so the share sheet never waits on it.
   useEffect(() => { void inviteCodeFor(user?.id); }, [user?.id]);
 
-  // The phone's own status bar takes the social tab's colour, so the header
-  // reads as running to the very top of the screen.
+  // Each section's header carries that section's hue, the same one its pill
+  // in the tab bar does; a page outside the four reads as Buy, as the bar does.
+  const tone = TONES[Math.max(0, TABS.findIndex((tab) => tab.match(pathname)))] ?? TONES[0];
   useEffect(() => {
+    document.documentElement.dataset.tone = tone.id;
+    // The phone's own status bar takes the header's colour, so the header
+    // reads as running to the very top of the screen.
     const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (meta) meta.content = social ? '#FF3A5C' : '#080B12';
-  }, [social]);
+    if (meta) meta.content = tone.status;
+  }, [tone]);
 
-  function submitSearch(event: FormEvent) {
-    event.preventDefault();
+  const closeSearch = useCallback(() => setSearching(false), []);
+  const submitSearch = useCallback((term: string) => {
+    setSearching(false);
     // On the catalogue a search narrows what is already filtered rather than
     // throwing the filters away; from anywhere else it starts fresh.
     const next = new URLSearchParams(pathname === '/' ? params : undefined);
-    if (term.trim()) next.set('q', term.trim());
+    if (term) next.set('q', term);
     else next.delete('q');
     const suffix = next.toString();
     navigate(suffix ? `/?${suffix}` : '/');
-  }
+  }, [navigate, params, pathname]);
 
   return (
     // The social screens bring their own header - one gradient block with the
@@ -63,24 +66,27 @@ export function AppShell() {
       <ScrollBars />
       <ViewportSync />
       <header className="nav">
-        <NavLink to="/" className="brand" onClick={() => setTerm('')}>
+        <NavLink to="/" className="brand">
           <span className="brand__mark" aria-hidden="true" />
           <span className="brand__name">Figmark</span>
         </NavLink>
 
-        <form className="nav__search" onSubmit={submitSearch} role="search">
-          <div className="search">
-            <span className="search__icon">
-              <Icon name="search" />
-            </span>
-            <input
-              value={term}
-              onChange={(event) => setTerm(event.target.value)}
-              placeholder="Search figures, kits, sneakers, electronics…"
-              aria-label="Search listings"
-            />
-          </div>
-        </form>
+        {/* The social tab's search, with items in it: a glass field on the
+            header's colour that opens the search sheet. It shows what is being
+            searched, however the search was started - a tag tapped on an item,
+            the back button, a shared link. */}
+        <div className="nav__search">
+          <button type="button" className={`navfind${query ? ' is-set' : ''}`} onClick={() => setSearching(true)}
+            aria-label={query ? `Searching for ${query}. Change the search` : 'Search items, shops, people and forums'}>
+            <Icon name="search" size={17} />
+            <span className="navfind__text">{query || 'Search items, shops, people…'}</span>
+          </button>
+          {query && (
+            <button type="button" className="navfind__clear" aria-label="Clear search" onClick={() => submitSearch('')}>
+              <Icon name="close" size={13} />
+            </button>
+          )}
+        </div>
 
         {/* Buy, sell and social moved to the tab bar; what belongs up here is
             the things that are not a section - search, who you are, and the
@@ -146,10 +152,24 @@ export function AppShell() {
       {user && <FloatingCalc />}
 
       <TabBar />
+      {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} />}
       {authPrompt && <AuthModal reason={authPrompt.reason} onClose={closeAuth} />}
     </div>
   );
 }
+
+/**
+ * The colour each section's header runs in, keyed in the stylesheet by
+ * `data-tone` on the root, in the order of the tabs. `status` is the phone's
+ * status bar under the clock: the middle of the header's gradient, which a
+ * single colour matches across its width better than either end.
+ */
+const TONES = [
+  { id: 'buy', status: '#5A5EF2' },
+  { id: 'sell', status: '#1777D0' },
+  { id: 'services', status: '#3C8248' },
+  { id: 'social', status: '#FF3A5C' },
+] as const;
 
 /**
  * The cart, with how many items are waiting in it.

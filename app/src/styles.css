@@ -220,6 +220,14 @@
   --grad-sea:  linear-gradient(135deg, #06D6E7 0%, #3B82F6 100%);
   --grad-play: linear-gradient(135deg, #A3E635 0%, #06D6E7 100%);
 
+  /* The header's colour, one per section (set as data-tone on the root by
+     the shell). The tab bar's hues, taken deep enough to carry white: the
+     header is a field of colour under icons and text, not a pill. `soft` is
+     the same ramp at 40%, for the header once the page scrolls under it. */
+  --top-grad: linear-gradient(115deg, #3B82F6 0%, #7C3AED 100%);
+  --top-grad-soft: linear-gradient(115deg, rgba(59, 130, 246, 0.4) 0%, rgba(124, 58, 237, 0.4) 100%);
+  --top-ink: #A5B4FC;
+
   /* One type scale */
   --t-2xs: 10.5px;
   --t-xs: 11.5px;
@@ -397,14 +405,37 @@ code, kbd, samp, pre {
   display: flex;
   align-items: center;
   gap: 18px;
-  /* Opened from an iPhone's home screen the page can reach under the clock;
-     the header starts below it, as the social header does. Solid, with no
-     frosted glass at all: any blur showed as a smudge under the clock, and
-     the strip under the clock is the same colour so the two read as one bar. */
+  /* Opened from an iPhone's home screen the page reaches under the clock, and
+     the header's colour goes with it: the padding keeps what is in the header
+     below the clock, the gradient runs to the very top of the screen. */
   padding: env(safe-area-inset-top, 0px) 20px 0;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
+/* The section's gradient, on a layer of its own so it can fade: solid at the
+   top of the page, 40% once the page is scrolled under it. */
+.nav::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.18) 100%),
+    var(--top-grad);
+  transition: opacity 240ms var(--ease);
+  pointer-events: none;
+}
+/* The frost under it, there only while the page is passing beneath: at 40%
+   the gradient alone would leave every line of the page sharp behind the
+   search and the icons. */
+.nav::after {
+  content: ''; position: absolute; inset: 0; z-index: -2;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  opacity: 0;
+  transition: opacity 240ms var(--ease);
+  pointer-events: none;
+}
+:root[data-scrolled] .nav::before { opacity: 0.4; }
+:root[data-scrolled] .nav::after { opacity: 1; }
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The first coloured thing anyone sees, so it carries the full brand ramp
@@ -417,7 +448,7 @@ code, kbd, samp, pre {
 }
 /* In the header the mark sits flat: its glow spread up under the clock and
    read as a blur at the top of the screen. */
-.nav .brand__mark { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset; }
+.nav .brand__mark { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); }
 .brand__name { font-size: var(--t-md); font-weight: var(--w-bold); letter-spacing: -0.02em; }
 
 .nav__search { flex: 1; max-width: 560px; }
@@ -488,6 +519,24 @@ code, kbd, samp, pre {
 .order-status.badge--warn { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.3), 0 4px 16px rgba(251, 191, 36, 0.24); }
 .order-status.badge--danger { box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.32), 0 4px 16px rgba(244, 63, 94, 0.26); }
 .order-status.badge--accent { box-shadow: 0 0 0 1px var(--accent-line), 0 4px 16px rgba(124, 58, 237, 0.26); }
+
+/* ── Section tones ─────────────────────────────────────────────────────── */
+
+:root[data-tone='sell'] {
+  --top-grad: linear-gradient(115deg, #0891B2 0%, #2563EB 100%);
+  --top-grad-soft: linear-gradient(115deg, rgba(8, 145, 178, 0.4) 0%, rgba(37, 99, 235, 0.4) 100%);
+  --top-ink: #67E8F9;
+}
+:root[data-tone='services'] {
+  --top-grad: linear-gradient(115deg, #65A30D 0%, #0E7490 100%);
+  --top-grad-soft: linear-gradient(115deg, rgba(101, 163, 13, 0.4) 0%, rgba(14, 116, 144, 0.4) 100%);
+  --top-ink: #BEF264;
+}
+:root[data-tone='social'] {
+  --top-grad: linear-gradient(115deg, #FF5B1F 0%, #FF2E7E 58%, #C026D3 100%);
+  --top-grad-soft: linear-gradient(115deg, rgba(255, 91, 31, 0.4) 0%, rgba(255, 46, 126, 0.4) 58%, rgba(192, 38, 211, 0.4) 100%);
+  --top-ink: #FF8A65;
+}
 
 /* ── Search ────────────────────────────────────────────────────────────── */
 
@@ -7461,7 +7510,7 @@ body.is-locked { overflow: hidden; }
   /* Square, and see-through: the feed scrolls on underneath, blurred, so
      the bar reads as glass over the page rather than a lid on it. */
   border-radius: 0;
-  background: linear-gradient(115deg, rgba(255, 91, 31, 0.72) 0%, rgba(255, 46, 126, 0.72) 58%, rgba(192, 38, 211, 0.72) 100%);
+  background: linear-gradient(115deg, rgba(255, 91, 31, 0.4) 0%, rgba(255, 46, 126, 0.4) 58%, rgba(192, 38, 211, 0.4) 100%);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   border-bottom: 1px solid rgba(255, 255, 255, 0.18);
@@ -7550,6 +7599,64 @@ body.is-locked { overflow: hidden; }
   font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .followbtn.is-on { border-color: var(--border-strong); color: var(--text-dim); }
+
+/* ── The marketplace header's search, and its sheet ────────────────────── */
+
+/* The social header's glass, on whichever section's colour is behind it. */
+.navfind {
+  width: 100%; height: 40px;
+  display: flex; align-items: center; gap: 9px;
+  padding: 0 40px 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.34); border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.16); color: #fff;
+  font: inherit; font-size: var(--t-sm); text-align: left; cursor: pointer;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.navfind:hover { background: rgba(255, 255, 255, 0.26); }
+.navfind:active { transform: scale(0.985); }
+.navfind__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255, 255, 255, 0.8); }
+.navfind.is-set .navfind__text { color: #fff; font-weight: var(--w-semi); }
+.nav__search { position: relative; }
+.navfind__clear {
+  position: absolute; top: 50%; right: 7px; translate: 0 -50%;
+  display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 50%; background: rgba(0, 0, 0, 0.22); color: #fff; cursor: pointer;
+}
+.nav .navcart, .nav .bell__button {
+  border-color: rgba(255, 255, 255, 0.34); background: rgba(255, 255, 255, 0.16); color: #fff;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.nav .navcart:hover, .nav .bell__button:hover { background: rgba(255, 255, 255, 0.28); border-color: rgba(255, 255, 255, 0.5); }
+.nav .navcart.is-active { border-color: #fff; color: #fff; background: rgba(255, 255, 255, 0.3); }
+.nav .bell__panel, .nav .pmenu__panel { color: var(--text); }
+.nav .pmenu__btn { background: #fff; }
+.nav .navlogin { background: #fff; border-color: #fff; color: #0B0F1A; }
+
+/* The social sheet, in the section's colour, with the social palette's
+   accents traded for that colour's light tint. */
+.mktsearch {
+  --sx-blaze: var(--top-ink);
+  --sx-grad: var(--top-grad);
+  --sx-wash: rgba(255, 255, 255, 0.06);
+  --sx-line: rgba(255, 255, 255, 0.14);
+}
+.mktsearch .socsearch__bar { background: var(--top-grad); }
+.mktsearch__clear {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; padding: 0;
+  border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.22); color: #fff; cursor: pointer;
+}
+.mktsearch__thumb {
+  width: 52px; height: 52px; flex: 0 0 auto; aspect-ratio: auto;
+  border-radius: 12px; overflow: hidden; font-size: var(--t-sm);
+}
+.mktsearch .socsearch__who strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mktsearch__price { flex: 0 0 auto; font-weight: var(--w-bold); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.mktsearch__all {
+  justify-self: start; display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 4px; padding: 6px 4px; border: 0; background: none;
+  color: var(--top-ink); font: inherit; font-weight: var(--w-bold); font-size: var(--t-sm); cursor: pointer;
+}
 
 /* ── A room's strip ────────────────────────────────────────────────────── */
 
@@ -13358,16 +13465,22 @@ button.sk-plan__pick { cursor: pointer; }
 .pushguide__glyph { width: 18px; height: 18px; vertical-align: -3px; color: var(--accent); }
 .pushguide__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* The strip under an iPhone's clock and notch stays solid even while the
-   header slides away on scroll, so the page never shows through behind the
-   time. Zero high everywhere else. */
+/* The strip under an iPhone's clock and notch. While the header is showing
+   it is the header's own top; once the header slides away on scroll the
+   strip stays behind in the header's scrolled glass, so the time never sits
+   on bare page. Zero high everywhere else. */
 body::before {
   content: '';
   position: fixed; top: 0; left: 0; right: 0; z-index: 60;
   height: env(safe-area-inset-top, 0px);
-  background: var(--bg);
+  background: var(--top-grad-soft);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  opacity: 0;
+  transition: opacity 280ms var(--ease);
   pointer-events: none;
 }
+:root[data-bars='hidden'] body::before { opacity: 1; }
 /* The social header runs its own colour up under the clock on purpose. */
 body:has(.shell--social)::before { display: none; }
 

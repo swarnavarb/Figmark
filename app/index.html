@@ -22,10 +22,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Figmark" />
-    <!-- "black", not "black-translucent": translucent draws the page under the
-         clock and notch, and the header has no top inset, so it slid up there
-         and could not be tapped. -->
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <!-- "black-translucent": the page draws under the clock and notch, so each
+         section's header colour runs to the very top of the screen. Every
+         header pads itself by env(safe-area-inset-top), which keeps what is
+         in it below the clock and tappable. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta
       name="description"
       content="Marketplace for import resellers: pre-orders, order manifests, Buyer Protection and verified two-sided reviews."
