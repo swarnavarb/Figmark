@@ -6,7 +6,7 @@ import { Icon, type IconName } from './Icon';
 import { PushRow, usePush } from './PushControls';
 import { timeAgo } from '../format';
 import { setBadge } from '../push';
-import { isStale } from '../freshness';
+import { isReloading, isStale, loadFresh } from '../freshness';
 
 /**
  * What happened while you were not looking.
@@ -275,6 +275,13 @@ export function NotificationLinks() {
   useEffect(() => {
     const go = (raw: unknown) => {
       const link = typeof raw === 'string' && raw.startsWith('/') ? raw : '/';
+      // Mid-way through reloading onto a new version, moving in place is lost:
+      // the reload comes back to the address it started from. Loading the
+      // page the tap is for instead overrides the reload, on the new version.
+      if (isReloading()) {
+        loadFresh(link);
+        return;
+      }
       const here = `${window.location.pathname}${window.location.search}`;
       if (link !== here) navigate(link);
     };
@@ -328,7 +335,7 @@ const HANDOFF_KEY = '/__figmark-open';
 /** A tap older than this was handled some other way, or is not news any more. */
 const HANDOFF_FRESH_MS = 2 * 60_000;
 /** When a page that has just come to the front looks for one. */
-const HANDOFF_LOOKS_MS = [0, 400, 1200, 3000];
+const HANDOFF_LOOKS_MS = [0, 300, 800, 1500, 3000, 6000];
 
 async function readHandoff(): Promise<string | null> {
   try {
@@ -364,7 +371,7 @@ export function FreshOnNavigate() {
       first.current = false;
       return;
     }
-    if (isStale()) window.location.assign(`${location.pathname}${location.search}${location.hash}`);
+    if (isStale()) loadFresh(`${location.pathname}${location.search}${location.hash}`);
   }, [location.pathname, location.search, location.hash]);
   return null;
 }

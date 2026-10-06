@@ -61,7 +61,7 @@ export function AppShell() {
     <div className={`shell shell--tabbed${social ? ' shell--social' : ''}${room ? ' shell--room' : ''}`}>
       <ScrollManager />
       <ScrollBars />
-      {room && <ViewportSync />}
+      <ViewportSync />
       <header className="nav">
         <NavLink to="/" className="brand" onClick={() => setTerm('')}>
           <span className="brand__mark" aria-hidden="true" />

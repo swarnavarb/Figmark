@@ -16,8 +16,10 @@
  */
 
 const EVERY_MS = 5 * 60_000;
+const TAP_GRACE_MS = 1500;
 
 let stale = false;
+let reloading = false;
 
 /** The entry script this page was started with, e.g. /assets/main-abc123.js. */
 function runningScript(): string | null {
@@ -52,6 +54,21 @@ function updateWorker(): void {
     .catch(() => undefined);
 }
 
+/**
+ * True from the moment this page starts reloading itself. A notification tap
+ * followed then has to load its page outright: moved to in place, it is lost
+ * when the reload comes back to the address it started from.
+ */
+export function isReloading(): boolean {
+  return reloading;
+}
+
+/** Load `path` in full, on the new version, in place of any reload. */
+export function loadFresh(path: string): void {
+  reloading = true;
+  window.location.assign(path);
+}
+
 /** True when a newer version is live; the next page change loads it. */
 export function isStale(): boolean {
   return stale;
@@ -61,7 +78,14 @@ export function keepFresh(): void {
   const onFront = async () => {
     if (document.visibilityState !== 'visible') return;
     updateWorker();
-    if (await check()) window.location.reload();
+    if (!(await check())) return;
+    // A notification tap brings the app forward too, and following it while
+    // stale is a full load of its page already (FreshOnNavigate). So the
+    // reload waits a moment, and stands down if that load has started.
+    await new Promise((resolve) => window.setTimeout(resolve, TAP_GRACE_MS));
+    if (reloading || document.visibilityState !== 'visible') return;
+    reloading = true;
+    window.location.reload();
   };
   document.addEventListener('visibilitychange', () => void onFront());
   // An iPhone home-screen app coming back from the background fires this
