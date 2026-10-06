@@ -13,6 +13,7 @@ import { Avatar, EmptyState, ErrorNotice, LevelChip, Thumb, TrustBadge, leadPhot
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { EarnPill, earnOf } from '../components/Affiliate';
+import { PushCard } from '../components/PushControls';
 
 type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
 
@@ -148,6 +149,10 @@ export function ProfilePage() {
           </p>
         )}
       </div>
+
+      {/* Notifications for this device, with a test, so "am I getting
+          them?" has an answer on the spot. */}
+      <PushCard />
 
       {/* Something with money on it and a person waiting. Above the tabs,
           because it is the reason to have opened this page at all. */}

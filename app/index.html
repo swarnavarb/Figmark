@@ -13,7 +13,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Figmark" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "black", not "black-translucent": translucent draws the page under the
+         clock and notch, and the header has no top inset, so it slid up there
+         and could not be tapped. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta
       name="description"
       content="Marketplace for import resellers: pre-orders, order manifests, Buyer Protection and verified two-sided reviews."
