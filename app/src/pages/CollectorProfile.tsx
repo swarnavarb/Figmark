@@ -14,7 +14,7 @@ import { SocialPostCard } from '../components/SocialPost';
 import { shrink } from '../components/PhotoManager';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
-import { Bio, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
+import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
 
 /**
  * A person's page, as a collector's.
@@ -98,7 +98,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
               )}
             </div>
             <p className="faint" style={{ margin: 0 }}>
-              {page && <><b className="qprofile__fans">{page.followerCount}</b> {page.followerCount === 1 ? 'follower' : 'followers'}</>}
+              {page && <FollowCounts userId={page.sellerId} followerCount={page.followerCount} />}
               {page && person.memberSince && ' · '}
               {person.memberSince && `here since ${formatDate(person.memberSince)}`}
               {person.lastSeenAt && ` · seen ${timeAgo(person.lastSeenAt)}`}

@@ -80,6 +80,8 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     kind: request.query.get('kind') ?? undefined,
     sort: request.query.get('sort') ?? undefined,
     maxPriceMinor: numeric(request.query.get('maxPrice')),
+    // One shop's live stock, for its storefront.
+    sellerId: request.query.get('seller') ?? undefined,
     followedSellerIds,
   // Expired is read off the clock, so it is filtered here rather than stored.
   })).filter((listing) => !isExpired(listing));
@@ -966,6 +968,28 @@ async function myActivity(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/** GET /api/me/saved - everything you saved, newest save first, as the feed shows it. */
+async function mySaved(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const ids = await repository.listLikedListingIds(user.id);
+  const listings = (await Promise.all(ids.map((id) => repository.getListing(id))))
+    .filter((listing): listing is Listing => listing !== null && listing.status !== 'archived' && !listing.privateFor);
+  const sellers = await repository.listUsersByIds([...new Set(listings.map((l) => l.sellerId))]);
+  const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
+  return json(200, {
+    listings: listings.map((listing) => ({
+      ...withoutCosts(listing),
+      liked: true,
+      seller: sellerById.get(listing.sellerId) ?? null,
+      estimatedDispatchAt: null,
+      // Sold out or past its date: still yours to look back at, but not buyable.
+      gone: listing.status !== 'active' || isExpired(listing),
+    })),
+  });
+}
+
 /**
  * GET /api/me/listings - the signed-in account's own stock, and nothing else.
  *
@@ -1174,6 +1198,7 @@ export const myListingsRoute = handler(myListings);
 export const forwardersRoute = handler(forwarders);
 
 const anon = { authLevel: 'anonymous' } as const;
+export const mySavedRoute = handler(mySaved);
 app.http('feed', { ...anon, methods: ['GET'], route: 'feed', handler: feedRoute });
 app.http('listing-detail', { ...anon, methods: ['GET'], route: 'listings/{id}', handler: listingDetailRoute });
 export const similarListingsRoute = handler(similarListings);
@@ -1192,5 +1217,6 @@ app.http('listing-edit', { ...anon, methods: ['POST'], route: 'listings/{id}/edi
 app.http('listing-delete', { ...anon, methods: ['POST'], route: 'listings/{id}/delete', handler: deleteListingRoute });
 app.http('order-create', { ...anon, methods: ['POST'], route: 'orders', handler: createOrderRoute });
 app.http('me-activity', { ...anon, methods: ['GET'], route: 'me/activity', handler: myActivityRoute });
+app.http('me-saved', { ...anon, methods: ['GET'], route: 'me/saved', handler: mySavedRoute });
 app.http('me-listings', { ...anon, methods: ['GET'], route: 'me/listings', handler: myListingsRoute });
 app.http('forwarders', { ...anon, methods: ['GET'], route: 'forwarders', handler: forwardersRoute });

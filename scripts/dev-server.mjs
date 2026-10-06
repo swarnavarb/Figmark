@@ -25,7 +25,7 @@ const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, reactToCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
-  editListingRoute, deleteListingRoute, similarListingsRoute, affiliateLinkRoute, openShortLinkRoute,
+  editListingRoute, deleteListingRoute, similarListingsRoute, affiliateLinkRoute, openShortLinkRoute, mySavedRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affiliate-routes.js', apiRoot));
 const {
@@ -45,8 +45,10 @@ const {
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
   removePostRoute, trendingRoute, homeRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
+  forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute,
 } = await import(new URL('social-routes.js', apiRoot));
-const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute, dealItemsRoute } =
+const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute, dealItemsRoute,
+  blockedListRoute, unblockRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
   payRoute, confirmRoute, reviewRoute, unboxingRoute, orderStateRoute, checkoutRoute,
@@ -131,6 +133,9 @@ const routes = [
   ['GET', '/api/forwarders', forwardersRoute],
   ['GET', '/api/me/activity', myActivityRoute],
   ['GET', '/api/me/listings', myListingsRoute],
+  ['GET', '/api/me/saved', mySavedRoute],
+  ['GET', '/api/me/blocked', blockedListRoute],
+  ['POST', '/api/me/blocked/:id/unblock', unblockRoute],
   ['POST', '/api/orders', createOrderRoute],
   ['POST', '/api/listings', createListingRoute],
   ['GET', '/api/listings/:id', listingDetailRoute],
@@ -180,6 +185,10 @@ const routes = [
   ['GET', '/api/social/forums', listForumsRoute],
   ['POST', '/api/social/forums/new', createForumRoute],
   ['POST', '/api/social/forums/:id/join', joinForumRoute],
+  ['GET', '/api/social/forums/:id/members', forumMembersRoute],
+  ['POST', '/api/social/forums/:id/moderate', moderateForumRoute],
+  ['GET', '/api/social/shops/:id/feed', shopFeedRoute],
+  ['GET', '/api/users/:id/follows', followsRoute],
   ['GET', '/api/social/search', socialSearchRoute],
   ['GET', '/api/social/trending', trendingRoute],
   ['GET', '/api/social/home', homeRoute],

@@ -4,7 +4,7 @@ import type { StickerView } from '@shared/quest';
 import type { MergedRating, StoreLevel } from '@shared/storefront';
 import {
   ApiRequestError, api,
-  type Credit, type PageReviews, type PageSide, type PublicProfile, type ReviewsAbout,
+  type Credit, type FollowRow, type PageReviews, type PageSide, type PublicProfile, type ReviewsAbout,
 } from '../api';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -576,5 +576,63 @@ function PageReviewForm({ subjectId, side, existing, onWritten }: {
         <button type="button" className="btn btn--quiet" onClick={() => setOpen(false)}>Cancel</button>
       </div>
     </div>
+  );
+}
+
+/* ── Followers and following ─────────────────────────────────────────── */
+
+/**
+ * "12 followers · 4 following", each one tap from the list behind it.
+ * Read with the page, so both numbers are real rather than one of them.
+ */
+export function FollowCounts({ userId, followerCount }: { userId: string; followerCount: number }) {
+  const [data, setData] = useState<{ followers: FollowRow[]; following: FollowRow[] } | null>(null);
+  const [open, setOpen] = useState<'followers' | 'following' | null>(null);
+  useEffect(() => {
+    setData(null);
+    void api.follows(userId).then(setData).catch(() => setData(null));
+  }, [userId, followerCount]);
+  const followers = data?.followers.length ?? followerCount;
+  const following = data?.following.length ?? 0;
+  return (
+    <>
+      <button type="button" className="followcount" onClick={() => setOpen('followers')}>
+        <b>{followers}</b> {followers === 1 ? 'follower' : 'followers'}
+      </button>
+      {' · '}
+      <button type="button" className="followcount" onClick={() => setOpen('following')}>
+        <b>{following}</b> following
+      </button>
+      {open && (
+        <Modal title={open === 'followers' ? 'Followers' : 'Following'} onClose={() => setOpen(null)}>
+          <div className="chips chips--tight" role="tablist">
+            {(['followers', 'following'] as const).map((tab) => (
+              <button key={tab} type="button" role="tab" aria-selected={open === tab}
+                className={`chip${open === tab ? ' is-on' : ''}`} onClick={() => setOpen(tab)}>
+                {tab === 'followers' ? `Followers ${followers}` : `Following ${following}`}
+              </button>
+            ))}
+          </div>
+          {!data ? <SkeletonText lines={3} /> : data[open].length === 0 ? (
+            <p className="muted">{open === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}</p>
+          ) : (
+            <ul className="followlist">
+              {data[open].map((row) => (
+                <li key={row.id}>
+                  {row.handle ? (
+                    <Link to={`/${row.handle}`} onClick={() => setOpen(null)} className="followlist__row">
+                      <Avatar name={row.name} size={34} />
+                      <span><strong>{row.name}</strong><span className="faint">@{row.handle}{row.isStore ? ' · shop' : ''}</span></span>
+                    </Link>
+                  ) : (
+                    <span className="followlist__row"><Avatar name={row.name} size={34} /><strong>{row.name}</strong></span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Modal>
+      )}
+    </>
   );
 }

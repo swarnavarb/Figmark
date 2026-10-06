@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { FORUM_CAP } from '../../../shared/enums.js';
+import { FORUM_CAP, FORUM_MODERATORS_MAX, FORUM_UNLOCK_LEVELS, forumLockedMessage, forumSlotsAt } from '../../../shared/enums.js';
 import type { Forum, Listing, Post, User } from '../../../shared/models.js';
 import {
   COMMENT_MAX_CHARS, POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_COMMENTS,
@@ -18,6 +18,7 @@ import { tooFast } from '../rate-limit.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { notify } from './notify.js';
+import { levelOf } from './quest-routes.js';
 
 /**
  * The social side: what the people you follow are saying, and the forums.
@@ -385,8 +386,6 @@ async function withoutShops(posts: Post[], repository: Repo): Promise<Post[]> {
 
 /** Said when a shop tries to take part in a forum. */
 const MAX_ALSO_FORUMS = 2;
-/** Forums one person may open while the total is capped. */
-const FORUMS_PER_PERSON = 2;
 const FORUM_NAME_MAX = 60;
 const FORUM_ABOUT_MAX = 200;
 const shopsStayOut = () => error(403, 'people_only', 'Forums are for people. Switch to your profile to take part.');
@@ -797,6 +796,9 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
           id: forum.id, kind: 'forum' as const, name: forum.name, description: forum.description, mine: false,
           memberCount: forum.memberIds?.length ?? 0,
           member: (forum.memberIds ?? []).includes(viewer.id),
+          role: forumRole(forum, viewer.id),
+          rules: forum.rules ?? '',
+          banned: (forum.bannedIds ?? []).includes(viewer.id),
           postCount: shown.length,
         }
       : {
@@ -1370,8 +1372,8 @@ async function deletePostComment(request: HttpRequest, _context: InvocationConte
   const commentId = request.params.comment;
   const comment = post.comments?.find((entry) => entry.id === commentId);
   if (!comment) return error(404, 'not_found', 'That comment is not there any more.');
-  if (comment.authorId !== user.id && post.authorId !== user.id) {
-    return error(403, 'forbidden', 'Only whoever wrote it, or the post\'s author, can remove that.');
+  if (comment.authorId !== user.id && post.authorId !== user.id && !(await runsForum(repository, post, user.id))) {
+    return error(403, 'forbidden', 'Only whoever wrote it, the post\'s author or a moderator can remove that.');
   }
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
@@ -1518,7 +1520,8 @@ async function pinPost(request: HttpRequest, _context: InvocationContext) {
   if (!actor) return notYours();
   if (!post) return noPost();
   const owner = post.channel === 'seller' ? await repository.getUserById(post.channelId) : null;
-  if (!owner?.sellerProfile || !can(owner, user.id, 'posts')) {
+  const moderating = post.channel === 'forum' && await runsForum(repository, post, user.id);
+  if (!moderating && (!owner?.sellerProfile || !can(owner, user.id, 'posts'))) {
     return error(403, 'forbidden', 'Only whoever runs the shop can pin in its channel.');
   }
   if (!post.pinned) {
@@ -1538,7 +1541,9 @@ async function removePost(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
   if (!actor) return notYours();
   if (!post) return noPost();
-  if (post.authorId !== user.id) return error(403, 'forbidden', 'Only whoever posted it can take it down.');
+  if (post.authorId !== user.id && !(await runsForum(repository, post, user.id))) {
+    return error(403, 'forbidden', 'Only whoever posted it, or the forum\'s moderators, can take it down.');
+  }
   await repository.deletePost(post.channelId, post.id);
   // A forum post and its wall entry go together, whichever end is deleted.
   if (post.wallPostId) await repository.deletePost(post.authorId, post.wallPostId);
@@ -1548,9 +1553,10 @@ async function removePost(request: HttpRequest, _context: InvocationContext) {
 
 /** A forum as a list shows it: who is in it is a count, and whether you are. */
 function forumRow(forum: Forum, viewerId: string, latest: Post | null = null) {
-  const { memberIds, ...rest } = forum;
+  const { memberIds, moderatorIds: _mods, bannedIds: _banned, warnings: _warnings, ...rest } = forum;
   return {
     ...rest,
+    role: forumRole(forum, viewerId),
     memberCount: memberIds?.length ?? 0,
     member: (memberIds ?? []).includes(viewerId),
     lastPost: latest ? gist(latest.body || 'Photo') : null,
@@ -1570,7 +1576,25 @@ async function listForums(request: HttpRequest, _context: InvocationContext) {
     return forumRow(forum, user.id, latest ?? null);
   }));
   rows.sort((a, b) => Number(b.member) - Number(a.member) || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''));
-  return json(200, { forums: rows, cap: FORUM_CAP, remaining: Math.max(0, FORUM_CAP - forums.length) });
+  const me = await repository.getUserById(user.id);
+  const level = me ? await levelOf(repository, me) : 1;
+  const opened = forums.filter((forum) => forum.createdBy === user.id).length;
+  const allowed = user.capabilities?.isAdmin ? Infinity : forumSlotsAt(level);
+  return json(200, {
+    forums: rows,
+    cap: FORUM_CAP,
+    remaining: Math.max(0, FORUM_CAP - forums.length),
+    // Your own allowance, earned by level: 5, 7, 8, 9 and 10.
+    slots: {
+      level,
+      opened,
+      allowed: Number.isFinite(allowed) ? allowed : FORUM_UNLOCK_LEVELS.length,
+      canCreate: opened < allowed,
+      nextLevel: FORUM_UNLOCK_LEVELS.find((at) => at > level) ?? null,
+      unlockLevels: FORUM_UNLOCK_LEVELS,
+      message: opened < allowed ? null : forumLockedMessage(level, opened),
+    },
+  });
 }
 
 /**
@@ -1591,6 +1615,13 @@ async function joinForum(request: HttpRequest, _context: InvocationContext) {
   const members = new Set(forum.memberIds ?? []);
   const join = typeof wanted === 'boolean' ? wanted : !members.has(user.id);
   if (join === members.has(user.id)) return json(200, { forum: forumRow(forum, user.id) });
+  if (join && (forum.bannedIds ?? []).includes(user.id)) {
+    return error(403, 'forum_banned', `The moderators of ${forum.name} removed you from it.`);
+  }
+  // The founder cannot walk out of their own room and leave it unrun.
+  if (!join && forum.createdBy === user.id) {
+    return error(409, 'forum_founder', 'You run this forum. Founders stay in their own room.');
+  }
   if (join) members.add(user.id);
   else members.delete(user.id);
   forum.memberIds = [...members];
@@ -1686,18 +1717,13 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
 
   const repository = await getRepository();
   const existing = await repository.listForums();
-  // The cap is everybody's, so nobody gets to spend all of it. Operators
-  // seed the rooms and are not counted.
-  if (!user.capabilities?.isAdmin
-    && existing.filter((forum) => forum.createdBy === user.id).length >= FORUMS_PER_PERSON) {
-    return error(409, 'forum_limit_reached', `You can open ${FORUMS_PER_PERSON} forums while they are being built out.`);
-  }
-  if (existing.length >= FORUM_CAP) {
-    return error(
-      409,
-      'forum_cap_reached',
-      `Forums are capped at ${FORUM_CAP} while the feature is being built out. Post in an existing one for now.`,
-    );
+  // Forums are earned: one at level 5, then one more at 7, 8, 9 and 10.
+  // Operators seed the rooms and are not counted.
+  const opened = existing.filter((forum) => forum.createdBy === user.id).length;
+  if (!user.capabilities?.isAdmin) {
+    const me = await repository.getUserById(user.id);
+    const level = me ? await levelOf(repository, me) : 1;
+    if (opened >= forumSlotsAt(level)) return error(403, 'forum_locked', forumLockedMessage(level, opened));
   }
   if (existing.some((forum) => forum.name.toLowerCase() === name.toLowerCase())) {
     return error(409, 'forum_exists', 'A forum with that name already exists.');
@@ -1717,6 +1743,221 @@ async function createForum(request: HttpRequest, _context: InvocationContext) {
   };
 
   return json(201, { forum: forumRow(await repository.createForum(forum), user.id) });
+}
+
+
+/** Who somebody is in a forum: its founder, a moderator, a member, or nobody. */
+function forumRole(forum: Forum, userId: string): 'admin' | 'moderator' | 'member' | null {
+  if (forum.createdBy === userId) return 'admin';
+  if ((forum.moderatorIds ?? []).includes(userId)) return 'moderator';
+  return (forum.memberIds ?? []).includes(userId) ? 'member' : null;
+}
+
+/** Whether this person keeps order in the forum a post was made in. */
+async function runsForum(repository: Repo, post: Post, userId: string): Promise<boolean> {
+  if (post.channel !== 'forum') return false;
+  const forum = await repository.getForum(post.channelId);
+  const role = forum ? forumRole(forum, userId) : null;
+  return role === 'admin' || role === 'moderator';
+}
+
+/** A person as a forum's member list shows them. */
+function memberRow(person: User, forum: Forum) {
+  return {
+    id: person.id,
+    name: person.displayName,
+    handle: person.username ?? null,
+    role: forumRole(forum, person.id) ?? 'member',
+    warnings: (forum.warnings ?? []).filter((entry) => entry.userId === person.id).length,
+  };
+}
+
+/** GET /api/social/forums/{id}/members - who is in, who runs it, and (to them) who is out. */
+async function forumMembers(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const forum = request.params.id ? await repository.getForum(request.params.id) : null;
+  if (!forum) return error(404, 'not_found', 'No such forum.');
+  const role = forumRole(forum, user.id);
+  const runs = role === 'admin' || role === 'moderator';
+  const ids = [...new Set([forum.createdBy, ...(forum.moderatorIds ?? []), ...(forum.memberIds ?? []), ...(runs ? forum.bannedIds ?? [] : [])])];
+  const people = new Map((await repository.listUsersByIds(ids)).map((person) => [person.id, person]));
+  const rank = { admin: 0, moderator: 1, member: 2 } as const;
+  const members = [...new Set([forum.createdBy, ...(forum.moderatorIds ?? []), ...(forum.memberIds ?? [])])]
+    .map((id) => people.get(id)).filter((person): person is User => Boolean(person))
+    .map((person) => memberRow(person, forum))
+    .sort((a, b) => rank[a.role] - rank[b.role] || a.name.localeCompare(b.name));
+  const banned = runs
+    ? (forum.bannedIds ?? []).map((id) => people.get(id)).filter((person): person is User => Boolean(person))
+      .map((person) => ({ id: person.id, name: person.displayName, handle: person.username ?? null }))
+    : [];
+  const warnings = runs
+    ? (forum.warnings ?? []).slice(-30).reverse().map((entry) => ({
+        ...entry, name: people.get(entry.userId)?.displayName ?? 'Somebody', by: people.get(entry.byId)?.displayName ?? 'A moderator',
+      }))
+    : [];
+  return json(200, { role, members, banned, warnings, moderatorsMax: FORUM_MODERATORS_MAX });
+}
+
+type ModAction = 'add' | 'remove' | 'ban' | 'unban' | 'warn' | 'promote' | 'demote' | 'edit';
+const MOD_ACTIONS: readonly ModAction[] = ['add', 'remove', 'ban', 'unban', 'warn', 'promote', 'demote', 'edit'];
+
+/**
+ * POST /api/social/forums/{id}/moderate - keep a room in order.
+ *
+ * `{ action, user?, note?, description?, rules? }`. The founder and their (at
+ * most two) moderators may add and remove people, keep them out, warn them and
+ * edit the room's description and rules. Only the founder appoints or stands
+ * down moderators, and nobody can act against the founder.
+ */
+async function moderateForum(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  if (request.query?.get('as')) return shopsStayOut();
+  const repository = await getRepository();
+  const forum = request.params.id ? await repository.getForum(request.params.id) : null;
+  if (!forum) return error(404, 'not_found', 'No such forum.');
+  const role = forumRole(forum, user.id);
+  if (role !== 'admin' && role !== 'moderator') return error(403, 'forbidden', 'Only the forum\'s admin and moderators can do that.');
+
+  const body = await readJson<{ action?: unknown; user?: unknown; note?: unknown; description?: unknown; rules?: unknown }>(request);
+  const action = body?.action as ModAction;
+  if (!body || !MOD_ACTIONS.includes(action)) return error(400, 'invalid_action', 'Say what to do.');
+
+  const now = new Date().toISOString();
+  if (action === 'edit') {
+    const description = typeof body.description === 'string' ? body.description.trim() : forum.description;
+    const rules = typeof body.rules === 'string' ? body.rules.trim() : forum.rules ?? '';
+    if (description.length > FORUM_ABOUT_MAX) return error(400, 'invalid_forum', `Keep the description under ${FORUM_ABOUT_MAX} characters.`);
+    if (rules.length > 1000) return error(400, 'invalid_forum', 'Keep the rules under 1000 characters.');
+    const saved = await repository.saveForum({ ...forum, description, rules, updatedAt: now });
+    return json(200, { forum: forumRow(saved, user.id) });
+  }
+
+  // Somebody, by id or @handle.
+  const who = typeof body.user === 'string' ? body.user.trim().replace(/^@/, '') : '';
+  if (!who) return error(400, 'invalid_user', 'Say who.');
+  const them = (await repository.getUserById(who)) ?? (await repository.getByHandle(who.toLowerCase()))?.user ?? null;
+  if (!them) return error(404, 'not_found', `Nobody is called @${who}.`);
+  if (them.id === forum.createdBy) return error(403, 'forbidden', 'Nobody can act against the forum\'s admin.');
+  if (them.id === user.id) return error(400, 'invalid_user', 'Not on yourself.');
+  const theirRole = forumRole(forum, them.id);
+  // Moderators are equals: one cannot remove, warn or ban another.
+  if (role === 'moderator' && theirRole === 'moderator') return error(403, 'forbidden', 'Only the admin can act on a moderator.');
+  if ((action === 'promote' || action === 'demote') && role !== 'admin') {
+    return error(403, 'forbidden', 'Only the forum\'s admin appoints moderators.');
+  }
+
+  const members = new Set(forum.memberIds ?? []);
+  const mods = new Set(forum.moderatorIds ?? []);
+  const banned = new Set(forum.bannedIds ?? []);
+  const warnings = [...(forum.warnings ?? [])];
+  const note = typeof body.note === 'string' ? body.note.trim().slice(0, 300) : '';
+  let notice: string | null = null;
+
+  switch (action) {
+    case 'add':
+      if (banned.has(them.id)) return error(409, 'forum_banned', `Let @${them.username ?? them.displayName} back in first.`);
+      members.add(them.id);
+      notice = `You were added to ${forum.name}.`;
+      break;
+    case 'remove':
+      members.delete(them.id);
+      mods.delete(them.id);
+      notice = `You were removed from ${forum.name}.`;
+      break;
+    case 'ban':
+      members.delete(them.id);
+      mods.delete(them.id);
+      banned.add(them.id);
+      notice = `You were removed from ${forum.name} and cannot rejoin.`;
+      break;
+    case 'unban':
+      banned.delete(them.id);
+      notice = `You may join ${forum.name} again.`;
+      break;
+    case 'warn':
+      if (!note) return error(400, 'invalid_note', 'Say what the warning is for.');
+      warnings.push({ userId: them.id, byId: user.id, note, at: now });
+      notice = `Warning from the moderators of ${forum.name}`;
+      break;
+    case 'promote':
+      if (!members.has(them.id)) return error(409, 'not_a_member', 'Only a member can be a moderator.');
+      if (!mods.has(them.id) && mods.size >= FORUM_MODERATORS_MAX) {
+        return error(409, 'too_many_moderators', `A forum has ${FORUM_MODERATORS_MAX} moderators at most. Stand one down first.`);
+      }
+      mods.add(them.id);
+      notice = `You are now a moderator of ${forum.name}.`;
+      break;
+    case 'demote':
+      mods.delete(them.id);
+      notice = `You are no longer a moderator of ${forum.name}.`;
+      break;
+  }
+
+  const saved = await repository.saveForum({
+    ...forum,
+    memberIds: [...members],
+    moderatorIds: [...mods],
+    bannedIds: [...banned],
+    warnings: warnings.slice(-200),
+    updatedAt: now,
+  });
+  if (notice) {
+    await notify(repository, [them.id], {
+      kind: 'forum_moderation',
+      title: notice,
+      body: action === 'warn' ? note : note || forum.name,
+      link: `/social/f/${forum.id}`,
+    }, { except: user.id });
+  }
+  return json(200, { forum: forumRow(saved, user.id), member: memberRow(them, saved) });
+}
+
+/**
+ * GET /api/social/shops/{id}/feed - what a shop said out loud.
+ *
+ * Its broadcasts: the same posts its followers see on their home feed and
+ * anybody can come across in trending, not the messages kept in its channel.
+ */
+async function shopFeed(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const actor = await actorFor(request, user, repository);
+  if (!actor) return notYours();
+  const shopId = request.params.id;
+  if (!shopId) return error(400, 'invalid_channel', 'A shop id is required.');
+  const posts = await repository.listPostsForChannels([shopId], 60, { feedOnly: true });
+  const broadcast = posts.filter((post) => post.channel === 'seller' && (post.reach ?? 'feed') === 'feed');
+  return json(200, { posts: await decorate(broadcast, repository, actor) });
+}
+
+/** A person or shop as a follower list shows them. */
+function followRow(person: User) {
+  const shop = person.sellerProfile;
+  return {
+    id: person.id,
+    name: shop?.storefrontName ?? person.displayName,
+    handle: shop?.username ?? person.username ?? null,
+    isStore: Boolean(shop),
+  };
+}
+
+/** GET /api/users/{id}/follows - who follows them, and who they follow. */
+async function follows(request: HttpRequest, _context: InvocationContext) {
+  const repository = await getRepository();
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_user', 'Say whose.');
+  const [followerIds, followingIds] = await Promise.all([
+    repository.listFollowerIds(id),
+    repository.listFollowedSellerIds(id),
+  ]);
+  const people = new Map((await repository.listUsersByIds([...new Set([...followerIds, ...followingIds])])).map((p) => [p.id, p]));
+  const rows = (ids: string[]) => ids.map((entry) => people.get(entry)).filter((p): p is User => Boolean(p) && !p!.suspended).map(followRow);
+  // A follower is a person; whoever they follow is shown as the shop they followed.
+  return json(200, { followers: rows(followerIds).map((row) => ({ ...row, isStore: false })), following: rows(followingIds) });
 }
 
 export const socialFeedRoute = handler(socialFeed);
@@ -1745,6 +1986,10 @@ export const socialSearchRoute = handler(search);
 
 const anon = { authLevel: 'anonymous' } as const;
 
+export const forumMembersRoute = handler(forumMembers);
+export const moderateForumRoute = handler(moderateForum);
+export const shopFeedRoute = handler(shopFeed);
+export const followsRoute = handler(follows);
 app.http('me-posts', { ...anon, methods: ['GET'], route: 'me/posts', handler: myPostsRoute });
 app.http('person-posts', { ...anon, methods: ['GET'], route: 'users/{id}/posts', handler: personPostsRoute });
 app.http('social-feed', { ...anon, methods: ['GET'], route: 'social/feed', handler: socialFeedRoute });
@@ -1768,4 +2013,8 @@ app.http('social-home', { ...anon, methods: ['GET'], route: 'social/home', handl
 app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });
 app.http('social-post-pin', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/pin', handler: pinPostRoute });
 app.http('social-forum-join', { ...anon, methods: ['POST'], route: 'social/forums/{id}/join', handler: joinForumRoute });
+app.http('social-forum-members', { ...anon, methods: ['GET'], route: 'social/forums/{id}/members', handler: forumMembersRoute });
+app.http('social-forum-moderate', { ...anon, methods: ['POST'], route: 'social/forums/{id}/moderate', handler: moderateForumRoute });
+app.http('social-shop-feed', { ...anon, methods: ['GET'], route: 'social/shops/{id}/feed', handler: shopFeedRoute });
+app.http('user-follows', { ...anon, methods: ['GET'], route: 'users/{id}/follows', handler: followsRoute });
 app.http('social-search', { ...anon, methods: ['GET'], route: 'social/search', handler: socialSearchRoute });

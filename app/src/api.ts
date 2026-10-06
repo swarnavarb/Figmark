@@ -1040,6 +1040,10 @@ export interface ChannelThread {
     /** Forums: how many are in it, and whether you are. */
     memberCount?: number;
     member?: boolean;
+    /** Forums: what you are in it - its founder (admin), a moderator, a member. */
+    role?: ForumRole | null;
+    rules?: string;
+    banned?: boolean;
   };
   /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
   shareable: { id: string; title: string; priceMinor: number; currency: string; condition?: string; photoUrl?: string | null }[];
@@ -1126,8 +1130,11 @@ export interface WantDetail {
   offers: WantOfferRow[];
 }
 
+export type ForumRole = 'admin' | 'moderator' | 'member';
+
 /** A forum as a list shows it. */
-export interface ForumRow extends Omit<Forum, 'memberIds'> {
+export interface ForumRow extends Omit<Forum, 'memberIds' | 'moderatorIds' | 'bannedIds' | 'warnings'> {
+  role: ForumRole | null;
   memberCount: number;
   member: boolean;
   lastPost: string | null;
@@ -1139,7 +1146,24 @@ export interface ForumsResponse {
   forums: ForumRow[];
   cap: number;
   remaining: number;
+  /** Your own allowance: a forum at level 5, then one more at 7, 8, 9 and 10. */
+  slots?: {
+    level: number; opened: number; allowed: number; canCreate: boolean;
+    nextLevel: number | null; unlockLevels: number[]; message: string | null;
+  };
 }
+
+export interface ForumMember { id: string; name: string; handle: string | null; role: ForumRole; warnings: number }
+export interface ForumMembers {
+  role: ForumRole | null;
+  members: ForumMember[];
+  banned: { id: string; name: string; handle: string | null }[];
+  warnings: { userId: string; name: string; by: string; note: string; at: string }[];
+  moderatorsMax: number;
+}
+export type ForumModAction = 'add' | 'remove' | 'ban' | 'unban' | 'warn' | 'promote' | 'demote' | 'edit';
+export interface FollowRow { id: string; name: string; handle: string | null; isStore: boolean }
+export interface BlockedRow { id: string; name: string; handle: string | null; shop: { name: string; handle: string | null } | null }
 
 /** What the social search finds. */
 export interface SocialSearchResult {
@@ -2527,6 +2551,14 @@ export const api = {
     post<{ read: number }>('/notifications/read', id ? { id } : {}),
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
+  forumMembers: (id: string) => request<ForumMembers>(`/social/forums/${encodeURIComponent(id)}/members`),
+  moderateForum: (id: string, body: { action: ForumModAction; user?: string; note?: string; description?: string; rules?: string }) =>
+    post<{ forum: ForumRow; member?: ForumMember }>(`/social/forums/${encodeURIComponent(id)}/moderate`, body),
+  shopFeed: (id: string) => request<{ posts: PostCard[] }>(`/social/shops/${encodeURIComponent(id)}/feed`),
+  follows: (id: string) => request<{ followers: FollowRow[]; following: FollowRow[] }>(`/users/${encodeURIComponent(id)}/follows`),
+  blocked: () => request<{ blocked: BlockedRow[] }>('/me/blocked'),
+  unblock: (id: string) => post<{ blocked: boolean }>(`/me/blocked/${encodeURIComponent(id)}/unblock`, {}),
+  saved: () => request<{ listings: (FeedListing & { gone: boolean })[] }>('/me/saved'),
   createForum: (body: { name: string; description?: string }) =>
     post<{ forum: ForumRow }>('/social/forums/new', body),
   forwarders: (route?: string) =>

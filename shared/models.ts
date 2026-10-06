@@ -2135,6 +2135,8 @@ export interface Notification extends BaseDocument {
 }
 
 export type NotificationKind =
+  /** A forum's founder or a moderator warned, removed or appointed you. */
+  | 'forum_moderation'
   | 'want_answered'
   | 'payment_claimed'
   | 'payment_received'
@@ -2325,6 +2327,14 @@ export interface Forum extends BaseDocument {
    * membership existed, which read as empty.
    */
   memberIds?: string[];
+  /** Up to two people the founder appointed to keep the room in order. */
+  moderatorIds?: string[];
+  /** Removed and kept out: they cannot join again until let back in. */
+  bannedIds?: string[];
+  /** House rules, shown at the top of the room. */
+  rules?: string;
+  /** Warnings handed out, newest last. */
+  warnings?: { userId: string; byId: string; note: string; at: string }[];
 }
 
 /* -------------------------------------------------------------------------- */

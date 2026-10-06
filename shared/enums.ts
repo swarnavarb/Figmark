@@ -243,6 +243,28 @@ export type ReviewDirection = (typeof REVIEW_DIRECTIONS)[number];
 export const FORUM_CAP = 6;
 
 /**
+ * The levels at which a person may open another forum: their first at 5, then
+ * one more at each of 7, 8, 9 and 10 - five in all.
+ */
+export const FORUM_UNLOCK_LEVELS = [5, 7, 8, 9, 10] as const;
+/** Moderators a forum's founder may appoint besides themselves. */
+export const FORUM_MODERATORS_MAX = 2;
+
+/** How many forums somebody at this level may have opened. */
+export function forumSlotsAt(level: number): number {
+  return FORUM_UNLOCK_LEVELS.filter((at) => level >= at).length;
+}
+
+/** Said when somebody asks for a forum they have not unlocked yet. */
+export function forumLockedMessage(level: number, opened: number): string {
+  const ladder = 'You can open your first forum at level 5, then one more at levels 7, 8, 9 and 10 (five in all).';
+  const next = FORUM_UNLOCK_LEVELS.find((at) => at > level);
+  if (opened === 0) return `You will be eligible to create your first forum when you reach level 5. You are level ${level}. ${ladder}`;
+  if (next === undefined) return `You have opened all ${FORUM_UNLOCK_LEVELS.length} of your forums.`;
+  return `You have used your ${opened} forum slot${opened === 1 ? '' : 's'}. Your next one unlocks at level ${next}; you are level ${level}. ${ladder}`;
+}
+
+/**
  * What someone may do in a store they do not own.
  *
  * Separate rights rather than one "manager" flag, because the jobs are

@@ -72,6 +72,7 @@ const {
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
   removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, shareableRoute: shareable, pinPostRoute: pinPost,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
+  forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -1620,19 +1621,6 @@ await check('a forum can be created, and posted into', async () => {
   const thread = await channelThread(req({ headers: auth, params: { id: created.jsonBody.forum.id } }), ctx);
   assert.equal(thread.jsonBody.channel.kind, 'forum');
   assert.equal(thread.jsonBody.posts.length, 1);
-});
-
-await check('forums are capped, and the refusal says so', async () => {
-  // Fill whatever is left, then prove the next one is refused rather than
-  // silently accepted - the cap is the feature being deliberately small.
-  let remaining = (await listForums(req({ headers: auth }), ctx)).jsonBody.remaining;
-  for (let index = 0; index < remaining; index += 1) {
-    const filler = await createForum(req({ headers: auth, body: { name: `Filler room ${index}` } }), ctx);
-    assert.equal(filler.status, 201);
-  }
-  const refused = await createForum(req({ headers: auth, body: { name: 'One too many' } }), ctx);
-  assert.equal(refused.status, 409);
-  assert.equal(refused.jsonBody.error, 'forum_cap_reached');
 });
 
 await check('a duplicate forum name is refused', async () => {
@@ -7905,6 +7893,47 @@ await check('forums are people only: no shop speaks in a seeded one', async () =
   assert.ok(thread.posts.every((card) => card.post.authorId.startsWith('usr_b_') || card.post.authorId === 'usr_demo'));
 });
 
+await check('a forum is earned by level, and the refusal says when', async () => {
+  const person = await newBuyer('Level One');
+  const list = (await listForums(req({ headers: person.headers }), ctx)).jsonBody;
+  assert.equal(list.slots.canCreate, false);
+  assert.deepEqual(list.slots.unlockLevels, [5, 7, 8, 9, 10]);
+  const refused = await createForum(req({ headers: person.headers, body: { name: 'Too early' } }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.jsonBody.error, 'forum_locked');
+  assert.match(refused.jsonBody.message ?? JSON.stringify(refused.jsonBody), /level 5/);
+});
+
+await check('the admin moderates with up to two moderators, who cannot touch the admin', async () => {
+  const room = (await createForum(req({ headers: auth, body: { name: 'Moderated room' } }), ctx)).jsonBody.forum;
+  const [a, b, c] = [await newBuyer('Mod A'), await newBuyer('Mod B'), await newBuyer('Mod C')];
+  for (const who of [a, b, c]) await joinForum(req({ headers: who.headers, params: { id: room.id }, body: { join: true } }), ctx);
+  const mod = (headers, body) => moderateForum(req({ headers, params: { id: room.id }, body }), ctx);
+  assert.equal((await mod(auth, { action: 'promote', user: a.id })).status, 200);
+  assert.equal((await mod(auth, { action: 'promote', user: b.id })).status, 200);
+  assert.equal((await mod(auth, { action: 'promote', user: c.id })).jsonBody.error, 'too_many_moderators');
+  assert.equal((await mod(a.headers, { action: 'promote', user: c.id })).status, 403, 'only the admin appoints');
+  assert.equal((await mod(a.headers, { action: 'ban', user: b.id })).status, 403, 'a moderator cannot act on a moderator');
+  const owner = (await forumMembers(req({ headers: auth, params: { id: room.id } }), ctx)).jsonBody.members.find((m) => m.role === 'admin');
+  assert.equal((await mod(a.headers, { action: 'remove', user: owner.id })).status, 403, 'nobody acts against the admin');
+  assert.equal((await mod(a.headers, { action: 'warn', user: c.id, note: 'Keep it civil.' })).status, 200);
+  const posted = await createPost(req({ headers: c.headers, body: { body: 'Spam spam', forumId: room.id } }), ctx);
+  assert.equal(posted.status, 201);
+  const gone = await removePost(req({ headers: a.headers, params: { channel: room.id, id: posted.jsonBody.post.id } }), ctx);
+  assert.equal(gone.status, 200, 'a moderator takes posts down');
+  assert.equal((await mod(a.headers, { action: 'ban', user: c.id })).status, 200);
+  const back = await joinForum(req({ headers: c.headers, params: { id: room.id }, body: { join: true } }), ctx);
+  assert.equal(back.jsonBody.error, 'forum_banned');
+  const people = (await forumMembers(req({ headers: auth, params: { id: room.id } }), ctx)).jsonBody;
+  assert.equal(people.banned.length, 1);
+  assert.equal(people.warnings.length, 1);
+});
+
+await check('followers and following are listed', async () => {
+  const body = (await follows(req({ params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(Array.isArray(body.followers) && Array.isArray(body.following));
+});
+
 await check('joining a forum is for people, and posting needs it', async () => {
   const person = await newBuyer('Forum Joiner');
   const refused = await createPost(req({ headers: person.headers, body: { body: 'Hello room', forumId: 'frm_deals' } }), ctx);
@@ -9647,7 +9676,7 @@ await check('posting in a burst is slowed down, and only for whoever is bursting
   }
 });
 
-await check('nobody spends the whole forum cap, and names stay short', async () => {
+await check('nobody opens more forums than their level allows, and names stay short', async () => {
   const opener = await newBuyer('Room Opener');
   const tooLong = await createForum(req({ headers: opener.headers, body: { name: 'x'.repeat(61) } }), ctx);
   assert.equal(tooLong.status, 400);
@@ -9660,8 +9689,9 @@ await check('nobody spends the whole forum cap, and names stay short', async () 
     });
   }
   const third = await createForum(req({ headers: opener.headers, body: { name: 'Opener room 3' } }), ctx);
-  assert.equal(third.status, 409);
-  assert.equal(third.jsonBody.error, 'forum_limit_reached');
+  // Two open at level 1 is already over the allowance: forums are earned by level now.
+  assert.equal(third.status, 403);
+  assert.equal(third.jsonBody.error, 'forum_locked');
 });
 
 await check('joining a forum says which, so a double tap does not undo it', async () => {

@@ -102,6 +102,11 @@ async function viewFor(repository: Repo, user: User, state: QuestState = user.qu
   return view;
 }
 
+/** Somebody's level as of now, the cache brought up to date on the way. */
+export async function levelOf(repository: Repo, user: User): Promise<number> {
+  return (await viewFor(repository, user)).level;
+}
+
 async function signedIn(request: HttpRequest) {
   const auth = await getAuthService();
   const principal = await auth.requireAuth(request);

@@ -319,6 +319,35 @@ async function block(request: HttpRequest, _context: InvocationContext) {
   return json(200, { blocked: body.block });
 }
 
+/** GET /api/me/blocked - everybody you blocked, to let back in from one place. */
+async function blockedList(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  const people = await repository.listUsersByIds(me?.messageBlocks ?? []);
+  return json(200, {
+    blocked: people.map((person) => ({
+      id: person.id,
+      name: person.displayName,
+      handle: person.username ?? null,
+      shop: person.sellerProfile ? { name: person.sellerProfile.storefrontName, handle: person.sellerProfile.username ?? null } : null,
+    })),
+  });
+}
+
+/** POST /api/me/blocked/{id}/unblock - let them write again, by account. */
+async function unblock(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  const next = (me.messageBlocks ?? []).filter((id) => id !== request.params.id);
+  await repository.updateUser({ ...me, messageBlocks: next, updatedAt: new Date().toISOString() });
+  return json(200, { blocked: false });
+}
+
 /**
  * POST /api/messages/{handle}/mute?as=<handle> - keep the conversation, stop counting it.
  *
@@ -730,6 +759,8 @@ export const publicProfileRoute = handler(publicProfile);
 
 const anon = { authLevel: 'anonymous' } as const;
 
+export const blockedListRoute = handler(blockedList);
+export const unblockRoute = handler(unblock);
 app.http('messages-inbox', { ...anon, methods: ['GET'], route: 'messages', handler: inboxRoute });
 app.http('messages-thread', { ...anon, methods: ['GET'], route: 'messages/{handle}', handler: threadRoute });
 // A distinct template, not just a distinct method: the Functions host treats
@@ -738,6 +769,8 @@ app.http('messages-deal-items', { ...anon, methods: ['GET'], route: 'messages/{h
 app.http('messages-send', { ...anon, methods: ['POST'], route: 'messages/{handle}/send', handler: sendMessageRoute });
 app.http('messages-react', { ...anon, methods: ['POST'], route: 'messages/{handle}/react', handler: reactToMessageRoute });
 app.http('messages-block', { ...anon, methods: ['POST'], route: 'messages/{handle}/block', handler: blockRoute });
+app.http('me-blocked', { ...anon, methods: ['GET'], route: 'me/blocked', handler: blockedListRoute });
+app.http('me-unblock', { ...anon, methods: ['POST'], route: 'me/blocked/{id}/unblock', handler: unblockRoute });
 app.http('messages-mute', { ...anon, methods: ['POST'], route: 'messages/{handle}/mute', handler: muteRoute });
 app.http('public-profile', { ...anon, methods: ['GET'], route: 'u/{handle}', handler: publicProfileRoute });
 app.http('me-username', { ...anon, methods: ['POST'], route: 'me/username', handler: setUsernameRoute });

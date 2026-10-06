@@ -13079,3 +13079,42 @@ button.sk-plan__pick { cursor: pointer; }
 .linkcard--compact { grid-template-columns: 84px minmax(0, 1fr); width: min(300px, 64vw); }
 .linkcard--compact .linkcard__img { height: 100%; min-height: 84px; }
 .linkcard--compact.linkcard--loading { aspect-ratio: auto; height: 84px; }
+
+/* ── Forum moderation, follows, saves ─────────────────────────────────── */
+.forumrole {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: .02em; vertical-align: middle;
+  background: var(--surface-2); color: var(--violet-text);
+}
+.forumrole--admin { background: var(--accent); color: #fff; }
+.forumhero__people, .followcount {
+  background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer;
+}
+.forumhero__people:hover, .followcount:hover { text-decoration: underline; }
+.forumrules {
+  margin: 0 0 12px; padding: 10px 14px; border-radius: 14px; background: var(--surface-2);
+}
+.forumrules summary { cursor: pointer; font-weight: 700; display: flex; gap: 6px; align-items: center; }
+.forumrules p { margin: 8px 0 0; white-space: pre-wrap; }
+.forumsearch {
+  width: 100%; margin: 0 0 10px; padding: 10px 14px; border-radius: 999px;
+  border: 1px solid var(--surface-hover); background: var(--surface); color: inherit; font: inherit;
+}
+.forummod { display: grid; gap: 12px; max-height: 70vh; overflow-y: auto; }
+.forummod__add { display: flex; gap: 8px; }
+.forummod__add input, .forummod__settings input, .forummod__settings textarea, .forummod__warnform textarea {
+  flex: 1; width: 100%; padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--surface-hover); background: var(--surface); color: inherit; font: inherit;
+}
+.forummod__list, .followlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.forummod__row, .followlist__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: inherit; text-decoration: none; }
+.forummod__who, .followlist__row > span { display: grid; flex: 1; min-width: 120px; }
+.forummod__who a { color: inherit; }
+.forummod__acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.forummod__acts .is-danger { color: var(--danger-text); }
+.forummod__warn p { margin: 4px 0 0; }
+.forummod__settings { display: grid; gap: 10px; }
+.forummod__settings label { display: grid; gap: 4px; font-weight: 600; }
+.forummod__warnform { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.pstats__follows { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.is-gone { opacity: .5; }

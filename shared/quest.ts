@@ -1,4 +1,5 @@
 import type { Listing, OwnedCard, QuestState } from './models.js';
+import { FORUM_UNLOCK_LEVELS } from './enums.js';
 
 /**
  * The collector game, as rules.
@@ -584,7 +585,7 @@ const INVITE_MONTHLY: Template = {
 interface Ladder {
   key: string;
   name: string;
-  metric: Metric | 'streak' | 'profile' | 'refer' | 'scout';
+  metric: Metric | 'streak' | 'profile' | 'refer' | 'scout' | 'level';
   steps: number[];
   blurb: (goal: number) => string;
   href: string | null;
@@ -620,6 +621,10 @@ const LADDERS: readonly Ladder[] = [
     blurb: (n) => (n === 1 ? 'Post something you are hunting for.' : `Post ${n} Wanted requests.`), href: '/wanted' },
   { key: 'streak', name: 'On Fire', metric: 'streak', steps: [7, 30, 100],
     blurb: (n) => `Check in ${n} days in a row.`, href: null },
+  // Forums are earned: a new one opens at each of these levels.
+  { key: 'forums', name: 'Forum Founder', metric: 'level', steps: [...FORUM_UNLOCK_LEVELS],
+    blurb: (n) => `Reach level ${n} to unlock forum #${FORUM_UNLOCK_LEVELS.indexOf(n as typeof FORUM_UNLOCK_LEVELS[number]) + 1}.`,
+    href: '/social?view=forums' },
   { key: 'profile', name: 'Show Yourself', metric: 'profile', steps: [2],
     blurb: () => 'Add a bio and a tag to your page.', href: '/me?tab=settings' },
 ];
@@ -737,6 +742,8 @@ function ladderProgress(ladder: Ladder, context: MeasureContext): number {
   if (ladder.metric === 'profile') return Number(context.facts.hasBio) + Number(context.facts.hasTags);
   if (ladder.metric === 'refer') return context.facts.referredSales;
   if (ladder.metric === 'scout') return context.facts.invitedSellers;
+  // The level last worked out: the one being worked out now includes this.
+  if (ladder.metric === 'level') return context.state.levelCache ?? 1;
   return countIn(ladder.metric, 'milestone', context);
 }
 
