@@ -404,22 +404,17 @@ code, kbd, samp, pre {
 
 .nav {
   position: sticky;
-  top: 0;
+  top: var(--pin-top);
   z-index: 50;
   height: var(--nav-h);
   display: flex;
   align-items: center;
   gap: 18px;
-  /* Opened from an iPhone's home screen the page reaches under the clock, and
-     the header's colour goes with it: the padding keeps what is in the header
-     below the clock, the gradient runs to the very top of the screen. */
-  padding: env(safe-area-inset-top, 0px) 20px 0;
-  /* Solid under the gradient: this is the colour Safari reads for its status
-     bar, which ignores a gradient. */
-  background-color: rgb(var(--top-rgb));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  /* In Safari the header runs to the very top of the page; the padding is
+     zero there. (In the home-screen app it sticks just under the clock
+     instead - see the end of this section.) */
+  padding: var(--nav-inset) 20px 0;
   color: #fff;
-  transition: background-color 240ms var(--ease), border-color 240ms var(--ease);
 }
 /* The header's top edge in its one colour, fading into the gradient below.
    Declared on the headers, not the root, so it takes the --top-rgb of the
@@ -429,24 +424,18 @@ code, kbd, samp, pre {
     rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) env(safe-area-inset-top, 0px),
     rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
 }
-/* The section's gradient, on a layer of its own so it can fade out once the
-   page scrolls under it, leaving the header's colour at 40%. */
-.nav::before {
-  content: ''; position: absolute; inset: 0; z-index: -1;
-  background:
-    var(--top-band),
-    linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.18) 100%),
-    var(--top-grad);
-  transition: opacity 240ms var(--ease);
-  pointer-events: none;
-}
 /*
- * The header once the page scrolls under it: glass that is the status bar's
- * colour at the top, so the two meet without a joint, thins to 40% by the
- * header's foot, and then dissolves into the page over a short blurred tail
- * rather than stopping at a line. The social tab's slim bar is the same glass.
+ * The header is glass: the section's colour, solid at the top where it meets
+ * the status bar, deepening to 40% by its foot over a blurred backdrop, then
+ * dissolving into the page over a short blurred tail rather than stopping at
+ * a line. Over the page's dark background at the top it reads as a colour
+ * that deepens downwards; scrolled, the page passes under it frosted. The
+ * blur is the header's backdrop only - the logo and icons sit on top of it,
+ * sharp. The social tab's slim bar is the same glass.
  */
-:root { --glass-tail: 18px; }
+/* --nav-inset: the room a top bar leaves for the clock inside itself;
+   --pin-top: how far below the screen's top edge a top bar pins. */
+:root { --glass-tail: 18px; --nav-inset: env(safe-area-inset-top, 0px); --pin-top: 0px; }
 .nav::after, .soccompact::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--glass-tail)); z-index: -2;
   background: linear-gradient(180deg,
@@ -458,10 +447,25 @@ code, kbd, samp, pre {
   mask-image: linear-gradient(180deg, #000 calc(100% - var(--glass-tail)), transparent 100%);
   pointer-events: none;
 }
-.nav::after { opacity: 0; transition: opacity 240ms var(--ease); }
-:root[data-scrolled] .nav { background-color: transparent; border-bottom-color: transparent; }
-:root[data-scrolled] .nav::before { opacity: 0; }
-:root[data-scrolled] .nav::after { opacity: 1; }
+
+/*
+ * The home-screen app on an iPhone lays its own blur and dimming over any bar
+ * pinned against the top edge of the screen - over the bar's contents too, so
+ * the logo and the icons came out blurred. There, the header sticks just
+ * under the clock instead of against the top edge, and a plain strip of the
+ * section's colour sits above it at the top of the page and scrolls away.
+ * iOS's effect then covers only the clock's own strip. The header's bottom
+ * edge is where it was, so --nav-h holds for everything measured from it.
+ */
+@media (display-mode: standalone) {
+  .shell:not(.shell--social)::before {
+    content: ''; display: block; flex: none;
+    height: env(safe-area-inset-top, 0px);
+    background: rgb(var(--top-rgb));
+  }
+  :root { --nav-inset: 0px; --pin-top: env(safe-area-inset-top, 0px); }
+  .nav { height: calc(var(--nav-h) - env(safe-area-inset-top, 0px)); }
+}
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The first coloured thing anyone sees, so it carries the full brand ramp
@@ -1381,7 +1385,7 @@ code, kbd, samp, pre {
 
 @media (max-width: 860px) {
   .detail { grid-template-columns: 1fr; }
-  .nav { height: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; flex-wrap: wrap; gap: 10px; }
+  .nav { height: auto; padding: calc(10px + var(--nav-inset)) 14px 10px; flex-wrap: wrap; gap: 10px; }
   .field-row { grid-template-columns: 1fr; }
   .nav__link { padding: 7px 9px; }
 }
@@ -1392,7 +1396,7 @@ code, kbd, samp, pre {
    are, and the tabs say what you are looking at. */
 @media (max-width: 560px) {
   .brand__name { display: none; }
-  .nav { padding: calc(9px + env(safe-area-inset-top, 0px)) 14px 9px; gap: 8px; }
+  .nav { padding: calc(9px + var(--nav-inset)) 14px 9px; gap: 8px; }
   .nav__links { gap: 4px; }
 }
 
@@ -7014,7 +7018,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 .nav { transition: transform 280ms var(--ease), background-color 240ms var(--ease), border-color 240ms var(--ease); }
 .tabbar { transition: transform 280ms var(--ease); }
-:root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail))); }
+:root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail) - var(--pin-top))); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(100%); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7451,7 +7455,7 @@ body.is-locked { overflow: hidden; }
   background-color: rgb(var(--top-rgb));
   background-image:
     var(--top-band),
-    linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.22) 100%),
+    linear-gradient(180deg, rgba(8, 11, 18, 0) calc(env(safe-area-inset-top, 0px) + 12px), rgba(8, 11, 18, 0.4) 100%),
     var(--sx-grad);
   background-size: 100% 100%, 100% 100%, 180% 180%;
   animation: soctop-drift 14s ease-in-out infinite alternate;
@@ -7536,14 +7540,14 @@ body.is-locked { overflow: hidden; }
 /* ── The bar that locks once the header has gone ───────────────────────── */
 
 .soccompact {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 60;
-  padding-top: env(safe-area-inset-top, 0px);
+  position: fixed; top: var(--pin-top); left: 0; right: 0; z-index: 60;
+  padding-top: var(--nav-inset);
   /* Square, and see-through: the feed scrolls on underneath, blurred, so
      the bar reads as glass over the page rather than a lid on it. The glass
      is its ::before, shared with the marketplace header. */
   border-radius: 0;
   color: #fff;
-  transform: translateY(calc(-100% - var(--glass-tail) - 4px));
+  transform: translateY(calc(-100% - var(--glass-tail) - var(--pin-top) - 4px));
   transition: transform 300ms var(--ease);
   pointer-events: none;
 }
@@ -13523,17 +13527,12 @@ button.sk-plan__pick { cursor: pointer; }
   pointer-events: none;
 }
 :root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
-/* Opened from the home screen the header itself runs up under the clock, and
-   iOS has to see that header as the bar at the top: with the strip there in
-   its place, iOS took the strip for the header and laid its own blur and
-   dimming over everything under it - the real header, icons and all. So in
-   the app the strip only stands in while the marketplace header is slid away. */
+/* Not in the home-screen app: there iOS draws its own blur under the clock,
+   over whatever the page has passed up there, and a bar pinned against the
+   top edge is one iOS blurs over (see the header). */
 @media (display-mode: standalone) {
   .topstrip { display: none; }
-  :root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip { display: block; }
 }
-html.is-installed .topstrip { display: none; }
-html.is-installed[data-bars='hidden'] .shell:not(.shell--social) > .topstrip { display: block; }
 
 /* ── Pull to refresh (home-screen copy only) ──────────────────────────────── */
 /* No rubber band at the top: the indicator is the bounce. */
