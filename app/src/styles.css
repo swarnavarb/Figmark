@@ -410,11 +410,16 @@ code, kbd, samp, pre {
   display: flex;
   align-items: center;
   gap: 18px;
-  /* In Safari the header runs to the very top of the page; the padding is
-     zero there. (In the home-screen app it sticks just under the clock
-     instead - see the end of this section.) */
+  /* In Safari the header runs to the very top of the screen and the padding
+     keeps what is in it below the clock. (In the home-screen app it sticks
+     just under the clock instead - see the end of this section.) */
   padding: var(--nav-inset) 20px 0;
+  /* Solid under the gradient: this is the colour Safari reads for its status
+     bar, which ignores a gradient. */
+  background-color: rgb(var(--top-rgb));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   color: #fff;
+  transition: background-color 240ms var(--ease), border-color 240ms var(--ease);
 }
 /* The header's top edge in its one colour, fading into the gradient below.
    Declared on the headers, not the root, so it takes the --top-rgb of the
@@ -424,14 +429,22 @@ code, kbd, samp, pre {
     rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) env(safe-area-inset-top, 0px),
     rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
 }
+/* The section's gradient, on a layer of its own so it can fade out once the
+   page scrolls under it, leaving the header's colour at 40%. */
+.nav::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background:
+    var(--top-band),
+    linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.18) 100%),
+    var(--top-grad);
+  transition: opacity 240ms var(--ease);
+  pointer-events: none;
+}
 /*
- * The header is glass: the section's colour, solid at the top where it meets
- * the status bar, deepening to 40% by its foot over a blurred backdrop, then
- * dissolving into the page over a short blurred tail rather than stopping at
- * a line. Over the page's dark background at the top it reads as a colour
- * that deepens downwards; scrolled, the page passes under it frosted. The
- * blur is the header's backdrop only - the logo and icons sit on top of it,
- * sharp. The social tab's slim bar is the same glass.
+ * The header once the page scrolls under it: glass that is the status bar's
+ * colour at the top, so the two meet without a joint, thins to 40% by the
+ * header's foot, and then dissolves into the page over a short blurred tail
+ * rather than stopping at a line. The social tab's slim bar is the same glass.
  */
 /* --nav-inset: the room a top bar leaves for the clock inside itself;
    --pin-top: how far below the screen's top edge a top bar pins. */
@@ -447,24 +460,32 @@ code, kbd, samp, pre {
   mask-image: linear-gradient(180deg, #000 calc(100% - var(--glass-tail)), transparent 100%);
   pointer-events: none;
 }
+.nav::after { opacity: 0; transition: opacity 240ms var(--ease); }
+:root[data-scrolled] .nav { background-color: transparent; border-bottom-color: transparent; }
+:root[data-scrolled] .nav::before { opacity: 0; }
+:root[data-scrolled] .nav::after { opacity: 1; }
 
 /*
  * The home-screen app on an iPhone lays its own blur and dimming over any bar
  * pinned against the top edge of the screen - over the bar's contents too, so
  * the logo and the icons came out blurred. There, the header sticks just
- * under the clock instead of against the top edge, and a plain strip of the
- * section's colour sits above it at the top of the page and scrolls away.
- * iOS's effect then covers only the clock's own strip. The header's bottom
- * edge is where it was, so --nav-h holds for everything measured from it.
+ * under the clock instead, and the colour under the clock is a shadow the
+ * header casts upwards: painted, but not a box iOS can take for a bar. iOS's
+ * dimming then falls on that colour alone - the look of the app - and the
+ * icons below it stay sharp. The header's bottom edge is where it was, so
+ * --nav-h holds for everything measured from it.
  */
 @media (display-mode: standalone) {
   .shell:not(.shell--social)::before {
     content: ''; display: block; flex: none;
     height: env(safe-area-inset-top, 0px);
-    background: rgb(var(--top-rgb));
   }
   :root { --nav-inset: 0px; --pin-top: env(safe-area-inset-top, 0px); }
-  .nav { height: calc(var(--nav-h) - env(safe-area-inset-top, 0px)); }
+  .nav {
+    height: calc(var(--nav-h) - env(safe-area-inset-top, 0px));
+    box-shadow: 0 calc(-1 * env(safe-area-inset-top, 0px)) 0 rgb(var(--top-rgb));
+  }
+  .soccompact { box-shadow: 0 calc(-1 * env(safe-area-inset-top, 0px)) 0 rgb(var(--top-rgb)); }
 }
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
@@ -7455,7 +7476,7 @@ body.is-locked { overflow: hidden; }
   background-color: rgb(var(--top-rgb));
   background-image:
     var(--top-band),
-    linear-gradient(180deg, rgba(8, 11, 18, 0) calc(env(safe-area-inset-top, 0px) + 12px), rgba(8, 11, 18, 0.4) 100%),
+    linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.22) 100%),
     var(--sx-grad);
   background-size: 100% 100%, 100% 100%, 180% 180%;
   animation: soctop-drift 14s ease-in-out infinite alternate;
