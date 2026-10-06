@@ -12,8 +12,10 @@ import { api } from './api';
  */
 
 export type PushState =
-  /** Not set up on this site (no keys), or the browser has no push at all. */
+  /** The browser has no push at all. */
   | 'unsupported'
+  /** The site has no keys configured, so nothing can be sent. */
+  | 'unavailable'
   /** An iPhone or iPad in a browser tab: it works only from the home screen. */
   | 'needs-install'
   /** Can be turned on. */
@@ -69,7 +71,7 @@ export async function pushState(): Promise<PushState> {
     // screen it does. So "unsupported" there really means "install it first".
     return isAppleMobile() && !isInstalled() ? 'needs-install' : 'unsupported';
   }
-  if (!(await publicKey())) return 'unsupported';
+  if (!(await publicKey())) return 'unavailable';
   if (Notification.permission === 'denied') return 'blocked';
   if (Notification.permission !== 'granted') return 'off';
   return (await currentSubscription()) ? 'on' : 'off';
@@ -91,7 +93,7 @@ export async function enablePush(): Promise<PushState> {
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return permission === 'denied' ? 'blocked' : 'off';
   const key = await publicKey();
-  if (!key) return 'unsupported';
+  if (!key) return 'unavailable';
 
   const registration = (await navigator.serviceWorker.getRegistration(SW_URL))
     ?? (await navigator.serviceWorker.register(SW_URL));

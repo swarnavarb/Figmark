@@ -253,7 +253,9 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.35);
   /* Coloured elevation: a lift that carries the hue of what it lifts. */
   --shadow-violet: 0 6px 24px rgba(124, 58, 237, 0.35);
-  --nav-h: 62px;
+  /* Includes the room under an iPhone's clock and notch, which is zero
+     everywhere else, so every offset measured from the header stays right. */
+  --nav-h: calc(62px + env(safe-area-inset-top, 0px));
   /* The bottom bar's height, including the home indicator. Declared here
      because two things need it: the bar sets itself from it, and a
      full-height screen has to stop above it. */
@@ -395,7 +397,9 @@ code, kbd, samp, pre {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 20px;
+  /* Opened from an iPhone's home screen the page can reach under the clock;
+     the header starts below it, as the social header does. */
+  padding: env(safe-area-inset-top, 0px) 20px 0;
   background: rgba(18, 18, 21, 0.85);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
@@ -1300,7 +1304,7 @@ code, kbd, samp, pre {
 @media (max-width: 860px) {
   .detail { grid-template-columns: 1fr; }
   .nav__search { order: 3; flex-basis: 100%; max-width: none; }
-  .nav { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 10px; }
+  .nav { height: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; flex-wrap: wrap; gap: 10px; }
   .field-row { grid-template-columns: 1fr; }
   .nav__link { padding: 7px 9px; }
 }
@@ -1311,7 +1315,7 @@ code, kbd, samp, pre {
    are, and the tabs say what you are looking at. */
 @media (max-width: 560px) {
   .brand__name { display: none; }
-  .nav { padding: 9px 14px; gap: 8px; }
+  .nav { padding: calc(9px + env(safe-area-inset-top, 0px)) 14px 9px; gap: 8px; }
   .nav__links { gap: 4px; }
 }
 
