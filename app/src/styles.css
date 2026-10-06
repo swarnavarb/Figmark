@@ -7917,9 +7917,22 @@ body.is-locked { overflow: hidden; }
   transition: none;
 }
 .shell--room .chroom { padding-bottom: 150px; }
+/* Held to what is on screen rather than to the browser's idea of the window,
+   which an iPhone can leave short or shifted - see ViewportSync. Both are
+   zero whenever the two agree.
+   Written against the bars-hidden state too: that rule lifts the bar off
+   the tab bar's spot elsewhere, and in a room - where there is no tab bar
+   and the bar already pads for the home indicator - it made the bar hop up
+   and back every time a scroll changed direction. */
+:root .shell--room .cbar,
+:root[data-bars='hidden'] .shell--room .cbar { bottom: var(--vv-gap, 0px); }
+.shell--room .roombar { top: var(--vv-top, 0px); }
+/* No rubber band in a room, in a browser tab as in the installed app: the
+   bounce carries the pinned bars with it on an iPhone. */
+html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: none; }
 /* The item a message is about makes the bar taller; the last message stays above it. */
 .shell--room .chroom:has(.cbar__about) { padding-bottom: 260px; }
-.shell--room .chnew { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+.shell--room .chnew { bottom: calc(88px + env(safe-area-inset-bottom, 0px) + var(--vv-gap, 0px)); }
 
 /* The inbox row, with the pen at its end. */
 .inbox__boxes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

@@ -73,33 +73,44 @@ self.addEventListener('notificationclick', (event) => {
     : Promise.resolve();
 
   event.waitUntil(Promise.all([read, (async () => {
-    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
-    if (!open) {
+    /* Left first, where the page looks whenever it comes to the front. An
+       iPhone often shows the app before this worker has even run, so a page
+       that checked on arriving and found nothing checks again a moment
+       later; a page frozen in the background, or reloaded onto a newer
+       version on the way, misses the message below but still finds this. */
+    await caches.open(HANDOFF_CACHE)
+      .then((cache) => cache.put(HANDOFF_KEY, new Response(JSON.stringify({ link: path, at: Date.now() }))))
+      .catch(() => undefined);
+
+    const windows = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
+      .filter((client) => new URL(client.url).origin === self.location.origin);
+    if (windows.length === 0) {
       await self.clients.openWindow(target);
       return;
     }
     /* Already open (often just in the background, as a home-screen app is):
        bring it forward and tell it where to go. The page moves itself, in
        place, which works everywhere - unlike navigating the window from here,
-       which iPhones refuse for a page this worker did not load. A page that
-       has not heard within a moment is navigated the old way as a fallback. */
+       which iPhones refuse for a page this worker did not load. The one on
+       screen is preferred; a copy left over in the background is not the one
+       the person is looking at. */
+    const open = windows.find((client) => client.focused)
+      || windows.find((client) => client.visibilityState === 'visible')
+      || windows[0];
     try {
       await open.focus();
     } catch {
       // Focus can be refused; the message still lands.
     }
-    // Left where the page looks when it comes to the front, too: a page
-    // frozen in the background, or reloaded onto a newer version on the way,
-    // misses the message but still finds this.
-    await caches.open(HANDOFF_CACHE)
-      .then((cache) => cache.put(HANDOFF_KEY, new Response(JSON.stringify({ link: path, at: Date.now() }))))
-      .catch(() => undefined);
+    // Every copy is told; only one on screen answers, so a copy asleep in
+    // the background cannot swallow the tap.
     const answered = new Promise((resolve) => {
-      const channel = new MessageChannel();
-      channel.port1.onmessage = () => resolve(true);
-      open.postMessage({ type: 'figmark:open', link: path }, [channel.port2]);
-      setTimeout(() => resolve(false), 1500);
+      for (const client of windows) {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve(true);
+        client.postMessage({ type: 'figmark:open', link: path }, [channel.port2]);
+      }
+      setTimeout(() => resolve(false), 2500);
     });
     if (await answered) return;
     if ('navigate' in open) {

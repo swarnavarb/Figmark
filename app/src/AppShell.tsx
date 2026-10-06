@@ -5,6 +5,7 @@ import { Notifications } from './components/Notifications';
 import { ScrollBars } from './components/ScrollBars';
 import { ScrollManager } from './components/ScrollManager';
 import { TabBar } from './components/TabBar';
+import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
@@ -60,6 +61,7 @@ export function AppShell() {
     <div className={`shell shell--tabbed${social ? ' shell--social' : ''}${room ? ' shell--room' : ''}`}>
       <ScrollManager />
       <ScrollBars />
+      {room && <ViewportSync />}
       <header className="nav">
         <NavLink to="/" className="brand" onClick={() => setTerm('')}>
           <span className="brand__mark" aria-hidden="true" />

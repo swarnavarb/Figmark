@@ -331,6 +331,31 @@ export function ThreadPage() {
     }
   }, [data?.messages]);
 
+  // Somebody reading the newest messages stays at them when the page lays
+  // itself out again - brought back by a notification tap, or the keyboard
+  // going away - rather than being left part way up the conversation.
+  useEffect(() => {
+    const atEnd = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 240;
+    let reading = true;
+    const onScroll = () => { reading = atEnd(); };
+    const settle = () => {
+      if (document.visibilityState !== 'visible' || !reading) return;
+      const end = () => window.scrollTo({ top: document.documentElement.scrollHeight });
+      window.requestAnimationFrame(end);
+      window.setTimeout(end, 300);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    document.addEventListener('visibilitychange', settle);
+    window.addEventListener('pageshow', settle);
+    window.visualViewport?.addEventListener('resize', settle);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      document.removeEventListener('visibilitychange', settle);
+      window.removeEventListener('pageshow', settle);
+      window.visualViewport?.removeEventListener('resize', settle);
+    };
+  }, []);
+
   useEffect(() => {
     const field = input.current;
     if (!field) return;

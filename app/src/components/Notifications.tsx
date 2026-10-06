@@ -282,25 +282,42 @@ export function NotificationLinks() {
     const onMessage = (event: MessageEvent) => {
       const data = event.data as { type?: string; link?: unknown } | null;
       if (data?.type !== 'figmark:open') return;
+      go(data.link);
+      // Only the copy on screen answers. One still in the background has
+      // moved too, but the worker carries on until the one being looked at
+      // has it - and the handoff stays for that one to find.
+      if (document.visibilityState !== 'visible') return;
       event.ports[0]?.postMessage({ ok: true });
       void forgetHandoff();
-      go(data.link);
     };
 
     /* The same tap, left by the worker for a page that missed the message:
-       frozen in the background, or reloaded onto a new version on the way. */
+       frozen in the background, or reloaded onto a new version on the way.
+       Looked for again over the next few seconds, because an iPhone puts the
+       app on screen before the worker has run and left it. */
+    let timers: number[] = [];
     const pickUp = async () => {
       if (document.visibilityState !== 'visible') return;
       const left = await readHandoff();
       if (left) go(left);
     };
+    const onFront = () => {
+      if (document.visibilityState !== 'visible') return;
+      timers.forEach((timer) => window.clearTimeout(timer));
+      timers = HANDOFF_LOOKS_MS.map((delay) => window.setTimeout(() => void pickUp(), delay));
+    };
 
     navigator.serviceWorker?.addEventListener('message', onMessage);
-    document.addEventListener('visibilitychange', pickUp);
-    void pickUp();
+    document.addEventListener('visibilitychange', onFront);
+    window.addEventListener('focus', onFront);
+    window.addEventListener('pageshow', onFront);
+    onFront();
     return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
       navigator.serviceWorker?.removeEventListener('message', onMessage);
-      document.removeEventListener('visibilitychange', pickUp);
+      document.removeEventListener('visibilitychange', onFront);
+      window.removeEventListener('focus', onFront);
+      window.removeEventListener('pageshow', onFront);
     };
   }, [navigate]);
   return null;
@@ -310,6 +327,8 @@ const HANDOFF_CACHE = 'figmark-open';
 const HANDOFF_KEY = '/__figmark-open';
 /** A tap older than this was handled some other way, or is not news any more. */
 const HANDOFF_FRESH_MS = 2 * 60_000;
+/** When a page that has just come to the front looks for one. */
+const HANDOFF_LOOKS_MS = [0, 400, 1200, 3000];
 
 async function readHandoff(): Promise<string | null> {
   try {
