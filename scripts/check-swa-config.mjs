@@ -103,4 +103,13 @@ check('shared links answer with their preview, not the bare app', () => {
   }
 });
 
+check('the service worker is always fetched fresh', () => {
+  // Browsers look for a new service worker on every visit, but a cached
+  // sw.js would keep the old one running for as long as the cache says -
+  // and a broken notification handler with it.
+  const route = (config.routes ?? []).find((entry) => entry.route === '/sw.js');
+  assert.ok(route, '/sw.js needs a route');
+  assert.equal(route.headers?.['Cache-Control'], 'no-cache');
+});
+
 console.log(`\n${passed} checks passed`);

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type AppNotification } from '../api';
 import { Icon } from './Icon';
+import { useToast } from './Feedback';
 import { timeAgo } from '../format';
+import { disablePush, enablePush, pushState, setBadge, syncPush, type PushState } from '../push';
 
 /**
  * What happened while you were not looking.
@@ -12,9 +14,10 @@ import { timeAgo } from '../format';
  * announces something and then leaves you to find it is an interruption, not a
  * message.
  *
- * Polled rather than pushed. Sockets are the right answer eventually and are a
- * different piece of work; a minute is soon enough for "somebody answered your
- * want" and costs one small request.
+ * Polled while the site is open; a minute is soon enough for "somebody
+ * answered your want" and costs one small request. When it is closed, the
+ * same notices reach the lock screen as Web Push (see push.ts), and a push
+ * that lands while it is open refreshes the bell on the spot.
  */
 const POLL_MS = 60_000;
 
@@ -24,6 +27,9 @@ export function Notifications() {
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement | null>(null);
+  const toast = useToast();
+  const [push, setPush] = useState<PushState>('unsupported');
+  const [pushBusy, setPushBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -40,6 +46,55 @@ export function Notifications() {
     const timer = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(timer);
   }, [load]);
+
+  // A device that is on stays on for whoever is signed in now; and a push
+  // arriving while the site is open is news for the bell too.
+  useEffect(() => {
+    void syncPush().then(pushState).then(setPush);
+    const onMessage = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type === 'figmark:notification') void load();
+    };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+  }, [load]);
+
+  // The number on the home-screen icon, where the device shows one.
+  useEffect(() => setBadge(unread), [unread]);
+
+  async function turnOn() {
+    setPushBusy(true);
+    try {
+      const next = await enablePush();
+      setPush(next);
+      if (next === 'on') toast('Notifications are on for this device.');
+      else if (next === 'blocked') toast('Notifications are blocked. Allow them for this site in your browser settings.', 'error');
+    } catch {
+      toast('Could not turn notifications on. Try again.', 'error');
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function turnOff() {
+    setPushBusy(true);
+    try {
+      await disablePush();
+      setPush(await pushState());
+    } catch {
+      toast('Could not turn notifications off. Try again.', 'error');
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function sendTest() {
+    try {
+      const { sent } = await api.pushTest();
+      toast(sent > 0 ? 'Sent. It should appear in a moment.' : 'No device took it. Turn notifications off and on again.', sent > 0 ? 'ok' : 'error');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not send a test.', 'error');
+    }
+  }
 
   // Clicking anywhere else closes it, which is what everybody expects a
   // dropdown to do and what nothing else on the page will do for it.
@@ -84,6 +139,9 @@ export function Notifications() {
             )}
           </div>
 
+          <PushRow state={push} busy={pushBusy} onEnable={() => void turnOn()}
+            onDisable={() => void turnOff()} onTest={() => void sendTest()} />
+
           {rows.length === 0 ? (
             <p className="faint" style={{ padding: '14px' }}>Nothing yet.</p>
           ) : (
@@ -101,6 +159,60 @@ export function Notifications() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Where this device stands on lock-screen notifications, and the one thing to
+ * do about it. Says nothing at all where the site or the browser cannot.
+ */
+function PushRow({ state, busy, onEnable, onDisable, onTest }: {
+  state: PushState;
+  busy: boolean;
+  onEnable: () => void;
+  onDisable: () => void;
+  onTest: () => void;
+}) {
+  if (state === 'unsupported') return null;
+
+  if (state === 'needs-install') {
+    return (
+      <div className="bell__push">
+        <span>
+          To get notifications on iPhone: tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>,
+          and open Figmark from the new icon.
+        </span>
+      </div>
+    );
+  }
+
+  if (state === 'blocked') {
+    return (
+      <div className="bell__push">
+        <span className="faint">Notifications are blocked for this site. Allow them in your browser settings to get them here.</span>
+      </div>
+    );
+  }
+
+  if (state === 'on') {
+    return (
+      <div className="bell__push">
+        <span className="faint">Notifications are on for this device.</span>
+        <span className="bell__push-actions">
+          <button type="button" className="btn btn--quiet btn--sm" onClick={onTest}>Send a test</button>
+          <button type="button" className="btn btn--quiet btn--sm" disabled={busy} onClick={onDisable}>Turn off</button>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bell__push">
+      <span>Get these on your lock screen, even when Figmark is closed.</span>
+      <button type="button" className="btn btn--sm" disabled={busy} onClick={onEnable}>
+        {busy ? 'Turning on…' : 'Turn on'}
+      </button>
     </div>
   );
 }

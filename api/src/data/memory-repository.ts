@@ -732,6 +732,17 @@ export class MemoryRepository implements Repository {
     return notification;
   }
 
+  async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {
+    return [...this.notifications.values()].filter((entry) =>
+      entry.notBefore !== undefined && entry.notBefore >= from && entry.notBefore <= until
+      && entry.pushedAt === undefined && !entry.withdrawn);
+  }
+
+  async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {
+    return [...this.users.values()]
+      .filter((user) => (user.pushEndpoints ?? []).some((entry) => entry.endpoint === endpoint));
+  }
+
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {
     return [...this.storeReviews.values()]
       .filter((review) => review.subjectId === subjectId)

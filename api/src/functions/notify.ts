@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Notification, NotificationKind } from '../../../shared/models.js';
 import type { getRepository } from '../data/index.js';
+import { pushNotice, sendHeldPushesAt } from '../push.js';
 
 /**
  * Telling somebody something happened.
@@ -13,6 +14,9 @@ import type { getRepository } from '../data/index.js';
  * That last one is the rule that makes the bell worth having. A row that says
  * "your order changed" and leaves the reader to find which order is an
  * interruption; one that opens the order is a message.
+ *
+ * It is also the one place a notice goes out to the person's phone (see
+ * push.ts), so every event that reaches the bell reaches the lock screen.
  */
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -39,6 +43,9 @@ export async function notify(
   options: { except?: string; notBefore?: string; undoId?: string } = {},
 ): Promise<void> {
   const now = new Date().toISOString();
+  // Held while its step can still be undone: the clock sends it when the hold
+  // ends, unless it has been taken back by then.
+  const held = Boolean(options.notBefore && Date.parse(options.notBefore) > Date.now());
   const people = new Set(
     audience.filter((id): id is string => Boolean(id) && id !== options.except),
   );
@@ -56,14 +63,17 @@ export async function notify(
           readAt: null,
           ...(options.notBefore ? { notBefore: options.notBefore } : {}),
           ...(options.undoId ? { undoId: options.undoId } : {}),
+          ...(held ? {} : { pushedAt: now }),
           createdAt: now,
           updatedAt: now,
         };
         await repository.saveNotification(notice);
+        if (!held) await pushNotice(repository, notice);
       } catch {
         // One person's missing notice is not a reason to fail the thing it was
         // about, which is already done.
       }
     }),
   );
+  if (held && people.size > 0) sendHeldPushesAt(repository, options.notBefore!);
 }

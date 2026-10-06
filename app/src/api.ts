@@ -2552,6 +2552,11 @@ export const api = {
     request<{ notifications: AppNotification[]; unread: number }>('/notifications'),
   markNotificationsRead: (id?: string) =>
     post<{ read: number }>('/notifications/read', id ? { id } : {}),
+  pushKey: () => request<{ publicKey: string | null }>('/push/key'),
+  pushSubscribe: (subscription: PushSubscriptionJSON) =>
+    post<{ ok: true; devices: number }>('/push/subscribe', subscription),
+  pushUnsubscribe: (endpoint: string) => post<{ ok: true }>('/push/unsubscribe', { endpoint }),
+  pushTest: () => post<{ sent: number }>('/push/test'),
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   forumMembers: (id: string) => request<ForumMembers>(`/social/forums/${encodeURIComponent(id)}/members`),

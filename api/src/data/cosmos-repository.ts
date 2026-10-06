@@ -1235,6 +1235,31 @@ export class CosmosRepository implements Repository {
     return resource!;
   }
 
+  /* Cross-partition, but bounded to a few minutes of holds, and a clock that
+     finds nothing costs one small query. */
+  async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {
+    const { resources } = await this.container('notifications')
+      .items.query<Notification>({
+        query: 'SELECT * FROM c WHERE IS_DEFINED(c.notBefore) AND c.notBefore >= @since AND c.notBefore <= @until'
+          + ' AND NOT IS_DEFINED(c.pushedAt) AND (NOT IS_DEFINED(c.withdrawn) OR c.withdrawn = false)',
+        parameters: [{ name: '@since', value: from }, { name: '@until', value: until }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  /* Cross-partition over accounts, but only run when a device turns
+     notifications on, which is once per device. */
+  async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({
+        query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
+        parameters: [{ name: '@endpoint', value: endpoint }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {
     const { resources } = await this.container('storeReviews')
       .items.query<StoreReview>(

@@ -7,6 +7,7 @@ import { ToastHost } from './components/Feedback';
 import { UndoHost } from './components/Undo';
 import { QuestProvider } from './components/Quest';
 import { GuestWall } from './components/GuestWall';
+import { registerServiceWorker } from './push';
 import './styles.css';
 
 /**
@@ -151,6 +152,9 @@ function App() {
     </QuestProvider>
   );
 }
+
+// Only shows notifications; it caches nothing, so the site loads as before.
+registerServiceWorker();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element #root is missing from index.html.');

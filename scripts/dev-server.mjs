@@ -60,6 +60,8 @@ const {
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
 } = await import(new URL('want-routes.js', apiRoot));
+const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } =
+  await import(new URL('push-routes.js', apiRoot));
 const { notificationsRoute, notificationsReadRoute } =
   await import(new URL('notification-routes.js', apiRoot));
 const { preOrderReadRoute, preOrderPledgeRoute } =
@@ -357,6 +359,10 @@ const routes = [
   ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
   ['GET', '/api/notifications', notificationsRoute],
   ['POST', '/api/notifications/read', notificationsReadRoute],
+  ['GET', '/api/push/key', pushKeyRoute],
+  ['POST', '/api/push/subscribe', pushSubscribeRoute],
+  ['POST', '/api/push/unsubscribe', pushUnsubscribeRoute],
+  ['POST', '/api/push/test', pushTestRoute],
   ['GET', '/api/users/:id/reviews', tradeReviewsRoute],
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],
@@ -514,10 +520,12 @@ const server = createServer((request, response) => {
 const port = Number(process.env.PORT ?? 5173);
 server.listen(port, () => console.log(`Figmark dev server on http://127.0.0.1:${port}`));
 
-/* The Functions host runs the power-sale clock as a timer trigger; this server
-   has no host, so it keeps the same once-a-minute beat itself. */
+/* The Functions host runs the power-sale and push clocks as timer triggers;
+   this server has no host, so it keeps the same once-a-minute beat itself. */
 const { tickPowerSales } = await import(new URL('power-sale.js', apiRoot));
+const { sendHeldPushes } = await import(new URL('../push.js', apiRoot));
 const { getRepository } = await import(new URL('../data/index.js', apiRoot));
 setInterval(() => {
   void getRepository().then((repository) => tickPowerSales(repository)).catch(() => undefined);
+  void getRepository().then((repository) => sendHeldPushes(repository)).catch(() => undefined);
 }, 60_000).unref();
