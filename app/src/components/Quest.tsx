@@ -325,7 +325,7 @@ export function StoreChip() {
   if (!shop) return null;
   const { level } = shop;
   return (
-    <Link to={`/quests?shop=${encodeURIComponent(shop.id)}`} className="qchip qchip--store"
+    <Link to={`/quests?shop=${encodeURIComponent(shop.id)}`} className="qchip"
       aria-label={`${shop.name}: level ${level.level} ${level.title}, open shop quests`}>
       <LevelRing level={level.level} progress={level.progress} size={30} />
       <span className="qchip__text">
