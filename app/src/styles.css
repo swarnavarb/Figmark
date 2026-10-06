@@ -404,28 +404,27 @@ code, kbd, samp, pre {
 
 .nav {
   position: sticky;
-  top: var(--pin-top);
+  top: 0;
   z-index: 50;
   height: var(--nav-h);
   display: flex;
   align-items: center;
   gap: 18px;
-  /* In Safari the header runs to the very top of the screen and the padding
-     keeps what is in it below the clock. (In the home-screen app it sticks
-     just under the clock instead - see the end of this section.) */
-  padding: var(--nav-inset) 20px 0;
-  /* No background of its own: every colour is on the layers behind it. A
-     solid background is what iOS takes for a toolbar, and in the home-screen
-     app it lays its blur over a toolbar's contents - the logo and the icons.
-     (Safari's status bar reads its colour from the .topstrip instead.) */
+  /* The header runs to the very top of the screen; the padding keeps what
+     is in it below the clock. */
+  padding: env(safe-area-inset-top, 0px) 20px 0;
+  /* No background of its own: every colour is on the layers behind it, and
+     the colour iOS and Safari read for the status bar is the .topstrip's. */
   color: #fff;
 }
-/* The header's top edge in its one colour, fading into the gradient below.
-   Declared on the headers, not the root, so it takes the --top-rgb of the
-   header it is drawn in. */
-.nav, .soctop, .roombar {
+/* The header's top edge: under the clock, the section's colour dimmed - the
+   look iOS gave the home-screen app with its own blur, drawn here instead -
+   brightening into the gradient below. Declared on the bars, not the root,
+   so it takes the --top-rgb of the bar it is drawn in. */
+.nav, .soctop, .roombar, .soccompact, .topstrip {
+  --top-dim: color-mix(in srgb, rgb(var(--top-rgb)) 45%, #0B0E1A);
   --top-band: linear-gradient(180deg,
-    rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) env(safe-area-inset-top, 0px),
+    var(--top-dim) 0, var(--top-dim) env(safe-area-inset-top, 0px),
     rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
 }
 /* The section's gradient, on a layer of its own so it can fade out once the
@@ -446,13 +445,11 @@ code, kbd, samp, pre {
  * header's foot, and then dissolves into the page over a short blurred tail
  * rather than stopping at a line. The social tab's slim bar is the same glass.
  */
-/* --nav-inset: the room a top bar leaves for the clock inside itself;
-   --pin-top: how far below the screen's top edge a top bar pins. */
-:root { --glass-tail: 18px; --nav-inset: env(safe-area-inset-top, 0px); --pin-top: 0px; }
+:root { --glass-tail: 18px; }
 .nav::after, .soccompact::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--glass-tail)); z-index: -2;
   background: linear-gradient(180deg,
-    rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) env(safe-area-inset-top, 0px),
+    var(--top-dim) 0, var(--top-dim) env(safe-area-inset-top, 0px),
     rgb(var(--top-rgb) / 0.4) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
@@ -463,25 +460,6 @@ code, kbd, samp, pre {
 .nav::after { opacity: 0; transition: opacity 240ms var(--ease); }
 :root[data-scrolled] .nav::before { opacity: 0; }
 :root[data-scrolled] .nav::after { opacity: 1; }
-
-/*
- * The home-screen app on an iPhone lays its own blur and dimming over a bar
- * pinned against the top edge of the screen - over the bar's contents too, so
- * the logo and the icons came out blurred. There, the header sticks just
- * under the clock instead, and a plain strip of the section's colour sits
- * above it at the top of the page, which iOS dims as the clock's backdrop.
- * The header's bottom edge is where it was, so --nav-h holds for everything
- * measured from it.
- */
-@media (display-mode: standalone) {
-  .shell:not(.shell--social)::before {
-    content: ''; display: block; flex: none;
-    height: env(safe-area-inset-top, 0px);
-    background: rgb(var(--top-rgb));
-  }
-  :root { --nav-inset: 0px; --pin-top: env(safe-area-inset-top, 0px); }
-  .nav { height: calc(var(--nav-h) - env(safe-area-inset-top, 0px)); }
-}
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The first coloured thing anyone sees, so it carries the full brand ramp
@@ -1401,7 +1379,7 @@ code, kbd, samp, pre {
 
 @media (max-width: 860px) {
   .detail { grid-template-columns: 1fr; }
-  .nav { height: auto; padding: calc(10px + var(--nav-inset)) 14px 10px; flex-wrap: wrap; gap: 10px; }
+  .nav { height: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; flex-wrap: wrap; gap: 10px; }
   .field-row { grid-template-columns: 1fr; }
   .nav__link { padding: 7px 9px; }
 }
@@ -1412,7 +1390,7 @@ code, kbd, samp, pre {
    are, and the tabs say what you are looking at. */
 @media (max-width: 560px) {
   .brand__name { display: none; }
-  .nav { padding: calc(9px + var(--nav-inset)) 14px 9px; gap: 8px; }
+  .nav { padding: calc(9px + env(safe-area-inset-top, 0px)) 14px 9px; gap: 8px; }
   .nav__links { gap: 4px; }
 }
 
@@ -7034,7 +7012,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 .nav { transition: transform 280ms var(--ease); }
 .tabbar { transition: transform 280ms var(--ease); }
-:root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail) - var(--pin-top))); }
+:root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail))); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(100%); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7556,14 +7534,14 @@ body.is-locked { overflow: hidden; }
 /* ── The bar that locks once the header has gone ───────────────────────── */
 
 .soccompact {
-  position: fixed; top: var(--pin-top); left: 0; right: 0; z-index: 60;
-  padding-top: var(--nav-inset);
+  position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+  padding-top: env(safe-area-inset-top, 0px);
   /* Square, and see-through: the feed scrolls on underneath, blurred, so
      the bar reads as glass over the page rather than a lid on it. The glass
      is its ::before, shared with the marketplace header. */
   border-radius: 0;
   color: #fff;
-  transform: translateY(calc(-100% - var(--glass-tail) - var(--pin-top) - 4px));
+  transform: translateY(calc(-100% - var(--glass-tail) - 4px));
   transition: transform 300ms var(--ease);
   pointer-events: none;
 }
@@ -13526,29 +13504,30 @@ button.sk-plan__pick { cursor: pointer; }
 .topstrip {
   position: fixed; top: 0; left: 0; right: 0; z-index: 61;
   height: max(env(safe-area-inset-top, 0px), 1px);
-  background-color: rgb(var(--top-rgb));
+  background-color: var(--top-dim);
 }
 :root:has(.roombar--forum:not(.roombar--reveal)) .topstrip { --top-rgb: 198 39 203; }
 /* With the marketplace header slid away, the strip trails the same blurred
    tail the header has, so the page passes under it rather than meeting an edge. */
 .topstrip::after {
   content: ''; position: absolute; top: 100%; left: 0; right: 0; height: var(--glass-tail);
-  background: linear-gradient(180deg, rgb(var(--top-rgb) / 0.6), rgb(var(--top-rgb) / 0));
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-mask-image: linear-gradient(180deg, #000, transparent);
-  mask-image: linear-gradient(180deg, #000, transparent);
+  /* No backdrop-filter here: a backdrop filter on the strip makes iOS draw
+     its own blur under the clock again (see below). */
+  background: linear-gradient(180deg, var(--top-dim), rgb(var(--top-rgb) / 0));
   opacity: 0;
   transition: opacity 280ms var(--ease);
   pointer-events: none;
 }
 :root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
-/* Not in the home-screen app: there iOS draws its own blur under the clock,
-   over whatever the page has passed up there, and a bar pinned against the
-   top edge is one iOS blurs over (see the header). */
-@media (display-mode: standalone) {
-  .topstrip { display: none; }
-}
+/*
+ * In the home-screen app the strip is also what keeps iOS 26's own blur off
+ * the header. iOS lays a blur over the top ~40pt of an installed web app -
+ * over the logo and icons too - unless a fixed or sticky box with a plain
+ * background colour covers the top edge, at least 90% of the width and more
+ * than 10px tall, with no backdrop-filter in the way. The header can't be
+ * that box (its glass is a backdrop filter); this strip is, so iOS uses its
+ * colour under the clock and blurs nothing.
+ */
 
 /* ── Pull to refresh (home-screen copy only) ──────────────────────────────── */
 /* No rubber band at the top: the indicator is the bounce. */
