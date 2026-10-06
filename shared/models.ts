@@ -157,6 +157,12 @@ export interface User extends BaseDocument {
    */
   pushEndpoints?: PushEndpoint[];
   /**
+   * Where this account uses Figmark: one row per browser or home-screen copy,
+   * as that copy reports itself. Kept for the operators' install figures and
+   * nothing else; never sent to anyone but an admin, and only as totals.
+   */
+  clientDevices?: ClientDevice[];
+  /**
    * Freight forwarders share the same account base rather than living in a
    * separate system; this extension is what puts one in the directory.
    */
@@ -2146,6 +2152,35 @@ export interface Notification extends BaseDocument {
    * how the clock knows what is still owed.
    */
   pushedAt?: string;
+}
+
+export const CLIENT_PLATFORMS = ['ios', 'android', 'mac', 'windows', 'linux', 'other'] as const;
+export type ClientPlatform = (typeof CLIENT_PLATFORMS)[number];
+export const CLIENT_BROWSERS = ['safari', 'chrome', 'samsung', 'edge', 'firefox', 'opera', 'other'] as const;
+export type ClientBrowser = (typeof CLIENT_BROWSERS)[number];
+export const CLIENT_PUSH_STATES = ['on', 'off', 'blocked', 'needs-install', 'unsupported', 'unavailable'] as const;
+export type ClientPushState = (typeof CLIENT_PUSH_STATES)[number];
+
+/**
+ * One copy of the site somebody uses, as it describes itself.
+ *
+ * "Copy" because an iPhone's home-screen Figmark and its Safari are separate
+ * as far as the site can tell - separate storage, separate sign-in - so each
+ * gets its own row, and a person counts as having installed it on a platform
+ * when any of their rows on that platform was opened from the home screen.
+ */
+export interface ClientDevice {
+  /** Random, made by that copy and kept in its own storage. */
+  id: string;
+  platform: ClientPlatform;
+  browser: ClientBrowser;
+  /** Opened from the home screen (or as an installed app) when it last reported. */
+  installed: boolean;
+  /** The first time it reported from the home screen; null if it never has. */
+  installedAt: string | null;
+  push: ClientPushState;
+  firstSeen: string;
+  lastSeen: string;
 }
 
 /**

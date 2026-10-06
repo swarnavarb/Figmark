@@ -8,6 +8,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
+  ClientDevice,
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
@@ -1243,6 +1244,17 @@ export class CosmosRepository implements Repository {
         query: 'SELECT * FROM c WHERE IS_DEFINED(c.notBefore) AND c.notBefore >= @since AND c.notBefore <= @until'
           + ' AND NOT IS_DEFINED(c.pushedAt) AND (NOT IS_DEFINED(c.withdrawn) OR c.withdrawn = false)',
         parameters: [{ name: '@since', value: from }, { name: '@until', value: until }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  /* Cross-partition over accounts, projected to the two fields the figures
+     need; read only when an operator opens the installs page. */
+  async listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>> {
+    const { resources } = await this.container('users')
+      .items.query<{ id: string; clientDevices: ClientDevice[] }>({
+        query: 'SELECT c.id, c.clientDevices FROM c WHERE IS_DEFINED(c.clientDevices)',
       })
       .fetchAll();
     return resources;

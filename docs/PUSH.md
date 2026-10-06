@@ -56,3 +56,25 @@ bell works exactly as before.
   count, and on tap marks it read and opens its page. It caches nothing.
 
 Checked by `scripts/smoke-push.mjs` (part of `npm test`).
+
+## Prompts and install-first on phones
+
+- A phone in a browser tab is shown how to put Figmark on its home screen
+  first; only the home-screen copy offers **Turn on**. iPhones need this
+  (notifications only work from the home screen); on Android it is where they
+  belong. Android browsers that support it get a one-tap **Install Figmark**.
+  A computer turns notifications on where it is.
+- About 4 seconds after signing in, a floating prompt offers real-time
+  updates. Tapping **Turn on** opens a sheet with the steps for that exact
+  device (iPhone Safari / Chrome, Android Chrome / Samsung / Firefox, a
+  blocked permission, or a computer) and ends with notifications on. It shows
+  after every sign-in; on an ordinary visit it waits 3 days after "Not now".
+
+## Installs & devices (admin)
+
+Each signed-in copy of the site reports its device, browser, whether it was
+opened from the home screen, and its notification state, once a day or when
+one changes (`POST /api/me/device`, kept on the account as `clientDevices`).
+The admin console's **Installs & devices** tab shows the totals by person:
+e.g. "38% of iPhone users added Figmark to their home screen", plus browsers,
+notifications on, and active in the last 7 days.

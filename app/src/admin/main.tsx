@@ -8,6 +8,7 @@ import { LearnView } from './LearnView';
 import { ReportsView } from './ReportsView';
 import { SettingsView } from './SettingsView';
 import { StoresView } from './StoresView';
+import { DevicesView } from './DevicesView';
 import '../styles.css';
 
 /**
@@ -30,13 +31,14 @@ import '../styles.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'stores' | 'disputes' | 'reports' | 'settings' | 'learn';
+type Tab = 'users' | 'stores' | 'disputes' | 'reports' | 'devices' | 'settings' | 'learn';
 
 const TAB_LABELS: Record<Tab, string> = {
   users: 'People and stores',
   stores: 'Service stores',
   disputes: 'Disputes',
   reports: 'Reviews & comments',
+  devices: 'Installs & devices',
   settings: 'Settings',
   learn: 'Learn page',
 };
@@ -112,6 +114,7 @@ function Console() {
           : tab === 'stores' ? <StoresView />
           : tab === 'disputes' ? <DisputesView />
           : tab === 'reports' ? <ReportsView />
+          : tab === 'devices' ? <DevicesView />
           : tab === 'settings' ? <SettingsView />
           : <LearnView />}
 

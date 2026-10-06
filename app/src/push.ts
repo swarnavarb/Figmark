@@ -1,4 +1,7 @@
 import { api } from './api';
+import { isInstalled, isMobile } from './device';
+
+export { isAppleMobile, isInstalled } from './device';
 
 /**
  * Lock-screen notifications on this device.
@@ -16,7 +19,11 @@ export type PushState =
   | 'unsupported'
   /** The site has no keys configured, so nothing can be sent. */
   | 'unavailable'
-  /** An iPhone or iPad in a browser tab: it works only from the home screen. */
+  /**
+   * A phone in a browser tab. Figmark asks to be on the home screen first: on
+   * an iPhone notifications only work from there, and on Android it is where
+   * they belong next to every other app's.
+   */
   | 'needs-install'
   /** Can be turned on. */
   | 'off'
@@ -26,18 +33,6 @@ export type PushState =
   | 'blocked';
 
 const SW_URL = '/sw.js';
-
-/** iOS and iPadOS, including an iPad that reports itself as a Mac. */
-export function isAppleMobile(): boolean {
-  const agent = navigator.userAgent;
-  return /iPhone|iPad|iPod/.test(agent) || (agent.includes('Macintosh') && navigator.maxTouchPoints > 1);
-}
-
-/** Opened from the home screen rather than in a browser tab. */
-export function isInstalled(): boolean {
-  return window.matchMedia?.('(display-mode: standalone)').matches
-    || (navigator as Navigator & { standalone?: boolean }).standalone === true;
-}
 
 function browserSupportsPush(): boolean {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
@@ -66,11 +61,15 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 
 /** Where this device stands. */
 export async function pushState(): Promise<PushState> {
-  if (!browserSupportsPush()) {
+  if (isMobile() && !isInstalled()) {
+    if (!(await publicKey())) return 'unavailable';
+    // Already turned on in this tab before install-first existed: leave it on.
+    if (browserSupportsPush() && Notification.permission === 'granted' && (await currentSubscription())) return 'on';
     // Safari on an iPhone has no PushManager in a tab at all; from the home
-    // screen it does. So "unsupported" there really means "install it first".
-    return isAppleMobile() && !isInstalled() ? 'needs-install' : 'unsupported';
+    // screen it does. Android could, but the home screen is where it belongs.
+    return 'needs-install';
   }
+  if (!browserSupportsPush()) return 'unsupported';
   if (!(await publicKey())) return 'unavailable';
   if (Notification.permission === 'denied') return 'blocked';
   if (Notification.permission !== 'granted') return 'off';

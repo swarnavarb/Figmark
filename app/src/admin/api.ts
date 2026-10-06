@@ -3,6 +3,7 @@ import type { Dispute, EscrowRights, SellerTrustSignals, TrustSignals } from '@s
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
+import type { DeviceFigures } from '@shared/devices';
 import { ApiRequestError, api as marketplace, type OpsStoreRow } from '../api';
 import type { StoreStatus } from '@shared/models';
 import type { StoreKind } from '@shared/service-stores';
@@ -147,6 +148,7 @@ export const admin = {
   uploadImage: (dataUrl: string) => marketplace.uploadPhoto(dataUrl),
 
   /** Marketplace-wide rules: today, how long protected payments are held. */
+  devices: () => request<DeviceFigures>('/ops/devices'),
   settings: () => request<MarketSettings>('/ops/settings'),
   saveSettings: (settings: Pick<MarketSettings, 'autoReleaseDays'>) =>
     post<MarketSettings>('/ops/settings/save', settings),
