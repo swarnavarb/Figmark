@@ -414,12 +414,11 @@ code, kbd, samp, pre {
      keeps what is in it below the clock. (In the home-screen app it sticks
      just under the clock instead - see the end of this section.) */
   padding: var(--nav-inset) 20px 0;
-  /* Solid under the gradient: this is the colour Safari reads for its status
-     bar, which ignores a gradient. */
-  background-color: rgb(var(--top-rgb));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  /* No background of its own: every colour is on the layers behind it. A
+     solid background is what iOS takes for a toolbar, and in the home-screen
+     app it lays its blur over a toolbar's contents - the logo and the icons.
+     (Safari's status bar reads its colour from the .topstrip instead.) */
   color: #fff;
-  transition: background-color 240ms var(--ease), border-color 240ms var(--ease);
 }
 /* The header's top edge in its one colour, fading into the gradient below.
    Declared on the headers, not the root, so it takes the --top-rgb of the
@@ -433,6 +432,7 @@ code, kbd, samp, pre {
    page scrolls under it, leaving the header's colour at 40%. */
 .nav::before {
   content: ''; position: absolute; inset: 0; z-index: -1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   background:
     var(--top-band),
     linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.18) 100%),
@@ -461,31 +461,26 @@ code, kbd, samp, pre {
   pointer-events: none;
 }
 .nav::after { opacity: 0; transition: opacity 240ms var(--ease); }
-:root[data-scrolled] .nav { background-color: transparent; border-bottom-color: transparent; }
 :root[data-scrolled] .nav::before { opacity: 0; }
 :root[data-scrolled] .nav::after { opacity: 1; }
 
 /*
- * The home-screen app on an iPhone lays its own blur and dimming over any bar
+ * The home-screen app on an iPhone lays its own blur and dimming over a bar
  * pinned against the top edge of the screen - over the bar's contents too, so
  * the logo and the icons came out blurred. There, the header sticks just
- * under the clock instead, and the colour under the clock is a shadow the
- * header casts upwards: painted, but not a box iOS can take for a bar. iOS's
- * dimming then falls on that colour alone - the look of the app - and the
- * icons below it stay sharp. The header's bottom edge is where it was, so
- * --nav-h holds for everything measured from it.
+ * under the clock instead, and a plain strip of the section's colour sits
+ * above it at the top of the page, which iOS dims as the clock's backdrop.
+ * The header's bottom edge is where it was, so --nav-h holds for everything
+ * measured from it.
  */
 @media (display-mode: standalone) {
   .shell:not(.shell--social)::before {
     content: ''; display: block; flex: none;
     height: env(safe-area-inset-top, 0px);
+    background: rgb(var(--top-rgb));
   }
   :root { --nav-inset: 0px; --pin-top: env(safe-area-inset-top, 0px); }
-  .nav {
-    height: calc(var(--nav-h) - env(safe-area-inset-top, 0px));
-    box-shadow: 0 calc(-1 * env(safe-area-inset-top, 0px)) 0 rgb(var(--top-rgb));
-  }
-  .soccompact { box-shadow: 0 calc(-1 * env(safe-area-inset-top, 0px)) 0 rgb(var(--top-rgb)); }
+  .nav { height: calc(var(--nav-h) - env(safe-area-inset-top, 0px)); }
 }
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
@@ -7037,7 +7032,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 /* ── Bars that step aside while you read ───────────────────────────────── */
 
-.nav { transition: transform 280ms var(--ease), background-color 240ms var(--ease), border-color 240ms var(--ease); }
+.nav { transition: transform 280ms var(--ease); }
 .tabbar { transition: transform 280ms var(--ease); }
 :root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail) - var(--pin-top))); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(100%); }
