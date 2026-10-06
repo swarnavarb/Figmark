@@ -115,6 +115,7 @@ const {
   fillingLotsRoute: fillingLots, dropsRoute: dropsShelf, dropRoute: readDrop, remindRoute: remindDrop,
 } = await import(new URL('showcase-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
+const { discardCheckoutRoute: discardCheckout } = await import(new URL('order-routes.js', fns));
 const {
   acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
   requestReversalDetailsRoute: requestReversalDetails, confirmReversalDetailsRoute: confirmReversalDetails,
@@ -7458,6 +7459,25 @@ await check('pressing Buy opens a checkout the seller cannot see, and holds no s
   const again = await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx);
   assert.equal(again.jsonBody.order.id, orderId, 'Buy again goes back to the same checkout');
   assert.equal(again.jsonBody.order.buyClicks, 2);
+});
+
+await check('a cart item can be removed, or moved to saved; a placed order cannot', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Cart Only', priceMinor: 7_000, quantityAvailable: 2 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const buyer = await newBuyer('Cart Tidier');
+  const first = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.equal((await discardCheckout(req({ headers: auth, params: { id: first }, body: {} }), ctx)).status, 404, 'only the buyer');
+  const saved = await discardCheckout(req({ headers: buyer.headers, params: { id: first }, body: { save: true } }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.saved, true);
+  assert.equal((await orderState(req({ headers: buyer.headers, params: { id: first } }), ctx)).status, 404, 'gone from the cart');
+  const second = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.notEqual(second, first);
+  const again = await discardCheckout(req({ headers: buyer.headers, params: { id: second }, body: { save: true } }), ctx);
+  assert.equal(again.jsonBody.saved, true, 'saving twice keeps it saved');
+  const third = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  await bookOrder(req({ headers: buyer.headers, params: { id: third } }), ctx);
+  assert.equal((await discardCheckout(req({ headers: buyer.headers, params: { id: third }, body: {} }), ctx)).status, 409);
 });
 
 await check('booking from the checkout places the order and tells the seller', async () => {

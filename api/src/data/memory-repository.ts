@@ -442,6 +442,10 @@ export class MemoryRepository implements Repository {
     if (stored) stored.viewCount += 1;
   }
 
+  async deleteOrder(order: Order): Promise<void> {
+    this.orders.delete(order.id);
+  }
+
   async getOrder(id: string): Promise<Order | null> {
     return this.orders.get(id) ?? null;
   }

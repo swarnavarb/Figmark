@@ -920,6 +920,7 @@ export function seedOrders(): Order[] {
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-2), note: 'Order placed.', recordedBy: 'usr_demo' }],
       escrow: { state: 'none', amountMinor: 54_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      placedAt: null,
       completedAt: null, createdAt: iso(-2), updatedAt: iso(-2),
     },
     {
@@ -953,6 +954,7 @@ export function seedOrders(): Order[] {
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-1), note: 'Order placed.', recordedBy: 'usr_demo' }],
       protection: null,
       escrow: { state: 'none', amountMinor: 32_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      placedAt: null,
       completedAt: null, createdAt: iso(-1), updatedAt: iso(-1),
     },
     /* Sales the demo account has made, so the seller dashboards have numbers in

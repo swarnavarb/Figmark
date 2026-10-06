@@ -36,6 +36,8 @@ const TAB_LABELS: Record<Tab, string> = {
  */
 function waitingOn(data: ActivityResponse, userId: string) {
   return [...data.orders, ...data.sales].filter((order) => {
+    // An unpaid Buy lives in the cart, not here: only placed orders wait on anyone.
+    if (order.placedAt === null) return false;
     // An open dispute is waiting on somebody whichever side they are, so it
     // counts whether or not there is an order action behind it.
     if (order.escrow.state === 'disputed') return true;

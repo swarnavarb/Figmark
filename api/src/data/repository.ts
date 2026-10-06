@@ -166,6 +166,8 @@ export interface Repository {
    * buyers cannot both take the last one.
    */
   takeStock(order: Order): Promise<boolean>;
+  /** Removes an order outright. Only for a cart item, which holds no stock. */
+  deleteOrder(order: Order): Promise<void>;
   /** One more look at a listing's page. */
   countView(listing: Listing): Promise<void>;
   /** A seller's checkouts nobody went ahead with - for insights, never for the order book. */

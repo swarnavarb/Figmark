@@ -53,7 +53,7 @@ const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUserna
 const {
   payRoute, confirmRoute, reviewRoute, unboxingRoute, orderStateRoute, checkoutRoute,
   claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
-  acceptOrderRoute, cancelOrderRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
+  acceptOrderRoute, cancelOrderRoute, discardCheckoutRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
   submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
   ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, myRefundsRoute, flagDisputeRoute, myDisputesRoute,
 } = await import(new URL('order-routes.js', apiRoot));
@@ -234,6 +234,7 @@ const routes = [
   ['POST', '/api/orders/:id/book', bookOrderRoute],
   ['POST', '/api/orders/:id/accept', acceptOrderRoute],
   ['POST', '/api/orders/:id/cancel', cancelOrderRoute],
+  ['POST', '/api/orders/:id/discard', discardCheckoutRoute],
   ['POST', '/api/orders/:id/reversal/request-details', requestReversalDetailsRoute],
   ['POST', '/api/orders/:id/reversal/confirm-details', confirmReversalDetailsRoute],
   ['POST', '/api/orders/:id/reversal/submit', submitReversalRoute],

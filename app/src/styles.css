@@ -10090,6 +10090,8 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   transition: background 200ms, transform 200ms var(--bounce);
 }
 .icard__open:hover { background: var(--surface-hover); transform: translateY(-1px); }
+/* Cart: take it out, or keep it for later on Saved. A row of its own under Checkout. */
+.cartacts { flex: 1 1 100%; display: flex; gap: 8px; justify-content: flex-end; }
 @media (max-width: 420px) {
   .icard__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

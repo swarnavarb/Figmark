@@ -7,6 +7,7 @@ import { Modal } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Thumb } from '../components/ui';
 import { ItemCard, Svg } from '../components/ListingBlocks';
 import { formatMoney, timeAgo } from '../format';
+import { useToast } from '../components/Feedback';
 
 type Item = ItemGroup['items'][number];
 
@@ -205,6 +206,21 @@ export function PurchasesPage() {
 export function CartPage() {
   const [items, setItems] = useState<{ item: Item; group: ItemGroup }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const toast = useToast();
+
+  async function discard(item: Item, save: boolean) {
+    setBusy(item.id);
+    try {
+      await api.discardCheckout(item.id, save);
+      setItems((now) => now && now.filter((entry) => entry.item.id !== item.id));
+      toast(save ? `${item.itemName} moved to Saved.` : `${item.itemName} removed from your cart.`, 'ok');
+    } catch (err) {
+      toast(err instanceof ApiRequestError ? err.message : 'That did not work.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
 
   useEffect(() => {
     void api.myItems()
@@ -255,6 +271,12 @@ export function CartPage() {
               ]}>
               <Link to={`/order/${item.id}`} className="btn btn--sm icard__go">Checkout →</Link>
               <Link to={`/listing/${item.listingId}`} className="icard__open">View listing <Svg name="open" size={14} /></Link>
+              <span className="cartacts">
+                <button type="button" className="btn btn--ghost btn--sm" disabled={busy === item.id}
+                  onClick={() => void discard(item, true)}><Svg name="heart" size={13} /> Move to saved</button>
+                <button type="button" className="btn btn--quiet btn--sm is-danger" disabled={busy === item.id}
+                  onClick={() => void discard(item, false)}>Remove</button>
+              </span>
             </ItemCard>
           ))}
         </div>

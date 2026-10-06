@@ -1834,6 +1834,35 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
  * order becomes `payment_reversal_pending` and stays there until the reversal
  * is recorded - see `submitReversal`.
  */
+/**
+ * Takes an item out of the cart: a Buy that was never paid or booked. Nothing
+ * is held for a checkout and the seller was never told, so it simply goes.
+ * With `save`, the item is kept on the buyer's Saved list instead.
+ */
+async function discardCheckout(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const order = await repository.getOrder(request.params.id ?? '');
+  if (!order || order.buyerId !== user.id) return error(404, 'not_found', 'Nothing like that in your cart.');
+  if (order.placedAt !== null) return error(409, 'already_placed', 'That is an order now, not a cart item.');
+
+  let body: { save?: boolean };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  let saved = false;
+  if (body.save) {
+    saved = (await repository.listLikedListingIds(user.id)).includes(order.listingId)
+      || (await repository.toggleLike(user.id, order.listingId));
+  }
+  await repository.deleteOrder(order);
+  return json(200, { removed: order.id, saved });
+}
+
 async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -2311,6 +2340,8 @@ app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state',
 app.http('order-checkout', { ...anon, methods: ['GET'], route: 'orders/{id}/checkout', handler: checkoutRoute });
 app.http('order-book', { ...anon, methods: ['POST'], route: 'orders/{id}/book', handler: bookOrderRoute });
 app.http('order-accept', { ...anon, methods: ['POST'], route: 'orders/{id}/accept', handler: acceptOrderRoute });
+export const discardCheckoutRoute = handler(discardCheckout);
+app.http('order-discard', { ...anon, methods: ['POST'], route: 'orders/{id}/discard', handler: discardCheckoutRoute });
 app.http('order-cancel', { ...anon, methods: ['POST'], route: 'orders/{id}/cancel', handler: cancelOrderRoute });
 app.http('order-reversal-request-details', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/request-details', handler: requestReversalDetailsRoute });
 app.http('order-reversal-confirm-details', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/confirm-details', handler: confirmReversalDetailsRoute });

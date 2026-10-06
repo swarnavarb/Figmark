@@ -252,6 +252,39 @@ export class CosmosRepository implements Repository {
   }
 
   /**
+   * Clears out the unpaid orders left from before the cart.
+   *
+   * Pressing Buy used to make a real order at once, unpaid, and take stock for
+   * it; those piled up on profiles as "pay" rows nobody meant. Now an unpaid
+   * Buy is a cart item (`placedAt: null`) and an order exists only once it is
+   * paid or booked. An old row - no `placedAt` at all - still waiting on a
+   * first payment, never booked, accepted or claimed, is one of those clicks:
+   * its stock goes back on the shelf and the row goes. Anything with money or
+   * a seller's decision on it is a real order and stays. Safe on every start.
+   */
+  private async clearLegacyUnpaid(): Promise<string> {
+    const { resources } = await this.container('orders').items.query<Order>({
+      query: "SELECT * FROM c WHERE NOT IS_DEFINED(c.placedAt) AND c.status = 'pending_payment' AND c.paymentStatus = 'unpaid'",
+    }).fetchAll();
+    const stale = resources.filter((order) => !order.bookingOnly && !order.accepted && !order.paymentClaim
+      && !(order.payments?.length) && !(order.credits?.length));
+    for (const order of stale) {
+      const listing = await this.getListing(order.listingId);
+      if (listing) {
+        if (listing.quantityMode !== 'multiple') {
+          listing.quantityAvailable += order.quantity;
+          if (listing.status === 'sold_out') listing.status = 'active';
+        }
+        if (listing.preOrder) listing.preOrder.filledCount = Math.max(0, listing.preOrder.filledCount - order.quantity);
+        listing.soldCount = Math.max(0, (listing.soldCount ?? 0) - order.quantity);
+        await this.updateListing(listing);
+      }
+      await this.deleteOrder(order);
+    }
+    return stale.length ? ` Cleared ${stale.length} unpaid order(s) from before the cart.` : '';
+  }
+
+  /**
    * Makes the site owner the admin of every forum that existed before forums
    * had admins. Forums opened after the cutoff keep whoever opened them, so
    * this is safe to run on every start. The owner's handle comes from
@@ -373,13 +406,15 @@ export class CosmosRepository implements Repository {
       // Independent passes over different containers, so they overlap rather
       // than queue: the repair reads users and identifiers, the top-up reads
       // the nine containers that hold fixtures.
+      // First, so the fixtures this removes come straight back - as cart items.
+      const cleared = await this.clearLegacyUnpaid().catch((error) => ` Unpaid clean-up failed: ${describeError(error)}.`);
       const [repaired, toppedUp] = await Promise.all([this.repair(), this.topUpFixtures()]);
       // After the rows are in place, so anything the top-up just added is
       // considered too.
       const handles = await this.backfillHandles();
       // Never lets a failure here stop the start-up repairs reporting.
       const forums = await this.assignForumOwner().catch((error) => ` Forum owner pass failed: ${describeError(error)}.`);
-      outcome = `${repaired}${toppedUp}${handles}${forums}` || ' Fixtures were already up to date.';
+      outcome = `${cleared}${repaired}${toppedUp}${handles}${forums}` || ' Fixtures were already up to date.';
     } catch (error) {
       outcome = ` Preparing the database failed: ${describeError(error)}.`;
     }
@@ -1708,6 +1743,10 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources[0] ?? null;
+  }
+
+  async deleteOrder(order: Order): Promise<void> {
+    await this.container('orders').item(order.id, order.lotId).delete();
   }
 
   async updateOrder(order: Order): Promise<Order> {
