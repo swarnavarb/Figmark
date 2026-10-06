@@ -74,10 +74,20 @@ export function PurchasesPage() {
 
   return (
     <main className="page">
-      <div className="purch__hero">
-        <h1>🛍️ My Purchases</h1>
-        <p>Everything you ordered or booked, and where it is.</p>
-      </div>
+      <header className="cartbox rise">
+        <span className="cartbox__icon"><Svg name="box" size={24} /></span>
+        <div className="cartbox__text">
+          <span className="cartbox__eyebrow">Ordered or booked</span>
+          <h1 className="cartbox__title">My Purchases</h1>
+          <p className="cartbox__lede">Everything you ordered or booked, and where it is.</p>
+        </div>
+        {items.length > 0 && (
+          <div className="cartbox__sum">
+            <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
+            {owedMinor > 0 && <b>{formatMoney(owedMinor, toPay[0]?.currency)} due</b>}
+          </div>
+        )}
+      </header>
 
       {cartCount > 0 && (
         <Link to="/cart" className="cartnudge">

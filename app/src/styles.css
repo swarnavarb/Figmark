@@ -1269,27 +1269,30 @@ code, kbd, samp, pre {
 /* Scrolls rather than wraps: a fourth tab turned this into two ragged rows on
    a phone, and a strip of tabs reads as one row or not at all. */
 .tabs {
-  display: flex; gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
-  overflow-x: auto;
+  display: flex; gap: 4px; align-items: center;
+  margin-bottom: 16px; padding: 4px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill);
+  /* Sideways only: a row of tabs never scrolls up and down under a thumb. */
+  overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain; touch-action: pan-x;
+  scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
 .tabs::-webkit-scrollbar { display: none; }
-.tabs .tab { flex: 0 0 auto; white-space: nowrap; }
+.tabs .tab { flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start; }
 .tab {
-  padding: 10px 15px; border: none; background: transparent;
-  color: var(--text-dim); font-size: var(--t-sm); font-weight: var(--w-semi);
-  cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 7px 13px; border: none; border-radius: var(--r-pill); background: transparent;
+  color: var(--text-dim); font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.2;
+  cursor: pointer; transition: background 180ms, color 180ms;
 }
-.tab:hover { color: var(--text); }
-.tab.is-on { color: var(--accent-text); border-bottom-color: var(--accent); }
+.tab:hover { color: var(--text); background: var(--surface-hover); }
+.tab.is-on { color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.tab .faint { margin-left: 2px !important; font-size: var(--t-xs); }
 
-/* A brighter, thicker underline where a page has few enough tabs that one
-   can afford to be a real statement of where you are, not just a hint. */
+/* A bolder fill where a page has few enough tabs to make a statement of it. */
 .tabs--vivid .tab.is-on {
-  border-bottom-width: 3px;
-  border-image: linear-gradient(90deg, var(--accent), var(--aqua)) 1;
+  color: #fff; background: linear-gradient(90deg, var(--accent), var(--aqua)); box-shadow: none;
 }
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
