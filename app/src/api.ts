@@ -1119,6 +1119,8 @@ export interface AppNotification {
   read: boolean;
   /** How many events this row stands for: "Sana sent you 3 messages" is 3. */
   count: number;
+  /** What a run of events is about: the bell shows one line per group. */
+  group?: string | null;
   createdAt: string;
 }
 
@@ -1785,6 +1787,9 @@ export interface Thread {
   blocked?: boolean;
   /** Kept, but not counted as unread. */
   muted?: boolean;
+  /** The oldest message to you that was unread when the chat opened, and how many. */
+  firstUnreadId?: string | null;
+  unread?: number;
 }
 
 /** Which of an account's two pages: its shop, or the person behind it. */

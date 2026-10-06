@@ -658,7 +658,7 @@ async function nudge(request: HttpRequest, _context: InvocationContext) {
       link = `/order/${order.id}`;
     } else {
       if (order.placedAt) return error(409, 'already_placed', 'That checkout already became an order.');
-      title = `${order.itemName} is still waiting for you`;
+      title = `${order.itemName} is still waiting for you at ${shopName}`;
       text = `You pressed Buy at ${shopName} but did not finish. It is still there if you want it.`;
       link = `/listing/${order.listingId}`;
     }
@@ -668,7 +668,7 @@ async function nudge(request: HttpRequest, _context: InvocationContext) {
     const saved = (await repository.listLikesForListings([listing.id])).some((like) => like.userId === body.buyerId);
     if (!saved) return error(404, 'not_found', 'They have not saved that item.');
     buyerId = body.buyerId;
-    title = `${listing.title} - the one you saved`;
+    title = `${shopName}: ${listing.title}, the one you saved`;
     text = listing.restockedAt ? `It is back in stock at ${shopName}.` : `It is on sale at ${shopName}.`;
     text += ` Now ₹${(listing.priceMinor / 100).toLocaleString('en-IN')}.`;
     link = `/listing/${listing.id}`;

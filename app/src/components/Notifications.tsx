@@ -25,6 +25,11 @@ import { isReloading, isStale, loadFresh } from '../freshness';
  * filters so somebody who only wants their messages is not reading past their
  * parcels. Going to a page a notice points at reads it, however you got there:
  * opening the conversation is reading the news of it.
+ *
+ * One line per thing: a conversation, a post's likes, a lot's tracking. The
+ * server folds each new event into that line and counts what is new since it
+ * was last read; anything older that slipped through as a second line is
+ * dropped here. Unread lines sit under "New", the rest under "Earlier".
  */
 const POLL_MS = 60_000;
 
@@ -56,6 +61,17 @@ function isAt(link: string, pathname: string, search: string): boolean {
   const want = new URLSearchParams(place.query);
   const have = new URLSearchParams(search);
   return [...want.entries()].every(([key, value]) => have.get(key) === value);
+}
+
+/** The first - newest - line of each group, in order. */
+function oneEach(rows: readonly AppNotification[]): AppNotification[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (!row.group) return true;
+    if (seen.has(row.group)) return false;
+    seen.add(row.group);
+    return true;
+  });
 }
 
 export function Notifications() {
@@ -93,7 +109,7 @@ export function Notifications() {
       const older = oldest ? shown.current.filter((row) => !fresh.has(row.id) && row.createdAt < oldest) : [];
       // Older pages already showing keep their own place to carry on from.
       if (older.length === 0) setNextBefore(page.nextBefore);
-      setRows([...page.notifications, ...older]);
+      setRows(oneEach([...page.notifications, ...older]));
     } catch {
       // A bell that cannot load is not worth an error on somebody's screen.
     }
@@ -124,8 +140,16 @@ export function Notifications() {
     const onDown = (event: MouseEvent) => {
       if (panel.current && !panel.current.contains(event.target as Node)) setOpen(false);
     };
+    // And Escape, from anywhere on the page.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
     window.addEventListener('mousedown', onDown);
-    return () => window.removeEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
   }, [open]);
 
   /* Being on the page a notice points at is having seen it, whether you got
@@ -164,7 +188,7 @@ export function Notifications() {
       counts(page);
       setRows((current) => {
         const have = new Set(current.map((row) => row.id));
-        return [...current, ...page.notifications.filter((row) => !have.has(row.id))];
+        return oneEach([...current, ...page.notifications.filter((row) => !have.has(row.id))]);
       });
       setNextBefore(page.nextBefore);
     } catch {
@@ -174,15 +198,16 @@ export function Notifications() {
     }
   }
 
-  async function follow(row: AppNotification) {
+  /* Straight there: being on the page reads it (above), and waiting for the
+     server first only made every tap feel slow. */
+  function follow(row: AppNotification) {
     setOpen(false);
-    try {
-      await api.markNotificationsRead(row.id);
-    } catch {
-      // Going where it points matters more than recording that it was read.
-    }
-    await load();
     navigate(row.link);
+    if (row.read) return;
+    setRows((current) => current.map((item) => (item.id === row.id ? { ...item, read: true } : item)));
+    setUnread((count) => Math.max(0, count - 1));
+    setByCategory((current) => ({ ...current, [row.category]: Math.max(0, (current[row.category] ?? 0) - 1) || undefined }));
+    void api.markNotificationsRead(row.id).catch(() => undefined).then(() => load());
   }
 
   async function readAll() {
@@ -191,6 +216,26 @@ export function Notifications() {
   }
 
   const shownUnread = filter ? byCategory[filter] ?? 0 : unread;
+  const fresh = rows.filter((row) => !row.read);
+  const earlier = rows.filter((row) => row.read);
+
+  const line = (row: AppNotification) => (
+    <button key={row.id} type="button"
+      className={`bell__row${row.read ? '' : ' is-unread'}`}
+      onClick={() => follow(row)}>
+      <span className={`bell__glyph bell__glyph--${row.category}`} aria-hidden="true">
+        <Icon name={CATEGORY_ICON[row.category] ?? 'bell'} size={15} />
+      </span>
+      <span className="bell__text">
+        <span className="bell__title">{row.title}</span>
+        {row.body && <span className="faint bell__body">{row.body}</span>}
+        <span className="faint bell__when">{timeAgo(row.createdAt)}</span>
+      </span>
+      {!row.read && (row.count > 1
+        ? <span className="bell__count" aria-label={`${row.count} new`}>{row.count > 99 ? '99+' : row.count}</span>
+        : <span className="bell__unread" aria-label="Unread" />)}
+    </button>
+  );
 
   return (
     <div className="bell" ref={panel}>
@@ -234,21 +279,10 @@ export function Notifications() {
             </p>
           ) : (
             <div className="bell__list">
-              {rows.map((row) => (
-                <button key={row.id} type="button"
-                  className={`bell__row${row.read ? '' : ' is-unread'}`}
-                  onClick={() => void follow(row)}>
-                  <span className={`bell__glyph bell__glyph--${row.category}`} aria-hidden="true">
-                    <Icon name={CATEGORY_ICON[row.category] ?? 'bell'} size={15} />
-                  </span>
-                  <span className="bell__text">
-                    <span className="bell__title">{row.title}</span>
-                    {row.body && <span className="faint bell__body">{row.body}</span>}
-                    <span className="faint bell__when">{timeAgo(row.createdAt)}</span>
-                  </span>
-                  {!row.read && <span className="bell__unread" aria-label="Unread" />}
-                </button>
-              ))}
+              {fresh.length > 0 && earlier.length > 0 && <p className="bell__section">New</p>}
+              {fresh.map(line)}
+              {fresh.length > 0 && earlier.length > 0 && <p className="bell__section">Earlier</p>}
+              {earlier.map(line)}
               {nextBefore && (
                 <button type="button" className="bell__more" onClick={() => void more()} disabled={loadingMore}>
                   {loadingMore ? 'Loading…' : 'Show older'}

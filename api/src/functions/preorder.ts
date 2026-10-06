@@ -131,7 +131,7 @@ export async function reconcilePreOrder(
     next.nearlyNotifiedAt = iso;
     await notify(repository, audience, {
       kind: 'preorder_nearly',
-      title: `${preOrder.fillThreshold - committed} more and ${item} goes ahead`,
+      title: `${preOrder.fillThreshold - committed} more and ${item} at ${shop} goes ahead`,
       body: `${committed} of ${preOrder.fillThreshold} are in at ${shop}. Bring someone in and they place the order.`,
       link: `/listing/${listing.id}`,
     });
@@ -144,7 +144,7 @@ export async function reconcilePreOrder(
     next.pledgeDueAt = new Date(now.getTime() + PLEDGE_GRACE_HOURS * 3_600_000).toISOString();
     await notify(repository, audience, {
       kind: 'preorder_filled',
-      title: `${item} is going ahead`,
+      title: `${item} at ${shop} is going ahead`,
       body: `${committed} of ${preOrder.fillThreshold} committed. ${shop} places the order now.`,
       link: `/listing/${listing.id}`,
     });
@@ -176,7 +176,7 @@ export async function reconcilePreOrder(
     next.closedAt = iso;
     await notify(repository, audience, {
       kind: 'preorder_closed',
-      title: `${item} closed ${preOrder.fillThreshold - committed} short`,
+      title: `${item} at ${shop} closed ${preOrder.fillThreshold - committed} short`,
       body:
         filledCount > 0
           ? `${shop} placed no order. Every booking is refunded in full, and pledges were never charged.`

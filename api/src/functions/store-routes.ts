@@ -20,6 +20,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { forwarderTookLot } from '../service-access.js';
 import { ownedLot } from './fulfilment-routes.js';
+import { gistOf } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { error, handler, json } from './http.js';
 
@@ -937,9 +938,10 @@ async function commission(request: HttpRequest, _context: InvocationContext) {
   order.artistJob = job;
   order.updatedAt = now;
   const saved = await repository.updateOrder(order);
+  const named = await orderNames(repository, order);
   await notify(repository, crewOf(artist, 'artist'), {
     kind: 'commission',
-    title: `New commission: ${offering?.name ?? 'custom work'}`,
+    title: `${named.buyer} commissioned ${gistOf(offering?.name, 'custom work', 40)}`,
     body: order.itemName,
     link: `/services/store/artist/${artist.id}`,
   });

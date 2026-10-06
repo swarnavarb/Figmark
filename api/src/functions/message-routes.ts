@@ -214,6 +214,13 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
   const page = await repository.listMessages(threadId, THREAD_PAGE, before);
   // Inclusive, as `before` is: the app drops what it already has.
   const messages = since ? page.filter((message) => message.createdAt >= since) : page;
+  // Where the reader left off, worked out before reading it marks it read:
+  // the app draws "new messages" above this one and opens the chat there.
+  const firstUnread = !before && !since
+    ? page.find((message) => message.to.handle === us.handle && !message.readAt) ?? null
+    : null;
+  const unread = firstUnread ? page.filter((message) => message.to.handle === us.handle && !message.readAt).length : 0;
+  const firstUnreadId = firstUnread?.id ?? null;
   // Writing read receipts is a write per message; only when there is one to write.
   if (!before && page.some((message) => message.to.handle === us.handle && !message.readAt)) {
     await repository.markThreadRead(threadId, us.handle);
@@ -228,6 +235,9 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
     us, them, handles: mine, threadId, messages: await withLiveItems(messages, repository),
     /** Whether there is more to page back to. */
     more: !since && page.length === THREAD_PAGE,
+    /** The oldest message to you that you had not read, and how many there were. */
+    firstUnreadId,
+    unread,
     blocked: (me?.messageBlocks ?? []).includes(them.userId),
     muted: (me?.mutedThreads ?? []).includes(threadId),
   });

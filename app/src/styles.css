@@ -2803,7 +2803,7 @@ code, kbd, samp, pre {
 }
 .bell__list { max-height: min(60vh, 520px); overflow-y: auto; overscroll-behavior: contain; }
 .bell__row {
-  display: grid; grid-template-columns: 30px minmax(0, 1fr) 8px; align-items: start; gap: 10px;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: start; gap: 10px;
   width: 100%; padding: 10px 12px; text-align: left;
   background: none; border: 0; border-bottom: 1px solid var(--border);
   color: inherit; font: inherit; cursor: pointer;
@@ -2820,6 +2820,16 @@ code, kbd, samp, pre {
 .bell__when { font-size: var(--t-2xs); }
 .bell__row:not(.is-unread) .bell__title { font-weight: var(--w-medium); color: var(--text-dim); }
 .bell__unread { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--accent); }
+/* What is new on a line that stands for several: "Arjun sent you 3 messages". */
+.bell__count {
+  min-width: 20px; height: 20px; padding: 0 6px; margin-top: 1px; border-radius: var(--r-pill);
+  display: inline-grid; place-items: center;
+  background: var(--accent); color: var(--accent-ink); font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+.bell__section {
+  margin: 0; padding: 10px 14px 4px;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint);
+}
 /* What a row is about, at a glance: a tinted circle per category. */
 .bell__glyph {
   display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
@@ -7148,6 +7158,10 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   background: var(--surface-2); color: var(--text-dim);
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase;
 }
+/* Where the reader left off: everything under the line is new to them. */
+.chunread { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; color: var(--accent-text); }
+.chunread::before, .chunread::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: 0.45; }
+.chunread span { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; }
 
 /* One message. The shop on the left in its colours, customers on the left in
    grey, you on the right - the way every chat already reads. */

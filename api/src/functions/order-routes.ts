@@ -774,8 +774,8 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
     const named = await orderNames(repository, order);
     await notify(repository, [order.sellerId], {
       kind: 'order_placed',
-      title: `New order for ${named.forShop}, paid with kept credit`,
-      body: `${named.buyer} · ${order.itemName}`,
+      title: `${named.buyer} ordered from ${named.forShop} with kept credit`,
+      body: order.itemName,
       link: `/order/${order.id}`,
     });
     return json(200, { order: saved });

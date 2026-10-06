@@ -235,10 +235,18 @@ export function ThreadPage() {
   };
   const { confirm, dialog } = useConfirm();
 
+  /** Where the reader left off: "N unread messages" is drawn above this one. */
+  const [marker, setMarker] = useState<{ id: string; count: number } | null>(null);
+  /** Opened at the marker rather than the end, so not pulled to the end yet. */
+  const heldAtMarker = useRef(false);
   const load = useCallback(async (quiet = false) => {
     if (!handle) return;
     try {
-      setData(await api.thread(handle, as));
+      const fresh = await api.thread(handle, as);
+      // Kept for as long as the chat is open: replying reads nothing new, and
+      // the line should not vanish under somebody still catching up.
+      if (fresh.firstUnreadId) setMarker({ id: fresh.firstUnreadId, count: fresh.unread ?? 0 });
+      setData(fresh);
     } catch (err) {
       if (!quiet) setError(err instanceof ApiRequestError ? err.message : 'Could not open this conversation.');
     }
@@ -246,6 +254,8 @@ export function ThreadPage() {
 
   useEffect(() => {
     newest.current = null;
+    heldAtMarker.current = false;
+    setMarker(null);
     void load();
   }, [load]);
 
@@ -328,14 +338,30 @@ export function ThreadPage() {
 
   // A conversation is read at the bottom - and taken there again when
   // something new arrives at the end. Earlier pages land at the top and do not.
+  // Opened with unread messages, it starts at the first of them instead, under
+  // the line, so nothing new is scrolled past unseen.
   useLayoutEffect(() => {
     const last = data?.messages.at(-1)?.id ?? null;
     const list = scroller.current;
     if (list && last !== newest.current) {
-      list.scrollTo({ top: list.scrollHeight, behavior: newest.current ? 'smooth' : 'auto' });
+      const line = !newest.current && marker ? document.getElementById('dm-unread') : null;
+      // Where the line sits in the list; only worth stopping at when going to
+      // the end would carry it off the top of the screen.
+      const at = line ? list.scrollTop + line.getBoundingClientRect().top - list.getBoundingClientRect().top - 12 : 0;
+      // Still catching up from the line, somebody else's new message waits at
+      // the end rather than pulling them past what they have not read.
+      const behind = heldAtMarker.current && newest.current
+        && data?.messages.at(-1)?.from.handle !== data?.us.handle
+        && list.scrollTop + list.clientHeight < list.scrollHeight - 240;
+      if (line && at < list.scrollHeight - list.clientHeight) {
+        list.scrollTo({ top: Math.max(0, at) });
+        heldAtMarker.current = true;
+      } else if (!behind) {
+        list.scrollTo({ top: list.scrollHeight, behavior: newest.current ? 'smooth' : 'auto' });
+      }
       newest.current = last;
     }
-  }, [data?.messages]);
+  }, [data?.messages, marker]);
 
   // Somebody reading the newest messages stays at them when the list
   // changes size - the keyboard coming or going, the bar growing a line, the
@@ -346,7 +372,8 @@ export function ThreadPage() {
     const list = scroller.current;
     if (!list) return;
     const atEnd = () => list.scrollTop + list.clientHeight >= list.scrollHeight - 240;
-    let reading = true;
+    // Opened at the unread line, the reader is not at the end until they get there.
+    let reading = !heldAtMarker.current;
     const onScroll = () => { reading = atEnd(); };
     const settle = () => {
       if (document.visibilityState !== 'visible' || !reading) return;
@@ -436,6 +463,13 @@ export function ThreadPage() {
     if (day !== lastDay) {
       blocks.push(<div key={`day-${message.id}`} className="chday"><span>{day}</span></div>);
       lastDay = day;
+    }
+    if (marker?.id === message.id) {
+      blocks.push(
+        <div key="unread" id="dm-unread" className="chunread" role="separator">
+          <span>{marker.count > 1 ? `${marker.count} unread messages` : 'Unread message'}</span>
+        </div>,
+      );
     }
     const previous = data.messages[index - 1];
     // A run is consecutive messages from the same voice inside five minutes.

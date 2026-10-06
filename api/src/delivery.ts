@@ -3,7 +3,8 @@ import type { Order, StageEvent } from '../../shared/models.js';
 import { autoReleaseDue, awaitingAcceptance, daysFrom, isStopped } from '../../shared/orders.js';
 import { coarseStage, lotEndIndex, routeOf } from '../../shared/routes.js';
 import type { getRepository } from './data/index.js';
-import { notify, orderNames } from './functions/notify.js';
+import { possessive } from '../../shared/notifications.js';
+import { capital, notify, orderNames } from './functions/notify.js';
 
 /**
  * The one way an item reaches its buyer, and the one way its money is let go.
@@ -221,7 +222,7 @@ export async function releaseHeld(order: Order, reason: string, by: string, repo
       [order.sellerId],
       {
         kind: 'payment_released',
-        title: `Payment released to ${named.forShop}`,
+        title: `${capital(possessive(named.buyer))} payment released to ${named.forShop}`,
         body: `${order.itemName} · ${reason}`,
         link: `/order/${encodeURIComponent(order.id)}`,
       },

@@ -30,7 +30,7 @@ export interface NoticeDraft {
   /** Where tapping it goes, as an in-app route. */
   link: string;
   /**
-   * Fold into an unread notice about the same thing instead of adding a row.
+   * Fold into the notice about the same thing instead of adding a row.
    *
    * `key` names the thing (a conversation, a post's likes) and must be unique
    * to it; `title` says the collected events, given how many there are and
@@ -43,8 +43,8 @@ export interface NoticeDraft {
   };
 }
 
-/** How many unread rows to look through for one to fold into. */
-const GROUP_LOOKBACK = 30;
+/** How many recent rows to look through for one to fold into. */
+const GROUP_LOOKBACK = 60;
 /** Names kept on a folded notice: enough for "and 3 others" to stay true. */
 const GROUP_ACTORS_MAX = 50;
 
@@ -101,20 +101,24 @@ export async function notify(
 }
 
 /**
- * The unread notice about the same thing, brought up to date with this event,
- * or null when there is none to fold into.
+ * The notice about the same thing, brought up to date with this event, or
+ * null when there is none to fold into.
  *
- * Only unread ones: once somebody has seen "Arjun sent you 3 messages", the
- * fourth is news again and gets a row of its own. It moves to the top, as the
- * newest thing that happened.
+ * One row per thing, for good: a conversation is one line in the bell however
+ * many times it has been read. An unread one adds this event to its count; a
+ * read one starts counting again from this event, unread - "Arjun sent you 3
+ * messages" says what is new since you last looked, not since the start.
+ * Either way it moves to the top, as the newest thing that happened.
  */
 async function foldInto(repository: Repo, userId: string, draft: NoticeDraft, now: string): Promise<Notification | null> {
   const group = draft.group!;
   const existing = (await repository.listNotifications(userId, GROUP_LOOKBACK))
-    .find((row) => row.group === group.key && row.readAt === null && isVisibleNotice(row));
+    .find((row) => row.group === group.key && isVisibleNotice(row));
   if (!existing) return null;
-  const count = (existing.count ?? 1) + 1;
-  const actors = [group.actor, ...(existing.actors ?? []).filter((name) => name !== group.actor)].slice(0, GROUP_ACTORS_MAX);
+  const unread = existing.readAt === null;
+  const count = unread ? (existing.count ?? 1) + 1 : 1;
+  const actors = [group.actor, ...(unread ? existing.actors ?? [] : []).filter((name) => name !== group.actor)]
+    .slice(0, GROUP_ACTORS_MAX);
   return {
     ...existing,
     kind: draft.kind,
@@ -123,6 +127,7 @@ async function foldInto(repository: Repo, userId: string, draft: NoticeDraft, no
     link: draft.link,
     count,
     actors,
+    readAt: null,
     pushedAt: now,
     createdAt: now,
     updatedAt: now,

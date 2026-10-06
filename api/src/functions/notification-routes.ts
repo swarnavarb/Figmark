@@ -26,6 +26,23 @@ const SCAN_PASSES = 4;
 /** The unread count looks this far back: past it the badge says 99+ anyway. */
 const UNREAD_WINDOW = 100;
 
+/**
+ * The newest row of each group, the rest dropped.
+ *
+ * New events fold into one row per thing (see notify.ts), but rows written
+ * before that rule - or past how far back it looks - can leave a conversation
+ * on several lines. Newest first in, so the one kept is the latest.
+ */
+function oneEach(rows: readonly Notification[]): Notification[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (!row.group) return true;
+    if (seen.has(row.group)) return false;
+    seen.add(row.group);
+    return true;
+  });
+}
+
 function wire(row: Notification) {
   return {
     id: row.id,
@@ -36,6 +53,8 @@ function wire(row: Notification) {
     link: row.link,
     read: row.readAt !== null,
     count: row.count ?? 1,
+    /** What it is about, when it stands for a run of events: one row per group. */
+    group: row.group ?? null,
     createdAt: row.notBefore ?? row.createdAt,
   };
 }
@@ -66,7 +85,8 @@ async function list(request: HttpRequest, _context: InvocationContext) {
   await sendHeldPushesSoon(repository, now);
 
   const latest = await repository.listNotifications(user.id, UNREAD_WINDOW);
-  const unreadRows = latest.filter((row) => row.readAt === null && isVisibleNotice(row, now));
+  // Counted as the bell shows them: a group is unread when its line is.
+  const unreadRows = oneEach(latest.filter((row) => isVisibleNotice(row, now))).filter((row) => row.readAt === null);
   const unreadByCategory: Partial<Record<NotificationCategory, number>> = {};
   for (const row of unreadRows) {
     const key = categoryOf(row.kind);
@@ -77,19 +97,22 @@ async function list(request: HttpRequest, _context: InvocationContext) {
      The cursor is the stored time of the last row looked at, so the next page
      carries on from exactly there, whatever this one skipped. */
   const page: Notification[] = [];
+  const groups = new Set<string>();
   let cursor = before;
   let more = false;
   let resume: string | null = null;
   for (let pass = 0; pass < SCAN_PASSES; pass += 1) {
     const batch = await repository.listNotifications(user.id, SCAN_BATCH, cursor);
     for (const row of batch) {
-      if (isVisibleNotice(row, now) && (!category || categoryOf(row.kind) === category)) {
+      if (isVisibleNotice(row, now) && (!category || categoryOf(row.kind) === category)
+        && !(row.group && groups.has(row.group))) {
         // One more than fits: there is a next page, starting with this row.
         if (page.length === limit) {
           more = true;
           break;
         }
         page.push(row);
+        if (row.group) groups.add(row.group);
       }
       resume = row.createdAt;
     }
@@ -138,9 +161,13 @@ async function markRead(request: HttpRequest, _context: InvocationContext) {
   // Only what the reader could have seen: a held notice is not read yet.
   const rows = (await repository.listNotifications(user.id, UNREAD_WINDOW))
     .filter((row) => isVisibleNotice(row));
-  const target = rows.filter((row) =>
+  const named = rows.filter((row) =>
     (!ids || ids.includes(row.id)) && (!category || categoryOf(row.kind) === category));
-  if (typeof body.id === 'string' && target.length === 0) return error(404, 'not_found', 'No such notification.');
+  if (typeof body.id === 'string' && named.length === 0) return error(404, 'not_found', 'No such notification.');
+  // A row is its whole group: reading the line for a conversation reads any
+  // older line for it too, or that one would surface the moment this one did.
+  const groups = new Set(named.flatMap((row) => (row.group ? [row.group] : [])));
+  const target = rows.filter((row) => named.includes(row) || (row.group !== undefined && groups.has(row.group)));
 
   const now = new Date().toISOString();
   await Promise.all(
