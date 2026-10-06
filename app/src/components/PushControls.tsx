@@ -3,9 +3,13 @@ import { api } from '../api';
 import { useToast } from './Feedback';
 import { useSession } from '../session';
 import {
-  canPromptInstall, deviceBrowser, devicePlatform, isInstalled, onInstallPromptChange, promptInstall, reportDevice,
+  canPromptInstall, deviceBrowser, devicePlatform, isInstalled, onInstallPromptChange, onHomeScreenElsewhere, promptInstall, reportDevice,
 } from '../device';
 import { disablePush, enablePush, pushState, syncPush, type PushState } from '../push';
+import type { NotificationPrefs } from '@shared/models';
+import {
+  CATEGORY_LABELS, NOTIFICATION_CATEGORIES, QUIET_FROM_HOUR, QUIET_UNTIL_HOUR, type NotificationCategory,
+} from '@shared/notifications';
 
 /**
  * Lock-screen notifications for this device: where it stands, the one thing
@@ -177,31 +181,113 @@ export function PushCard() {
         <span className={push.state === 'on' ? 'faint' : undefined}>{explain(push.state)}</span>
         <Buttons push={push} />
       </div>
+      <PhoneSettings on={push.state === 'on'} />
     </section>
+  );
+}
+
+/**
+ * What reaches the lock screen, by kind, and whether it buzzes at night.
+ *
+ * For the account rather than this device, so a phone and a laptop agree. The
+ * bell keeps everything either way: switching "Social" off here is "do not
+ * wake me for a like", not "do not tell me".
+ */
+function PhoneSettings({ on }: { on: boolean }) {
+  const toast = useToast();
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void api.notificationSettings().then((result) => live && setPrefs(result.prefs)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!prefs) return null;
+
+  async function save(next: Partial<NotificationPrefs>) {
+    const before = prefs;
+    setPrefs({ ...prefs!, ...next });
+    try {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      setPrefs((await api.saveNotificationSettings({ ...next, timeZone })).prefs);
+    } catch {
+      setPrefs(before);
+      toast('Could not save that. Try again.', 'error');
+    }
+  }
+
+  const toggle = (category: NotificationCategory) => {
+    const off = new Set(prefs.pushOff);
+    if (off.has(category)) off.delete(category);
+    else off.add(category);
+    void save({ pushOff: [...off] });
+  };
+
+  return (
+    <div className="phoneprefs">
+      <span className="phoneprefs__head">
+        <strong>What reaches your phone</strong>
+        <span className="faint">
+          {on ? 'Everything still shows in the bell.' : 'Applies once notifications are on. Everything still shows in the bell.'}
+        </span>
+      </span>
+      {NOTIFICATION_CATEGORIES.map((category) => (
+        <label key={category} className="phoneprefs__row">
+          <span>{CATEGORY_LABELS[category]}</span>
+          <input type="checkbox" role="switch" className="phoneprefs__switch"
+            checked={!prefs.pushOff.includes(category)} onChange={() => toggle(category)} />
+        </label>
+      ))}
+      <label className="phoneprefs__row">
+        <span>
+          Quiet at night
+          <span className="faint phoneprefs__hint">
+            {QUIET_FROM_HOUR}:00 to {String(QUIET_UNTIL_HOUR).padStart(2, '0')}:00, they arrive without a sound
+          </span>
+        </span>
+        <input type="checkbox" role="switch" className="phoneprefs__switch"
+          checked={prefs.quietHours} onChange={() => void save({ quietHours: !prefs.quietHours })} />
+      </label>
+    </div>
   );
 }
 
 /* ── The floating prompt and the steps ────────────────────────────────────── */
 
-const NUDGE_DELAY_MS = 4000;
-const SNOOZE_MS = 3 * 24 * 60 * 60 * 1000;
-const SNOOZE_KEY = 'figmark:push-nudge-snooze';
+/** How long after signing in, or opening the app, the prompt floats up. */
+const NUDGE_DELAY_MS = 10_000;
+/** Shown, then left alone this long, until there is nothing left to ask. */
+const NUDGE_EVERY_MS = 4 * 60 * 60 * 1000;
+const SHOWN_KEY = 'figmark:push-nudge-shown';
 
-function snoozedUntil(): number {
+function lastShown(): number {
   try {
-    return Number(localStorage.getItem(SNOOZE_KEY)) || 0;
+    return Number(localStorage.getItem(SHOWN_KEY)) || 0;
   } catch {
     return 0;
   }
 }
 
+function markShown(at: number): void {
+  try {
+    localStorage.setItem(SHOWN_KEY, String(at));
+  } catch {
+    // Asked again on the next visit instead.
+  }
+}
+
 /**
  * Mounted once, while somebody is signed in: reports where this copy is
- * used, floats the prompt a few seconds after sign-in or opening the app,
- * and holds the steps sheet any of the four places can open.
+ * used, floats the prompt ten seconds after sign-in or opening the app, and
+ * holds the steps sheet any of the four places can open.
  *
- * The prompt shows after every sign-in. On an ordinary visit it waits three
- * days after "Not now", so it asks rather than nags.
+ * The prompt shows after every sign-in, and otherwise at most once every four
+ * hours - whether it was answered "Not now" or simply ignored - until there is
+ * nothing left to ask: Figmark is on the home screen and notifications are on.
+ * A copy left open keeps its own clock, so a tab open all day asks again too.
  */
 export function PushHost() {
   const { user } = useSession();
@@ -221,38 +307,49 @@ export function PushHost() {
 function SignedInPush({ userId, fresh }: { userId: string; fresh: boolean }) {
   const push = usePush();
   const [nudge, setNudge] = useState(false);
-  const shown = useRef(false);
+  // Bumped each time the prompt goes away, so the next one is scheduled.
+  const [round, setRound] = useState(0);
+  const freshUsed = useRef(false);
 
   // Where this copy is used, for the operators' figures: once a day, or when it changes.
+  const [installedElsewhere, setInstalledElsewhere] = useState(() => onHomeScreenElsewhere(userId));
   useEffect(() => {
-    if (push.state) void reportDevice(userId, push.state);
+    if (push.state) {
+      void reportDevice(userId, push.state).then((answer) => {
+        if (answer) setInstalledElsewhere(true);
+      });
+    }
   }, [userId, push.state]);
 
+  // A phone browser whose person already put Figmark on the home screen has
+  // nothing to ask: the home-screen copy asks about notifications itself.
+  const wanted = push.state === 'off' || push.state === 'blocked'
+    || (push.state === 'needs-install' && !installedElsewhere);
+
   useEffect(() => {
-    if (!push.state || shown.current) return undefined;
-    const wanted = push.state === 'off' || push.state === 'needs-install' || push.state === 'blocked';
-    if (!wanted) return undefined;
-    if (!fresh && snoozedUntil() > Date.now()) return undefined;
+    if (!wanted || nudge) return undefined;
+    const now = Date.now();
+    // A fresh sign-in asks straight away; anything else waits out the four hours.
+    const due = fresh && !freshUsed.current ? now : lastShown() + NUDGE_EVERY_MS;
+    const wait = Math.max(NUDGE_DELAY_MS, due - now);
+    // Beyond what a timer can hold, a tab is not going to be open that long anyway.
+    if (wait > 2 ** 31 - 1) return undefined;
     const timer = setTimeout(() => {
-      shown.current = true;
+      freshUsed.current = true;
+      markShown(Date.now());
       setNudge(true);
-    }, NUDGE_DELAY_MS);
+    }, wait);
     return () => clearTimeout(timer);
-  }, [push.state, fresh]);
+  }, [wanted, nudge, fresh, round]);
 
   // Turned on (here or anywhere else): nothing left to ask.
   useEffect(() => {
-    if (push.state === 'on') setNudge(false);
-  }, [push.state]);
+    if (!wanted) setNudge(false);
+  }, [wanted]);
 
-
-  function later() {
+  function dismiss() {
     setNudge(false);
-    try {
-      localStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_MS));
-    } catch {
-      // Asked again next visit instead.
-    }
+    setRound((count) => count + 1);
   }
 
   return (
@@ -265,10 +362,10 @@ function SignedInPush({ userId, fresh }: { userId: string; fresh: boolean }) {
             <span>Know the moment your order moves, a payment lands or someone replies.</span>
           </span>
           <span className="pushnudge__actions">
-            <button type="button" className="btn btn--sm" onClick={() => { setNudge(false); push.openGuide(); }}>
+            <button type="button" className="btn btn--sm" onClick={() => { dismiss(); push.openGuide(); }}>
               Turn on
             </button>
-            <button type="button" className="btn btn--quiet btn--sm" onClick={later}>Not now</button>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={dismiss}>Not now</button>
           </span>
         </div>
       )}

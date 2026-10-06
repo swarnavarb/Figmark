@@ -3381,9 +3381,13 @@ await check('a lot moving tells everybody who bought into it', async () => {
 
   const one = (await noticesFor(buyerIds[0]))[0];
   assert.equal(one.kind, 'lot_moved');
-  // To their own purchases, not to the seller's view of the lot, which
-  // shows them everybody else's orders.
-  assert.equal(one.link, '/me?tab=purchases');
+  // To their own order (or their purchases, when they have several in the
+  // lot), never to the seller's view of the lot, which shows them everybody
+  // else's orders.
+  assert.match(one.link, /^\/order\/|^\/me\?tab=purchases$/);
+  assert.ok(!one.link.includes('/lot/'), one.link);
+  // Says whose shop it came from, so somebody with three lots knows which.
+  assert.match(one.title, / from /, one.title);
 });
 
 await check('a dispute tells the other side and whoever holds the money', async () => {
@@ -9269,7 +9273,7 @@ await check('a step forward can be undone for three minutes, and shows nowhere u
   let tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
   assert.ok(!tracked.order.stageHistory.some((event) => event.undoId === undo.id), 'hidden from the buyer timeline');
   let told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
-  assert.ok(!told.some((row) => row.title.startsWith('Undo box')), 'the buyer is not told yet');
+  assert.ok(!told.some((row) => row.body.includes('Undo box')), 'the buyer is not told yet');
 
   // Undone: back where it was, no trace, the held notice withdrawn.
   const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
@@ -9297,7 +9301,8 @@ await check('a step forward can be undone for three minutes, and shows nowhere u
   tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
   assert.ok(tracked.order.stageHistory.some((event) => event.undoId === again.undo.id), 'shown once the window closes');
   told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
-  assert.ok(told.some((row) => row.title.startsWith('Undo box')), 'and the buyer is told');
+  // About their item, with the lot it travels in.
+  assert.ok(told.some((row) => row.body.includes('Undo box')), 'and the buyer is told');
   const late = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: again.undo.to, undoOf: again.undo.id } }), ctx);
   assert.equal(late.status, 409);
 

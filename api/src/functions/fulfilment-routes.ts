@@ -30,7 +30,7 @@ import { autoReleaseDays } from '../settings.js';
 import { offersAffiliate } from '../affiliate.js';
 import { linkDiscountMinor } from '../../../shared/affiliate.js';
 import { storeTag } from '../../../shared/storefront.js';
-import { notify } from './notify.js';
+import { capital, notifyBuyers } from './notify.js';
 import { error, handler, json } from './http.js';
 
 /** What to write on the timeline when a checkpoint is ticked. */
@@ -662,18 +662,17 @@ async function advanceStage(request: HttpRequest, _context: InvocationContext) {
   // have no way of knowing it cleared customs unless somebody tells them.
   // Without this they ask the seller one at a time, which is the conversation
   // the channel exists to stop happening twenty times.
-  await notify(
+  // To their own order rather than to the lot, which is the seller's view of
+  // it and shows them everybody else's purchases.
+  await notifyBuyers(
     repository,
-    orders.map((order) => order.buyerId),
-    {
+    orders,
+    ({ items, shop }) => ({
       kind: 'lot_moved',
-      title: `${lot.name}: ${LOT_STAGE_LABELS[target]}`,
-      body: `${orders.length} ${orders.length === 1 ? 'order' : 'orders'} in this lot moved.`,
-      // To their own order rather than to the lot, which is the seller's
-      // view of it and shows them everybody else's purchases.
-      link: '/me?tab=purchases',
-    },
-    { except: lot.sellerId },
+      title: `${capital(items)} from ${shop}: ${LOT_STAGE_LABELS[target]}`,
+      body: `Travelling with ${lot.name}. Tap to see where it is.`,
+    }),
+    { except: lot.sellerId, track: lot.id },
   );
 
   return json(200, { lot: updated, ordersUpdated: orders.length });
@@ -1213,12 +1212,11 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       { stage: order.stage, enteredAt: now, note: `${shipmentNote} (updated)`, recordedBy: user.id },
     ];
     const saved = await repository.updateOrder(order);
-    await notify(
-      repository,
-      [order.buyerId],
-      { kind: 'lot_moved', title: `${order.itemName}: tracking details`, body: shipmentNote!, link: `/order/${order.id}` },
-      { except: order.sellerId },
-    );
+    await notifyBuyers(repository, [order], ({ items, shop }) => ({
+      kind: 'lot_moved',
+      title: `${shop} added tracking for ${items}`,
+      body: shipmentNote!,
+    }), { except: order.sellerId });
     const siblings = !inLot(order)
       ? (await repository.listOrdersForSeller(order.sellerId)).filter((row) => row.lotId === order.lotId)
       : await repository.listOrdersForLot(order.lotId);

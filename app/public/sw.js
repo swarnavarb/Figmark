@@ -7,7 +7,8 @@
  * of work with its own way of serving yesterday's site, and nothing here
  * needs it.
  *
- * The message is what api/src/push.ts sends: { id, title, body, link, unread }.
+ * The message is what api/src/push.ts sends: { id, title, body, link, unread,
+ * tag?, silent? }.
  */
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -27,8 +28,13 @@ self.addEventListener('push', (event) => {
     icon: '/icons/icon-192.png',
     // The small monochrome glyph Android puts in the status bar.
     badge: '/icons/badge-72.png',
-    // One per notice: a repeat replaces rather than stacks.
-    tag: message.id || undefined,
+    // One per notice: a repeat replaces rather than stacks. A folded one
+    // ("Arjun sent you 3 messages") replaces its earlier line, and still
+    // buzzes, because it is news.
+    tag: message.tag || message.id || undefined,
+    renotify: Boolean(message.tag),
+    // Quiet hours: on the lock screen, without a sound.
+    silent: Boolean(message.silent),
     data: { id: message.id || null, link: message.link || '/' },
   });
 

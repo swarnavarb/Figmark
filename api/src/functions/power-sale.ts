@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Listing, Post, PowerSale, PowerSaleItem, User } from '../../../shared/models.js';
 import type { getRepository } from '../data/index.js';
+import { actorName } from '../../../shared/notifications.js';
 import { notify } from './notify.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -301,7 +302,7 @@ export async function advancePowerSale(
     if (next === 0 && !sale.remindedAt && (sale.reminders ?? []).length > 0) {
       await notify(repository, sale.reminders ?? [], {
         kind: 'sale_opened',
-        title: `⚡ ${sale.name} is dropping now`,
+        title: `⚡ ${sale.name} is dropping now at ${actorName(shop.sellerProfile.storefrontName, shop.sellerProfile.username)}`,
         body: `${item.title} is first - members' price for ${sale.windowMinutes} min.`,
         link: `/social/c/${encodeURIComponent(sale.sellerId)}`,
       }, { except: sale.sellerId });

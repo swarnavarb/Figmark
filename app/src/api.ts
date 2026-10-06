@@ -1,4 +1,6 @@
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
+import type { NotificationCategory } from '@shared/notifications';
+import type { NotificationPrefs } from '@shared/models';
 import type {
   ApiError,
   AuthUser,
@@ -1109,12 +1111,23 @@ export interface WantOfferRow {
 export interface AppNotification {
   id: string;
   kind: string;
+  category: NotificationCategory;
   title: string;
   body: string;
   /** Where tapping it goes. */
   link: string;
   read: boolean;
+  /** How many events this row stands for: "Sana sent you 3 messages" is 3. */
+  count: number;
   createdAt: string;
+}
+
+export interface NotificationPage {
+  notifications: AppNotification[];
+  unread: number;
+  unreadByCategory: Partial<Record<NotificationCategory, number>>;
+  /** Where the next page starts; null at the end. */
+  nextBefore: string | null;
 }
 
 export interface WantDetail {
@@ -2548,17 +2561,26 @@ export const api = {
     post<{ joined: boolean; seekerCount: number }>(
       `/wants/${encodeURIComponent(id)}/me?buyer=${encodeURIComponent(buyerId)}`,
     ),
-  notifications: () =>
-    request<{ notifications: AppNotification[]; unread: number }>('/notifications'),
-  markNotificationsRead: (id?: string) =>
-    post<{ read: number }>('/notifications/read', id ? { id } : {}),
+  notifications: (options: { before?: string | null; category?: NotificationCategory | null } = {}) => {
+    const query = new URLSearchParams();
+    if (options.before) query.set('before', options.before);
+    if (options.category) query.set('category', options.category);
+    const qs = query.toString();
+    return request<NotificationPage>(`/notifications${qs ? `?${qs}` : ''}`);
+  },
+  /** One by id, several by ids, a whole category, or (nothing given) everything. */
+  markNotificationsRead: (which?: string | { ids?: string[]; category?: NotificationCategory }) =>
+    post<{ read: number }>('/notifications/read', typeof which === 'string' ? { id: which } : which ?? {}),
+  notificationSettings: () => request<{ prefs: NotificationPrefs }>('/notifications/settings'),
+  saveNotificationSettings: (prefs: Partial<NotificationPrefs>) =>
+    post<{ prefs: NotificationPrefs }>('/notifications/settings/save', prefs),
   pushKey: () => request<{ publicKey: string | null }>('/push/key'),
   pushSubscribe: (subscription: PushSubscriptionJSON) =>
     post<{ ok: true; devices: number }>('/push/subscribe', subscription),
   pushUnsubscribe: (endpoint: string) => post<{ ok: true }>('/push/unsubscribe', { endpoint }),
   pushTest: () => post<{ sent: number }>('/push/test'),
   reportDevice: (body: { id: string; platform: string; browser: string; installed: boolean; push: string }) =>
-    post<{ ok: true }>('/me/device', body),
+    post<{ ok: true; onHomeScreen?: boolean }>('/me/device', body),
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   forumMembers: (id: string) => request<ForumMembers>(`/social/forums/${encodeURIComponent(id)}/members`),

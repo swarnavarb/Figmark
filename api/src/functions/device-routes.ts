@@ -54,10 +54,16 @@ async function report(request: HttpRequest, _context: InvocationContext) {
   const devices = fresh.clientDevices ?? [];
   const before = devices.find((device) => device.id === id);
 
+  // Whether this person has Figmark on the home screen of this kind of phone,
+  // from another copy. A browser tab on an iPhone cannot see its home-screen
+  // twin, so this is how it knows to stop asking for something already done.
+  const onHomeScreen = installed || devices.some((device) =>
+    device.id !== id && device.platform === platform && device.installedAt !== null);
+
   const unchanged = before && before.platform === platform && before.browser === browser
     && before.installed === installed && before.push === push
     && Date.now() - Date.parse(before.lastSeen) < QUIET_MS;
-  if (unchanged) return json(200, { ok: true });
+  if (unchanged) return json(200, { ok: true, onHomeScreen });
 
   const next: ClientDevice = {
     id,
@@ -73,7 +79,7 @@ async function report(request: HttpRequest, _context: InvocationContext) {
     .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
     .slice(0, MAX_DEVICES);
   await repository.updateUser({ ...fresh, clientDevices: kept, updatedAt: now });
-  return json(200, { ok: true });
+  return json(200, { ok: true, onHomeScreen });
 }
 
 /** GET /api/ops/devices - the totals, for operators only. */

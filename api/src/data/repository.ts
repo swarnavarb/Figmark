@@ -255,7 +255,8 @@ export interface Repository {
   getPowerSale(sellerId: string, id: string): Promise<PowerSale | null>;
   savePowerSale(sale: PowerSale): Promise<PowerSale>;
   /** Everything waiting for one person, newest first. */
-  listNotifications(userId: string, limit?: number): Promise<Notification[]>;
+  /** Newest first; with `before`, only those written before that moment - the next page. */
+  listNotifications(userId: string, limit?: number, before?: string): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;
   /**
    * Held notices whose hold ended between `from` and `until`, not yet sent to

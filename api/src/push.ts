@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import type { Notification, PushEndpoint } from '../../shared/models.js';
+import { categoryOf, inQuietHours, type NotificationCategory } from '../../shared/notifications.js';
 import type { getRepository } from './data/index.js';
 
 /**
@@ -58,6 +59,13 @@ export interface PushMessage {
   link: string;
   /** Unread notices, for the badge on the home-screen icon. */
   unread: number;
+  /**
+   * What the lock screen files it under: a notice folded into another (the
+   * third message in a conversation) replaces the one already showing.
+   */
+  tag?: string;
+  /** Arrives without sound or vibration: quiet hours. */
+  silent?: boolean;
 }
 
 /**
@@ -81,7 +89,7 @@ const webPushTransport: PushTransport = async (endpoint, message) => {
         urgency: 'high',
         // Same topic replaces an undelivered copy rather than adding a second,
         // so the rare double send from two clocks shows once.
-        topic: message.id.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32),
+        topic: (message.tag ?? message.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32),
         timeout: 5000,
       },
     );
@@ -116,12 +124,22 @@ export function isVisibleNotice(row: Notification, now = Date.now()): boolean {
  *
  * Returns how many push services took it. Never throws.
  */
-export async function pushToUser(repository: Repo, userId: string, message: Omit<PushMessage, 'unread'>): Promise<number> {
+export async function pushToUser(
+  repository: Repo,
+  userId: string,
+  message: Omit<PushMessage, 'unread'>,
+  /** What the notice is about, so the person's choices apply. Absent for a test. */
+  category?: NotificationCategory,
+): Promise<number> {
   if (!pushEnabled()) return 0;
   try {
     const user = await repository.getUserById(userId);
     const endpoints = user?.pushEndpoints ?? [];
     if (endpoints.length === 0) return 0;
+    const prefs = user?.notificationPrefs;
+    // Kept to the bell, by their choice.
+    if (category && prefs?.pushOff.includes(category)) return 0;
+    const silent = Boolean(category && prefs?.quietHours && inQuietHours(new Date(), prefs.timeZone));
 
     const unread = (await repository.listNotifications(userId, 100))
       .filter((row) => isVisibleNotice(row) && row.readAt === null).length;
@@ -131,6 +149,7 @@ export async function pushToUser(repository: Repo, userId: string, message: Omit
       title: message.title.slice(0, 120),
       body: message.body.slice(0, 300),
       unread,
+      ...(silent ? { silent: true } : {}),
     };
 
     const results = await Promise.all(endpoints.map(async (endpoint) => {
@@ -162,7 +181,10 @@ export async function forgetEndpoints(repository: Repo, userId: string, endpoint
 export function pushNotice(repository: Repo, notice: Notification): Promise<number> {
   return pushToUser(repository, notice.userId, {
     id: notice.id, title: notice.title, body: notice.body, link: notice.link,
-  });
+    // The row's own id is the tag already for a folded notice: it keeps the
+    // id of the first, so the phone swaps the old line for the new one.
+    ...(notice.group ? { tag: notice.id } : {}),
+  }, categoryOf(notice.kind));
 }
 
 /* ── The clock for held notices ─────────────────────────────────────────── */

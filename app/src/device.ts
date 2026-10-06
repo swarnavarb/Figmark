@@ -133,11 +133,24 @@ function deviceId(): string {
   return sessionId;
 }
 
+const HOME_KEY = 'figmark:on-home-screen';
+
+/**
+ * Whether this person already has Figmark on this kind of phone's home
+ * screen, as the server last said. A Safari tab cannot see its home-screen
+ * twin - they keep separate storage - so this is the only way it knows.
+ */
+export function onHomeScreenElsewhere(userId: string): boolean {
+  return read(HOME_KEY) === userId;
+}
+
 /**
  * Tell the account where it is being used. Once a day per copy, or straight
  * away when something changed - it was installed, or notifications went on.
+ * Resolves to whether this person has Figmark on the home screen of this
+ * kind of device, or null when it did not ask.
  */
-export async function reportDevice(userId: string, push: ClientPushState): Promise<void> {
+export async function reportDevice(userId: string, push: ClientPushState): Promise<boolean | null> {
   const body = {
     id: deviceId(),
     platform: devicePlatform(),
@@ -150,15 +163,18 @@ export async function reportDevice(userId: string, push: ClientPushState): Promi
   if (sent) {
     try {
       const last = JSON.parse(sent) as { signature: string; at: number };
-      if (last.signature === signature && Date.now() - last.at < RESEND_MS) return;
+      if (last.signature === signature && Date.now() - last.at < RESEND_MS) return null;
     } catch {
       // Unreadable: send.
     }
   }
   try {
-    await api.reportDevice(body);
+    const { onHomeScreen } = await api.reportDevice(body);
     write(SENT_KEY, JSON.stringify({ signature, at: Date.now() }));
+    if (onHomeScreen) write(HOME_KEY, userId);
+    return onHomeScreen ?? null;
   } catch {
     // Figures, not function: the next visit tries again.
+    return null;
   }
 }

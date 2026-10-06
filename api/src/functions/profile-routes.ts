@@ -3,6 +3,8 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { Order, Review, StoreReview, User } from '../../../shared/models.js';
 import { reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import { personRef } from '../../../shared/parties.js';
+import { actorName, gistOf, stars, toWhom, whose } from '../../../shared/notifications.js';
+import { notify } from './notify.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
@@ -220,7 +222,23 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
     updatedAt: now,
   };
 
-  return json(existing ? 200 : 201, { review: await repository.saveStoreReview(review) });
+  const saved = await repository.saveStoreReview(review);
+
+  // News to the page it was left on - said as which page, since one account
+  // can have both, and with the stars, since that is what they will ask first.
+  const who = actorName(review.authorName, review.authorHandle);
+  const store = side === 'store' ? subject.sellerProfile!.storefrontName : null;
+  const handle = side === 'store' ? subject.sellerProfile!.username : subject.username;
+  await notify(repository, [subject.id], {
+    kind: 'review_received',
+    title: existing
+      ? `${who} updated ${whose(store)} review to ${stars(rating)}`
+      : `${who} reviewed ${toWhom(store)} ${stars(rating)}`,
+    body: gistOf(review.body),
+    link: handle ? `/${encodeURIComponent(handle)}` : '/me',
+  }, { except: user.id });
+
+  return json(existing ? 200 : 201, { review: saved });
 }
 
 /**

@@ -27,7 +27,8 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
-import { notify } from './notify.js';
+import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
+import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
 import { adjustHeldCredit, heldCreditMinor, placeOrder, returnKeptCredit } from './placement.js';
 import { error, handler, json } from './http.js';
@@ -426,6 +427,37 @@ async function confirm(request: HttpRequest, _context: InvocationContext) {
  * A rating the counterparty can read before writing their own is a rating they
  * can answer, and retaliation is what makes two-sided feedback worthless.
  */
+/**
+ * The news of an order review, to whoever it is about.
+ *
+ * Reviews are blind until both sides have written, so the first one cannot
+ * say what it says: it says one is waiting, and that writing yours opens
+ * both. The second says what the other side gave, now it can be seen.
+ * Addressed to the side it is about - "Arjun reviewed Kaiju Imports" to a
+ * shop, "Kaiju Imports reviewed you" to a buyer.
+ */
+async function announceReview(order: Order, written: Review, repository: Awaited<ReturnType<typeof getRepository>>) {
+  const [buyer, seller] = await Promise.all([repository.getUserById(order.buyerId), repository.getUserById(order.sellerId)]);
+  const storeName = seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'The shop';
+  const byBuyer = written.authorId === order.buyerId;
+  const who = byBuyer ? actorName(buyer?.displayName ?? 'Your buyer', buyer?.username) : actorName(storeName, seller?.sellerProfile?.username);
+  const whom = toWhom(byBuyer ? storeName : null);
+  const item = gistOf(order.itemName, 'your order', 40);
+  await notify(repository, [written.subjectId], written.revealed
+    ? {
+      kind: 'review_received',
+      title: `${who} reviewed ${whom} ${stars(written.rating)}`,
+      body: written.body ? `${item}: ${gistOf(written.body, '', 70)}` : `${item} · both reviews are now visible`,
+      link: `/order/${encodeURIComponent(order.id)}`,
+    }
+    : {
+      kind: 'review_received',
+      title: `${who} reviewed ${whom}`,
+      body: `Review ${item} too and both reviews open`,
+      link: `/order/${encodeURIComponent(order.id)}`,
+    }, { except: written.authorId });
+}
+
 async function review(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -485,6 +517,7 @@ async function review(request: HttpRequest, _context: InvocationContext) {
     await rescore(other.subjectId, repository);
   }
   if (written.revealed) await rescore(written.subjectId, repository);
+  await announceReview(order, written, repository);
 
   return json(201, { review: written });
 }
@@ -553,9 +586,10 @@ async function unboxing(request: HttpRequest, _context: InvocationContext) {
   order.unboxingPostId = post.id;
   order.updatedAt = now;
   await repository.updateOrder(order);
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'post_shared',
-    title: `${buyer?.displayName ?? 'Your buyer'} showed off what arrived`,
+    title: `${named.buyer} showed off what arrived from ${named.forShop}`,
     body: order.itemName,
     link: `/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`,
   }, { except: user.id });
@@ -737,10 +771,11 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
     statusFromMoney(order);
     note(order, 'Paid with the credit the seller kept for you.', user.id);
     const saved = await repository.updateOrder(order);
+    const named = await orderNames(repository, order);
     await notify(repository, [order.sellerId], {
       kind: 'order_placed',
-      title: 'New order — paid with the credit you kept',
-      body: order.itemName,
+      title: `New order for ${named.forShop}, paid with kept credit`,
+      body: `${named.buyer} · ${order.itemName}`,
       link: `/order/${order.id}`,
     });
     return json(200, { order: saved });
@@ -764,10 +799,11 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
 
   // The seller is the only person who can answer this, and they have no reason
   // to be looking at the order until somebody tells them to.
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'payment_claimed',
-    title: 'A buyer says they have paid',
-    body: order.itemName,
+    title: `${named.buyer} says they paid ${named.forShop}`,
+    body: `${order.itemName} · check it arrived and confirm`,
     link: `/order/${order.id}`,
   });
 
@@ -877,9 +913,10 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
 
   // The buyer has sent money somewhere and is waiting to hear. A denial is the
   // one they most need, because it is the one they have to act on.
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'payment_settled',
-    title: body.accept ? 'Your payment was confirmed' : 'The seller says your payment has not arrived',
+    title: body.accept ? `${named.shop} confirmed your payment` : `${named.shop} says your payment has not arrived`,
     body: body.accept ? order.itemName : reason,
     link: `/order/${order.id}`,
   });
@@ -981,9 +1018,10 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
     const saved: Order[] = [];
     for (const order of touched.values()) saved.push(await repository.updateOrder({ ...order, updatedAt: now }));
 
+    const named = await orderNames(repository, first);
     await notify(repository, [first.sellerId], {
       kind: 'payment_claimed',
-      title: `A buyer says they paid ${rupees(amountMinor)}`,
+      title: `${named.buyer} says they paid ${named.forShop} ${rupees(amountMinor)}`,
       body: saved.map((o) => o.itemName).join(', '),
       link: `/order/${first.id}`,
     });
@@ -1027,9 +1065,10 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
   const saved: Order[] = [];
   for (const order of touched.values()) saved.push(await repository.updateOrder({ ...order, updatedAt: now }));
 
+  const named = await orderNames(repository, first);
   await notify(repository, [first.sellerId], {
     kind: 'payment_received',
-    title: `A buyer paid ${rupees(amountMinor)}`,
+    title: `${named.buyer} paid ${named.forShop} ${rupees(amountMinor)}`,
     body: saved.map((o) => o.itemName).join(', '),
     link: `/order/${first.id}`,
   });
@@ -1165,9 +1204,10 @@ function startReturn(
 async function tellBuyerRefunded(
   repository: Repo, order: Order, amountMinor: number, reference: string | null, message?: string,
 ): Promise<void> {
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'credit_refund_sent',
-    title: `The seller says they refunded ${rupees(amountMinor)} to you`,
+    title: `${named.shop} says they refunded you ${rupees(amountMinor)}`,
     body: `${order.itemName} — tell them whether it arrived.`,
     link: '/wallet',
   });
@@ -1373,9 +1413,12 @@ async function ackCreditRefund(request: HttpRequest, _context: InvocationContext
   order.updatedAt = now;
   const saved = await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'credit_refund_answered',
-    title: body.received ? `The buyer got the ${rupees(total)} you returned` : `The buyer says the ${rupees(total)} you returned has not arrived`,
+    title: body.received
+      ? `${named.buyer} got the ${rupees(total)} refund from ${named.forShop}`
+      : `${named.buyer} says the ${rupees(total)} refund from ${named.forShop} has not arrived`,
     body: order.itemName,
     link: `/order/${order.id}`,
   });
@@ -1464,10 +1507,11 @@ async function applyCredit(request: HttpRequest, _context: InvocationContext) {
 
   const [savedSource, savedTarget] = [await repository.updateOrder(source), await repository.updateOrder(target)];
 
+  const named = await orderNames(repository, source);
   await notify(repository, [source.buyerId], {
     kind: 'credit_applied',
-    title: `${rupees(amount)} of your extra payment went towards ${target.itemName}`,
-    body: `From ${source.itemName}`,
+    title: `${named.shop} put ${rupees(amount)} of your credit towards ${gistOf(target.itemName, 'an order', 40)}`,
+    body: `Extra you paid on ${source.itemName}`,
     link: `/order/${target.id}`,
   });
 
@@ -1505,10 +1549,11 @@ async function holdCredit(request: HttpRequest, _context: InvocationContext) {
   order.updatedAt = new Date().toISOString();
   const saved = await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'credit_applied',
-    title: `Your extra ${rupees(total)} is kept as credit`,
-    body: `The seller will put it towards your next order with them. (${order.itemName})`,
+    title: `${named.shop} kept your extra ${rupees(total)} as credit`,
+    body: `It goes towards your next order with them. (${order.itemName})`,
     link: `/order/${order.id}`,
   });
 
@@ -1718,9 +1763,10 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
     });
   }
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'order_rejected',
-    title: `${order.itemName} could not be sold to you`,
+    title: `${named.shop} could not sell you ${gistOf(order.itemName, 'this item', 40)}`,
     body: reason,
     link: `/order/${order.id}`,
   });
@@ -1806,17 +1852,20 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
   note(order, order.bookingOnly ? 'Booking accepted by seller.' : 'Order accepted by seller.', user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], order.bookingOnly
     ? {
         kind: 'booking_accepted',
-        title: 'Your booking has been accepted',
-        body: covered ? 'It is paid for with the credit the seller kept for you.' : 'Please make the payment.',
+        title: `${named.shop} accepted your booking`,
+        body: covered
+          ? `${order.itemName} · paid with the credit they kept for you`
+          : `${order.itemName} · make the payment to lock it in`,
         link: `/order/${order.id}`,
       }
     : {
         kind: 'order_accepted',
-        title: `${order.itemName} was accepted`,
-        body: 'The seller has accepted your order.',
+        title: `${named.shop} accepted your order`,
+        body: order.itemName,
         link: `/order/${order.id}`,
       });
 
@@ -1898,10 +1947,11 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
     note(order, `Order cancelled by seller: ${reason}`, user.id);
     await repository.updateOrder(order);
 
+    const named = await orderNames(repository, order);
     await notify(repository, [order.buyerId], {
       kind: 'order_cancelled',
-      title: `${order.itemName} was cancelled`,
-      body: reason,
+      title: `${named.shop} cancelled your order`,
+      body: `${order.itemName}: ${reason}`,
       link: `/order/${order.id}`,
     });
     if (buyer && seller) {
@@ -1937,18 +1987,19 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   note(order, `Payment reversal initiated — ${rupees(money.paidMinor)}`, user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'payment_reversal_pending',
-    title: `${order.itemName} was cancelled — reversing your payment`,
-    body: reason,
+    title: `${named.shop} cancelled your order and is returning ${rupees(money.paidMinor)}`,
+    body: `${order.itemName}: ${reason}`,
     link: `/order/${order.id}`,
   });
 
   if (buyer && !buyer.reversalDetails) {
     await notify(repository, [order.buyerId], {
       kind: 'reversal_details_needed',
-      title: 'Add your payment reversal details',
-      body: `${order.itemName} was cancelled and needs somewhere to send your ${rupees(money.paidMinor)} back.`,
+      title: `Tell ${named.shop} where to send your ${rupees(money.paidMinor)}`,
+      body: `Add your payment reversal details so the refund for ${order.itemName} can go out.`,
       link: '/wallet?tab=details',
     });
     if (seller) {
@@ -2005,10 +2056,11 @@ async function requestReversalDetails(request: HttpRequest, _context: Invocation
   order.updatedAt = now;
   const saved = await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'reversal_details_needed',
-    title: has ? 'Please confirm your payment reversal details' : 'Add your payment reversal details',
-    body: `${seller.sellerProfile?.storefrontName ?? seller.displayName} needs them to refund you for ${order.itemName}.`,
+    title: has ? `${named.shop} asks you to confirm your refund details` : `${named.shop} needs your refund details`,
+    body: `So they can refund you for ${order.itemName}.`,
     link: '/wallet?tab=details',
   });
 
@@ -2056,10 +2108,11 @@ export async function confirmDetailsOn(repository: Repo, order: Order, buyer: Us
   note(order, 'Buyer confirmed their payment reversal details.', buyer.id);
   const saved = await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'reversal_details_updated',
-    title: 'The buyer confirmed their payment reversal details',
-    body: `${order.itemName} — you can refund them now.`,
+    title: `${named.buyer} confirmed their refund details for ${named.forShop}`,
+    body: `${order.itemName} · you can send the refund now`,
     link: '/shop?tab=refunds',
   });
   const seller = await repository.getUserById(order.sellerId);
@@ -2157,10 +2210,11 @@ async function submitReversal(request: HttpRequest, _context: InvocationContext)
   note(order, `Payment reversed — ${rupees(amountMinor)}`, user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'payment_reversed',
-    title: `${rupees(amountMinor)} has been marked reversed`,
-    body: 'Please confirm whether you have received it.',
+    title: `${named.shop} sent back ${rupees(amountMinor)}`,
+    body: `${order.itemName} · tell them whether it arrived`,
     link: `/order/${order.id}`,
   });
 
@@ -2216,9 +2270,12 @@ async function ackReversal(request: HttpRequest, _context: InvocationContext) {
   note(order, body.received ? 'Buyer confirmed payment received.' : 'Buyer says payment not received.', user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'reversal_ack',
-    title: body.received ? 'The buyer confirmed the reversal arrived' : 'The buyer says the reversal has not arrived',
+    title: body.received
+      ? `${named.buyer} got the refund from ${named.forShop}`
+      : `${named.buyer} says the refund from ${named.forShop} has not arrived`,
     body: order.itemName,
     link: `/order/${order.id}`,
   });
@@ -2262,10 +2319,11 @@ async function raiseDispute(request: HttpRequest, _context: InvocationContext) {
   note(order, 'Dispute raised: buyer reports payment not received.', user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'dispute_raised_reversal',
-    title: `Dispute raised on ${order.itemName}`,
-    body: 'The buyer says the reversed payment never arrived.',
+    title: `${named.buyer} opened a dispute with ${named.forShop}`,
+    body: `${order.itemName} · they say the refund never arrived`,
     link: `/dispute/${dispute.id}`,
   });
 

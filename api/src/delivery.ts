@@ -3,7 +3,7 @@ import type { Order, StageEvent } from '../../shared/models.js';
 import { autoReleaseDue, awaitingAcceptance, daysFrom, isStopped } from '../../shared/orders.js';
 import { coarseStage, lotEndIndex, routeOf } from '../../shared/routes.js';
 import type { getRepository } from './data/index.js';
-import { notify } from './functions/notify.js';
+import { notify, orderNames } from './functions/notify.js';
 
 /**
  * The one way an item reaches its buyer, and the one way its money is let go.
@@ -116,13 +116,14 @@ export async function confirmReceived(order: Order, by: string, repository: Repo
     return releaseHeld(order, 'Delivery confirmed by the buyer.', by, repository);
   }
   const saved = await releaseHeld(order, 'The buyer confirmed they received it.', by, repository);
+  const named = await orderNames(repository, order);
   await notify(
     repository,
     [order.sellerId],
     {
       kind: 'order_received',
-      title: `Received: ${order.itemName}`,
-      body: 'The buyer confirmed it reached them.',
+      title: `${named.buyer} received their order from ${named.forShop}`,
+      body: order.itemName,
       link: `/order/${encodeURIComponent(order.id)}`,
     },
     { except: by },
@@ -175,15 +176,16 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
     saved = await repository.updateOrder(order);
   }
   const held = order.escrow.state === 'held';
+  const named = await orderNames(repository, order);
   await notify(
     repository,
     [order.buyerId],
     {
       kind: 'order_delivered',
-      title: `Delivered: ${order.itemName}`,
+      title: `Your order from ${named.shop} was delivered`,
       body: held
-        ? 'Tap "Yes, it arrived" on the order once it is in your hands - that releases the payment - or open a dispute if something is wrong. You can add it to your collection now.'
-        : 'Tap "I received it" on the order once it is in your hands. You can add it to your collection and leave a review now.',
+        ? `${order.itemName}. Tap "Yes, it arrived" once it is in your hands to release the payment, or open a dispute if something is wrong.`
+        : `${order.itemName}. Tap "I received it" once it is in your hands, then leave a review.`,
       link: `/order/${encodeURIComponent(order.id)}`,
     },
     { except: by },
@@ -213,13 +215,14 @@ export async function releaseHeld(order: Order, reason: string, by: string, repo
     saved = (await repository.getOrder(saved.id)) ?? saved;
   }
   if (wasHeld) {
+    const named = await orderNames(repository, order);
     await notify(
       repository,
       [order.sellerId],
       {
         kind: 'payment_released',
-        title: `Payment released: ${order.itemName}`,
-        body: reason,
+        title: `Payment released to ${named.forShop}`,
+        body: `${order.itemName} · ${reason}`,
         link: `/order/${encodeURIComponent(order.id)}`,
       },
       { except: by },

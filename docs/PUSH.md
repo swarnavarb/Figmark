@@ -64,11 +64,14 @@ Checked by `scripts/smoke-push.mjs` (part of `npm test`).
   (notifications only work from the home screen); on Android it is where they
   belong. Android browsers that support it get a one-tap **Install Figmark**.
   A computer turns notifications on where it is.
-- About 4 seconds after signing in, a floating prompt offers real-time
+- About 10 seconds after signing in, a floating prompt offers real-time
   updates. Tapping **Turn on** opens a sheet with the steps for that exact
   device (iPhone Safari / Chrome, Android Chrome / Samsung / Firefox, a
   blocked permission, or a computer) and ends with notifications on. It shows
-  after every sign-in; on an ordinary visit it waits 3 days after "Not now".
+  after every sign-in, and otherwise at most every 4 hours, until Figmark is
+  on the home screen and notifications are on. A phone browser whose owner
+  already added Figmark to the home screen stops asking (the server says so
+  in its answer to the device report).
 
 ## Installs & devices (admin)
 
@@ -78,3 +81,32 @@ one changes (`POST /api/me/device`, kept on the account as `clientDevices`).
 The admin console's **Installs & devices** tab shows the totals by person:
 e.g. "38% of iPhone users added Figmark to their home screen", plus browsers,
 notifications on, and active in the last 7 days.
+
+## What notices say, and how many there are
+
+- **Who it is for.** A notice says whether it reached you or a store you run,
+  by name: "Sana messaged you" / "Sana messaged Kaiju Imports". A name longer
+  than 22 characters becomes "your store" (and a long sender name becomes
+  their @handle). Order, payment, dispute and delivery notices name the buyer
+  and the shop the same way, and each side of a dispute gets its own wording.
+- **What is covered.** Everything that already notified, plus: direct
+  messages (to the person, or to everyone who can post as the store; muted
+  conversations stay quiet), reactions to messages, customers writing in a
+  store's channel, store announcements to followers, likes and reactions on
+  posts, comments and item comments, comment likes, shares, item saves,
+  follows, order reviews (blind ones say "review yours to see both"), page
+  reviews, and a shop's own pre-order filling or closing short.
+- **Folding.** Repeats about the same thing fold into one unread row:
+  "Sana sent Kaiju Imports 3 messages", "Sana and 4 others reacted to your
+  post", one row per lot showing its latest step. The phone replaces the
+  earlier line instead of stacking another. Once read, the next one is news
+  again.
+- **Reading.** Opening the page a notice points at reads it, however you got
+  there (a conversation also reads its notices on the server).
+- **The bell** pages 20 at a time ("Show older"), filters by Messages,
+  Orders, Payments, Social, Reviews or Drops with unread counts, and "Mark
+  read" follows the filter.
+- **Phone settings** (profile → Notifications on this device): switch each
+  category off the lock screen (it stays in the bell), and "Quiet at night"
+  (22:00–07:00 in the person's own time zone, pushes arrive without sound).
+  Stored on the account as `notificationPrefs`.
