@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ApiRequestError, api, type ChannelThread, type PostCard } from '../api';
 import { EmptyState, ErrorNotice } from './ui';
@@ -42,6 +42,9 @@ function Forum() {
   const [joining, setJoining] = useState(false);
   const [people, setPeople] = useState(false);
   const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -74,6 +77,25 @@ function Forum() {
     }
   }
 
+  // Search lives behind an icon, in the hero and in the collapsed bar alike.
+  function openSearch() {
+    setSearchOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.setTimeout(() => searchRef.current?.focus({ preventScroll: true }), 60);
+  }
+
+  async function share() {
+    const url = window.location.href;
+    try {
+      if (navigator.share) await navigator.share({ title: data?.channel.name, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1800);
+      }
+    } catch { /* cancelled */ }
+  }
+
   const channel = data?.channel;
   const member = Boolean(channel?.member);
   const runs = channel?.role === 'admin' || channel?.role === 'moderator';
@@ -96,10 +118,15 @@ function Forum() {
         title={channel?.name ?? <span className="skel" style={{ width: 120, height: 12 }} />}
         sub={channel && <>{channel.memberCount ?? 0} members · {channel.postCount ?? posts.length} posts</>}
         action={channel && (
-          <button type="button" className={`roombar__btn${member ? ' is-on' : ''}`} disabled={joining}
-            onClick={() => void join()}>
-            {member ? <><Icon name="check" size={13} /> Joined</> : <><Icon name="plus" size={13} /> Join</>}
-          </button>
+          <>
+            <button type="button" className="roombar__icon" aria-label="Search this forum" onClick={openSearch}>
+              <Icon name="search" size={17} />
+            </button>
+            <button type="button" className={`roombar__btn${member ? ' is-on' : ''}`} disabled={joining}
+              onClick={() => void join()}>
+              {member ? <><Icon name="check" size={13} /> Joined</> : <><Icon name="plus" size={13} /> Join</>}
+            </button>
+          </>
         )} />
 
       <main className="page social forumroom">
@@ -107,28 +134,37 @@ function Forum() {
 
         {channel && (
           <header className="forumhero">
-            <button type="button" className="chhero__back" aria-label="Back" onClick={back}>
-              <Icon name="back" size={18} />
-            </button>
-            <span className="forumhero__kicker"><Icon name="forum" size={13} /> Forum</span>
-            <h1 className="forumhero__name">{channel.name}</h1>
-            {channel.description && <p className="forumhero__desc">{channel.description}</p>}
-            <p className="forumhero__stats">
-              <button type="button" className="forumhero__people" onClick={() => setPeople(true)}>
-                <strong>{channel.memberCount ?? 0}</strong> members
-              </button> · <strong>{channel.postCount ?? posts.length}</strong> posts <RoleChip role={channel.role} />
-            </p>
-            <span className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {channel.role !== 'admin' && !channel.banned && (
-                <button type="button" className={`forumhero__join${member ? ' is-on' : ''}`} disabled={joining} onClick={() => void join()}>
-                  {member ? <><Icon name="check" size={15} /> Joined</> : <><Icon name="plus" size={15} /> Join to post</>}
-                </button>
-              )}
-              <button type="button" className="forumhero__join" onClick={() => setPeople(true)}>
-                <Icon name="users" size={15} /> {runs ? 'Moderate' : 'Members'}
+            <div className="forumhero__row">
+              <button type="button" className="forumhero__back" aria-label="Back" onClick={back}>
+                <Icon name="back" size={19} />
               </button>
-            </span>
-            {channel.banned && <p className="faint">The moderators removed you from this forum.</p>}
+              <h1 className="forumhero__name">{channel.name}</h1>
+              <button type="button" className="forumhero__icon" aria-label="Search this forum" onClick={openSearch}>
+                <Icon name="search" size={18} />
+              </button>
+              <button type="button" className="forumhero__icon" aria-label="Share this forum" onClick={() => void share()}>
+                <Icon name={copied ? 'check' : 'share'} size={18} />
+              </button>
+            </div>
+            {channel.description && <p className="forumhero__desc">{channel.description}</p>}
+            <div className="forumhero__meta">
+              <p className="forumhero__stats">
+                <button type="button" className="forumhero__people" onClick={() => setPeople(true)}>
+                  <strong>{channel.memberCount ?? 0}</strong> members
+                </button> · <strong>{channel.postCount ?? posts.length}</strong> posts <RoleChip role={channel.role} />
+              </p>
+              <span className="forumhero__acts">
+                {channel.role !== 'admin' && !channel.banned && (
+                  <button type="button" className={`forumhero__join${member ? ' is-on' : ''}`} disabled={joining} onClick={() => void join()}>
+                    {member ? <><Icon name="check" size={14} /> Joined</> : <><Icon name="plus" size={14} /> Join</>}
+                  </button>
+                )}
+                <button type="button" className="forumhero__join" onClick={() => setPeople(true)}>
+                  <Icon name="users" size={14} /> {runs ? 'Moderate' : 'Members'}
+                </button>
+              </span>
+            </div>
+            {channel.banned && <p className="forumhero__banned">The moderators removed you from this forum.</p>}
           </header>
         )}
 
@@ -149,9 +185,15 @@ function Forum() {
         )}
 
         <div className="feed">
-          {data && data.posts.length > 0 && (
-            <input className="forumsearch" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search this forum" aria-label="Search this forum" />
+          {searchOpen && (
+            <div className="forumsearch">
+              <Icon name="search" size={16} />
+              <input ref={searchRef} type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search this forum" aria-label="Search this forum" />
+              <button type="button" aria-label="Close search" onClick={() => { setQuery(''); setSearchOpen(false); }}>
+                <Icon name="close" size={15} />
+              </button>
+            </div>
           )}
 
           {member && channel && (

@@ -422,7 +422,7 @@ code, kbd, samp, pre {
    the gradient below. Declared on the bars, not the root, so it takes the
    --top-rgb of the bar it is drawn in. */
 :root { --strip-h: calc(env(safe-area-inset-top, 0px) + 6px); }
-.nav, .soctop, .roombar, .soccompact, .topstrip {
+.nav, .soctop, .roombar, .soccompact, .topstrip, .forumhero {
   --top-band: linear-gradient(180deg,
     rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) var(--strip-h),
     rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
@@ -7833,30 +7833,64 @@ body.is-locked { overflow: hidden; }
 
 .forumroom { --page-max: 720px; }
 .forumhero {
+  --top-rgb: 198 39 203;
   position: relative; overflow: hidden; isolation: isolate;
-  display: grid; gap: 6px; justify-items: start;
-  margin-bottom: 14px; padding: 20px 18px; border-radius: 22px; color: #fff;
-  background:
-    linear-gradient(180deg, rgba(8, 11, 18, 0) 30%, rgba(8, 11, 18, 0.35) 100%),
+  display: grid; gap: 6px;
+  /* Runs to the very top and both edges of the screen: the status bar's colour
+     is the hero's own top edge, so the two read as one surface. */
+  margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 12px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) max(var(--page-pad), env(safe-area-inset-right, 0px)) 12px max(var(--page-pad), env(safe-area-inset-left, 0px));
+  border-radius: 0 0 22px 22px; color: #fff;
+  background-color: rgb(var(--top-rgb));
+  background-image:
+    var(--top-band),
+    linear-gradient(180deg, rgba(8, 11, 18, 0) 40%, rgba(8, 11, 18, 0.3) 100%),
     linear-gradient(115deg, #7C3AED 0%, #C026D3 45%, #FF2E7E 100%);
-  box-shadow: 0 10px 30px rgba(192, 38, 211, 0.3);
+  box-shadow: 0 10px 30px rgba(192, 38, 211, 0.28);
 }
-.forumhero__kicker {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.92;
+.forumhero__row { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+.forumhero__back, .forumhero__icon {
+  display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto;
+  border: 0; border-radius: 50%; background: transparent; color: #fff; cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
 }
+.forumhero__back { margin-left: -8px; }
+.forumhero__back:hover, .forumhero__icon:hover { background: rgba(255, 255, 255, 0.18); }
 .forumhero__name {
-  font-family: var(--display); font-size: clamp(26px, 7vw, 36px); font-weight: 800; font-style: italic;
-  letter-spacing: -0.02em; line-height: 1.05;
+  flex: 1; min-width: 0; margin: 0 0 0 2px;
+  font-family: var(--display); font-size: clamp(22px, 6vw, 28px); font-weight: 800; font-style: italic;
+  letter-spacing: -0.02em; line-height: 1.1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.forumhero__desc { font-size: var(--t-sm); opacity: 0.95; max-width: 52ch; }
-.forumhero__stats { font-size: var(--t-xs); opacity: 0.92; }
+.forumhero__desc {
+  margin: 0; font-size: var(--t-sm); opacity: 0.95; max-width: 52ch;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.forumhero__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.forumhero__stats { margin: 0; font-size: var(--t-xs); opacity: 0.95; }
+.forumhero__acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.forumhero__banned { margin: 0; font-size: var(--t-xs); opacity: 0.9; }
 .forumhero__join {
-  display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;
-  padding: 9px 18px; border: 0; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border: 0; border-radius: var(--r-pill);
   background: #fff; color: var(--sx-ink); cursor: pointer;
-  font-weight: 800; font-size: var(--t-xs); letter-spacing: 0.04em; text-transform: uppercase; font-style: italic;
+  font-weight: 800; font-size: var(--t-2xs); letter-spacing: 0.04em; text-transform: uppercase; font-style: italic;
 }
+.roombar__action { display: flex; align-items: center; gap: 6px; }
+.roombar__icon {
+  display: grid; place-items: center; width: 34px; height: 34px;
+  border: 0; border-radius: 50%; background: transparent; color: #fff; cursor: pointer;
+}
+.roombar__icon:hover { background: var(--sx-glass); }
+/* The forum's hero is the top of the page; nothing sits above it. */
+.roombar--reveal + .page.forumroom { padding-top: 0; }
+.forumroom .forumsearch {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 6px 0 14px;
+}
+.forumroom .forumsearch input {
+  flex: 1; min-width: 0; padding: 10px 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit;
+}
+.forumroom .forumsearch button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
 
 /* ── Composer: forums and the wall ─────────────────────────────────────── */
 
@@ -13584,7 +13618,7 @@ button.sk-plan__pick { cursor: pointer; }
      straight from the style (see below), and only a resolved colour counts. */
   background-color: rgb(var(--top-rgb));
 }
-:root:has(.roombar--forum:not(.roombar--reveal)) .topstrip { --top-rgb: 198 39 203; }
+:root:has(.roombar--forum) .topstrip { --top-rgb: 198 39 203; }
 /* With the marketplace header slid away, the strip trails the same blurred
    tail the header has, so the page passes under it rather than meeting an edge. */
 .topstrip::after {
