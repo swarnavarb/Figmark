@@ -11501,16 +11501,14 @@ a.ocust__name:hover { color: var(--accent-text); }
     linear-gradient(160deg, var(--surface-2), var(--surface));
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
-.lpulse__stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px; }
-.lpulse__stat {
-  display: grid; gap: 1px; padding: 8px 10px; min-width: 0;
-  border-radius: 12px; background: rgba(255, 255, 255, 0.04);
-}
-.lpulse__stat b { font-family: var(--mono); font-size: var(--t-md); font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
-.lpulse__stat small { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
-.lpulse__stat.is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
-.lpulse__stat.is-due b { color: #FBBF24; }
-.lpulse__stat.is-clear b { color: var(--ok); }
+.lpulse__sum { display: grid; gap: 7px; }
+.lpulse__line { font-size: var(--t-sm); color: var(--text-dim); }
+.lpulse__line b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.lpulse__sum .ocard__bar span { background: linear-gradient(90deg, var(--ok), var(--aqua)); }
+.lpulse__pay { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: var(--t-xs); color: var(--text-faint); }
+.lpulse__pay b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.lpulse__pay .is-due, .lpulse__pay .is-due b { color: #FBBF24; }
+.lpulse__pay .is-clear { color: var(--ok); font-weight: var(--w-semi); }
 /* The orders' own steps as a pipeline: a ring per step, filled by how many
    of the lot's orders have reached it, joined by a line that lights up as
    the steps before it fill. */
@@ -12268,14 +12266,26 @@ a.ocust__name:hover { color: var(--accent-text); }
 .ocust__chipstep::before { content: '· '; }
 .ocust.is-open .ocust__fold { background: rgb(var(--tone) / 0.22); }
 
-/* Above the customers: the count, and one switch to open or fold them all. */
-.ocusts__bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 2px; font-size: var(--t-xs); }
-.ocusts__all {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: var(--r-pill);
-  background: var(--surface-2); color: var(--text); font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+/* Folded, the head is name, count and what is pending - no avatar beside the chevron. */
+.ocust__head--slim { grid-template-columns: auto minmax(0, 1fr) auto; }
+/* Pending, said without a glow: on a list of customers it is a fact, not an alarm. */
+.ocust__total .badge--purple { box-shadow: none; background: rgba(147, 51, 234, 0.22); color: #E9D5FF; }
+.ocusts__count { padding: 0 2px; font-size: var(--t-xs); }
+
+/* Inside a lot the filters are one row: status, To answer when it counts, and fold-all. */
+.ofilters { display: flex; align-items: center; gap: 6px; }
+.ofilters > .segwrap { flex: 1 1 auto; min-width: 0; padding: 4px; border-radius: 16px; }
+.ofilters .segtab { padding: 8px 4px; font-size: var(--t-xs); border-radius: 12px; }
+.ofilters__answer, .ofilters__fold {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 40px; border: 1px solid var(--border-strong); border-radius: 14px;
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
 }
-.ocusts__all:hover { border-color: var(--text-faint); }
+.ofilters__answer { padding: 0 10px; gap: 4px; }
+.ofilters__answer b { padding: 1px 6px; border-radius: 999px; background: var(--coral); color: var(--coral-ink); font-size: 11px; }
+.ofilters__answer.is-on { border-color: var(--coral-line); background: var(--coral-soft); }
+.ofilters__fold { width: 40px; padding: 0; }
+.ofilters__answer:hover, .ofilters__fold:hover { border-color: var(--text-faint); }
 .lotitem { border-bottom: none; }
 /* A called-off order: the timeline stops at a last rung, and nothing follows it. */
 .ladder__row--ended .ladder__dot {
