@@ -231,6 +231,7 @@
      AppShell.tsx. */
   --top-grad: linear-gradient(115deg, #3B82F6 0%, #7C3AED 100%);
   --top-rgb: 91 94 241;
+  --top-dim-rgb: 47 50 123;
   --top-ink: #A5B4FC;
 
   /* One type scale */
@@ -417,14 +418,17 @@ code, kbd, samp, pre {
      the colour iOS and Safari read for the status bar is the .topstrip's. */
   color: #fff;
 }
-/* The header's top edge: under the clock, the section's colour dimmed - the
-   look iOS gave the home-screen app with its own blur, drawn here instead -
-   brightening into the gradient below. Declared on the bars, not the root,
-   so it takes the --top-rgb of the bar it is drawn in. */
+/* The header's top edge: under the clock, the section's colour dimmed
+   (--top-dim-rgb, the colour mixed 45% into the page's dark) - the look iOS
+   gave the home-screen app with its own blur, drawn here instead - then
+   brightening into the gradient below. Solid down to the foot of the
+   .topstrip, which overlaps the header's top few pixels. Declared on the
+   bars, not the root, so it takes the tone of the bar it is drawn in. */
+:root { --strip-h: calc(env(safe-area-inset-top, 0px) + 6px); }
 .nav, .soctop, .roombar, .soccompact, .topstrip {
-  --top-dim: color-mix(in srgb, rgb(var(--top-rgb)) 45%, #0B0E1A);
+  --top-dim: rgb(var(--top-dim-rgb));
   --top-band: linear-gradient(180deg,
-    var(--top-dim) 0, var(--top-dim) env(safe-area-inset-top, 0px),
+    var(--top-dim) 0, var(--top-dim) var(--strip-h),
     rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
 }
 /* The section's gradient, on a layer of its own so it can fade out once the
@@ -449,7 +453,7 @@ code, kbd, samp, pre {
 .nav::after, .soccompact::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--glass-tail)); z-index: -2;
   background: linear-gradient(180deg,
-    var(--top-dim) 0, var(--top-dim) env(safe-area-inset-top, 0px),
+    var(--top-dim) 0, var(--top-dim) var(--strip-h),
     rgb(var(--top-rgb) / 0.4) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
@@ -548,16 +552,19 @@ code, kbd, samp, pre {
 :root[data-tone='sell'] {
   --top-grad: linear-gradient(115deg, #0891B2 0%, #2563EB 100%);
   --top-rgb: 23 122 206;
+  --top-dim-rgb: 16 63 107;
   --top-ink: #67E8F9;
 }
 :root[data-tone='services'] {
   --top-grad: linear-gradient(115deg, #65A30D 0%, #0E7490 100%);
   --top-rgb: 58 140 78;
+  --top-dim-rgb: 32 71 49;
   --top-ink: #BEF264;
 }
 :root[data-tone='social'] {
   --top-grad: linear-gradient(115deg, #FF5B1F 0%, #FF2E7E 58%, #C026D3 100%);
   --top-rgb: 255 52 113;
+  --top-dim-rgb: 121 31 65;
   --top-ink: #FF8A65;
 }
 
@@ -6549,6 +6556,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   --sx-line: rgba(255, 110, 60, 0.3);
   --sx-glow: 0 10px 30px rgba(255, 70, 80, 0.28);
   --top-rgb: 255 52 113;
+  --top-dim-rgb: 121 31 65;
 }
 
 /* ── The header: a banner, not a heading ───────────────────────────────── */
@@ -7690,6 +7698,7 @@ body.is-locked { overflow: hidden; }
 }
 .roombar--forum {
   --top-rgb: 198 39 203;
+  --top-dim-rgb: 95 25 106;
   background-image: var(--top-band), linear-gradient(115deg, #7C3AED 0%, #C026D3 45%, #FF2E7E 100%);
 }
 .roombar__in {
@@ -13503,10 +13512,12 @@ button.sk-plan__pick { cursor: pointer; }
  */
 .topstrip {
   position: fixed; top: 0; left: 0; right: 0; z-index: 61;
-  height: max(env(safe-area-inset-top, 0px), 1px);
-  background-color: var(--top-dim);
+  height: var(--strip-h);
+  /* A plain rgb(), never color-mix() or a gradient: iOS reads this value
+     straight from the style (see below), and only a resolved colour counts. */
+  background-color: rgb(var(--top-dim-rgb));
 }
-:root:has(.roombar--forum:not(.roombar--reveal)) .topstrip { --top-rgb: 198 39 203; }
+:root:has(.roombar--forum:not(.roombar--reveal)) .topstrip { --top-rgb: 198 39 203; --top-dim-rgb: 95 25 106; }
 /* With the marketplace header slid away, the strip trails the same blurred
    tail the header has, so the page passes under it rather than meeting an edge. */
 .topstrip::after {
@@ -13521,12 +13532,15 @@ button.sk-plan__pick { cursor: pointer; }
 :root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
 /*
  * In the home-screen app the strip is also what keeps iOS 26's own blur off
- * the header. iOS lays a blur over the top ~40pt of an installed web app -
- * over the logo and icons too - unless a fixed or sticky box with a plain
- * background colour covers the top edge, at least 90% of the width and more
- * than 10px tall, with no backdrop-filter in the way. The header can't be
- * that box (its glass is a backdrop filter); this strip is, so iOS uses its
- * colour under the clock and blurs nothing.
+ * the header. iOS lays a Liquid Glass blur over the top of an installed web
+ * app - over the header's logo and icons too - unless the fixed or sticky
+ * box it hit-tests 4px inside the top edge (WebKit's
+ * LocalFrameView::fixedContainerEdges) is at least 90% of the width, more
+ * than 10px tall, has a plain resolved background-color and no
+ * backdrop-filter up its ancestry. This strip is that box. It reaches 6px
+ * below the clock so the probe finds it whether it measures from the
+ * screen's edge or from below the status bar, while staying above the
+ * header's logo and icons.
  */
 
 /* ── Pull to refresh (home-screen copy only) ──────────────────────────────── */
