@@ -7,6 +7,7 @@ import { getRepository } from '../data/index.js';
 import { settleDispute } from './dispute-routes.js';
 import { error, handler, json } from './http.js';
 import { getPhotoStore } from '../storage/index.js';
+import { releasePostPhotos } from '../storage/release.js';
 import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
 
 /**
@@ -209,6 +210,7 @@ async function deleteAccount(request: HttpRequest, _context: InvocationContext) 
   for (const listing of listings) await repository.deleteListing(id, listing.id);
   for (const lot of lots) await repository.deleteLot(id, lot.id);
   for (const post of posts) await repository.deletePost(post.channelId, post.id);
+  await releasePostPhotos(posts, repository);
   await repository.deleteUser(id);
 
   return json(200, {
@@ -247,9 +249,12 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
     case 'lot':
       await repository.deleteLot(ownerId, id);
       break;
-    case 'post':
+    case 'post': {
+      const gone = await repository.getPost(ownerId, id);
       await repository.deletePost(ownerId, id);
+      if (gone) await releasePostPhotos([gone], repository);
       break;
+    }
     case 'review':
       await repository.deleteReview(ownerId, id);
       break;

@@ -863,7 +863,10 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
               <img src={photo.preview} alt={`Attached photo ${index + 1}`} />
               {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
-                onClick={() => setPhotos((all) => all.filter((entry) => entry.key !== photo.key))}>
+                onClick={() => {
+                  if (photo.url) void api.discardPhoto(photo.url);
+                  setPhotos((all) => all.filter((entry) => entry.key !== photo.key));
+                }}>
                 <Icon name="close" size={12} />
               </button>
             </div>

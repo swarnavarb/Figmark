@@ -378,6 +378,8 @@ export interface Repository {
   sendMessage(message: Message): Promise<Message>;
   /** Writes a message back, for reactions. */
   updateMessage(message: Message): Promise<Message>;
+  /** Removes one message from its thread. */
+  deleteMessage(threadId: string, id: string): Promise<void>;
   /** Marks everything addressed to `handle` in this thread as read. */
   markThreadRead(threadId: string, handle: string): Promise<number>;
 

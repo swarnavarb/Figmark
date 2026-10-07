@@ -26,7 +26,17 @@ export interface PhotoStore {
   /** Public URL for a stored blob, or null when the backend has no public form. */
   urlFor(blobName: string): string | null;
   /** Store bytes and say where they can be read. */
-  upload(bytes: Uint8Array, contentType: string): Promise<StoredPhoto>;
+  upload(bytes: Uint8Array, contentType: string, uploadedBy?: string): Promise<StoredPhoto>;
+  /** Who uploaded a public photo and what, if anything, has claimed it since. */
+  publicInfo(blobName: string): Promise<PublicPhotoInfo | null>;
+  /**
+   * Record that a listing, post or hunt now uses this photo. The first claim
+   * wins: true when the photo is, or now becomes, `owner`'s.
+   *
+   * It is what makes deleting safe. A photo is only ever removed along with the
+   * thing that claimed it, never because something else was deleted.
+   */
+  claimPublic(blobName: string, owner: string): Promise<boolean>;
   /** Read one back, for the backend that has no public URL of its own. */
   read(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null>;
 
@@ -49,6 +59,14 @@ export interface PhotoStore {
   list(): Promise<BlobEntry[]>;
   /** Delete one. False when there was nothing by that name. */
   remove(scope: PhotoScope, blobName: string): Promise<boolean>;
+}
+
+export interface PublicPhotoInfo {
+  /** Null for photos uploaded before this was recorded. */
+  uploadedBy: string | null;
+  /** What claimed it, like `post:pst_x` or `listing:lst_x`; null while unsaved. */
+  attachedTo: string | null;
+  uploadedAt: string;
 }
 
 /** Which container a blob lives in: the public-read photos, or the private chat ones. */

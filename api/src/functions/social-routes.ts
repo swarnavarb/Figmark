@@ -15,6 +15,7 @@ import { PERSON_FOLLOW } from '../../../shared/storefront.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { ownPhotos } from '../storage/index.js';
+import { claimPhotos, releasePostPhotos } from '../storage/release.js';
 import { tooFast } from '../rate-limit.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
@@ -1179,6 +1180,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     }
   }
   const saved = await repository.createPost(post);
+  await claimPhotos(photoUrls, `post:${saved.id}`);
   if (forumName && post.wallPostId) {
     await repository.createPost({
       ...post,
@@ -1703,10 +1705,22 @@ async function removePost(request: HttpRequest, _context: InvocationContext) {
   if (post.authorId !== user.id && !(await runsForum(repository, post, user.id))) {
     return error(403, 'forbidden', 'Only whoever posted it, or the forum\'s moderators, can take it down.');
   }
+  // Both ends, read before they go: whichever one holds the photos is released.
+  const ends = [post];
+  if (post.wallPostId) {
+    const wall = await repository.getPost(post.authorId, post.wallPostId);
+    if (wall) ends.push(wall);
+  }
+  if (post.wallOf) {
+    const forum = await repository.getPost(post.wallOf.forumId, post.wallOf.postId);
+    if (forum) ends.push(forum);
+  }
   await repository.deletePost(post.channelId, post.id);
   // A forum post and its wall entry go together, whichever end is deleted.
   if (post.wallPostId) await repository.deletePost(post.authorId, post.wallPostId);
   if (post.wallOf) await repository.deletePost(post.wallOf.forumId, post.wallOf.postId);
+  // The photos go with the post that claimed them, unless a copy in another forum still shows them.
+  await releasePostPhotos(ends, repository);
   return json(200, { deleted: post.id });
 }
 

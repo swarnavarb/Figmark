@@ -942,6 +942,10 @@ export class CosmosRepository implements Repository {
     return resource ?? message;
   }
 
+  async deleteMessage(threadId: string, id: string): Promise<void> {
+    await this.container('messages').item(id, threadId).delete().catch(() => {});
+  }
+
   async updateMessage(message: Message): Promise<Message> {
     const { resource } = await this.container('messages').items.upsert(message);
     return (resource as Message | undefined) ?? message;

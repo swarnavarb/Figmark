@@ -6,6 +6,7 @@ import { personRef, sellerRef } from '../../../shared/parties.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
 import { ownPhotos } from '../storage/index.js';
+import { claimPhotos } from '../storage/release.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -167,7 +168,9 @@ async function post(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   };
 
-  return json(201, { want: card(await repository.saveWant(want)) });
+  const savedWant = await repository.saveWant(want);
+  await claimPhotos(photoUrls, `want:${savedWant.id}`);
+  return json(201, { want: card(savedWant) });
 }
 
 /** The hunt, or the refusal. Reading one needs its partition, which is its buyer. */

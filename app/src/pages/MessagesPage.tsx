@@ -438,6 +438,8 @@ export function ThreadPage() {
     setPhotos((all) => {
       const gone = all.find((photo) => photo.key === key);
       if (gone) URL.revokeObjectURL(gone.preview);
+      // Picked and never sent: deleted from the private store, not left behind.
+      if (gone?.name) void api.discardChatPhoto(gone.name);
       return all.filter((photo) => photo.key !== key);
     });
   }
@@ -467,6 +469,23 @@ export function ThreadPage() {
       ...current,
       messages: current.messages.map((message) => (message.id === id ? { ...message, ...change } : message)),
     });
+
+  async function removeMessage(message: Message) {
+    if (!handle || !await confirm({
+      title: 'Delete this message?',
+      body: message.photos?.length
+        ? 'It will be deleted for both of you, and its photos will be permanently deleted.'
+        : 'It will be deleted for both of you.',
+      action: 'Delete',
+      danger: true,
+    })) return;
+    try {
+      await api.deleteMessage(handle, message.id, data?.us.handle);
+      setData((current) => current && { ...current, messages: current.messages.filter((entry) => entry.id !== message.id) });
+    } catch (err) {
+      setNotice(err instanceof ApiRequestError ? err.message : 'Could not delete that.');
+    }
+  }
 
   const jump = (id: string) => {
     const node = document.getElementById(`dm-${id}`);
@@ -520,6 +539,7 @@ export function ThreadPage() {
         onDeal={(deal) => makeDeal(data.us, data.them, { from: deal })}
         onDealFrom={(listingId) => setPicker({ focus: listingId })}
         onReactions={(reactions) => patch(message.id, { reactions })}
+        onDelete={() => void removeMessage(message)}
         handle={handle!} />,
     );
   });
@@ -695,7 +715,7 @@ export function ThreadPage() {
 }
 
 /** One message in a conversation: hold it for the rest. */
-function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, onNotice, onDeal, onDealFrom, onReactions }: {
+function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, onNotice, onDeal, onDealFrom, onReactions, onDelete }: {
   message: Message;
   thread: Thread;
   handle: string;
@@ -706,6 +726,7 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
   onDeal: (deal: MessageDeal) => void;
   onDealFrom: (listingId: string) => void;
   onReactions: (reactions: NonNullable<Message['reactions']>) => void;
+  onDelete: () => void;
 }) {
   const mine = message.from.handle === thread.us.handle;
   const [open, setOpen] = useState(false);
@@ -823,6 +844,11 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
                 <button type="button" onClick={() => setPicking(true)}><Icon name="smile" size={14} /> React</button>
                 <button type="button" onClick={() => { onReply(); setOpen(false); }}><Icon name="back" size={14} /> Reply</button>
                 <button type="button" onClick={() => void copy()}><Icon name="copy" size={14} /> Copy</button>
+                {mine && (
+                  <button type="button" onClick={() => { setOpen(false); onDelete(); }}>
+                    <Icon name="close" size={14} /> Delete
+                  </button>
+                )}
               </>
             )}
           </div>

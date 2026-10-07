@@ -316,6 +316,7 @@ export function Composer({ onPosted, forum = null }: {
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
                 onClick={() => {
                   URL.revokeObjectURL(photo.preview);
+                  if (photo.url) void api.discardPhoto(photo.url);
                   setPhotos((list) => list.filter((entry) => entry.key !== photo.key));
                 }}>
                 <Icon name="close" size={12} />

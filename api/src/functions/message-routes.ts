@@ -730,6 +730,77 @@ async function dealItems(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
+ * POST /api/messages/{handle}/delete - take back a message you sent.
+ *
+ * Gone for both of you, and so are any photos it carried: they are removed from
+ * the private store, since nothing else can ever show them. Only the handle
+ * that wrote it can; you cannot delete what somebody sent you.
+ */
+async function deleteMessage(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const other = request.params.handle;
+  if (!other) return error(400, 'invalid_handle', 'Name who the conversation is with.');
+
+  let body: { messageId?: string; as?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (!body.messageId) return error(400, 'invalid_request', 'Say which message.');
+
+  const mine = await handlesFor(user.id, repository);
+  const them = await partyFor(other, repository);
+  if (!them) return error(404, 'not_found', `Nobody holds @${other}.`);
+  const us = body.as
+    ? mine.find((party) => party.handle === body.as!.toLowerCase())
+    : await defaultVoice(mine, them.handle, repository);
+  if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
+
+  const threadId = threadIdFor(us.handle, them.handle);
+  const message = (await repository.listMessages(threadId)).find((entry) => entry.id === body.messageId);
+  if (!message) return error(404, 'not_found', 'That message is not in this conversation.');
+  if (message.from.handle !== us.handle) return error(403, 'forbidden', 'You can only delete what you sent.');
+
+  await repository.deleteMessage(threadId, message.id);
+  if (message.photos?.length) {
+    const store = await getPhotoStore();
+    const key = threadKeyOf(threadId);
+    for (const name of message.photos) {
+      // Only a photo pinned to this very thread: the name alone proves nothing.
+      const info = await store.privateInfo(name).catch(() => null);
+      if (info?.threadKey === key) await store.remove('private', name).catch(() => false);
+    }
+  }
+  return json(200, { deleted: message.id });
+}
+
+/**
+ * POST /api/message-photos/discard - take back a chat photo picked and not sent.
+ *
+ * Only the uploader's, and only before a message carries it: once sent, a photo
+ * goes with its message and nothing else.
+ */
+async function discardChatPhoto(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  let body: { blobName?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const name = typeof body.blobName === 'string' ? body.blobName : '';
+  if (!CHAT_PHOTO_NAME.test(name)) return error(400, 'invalid_request', 'Say which photo.');
+  const store = await getPhotoStore();
+  const info = await store.privateInfo(name);
+  if (!info || info.uploadedBy !== user.id || info.threadKey) return json(200, { discarded: false });
+  return json(200, { discarded: await store.remove('private', name) });
+}
+
+/**
  * POST /api/messages/{handle}/react - react to one message, change it, or take it back.
  *
  * One reaction per handle, as everywhere else: the same reaction again takes
@@ -966,6 +1037,8 @@ export const setUsernameRoute = handler(setUsername);
 export const threadRoute = handler(thread);
 export const sendMessageRoute = handler(send);
 export const reactToMessageRoute = handler(reactToMessage);
+export const deleteMessageRoute = handler(deleteMessage);
+export const discardChatPhotoRoute = handler(discardChatPhoto);
 export const blockRoute = handler(block);
 export const muteRoute = handler(mute);
 export const dealItemsRoute = handler(dealItems);
@@ -985,6 +1058,8 @@ app.http('messages-deal-items', { ...anon, methods: ['GET'], route: 'messages/{h
 app.http('messages-send', { ...anon, methods: ['POST'], route: 'messages/{handle}/send', handler: sendMessageRoute });
 app.http('messages-photo-upload', { ...anon, methods: ['POST'], route: 'message-photos', handler: uploadChatPhotoRoute });
 app.http('messages-photo', { ...anon, methods: ['GET'], route: 'messages/{handle}/photos/{name}', handler: chatPhotoRoute });
+app.http('messages-delete', { ...anon, methods: ['POST'], route: 'messages/{handle}/delete', handler: deleteMessageRoute });
+app.http('messages-photo-discard', { ...anon, methods: ['POST'], route: 'message-photos/discard', handler: discardChatPhotoRoute });
 app.http('messages-react', { ...anon, methods: ['POST'], route: 'messages/{handle}/react', handler: reactToMessageRoute });
 app.http('messages-block', { ...anon, methods: ['POST'], route: 'messages/{handle}/block', handler: blockRoute });
 app.http('me-blocked', { ...anon, methods: ['GET'], route: 'me/blocked', handler: blockedListRoute });

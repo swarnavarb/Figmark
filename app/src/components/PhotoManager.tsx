@@ -28,6 +28,8 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  /** Photos uploaded here and not yet saved with the listing: safe to throw away. */
+  const fresh = useRef(new Set<string>());
 
   /** Exactly one primary, always: the first unless somebody said otherwise. */
   const commit = (next: PhotoDraft[]) => {
@@ -54,6 +56,7 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
       for (const file of files.slice(0, 6 - photos.length)) {
         const stored = await api.uploadPhoto(await shrink(file));
         added.push({ ...stored, isPrimary: false });
+        fresh.current.add(stored.url);
       }
       commit([...photos, ...added]);
     } catch (err) {
@@ -95,7 +98,12 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
               <button type="button" className="iconbtn" aria-label={`Move photo ${index + 1} right`}
                 disabled={index === photos.length - 1} onClick={() => move(index, index + 1)}><Icon name="right" size={13} /></button>
               <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete photo ${index + 1}`}
-                onClick={() => commit(photos.filter((_, i) => i !== index))}><Icon name="close" size={13} /></button>
+                onClick={() => {
+                  // One picked in this session and never saved is deleted from storage
+                  // at once; one already on the listing stays until it is saved without it.
+                  if (fresh.current.delete(photo.url)) void api.discardPhoto(photo.url);
+                  commit(photos.filter((_, i) => i !== index));
+                }}><Icon name="close" size={13} /></button>
             </div>
           </figure>
         ))}

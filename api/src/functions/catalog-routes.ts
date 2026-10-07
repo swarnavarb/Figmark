@@ -20,6 +20,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { isLive } from '../../../shared/service-stores.js';
+import { claimPhotos } from '../storage/release.js';
 import { error, handler, json } from './http.js';
 import { placeOrder } from './placement.js';
 import {
@@ -501,6 +502,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   };
 
   const created = await repository.createListing(listing);
+  await claimPhotos(created.photos.map((photo) => photo.blobName || photo.url), `listing:${created.id}`);
 
   // Telling people is part of listing, not a second job to remember. The
   // channel is where a shop's followers already are; the feed is everybody.
@@ -1232,7 +1234,9 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     if (listing.status === 'sold_out' && next.status === 'active') next.restockedAt = next.updatedAt;
   }
 
-  return json(200, { listing: await repository.updateListing(next) });
+  const updated = await repository.updateListing(next);
+  await claimPhotos(updated.photos.map((photo) => photo.blobName || photo.url), `listing:${updated.id}`);
+  return json(200, { listing: updated });
 }
 
 /**

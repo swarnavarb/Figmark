@@ -609,6 +609,10 @@ export class MemoryRepository implements Repository {
     return message;
   }
 
+  async deleteMessage(_threadId: string, id: string): Promise<void> {
+    this.messages.delete(id);
+  }
+
   async updateMessage(message: Message): Promise<Message> {
     this.messages.set(message.id, message);
     return message;

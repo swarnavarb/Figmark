@@ -10,6 +10,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
 import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
+import { discardUpload } from '../storage/release.js';
 import { buildLot, type NewLotBody } from './fulfilment-routes.js';
 import { notify, orderNames } from './notify.js';
 import { gistOf } from '../../../shared/notifications.js';
@@ -158,7 +159,7 @@ export const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
  */
 async function upload(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  await auth.requireCapability(request, ['sell']);
+  const user = await auth.requireCapability(request, ['sell']);
 
   let body: { dataUrl?: string };
   try {
@@ -189,8 +190,31 @@ async function upload(request: HttpRequest, _context: InvocationContext) {
   }
 
   const store = await getPhotoStore();
-  const stored = await store.upload(photo.bytes, photo.contentType);
+  const stored = await store.upload(photo.bytes, photo.contentType, user.id);
   return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
+}
+
+/**
+ * POST /api/uploads/discard - take back a photo picked and then removed before saving.
+ *
+ * Only for a draft: the uploader's own, not yet part of any listing, post or
+ * hunt, and not old. Anything else is refused and left to the operator's
+ * unused-photo scan.
+ */
+async function discardRoute(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  let body: { url?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (typeof body.url !== 'string' || !body.url) return error(400, 'invalid_request', 'Say which photo.');
+  const result = await discardUpload(user.id, body.url);
+  if (result === 'discarded') return json(200, { discarded: true });
+  // One answer for a photo that is not there and one that is not theirs.
+  return json(200, { discarded: false, reason: result === 'not_yours' ? 'not_found' : result });
 }
 
 /**
@@ -343,6 +367,7 @@ export const listTemplatesRoute = handler(listTemplates);
 export const saveTemplateRoute = handler(saveTemplate);
 export const deleteTemplateRoute = handler(deleteTemplate);
 export const uploadRoute = handler(upload);
+export const discardUploadRoute = handler(discardRoute);
 export const photoRoute = handler(photo);
 export const assignOrderToLotRoute = handler(assignOrderToLot);
 
@@ -356,6 +381,7 @@ app.http('templates-delete', {
   ...anon, methods: ['POST'], route: 'templates/{id}/delete', handler: deleteTemplateRoute,
 });
 app.http('uploads', { ...anon, methods: ['POST'], route: 'uploads', handler: uploadRoute });
+app.http('uploads-discard', { ...anon, methods: ['POST'], route: 'uploads/discard', handler: discardUploadRoute });
 app.http('photo', { ...anon, methods: ['GET'], route: 'photos/{name}', handler: photoRoute });
 app.http('order-lot', {
   ...anon, methods: ['POST'], route: 'orders/{id}/lot', handler: assignOrderToLotRoute,

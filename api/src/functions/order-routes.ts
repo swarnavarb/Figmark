@@ -33,6 +33,7 @@ import { openDisputeRecord } from './dispute-routes.js';
 import { adjustHeldCredit, heldCreditMinor, placeOrder, returnKeptCredit } from './placement.js';
 import { error, handler, json } from './http.js';
 import { ownPhotos } from '../storage/index.js';
+import { claimPhotos } from '../storage/release.js';
 import { tooFast } from '../rate-limit.js';
 
 /**
@@ -583,6 +584,7 @@ async function unboxing(request: HttpRequest, _context: InvocationContext) {
     createdAt: now,
     updatedAt: now,
   });
+  await claimPhotos(photoUrls, `post:${post.id}`);
   order.unboxingPostId = post.id;
   order.updatedAt = now;
   await repository.updateOrder(order);

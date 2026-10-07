@@ -4,7 +4,7 @@ import { CHAT_PHOTO_CONTAINER_NAME, PHOTO_CONTAINER_NAME } from '../../../shared
 import type { StorageConfig } from '../config.js';
 import { randomUUID } from 'node:crypto';
 import { extensionFor } from './memory-store.js';
-import type { BlobEntry, PhotoScope, PhotoStore, PrivatePhotoInfo, StoredPhoto, StorageStatus } from './types.js';
+import type { BlobEntry, PhotoScope, PhotoStore, PrivatePhotoInfo, PublicPhotoInfo, StoredPhoto, StorageStatus } from './types.js';
 
 /** Azure Blob Storage implementation for listing and condition photos. */
 export class BlobPhotoStore implements PhotoStore {
@@ -58,12 +58,15 @@ export class BlobPhotoStore implements PhotoStore {
     return `${this.client.url.replace(/\/$/, '')}/${PHOTO_CONTAINER_NAME}/${encodeURIComponent(blobName)}`;
   }
 
-  async upload(bytes: Uint8Array, contentType: string): Promise<StoredPhoto> {
+  async upload(bytes: Uint8Array, contentType: string, uploadedBy?: string): Promise<StoredPhoto> {
     const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
     const blob = this.client
       .getContainerClient(PHOTO_CONTAINER_NAME)
       .getBlockBlobClient(blobName);
-    await blob.uploadData(bytes, { blobHTTPHeaders: { blobContentType: contentType } });
+    await blob.uploadData(bytes, {
+      blobHTTPHeaders: { blobContentType: contentType },
+      ...(uploadedBy ? { metadata: { uploadedby: uploadedBy } } : {}),
+    });
     // The container is public-read, so the storage URL is the fast path and
     // this app never has to proxy the bytes.
     return { blobName, url: this.urlFor(blobName)! };
@@ -80,6 +83,35 @@ export class BlobPhotoStore implements PhotoStore {
       };
     } catch {
       return null;
+    }
+  }
+
+  private publicBlob(blobName: string) {
+    return this.client.getContainerClient(PHOTO_CONTAINER_NAME).getBlockBlobClient(blobName);
+  }
+
+  async publicInfo(blobName: string): Promise<PublicPhotoInfo | null> {
+    try {
+      const properties = await this.publicBlob(blobName).getProperties();
+      return {
+        uploadedBy: properties.metadata?.uploadedby ?? null,
+        attachedTo: properties.metadata?.attachedto ?? null,
+        uploadedAt: (properties.lastModified ?? new Date()).toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async claimPublic(blobName: string, owner: string): Promise<boolean> {
+    try {
+      const blob = this.publicBlob(blobName);
+      const { metadata } = await blob.getProperties();
+      if (metadata?.attachedto) return metadata.attachedto === owner;
+      await blob.setMetadata({ ...(metadata ?? {}), attachedto: owner });
+      return true;
+    } catch {
+      return false;
     }
   }
 

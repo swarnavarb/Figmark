@@ -2296,6 +2296,12 @@ export const api = {
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
   uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
+  /**
+   * Throw away a photo that was picked and then taken out again before saving.
+   * Quiet on purpose: the server refuses anything that is not a draft of yours,
+   * and a failure only leaves the photo for the operator's scan.
+   */
+  discardPhoto: (url: string) => post<{ discarded: boolean }>('/uploads/discard', { url }).catch(() => null),
   /** The card for a Figmark link inside a post - the same one a chat app shows. */
   linkPreview: (path: string) => request<LinkPreview>(`/link-preview?u=${encodeURIComponent(path)}`),
   /** File one order into a lot - an existing one, or one opened here. */
@@ -2426,6 +2432,10 @@ export const api = {
     }),
   /** A picture for a chat, in: a private name out, with no address of its own. */
   uploadChatPhoto: (dataUrl: string) => post<{ blobName: string }>('/message-photos', { dataUrl }),
+  discardChatPhoto: (blobName: string) => post<{ discarded: boolean }>('/message-photos/discard', { blobName }).catch(() => null),
+  /** Take back a message you sent; its photos are deleted with it. */
+  deleteMessage: (handle: string, messageId: string, as?: string) =>
+    post<{ deleted: string }>(`/messages/${encodeURIComponent(handle)}/delete`, { messageId, as }),
   /** Where a chat photo is read: through the thread, so only its two ends can. */
   chatPhotoUrl: (handle: string, name: string, as?: string) =>
     `/api/messages/${encodeURIComponent(handle)}/photos/${encodeURIComponent(name)}${as ? `?as=${encodeURIComponent(as)}` : ''}`,

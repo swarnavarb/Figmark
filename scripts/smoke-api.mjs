@@ -87,7 +87,7 @@ const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
   publicProfileRoute: publicProfile, setUsernameRoute: setUsername, reactToMessageRoute: reactToMessage,
   blockRoute: blockHandle, muteRoute: muteThread, dealItemsRoute: dealItems,
-  uploadChatPhotoRoute: uploadChatPhoto, chatPhotoRoute,
+  uploadChatPhotoRoute: uploadChatPhoto, chatPhotoRoute, deleteMessageRoute: deleteMessage, discardChatPhotoRoute: discardChatPhoto,
 } = await import(new URL('message-routes.js', fns));
 const { unboxingRoute: shareUnboxing } = await import(new URL('order-routes.js', fns));
 const { resetRateLimits } = await import(new URL('../rate-limit.js', fns));
@@ -158,7 +158,7 @@ const {
 } = await import(new URL('tracking-routes.js', fns));
 const {
   listTemplatesRoute: listTemplates, saveTemplateRoute: saveTemplate,
-  deleteTemplateRoute: deleteTemplate, uploadRoute: upload, photoRoute,
+  deleteTemplateRoute: deleteTemplate, uploadRoute: upload, discardUploadRoute: discardUpload, photoRoute,
   assignOrderToLotRoute: assignOrderToLot,
 } = await import(new URL('template-routes.js', fns));
 const {
@@ -2241,6 +2241,98 @@ await check('a photo already sent cannot be sent again into another thread', asy
   }), ctx);
   assert.equal(again.status, 400);
   assert.equal(again.jsonBody.error, 'invalid_photo');
+});
+
+/* Taking photos back out: deleted from the blob with whatever owned them. */
+const tinyPhoto = (seed) => `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==#${seed}`;
+const { getPhotoStore: photoStore } = await import(new URL('../api/dist/api/src/storage/index.js', import.meta.url));
+
+await check('a listing photo removed before publishing is deleted from storage at once', async () => {
+  const store = await photoStore();
+  const picked = (await upload(req({ headers: auth, body: { dataUrl: tinyPhoto(1) } }), ctx)).jsonBody;
+  assert.ok(await store.read(picked.blobName));
+
+  // Somebody else cannot throw it away; the answer is the same as for a photo that is not there.
+  const other = await discardUpload(req({ headers: helper, body: { url: picked.url } }), ctx);
+  assert.equal(other.jsonBody.discarded, false);
+  assert.ok(await store.read(picked.blobName), 'it survived the stranger');
+
+  const gone = await discardUpload(req({ headers: auth, body: { url: picked.url } }), ctx);
+  assert.equal(gone.jsonBody.discarded, true);
+  assert.equal(await store.read(picked.blobName), null);
+});
+
+await check('a photo that a saved listing uses cannot be discarded', async () => {
+  const store = await photoStore();
+  const picked = (await upload(req({ headers: auth, body: { dataUrl: tinyPhoto(2) } }), ctx)).jsonBody;
+  const made = await createListing(req({
+    headers: auth, body: { title: 'Holds its photo', priceMinor: 20_000, photos: [{ blobName: picked.blobName, url: picked.url, isPrimary: true }] },
+  }), ctx);
+  assert.equal(made.status, 201);
+  const refused = await discardUpload(req({ headers: auth, body: { url: picked.url } }), ctx);
+  assert.equal(refused.jsonBody.discarded, false);
+  assert.equal(refused.jsonBody.reason, 'in_use');
+  assert.ok(await store.read(picked.blobName));
+});
+
+await check("deleting a post deletes the photos it was made with, and only those", async () => {
+  const store = await photoStore();
+  const own = (await upload(req({ headers: auth, body: { dataUrl: tinyPhoto(3) } }), ctx)).jsonBody;
+  const listingPhoto = (await upload(req({ headers: auth, body: { dataUrl: tinyPhoto(4) } }), ctx)).jsonBody;
+  await createListing(req({
+    headers: auth, body: { title: 'Lends its photo', priceMinor: 20_000, photos: [{ blobName: listingPhoto.blobName, url: listingPhoto.url, isPrimary: true }] },
+  }), ctx);
+
+  // A post that shows the listing's photo as well as its own.
+  const said = await createPost(req({
+    headers: auth, body: { body: 'New in', channelId: 'usr_demo', photoUrls: [own.url, listingPhoto.url] },
+  }), ctx);
+  assert.equal(said.status, 201, JSON.stringify(said.jsonBody));
+  const post = said.jsonBody.post;
+
+  // Once sent it is the post's, so it can no longer be discarded as a draft.
+  assert.equal((await discardUpload(req({ headers: auth, body: { url: own.url } }), ctx)).jsonBody.discarded, false);
+
+  const removed = await removePost(req({ headers: auth, params: { channel: post.channelId, id: post.id } }), ctx);
+  assert.equal(removed.status, 200);
+  assert.equal(await store.read(own.blobName), null, "the post's own photo goes with it");
+  assert.ok(await store.read(listingPhoto.blobName), "the listing's photo, which the post only showed, stays");
+});
+
+await check('a chat photo picked and not sent can be taken back, a sent one cannot', async () => {
+  const store = await photoStore();
+  const picked = (await uploadChatPhoto(req({ headers: auth, body: { dataUrl: tinyPhoto(5) } }), ctx)).jsonBody;
+  const stranger = await discardChatPhoto(req({ headers: helper, body: { blobName: picked.blobName } }), ctx);
+  assert.equal(stranger.jsonBody.discarded, false);
+  assert.ok(await store.readPrivate(picked.blobName));
+  assert.equal((await discardChatPhoto(req({ headers: auth, body: { blobName: picked.blobName } }), ctx)).jsonBody.discarded, true);
+  assert.equal(await store.readPrivate(picked.blobName), null);
+});
+
+await check('deleting a message deletes it for both, with its photos, and only its sender can', async () => {
+  const store = await photoStore();
+  const sentPhoto = (await uploadChatPhoto(req({ headers: auth, body: { dataUrl: tinyPhoto(6) } }), ctx)).jsonBody.blobName;
+  const sent = await sendMessage(req({
+    headers: auth, params: { handle: 'baiyun_hobby' }, body: { body: 'Look at this', as: 'arjun', photos: [sentPhoto] },
+  }), ctx);
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  const id = sent.jsonBody.message.id;
+
+  // The one it was sent to cannot delete it; nothing changes.
+  const theirs = await deleteMessage(req({ headers: packer, params: { handle: 'arjun' }, body: { messageId: id } }), ctx);
+  assert.equal(theirs.status, 403);
+  assert.ok(await store.readPrivate(sentPhoto), 'the photo is still there');
+
+  // Nor can somebody who is not in the chat.
+  assert.equal((await deleteMessage(req({ headers: shopless, params: { handle: 'arjun' }, body: { messageId: id } }), ctx)).status, 404);
+
+  const done = await deleteMessage(req({ headers: auth, params: { handle: 'baiyun_hobby' }, body: { messageId: id, as: 'arjun' } }), ctx);
+  assert.equal(done.status, 200);
+  assert.equal(await store.readPrivate(sentPhoto), null, 'the photo went with the message');
+  const after = (await thread(req({ headers: auth, params: { handle: 'baiyun_hobby' }, query: { as: 'arjun' } }), ctx)).jsonBody;
+  assert.ok(!after.messages.some((message) => message.id === id), 'gone from the thread');
+  const theirsNow = (await thread(req({ headers: packer, params: { handle: 'arjun' } }), ctx)).jsonBody;
+  assert.ok(!theirsNow.messages.some((message) => message.id === id), 'and gone for the other side too');
 });
 
 /* ── checkout, with and without protection ─────────────────────────────── */

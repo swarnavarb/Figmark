@@ -48,7 +48,7 @@ const {
   forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute,
 } = await import(new URL('social-routes.js', apiRoot));
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute, dealItemsRoute,
-  blockedListRoute, unblockRoute, uploadChatPhotoRoute, chatPhotoRoute } =
+  blockedListRoute, unblockRoute, uploadChatPhotoRoute, chatPhotoRoute, deleteMessageRoute, discardChatPhotoRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
   payRoute, confirmRoute, reviewRoute, unboxingRoute, orderStateRoute, checkoutRoute,
@@ -84,7 +84,7 @@ const {
 } = await import(new URL('tracking-routes.js', apiRoot));
 const {
   listTemplatesRoute, saveTemplateRoute, deleteTemplateRoute,
-  uploadRoute, photoRoute, assignOrderToLotRoute,
+  uploadRoute, discardUploadRoute, photoRoute, assignOrderToLotRoute,
 } = await import(new URL('template-routes.js', apiRoot));
 const {
   servicesHubRoute, serviceDirectoryRoute, offerServiceRoute,
@@ -214,6 +214,8 @@ const routes = [
   ['POST', '/api/messages/:handle/mute', muteRoute],
   ['GET', '/api/messages/:handle/items', dealItemsRoute],
   ['POST', '/api/message-photos', uploadChatPhotoRoute],
+  ['POST', '/api/message-photos/discard', discardChatPhotoRoute],
+  ['POST', '/api/messages/:handle/delete', deleteMessageRoute],
   ['GET', '/api/messages/:handle/photos/:name', chatPhotoRoute],
   ['GET', '/api/u/:handle', publicProfileRoute],
   ['POST', '/api/me/username', setUsernameRoute],
@@ -325,6 +327,7 @@ const routes = [
   ['POST', '/api/templates/new', saveTemplateRoute],
   ['POST', '/api/templates/:id/delete', deleteTemplateRoute],
   ['POST', '/api/uploads', uploadRoute],
+  ['POST', '/api/uploads/discard', discardUploadRoute],
   ['GET', '/api/photos/:name', photoRoute],
   ['POST', '/api/orders/:id/lot', assignOrderToLotRoute],
   ['GET', '/api/services', servicesHubRoute],

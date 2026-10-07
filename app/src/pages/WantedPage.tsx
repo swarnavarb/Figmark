@@ -318,7 +318,10 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
         {photos.map((url) => (
           <span key={url} className="isophotos__tile">
             <img src={url} alt="" />
-            <button type="button" aria-label="Remove photo" onClick={() => setPhotos((all) => all.filter((entry) => entry !== url))}>
+            <button type="button" aria-label="Remove photo" onClick={() => {
+              void api.discardPhoto(url);
+              setPhotos((all) => all.filter((entry) => entry !== url));
+            }}>
               <Icon name="close" size={12} />
             </button>
           </span>
