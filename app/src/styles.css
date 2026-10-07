@@ -231,7 +231,6 @@
      AppShell.tsx. */
   --top-grad: linear-gradient(115deg, #3B82F6 0%, #7C3AED 100%);
   --top-rgb: 91 94 241;
-  --top-dim-rgb: 47 50 123;
   --top-ink: #A5B4FC;
 
   /* One type scale */
@@ -418,17 +417,14 @@ code, kbd, samp, pre {
      the colour iOS and Safari read for the status bar is the .topstrip's. */
   color: #fff;
 }
-/* The header's top edge: under the clock, the section's colour dimmed
-   (--top-dim-rgb, the colour mixed 45% into the page's dark) - the look iOS
-   gave the home-screen app with its own blur, drawn here instead - then
-   brightening into the gradient below. Solid down to the foot of the
-   .topstrip, which overlaps the header's top few pixels. Declared on the
-   bars, not the root, so it takes the tone of the bar it is drawn in. */
+/* The header's top edge in its one colour, solid down to the foot of the
+   .topstrip (which overlaps the header's top few pixels) and fading into
+   the gradient below. Declared on the bars, not the root, so it takes the
+   --top-rgb of the bar it is drawn in. */
 :root { --strip-h: calc(env(safe-area-inset-top, 0px) + 6px); }
 .nav, .soctop, .roombar, .soccompact, .topstrip {
-  --top-dim: rgb(var(--top-dim-rgb));
   --top-band: linear-gradient(180deg,
-    var(--top-dim) 0, var(--top-dim) var(--strip-h),
+    rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) var(--strip-h),
     rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
 }
 /* The section's gradient, on a layer of its own so it can fade out once the
@@ -453,7 +449,7 @@ code, kbd, samp, pre {
 .nav::after, .soccompact::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--glass-tail)); z-index: -2;
   background: linear-gradient(180deg,
-    var(--top-dim) 0, var(--top-dim) var(--strip-h),
+    rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) var(--strip-h),
     rgb(var(--top-rgb) / 0.4) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
@@ -552,19 +548,16 @@ code, kbd, samp, pre {
 :root[data-tone='sell'] {
   --top-grad: linear-gradient(115deg, #0891B2 0%, #2563EB 100%);
   --top-rgb: 23 122 206;
-  --top-dim-rgb: 16 63 107;
   --top-ink: #67E8F9;
 }
 :root[data-tone='services'] {
   --top-grad: linear-gradient(115deg, #65A30D 0%, #0E7490 100%);
   --top-rgb: 58 140 78;
-  --top-dim-rgb: 32 71 49;
   --top-ink: #BEF264;
 }
 :root[data-tone='social'] {
   --top-grad: linear-gradient(115deg, #FF5B1F 0%, #FF2E7E 58%, #C026D3 100%);
   --top-rgb: 255 52 113;
-  --top-dim-rgb: 121 31 65;
   --top-ink: #FF8A65;
 }
 
@@ -6556,7 +6549,6 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   --sx-line: rgba(255, 110, 60, 0.3);
   --sx-glow: 0 10px 30px rgba(255, 70, 80, 0.28);
   --top-rgb: 255 52 113;
-  --top-dim-rgb: 121 31 65;
 }
 
 /* ── The header: a banner, not a heading ───────────────────────────────── */
@@ -7698,7 +7690,6 @@ body.is-locked { overflow: hidden; }
 }
 .roombar--forum {
   --top-rgb: 198 39 203;
-  --top-dim-rgb: 95 25 106;
   background-image: var(--top-band), linear-gradient(115deg, #7C3AED 0%, #C026D3 45%, #FF2E7E 100%);
 }
 .roombar__in {
@@ -13500,14 +13491,12 @@ button.sk-plan__pick { cursor: pointer; }
 /*
  * The strip under the clock, in the section's colour, on every screen.
  *
- * Two jobs. On an iPhone opened from the home screen it is the colour under
- * the clock and notch, staying put when the header slides away. And in
- * Safari, which ignores theme-color and colours its status bar from a fixed
+ * In Safari, which ignores theme-color and colours its status bar from a fixed
  * or sticky bar at the top of the page, it is that bar: the social header
  * scrolls with the page, so without this Safari fell back to the page's dark
  * background there. A real element rather than body::before, because Safari
- * finds the bar by hit-testing and a pseudo-element answers as <body>. One
- * pixel high where there is no notch, under a header whose top edge is the
+ * finds the bar by hit-testing and a pseudo-element answers as <body>. Six
+ * pixels high where there is no notch, over a header whose top edge is the
  * same colour.
  */
 .topstrip {
@@ -13515,32 +13504,30 @@ button.sk-plan__pick { cursor: pointer; }
   height: var(--strip-h);
   /* A plain rgb(), never color-mix() or a gradient: iOS reads this value
      straight from the style (see below), and only a resolved colour counts. */
-  background-color: rgb(var(--top-dim-rgb));
+  background-color: rgb(var(--top-rgb));
 }
-:root:has(.roombar--forum:not(.roombar--reveal)) .topstrip { --top-rgb: 198 39 203; --top-dim-rgb: 95 25 106; }
+:root:has(.roombar--forum:not(.roombar--reveal)) .topstrip { --top-rgb: 198 39 203; }
 /* With the marketplace header slid away, the strip trails the same blurred
    tail the header has, so the page passes under it rather than meeting an edge. */
 .topstrip::after {
   content: ''; position: absolute; top: 100%; left: 0; right: 0; height: var(--glass-tail);
   /* No backdrop-filter here: a backdrop filter on the strip makes iOS draw
      its own blur under the clock again (see below). */
-  background: linear-gradient(180deg, var(--top-dim), rgb(var(--top-rgb) / 0));
+  background: linear-gradient(180deg, rgb(var(--top-rgb)), rgb(var(--top-rgb) / 0));
   opacity: 0;
   transition: opacity 280ms var(--ease);
   pointer-events: none;
 }
 :root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
 /*
- * In the home-screen app the strip is also what keeps iOS 26's own blur off
- * the header. iOS lays a Liquid Glass blur over the top of an installed web
- * app - over the header's logo and icons too - unless the fixed or sticky
- * box it hit-tests 4px inside the top edge (WebKit's
- * LocalFrameView::fixedContainerEdges) is at least 90% of the width, more
- * than 10px tall, has a plain resolved background-color and no
- * backdrop-filter up its ancestry. This strip is that box. It reaches 6px
- * below the clock so the probe finds it whether it measures from the
- * screen's edge or from below the status bar, while staying above the
- * header's logo and icons.
+ * What Safari looks for: the fixed or sticky box WebKit hit-tests 4px inside
+ * the top edge (LocalFrameView::fixedContainerEdges), at least 90% of the
+ * width and more than 10px tall, with a plain resolved background-color and
+ * no backdrop-filter up its ancestry. Safari paints its bar in that colour;
+ * without one it lays its own blur there. The strip reaches 6px below the
+ * clock so the probe finds it wherever it measures from, while staying above
+ * the header's logo and icons. (The home-screen app no longer draws under the
+ * clock at all - see the status-bar-style tag in index.html.)
  */
 
 /* ── Pull to refresh (home-screen copy only) ──────────────────────────────── */

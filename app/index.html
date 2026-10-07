@@ -38,11 +38,15 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Figmark" />
-    <!-- "black-translucent": the page draws under the clock and notch, so each
-         section's header colour runs to the very top of the screen. Every
-         header pads itself by env(safe-area-inset-top), which keeps what is
-         in it below the clock and tappable. -->
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "default", not "black-translucent". Translucent drew the page under
+         the clock, and from iOS 26 the home-screen app lays its Liquid Glass
+         edge blur over whatever is there and a band below it - the header's
+         logo and icons included. "default" puts the page below an opaque
+         status bar, which iOS tints from theme-color: each section's colour,
+         set before the first paint above and on every change of section in
+         AppShell. iOS keeps these tags from when the icon was added, so an
+         existing home-screen icon has to be removed and added again. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta
       name="description"
       content="Marketplace for import resellers: pre-orders, order manifests, Buyer Protection and verified two-sided reviews."
