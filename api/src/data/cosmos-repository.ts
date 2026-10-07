@@ -17,6 +17,7 @@ import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
+import { photoNamesIn } from '../storage/unused.js';
 import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
@@ -1042,6 +1043,19 @@ export class CosmosRepository implements Repository {
       .items.query<User>({ query: 'SELECT * FROM c ORDER BY c.createdAt DESC' })
       .fetchAll();
     return resources;
+  }
+
+  async blobReferences(): Promise<Set<string>> {
+    const found = new Set<string>();
+    for (const definition of CONTAINER_LIST) {
+      const pages = this.container(definition.name as keyof typeof CONTAINERS)
+        .items.query({ query: 'SELECT * FROM c' })
+        .getAsyncIterator();
+      for await (const page of pages) {
+        for (const name of photoNamesIn(JSON.stringify(page.resources ?? []))) found.add(name);
+      }
+    }
+    return found;
   }
 
   async listEscrowAgents(): Promise<User[]> {

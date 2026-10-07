@@ -290,6 +290,15 @@ export interface Repository {
   /** Every account, for the admin list. Bounded by how many people signed up. */
   listAllUsers(): Promise<User[]>;
   /**
+   * Every photo name any record still mentions, lower-cased.
+   *
+   * Read as text across every container, so a photo counts as used wherever it
+   * turns up - a listing, an order, a post, a collection card, a message -
+   * without this having to know which field holds which. Slow, and meant to be:
+   * only the operator's unused-photo scan calls it.
+   */
+  blobReferences(): Promise<Set<string>>;
+  /**
    * Everyone the company has approved to hold money.
    *
    * Read at checkout, so it is on the buyer's path: a handful of vetted people,

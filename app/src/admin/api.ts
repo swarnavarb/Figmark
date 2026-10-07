@@ -109,6 +109,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
+export interface PhotoScan {
+  stored: number;
+  inUse: number;
+  tooNew: number;
+  graceHours: number;
+  unusedCount: number;
+  unusedBytes: number;
+  unused: { scope: 'public' | 'private'; name: string; size: number; uploadedAt: string }[];
+  storage: { backend: 'azure_blob' | 'memory'; connected: boolean; detail: string };
+}
+
 export const admin = {
   me: marketplace.me,
   signIn: marketplace.login,
@@ -125,6 +136,11 @@ export const admin = {
     post<{ deleted: Record<string, unknown> }>(`/ops/users/${encodeURIComponent(id)}/delete`),
   deleteResource: (kind: string, id: string, ownerId: string) =>
     post<{ deleted: Record<string, unknown> }>('/ops/resources/delete', { kind, id, ownerId }),
+  /** Which stored photos nothing uses. Read-only; slow on a big database. */
+  scanPhotos: (graceHours: number) => post<PhotoScan>('/ops/photos/scan', { graceHours }),
+  /** Delete them. Looks again first; `only` narrows it to named photos. */
+  cleanupPhotos: (graceHours: number, only?: { scope: 'public' | 'private'; name: string }[]) =>
+    post<{ deleted: number; bytes: number; failed: number }>('/ops/photos/cleanup', { graceHours, ...(only ? { only } : {}) }),
   setEscrow: (id: string, body: { enabled: boolean; feeBasisPoints?: number; displayName?: string; note?: string }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/escrow`, body),
 

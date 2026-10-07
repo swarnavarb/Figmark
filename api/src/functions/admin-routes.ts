@@ -6,6 +6,8 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { settleDispute } from './dispute-routes.js';
 import { error, handler, json } from './http.js';
+import { getPhotoStore } from '../storage/index.js';
+import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
 
 /**
  * Operating the marketplace.
@@ -259,6 +261,46 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
 }
 
 /**
+ * POST /api/ops/photos/scan - which stored photos does nothing use?
+ *
+ * Read-only. Slow on a big database because it reads every record, so it runs
+ * when an operator asks and never by itself.
+ */
+async function scanPhotos(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const body = (await request.json().catch(() => ({}))) as { graceHours?: unknown };
+  const store = await getPhotoStore();
+  const scan = await scanUnused(store, await getRepository(), graceFrom(body.graceHours));
+  return json(200, { ...scan, storage: store.status() });
+}
+
+/**
+ * POST /api/ops/photos/cleanup - delete the photos nothing uses.
+ *
+ * Looks again before deleting, so it never acts on a stale list. With `only` it
+ * deletes just those photos, if they are still unused.
+ */
+async function cleanupPhotos(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  let body: { graceHours?: unknown; only?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  let only: { scope: 'public' | 'private'; name: string }[] | undefined;
+  if (body.only !== undefined) {
+    if (!Array.isArray(body.only) || !body.only.every((entry) =>
+      entry && (entry.scope === 'public' || entry.scope === 'private') && typeof entry.name === 'string')) {
+      return error(400, 'invalid_request', 'Name photos as { scope, name }.');
+    }
+    only = body.only as typeof only;
+  }
+  const result = await deleteUnused(await getPhotoStore(), await getRepository(), graceFrom(body.graceHours), only);
+  return json(200, result);
+}
+
+/**
  * POST /api/ops/users/{id}/escrow - approve or remove an escrow.
  *
  * The commercial decision behind the whole feature: this person may hold other
@@ -406,6 +448,8 @@ export const adminUserDetailRoute = handler(userDetail);
 export const adminSuspendRoute = handler(suspend);
 export const adminDeleteUserRoute = handler(deleteAccount);
 export const adminDeleteResourceRoute = handler(deleteResource);
+export const adminPhotoScanRoute = handler(scanPhotos);
+export const adminPhotoCleanupRoute = handler(cleanupPhotos);
 export const adminEscrowRoute = handler(escrowRights);
 export const adminDisputesRoute = handler(disputes);
 export const adminResolveRoute = handler(resolveDispute);
@@ -418,5 +462,7 @@ app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'ops/users/{id}/s
 app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'ops/users/{id}/delete', handler: adminDeleteUserRoute });
 app.http('admin-escrow', { ...anon, methods: ['POST'], route: 'ops/users/{id}/escrow', handler: adminEscrowRoute });
 app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'ops/resources/delete', handler: adminDeleteResourceRoute });
+app.http('admin-photo-scan', { ...anon, methods: ['POST'], route: 'ops/photos/scan', handler: adminPhotoScanRoute });
+app.http('admin-photo-cleanup', { ...anon, methods: ['POST'], route: 'ops/photos/cleanup', handler: adminPhotoCleanupRoute });
 app.http('admin-disputes', { ...anon, methods: ['GET'], route: 'ops/disputes', handler: adminDisputesRoute });
 app.http('admin-resolve', { ...anon, methods: ['POST'], route: 'ops/disputes/{id}/resolve', handler: adminResolveRoute });

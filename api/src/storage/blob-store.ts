@@ -4,7 +4,7 @@ import { CHAT_PHOTO_CONTAINER_NAME, PHOTO_CONTAINER_NAME } from '../../../shared
 import type { StorageConfig } from '../config.js';
 import { randomUUID } from 'node:crypto';
 import { extensionFor } from './memory-store.js';
-import type { PhotoStore, PrivatePhotoInfo, StoredPhoto, StorageStatus } from './types.js';
+import type { BlobEntry, PhotoScope, PhotoStore, PrivatePhotoInfo, StoredPhoto, StorageStatus } from './types.js';
 
 /** Azure Blob Storage implementation for listing and condition photos. */
 export class BlobPhotoStore implements PhotoStore {
@@ -122,6 +122,35 @@ export class BlobPhotoStore implements PhotoStore {
     } catch {
       return null;
     }
+  }
+
+  async list(): Promise<BlobEntry[]> {
+    const entries: BlobEntry[] = [];
+    for (const [scope, containerName] of [
+      ['public', PHOTO_CONTAINER_NAME],
+      ['private', CHAT_PHOTO_CONTAINER_NAME],
+    ] as const) {
+      const container = this.client.getContainerClient(containerName);
+      try {
+        for await (const blob of container.listBlobsFlat()) {
+          entries.push({
+            scope,
+            name: blob.name,
+            size: blob.properties.contentLength ?? 0,
+            uploadedAt: (blob.properties.lastModified ?? new Date()).toISOString(),
+          });
+        }
+      } catch {
+        // A container that is not there yet has nothing to list.
+      }
+    }
+    return entries;
+  }
+
+  async remove(scope: PhotoScope, blobName: string): Promise<boolean> {
+    const containerName = scope === 'public' ? PHOTO_CONTAINER_NAME : CHAT_PHOTO_CONTAINER_NAME;
+    const gone = await this.client.getContainerClient(containerName).getBlockBlobClient(blobName).deleteIfExists();
+    return gone.succeeded;
   }
 }
 

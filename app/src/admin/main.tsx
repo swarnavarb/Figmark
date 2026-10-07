@@ -9,6 +9,7 @@ import { ReportsView } from './ReportsView';
 import { SettingsView } from './SettingsView';
 import { StoresView } from './StoresView';
 import { DevicesView } from './DevicesView';
+import { PhotosView } from './PhotosView';
 import '../styles.css';
 
 /**
@@ -31,7 +32,7 @@ import '../styles.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'stores' | 'disputes' | 'reports' | 'devices' | 'settings' | 'learn';
+type Tab = 'users' | 'stores' | 'disputes' | 'reports' | 'devices' | 'photos' | 'settings' | 'learn';
 
 const TAB_LABELS: Record<Tab, string> = {
   users: 'People and stores',
@@ -39,6 +40,7 @@ const TAB_LABELS: Record<Tab, string> = {
   disputes: 'Disputes',
   reports: 'Reviews & comments',
   devices: 'Installs & devices',
+  photos: 'Stored photos',
   settings: 'Settings',
   learn: 'Learn page',
 };
@@ -115,6 +117,7 @@ function Console() {
           : tab === 'disputes' ? <DisputesView />
           : tab === 'reports' ? <ReportsView />
           : tab === 'devices' ? <DevicesView />
+          : tab === 'photos' ? <PhotosView />
           : tab === 'settings' ? <SettingsView />
           : <LearnView />}
 

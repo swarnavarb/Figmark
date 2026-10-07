@@ -44,6 +44,22 @@ export interface PhotoStore {
   /** Pin a private photo to the thread it was sent in. */
   attachPrivate(blobName: string, threadKey: string): Promise<void>;
   readPrivate(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null>;
+
+  /** Every stored photo, public and private, for the operator's unused-photo scan. */
+  list(): Promise<BlobEntry[]>;
+  /** Delete one. False when there was nothing by that name. */
+  remove(scope: PhotoScope, blobName: string): Promise<boolean>;
+}
+
+/** Which container a blob lives in: the public-read photos, or the private chat ones. */
+export type PhotoScope = 'public' | 'private';
+
+export interface BlobEntry {
+  scope: PhotoScope;
+  name: string;
+  size: number;
+  /** When it was uploaded, as an ISO time. */
+  uploadedAt: string;
 }
 
 export interface PrivatePhotoInfo {

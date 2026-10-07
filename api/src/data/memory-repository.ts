@@ -14,6 +14,7 @@ import { handleKey } from '../../../shared/handles.js';
 import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
+import { photoNamesIn } from '../storage/unused.js';
 import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
@@ -798,6 +799,17 @@ export class MemoryRepository implements Repository {
 
   async listAllUsers(): Promise<User[]> {
     return [...this.users.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async blobReferences(): Promise<Set<string>> {
+    // Every table this repository keeps is a Map or a list of records; reading
+    // them all as text means a new table is covered without being listed here.
+    const found = new Set<string>();
+    for (const value of Object.values(this)) {
+      const records = value instanceof Map ? [...value.values()] : Array.isArray(value) ? value : null;
+      if (records) for (const name of photoNamesIn(JSON.stringify(records))) found.add(name);
+    }
+    return found;
   }
 
   async listEscrowAgents(): Promise<User[]> {

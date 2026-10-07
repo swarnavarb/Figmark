@@ -177,6 +177,7 @@ const {
   adminSuspendRoute: adminSuspend, adminDeleteUserRoute: adminDeleteUser,
   adminDeleteResourceRoute: adminDeleteResource, adminEscrowRoute: adminEscrow,
   adminDisputesRoute: adminDisputes, adminResolveRoute: adminResolve,
+  adminPhotoScanRoute: adminPhotoScan, adminPhotoCleanupRoute: adminPhotoCleanup,
 } = await import(new URL('admin-routes.js', fns));
 const { isAnnouncement } = await import(new URL('../api/dist/shared/posts.js', import.meta.url));
 const { LOT_STAGES } = await import(new URL('../api/dist/shared/enums.js', import.meta.url));
@@ -3530,6 +3531,8 @@ await check('every operations route refuses an ordinary account', async () => {
     [adminEscrow, { params: { id: 'usr_demo' }, body: { enabled: true } }],
     [adminDeleteResource, { body: { kind: 'listing', id: 'x', ownerId: 'y' } }],
     [adminDisputes, {}],
+    [adminPhotoScan, { body: {} }],
+    [adminPhotoCleanup, { body: {} }],
     [adminResolve, { params: { id: 'x' }, body: { outcome: 'refund_buyer', note: 'no' } }],
   ];
   for (const [call, extra] of calls) {
@@ -3540,6 +3543,68 @@ await check('every operations route refuses an ordinary account', async () => {
 
 await check('and refuses a request with no session at all', async () => {
   assert.equal((await adminUsers(req(), ctx)).status, 401);
+});
+
+await check('unused photos are found by looking at every record, and only those are deleted', async () => {
+  const { getPhotoStore } = await import(new URL('../api/dist/api/src/storage/index.js', import.meta.url));
+  const { scanUnused, deleteUnused } = await import(new URL('../api/dist/api/src/storage/unused.js', import.meta.url));
+  const store = await getPhotoStore();
+  const repo = await getRepository();
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+
+  const used = await store.upload(bytes, 'image/jpeg');
+  const lonely = await store.upload(bytes, 'image/jpeg');
+  const sharedInPost = await store.upload(bytes, 'image/jpeg');
+  const chatUsed = await store.uploadPrivate(bytes, 'image/jpeg', 'usr_x');
+  const chatLonely = await store.uploadPrivate(bytes, 'image/jpeg', 'usr_x');
+
+  // Mentioned anywhere counts: a listing's own photos, another record that only
+  // copied the address, and a chat message carrying a private photo.
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Keeps a photo', priceMinor: 20_000, photos: [{ blobName: used.blobName, url: used.url, isPrimary: true }] },
+  }), ctx);
+  assert.equal(listed.status, 201);
+  await repo.sendMessage({
+    id: 'msg_photo_scan', threadId: 'a|b', from: { handle: 'a', userId: 'u1', isStore: false, displayName: 'A' },
+    to: { handle: 'b', userId: 'u2', isStore: false, displayName: 'B' }, body: 'Sent a photo', readAt: null,
+    photos: [chatUsed.blobName], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  await repo.updateListing({ ...listed.jsonBody.listing, description: `copied: ${sharedInPost.url}` });
+
+  // Too new to judge by the normal grace; an operator's scan leaves them alone.
+  const route = await adminPhotoScan(req({ headers: auth, body: { graceHours: 24 } }), ctx);
+  assert.equal(route.status, 200);
+  assert.equal(route.jsonBody.unusedCount, 0, 'a photo from a minute ago is never called unused');
+  assert.ok(route.jsonBody.tooNew >= 2);
+
+  // With no grace at all, the two nothing mentions are the only ones found.
+  const scan = await scanUnused(store, repo, 0);
+  const names = scan.unused.map((blob) => `${blob.scope}:${blob.name}`);
+  assert.ok(names.includes(`public:${lonely.blobName}`));
+  assert.ok(names.includes(`private:${chatLonely.blobName}`));
+  for (const kept of [used.blobName, sharedInPost.blobName, chatUsed.blobName]) {
+    assert.ok(!names.some((entry) => entry.endsWith(kept)), `${kept} is used and must not be listed`);
+  }
+
+  // Deleting only touches what is still unused, and only what was named.
+  const only = await deleteUnused(store, repo, 0, [{ scope: 'public', name: lonely.blobName }, { scope: 'public', name: used.blobName }]);
+  assert.equal(only.deleted, 1, 'the used one named alongside it is skipped');
+  assert.equal(await store.read(lonely.blobName), null);
+  assert.ok(await store.read(used.blobName));
+
+  const rest = await deleteUnused(store, repo, 0);
+  assert.ok(rest.deleted >= 1);
+  assert.equal(await store.readPrivate(chatLonely.blobName), null);
+  assert.ok(await store.readPrivate(chatUsed.blobName), 'a photo in a message survives');
+  assert.ok(await store.read(sharedInPost.blobName), 'so does one only mentioned in a description');
+});
+
+await check('the grace period cannot be set to nothing from the route', async () => {
+  const route = await adminPhotoScan(req({ headers: auth, body: { graceHours: 0 } }), ctx);
+  assert.equal(route.jsonBody.graceHours, 1);
+  const wild = await adminPhotoScan(req({ headers: auth, body: { graceHours: 'soon' } }), ctx);
+  assert.equal(wild.jsonBody.graceHours, 24);
+  assert.equal((await adminPhotoCleanup(req({ headers: auth, body: { only: 'all' } }), ctx)).status, 400);
 });
 
 await check('the list carries the store and the grant behind each account', async () => {

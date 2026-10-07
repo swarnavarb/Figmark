@@ -106,7 +106,7 @@ const {
 } = await import(new URL('dispute-routes.js', apiRoot));
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
-  adminDeleteResourceRoute, adminEscrowRoute, adminDisputesRoute, adminResolveRoute,
+  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminEscrowRoute, adminDisputesRoute, adminResolveRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
   questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questOpenRoute,
@@ -285,6 +285,8 @@ const routes = [
   ['POST', '/api/ops/users/:id/delete', adminDeleteUserRoute],
   ['POST', '/api/ops/users/:id/escrow', adminEscrowRoute],
   ['POST', '/api/ops/resources/delete', adminDeleteResourceRoute],
+  ['POST', '/api/ops/photos/scan', adminPhotoScanRoute],
+  ['POST', '/api/ops/photos/cleanup', adminPhotoCleanupRoute],
   ['GET', '/api/ops/disputes', adminDisputesRoute],
   ['POST', '/api/ops/disputes/:id/resolve', adminResolveRoute],
   ['GET', '/api/wants', wantsBoardRoute],
