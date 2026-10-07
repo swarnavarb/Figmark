@@ -263,7 +263,8 @@ export function ListingPage() {
             <Urgency listing={listing} />
             {buyBox}
             {/* A price made for one buyer is not a price to pass round. */}
-            {!listing.privateFor && <ListingShare spec={shareSpec} onOpen={() => shareSheet.open(shareSpec)} />}
+            {/* With a commission on, the affiliate card is the share block; two would say the same thing twice. */}
+            {!listing.privateFor && !data.affiliate && <ListingShare spec={shareSpec} onOpen={() => shareSheet.open(shareSpec)} />}
             {data.affiliate && !listing.privateFor && (
               <AffiliateCard listingId={listing.id} amountMinor={data.affiliate.amountMinor} offMinor={data.affiliate.buyerOffMinor}
                 canShare={data.affiliate.canShare} currency={listing.currency} isOwn={data.isOwn}

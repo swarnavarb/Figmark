@@ -98,12 +98,24 @@ function loadFonts(): Promise<void> {
 const images = new Map<string, Promise<HTMLImageElement | null>>();
 
 /**
+ * One of our own uploaded photos, asked for through the API rather than from
+ * the storage account. The account sends no CORS headers, so a cross-origin
+ * request for it fails and the card went out without the item's photo; the
+ * API serves the same bytes from this origin, where CORS does not come into it.
+ */
+function ownPhoto(src: string): string {
+  const stored = src.match(/^https:\/\/[a-z0-9]+\.blob\.core\.windows\.net\/listing-photos\/([\w.-]+)$/i);
+  return stored ? `/api/photos/${encodeURIComponent(stored[1]!)}` : src;
+}
+
+/**
  * A photo, ready to draw, or null. Asked for with CORS so a photo from another
  * site either arrives drawable or not at all - never one that silently poisons
  * the canvas and fails the export at the last step.
  */
 export function loadImage(src: string | null | undefined): Promise<HTMLImageElement | null> {
   if (!src) return Promise.resolve(null);
+  src = ownPhoto(src);
   let pending = images.get(src);
   if (!pending) {
     pending = new Promise((resolve) => {

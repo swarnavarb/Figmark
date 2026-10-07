@@ -75,6 +75,7 @@ export function AffiliateCard({ listingId, amountMinor, offMinor = 0, currency, 
             {off && ` Buyers who come through a link pay ${off} less.`}
           </span>
         </div>
+        {onShare && <button type="button" className="btn btn--sm affcard__btn" onClick={onShare}>📣 Share</button>}
       </section>
     );
   }
