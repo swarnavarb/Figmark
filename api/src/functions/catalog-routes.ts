@@ -20,7 +20,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { isLive } from '../../../shared/service-stores.js';
-import { claimPhotos } from '../storage/release.js';
+import { claimPhotos, releaseListingPhotos } from '../storage/release.js';
 import { error, handler, json } from './http.js';
 import { placeOrder } from './placement.js';
 import {
@@ -1184,6 +1184,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
     affiliateMinor?: number | null;
     affiliateOffMinor?: number | null;
+    photos?: { blobName?: string; url: string; isPrimary?: boolean }[];
   };
   try {
     body = (await request.json()) as typeof body;
@@ -1210,6 +1211,15 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     next.title = body.title.trim();
   }
   if (body.description !== undefined) next.description = body.description.trim();
+  if (Array.isArray(body.photos)) {
+    // Same rules as a new listing: at most six, exactly one primary.
+    const kept = body.photos
+      .slice(0, 6)
+      .map((photo) => ({ blobName: photo.blobName ?? '', url: photo.url, imageHash: null, isPrimary: photo.isPrimary === true }))
+      .filter((photo) => photo.blobName || photo.url);
+    const lead = Math.max(0, kept.findIndex((photo) => photo.isPrimary));
+    next.photos = kept.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
+  }
   if (body.priceMinor !== undefined) {
     if (!(body.priceMinor > 0)) return error(400, 'invalid_listing', 'A price above zero is required.');
     next.priceMinor = Math.round(body.priceMinor);
@@ -1236,6 +1246,12 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
 
   const updated = await repository.updateListing(next);
   await claimPhotos(updated.photos.map((photo) => photo.blobName || photo.url), `listing:${updated.id}`);
+  if (Array.isArray(body.photos)) {
+    // Photos taken off the listing leave the blob too, unless something else still names them.
+    const names = new Set(updated.photos.flatMap((photo) => [photo.url, photo.blobName]));
+    const dropped = listing.photos.filter((photo) => !names.has(photo.url) && !(photo.blobName && names.has(photo.blobName)));
+    if (dropped.length > 0) await releaseListingPhotos([{ ...listing, photos: dropped }], repository);
+  }
   return json(200, { listing: updated });
 }
 

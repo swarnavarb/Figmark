@@ -7,9 +7,10 @@ import {
   isMultiple, methodOf, orderMoney, timeLeft,
 } from '@shared/payments';
 import { Link } from 'react-router-dom';
-import { ApiRequestError, api } from '../api';
+import { ApiRequestError, api, type PhotoDraft } from '../api';
 import { formatDate, formatMoney } from '../format';
 import { Modal } from './LotFields';
+import { PhotoManager } from './PhotoManager';
 import { ErrorNotice } from './ui';
 import { LBox, OptionTiles, Switch, ToggleRow, daysUntil, isoInDays } from './ListingForm';
 
@@ -360,6 +361,9 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
   const [terms, setTerms] = useState(() => termsDraft({
     ...listing, expiresAt: isExpired(listing) ? null : listing.expiresAt,
   }));
+  const [photos, setPhotos] = useState<PhotoDraft[]>(() => listing.photos.map((photo) => ({
+    blobName: photo.blobName ?? '', url: photo.url ?? '', isPrimary: photo.isPrimary,
+  })));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const expired = isExpired(listing);
@@ -382,7 +386,7 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
   function save(event: FormEvent) {
     event.preventDefault();
     void run(async () => (await api.editListing(listing.id, {
-      title: title.trim(), priceMinor: Math.round(Number(price) * 100), ...termsBody(terms),
+      title: title.trim(), priceMinor: Math.round(Number(price) * 100), photos, ...termsBody(terms),
       // A deal keeps its clock unless a new one was picked.
       ...(privateDeal ? {
         affiliateMinor: null, affiliateOffMinor: null,
@@ -410,6 +414,7 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
             <span>Price (₹)</span>
             <input type="number" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
           </label>
+          <PhotoManager photos={photos} onChange={setPhotos} />
         </LBox>
         <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} privateDeal={privateDeal} />
         {privateDeal && <DealClock hours={dealHours} onChange={setDealHours} endsAt={listing.expiresAt} />}
