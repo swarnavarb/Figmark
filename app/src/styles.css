@@ -4071,24 +4071,18 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 .ocard__price .badge { white-space: nowrap; }
 
-.ocard__money { display: grid; gap: 6px; }
-.ocard__bar { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
-.ocard__bar span {
+/* Total · Paid · Balance: one small line over a hairline bar, under a customer and under each order. */
+.mline { display: grid; gap: 5px; }
+.mline__bar { height: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.mline__bar span {
   display: block; height: 100%; border-radius: inherit;
   background: linear-gradient(90deg, rgb(var(--tone)), rgb(var(--tone-2)));
-  box-shadow: 0 0 12px rgb(var(--tone) / 0.6);
   transition: width 700ms var(--ease);
 }
-.ocard__moneytext { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-xs); color: var(--text-faint); }
-.ocard__moneytext b { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.ocard__done {
-  font-weight: var(--w-bold);
-  background: linear-gradient(90deg, #34D399, #06D6E7, #A78BFA, #34D399);
-  background-size: 200% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: ocard-shimmer 3.5s linear infinite;
-}
-@keyframes ocard-shimmer { to { background-position: -200% 0; } }
+.mline__row { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: var(--t-xs); color: var(--text-faint); }
+.mline__row b { color: var(--text); font-weight: var(--w-semi); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.mline__row .is-due b { color: #FBBF24; }
+.mline__row .is-clear b { color: var(--ok); }
 .ocard__extra { color: #F0ABFC; font-weight: var(--w-semi); }
 
 .ocard__chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
@@ -4296,8 +4290,8 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ocard, .ocard.is-urgent::before, .ocard.is-glowing, .ocard__done { animation: none; }
-  .ocard__bar span { transition: none; }
+  .ocard, .ocard.is-urgent::before, .ocard.is-glowing { animation: none; }
+  .mline__bar span { transition: none; }
 }
 
 /* ── The conversation ──────────────────────────────────────────────────────
@@ -11379,23 +11373,7 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 a.ocust__name:hover { color: var(--accent-text); }
 .ocust__meta { font-size: var(--t-xs); color: var(--text-faint); }
 .ocust__total { display: grid; justify-items: end; gap: 6px; }
-.ocust__total b { font-family: var(--mono); font-size: var(--t-md); font-variant-numeric: tabular-nums; color: var(--text); }
 .ocust__total .badge { white-space: nowrap; }
-.ocust__money { display: grid; gap: 8px; }
-.ocust__money .ocard__bar span { background: linear-gradient(90deg, rgb(var(--tone)), rgb(var(--tone-2))); }
-.ocust__sums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.ocust__sums > span {
-  display: grid; gap: 2px; padding: 8px 10px; border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-}
-.ocust__sums small { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
-.ocust__sums b {
-  font-family: var(--mono); font-size: var(--t-sm); font-variant-numeric: tabular-nums; color: var(--text);
-  overflow-wrap: anywhere;
-}
-.ocust__sums > .is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
-.ocust__sums > .is-due b { color: #FBBF24; }
-.ocust__sums > .is-clear b { color: var(--ok); }
 
 /*
  * An item's buttons in a lot, one after another: its own presses and the

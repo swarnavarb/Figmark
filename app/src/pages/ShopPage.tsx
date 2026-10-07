@@ -1448,6 +1448,8 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
   const share = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const currency = rows[0]?.currency;
   const tone = live.length === 0 ? 'quiet' : pending > 0 ? (paid > 0 ? 'purple' : 'warn') : 'ok';
+  /* Open, the head says only where the money stands; the sums sit in the body. */
+  const payWord = live.length === 0 ? 'Nothing owed' : pending <= 0 ? 'Paid' : paid > 0 ? 'Partially paid' : 'Not paid';
   const panelId = `ocust-${customer.key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
   return (
@@ -1469,13 +1471,8 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
           </span>
         </div>
         <div className="ocust__total">
-          {open && <b>{formatTotals(sum((row) => row.totalMinor), currency)}</b>}
           <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>
-            {live.length === 0
-              ? 'Nothing owed'
-              : pending > 0
-                ? <>Pending{!open && ` ${formatTotals(sum((row) => row.outstandingMinor), currency)}`}</>
-                : 'All paid'}
+            {open || pending <= 0 ? payWord : `Pending ${formatTotals(sum((row) => row.outstandingMinor), currency)}`}
           </span>
         </div>
       </header>
@@ -1500,24 +1497,43 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
 
       {open && (
         <div id={panelId} className="ocust__body">
-          {/* All paid says itself in the badge; the breakdown is for when money is still out. */}
-          {live.length > 0 && pending > 0 && (
-            <div className="ocust__money">
-              <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
-              <div className="ocust__sums">
-                <span><small>Orders</small><b>{formatTotals(sum((row) => row.totalMinor), currency)}</b></span>
-                <span><small>Paid</small><b>{formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}</b></span>
-                <span className={pending > 0 ? 'is-due' : 'is-clear'}>
-                  <small>Pending</small>
-                  <b>{formatTotals(sum((row) => row.outstandingMinor), currency)}</b>
-                </span>
-              </div>
-            </div>
+          {live.length > 0 && (
+            <MoneyLine share={share} due={pending > 0}
+              total={formatTotals(sum((row) => row.totalMinor), currency)}
+              paid={formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}
+              balance={formatTotals(sum((row) => row.outstandingMinor), currency)} />
           )}
           <div className="orows">{children}</div>
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Total, paid and balance on one small line over a thin bar of how much has
+ * landed. The same line sits under a customer and under each of their
+ * orders, so a lot and the Orders list read alike.
+ */
+function MoneyLine({ total, paid, balance, share, due, children }: {
+  total: string;
+  paid: string;
+  balance: string;
+  /** How much of the total has landed, 0-100. */
+  share: number;
+  due: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="mline">
+      <div className="mline__bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
+      <div className="mline__row">
+        <span>Total <b>{total}</b></span>
+        <span>Paid <b>{paid}</b></span>
+        <span className={due ? 'is-due' : 'is-clear'}>Balance <b>{balance}</b></span>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -1882,8 +1898,6 @@ function OrderRow({
   /* Something to press: not called off, and not a booking still waiting to be taken on. */
   const working = !isClosed(row) && !(row.bookingOnly && !row.accepted);
   const { tone, label } = orderTone(row, needsAnswer);
-  /* Fully paid and nothing extra: the badge says it, the bar would only repeat it. */
-  const settled = row.outstandingMinor <= 0 && row.paidMinor > 0 && row.creditMinor <= 0;
   const paidShare = row.totalMinor > 0 ? Math.min(100, Math.round((row.paidMinor / row.totalMinor) * 100)) : 0;
   const orderLink = { pathname: `/order/${row.id}` };
   const linkState = { from };
@@ -1919,23 +1933,15 @@ function OrderRow({
           <span>{timeAgo(row.createdAt)}</span>
           {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
         </>}
-        side={<>
-          <b>{formatMoney(row.totalMinor, row.currency)}</b>
-          <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>
-        </>} />
+        side={<span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>} />
 
-      {/* The money, as a bar rather than a sentence: how much of this has
-          actually landed. Once it is all in, the Paid badge already says so. */}
-      {!settled && <div className="ocard__money">
-        <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${paidShare}%` }} /></div>
-        <div className="ocard__moneytext">
-          <span><b>{formatMoney(row.paidMinor, row.currency)}</b> paid</span>
-          {row.outstandingMinor > 0
-            ? <span><b>{formatMoney(row.outstandingMinor, row.currency)}</b> left</span>
-            : row.paidMinor > 0 && <span className="ocard__done">✨ Fully paid</span>}
-          {row.creditMinor > 0 && <span className="ocard__extra">💰 {formatMoney(row.creditMinor, row.currency)} extra</span>}
-        </div>
-      </div>}
+      {/* The money on one small line: what it costs, what has landed, what is left. */}
+      <MoneyLine share={paidShare} due={row.outstandingMinor > 0}
+        total={formatMoney(row.totalMinor, row.currency)}
+        paid={formatMoney(Math.min(row.paidMinor, row.totalMinor), row.currency)}
+        balance={formatMoney(Math.max(0, row.outstandingMinor), row.currency)}>
+        {row.creditMinor > 0 && <span className="ocard__extra">{formatMoney(row.creditMinor, row.currency)} extra</span>}
+      </MoneyLine>
 
       {/* The one line on where it stands. A claimed payment already has its
           own line below, with the amount and the reference. */}
