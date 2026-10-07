@@ -593,7 +593,6 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   };
 
-<<<<<<< HEAD
   const saved = await repository.sendMessage(message);
   // Pinned to the thread only once the message exists, so a failed send leaves
   // the photo free to try again rather than stuck to a message that is not there.
@@ -602,10 +601,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     await Promise.all(photoNames.map((name) => store.attachPrivate(name, threadKey)));
   }
   const [sent] = await withLiveItems([saved], repository);
-=======
-  const [sent] = await withLiveItems([await repository.sendMessage(message)], repository);
   await announceMessage(message, user.id, repository);
->>>>>>> origin/development
   return json(201, { message: sent });
 }
 

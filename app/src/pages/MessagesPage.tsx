@@ -608,66 +608,6 @@ export function ThreadPage() {
               <button type="button" className="iconbtn" aria-label="Not about this item" onClick={dropAbout}>
                 <Icon name="close" size={13} />
               </button>
-<<<<<<< HEAD
-            </div>
-          )}
-          {photos.length > 0 && (
-            <div className="cbar__photos">
-              {photos.map((photo) => (
-                <span key={photo.key} className={`cbar__photo${photo.failed ? ' is-failed' : ''}${photo.name ? '' : ' is-loading'}`}>
-                  <img src={photo.preview} alt="" />
-                  <button type="button" className="cbar__photodrop" aria-label="Remove photo" onClick={() => dropPhoto(photo.key)}>
-                    <Icon name="close" size={12} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="cbar__row">
-            {/* Whose voice you are writing in, switched from where you write.
-                Each voice is its own conversation, so switching opens that one. */}
-            {data.handles.length > 1 && (
-              <VoiceScope
-                voice={{ storeId: data.us.isStore ? data.us.handle : null, name: data.us.displayName, handle: data.us.handle }}
-                voices={data.handles.map((party) => ({
-                  storeId: party.isStore ? party.handle : null, name: party.displayName, handle: party.handle,
-                }))}
-                choose={(storeId) => {
-                  const party = data.handles.find((entry) => (storeId ? entry.handle === storeId : !entry.isStore));
-                  if (party && party.handle !== data.us.handle) {
-                    navigate(`/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(party.handle)}`, { replace: true });
-                  }
-                }}>
-                <VoicePicker size={36} title="Write as" />
-              </VoiceScope>
-            )}
-            {dealable && (
-              <button type="button" className="cbar__attach" onClick={() => (data.us.isStore ? setPicker({ focus: null }) : setAsking(true))}
-                aria-label={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}
-                title={data.us.isStore ? 'Make a private deal' : 'Ask for a private deal'}>
-                🤝
-              </button>
-            )}
-            <input ref={fileInput} type="file" accept="image/*" multiple hidden
-              onChange={(event) => { void addPhotos(event.target.files); event.target.value = ''; }} />
-            <button type="button" className="cbar__attach" onClick={() => fileInput.current?.click()}
-              disabled={photos.length >= 4} aria-label="Send a photo" title="Send a photo (only you two can see it)">
-              <Icon name="image" size={18} />
-            </button>
-            <textarea ref={input} className="cbar__input" rows={1} value={body} maxLength={4000}
-              placeholder={replyTo ? 'Write a reply…' : about ? 'Ask a question or name your price…' : `Message ${data.them.displayName}…`} aria-label="Message"
-              onChange={(event) => setBody(event.target.value)}
-              onKeyDown={(event) => {
-                // Enter sends, shift-enter makes a line: the bargain every messenger makes.
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  void send();
-                }
-                if (event.key === 'Escape') setReplyTo(null);
-              }} />
-            <button type="submit" className="cbar__send" disabled={busy || uploading || (!body.trim() && !about && sendable.length === 0)} aria-label="Send">
-              {busy ? <span className="writer__spin cbar__spin" /> : <Icon name="send" size={18} />}
-=======
             </span>
             {/* The questions everybody asks, a tap away. Each one fills the
                 box rather than sending, so it can be changed first. */}
@@ -687,8 +627,19 @@ export function ThreadPage() {
             </span>
             <button type="button" className="iconbtn" aria-label="Cancel reply" onClick={() => setReplyTo(null)}>
               <Icon name="close" size={13} />
->>>>>>> origin/development
             </button>
+          </div>
+        )}
+        {photos.length > 0 && (
+          <div className="cbar__photos">
+            {photos.map((photo) => (
+              <span key={photo.key} className={`cbar__photo${photo.failed ? ' is-failed' : ''}${photo.name ? '' : ' is-loading'}`}>
+                <img src={photo.preview} alt="" />
+                <button type="button" className="cbar__photodrop" aria-label="Remove photo" onClick={() => dropPhoto(photo.key)}>
+                  <Icon name="close" size={12} />
+                </button>
+              </span>
+            ))}
           </div>
         )}
         <div className="cbar__row">
@@ -716,6 +667,12 @@ export function ThreadPage() {
               🤝
             </button>
           )}
+          <input ref={fileInput} type="file" accept="image/*" multiple hidden
+            onChange={(event) => { void addPhotos(event.target.files); event.target.value = ''; }} />
+          <button type="button" className="cbar__attach" onClick={() => fileInput.current?.click()}
+            disabled={photos.length >= 4} aria-label="Send a photo" title="Send a photo (only you two can see it)">
+            <Icon name="image" size={18} />
+          </button>
           <textarea ref={input} className="cbar__input" rows={1} value={body} maxLength={4000}
             placeholder={replyTo ? 'Write a reply…' : about ? 'Ask a question or name your price…' : `Message ${data.them.displayName}…`} aria-label="Message"
             onChange={(event) => setBody(event.target.value)}
@@ -727,7 +684,7 @@ export function ThreadPage() {
               }
               if (event.key === 'Escape') setReplyTo(null);
             }} />
-          <button type="submit" className="cbar__send" disabled={busy || (!body.trim() && !about)} aria-label="Send">
+          <button type="submit" className="cbar__send" disabled={busy || uploading || (!body.trim() && !about && sendable.length === 0)} aria-label="Send">
             {busy ? <span className="writer__spin cbar__spin" /> : <Icon name="send" size={18} />}
           </button>
         </div>
