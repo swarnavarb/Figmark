@@ -85,6 +85,7 @@ const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
   publicProfileRoute: publicProfile, setUsernameRoute: setUsername, reactToMessageRoute: reactToMessage,
   blockRoute: blockHandle, muteRoute: muteThread, dealItemsRoute: dealItems,
+  uploadChatPhotoRoute: uploadChatPhoto, chatPhotoRoute,
 } = await import(new URL('message-routes.js', fns));
 const { unboxingRoute: shareUnboxing } = await import(new URL('order-routes.js', fns));
 const { resetRateLimits } = await import(new URL('../rate-limit.js', fns));
@@ -2168,6 +2169,87 @@ await check('the packing view never shows the owner the buyer list twice', async
   // ownership implying every right must not turn one into the other.
   const owners = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
   assert.ok(owners.customers.length > 0, 'the owner still gets customers');
+});
+
+/* Photos sent in a chat are private: readable from their own thread only. */
+const chatPixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+let chatPhotoName;
+
+await check('a chat photo goes to the private store and comes back as a name, not a URL', async () => {
+  const stored = await uploadChatPhoto(req({ headers: auth, body: { dataUrl: chatPixel } }), ctx);
+  assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
+  assert.ok(stored.jsonBody.blobName.endsWith('.png'));
+  assert.equal(stored.jsonBody.url, undefined, 'a private photo has no address to hand out');
+  chatPhotoName = stored.jsonBody.blobName;
+
+  // Not readable from the public photo route, nor before a message carries it.
+  assert.equal((await photoRoute(req({ params: { name: chatPhotoName } }), ctx)).status, 404);
+  const early = await chatPhotoRoute(req({ headers: auth, params: { handle: 'baiyun_hobby', name: chatPhotoName }, query: { as: 'arjun' } }), ctx);
+  assert.equal(early.status, 404);
+});
+
+await check('only a signed-in account may upload, and the same limits as any photo apply', async () => {
+  assert.equal((await uploadChatPhoto(req({ body: { dataUrl: chatPixel } }), ctx)).status, 401);
+  assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: 'data:application/pdf;base64,AAAA' } }), ctx)).status, 400);
+  const huge = `data:image/jpeg;base64,${'A'.repeat(1_400_000)}`;
+  assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: huge } }), ctx)).status, 413);
+});
+
+await check("somebody else's upload cannot be sent as yours, and made-up names are refused", async () => {
+  const theirs = (await uploadChatPhoto(req({ headers: packer, body: { dataUrl: chatPixel } }), ctx)).jsonBody.blobName;
+  const stolen = await sendMessage(req({
+    headers: auth, params: { handle: 'baiyun_hobby' }, body: { body: 'mine now', as: 'arjun', photos: [theirs] },
+  }), ctx);
+  assert.equal(stolen.status, 400);
+  assert.equal(stolen.jsonBody.error, 'invalid_photo');
+
+  for (const photos of [['../etc/passwd'], ['nope.png'], 'x', ['a.png', 'b.png', 'c.png', 'd.png', 'e.png']]) {
+    const refused = await sendMessage(req({
+      headers: auth, params: { handle: 'baiyun_hobby' }, body: { body: 'x', as: 'arjun', photos },
+    }), ctx);
+    assert.equal(refused.status, 400, JSON.stringify(photos));
+  }
+});
+
+await check('a photo can be sent on its own, and carries no words it was not given', async () => {
+  const sent = await sendMessage(req({
+    headers: auth, params: { handle: 'baiyun_hobby' }, body: { as: 'arjun', photos: [chatPhotoName] },
+  }), ctx);
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  assert.deepEqual(sent.jsonBody.message.photos, [chatPhotoName]);
+  assert.equal(sent.jsonBody.message.body, 'Sent a photo');
+});
+
+await check('both ends of the thread can read it, privately cached', async () => {
+  const mine = await chatPhotoRoute(req({ headers: auth, params: { handle: 'baiyun_hobby', name: chatPhotoName }, query: { as: 'arjun' } }), ctx);
+  assert.equal(mine.status, 200);
+  assert.equal(mine.headers['Content-Type'], 'image/png');
+  assert.match(mine.headers['Cache-Control'], /^private/);
+  assert.ok(mine.body.length > 0);
+
+  const theirs = await chatPhotoRoute(req({ headers: packer, params: { handle: 'arjun', name: chatPhotoName } }), ctx);
+  assert.equal(theirs.status, 200);
+});
+
+await check('nobody else can read it: another account, another thread, or no sign-in', async () => {
+  const outsider = await chatPhotoRoute(req({ headers: shopless, params: { handle: 'arjun', name: chatPhotoName } }), ctx);
+  assert.equal(outsider.status, 404, 'another account, even one naming the real handle');
+  const otherThread = await chatPhotoRoute(req({ headers: auth, params: { handle: 'sams_corner', name: chatPhotoName }, query: { as: 'arjun' } }), ctx);
+  assert.equal(otherThread.status, 404, 'the same sender, but a different conversation');
+  const asShop = await chatPhotoRoute(req({ headers: auth, params: { handle: 'baiyun_hobby', name: chatPhotoName }, query: { as: 'arjun_collects' } }), ctx);
+  assert.equal(asShop.status, 404, 'the same two people on different voices are a different thread');
+  await assert.rejects(
+    async () => { const r = await chatPhotoRoute(req({ params: { handle: 'baiyun_hobby', name: chatPhotoName } }), ctx); if (r.status === 401) throw new Error('401'); },
+    /401/,
+  );
+});
+
+await check('a photo already sent cannot be sent again into another thread', async () => {
+  const again = await sendMessage(req({
+    headers: auth, params: { handle: 'sams_corner' }, body: { body: 'again', as: 'arjun', photos: [chatPhotoName] },
+  }), ctx);
+  assert.equal(again.status, 400);
+  assert.equal(again.jsonBody.error, 'invalid_photo');
 });
 
 /* ── checkout, with and without protection ─────────────────────────────── */

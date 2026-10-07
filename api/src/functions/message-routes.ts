@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
 import type { Listing, Message, MessageDeal, MessageItem, MessageParty, User } from '../../../shared/models.js';
@@ -17,6 +17,8 @@ import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { storeFactsFrom } from '../store-facts.js';
+import { getPhotoStore } from '../storage/index.js';
+import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 
 /**
  * The handle namespace, and the messages addressed through it.
@@ -366,6 +368,8 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     body?: string; as?: string; deal?: Partial<MessageDeal> | null; replyToId?: string | null;
     /** An item this message is about: one either side of the chat sells. */
     itemId?: string | null;
+    /** Names from POST /api/message-photos, uploaded by the sender. */
+    photos?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -374,7 +378,17 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   }
 
   let text = body.body?.trim() ?? '';
-  if (!text && !body.deal && !body.itemId) return error(400, 'invalid_message', 'Write something first.');
+  let photoNames: string[] = [];
+  if (body.photos !== undefined && body.photos !== null) {
+    if (!Array.isArray(body.photos) || body.photos.length > MESSAGE_MAX_PHOTOS
+      || !body.photos.every((name) => typeof name === 'string' && CHAT_PHOTO_NAME.test(name))) {
+      return error(400, 'invalid_photo', `A message can carry up to ${MESSAGE_MAX_PHOTOS} photos.`);
+    }
+    photoNames = [...new Set(body.photos as string[])];
+  }
+  if (!text && !body.deal && !body.itemId && photoNames.length === 0) {
+    return error(400, 'invalid_message', 'Write something first.');
+  }
   if (text.length > 4000) return error(400, 'invalid_message', 'Keep a message under 4000 characters.');
   const slow = tooFast(user.id, 'message');
   if (slow) return slow;
@@ -394,6 +408,21 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   if (wall === 'you') return error(403, 'blocked', `You blocked @${them.handle}. Unblock them to write.`);
   // Not saying who blocked whom: being told is its own message.
   if (wall === 'them') return error(403, 'blocked', `@${them.handle} is not taking messages from you.`);
+
+  // Photos: each must be one this account uploaded and has not already sent.
+  // Checked here, once both ends are known, so a name cannot be lifted from
+  // somebody else's upload or reused to show a photo in a second thread.
+  const threadKey = threadKeyOf(threadIdFor(us.handle, them.handle));
+  if (photoNames.length > 0) {
+    const store = await getPhotoStore();
+    for (const name of photoNames) {
+      const info = await store.privateInfo(name);
+      if (!info || info.uploadedBy !== user.id || info.threadKey) {
+        return error(400, 'invalid_photo', 'One of those photos is not yours to send. Add it again.');
+      }
+    }
+    text ||= photoNames.length === 1 ? 'Sent a photo' : `Sent ${photoNames.length} photos`;
+  }
 
   // A private deal, either way round. An offer is the shop's: an item made
   // for this buyer alone, bought like any other. A request is the buyer's:
@@ -466,6 +495,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     to: them,
     body: text,
     readAt: null,
+    ...(photoNames.length > 0 ? { photos: photoNames } : {}),
     ...(deal ? { deal } : {}),
     ...(item ? { item } : {}),
     ...(replyTo ? { replyTo } : {}),
@@ -473,8 +503,104 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   };
 
-  const [sent] = await withLiveItems([await repository.sendMessage(message)], repository);
+  const saved = await repository.sendMessage(message);
+  // Pinned to the thread only once the message exists, so a failed send leaves
+  // the photo free to try again rather than stuck to a message that is not there.
+  if (photoNames.length > 0) {
+    const store = await getPhotoStore();
+    await Promise.all(photoNames.map((name) => store.attachPrivate(name, threadKey)));
+  }
+  const [sent] = await withLiveItems([saved], repository);
   return json(201, { message: sent });
+}
+
+/** A name the private photo store gave out: a uuid and an extension, nothing else. */
+const CHAT_PHOTO_NAME = /^[\w-]+\.(?:jpg|png|webp|gif)$/;
+const MESSAGE_MAX_PHOTOS = 4;
+
+/** What a photo is pinned to: the thread, hashed so the store never holds handles. */
+function threadKeyOf(threadId: string): string {
+  return createHash('sha256').update(threadId).digest('hex');
+}
+
+/**
+ * POST /api/message-photos - a picture in, a name out, for a chat.
+ *
+ * The same data-URL contract and size cap as listing photos, but the picture
+ * goes to the private store and comes back as a name with no address. It does
+ * not appear anywhere until a message carries it.
+ */
+async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const slow = tooFast(user.id, 'chatphoto');
+  if (slow) return slow;
+
+  let body: { dataUrl?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const match = /^data:([a-z/+-]+);base64,(.+)$/i.exec(body.dataUrl ?? '');
+  if (!match) return error(400, 'invalid_photo', 'Send the photo as a base64 data URL.');
+  const contentType = match[1]!.toLowerCase();
+  if (!ALLOWED_TYPES.includes(contentType)) {
+    return error(400, 'invalid_photo', 'Photos must be JPEG, PNG, WebP or GIF.');
+  }
+  const bytes = Buffer.from(match[2]!, 'base64');
+  if (bytes.byteLength === 0) return error(400, 'invalid_photo', 'That photo is empty.');
+  if (bytes.byteLength > MAX_PHOTO_BYTES) {
+    return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
+  }
+
+  const stored = await (await getPhotoStore()).uploadPrivate(new Uint8Array(bytes), contentType, user.id);
+  return json(201, stored);
+}
+
+/**
+ * GET /api/messages/{handle}/photos/{name}?as=<handle> - a photo from a chat.
+ *
+ * Served only to someone speaking as one end of the thread the photo was sent
+ * in. Everyone else, including other people in the same chat's neighbouring
+ * threads, gets the same 404 as a name that does not exist.
+ */
+async function chatPhoto(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const other = request.params.handle;
+  const name = request.params.name;
+  const missing = { status: 404, body: 'Not found' };
+  if (!other || !name || !CHAT_PHOTO_NAME.test(name)) return missing;
+
+  const mine = await handlesFor(user.id, repository);
+  const them = await partyFor(other, repository);
+  if (mine.length === 0 || !them) return missing;
+  const asHandle = request.query.get('as')?.toLowerCase();
+  const us = asHandle
+    ? mine.find((party) => party.handle === asHandle)
+    : await defaultVoice(mine, them.handle, repository);
+  if (!us || us.handle === them.handle) return missing;
+
+  const store = await getPhotoStore();
+  const info = await store.privateInfo(name);
+  if (!info || info.threadKey !== threadKeyOf(threadIdFor(us.handle, them.handle))) return missing;
+
+  const found = await store.readPrivate(name);
+  if (!found) return missing;
+  return {
+    status: 200,
+    headers: {
+      'Content-Type': found.contentType,
+      // Private: a shared cache must not keep what only two people may see.
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    },
+    body: Buffer.from(found.bytes),
+  };
 }
 
 /**
@@ -726,6 +852,8 @@ export const reactToMessageRoute = handler(reactToMessage);
 export const blockRoute = handler(block);
 export const muteRoute = handler(mute);
 export const dealItemsRoute = handler(dealItems);
+export const uploadChatPhotoRoute = handler(uploadChatPhoto);
+export const chatPhotoRoute = handler(chatPhoto);
 export const publicProfileRoute = handler(publicProfile);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -736,6 +864,8 @@ app.http('messages-thread', { ...anon, methods: ['GET'], route: 'messages/{handl
 // equivalent templates as a conflict regardless of verb.
 app.http('messages-deal-items', { ...anon, methods: ['GET'], route: 'messages/{handle}/items', handler: dealItemsRoute });
 app.http('messages-send', { ...anon, methods: ['POST'], route: 'messages/{handle}/send', handler: sendMessageRoute });
+app.http('messages-photo-upload', { ...anon, methods: ['POST'], route: 'message-photos', handler: uploadChatPhotoRoute });
+app.http('messages-photo', { ...anon, methods: ['GET'], route: 'messages/{handle}/photos/{name}', handler: chatPhotoRoute });
 app.http('messages-react', { ...anon, methods: ['POST'], route: 'messages/{handle}/react', handler: reactToMessageRoute });
 app.http('messages-block', { ...anon, methods: ['POST'], route: 'messages/{handle}/block', handler: blockRoute });
 app.http('messages-mute', { ...anon, methods: ['POST'], route: 'messages/{handle}/mute', handler: muteRoute });

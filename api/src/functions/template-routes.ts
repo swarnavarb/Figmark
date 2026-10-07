@@ -142,8 +142,8 @@ async function deleteTemplate(request: HttpRequest, _context: InvocationContext)
 /* ── Photos ────────────────────────────────────────────────────────────── */
 
 /** The most a single photo may be, after the browser has shrunk it. */
-const MAX_PHOTO_BYTES = 900_000;
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+export const MAX_PHOTO_BYTES = 900_000;
+export const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 /**
  * POST /api/uploads - a picture in, a URL out.

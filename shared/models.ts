@@ -2365,6 +2365,12 @@ export interface Message extends BaseDocument {
   to: MessageParty;
   body: string;
   readAt: string | null;
+  /**
+   * Photos sent with the message, as names in the private chat-photos store.
+   * Never URLs: they have no public address, and are read only through the
+   * thread by the two handles in it.
+   */
+  photos?: string[];
   /** A private deal card, when the message carries one. */
   deal?: MessageDeal | null;
   /** An item this message is about, so both sides know which one. */

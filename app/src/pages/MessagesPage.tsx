@@ -12,6 +12,7 @@ import { timeAgo } from '../format';
 import { VoicePicker, VoiceScope } from '../components/SocialVoice';
 import { RoomBar, useLongPress } from '../components/SocialChrome';
 import { useGoBack } from '../components/ScrollManager';
+import { shrink } from '../components/PhotoManager';
 
 /**
  * The inbox.
@@ -183,6 +184,9 @@ export function ThreadPage() {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  /** Photos on their way: shown at once from the file, sent once they are up. */
+  const [photos, setPhotos] = useState<DraftPhoto[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Arriving from a saved calculation's "Private deal": the form opens with it.
   // Watched by the navigation's key, because "Private deal" pressed while this
@@ -342,14 +346,49 @@ export function ThreadPage() {
     if (replyTo) input.current?.focus();
   }, [replyTo]);
 
+  const uploading = photos.some((photo) => !photo.name && !photo.failed);
+  const sendable = photos.filter((photo) => photo.name).map((photo) => photo.name!);
+
+  async function addPhotos(list: FileList | null) {
+    if (!list) return;
+    const chosen = [...list].filter((file) => file.type.startsWith('image/')).slice(0, 4 - photos.length);
+    const drafts = chosen.map((file) => ({
+      key: `${file.name}-${Math.random().toString(36).slice(2, 7)}`,
+      preview: URL.createObjectURL(file),
+      name: null as string | null,
+      failed: false,
+    }));
+    setPhotos((all) => [...all, ...drafts]);
+    await Promise.all(chosen.map(async (file, index) => {
+      const key = drafts[index]!.key;
+      try {
+        const stored = await api.uploadChatPhoto(await shrink(file));
+        setPhotos((all) => all.map((photo) => (photo.key === key ? { ...photo, name: stored.blobName } : photo)));
+      } catch (err) {
+        setPhotos((all) => all.map((photo) => (photo.key === key ? { ...photo, failed: true } : photo)));
+        setError(err instanceof ApiRequestError ? err.message : 'A photo would not upload.');
+      }
+    }));
+  }
+
+  function dropPhoto(key: string) {
+    setPhotos((all) => {
+      const gone = all.find((photo) => photo.key === key);
+      if (gone) URL.revokeObjectURL(gone.preview);
+      return all.filter((photo) => photo.key !== key);
+    });
+  }
+
   async function send(event?: FormEvent) {
     event?.preventDefault();
-    if (!handle || (!body.trim() && !about)) return;
+    if (!handle || uploading || (!body.trim() && !about && sendable.length === 0)) return;
     setBusy(true);
     setError(null);
     try {
-      await api.sendMessage(handle, body.trim(), data?.us.handle, undefined, replyTo?.id, about?.id);
+      await api.sendMessage(handle, body.trim(), data?.us.handle, undefined, replyTo?.id, about?.id, sendable);
       setBody('');
+      photos.forEach((photo) => URL.revokeObjectURL(photo.preview));
+      setPhotos([]);
       setReplyTo(null);
       if (about) dropAbout();
       await load();
@@ -519,6 +558,18 @@ export function ThreadPage() {
               </button>
             </div>
           )}
+          {photos.length > 0 && (
+            <div className="cbar__photos">
+              {photos.map((photo) => (
+                <span key={photo.key} className={`cbar__photo${photo.failed ? ' is-failed' : ''}${photo.name ? '' : ' is-loading'}`}>
+                  <img src={photo.preview} alt="" />
+                  <button type="button" className="cbar__photodrop" aria-label="Remove photo" onClick={() => dropPhoto(photo.key)}>
+                    <Icon name="close" size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="cbar__row">
             {/* Whose voice you are writing in, switched from where you write.
                 Each voice is its own conversation, so switching opens that one. */}
@@ -544,6 +595,12 @@ export function ThreadPage() {
                 🤝
               </button>
             )}
+            <input ref={fileInput} type="file" accept="image/*" multiple hidden
+              onChange={(event) => { void addPhotos(event.target.files); event.target.value = ''; }} />
+            <button type="button" className="cbar__attach" onClick={() => fileInput.current?.click()}
+              disabled={photos.length >= 4} aria-label="Send a photo" title="Send a photo (only you two can see it)">
+              <Icon name="image" size={18} />
+            </button>
             <textarea ref={input} className="cbar__input" rows={1} value={body} maxLength={4000}
               placeholder={replyTo ? 'Write a reply…' : about ? 'Ask a question or name your price…' : `Message ${data.them.displayName}…`} aria-label="Message"
               onChange={(event) => setBody(event.target.value)}
@@ -555,7 +612,7 @@ export function ThreadPage() {
                 }
                 if (event.key === 'Escape') setReplyTo(null);
               }} />
-            <button type="submit" className="cbar__send" disabled={busy || (!body.trim() && !about)} aria-label="Send">
+            <button type="submit" className="cbar__send" disabled={busy || uploading || (!body.trim() && !about && sendable.length === 0)} aria-label="Send">
               {busy ? <span className="writer__spin cbar__spin" /> : <Icon name="send" size={18} />}
             </button>
           </div>
@@ -650,7 +707,17 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
           {message.deal ? (
             <DealCard message={message} mine={mine} us={thread.us} onAnswer={onDeal} />
           ) : message.item && message.body === `About ${message.item.title}` ? null : (
-            <p className="cmsg__body">{message.body}</p>
+            // A photo with no words of its own is just the photo.
+            message.photos?.length && /^Sent (a photo|\d+ photos)$/.test(message.body) ? null : (
+              <p className="cmsg__body">{message.body}</p>
+            )
+          )}
+          {message.photos && message.photos.length > 0 && (
+            <div className={`cmsg__photos cmsg__photos--${Math.min(message.photos.length, 4)}`}>
+              {message.photos.map((name) => (
+                <img key={name} src={api.chatPhotoUrl(handle, name, thread.us.handle)} alt="Photo in this chat" loading="lazy" />
+              ))}
+            </div>
           )}
           <span className="cmsg__time">
             {timeAgo(message.createdAt)}
@@ -692,6 +759,14 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
       </div>
     </div>
   );
+}
+
+/** A chat photo being added: previewed from the file, named once it is up. */
+interface DraftPhoto {
+  key: string;
+  preview: string;
+  name: string | null;
+  failed: boolean;
 }
 
 /** The item a message is about to be about, before it is sent. */

@@ -2371,10 +2371,19 @@ export const api = {
     post<{ blocked: boolean }>(`/messages/${encodeURIComponent(handle)}/block`, { block }),
   muteThread: (handle: string, mute: boolean, as?: string) =>
     post<{ muted: boolean }>(`/messages/${encodeURIComponent(handle)}/mute`, { mute, as }),
-  sendMessage: (handle: string, body: string, as?: string, deal?: Partial<MessageDeal>, replyToId?: string, itemId?: string) =>
+  sendMessage: (
+    handle: string, body: string, as?: string, deal?: Partial<MessageDeal>, replyToId?: string, itemId?: string,
+    photos?: string[],
+  ) =>
     post<{ message: Message }>(`/messages/${encodeURIComponent(handle)}/send`, {
       body, as, ...(deal ? { deal } : {}), ...(replyToId ? { replyToId } : {}), ...(itemId ? { itemId } : {}),
+      ...(photos?.length ? { photos } : {}),
     }),
+  /** A picture for a chat, in: a private name out, with no address of its own. */
+  uploadChatPhoto: (dataUrl: string) => post<{ blobName: string }>('/message-photos', { dataUrl }),
+  /** Where a chat photo is read: through the thread, so only its two ends can. */
+  chatPhotoUrl: (handle: string, name: string, as?: string) =>
+    `/api/messages/${encodeURIComponent(handle)}/photos/${encodeURIComponent(name)}${as ? `?as=${encodeURIComponent(as)}` : ''}`,
   /** The shop's own items, sold out and expired too, to make a private deal from. */
   dealItems: (handle: string, as: string) =>
     request<{ items: DealItem[] }>(`/messages/${encodeURIComponent(handle)}/items?as=${encodeURIComponent(as)}`),

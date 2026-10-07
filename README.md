@@ -67,9 +67,9 @@ freight forwarder directory, and a combined profile covering listings,
 purchases and follows. Social signals — bookmarks, follows, public comments and
 rate-limited bumps — are wired end to end.
 
-Not built yet: direct buyer-seller messaging, photo upload (listings use a
-generated placeholder until blob storage is connected), and reverse-image
-search.
+Photo upload works against Blob Storage (listing photos are public-read; photos
+sent in chats go to a private container and are served only to the two handles
+in the thread). Not built yet: reverse-image search.
 
 ## Status
 

@@ -7221,6 +7221,21 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 .cbar__attach { background: var(--surface-2); color: var(--sx-volt); }
 .cbar__send { background: var(--sx-grad); color: #fff; box-shadow: 0 4px 14px rgba(255, 70, 80, 0.35); }
+.cbar__attach:disabled { opacity: 0.4; cursor: default; }
+.cbar__photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.cbar__photo { position: relative; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.cbar__photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cbar__photo.is-loading img { opacity: 0.45; }
+.cbar__photo.is-failed { outline: 2px solid var(--sx-blaze); }
+.cbar__photodrop {
+  position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: rgba(0, 0, 0, 0.65); color: #fff; cursor: pointer;
+}
+.cmsg__photos { display: grid; gap: 3px; margin: 2px 0; max-width: 260px; }
+.cmsg__photos--1 { grid-template-columns: 1fr; }
+.cmsg__photos--2, .cmsg__photos--3, .cmsg__photos--4 { grid-template-columns: 1fr 1fr; }
+.cmsg__photos img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; display: block; background: var(--surface-2); }
+.cmsg__photos--1 img { aspect-ratio: auto; max-height: 320px; }
 .cbar__send:disabled { opacity: 0.4; box-shadow: none; cursor: default; }
 .cbar__spin { position: static; width: 18px; height: 18px; border-width: 2px; }
 .cbar__input {

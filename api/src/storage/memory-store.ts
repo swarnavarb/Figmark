@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PhotoStore, StoredPhoto, StorageStatus } from './types.js';
+import type { PhotoStore, PrivatePhotoInfo, StoredPhoto, StorageStatus } from './types.js';
 
 /**
  * Used when no storage account is configured.
@@ -40,6 +40,31 @@ export class MemoryPhotoStore implements PhotoStore {
 
   async read(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
     return this.blobs.get(blobName) ?? null;
+  }
+
+  private readonly privateBlobs = new Map<
+    string,
+    { bytes: Uint8Array; contentType: string; uploadedBy: string; threadKey: string | null }
+  >();
+
+  async uploadPrivate(bytes: Uint8Array, contentType: string, uploadedBy: string): Promise<{ blobName: string }> {
+    const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
+    this.privateBlobs.set(blobName, { bytes, contentType, uploadedBy, threadKey: null });
+    return { blobName };
+  }
+
+  async privateInfo(blobName: string): Promise<PrivatePhotoInfo | null> {
+    const found = this.privateBlobs.get(blobName);
+    return found ? { uploadedBy: found.uploadedBy, threadKey: found.threadKey } : null;
+  }
+
+  async attachPrivate(blobName: string, threadKey: string): Promise<void> {
+    const found = this.privateBlobs.get(blobName);
+    if (found) found.threadKey = threadKey;
+  }
+
+  async readPrivate(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    return this.privateBlobs.get(blobName) ?? null;
   }
 }
 

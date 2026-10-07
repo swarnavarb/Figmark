@@ -29,4 +29,25 @@ export interface PhotoStore {
   upload(bytes: Uint8Array, contentType: string): Promise<StoredPhoto>;
   /** Read one back, for the backend that has no public URL of its own. */
   read(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null>;
+
+  /**
+   * Private photos: the ones sent in a chat.
+   *
+   * Kept apart from the public store on purpose. They have no public URL at all,
+   * so the only way to see one is through the API, which checks who is asking.
+   * Each is tagged with the account that uploaded it and, once a message carries
+   * it, the thread it was sent in - so it can be attached once, by its owner,
+   * and read only from that thread.
+   */
+  uploadPrivate(bytes: Uint8Array, contentType: string, uploadedBy: string): Promise<{ blobName: string }>;
+  privateInfo(blobName: string): Promise<PrivatePhotoInfo | null>;
+  /** Pin a private photo to the thread it was sent in. */
+  attachPrivate(blobName: string, threadKey: string): Promise<void>;
+  readPrivate(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null>;
+}
+
+export interface PrivatePhotoInfo {
+  uploadedBy: string;
+  /** Opaque key of the thread it was attached to, or null while unsent. */
+  threadKey: string | null;
 }
