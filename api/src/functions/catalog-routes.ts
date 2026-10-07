@@ -100,7 +100,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     listings: listings.map((listing) => ({
-      ...withoutCosts(listing),
+      ...publicListing(listing),
       liked: likedIds.has(listing.id),
       seller: sellerById.get(listing.sellerId) ?? null,
       estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
@@ -124,10 +124,18 @@ async function canSee(repository: Awaited<ReturnType<typeof getRepository>>, lis
   return !listing.privateFor || viewerId === listing.privateFor || await mayManage(repository, listing, viewerId);
 }
 
-/** A listing as anyone outside the shop may see it: without what it cost the shop. */
-function withoutCosts(listing: Listing): Listing {
-  const { costSheet: _cost, costSheetPrevious: _history, ...rest } = listing;
-  return rest;
+/**
+ * A listing as anyone outside the shop may see it: without what it cost the
+ * shop, and without its price history. A buyer is only ever shown "was" - the
+ * highest price it has been on sale at, when it has come down since - so that
+ * is all that leaves; every other change of price stays the shop's.
+ */
+function publicListing(listing: Listing): Listing {
+  const { costSheet: _cost, costSheetPrevious: _history, priceHistory, ...rest } = listing;
+  const highest = Math.max(0, ...(priceHistory ?? []).map((entry) => entry.priceMinor));
+  return highest > listing.priceMinor
+    ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }
+    : rest;
 }
 
 async function listingDetail(request: HttpRequest, _context: InvocationContext) {
@@ -213,7 +221,7 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
       referredBy: referredBy && !referredBy.suspended ? personRef(referredBy) : null,
     } : null,
     // What the item cost the shop is the shop's own business.
-    listing: (await mayManage(repository, listing, viewer?.id)) ? settled.listing : withoutCosts(settled.listing),
+    listing: (await mayManage(repository, listing, viewer?.id)) ? settled.listing : publicListing(settled.listing),
     /** The group behind the meter: counts, roster, and the reader's own place. */
     preOrder,
     seller: sellers[0] ? toSellerCard(sellers[0]) : null,
@@ -258,7 +266,7 @@ async function similarListings(request: HttpRequest, _context: InvocationContext
   const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
   return json(200, {
     listings: picks.map((entry) => ({
-      ...withoutCosts(entry),
+      ...publicListing(entry),
       liked: false,
       seller: sellerById.get(entry.sellerId) ?? null,
       estimatedDispatchAt: null,
@@ -1079,7 +1087,7 @@ async function mySaved(request: HttpRequest, _context: InvocationContext) {
   const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
   return json(200, {
     listings: listings.map((listing) => ({
-      ...withoutCosts(listing),
+      ...publicListing(listing),
       liked: true,
       seller: sellerById.get(listing.sellerId) ?? null,
       estimatedDispatchAt: null,

@@ -15,7 +15,7 @@ process.env.FIGMARK_UNDO_WINDOW_MS = '0';
 process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
-const { toErrorResponse } = await import(new URL('http.js', fns));
+const { toErrorResponse, json: jsonResponse } = await import(new URL('http.js', fns));
 const { loginRoute: login, signupRoute: signup, meRoute: me } = await import(new URL('auth-routes.js', fns));
 const {
   feedRoute: feed, listingDetailRoute: listingDetail, createListingRoute: createListing,
@@ -453,6 +453,21 @@ await check('newest is newest for everyone, whoever they follow', async () => {
   assert.deepEqual(times, [...times].sort().reverse(), 'the signed-in feed is not newest first');
   const anon = (await feed(req({}), ctx)).jsonBody.listings.map((listing) => listing.id);
   assert.deepEqual(body.listings.map((listing) => listing.id), anon, 'following a shop changed the order');
+});
+
+await check('responses carry no database bookkeeping, and buyers see only "was", not the price history', async () => {
+  const body = jsonResponse(200, { listing: { id: 'x', _rid: 'r', _etag: 'e', photos: [{ url: 'u', _ts: 1 }] } }).jsonBody;
+  assert.deepEqual(body, { listing: { id: 'x', photos: [{ url: 'u' }] } });
+
+  const listings = (await feed(req({}), ctx)).jsonBody.listings;
+  const dropped = listings.filter((listing) => listing.priceHistory);
+  assert.ok(dropped.length > 0, 'the seed needs an item whose price came down');
+  for (const listing of listings) {
+    assert.equal(listing.costSheet, undefined);
+    if (!listing.priceHistory) continue;
+    assert.equal(listing.priceHistory.length, 1, 'only the high-water mark leaves the shop');
+    assert.ok(listing.priceHistory[0].priceMinor > listing.priceMinor);
+  }
 });
 
 /* ── listing detail and social ─────────────────────────────────────────── */

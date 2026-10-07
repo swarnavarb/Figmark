@@ -17,7 +17,27 @@ import { AuthError } from '../auth/errors.js';
 export function json(status: number, body: unknown, cookies: string[] = []): HttpResponseInit {
   const headers = new Headers({ 'Content-Type': 'application/json' });
   for (const cookie of cookies) headers.append('Set-Cookie', cookie);
-  return { status, headers, jsonBody: body };
+  return { status, headers, jsonBody: withoutStoreFields(body) };
+}
+
+/** What Cosmos adds to every document it hands back: how it is stored, which no reader needs. */
+const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts']);
+
+/**
+ * The body with Cosmos's own fields taken out, at any depth. Routes return
+ * documents straight from the database often enough that this is done once,
+ * here, rather than remembered in each of them.
+ */
+function withoutStoreFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutStoreFields);
+  if (value === null || typeof value !== 'object') return value;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!STORE_FIELDS.has(key)) out[key] = withoutStoreFields(entry);
+  }
+  return out;
 }
 
 export function error(status: number, code: string, message: string): HttpResponseInit {
