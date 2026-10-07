@@ -11,6 +11,7 @@ import { useGoBack } from '../components/ScrollManager';
 import { timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { WantedPage } from './WantedPage';
+import { useToast } from '../components/Feedback';
 
 /**
  * The social side.
@@ -271,6 +272,7 @@ export const ChannelPage = ChannelRoom;
  * list sells what is inside: how many are in it, and the latest thing said.
  */
 function Forums() {
+  const toast = useToast();
   const { voice, choose } = useVoice();
   const [data, setData] = useState<ForumsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -336,8 +338,15 @@ function Forums() {
           <h2 className="forums__title">Your forums</h2>
           <p className="faint">{mine.length === 0 ? 'Join one below to post in it.' : `${mine.length} joined`}</p>
         </div>
-        {data && data.remaining > 0 && !voice.storeId && (
-          <button type="button" className="followbtn" onClick={() => setCreating(!creating)}>
+        {data && !voice.storeId && (
+          <button type="button" className="followbtn" onClick={() => {
+            // Not there yet: say when they will be, rather than hiding the button.
+            if (!creating && data.slots && !data.slots.canCreate) {
+              toast(data.slots.message ?? 'You will be eligible to create your first forum when you reach level 5.', 'info');
+              return;
+            }
+            setCreating(!creating);
+          }}>
             <Icon name={creating ? 'close' : 'plus'} size={12} /> {creating ? 'Cancel' : 'New forum'}
           </button>
         )}
@@ -352,7 +361,12 @@ function Forums() {
           <button type="submit" className="btn" disabled={busy || !name.trim()}>
             {busy ? 'Creating…' : 'Create forum'}
           </button>
-          <p className="faint">{data?.remaining} of {data?.cap} slots left while forums are being built out.</p>
+          {data?.slots && (
+            <p className="faint">
+              You have opened {data.slots.opened} of {data.slots.allowed} forum{data.slots.allowed === 1 ? '' : 's'} at level {data.slots.level}.
+              {data.slots.nextLevel && ` Another unlocks at level ${data.slots.nextLevel}.`} Forums unlock at levels {data.slots.unlockLevels.join(', ')}.
+            </p>
+          )}
         </form>
       )}
 

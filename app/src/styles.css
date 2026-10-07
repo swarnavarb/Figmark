@@ -220,6 +220,19 @@
   --grad-sea:  linear-gradient(135deg, #06D6E7 0%, #3B82F6 100%);
   --grad-play: linear-gradient(135deg, #A3E635 0%, #06D6E7 100%);
 
+  /* The header's colour, one per section (set as data-tone on the root by
+     the shell). The tab bar's hues, taken deep enough to carry white: the
+     header is a field of colour under icons and text, not a pill.
+     `rgb` is one solid colour from the middle of the ramp. The header's top
+     edge is that colour all the way across, and so is the phone's status bar
+     (theme-color, and Safari's own sampling of the bar pinned at the top),
+     so the two meet without a seam; the ramp opens up below it. Scrolled,
+     the header is that colour at 40%. Keep these in step with TONES in
+     AppShell.tsx. */
+  --top-grad: linear-gradient(115deg, #3B82F6 0%, #7C3AED 100%);
+  --top-rgb: 91 94 241;
+  --top-ink: #A5B4FC;
+
   /* One type scale */
   --t-2xs: 10.5px;
   --t-xs: 11.5px;
@@ -253,7 +266,9 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.35);
   /* Coloured elevation: a lift that carries the hue of what it lifts. */
   --shadow-violet: 0 6px 24px rgba(124, 58, 237, 0.35);
-  --nav-h: 62px;
+  /* Includes the room under an iPhone's clock and notch, which is zero
+     everywhere else, so every offset measured from the header stays right. */
+  --nav-h: calc(62px + env(safe-area-inset-top, 0px));
   /* The bottom bar's height, including the home indicator. Declared here
      because two things need it: the bar sets itself from it, and a
      full-height screen has to stop above it. */
@@ -395,11 +410,56 @@ code, kbd, samp, pre {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 20px;
-  background: rgba(18, 18, 21, 0.85);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
+  /* The header runs to the very top of the screen; the padding keeps what
+     is in it below the clock. */
+  padding: env(safe-area-inset-top, 0px) 20px 0;
+  /* No background of its own: every colour is on the layers behind it, and
+     the colour iOS and Safari read for the status bar is the .topstrip's. */
+  color: #fff;
 }
+/* The header's top edge in its one colour, solid down to the foot of the
+   .topstrip (which overlaps the header's top few pixels) and fading into
+   the gradient below. Declared on the bars, not the root, so it takes the
+   --top-rgb of the bar it is drawn in. */
+:root { --strip-h: calc(env(safe-area-inset-top, 0px) + 6px); }
+.nav, .soctop, .roombar, .soccompact, .topstrip {
+  --top-band: linear-gradient(180deg,
+    rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) var(--strip-h),
+    rgb(var(--top-rgb) / 0) calc(env(safe-area-inset-top, 0px) + 46px));
+}
+/* The section's gradient, on a layer of its own so it can fade out once the
+   page scrolls under it, leaving the header's colour at 40%. */
+.nav::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    var(--top-band),
+    linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.18) 100%),
+    var(--top-grad);
+  transition: opacity 240ms var(--ease);
+  pointer-events: none;
+}
+/*
+ * The header once the page scrolls under it: glass that is the status bar's
+ * colour at the top, so the two meet without a joint, thins to 40% by the
+ * header's foot, and then dissolves into the page over a short blurred tail
+ * rather than stopping at a line. The social tab's slim bar is the same glass.
+ */
+:root { --glass-tail: 18px; }
+.nav::after, .soccompact::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--glass-tail)); z-index: -2;
+  background: linear-gradient(180deg,
+    rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) var(--strip-h),
+    rgb(var(--top-rgb) / 0.4) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - var(--glass-tail)), transparent 100%);
+  mask-image: linear-gradient(180deg, #000 calc(100% - var(--glass-tail)), transparent 100%);
+  pointer-events: none;
+}
+.nav::after { opacity: 0; transition: opacity 240ms var(--ease); }
+:root[data-scrolled] .nav::before { opacity: 0; }
+:root[data-scrolled] .nav::after { opacity: 1; }
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The first coloured thing anyone sees, so it carries the full brand ramp
@@ -410,9 +470,11 @@ code, kbd, samp, pre {
   background: var(--grad-hero);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset, 0 3px 12px rgba(124, 58, 237, 0.42);
 }
+/* In the header the mark sits flat: its glow spread up under the clock and
+   read as a blur at the top of the screen. */
+.nav .brand__mark { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); }
 .brand__name { font-size: var(--t-md); font-weight: var(--w-bold); letter-spacing: -0.02em; }
 
-.nav__search { flex: 1; max-width: 560px; }
 .nav__links { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 
 .nav__link {
@@ -480,6 +542,24 @@ code, kbd, samp, pre {
 .order-status.badge--warn { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.3), 0 4px 16px rgba(251, 191, 36, 0.24); }
 .order-status.badge--danger { box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.32), 0 4px 16px rgba(244, 63, 94, 0.26); }
 .order-status.badge--accent { box-shadow: 0 0 0 1px var(--accent-line), 0 4px 16px rgba(124, 58, 237, 0.26); }
+
+/* ── Section tones ─────────────────────────────────────────────────────── */
+
+:root[data-tone='sell'] {
+  --top-grad: linear-gradient(115deg, #0891B2 0%, #2563EB 100%);
+  --top-rgb: 23 122 206;
+  --top-ink: #67E8F9;
+}
+:root[data-tone='services'] {
+  --top-grad: linear-gradient(115deg, #65A30D 0%, #0E7490 100%);
+  --top-rgb: 58 140 78;
+  --top-ink: #BEF264;
+}
+:root[data-tone='social'] {
+  --top-grad: linear-gradient(115deg, #FF5B1F 0%, #FF2E7E 58%, #C026D3 100%);
+  --top-rgb: 255 52 113;
+  --top-ink: #FF8A65;
+}
 
 /* ── Search ────────────────────────────────────────────────────────────── */
 
@@ -1269,35 +1349,37 @@ code, kbd, samp, pre {
 /* Scrolls rather than wraps: a fourth tab turned this into two ragged rows on
    a phone, and a strip of tabs reads as one row or not at all. */
 .tabs {
-  display: flex; gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
-  overflow-x: auto;
+  display: flex; gap: 4px; align-items: center;
+  margin-bottom: 16px; padding: 4px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill);
+  /* Sideways only: a row of tabs never scrolls up and down under a thumb. */
+  overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain; touch-action: pan-x;
+  scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
 .tabs::-webkit-scrollbar { display: none; }
-.tabs .tab { flex: 0 0 auto; white-space: nowrap; }
+.tabs .tab { flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start; }
 .tab {
-  padding: 10px 15px; border: none; background: transparent;
-  color: var(--text-dim); font-size: var(--t-sm); font-weight: var(--w-semi);
-  cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 7px 13px; border: none; border-radius: var(--r-pill); background: transparent;
+  color: var(--text-dim); font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.2;
+  cursor: pointer; transition: background 180ms, color 180ms;
 }
-.tab:hover { color: var(--text); }
-.tab.is-on { color: var(--accent-text); border-bottom-color: var(--accent); }
+.tab:hover { color: var(--text); background: var(--surface-hover); }
+.tab.is-on { color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.tab .faint { margin-left: 2px !important; font-size: var(--t-xs); }
 
-/* A brighter, thicker underline where a page has few enough tabs that one
-   can afford to be a real statement of where you are, not just a hint. */
+/* A bolder fill where a page has few enough tabs to make a statement of it. */
 .tabs--vivid .tab.is-on {
-  border-bottom-width: 3px;
-  border-image: linear-gradient(90deg, var(--accent), var(--aqua)) 1;
+  color: #fff; background: linear-gradient(90deg, var(--accent), var(--aqua)); box-shadow: none;
 }
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
 
 @media (max-width: 860px) {
   .detail { grid-template-columns: 1fr; }
-  .nav__search { order: 3; flex-basis: 100%; max-width: none; }
-  .nav { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 10px; }
+  .nav { height: auto; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; flex-wrap: wrap; gap: 10px; }
   .field-row { grid-template-columns: 1fr; }
   .nav__link { padding: 7px 9px; }
 }
@@ -1308,7 +1390,7 @@ code, kbd, samp, pre {
    are, and the tabs say what you are looking at. */
 @media (max-width: 560px) {
   .brand__name { display: none; }
-  .nav { padding: 9px 14px; gap: 8px; }
+  .nav { padding: calc(9px + env(safe-area-inset-top, 0px)) 14px 9px; gap: 8px; }
   .nav__links { gap: 4px; }
 }
 
@@ -1375,13 +1457,17 @@ code, kbd, samp, pre {
   z-index: 40;
   display: flex;
   isolation: isolate;
-  /* Translucent over a blur, so content scrolling underneath stays legible as
-     a hint of movement rather than being cut off by a solid slab. */
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  /* Glass, as the header is once scrolled: the page passes underneath as a
+     blurred hint of movement. The blur is the bar's backdrop only - the tabs
+     and the pill sit on top of it, sharp. */
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
   border-top: 1px solid var(--border);
   height: var(--tabbar-h);
+  /* Down to the true bottom when an iPhone has left the window a keyboard
+     short - see ViewportSync. Zero otherwise. */
+  margin-bottom: calc(-1 * var(--vv-shrunk, 0px));
   padding: 6px 8px;
   padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
 }
@@ -2787,16 +2873,99 @@ code, kbd, samp, pre {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 10px 12px; border-bottom: 1px solid var(--border);
 }
-.bell__list { max-height: 60vh; overflow-y: auto; }
+.bell__list { max-height: min(60vh, 520px); overflow-y: auto; overscroll-behavior: contain; }
 .bell__row {
-  display: grid; gap: 2px; width: 100%; padding: 10px 12px; text-align: left;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: start; gap: 10px;
+  width: 100%; padding: 10px 12px; text-align: left;
   background: none; border: 0; border-bottom: 1px solid var(--border);
   color: inherit; font: inherit; cursor: pointer;
 }
 .bell__row:hover { background: var(--surface-hover); }
 /* Unread reads as unread without a second colour to learn. */
 .bell__row.is-unread { background: var(--accent-soft); }
-.bell__title { font-size: var(--t-sm); font-weight: var(--w-semi); }
+.bell__text { display: grid; gap: 2px; min-width: 0; }
+.bell__title { font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.3; overflow-wrap: anywhere; }
+.bell__body {
+  font-size: var(--t-xs); line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.bell__when { font-size: var(--t-2xs); }
+.bell__row:not(.is-unread) .bell__title { font-weight: var(--w-medium); color: var(--text-dim); }
+.bell__unread { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--accent); }
+/* What is new on a line that stands for several: "Arjun sent you 3 messages". */
+.bell__count {
+  min-width: 20px; height: 20px; padding: 0 6px; margin-top: 1px; border-radius: var(--r-pill);
+  display: inline-grid; place-items: center;
+  background: var(--accent); color: var(--accent-ink); font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+.bell__section {
+  margin: 0; padding: 10px 14px 4px;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint);
+}
+/* What a row is about, at a glance: a tinted circle per category. */
+.bell__glyph {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--surface-hover); color: var(--text-dim);
+}
+.bell__glyph--messages { background: var(--blue-soft); color: var(--blue-text); }
+.bell__glyph--orders { background: var(--aqua-soft); color: var(--aqua); }
+.bell__glyph--payments { background: var(--ok-soft); color: var(--ok); }
+.bell__glyph--social { background: var(--pink-soft); color: var(--pink-text); }
+.bell__glyph--reviews { background: var(--warn-soft); color: var(--warn); }
+.bell__glyph--drops { background: var(--violet-soft); color: var(--violet-text); }
+/* One row of filters, scrolled sideways rather than wrapped. */
+.bell__filters {
+  display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+}
+.bell__filters::-webkit-scrollbar { display: none; }
+.bell__chip {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); background: none; color: var(--text-dim);
+  font: inherit; font-size: var(--t-xs); font-weight: var(--w-medium); cursor: pointer;
+}
+.bell__chip.is-on { background: var(--text); border-color: var(--text); color: var(--bg); }
+.bell__chip-count {
+  min-width: 16px; padding: 0 4px; border-radius: var(--r-pill);
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 10px; line-height: 16px; text-align: center;
+}
+.bell__empty { padding: 14px; margin: 0; }
+.bell__more {
+  display: block; width: 100%; padding: 12px; border: 0; background: none;
+  color: var(--accent-text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
+}
+.bell__more:disabled { color: var(--text-faint); cursor: default; }
+/* Lock-screen notifications for this device: one line and the one thing to do. */
+.bell__push {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  font-size: var(--t-sm);
+}
+.bell__push-actions { display: flex; gap: 4px; flex: none; }
+.bell__push > .btn { flex: none; white-space: nowrap; }
+
+/* What reaches the phone: one row per kind, a switch on the right. */
+.phoneprefs { display: grid; gap: 2px; padding-top: 12px; border-top: 1px solid var(--border); }
+.phoneprefs__head { display: grid; gap: 2px; margin-bottom: 6px; font-size: var(--t-sm); }
+.phoneprefs__row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 44px; font-size: var(--t-sm); cursor: pointer;
+}
+.phoneprefs__hint { display: block; font-size: var(--t-xs); }
+.phoneprefs__switch {
+  appearance: none; -webkit-appearance: none; flex: none; position: relative;
+  width: 40px; height: 24px; margin: 0; border-radius: var(--r-pill);
+  background: var(--border-strong); cursor: pointer; transition: background 160ms ease;
+}
+.phoneprefs__switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; transition: transform 160ms ease;
+}
+.phoneprefs__switch:checked { background: var(--accent); }
+.phoneprefs__switch:checked::after { transform: translateX(16px); }
+.phoneprefs__switch:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
 
 /* +Me and how many others, on one row under the post. */
 .alsome {
@@ -3759,7 +3928,7 @@ a.order__name:hover { color: var(--accent-text); }
   z-index: 80;
   left: var(--page-pad);
   right: var(--page-pad);
-  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + 17px);
   display: grid;
   gap: var(--s2);
   justify-items: stretch;
@@ -3902,24 +4071,18 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 .ocard__price .badge { white-space: nowrap; }
 
-.ocard__money { display: grid; gap: 6px; }
-.ocard__bar { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
-.ocard__bar span {
+/* Total · Paid · Balance: one small line over a hairline bar, under a customer and under each order. */
+.mline { display: grid; gap: 5px; }
+.mline__bar { height: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.mline__bar span {
   display: block; height: 100%; border-radius: inherit;
   background: linear-gradient(90deg, rgb(var(--tone)), rgb(var(--tone-2)));
-  box-shadow: 0 0 12px rgb(var(--tone) / 0.6);
   transition: width 700ms var(--ease);
 }
-.ocard__moneytext { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-xs); color: var(--text-faint); }
-.ocard__moneytext b { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.ocard__done {
-  font-weight: var(--w-bold);
-  background: linear-gradient(90deg, #34D399, #06D6E7, #A78BFA, #34D399);
-  background-size: 200% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: ocard-shimmer 3.5s linear infinite;
-}
-@keyframes ocard-shimmer { to { background-position: -200% 0; } }
+.mline__row { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: var(--t-xs); color: var(--text-faint); }
+.mline__row b { color: var(--text); font-weight: var(--w-semi); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.mline__row .is-due b { color: #FBBF24; }
+.mline__row .is-clear b { color: var(--ok); }
 .ocard__extra { color: #F0ABFC; font-weight: var(--w-semi); }
 
 .ocard__chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
@@ -4127,8 +4290,8 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ocard, .ocard.is-urgent::before, .ocard.is-glowing, .ocard__done { animation: none; }
-  .ocard__bar span { transition: none; }
+  .ocard, .ocard.is-urgent::before, .ocard.is-glowing { animation: none; }
+  .mline__bar span { transition: none; }
 }
 
 /* ── The conversation ──────────────────────────────────────────────────────
@@ -6379,6 +6542,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   --sx-wash: linear-gradient(115deg, rgba(255, 91, 31, 0.14) 0%, rgba(255, 46, 126, 0.08) 55%, rgba(192, 38, 211, 0.04) 100%);
   --sx-line: rgba(255, 110, 60, 0.3);
   --sx-glow: 0 10px 30px rgba(255, 70, 80, 0.28);
+  --top-rgb: 255 52 113;
 }
 
 /* ── The header: a banner, not a heading ───────────────────────────────── */
@@ -6840,8 +7004,9 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 /* ── Bars that step aside while you read ───────────────────────────────── */
 
-.nav, .tabbar { transition: transform 280ms var(--ease); }
-:root[data-bars='hidden'] .nav { transform: translateY(-100%); }
+.nav { transition: transform 280ms var(--ease); }
+.tabbar { transition: transform 280ms var(--ease); }
+:root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail))); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(100%); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7061,6 +7226,10 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   background: var(--surface-2); color: var(--text-dim);
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase;
 }
+/* Where the reader left off: everything under the line is new to them. */
+.chunread { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; color: var(--accent-text); }
+.chunread::before, .chunread::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: 0.45; }
+.chunread span { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; }
 
 /* One message. The shop on the left in its colours, customers on the left in
    grey, you on the right - the way every chat already reads. */
@@ -7284,16 +7453,20 @@ body.is-locked { overflow: hidden; }
   /* Square along the bottom: the header is the top edge of the screen, not a card on it. */
   border-radius: 0;
   padding-top: env(safe-area-inset-top, 0px);
-  background:
+  /* One colour along the top edge, the status bar's, as the marketplace
+     header has; the drifting gradient opens up below it. */
+  background-color: rgb(var(--top-rgb));
+  background-image:
+    var(--top-band),
     linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.22) 100%),
     var(--sx-grad);
-  background-size: 100% 100%, 180% 180%;
+  background-size: 100% 100%, 100% 100%, 180% 180%;
   animation: soctop-drift 14s ease-in-out infinite alternate;
   box-shadow: 0 14px 40px rgba(255, 60, 90, 0.26);
 }
 @keyframes soctop-drift {
-  from { background-position: 0 0, 0% 30%; }
-  to { background-position: 0 0, 100% 70%; }
+  from { background-position: 0 0, 0 0, 0% 30%; }
+  to { background-position: 0 0, 0 0, 100% 70%; }
 }
 .soctop__in {
   display: grid; gap: 12px;
@@ -7373,15 +7546,11 @@ body.is-locked { overflow: hidden; }
   position: fixed; top: 0; left: 0; right: 0; z-index: 60;
   padding-top: env(safe-area-inset-top, 0px);
   /* Square, and see-through: the feed scrolls on underneath, blurred, so
-     the bar reads as glass over the page rather than a lid on it. */
+     the bar reads as glass over the page rather than a lid on it. The glass
+     is its ::before, shared with the marketplace header. */
   border-radius: 0;
-  background: linear-gradient(115deg, rgba(255, 91, 31, 0.72) 0%, rgba(255, 46, 126, 0.72) 58%, rgba(192, 38, 211, 0.72) 100%);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 8px 26px rgba(255, 60, 90, 0.18);
   color: #fff;
-  transform: translateY(-110%);
+  transform: translateY(calc(-100% - var(--glass-tail) - 4px));
   transition: transform 300ms var(--ease);
   pointer-events: none;
 }
@@ -7465,17 +7634,73 @@ body.is-locked { overflow: hidden; }
 }
 .followbtn.is-on { border-color: var(--border-strong); color: var(--text-dim); }
 
+/* ── The marketplace header's search, and its sheet ────────────────────── */
+
+/* The social header's search icon, on whichever section's colour is behind
+   it. A dot while a search is on, since the words themselves are not shown. */
+.navsearch {
+  position: relative; display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.34); border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16); color: #fff; cursor: pointer;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.navsearch:hover { background: rgba(255, 255, 255, 0.28); }
+.navsearch:active { transform: scale(0.94); }
+.navsearch.is-set::after {
+  content: ''; position: absolute; top: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 2px rgb(var(--top-rgb));
+}
+.nav .navcart, .nav .bell__button {
+  border-color: rgba(255, 255, 255, 0.34); background: rgba(255, 255, 255, 0.16); color: #fff;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.nav .navcart:hover, .nav .bell__button:hover { background: rgba(255, 255, 255, 0.28); border-color: rgba(255, 255, 255, 0.5); }
+.nav .navcart.is-active { border-color: #fff; color: #fff; background: rgba(255, 255, 255, 0.3); }
+.nav .bell__panel, .nav .pmenu__panel { color: var(--text); }
+.nav .pmenu__btn { background: #fff; }
+.nav .navlogin { background: #fff; border-color: #fff; color: #0B0F1A; }
+
+/* The social sheet, in the section's colour, with the social palette's
+   accents traded for that colour's light tint. */
+.mktsearch {
+  --sx-blaze: var(--top-ink);
+  --sx-grad: var(--top-grad);
+  --sx-wash: rgba(255, 255, 255, 0.06);
+  --sx-line: rgba(255, 255, 255, 0.14);
+}
+.mktsearch .socsearch__bar { background: var(--top-grad); }
+.mktsearch__clear {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; padding: 0;
+  border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.22); color: #fff; cursor: pointer;
+}
+.mktsearch__thumb {
+  width: 52px; height: 52px; flex: 0 0 auto; aspect-ratio: auto;
+  border-radius: 12px; overflow: hidden; font-size: var(--t-sm);
+}
+.mktsearch .socsearch__who strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mktsearch__price { flex: 0 0 auto; font-weight: var(--w-bold); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.mktsearch__all {
+  justify-self: start; display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 4px; padding: 6px 4px; border: 0; background: none;
+  color: var(--top-ink); font: inherit; font-weight: var(--w-bold); font-size: var(--t-sm); cursor: pointer;
+}
+
 /* ── A room's strip ────────────────────────────────────────────────────── */
 
 .roombar {
   position: sticky; top: 0; z-index: 30;
   padding-top: env(safe-area-inset-top, 0px);
   border-radius: 0;
-  background: var(--sx-grad);
+  background-color: rgb(var(--top-rgb));
+  background-image: var(--top-band), var(--sx-grad);
   box-shadow: 0 8px 24px rgba(255, 60, 90, 0.26);
   color: #fff;
 }
-.roombar--forum { background: linear-gradient(115deg, #7C3AED 0%, #C026D3 45%, #FF2E7E 100%); }
+.roombar--forum {
+  --top-rgb: 198 39 203;
+  background-image: var(--top-band), linear-gradient(115deg, #7C3AED 0%, #C026D3 45%, #FF2E7E 100%);
+}
 .roombar__in {
   display: flex; align-items: center; gap: 10px;
   max-width: 720px; height: 56px; margin: 0 auto;
@@ -7800,6 +8025,44 @@ body.is-locked { overflow: hidden; }
   min-height: calc(100dvh - var(--roombar-h));
 }
 .dmroom .chthread { flex: 1; min-height: 0; }
+
+/* ── A conversation pins nothing to the screen ──────────────────────────────
+ *
+ * Header, messages, composer: three rows of a column exactly the height of
+ * the page, with only the middle one scrolling. Nothing is position: fixed
+ * or sticky, because that is what an iPhone home-screen app gets wrong - after
+ * the keyboard, or woken by a notification tap, it can draw pinned things a
+ * keyboard's height up the screen while the page itself is laid out right.
+ * Things in the flow of a page that does not scroll have nowhere to drift.
+ */
+html:has(.dmscreen), html:has(.dmscreen) body, html:has(.dmscreen) #root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.shell:has(.dmscreen) { height: 100%; min-height: 0; }
+.dmscreen {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.dmscreen > .roombar { position: relative; top: auto; flex: none; }
+.shell--room .dmscreen > .dmroom {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 12px;
+  /* Full width, so a wheel or a thumb anywhere scrolls it; the messages keep
+     their column inside. */
+  max-width: none;
+  padding-inline: max(var(--page-pad), calc((100% - 720px) / 2 + var(--page-pad)));
+}
+/* Fills the list when there is little to read, so the messages sit just
+   above the bar, and grows past it when there is more, to be scrolled. */
+.dmscreen .dmroom .chthread { flex: 1 0 auto; min-height: auto; }
+:root .shell--room .dmscreen > .cbar,
+:root[data-bars='hidden'] .shell--room .dmscreen > .cbar {
+  position: relative; bottom: auto; flex: none;
+}
 .chstrip { box-shadow: 0 10px 12px -8px var(--bg); }
 
 /* Holding a message opens its actions; it should not also start selecting
@@ -7848,9 +8111,22 @@ body.is-locked { overflow: hidden; }
   transition: none;
 }
 .shell--room .chroom { padding-bottom: 150px; }
+/* Held to what is on screen rather than to the browser's idea of the window,
+   which an iPhone can leave short or shifted - see ViewportSync. Both are
+   zero whenever the two agree.
+   Written against the bars-hidden state too: that rule lifts the bar off
+   the tab bar's spot elsewhere, and in a room - where there is no tab bar
+   and the bar already pads for the home indicator - it made the bar hop up
+   and back every time a scroll changed direction. */
+:root .shell--room .cbar,
+:root[data-bars='hidden'] .shell--room .cbar { bottom: var(--vv-gap, 0px); }
+.shell--room .roombar { top: var(--vv-top, 0px); }
+/* No rubber band in a room, in a browser tab as in the installed app: the
+   bounce carries the pinned bars with it on an iPhone. */
+html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: none; }
 /* The item a message is about makes the bar taller; the last message stays above it. */
 .shell--room .chroom:has(.cbar__about) { padding-bottom: 260px; }
-.shell--room .chnew { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+.shell--room .chnew { bottom: calc(88px + env(safe-area-inset-bottom, 0px) + var(--vv-gap, 0px)); }
 
 /* The inbox row, with the pen at its end. */
 .inbox__boxes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -10105,6 +10381,8 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   transition: background 200ms, transform 200ms var(--bounce);
 }
 .icard__open:hover { background: var(--surface-hover); transform: translateY(-1px); }
+/* Cart: take it out, or keep it for later on Saved. A row of its own under Checkout. */
+.cartacts { flex: 1 1 100%; display: flex; gap: 8px; justify-content: flex-end; }
 @media (max-width: 420px) {
   .icard__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -11110,23 +11388,7 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 a.ocust__name:hover { color: var(--accent-text); }
 .ocust__meta { font-size: var(--t-xs); color: var(--text-faint); }
 .ocust__total { display: grid; justify-items: end; gap: 6px; }
-.ocust__total b { font-family: var(--mono); font-size: var(--t-md); font-variant-numeric: tabular-nums; color: var(--text); }
 .ocust__total .badge { white-space: nowrap; }
-.ocust__money { display: grid; gap: 8px; }
-.ocust__money .ocard__bar span { background: linear-gradient(90deg, rgb(var(--tone)), rgb(var(--tone-2))); }
-.ocust__sums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.ocust__sums > span {
-  display: grid; gap: 2px; padding: 8px 10px; border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-}
-.ocust__sums small { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
-.ocust__sums b {
-  font-family: var(--mono); font-size: var(--t-sm); font-variant-numeric: tabular-nums; color: var(--text);
-  overflow-wrap: anywhere;
-}
-.ocust__sums > .is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
-.ocust__sums > .is-due b { color: #FBBF24; }
-.ocust__sums > .is-clear b { color: var(--ok); }
 
 /*
  * An item's buttons in a lot, one after another: its own presses and the
@@ -11232,14 +11494,20 @@ a.ocust__name:hover { color: var(--accent-text); }
     linear-gradient(160deg, var(--surface-2), var(--surface));
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
-.lpulse__stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px; }
+.lpulse__stats { display: grid; gap: 8px; }
+.lpulse__stats--people { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lpulse__stats--money { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .lpulse__stat {
-  display: grid; gap: 1px; padding: 8px 10px; min-width: 0;
-  border-radius: 12px; background: rgba(255, 255, 255, 0.04);
+  display: grid; justify-items: center; gap: 2px; min-width: 0;
+  padding: 10px 6px; border-radius: 14px; text-align: center;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
 }
-.lpulse__stat b { font-family: var(--mono); font-size: var(--t-md); font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
 .lpulse__stat small { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
-.lpulse__stat.is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
+.lpulse__stat b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
+.lpulse__stats--people b { font-size: var(--t-2xl); line-height: 1.1; }
+.lpulse__stats--money b { font-size: var(--t-md); }
+.lpulse__stat.is-paid b { color: var(--ok); }
+.lpulse__stat.is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.35); }
 .lpulse__stat.is-due b { color: #FBBF24; }
 .lpulse__stat.is-clear b { color: var(--ok); }
 /* The orders' own steps as a pipeline: a ring per step, filled by how many
@@ -11361,7 +11629,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .undobar {
   position: fixed; z-index: 85;
   left: var(--page-pad); right: var(--page-pad);
-  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + 17px);
   display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px;
   padding: 10px 10px 10px 12px;
   border-radius: var(--r-md);
@@ -11936,19 +12204,92 @@ a.ocust__name:hover { color: var(--accent-text); }
  */
 .lotnav { margin-bottom: 10px; padding: 3px; gap: 3px; border-radius: 14px; }
 .lotnav__tab { grid-auto-flow: column; gap: 6px; padding: 7px 4px; border-radius: 11px; }
-.lpulse { gap: 10px; padding: 12px; border-radius: 18px; }
-.ocusts { gap: 12px; }
-.ocust { gap: 8px; padding: 10px; border-radius: 18px; }
+/* Not a card: the lot's hero above is the card, and two glowing panels in a
+   row read as one blur. These are loose boxes on the page instead. */
+.lpulse { gap: 8px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+.lpulse__route { padding: 6px 0 2px; }
+.ocusts { gap: 10px; }
+/*
+ * A customer and an order must not look alike. The customer is a filled band
+ * in their money colour with a big name; their orders sit under it as flat,
+ * smaller cards on a rail, each marked only by a stripe in its own colour.
+ */
+.ocust { gap: 0; padding: 0; border-radius: 18px; overflow: hidden; }
 .ocust__head {
-  padding: 2px 4px 8px;
-  border-bottom: 1px solid rgb(var(--tone) / 0.25);
+  grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(90deg, rgb(var(--tone) / 0.26), rgb(var(--tone) / 0.08) 70%, rgb(var(--tone) / 0.04));
+  border-bottom: 1px solid rgb(var(--tone) / 0.3);
 }
-.ocust__name { font-size: var(--t-md); font-weight: var(--w-bold); }
-.ocust > .orows {
-  gap: 8px; margin-left: 10px; padding-left: 10px;
+.ocust.is-folded .ocust__head { padding: 8px 12px; border-bottom-color: rgb(var(--tone) / 0.14); }
+.ocust__name { font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.01em; }
+.ocust.is-folded .ocust__name { font-size: var(--t-md); }
+.ocust__fold {
+  display: grid; place-items: center; width: 30px; height: 30px; padding: 0;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.ocust__fold:hover { background: rgba(255, 255, 255, 0.16); }
+.ocust__body { display: grid; gap: 8px; padding: 10px; }
+.ocust__body > .orows {
+  gap: 8px; margin-left: 8px; padding-left: 10px;
   border-left: 2px solid rgb(var(--tone) / 0.35);
 }
-.ocust .ocard { padding: 10px 10px 8px; gap: 8px; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+.ocust .ocard {
+  padding: 10px 10px 8px 13px; gap: 8px; border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 rgb(var(--tone) / 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.ocust .ocard::before { display: none; }
+.ocust .ocard.is-urgent::before { display: block; }
+.ocust .ocard__name { font-size: var(--t-sm); font-weight: var(--w-semi); }
+.ocust .ocard__img { width: 40px; height: 40px; border-radius: 10px; }
+
+/* Folded: every order on one line - a dot in its money colour, its name, its step. */
+.ocust__line {
+  display: flex; gap: 6px; padding: 8px 12px 10px;
+  overflow-x: auto; scrollbar-width: none; cursor: pointer;
+}
+.ocust__line::-webkit-scrollbar { display: none; }
+.ocust__chip {
+  --c: 148 163 184;
+  flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 240px;
+  padding: 4px 10px 4px 8px; border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px rgb(var(--c) / 0.32);
+  font-size: var(--t-xs); white-space: nowrap;
+}
+.ocust__chip i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: rgb(var(--c)); }
+.ocust__chip--ok { --c: 52 211 153; }
+.ocust__chip--warn { --c: 251 191 36; }
+.ocust__chip--danger { --c: 244 63 94; }
+.ocust__chip--purple { --c: 147 51 234; }
+.ocust__chip--accent { --c: 124 58 237; }
+.ocust__chipname { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: var(--w-semi); }
+.ocust__chipstep { flex: none; color: var(--text-faint); }
+.ocust__chipstep::before { content: '· '; }
+.ocust.is-open .ocust__fold { background: rgb(var(--tone) / 0.22); }
+
+/* Folded, the head is name, count and what is pending - no avatar beside the chevron. */
+.ocust__head--slim { grid-template-columns: auto minmax(0, 1fr) auto; }
+/* Pending, said without a glow: on a list of customers it is a fact, not an alarm. */
+.ocust__total .badge--purple { box-shadow: none; background: rgba(147, 51, 234, 0.22); color: #E9D5FF; }
+.ocusts__count { padding: 0 2px; font-size: var(--t-xs); }
+
+/* Inside a lot the filters are one row: status, To answer when it counts, and fold-all. */
+.ofilters { display: flex; align-items: center; gap: 6px; }
+.ofilters > .segwrap { flex: 1 1 auto; min-width: 0; padding: 4px; border-radius: 16px; }
+.ofilters .segtab { padding: 8px 4px; font-size: var(--t-xs); border-radius: 12px; }
+.ofilters__answer, .ofilters__fold {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 40px; border: 1px solid var(--border-strong); border-radius: 14px;
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.ofilters__answer { padding: 0 10px; gap: 4px; }
+.ofilters__answer b { padding: 1px 6px; border-radius: 999px; background: var(--coral); color: var(--coral-ink); font-size: 11px; }
+.ofilters__answer.is-on { border-color: var(--coral-line); background: var(--coral-soft); }
+.ofilters__fold { width: 40px; padding: 0; }
+.ofilters__answer:hover, .ofilters__fold:hover { border-color: var(--text-faint); }
 .lotitem { border-bottom: none; }
 /* A called-off order: the timeline stops at a last rung, and nothing follows it. */
 .ladder__row--ended .ladder__dot {
@@ -11958,7 +12299,8 @@ a.ocust__name:hover { color: var(--accent-text); }
 }
 .ladder__row--ended .ladder__name { color: var(--danger, #F43F5E); }
 @media (max-width: 520px) {
-  .ocust > .orows { margin-left: 4px; padding-left: 8px; }
+  .ocust__body > .orows { margin-left: 2px; padding-left: 8px; }
+  .ocust__name { font-size: var(--t-md); }
 }
 
 /*
@@ -12970,7 +13312,7 @@ button.sk-plan__pick { cursor: pointer; }
 /* After a Bump with no points left. */
 .qnobump {
   position: fixed; z-index: 90; left: var(--page-pad); right: var(--page-pad);
-  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + 17px);
   display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-lg);
   background: linear-gradient(120deg, rgba(255, 90, 95, 0.22), var(--surface) 75%), var(--surface);
   border: 1px solid rgba(255, 90, 95, 0.5); box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
@@ -13094,3 +13436,192 @@ button.sk-plan__pick { cursor: pointer; }
 .linkcard--compact { grid-template-columns: 84px minmax(0, 1fr); width: min(300px, 64vw); }
 .linkcard--compact .linkcard__img { height: 100%; min-height: 84px; }
 .linkcard--compact.linkcard--loading { aspect-ratio: auto; height: 84px; }
+
+/* ── Forum moderation, follows, saves ─────────────────────────────────── */
+.forumrole {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: .02em; vertical-align: middle;
+  background: var(--surface-2); color: var(--violet-text);
+}
+.forumrole--admin { background: var(--accent); color: #fff; }
+.forumhero__people, .followcount {
+  background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer;
+}
+.forumhero__people:hover, .followcount:hover { text-decoration: underline; }
+.forumrules {
+  margin: 0 0 12px; padding: 10px 14px; border-radius: 14px; background: var(--surface-2);
+}
+.forumrules summary { cursor: pointer; font-weight: 700; display: flex; gap: 6px; align-items: center; }
+.forumrules p { margin: 8px 0 0; white-space: pre-wrap; }
+.forumsearch {
+  width: 100%; margin: 0 0 10px; padding: 10px 14px; border-radius: 999px;
+  border: 1px solid var(--surface-hover); background: var(--surface); color: inherit; font: inherit;
+}
+.forummod { display: grid; gap: 12px; max-height: 70vh; overflow-y: auto; }
+.forummod__add { display: flex; gap: 8px; }
+.forummod__add input, .forummod__settings input, .forummod__settings textarea, .forummod__warnform textarea {
+  flex: 1; width: 100%; padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--surface-hover); background: var(--surface); color: inherit; font: inherit;
+}
+.forummod__list, .followlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.forummod__row, .followlist__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: inherit; text-decoration: none; }
+.forummod__who, .followlist__row > span { display: grid; flex: 1; min-width: 120px; }
+.forummod__who a { color: inherit; }
+.forummod__acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.forummod__acts .is-danger { color: var(--danger-text); }
+.forummod__warn p { margin: 4px 0 0; }
+.forummod__settings { display: grid; gap: 10px; }
+.forummod__settings label { display: grid; gap: 4px; font-weight: 600; }
+.forummod__warnform { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.pstats__follows { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.is-gone { opacity: .5; }
+.streams--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.streams--3 .streams__tab { gap: 5px; white-space: nowrap; }
+
+/* ── Admin: installs & devices ─────────────────────────────────────────── */
+.devstats__headline { margin: 0; font-size: var(--t-md); }
+.devstats__headline strong { font-size: var(--t-xl); margin-right: 4px; }
+.devstats__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.devstats__tile { display: grid; gap: 4px; }
+.devstats__value { font-size: var(--t-2xl); font-weight: var(--w-bold); line-height: 1.1; }
+.devstats__table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.devstats__table th, .devstats__table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.devstats__table thead th { font-weight: var(--w-semi); color: var(--text-faint); }
+.devstats__table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.devstats__meter { display: flex; align-items: center; gap: 8px; min-width: 160px; }
+.devstats__track { flex: 1; height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.devstats__fill { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.devstats__label { font-variant-numeric: tabular-nums; min-width: 64px; }
+
+/* ── Notifications: the floating prompt and the steps sheet ─────────────── */
+.pushnudge {
+  position: fixed; z-index: 85;
+  left: 50%; translate: -50% 0;
+  bottom: calc(var(--tabbar-h) + 12px);
+  width: min(440px, calc(100vw - 24px));
+  display: grid; grid-template-columns: auto 1fr; gap: 10px 12px; align-items: start;
+  padding: 14px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  animation: pushnudge-in 320ms var(--ease) both;
+}
+.pushnudge__icon { font-size: 22px; line-height: 1; padding-top: 2px; }
+.pushnudge__text { display: grid; gap: 2px; font-size: var(--t-sm); }
+.pushnudge__text span { color: var(--text-faint); }
+.pushnudge__actions { grid-column: 2; display: flex; gap: 6px; }
+@keyframes pushnudge-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pushnudge { animation: none; } }
+
+.pushguide {
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; align-items: end; justify-items: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.pushguide__sheet {
+  width: min(520px, 100vw);
+  max-height: 88vh; overflow-y: auto;
+  display: grid; gap: 14px;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  border: 1px solid var(--border-strong); border-bottom: 0;
+  background: var(--surface);
+  animation: pushguide-up 280ms var(--ease) both;
+}
+@media (min-width: 600px) {
+  .pushguide { align-items: center; }
+  .pushguide__sheet { border-radius: var(--r-md); border-bottom: 1px solid var(--border-strong); padding-bottom: 18px; }
+}
+@keyframes pushguide-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pushguide__sheet { animation: none; } }
+.pushguide__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pushguide__head h2 { margin: 0; font-size: var(--t-lg, 20px); }
+.pushguide__close {
+  width: 32px; height: 32px; border-radius: 50%; flex: none;
+  border: 1px solid var(--border); background: var(--surface-2); color: inherit;
+  font-size: 20px; line-height: 1; cursor: pointer;
+}
+.pushguide__body { display: grid; gap: 10px; font-size: var(--t-sm); }
+.pushguide__body p { margin: 0; }
+.pushguide__steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 10px; }
+.pushguide__steps li {
+  /* The number hangs in the margin so the step itself is one flowing line of
+     text, icons and bold words included. */
+  counter-increment: step;
+  position: relative; min-height: 26px;
+  padding: 2px 0 0 38px;
+}
+.pushguide__steps li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 0;
+  width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--text, inherit);
+  font-weight: var(--w-bold); font-size: var(--t-xs);
+}
+.pushguide__glyph { width: 18px; height: 18px; vertical-align: -3px; color: var(--accent); }
+.pushguide__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/*
+ * The strip under the clock, in the section's colour, on every screen.
+ *
+ * In Safari, which ignores theme-color and colours its status bar from a fixed
+ * or sticky bar at the top of the page, it is that bar: the social header
+ * scrolls with the page, so without this Safari fell back to the page's dark
+ * background there. A real element rather than body::before, because Safari
+ * finds the bar by hit-testing and a pseudo-element answers as <body>. Six
+ * pixels high where there is no notch, over a header whose top edge is the
+ * same colour.
+ */
+.topstrip {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 61;
+  height: var(--strip-h);
+  /* A plain rgb(), never color-mix() or a gradient: iOS reads this value
+     straight from the style (see below), and only a resolved colour counts. */
+  background-color: rgb(var(--top-rgb));
+}
+:root:has(.roombar--forum:not(.roombar--reveal)) .topstrip { --top-rgb: 198 39 203; }
+/* With the marketplace header slid away, the strip trails the same blurred
+   tail the header has, so the page passes under it rather than meeting an edge. */
+.topstrip::after {
+  content: ''; position: absolute; top: 100%; left: 0; right: 0; height: var(--glass-tail);
+  /* No backdrop-filter here: a backdrop filter on the strip makes iOS draw
+     its own blur under the clock again (see below). */
+  background: linear-gradient(180deg, rgb(var(--top-rgb)), rgb(var(--top-rgb) / 0));
+  opacity: 0;
+  transition: opacity 280ms var(--ease);
+  pointer-events: none;
+}
+:root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
+/*
+ * What Safari looks for: the fixed or sticky box WebKit hit-tests 4px inside
+ * the top edge (LocalFrameView::fixedContainerEdges), at least 90% of the
+ * width and more than 10px tall, with a plain resolved background-color and
+ * no backdrop-filter up its ancestry. Safari paints its bar in that colour;
+ * without one it lays its own blur there. The strip reaches 6px below the
+ * clock so the probe finds it wherever it measures from, while staying above
+ * the header's logo and icons. (The home-screen app no longer draws under the
+ * clock at all - see the status-bar-style tag in index.html.)
+ */
+
+/* ── Pull to refresh (home-screen copy only) ──────────────────────────────── */
+/* No rubber band at the top: the indicator is the bounce. */
+html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
+.ptr {
+  position: fixed; z-index: 70;
+  left: 50%; top: calc(var(--nav-h) - 36px);
+  width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.ptr.is-caught { color: var(--accent); border-color: var(--accent); }
+.ptr__icon { width: 20px; height: 20px; }
+.ptr.is-refreshing .ptr__icon { animation: ptr-spin 700ms linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ptr.is-refreshing .ptr__icon { animation: none; } }
+.ptr__label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}

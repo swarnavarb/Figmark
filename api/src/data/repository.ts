@@ -3,6 +3,7 @@ import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
+  ClientDevice,
   Dispute, Follow, Forum, SiteContent, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
@@ -166,6 +167,8 @@ export interface Repository {
    * buyers cannot both take the last one.
    */
   takeStock(order: Order): Promise<boolean>;
+  /** Removes an order outright. Only for a cart item, which holds no stock. */
+  deleteOrder(order: Order): Promise<void>;
   /** One more look at a listing's page. */
   countView(listing: Listing): Promise<void>;
   /** A seller's checkouts nobody went ahead with - for insights, never for the order book. */
@@ -252,8 +255,20 @@ export interface Repository {
   getPowerSale(sellerId: string, id: string): Promise<PowerSale | null>;
   savePowerSale(sale: PowerSale): Promise<PowerSale>;
   /** Everything waiting for one person, newest first. */
-  listNotifications(userId: string, limit?: number): Promise<Notification[]>;
+  /** Newest first; with `before`, only those written before that moment - the next page. */
+  listNotifications(userId: string, limit?: number, before?: string): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;
+  /**
+   * Held notices whose hold ended between `from` and `until`, not yet sent to
+   * anybody's devices and not taken back - across everybody, for the clock
+   * that sends them. Bounded below so a notice from before push existed is
+   * never sent late.
+   */
+  listHeldNotificationsDue(from: string, until: string): Promise<Notification[]>;
+  /** Accounts holding this push endpoint: a browser belongs to whoever signed in on it last. */
+  listUsersByPushEndpoint(endpoint: string): Promise<User[]>;
+  /** Every account's reported devices, for the operators' install figures. */
+  listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>>;
   saveWantOffer(offer: WantOffer): Promise<WantOffer>;
   listStoreReviews(subjectId: string): Promise<StoreReview[]>;
   saveStoreReview(review: StoreReview): Promise<StoreReview>;

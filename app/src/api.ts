@@ -1,4 +1,6 @@
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
+import type { NotificationCategory } from '@shared/notifications';
+import type { NotificationPrefs } from '@shared/models';
 import type {
   ApiError,
   AuthUser,
@@ -1040,6 +1042,10 @@ export interface ChannelThread {
     /** Forums: how many are in it, and whether you are. */
     memberCount?: number;
     member?: boolean;
+    /** Forums: what you are in it - its founder (admin), a moderator, a member. */
+    role?: ForumRole | null;
+    rules?: string;
+    banned?: boolean;
   };
   /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
   shareable: { id: string; title: string; priceMinor: number; currency: string; condition?: string; photoUrl?: string | null }[];
@@ -1105,12 +1111,25 @@ export interface WantOfferRow {
 export interface AppNotification {
   id: string;
   kind: string;
+  category: NotificationCategory;
   title: string;
   body: string;
   /** Where tapping it goes. */
   link: string;
   read: boolean;
+  /** How many events this row stands for: "Sana sent you 3 messages" is 3. */
+  count: number;
+  /** What a run of events is about: the bell shows one line per group. */
+  group?: string | null;
   createdAt: string;
+}
+
+export interface NotificationPage {
+  notifications: AppNotification[];
+  unread: number;
+  unreadByCategory: Partial<Record<NotificationCategory, number>>;
+  /** Where the next page starts; null at the end. */
+  nextBefore: string | null;
 }
 
 export interface WantDetail {
@@ -1126,8 +1145,11 @@ export interface WantDetail {
   offers: WantOfferRow[];
 }
 
+export type ForumRole = 'admin' | 'moderator' | 'member';
+
 /** A forum as a list shows it. */
-export interface ForumRow extends Omit<Forum, 'memberIds'> {
+export interface ForumRow extends Omit<Forum, 'memberIds' | 'moderatorIds' | 'bannedIds' | 'warnings'> {
+  role: ForumRole | null;
   memberCount: number;
   member: boolean;
   lastPost: string | null;
@@ -1139,7 +1161,24 @@ export interface ForumsResponse {
   forums: ForumRow[];
   cap: number;
   remaining: number;
+  /** Your own allowance: a forum at level 5, then one more at 7, 8, 9 and 10. */
+  slots?: {
+    level: number; opened: number; allowed: number; canCreate: boolean;
+    nextLevel: number | null; unlockLevels: number[]; message: string | null;
+  };
 }
+
+export interface ForumMember { id: string; name: string; handle: string | null; role: ForumRole; warnings: number }
+export interface ForumMembers {
+  role: ForumRole | null;
+  members: ForumMember[];
+  banned: { id: string; name: string; handle: string | null }[];
+  warnings: { userId: string; name: string; by: string; note: string; at: string }[];
+  moderatorsMax: number;
+}
+export type ForumModAction = 'add' | 'remove' | 'ban' | 'unban' | 'warn' | 'promote' | 'demote' | 'edit';
+export interface FollowRow { id: string; name: string; handle: string | null; isStore: boolean }
+export interface BlockedRow { id: string; name: string; handle: string | null; shop: { name: string; handle: string | null } | null }
 
 /** What the social search finds. */
 export interface SocialSearchResult {
@@ -1748,6 +1787,9 @@ export interface Thread {
   blocked?: boolean;
   /** Kept, but not counted as unread. */
   muted?: boolean;
+  /** The oldest message to you that was unread when the chat opened, and how many. */
+  firstUnreadId?: string | null;
+  unread?: number;
 }
 
 /** Which of an account's two pages: its shop, or the person behind it. */
@@ -2279,6 +2321,9 @@ export const api = {
   /** The seller says yes to a fresh order or booking. */
   acceptOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/accept`, {}),
   /** The seller calls off an already-accepted order. */
+  /** Takes a never-paid Buy out of the cart; `save` keeps the item on Saved. */
+  discardCheckout: (id: string, save = false) =>
+    post<{ removed: string; saved: boolean }>(`/orders/${encodeURIComponent(id)}/discard`, { save }),
   cancelOrder: (id: string, body: { reason: string; message?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/cancel`, body),
   requestReversalDetails: (id: string, message?: string) =>
@@ -2530,12 +2575,37 @@ export const api = {
     post<{ joined: boolean; seekerCount: number }>(
       `/wants/${encodeURIComponent(id)}/me?buyer=${encodeURIComponent(buyerId)}`,
     ),
-  notifications: () =>
-    request<{ notifications: AppNotification[]; unread: number }>('/notifications'),
-  markNotificationsRead: (id?: string) =>
-    post<{ read: number }>('/notifications/read', id ? { id } : {}),
+  notifications: (options: { before?: string | null; category?: NotificationCategory | null } = {}) => {
+    const query = new URLSearchParams();
+    if (options.before) query.set('before', options.before);
+    if (options.category) query.set('category', options.category);
+    const qs = query.toString();
+    return request<NotificationPage>(`/notifications${qs ? `?${qs}` : ''}`);
+  },
+  /** One by id, several by ids, a whole category, or (nothing given) everything. */
+  markNotificationsRead: (which?: string | { ids?: string[]; category?: NotificationCategory }) =>
+    post<{ read: number }>('/notifications/read', typeof which === 'string' ? { id: which } : which ?? {}),
+  notificationSettings: () => request<{ prefs: NotificationPrefs }>('/notifications/settings'),
+  saveNotificationSettings: (prefs: Partial<NotificationPrefs>) =>
+    post<{ prefs: NotificationPrefs }>('/notifications/settings/save', prefs),
+  pushKey: () => request<{ publicKey: string | null }>('/push/key'),
+  pushSubscribe: (subscription: PushSubscriptionJSON) =>
+    post<{ ok: true; devices: number }>('/push/subscribe', subscription),
+  pushUnsubscribe: (endpoint: string) => post<{ ok: true }>('/push/unsubscribe', { endpoint }),
+  pushTest: () => post<{ sent: number }>('/push/test'),
+  reportDevice: (body: { id: string; platform: string; browser: string; installed: boolean; push: string }) =>
+    post<{ ok: true; onHomeScreen?: boolean }>('/me/device', body),
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
+  forumMembers: (id: string) => request<ForumMembers>(`/social/forums/${encodeURIComponent(id)}/members`),
+  moderateForum: (id: string, body: { action: ForumModAction; user?: string; note?: string; description?: string; rules?: string }) =>
+    post<{ forum: ForumRow; member?: ForumMember }>(`/social/forums/${encodeURIComponent(id)}/moderate`, body),
+  shopFeed: (id: string) => request<{ posts: PostCard[] }>(`/social/shops/${encodeURIComponent(id)}/feed`),
+  follows: (id: string, kind: 'person' | 'store') =>
+    request<{ followers: FollowRow[]; following: FollowRow[] }>(`/users/${encodeURIComponent(id)}/follows?kind=${kind}`),
+  blocked: () => request<{ blocked: BlockedRow[] }>('/me/blocked'),
+  unblock: (id: string) => post<{ blocked: boolean }>(`/me/blocked/${encodeURIComponent(id)}/unblock`, {}),
+  saved: () => request<{ listings: (FeedListing & { gone: boolean })[] }>('/me/saved'),
   createForum: (body: { name: string; description?: string }) =>
     post<{ forum: ForumRow }>('/social/forums/new', body),
   forwarders: (route?: string) =>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type ChannelThread, type PublicProfile, type ShelfState } from '../api';
+import { ApiRequestError, api, type FeedListing, type PostCard, type PublicProfile, type ShelfState } from '../api';
+import { listingRarity } from '@shared/quest';
+import { LootCard } from './FeedPage';
 import { SocialPostCard } from '../components/SocialPost';
 import { SkeletonText } from '../components/Feedback';
 import { Avatar, EmptyState, ErrorNotice, LevelChip } from '../components/ui';
@@ -9,7 +11,7 @@ import { brandHueFor, formatDate, timeAgo } from '../format';
 import { useSession } from '../session';
 import { Canopy } from '../components/ListingBlocks';
 import {
-  Bio, FollowButton, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
+  Bio, FollowButton, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
 } from '../components/ProfileParts';
 import { CollectorProfile } from './CollectorProfile';
 
@@ -90,6 +92,14 @@ function Storefront({ data, isMe, onFollow, reload }: {
   const [tab, setTab] = useState<Tab>('items');
   const [shelf, setShelf] = useState<Shelf>('all');
   const [ratingOpen, setRatingOpen] = useState(false);
+  // Live items as the Buy tab shows them: rarity, saves, the lot.
+  const [live, setLive] = useState<Map<string, FeedListing>>(new Map());
+  useEffect(() => {
+    void api.feed({ seller: data.sellerId })
+      .then((result) => setLive(new Map(result.listings.map((listing) => [listing.id, listing]))))
+      .catch(() => setLive(new Map()));
+  }, [data.sellerId]);
+  const now = Date.now();
 
   const shown = data.listings.filter((listing) => shelf === 'all' || listing.state === shelf);
   const filters = ([
@@ -133,7 +143,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
           edit={<Link to="/shop" className="pbtn pbtn--follow">Edit shop</Link>} />
 
         <div className="pstats">
-          <span><b>{data.followerCount}</b><small>{data.followerCount === 1 ? 'follower' : 'followers'}</small></span>
+          <span className="pstats__follows"><FollowCounts userId={data.sellerId} followerCount={data.followerCount} isStore /></span>
           <span><b>{data.counts.onSale}</b><small>live</small></span>
           <span><b>{data.counts.sold}</b><small>sold out</small></span>
           <span><b className={`ptrust ptrust--${trustTone(data.trustScore)}`}>{data.trustScore ?? '—'}</b><small>trust</small></span>
@@ -172,7 +182,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
         </div>
 
         {tab === 'feed' ? (
-          <ShopFeed shopId={data.sellerId} following={data.following} onFollow={onFollow} />
+          <ShopFeed shopId={data.sellerId} />
         ) : tab === 'reviews' ? (
           <ReviewsTab profile={data} canWrite={!isMe} onWritten={reload} />
         ) : data.listings.length === 0 ? (
@@ -190,8 +200,13 @@ function Storefront({ data, isMe, onFollow, reload }: {
                 ))}
               </div>
             )}
-            <div className="grid">
-              {shown.map((listing, i) => <ShelfCard key={listing.id} listing={listing} index={i} />)}
+            <div className="grid qgrid">
+              {shown.map((listing, i) => {
+                const full = live.get(listing.id);
+                return full
+                  ? <LootCard key={listing.id} listing={{ ...full, rarity: listingRarity(full, now) }} />
+                  : <ShelfCard key={listing.id} listing={listing} index={i} />;
+              })}
             </div>
           </>
         )}
@@ -205,37 +220,30 @@ function Storefront({ data, isMe, onFollow, reload }: {
 }
 
 /**
- * What the shop posts to its channel. A channel is for its followers, so
- * anybody else sees how much is behind the door and a way in.
+ * What the shop said out loud: its posts on the social feed, which anybody can
+ * read - not the messages kept for followers in its channel.
  */
-function ShopFeed({ shopId, following, onFollow }: {
-  shopId: string;
-  following: boolean;
-  onFollow: (following: boolean, followers?: number) => void;
-}) {
+function ShopFeed({ shopId }: { shopId: string }) {
   const { user, gate } = useSession();
-  const [thread, setThread] = useState<ChannelThread | null>(null);
+  const [posts, setPosts] = useState<PostCard[] | null>(null);
   useEffect(() => {
     if (!user) return;
-    setThread(null);
-    void api.channelThread(shopId).then(setThread).catch(() => setThread(null));
-  }, [shopId, user, following]);
+    setPosts(null);
+    void api.shopFeed(shopId).then((result) => setPosts(result.posts)).catch(() => setPosts([]));
+  }, [shopId, user]);
 
-  if (!user || thread?.locked) {
+  if (!user) {
     return (
-      <EmptyState title={thread ? `${thread.channel.postCount ?? 0} posts for followers` : 'Posts for followers'}>
-        Drops, restocks and news go to the shop's followers first.{' '}
-        {user
-          ? <FollowButton id={shopId} following={following} onChange={onFollow} />
-          : <button type="button" className="pbtn pbtn--follow" onClick={gate(() => undefined, 'Sign in to see the shop feed.')}>Sign in</button>}
+      <EmptyState title="Posts">
+        <button type="button" className="pbtn pbtn--follow" onClick={gate(() => undefined, 'Sign in to see the shop feed.')}>Sign in</button>
       </EmptyState>
     );
   }
-  if (!thread) return <SkeletonText lines={3} />;
-  if (thread.posts.length === 0) return <EmptyState title="Nothing posted yet">When the shop posts, it shows up here.</EmptyState>;
+  if (!posts) return <SkeletonText lines={3} />;
+  if (posts.length === 0) return <EmptyState title="Nothing posted yet">When the shop posts to the feed, it shows up here.</EmptyState>;
   return (
     <div className="stack">
-      {thread.posts.map((card) => <SocialPostCard key={card.post.id} card={card} />)}
+      {posts.map((card) => <SocialPostCard key={card.post.id} card={card} />)}
     </div>
   );
 }

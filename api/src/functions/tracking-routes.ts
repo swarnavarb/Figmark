@@ -14,7 +14,7 @@ import {
   afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, settleAll, syncLotDelivery, undeliver,
 } from '../delivery.js';
 import { autoReleaseDays } from '../settings.js';
-import { notify } from './notify.js';
+import { capital, notifyBuyers } from './notify.js';
 import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
 import { UNDO_EXPIRED, canUndo, undoTag, withdrawNotices, withoutUndo } from './undo.js';
@@ -337,17 +337,11 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (added.length > 0) {
-    await notify(
-      repository,
-      added.map((order) => order.buyerId),
-      {
-        kind: 'lot_moved',
-        title: `Your item is in ${lot.name}`,
-        body: `It now travels with the lot: ${route.name}.`,
-        link: '/me?tab=purchases',
-      },
-      { except: lot.sellerId },
-    );
+    await notifyBuyers(repository, added, ({ items, shop }) => ({
+      kind: 'lot_moved',
+      title: `${shop} put ${items} in ${lot.name}`,
+      body: `It travels with the lot now: ${route.name}.`,
+    }), { except: lot.sellerId, track: lot.id });
   }
 
   return json(200, { added: added.length, orderIds: added.map((order) => order.id) });
@@ -508,17 +502,11 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   // The notification the whole product is really for: twenty people paid for
   // one shipment weeks ago and have no way of knowing it cleared customs
   // unless somebody tells them.
-  await notify(
-    repository,
-    live.map((order) => order.buyerId),
-    {
-      kind: 'lot_moved',
-      title: `${lot.name}: ${step.name}`,
-      body: `${live.length} ${live.length === 1 ? 'item' : 'items'} in this lot moved.`,
-      link: '/me?tab=purchases',
-    },
-    { except: lot.sellerId, notBefore: event.undoUntil, undoId: event.undoId },
-  );
+  await notifyBuyers(repository, live, ({ items, shop }) => ({
+    kind: 'lot_moved',
+    title: `${capital(items)} from ${shop}: ${step.name}`,
+    body: `Travelling with ${lot.name}. Tap to see where it is.`,
+  }), { except: lot.sellerId, notBefore: event.undoUntil, undoId: event.undoId, track: lot.id });
 
   return json(200, {
     lot: updated,
@@ -667,17 +655,11 @@ async function rerouteLot(repository: Repo, lot: Lot, next: LotRoute, userId: st
     });
   }));
 
-  if (!quiet) await notify(
-    repository,
-    orders.map((order) => order.buyerId),
-    {
-      kind: 'lot_moved',
-      title: `${lot.name}: tracking updated`,
-      body: said,
-      link: '/me?tab=purchases',
-    },
-    { except: lot.sellerId },
-  );
+  if (!quiet) await notifyBuyers(repository, orders, ({ items, shop }) => ({
+    kind: 'lot_moved',
+    title: `${capital(items)} from ${shop}: tracking updated`,
+    body: said,
+  }), { except: lot.sellerId, track: lot.id });
 
   return { lot: updated, ordersUpdated: orders.length };
 }
@@ -775,12 +757,11 @@ async function closeLot(request: HttpRequest, _context: InvocationContext) {
   const orders = (await repository.listOrdersForLot(lot.id))
     .filter((order) => !isCancelledLike(order.status) && order.status !== 'delivered');
   if (closed) {
-    await notify(
-      repository,
-      orders.map((order) => order.buyerId),
-      { kind: 'lot_moved', title: `${lot.name}: ${said.replace(/\.$/, '')}`, body: said, link: '/me?tab=purchases' },
-      { except: lot.sellerId },
-    );
+    await notifyBuyers(repository, orders, ({ items, shop }) => ({
+      kind: 'lot_moved',
+      title: `${capital(items)} from ${shop}: ${said.replace(/\.$/, '')}`,
+      body: `Travelling with ${lot.name}.`,
+    }), { except: lot.sellerId, track: lot.id });
   }
   return json(200, { lot: updated });
 }
@@ -848,17 +829,11 @@ async function noteOnLot(request: HttpRequest, _context: InvocationContext) {
       updatedAt: now,
     })));
 
-  await notify(
-    repository,
-    orders.map((order) => order.buyerId),
-    {
-      kind: 'lot_moved',
-      title: `${lot.name}: an update`,
-      body: note,
-      link: '/me?tab=purchases',
-    },
-    { except: lot.sellerId },
-  );
+  await notifyBuyers(repository, orders, ({ items, shop }) => ({
+    kind: 'lot_moved',
+    title: `${shop} posted an update on ${items}`,
+    body: note,
+  }), { except: lot.sellerId, track: lot.id });
 
   return json(200, { lot: updated, ordersUpdated: orders.length });
 }
@@ -997,17 +972,11 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   }
 
   // A delivery already sent its own notice, with what to do next.
-  if (!delivered) await notify(
-    repository,
-    [order.buyerId],
-    {
-      kind: 'lot_moved',
-      title: moving && route ? `${order.itemName}: ${route.steps[target]!.name}` : `${order.itemName}: an update`,
-      body: note ?? 'Your item moved on.',
-      link: '/me?tab=purchases',
-    },
-    { except: order.sellerId, notBefore: event.undoUntil, undoId: event.undoId },
-  );
+  if (!delivered) await notifyBuyers(repository, [order], ({ items, shop }) => ({
+    kind: 'lot_moved',
+    title: moving && route ? `${capital(items)} from ${shop}: ${route.steps[target]!.name}` : `${shop} posted an update on ${items}`,
+    body: note ?? 'It moved on. Tap to see where it is.',
+  }), { except: order.sellerId, notBefore: event.undoUntil, undoId: event.undoId, track: order.lotId ?? order.id });
 
   return json(200, {
     order: updated,

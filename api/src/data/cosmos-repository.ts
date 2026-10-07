@@ -8,6 +8,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
+  ClientDevice,
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
@@ -70,6 +71,9 @@ function autoSeedEnabled(): boolean {
 /** How long one instance reuses the newest-posts window and the forum list. */
 const RECENT_TTL_MS = 15_000;
 const FORUM_TTL_MS = 60_000;
+/** Forums made up to here predate admins, and go to the site owner. */
+const FORUM_OWNER_CUTOFF = '2026-10-07T00:00:00.000Z';
+
 export class CosmosRepository implements Repository {
   readonly backend: BackendKind = 'cosmos';
 
@@ -249,6 +253,69 @@ export class CosmosRepository implements Repository {
   }
 
   /**
+   * Clears out the unpaid orders left from before the cart.
+   *
+   * Pressing Buy used to make a real order at once, unpaid, and take stock for
+   * it; those piled up on profiles as "pay" rows nobody meant. Now an unpaid
+   * Buy is a cart item (`placedAt: null`) and an order exists only once it is
+   * paid or booked. An old row - no `placedAt` at all - still waiting on a
+   * first payment, never booked, accepted or claimed, is one of those clicks:
+   * its stock goes back on the shelf and the row goes. Anything with money or
+   * a seller's decision on it is a real order and stays. Safe on every start.
+   */
+  private async clearLegacyUnpaid(): Promise<string> {
+    const { resources } = await this.container('orders').items.query<Order>({
+      query: "SELECT * FROM c WHERE NOT IS_DEFINED(c.placedAt) AND c.status = 'pending_payment' AND c.paymentStatus = 'unpaid'",
+    }).fetchAll();
+    const stale = resources.filter((order) => !order.bookingOnly && !order.accepted && !order.paymentClaim
+      && !(order.payments?.length) && !(order.credits?.length));
+    for (const order of stale) {
+      const listing = await this.getListing(order.listingId);
+      if (listing) {
+        if (listing.quantityMode !== 'multiple') {
+          listing.quantityAvailable += order.quantity;
+          if (listing.status === 'sold_out') listing.status = 'active';
+        }
+        if (listing.preOrder) listing.preOrder.filledCount = Math.max(0, listing.preOrder.filledCount - order.quantity);
+        listing.soldCount = Math.max(0, (listing.soldCount ?? 0) - order.quantity);
+        await this.updateListing(listing);
+      }
+      await this.deleteOrder(order);
+    }
+    return stale.length ? ` Cleared ${stale.length} unpaid order(s) from before the cart.` : '';
+  }
+
+  /**
+   * Makes the site owner the admin of every forum that existed before forums
+   * had admins. Forums opened after the cutoff keep whoever opened them, so
+   * this is safe to run on every start. The owner's handle comes from
+   * FORUM_OWNER_HANDLE (default `swarnava`), matched by handle, else by first name.
+   */
+  private async assignForumOwner(): Promise<string> {
+    const wanted = (process.env.FORUM_OWNER_HANDLE ?? 'swarnava').trim().toLowerCase();
+    const users = await this.listAllUsers();
+    const byHandle = users.filter((user) => (user.username ?? '').toLowerCase() === wanted);
+    const byName = users.filter((user) => (user.displayName ?? '').trim().toLowerCase().split(/\s+/)[0] === wanted);
+    // One account, or nobody: never guess between two people of the same name.
+    const owner = byHandle.length === 1 ? byHandle[0] : byName.length === 1 ? byName[0] : null;
+    if (!owner) return '';
+    let moved = 0;
+    for (const forum of await this.listForums()) {
+      if (forum.createdBy === owner.id || forum.createdAt > FORUM_OWNER_CUTOFF) continue;
+      await this.saveForum({
+        ...forum,
+        createdBy: owner.id,
+        memberIds: [...new Set([...(forum.memberIds ?? []), owner.id])],
+        moderatorIds: (forum.moderatorIds ?? []).filter((id) => id !== owner.id),
+        bannedIds: (forum.bannedIds ?? []).filter((id) => id !== owner.id),
+        updatedAt: new Date().toISOString(),
+      });
+      moved += 1;
+    }
+    return moved ? ` Made @${owner.username ?? owner.displayName} admin of ${moved} forum(s).` : '';
+  }
+
+  /**
    * Gives a handle to any account that has none.
    *
    * A row written before handles existed carries no username, and nothing
@@ -340,11 +407,15 @@ export class CosmosRepository implements Repository {
       // Independent passes over different containers, so they overlap rather
       // than queue: the repair reads users and identifiers, the top-up reads
       // the nine containers that hold fixtures.
+      // First, so the fixtures this removes come straight back - as cart items.
+      const cleared = await this.clearLegacyUnpaid().catch((error) => ` Unpaid clean-up failed: ${describeError(error)}.`);
       const [repaired, toppedUp] = await Promise.all([this.repair(), this.topUpFixtures()]);
       // After the rows are in place, so anything the top-up just added is
       // considered too.
       const handles = await this.backfillHandles();
-      outcome = `${repaired}${toppedUp}${handles}` || ' Fixtures were already up to date.';
+      // Never lets a failure here stop the start-up repairs reporting.
+      const forums = await this.assignForumOwner().catch((error) => ` Forum owner pass failed: ${describeError(error)}.`);
+      outcome = `${cleared}${repaired}${toppedUp}${handles}${forums}` || ' Fixtures were already up to date.';
     } catch (error) {
       outcome = ` Preparing the database failed: ${describeError(error)}.`;
     }
@@ -1147,13 +1218,18 @@ export class CosmosRepository implements Repository {
     return resource!;
   }
 
-  async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
+  async listNotifications(userId: string, limit = 40, before?: string): Promise<Notification[]> {
     const { resources } = await this.container('notifications')
       .items.query<Notification>(
-        {
-          query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
-          parameters: [{ name: '@limit', value: limit }],
-        },
+        before
+          ? {
+            query: 'SELECT * FROM c WHERE c.createdAt < @before ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+            parameters: [{ name: '@before', value: before }, { name: '@limit', value: limit }],
+          }
+          : {
+            query: 'SELECT * FROM c ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+            parameters: [{ name: '@limit', value: limit }],
+          },
         { partitionKey: userId },
       )
       .fetchAll();
@@ -1163,6 +1239,42 @@ export class CosmosRepository implements Repository {
   async saveNotification(notification: Notification): Promise<Notification> {
     const { resource } = await this.container('notifications').items.upsert<Notification>(notification);
     return resource!;
+  }
+
+  /* Cross-partition, but bounded to a few minutes of holds, and a clock that
+     finds nothing costs one small query. */
+  async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {
+    const { resources } = await this.container('notifications')
+      .items.query<Notification>({
+        query: 'SELECT * FROM c WHERE IS_DEFINED(c.notBefore) AND c.notBefore >= @since AND c.notBefore <= @until'
+          + ' AND NOT IS_DEFINED(c.pushedAt) AND (NOT IS_DEFINED(c.withdrawn) OR c.withdrawn = false)',
+        parameters: [{ name: '@since', value: from }, { name: '@until', value: until }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  /* Cross-partition over accounts, projected to the two fields the figures
+     need; read only when an operator opens the installs page. */
+  async listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>> {
+    const { resources } = await this.container('users')
+      .items.query<{ id: string; clientDevices: ClientDevice[] }>({
+        query: 'SELECT c.id, c.clientDevices FROM c WHERE IS_DEFINED(c.clientDevices)',
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  /* Cross-partition over accounts, but only run when a device turns
+     notifications on, which is once per device. */
+  async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({
+        query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
+        parameters: [{ name: '@endpoint', value: endpoint }],
+      })
+      .fetchAll();
+    return resources;
   }
 
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {
@@ -1673,6 +1785,10 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources[0] ?? null;
+  }
+
+  async deleteOrder(order: Order): Promise<void> {
+    await this.container('orders').item(order.id, order.lotId).delete();
   }
 
   async updateOrder(order: Order): Promise<Order> {

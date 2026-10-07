@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AuthUser } from '@shared/contracts';
+import { disablePush } from './push';
 import { api, setSessionRejectedHandler } from './api';
 
 /**
@@ -154,6 +155,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // While still signed in, so the account can let go of this device: the
+    // next person to use it must not get this account's notifications.
+    await disablePush().catch(() => undefined);
     await api.logout();
     setUser(null);
     setWarning(null);

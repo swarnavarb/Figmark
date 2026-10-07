@@ -7,6 +7,7 @@ import type { PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
+  ClientDevice,
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
@@ -442,6 +443,10 @@ export class MemoryRepository implements Repository {
     if (stored) stored.viewCount += 1;
   }
 
+  async deleteOrder(order: Order): Promise<void> {
+    this.orders.delete(order.id);
+  }
+
   async getOrder(id: string): Promise<Order | null> {
     return this.orders.get(id) ?? null;
   }
@@ -716,9 +721,9 @@ export class MemoryRepository implements Repository {
     return sale;
   }
 
-  async listNotifications(userId: string, limit = 40): Promise<Notification[]> {
+  async listNotifications(userId: string, limit = 40, before?: string): Promise<Notification[]> {
     return [...this.notifications.values()]
-      .filter((entry) => entry.userId === userId)
+      .filter((entry) => entry.userId === userId && (!before || entry.createdAt < before))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
   }
@@ -726,6 +731,23 @@ export class MemoryRepository implements Repository {
   async saveNotification(notification: Notification): Promise<Notification> {
     this.notifications.set(notification.id, notification);
     return notification;
+  }
+
+  async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {
+    return [...this.notifications.values()].filter((entry) =>
+      entry.notBefore !== undefined && entry.notBefore >= from && entry.notBefore <= until
+      && entry.pushedAt === undefined && !entry.withdrawn);
+  }
+
+  async listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>> {
+    return [...this.users.values()]
+      .filter((user) => (user.clientDevices ?? []).length > 0)
+      .map((user) => ({ id: user.id, clientDevices: user.clientDevices! }));
+  }
+
+  async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {
+    return [...this.users.values()]
+      .filter((user) => (user.pushEndpoints ?? []).some((entry) => entry.endpoint === endpoint));
   }
 
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {

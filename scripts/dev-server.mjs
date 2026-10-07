@@ -25,7 +25,7 @@ const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, reactToCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
-  editListingRoute, deleteListingRoute, similarListingsRoute, affiliateLinkRoute, openShortLinkRoute,
+  editListingRoute, deleteListingRoute, similarListingsRoute, affiliateLinkRoute, openShortLinkRoute, mySavedRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affiliate-routes.js', apiRoot));
 const {
@@ -45,20 +45,25 @@ const {
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
   removePostRoute, trendingRoute, homeRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
+  forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute,
 } = await import(new URL('social-routes.js', apiRoot));
-const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute, dealItemsRoute, uploadChatPhotoRoute, chatPhotoRoute } =
+const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute, dealItemsRoute,
+  blockedListRoute, unblockRoute, uploadChatPhotoRoute, chatPhotoRoute } =
   await import(new URL('message-routes.js', apiRoot));
 const {
   payRoute, confirmRoute, reviewRoute, unboxingRoute, orderStateRoute, checkoutRoute,
   claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
-  acceptOrderRoute, cancelOrderRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
+  acceptOrderRoute, cancelOrderRoute, discardCheckoutRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
   submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
   ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, myRefundsRoute, flagDisputeRoute, myDisputesRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
 } = await import(new URL('want-routes.js', apiRoot));
-const { notificationsRoute, notificationsReadRoute } =
+const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } =
+  await import(new URL('push-routes.js', apiRoot));
+const { deviceReportRoute, deviceFiguresRoute } = await import(new URL('device-routes.js', apiRoot));
+const { notificationsRoute, notificationsReadRoute, notificationSettingsRoute, notificationSettingsSaveRoute } =
   await import(new URL('notification-routes.js', apiRoot));
 const { preOrderReadRoute, preOrderPledgeRoute } =
   await import(new URL('preorder-routes.js', apiRoot));
@@ -131,6 +136,9 @@ const routes = [
   ['GET', '/api/forwarders', forwardersRoute],
   ['GET', '/api/me/activity', myActivityRoute],
   ['GET', '/api/me/listings', myListingsRoute],
+  ['GET', '/api/me/saved', mySavedRoute],
+  ['GET', '/api/me/blocked', blockedListRoute],
+  ['POST', '/api/me/blocked/:id/unblock', unblockRoute],
   ['POST', '/api/orders', createOrderRoute],
   ['POST', '/api/listings', createListingRoute],
   ['GET', '/api/listings/:id', listingDetailRoute],
@@ -180,6 +188,10 @@ const routes = [
   ['GET', '/api/social/forums', listForumsRoute],
   ['POST', '/api/social/forums/new', createForumRoute],
   ['POST', '/api/social/forums/:id/join', joinForumRoute],
+  ['GET', '/api/social/forums/:id/members', forumMembersRoute],
+  ['POST', '/api/social/forums/:id/moderate', moderateForumRoute],
+  ['GET', '/api/social/shops/:id/feed', shopFeedRoute],
+  ['GET', '/api/users/:id/follows', followsRoute],
   ['GET', '/api/social/search', socialSearchRoute],
   ['GET', '/api/social/trending', trendingRoute],
   ['GET', '/api/social/home', homeRoute],
@@ -227,6 +239,7 @@ const routes = [
   ['POST', '/api/orders/:id/book', bookOrderRoute],
   ['POST', '/api/orders/:id/accept', acceptOrderRoute],
   ['POST', '/api/orders/:id/cancel', cancelOrderRoute],
+  ['POST', '/api/orders/:id/discard', discardCheckoutRoute],
   ['POST', '/api/orders/:id/reversal/request-details', requestReversalDetailsRoute],
   ['POST', '/api/orders/:id/reversal/confirm-details', confirmReversalDetailsRoute],
   ['POST', '/api/orders/:id/reversal/submit', submitReversalRoute],
@@ -349,6 +362,14 @@ const routes = [
   ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
   ['GET', '/api/notifications', notificationsRoute],
   ['POST', '/api/notifications/read', notificationsReadRoute],
+  ['GET', '/api/notifications/settings', notificationSettingsRoute],
+  ['POST', '/api/notifications/settings/save', notificationSettingsSaveRoute],
+  ['GET', '/api/push/key', pushKeyRoute],
+  ['POST', '/api/push/subscribe', pushSubscribeRoute],
+  ['POST', '/api/push/unsubscribe', pushUnsubscribeRoute],
+  ['POST', '/api/push/test', pushTestRoute],
+  ['POST', '/api/me/device', deviceReportRoute],
+  ['GET', '/api/ops/devices', deviceFiguresRoute],
   ['GET', '/api/users/:id/reviews', tradeReviewsRoute],
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],
@@ -506,10 +527,12 @@ const server = createServer((request, response) => {
 const port = Number(process.env.PORT ?? 5173);
 server.listen(port, () => console.log(`Figmark dev server on http://127.0.0.1:${port}`));
 
-/* The Functions host runs the power-sale clock as a timer trigger; this server
-   has no host, so it keeps the same once-a-minute beat itself. */
+/* The Functions host runs the power-sale and push clocks as timer triggers;
+   this server has no host, so it keeps the same once-a-minute beat itself. */
 const { tickPowerSales } = await import(new URL('power-sale.js', apiRoot));
+const { sendHeldPushes } = await import(new URL('../push.js', apiRoot));
 const { getRepository } = await import(new URL('../data/index.js', apiRoot));
 setInterval(() => {
   void getRepository().then((repository) => tickPowerSales(repository)).catch(() => undefined);
+  void getRepository().then((repository) => sendHeldPushes(repository)).catch(() => undefined);
 }, 60_000).unref();

@@ -9,7 +9,11 @@ import { error } from './functions/http.js';
  * hundred times a minute, or tapping share in a loop to climb trending. A
  * determined spammer spread over many instances is a job for the edge.
  */
+<<<<<<< HEAD
 export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'chatphoto';
+=======
+export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test';
+>>>>>>> origin/development
 
 /** Each action's windows: at most `max` in any `ms`. */
 const LIMITS: Record<Action, { max: number; ms: number }[]> = {
@@ -20,7 +24,11 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   message: [{ max: 30, ms: 60_000 }, { max: 300, ms: 3_600_000 }],
   want: [{ max: 10, ms: 3_600_000 }],
   offer: [{ max: 30, ms: 3_600_000 }],
+<<<<<<< HEAD
   chatphoto: [{ max: 20, ms: 60_000 }, { max: 150, ms: 3_600_000 }],
+=======
+  push_test: [{ max: 5, ms: 60_000 }],
+>>>>>>> origin/development
 };
 
 const LONGEST_MS = Math.max(...Object.values(LIMITS).flat().map((limit) => limit.ms));

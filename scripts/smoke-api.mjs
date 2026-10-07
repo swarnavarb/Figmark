@@ -72,6 +72,7 @@ const {
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
   removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, shareableRoute: shareable, pinPostRoute: pinPost,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
+  forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -115,6 +116,7 @@ const {
   fillingLotsRoute: fillingLots, dropsRoute: dropsShelf, dropRoute: readDrop, remindRoute: remindDrop,
 } = await import(new URL('showcase-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
+const { discardCheckoutRoute: discardCheckout } = await import(new URL('order-routes.js', fns));
 const {
   acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
   requestReversalDetailsRoute: requestReversalDetails, confirmReversalDetailsRoute: confirmReversalDetails,
@@ -1621,19 +1623,6 @@ await check('a forum can be created, and posted into', async () => {
   const thread = await channelThread(req({ headers: auth, params: { id: created.jsonBody.forum.id } }), ctx);
   assert.equal(thread.jsonBody.channel.kind, 'forum');
   assert.equal(thread.jsonBody.posts.length, 1);
-});
-
-await check('forums are capped, and the refusal says so', async () => {
-  // Fill whatever is left, then prove the next one is refused rather than
-  // silently accepted - the cap is the feature being deliberately small.
-  let remaining = (await listForums(req({ headers: auth }), ctx)).jsonBody.remaining;
-  for (let index = 0; index < remaining; index += 1) {
-    const filler = await createForum(req({ headers: auth, body: { name: `Filler room ${index}` } }), ctx);
-    assert.equal(filler.status, 201);
-  }
-  const refused = await createForum(req({ headers: auth, body: { name: 'One too many' } }), ctx);
-  assert.equal(refused.status, 409);
-  assert.equal(refused.jsonBody.error, 'forum_cap_reached');
 });
 
 await check('a duplicate forum name is refused', async () => {
@@ -3474,9 +3463,13 @@ await check('a lot moving tells everybody who bought into it', async () => {
 
   const one = (await noticesFor(buyerIds[0]))[0];
   assert.equal(one.kind, 'lot_moved');
-  // To their own purchases, not to the seller's view of the lot, which
-  // shows them everybody else's orders.
-  assert.equal(one.link, '/me?tab=purchases');
+  // To their own order (or their purchases, when they have several in the
+  // lot), never to the seller's view of the lot, which shows them everybody
+  // else's orders.
+  assert.match(one.link, /^\/order\/|^\/me\?tab=purchases$/);
+  assert.ok(!one.link.includes('/lot/'), one.link);
+  // Says whose shop it came from, so somebody with three lots knows which.
+  assert.match(one.title, / from /, one.title);
 });
 
 await check('a dispute tells the other side and whoever holds the money', async () => {
@@ -7554,6 +7547,25 @@ await check('pressing Buy opens a checkout the seller cannot see, and holds no s
   assert.equal(again.jsonBody.order.buyClicks, 2);
 });
 
+await check('a cart item can be removed, or moved to saved; a placed order cannot', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Cart Only', priceMinor: 7_000, quantityAvailable: 2 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const buyer = await newBuyer('Cart Tidier');
+  const first = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.equal((await discardCheckout(req({ headers: auth, params: { id: first }, body: {} }), ctx)).status, 404, 'only the buyer');
+  const saved = await discardCheckout(req({ headers: buyer.headers, params: { id: first }, body: { save: true } }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.saved, true);
+  assert.equal((await orderState(req({ headers: buyer.headers, params: { id: first } }), ctx)).status, 404, 'gone from the cart');
+  const second = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.notEqual(second, first);
+  const again = await discardCheckout(req({ headers: buyer.headers, params: { id: second }, body: { save: true } }), ctx);
+  assert.equal(again.jsonBody.saved, true, 'saving twice keeps it saved');
+  const third = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  await bookOrder(req({ headers: buyer.headers, params: { id: third } }), ctx);
+  assert.equal((await discardCheckout(req({ headers: buyer.headers, params: { id: third }, body: {} }), ctx)).status, 409);
+});
+
 await check('booking from the checkout places the order and tells the seller', async () => {
   const listed = await createListing(req({ headers: auth, body: { title: 'Booked Later', priceMinor: 9_000, quantityAvailable: 2 } }), ctx);
   const listingId = listed.jsonBody.listing.id;
@@ -7985,6 +7997,50 @@ await check('forums are people only: no shop speaks in a seeded one', async () =
   }
   const thread = (await channelThread(req({ headers: auth, params: { id: 'frm_imports' } }), ctx)).jsonBody;
   assert.ok(thread.posts.every((card) => card.post.authorId.startsWith('usr_b_') || card.post.authorId === 'usr_demo'));
+});
+
+await check('a forum is earned by level, and the refusal says when', async () => {
+  const person = await newBuyer('Level One');
+  const list = (await listForums(req({ headers: person.headers }), ctx)).jsonBody;
+  assert.equal(list.slots.canCreate, false);
+  assert.deepEqual(list.slots.unlockLevels, [5, 7, 8, 9, 10]);
+  const refused = await createForum(req({ headers: person.headers, body: { name: 'Too early' } }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.jsonBody.error, 'forum_locked');
+  assert.match(refused.jsonBody.message ?? JSON.stringify(refused.jsonBody), /level 5/);
+});
+
+await check('the admin moderates with up to two moderators, who cannot touch the admin', async () => {
+  const room = (await createForum(req({ headers: auth, body: { name: 'Moderated room' } }), ctx)).jsonBody.forum;
+  const [a, b, c] = [await newBuyer('Mod A'), await newBuyer('Mod B'), await newBuyer('Mod C')];
+  for (const who of [a, b, c]) await joinForum(req({ headers: who.headers, params: { id: room.id }, body: { join: true } }), ctx);
+  const mod = (headers, body) => moderateForum(req({ headers, params: { id: room.id }, body }), ctx);
+  assert.equal((await mod(auth, { action: 'promote', user: a.id })).status, 200);
+  assert.equal((await mod(auth, { action: 'promote', user: b.id })).status, 200);
+  assert.equal((await mod(auth, { action: 'promote', user: c.id })).jsonBody.error, 'too_many_moderators');
+  assert.equal((await mod(a.headers, { action: 'promote', user: c.id })).status, 403, 'only the admin appoints');
+  assert.equal((await mod(a.headers, { action: 'ban', user: b.id })).status, 403, 'a moderator cannot act on a moderator');
+  const owner = (await forumMembers(req({ headers: auth, params: { id: room.id } }), ctx)).jsonBody.members.find((m) => m.role === 'admin');
+  assert.equal((await mod(a.headers, { action: 'remove', user: owner.id })).status, 403, 'nobody acts against the admin');
+  assert.equal((await mod(a.headers, { action: 'warn', user: c.id, note: 'Keep it civil.' })).status, 200);
+  const posted = await createPost(req({ headers: c.headers, body: { body: 'Spam spam', forumId: room.id } }), ctx);
+  assert.equal(posted.status, 201);
+  const gone = await removePost(req({ headers: a.headers, params: { channel: room.id, id: posted.jsonBody.post.id } }), ctx);
+  assert.equal(gone.status, 200, 'a moderator takes posts down');
+  assert.equal((await mod(a.headers, { action: 'ban', user: c.id })).status, 200);
+  const back = await joinForum(req({ headers: c.headers, params: { id: room.id }, body: { join: true } }), ctx);
+  assert.equal(back.jsonBody.error, 'forum_banned');
+  const people = (await forumMembers(req({ headers: auth, params: { id: room.id } }), ctx)).jsonBody;
+  assert.equal(people.banned.length, 1);
+  assert.equal(people.warnings.length, 1);
+});
+
+await check('a person and their shop have separate followers, and only people follow', async () => {
+  const shop = (await follows(req({ params: { id: 'usr_demo' }, query: { kind: 'store' } }), ctx)).jsonBody;
+  assert.ok(Array.isArray(shop.followers));
+  assert.deepEqual(shop.following, [], 'a shop follows nobody');
+  const person = (await follows(req({ params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(person.followers.every((row) => !row.isStore), 'followers are people');
 });
 
 await check('joining a forum is for people, and posting needs it', async () => {
@@ -9299,7 +9355,7 @@ await check('a step forward can be undone for three minutes, and shows nowhere u
   let tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
   assert.ok(!tracked.order.stageHistory.some((event) => event.undoId === undo.id), 'hidden from the buyer timeline');
   let told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
-  assert.ok(!told.some((row) => row.title.startsWith('Undo box')), 'the buyer is not told yet');
+  assert.ok(!told.some((row) => row.body.includes('Undo box')), 'the buyer is not told yet');
 
   // Undone: back where it was, no trace, the held notice withdrawn.
   const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
@@ -9327,7 +9383,8 @@ await check('a step forward can be undone for three minutes, and shows nowhere u
   tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
   assert.ok(tracked.order.stageHistory.some((event) => event.undoId === again.undo.id), 'shown once the window closes');
   told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
-  assert.ok(told.some((row) => row.title.startsWith('Undo box')), 'and the buyer is told');
+  // About their item, with the lot it travels in.
+  assert.ok(told.some((row) => row.body.includes('Undo box')), 'and the buyer is told');
   const late = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: again.undo.to, undoOf: again.undo.id } }), ctx);
   assert.equal(late.status, 409);
 
@@ -9729,7 +9786,7 @@ await check('posting in a burst is slowed down, and only for whoever is bursting
   }
 });
 
-await check('nobody spends the whole forum cap, and names stay short', async () => {
+await check('nobody opens more forums than their level allows, and names stay short', async () => {
   const opener = await newBuyer('Room Opener');
   const tooLong = await createForum(req({ headers: opener.headers, body: { name: 'x'.repeat(61) } }), ctx);
   assert.equal(tooLong.status, 400);
@@ -9742,8 +9799,9 @@ await check('nobody spends the whole forum cap, and names stay short', async () 
     });
   }
   const third = await createForum(req({ headers: opener.headers, body: { name: 'Opener room 3' } }), ctx);
-  assert.equal(third.status, 409);
-  assert.equal(third.jsonBody.error, 'forum_limit_reached');
+  // Two open at level 1 is already over the allowance: forums are earned by level now.
+  assert.equal(third.status, 403);
+  assert.equal(third.jsonBody.error, 'forum_locked');
 });
 
 await check('joining a forum says which, so a double tap does not undo it', async () => {

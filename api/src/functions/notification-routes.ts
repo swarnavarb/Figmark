@@ -1,6 +1,11 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
+import type { Notification, NotificationPrefs } from '../../../shared/models.js';
+import {
+  categoryOf, isCategory, NOTIFICATION_CATEGORIES, type NotificationCategory,
+} from '../../../shared/notifications.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { isVisibleNotice, sendHeldPushesSoon } from '../push.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -12,59 +17,157 @@ import { error, handler, json } from './http.js';
  * message.
  */
 
-/** GET /api/notifications - yours, newest first, with the unread count. */
+/** A page of the list. The bell shows this many, then "Show older". */
+const PAGE = 20;
+const PAGE_MAX = 50;
+/** Rows read per pass while filling a page of one category. */
+const SCAN_BATCH = 50;
+const SCAN_PASSES = 4;
+/** The unread count looks this far back: past it the badge says 99+ anyway. */
+const UNREAD_WINDOW = 100;
+
+/**
+ * The newest row of each group, the rest dropped.
+ *
+ * New events fold into one row per thing (see notify.ts), but rows written
+ * before that rule - or past how far back it looks - can leave a conversation
+ * on several lines. Newest first in, so the one kept is the latest.
+ */
+function oneEach(rows: readonly Notification[]): Notification[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (!row.group) return true;
+    if (seen.has(row.group)) return false;
+    seen.add(row.group);
+    return true;
+  });
+}
+
+function wire(row: Notification) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    category: categoryOf(row.kind),
+    title: row.title,
+    body: row.body,
+    link: row.link,
+    read: row.readAt !== null,
+    count: row.count ?? 1,
+    /** What it is about, when it stands for a run of events: one row per group. */
+    group: row.group ?? null,
+    createdAt: row.notBefore ?? row.createdAt,
+  };
+}
+
+/**
+ * GET /api/notifications?before=&category=&limit= - yours, newest first.
+ *
+ * Paged: `nextBefore` is where the next page starts, null at the end. Each
+ * page also carries the unread counts, overall and by category, so the badge
+ * and the filter chips stay right however far down somebody has scrolled.
+ */
 async function list(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
+  const beforeRaw = request.query.get('before');
+  const before = beforeRaw && !Number.isNaN(Date.parse(beforeRaw)) ? beforeRaw : undefined;
+  const categoryRaw = request.query.get('category');
+  const category = isCategory(categoryRaw) ? categoryRaw : null;
+  const limit = Math.min(PAGE_MAX, Math.max(1, Number(request.query.get('limit')) || PAGE));
+
   /* Withdrawn ones never show; held ones show once the step they report can
-     no longer be undone. Sorted by when they became visible, so a held notice
-     lands at the top when it appears rather than three minutes down. */
+     no longer be undone. */
   const now = Date.now();
-  const rows = (await repository.listNotifications(user.id, 40))
-    .filter((row) => !row.withdrawn && !(row.notBefore && Date.parse(row.notBefore) > now))
-    .map((row) => (row.notBefore ? { ...row, createdAt: row.notBefore } : row))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Every open copy of the site asks this once a minute, which makes it the
+  // clock for held pushes on a host without timers (see push.ts).
+  await sendHeldPushesSoon(repository, now);
+
+  const latest = await repository.listNotifications(user.id, UNREAD_WINDOW);
+  // Counted as the bell shows them: a group is unread when its line is.
+  const unreadRows = oneEach(latest.filter((row) => isVisibleNotice(row, now))).filter((row) => row.readAt === null);
+  const unreadByCategory: Partial<Record<NotificationCategory, number>> = {};
+  for (const row of unreadRows) {
+    const key = categoryOf(row.kind);
+    unreadByCategory[key] = (unreadByCategory[key] ?? 0) + 1;
+  }
+
+  /* Fill one page, reading in batches until it is full or the rows run out.
+     The cursor is the stored time of the last row looked at, so the next page
+     carries on from exactly there, whatever this one skipped. */
+  const page: Notification[] = [];
+  const groups = new Set<string>();
+  let cursor = before;
+  let more = false;
+  let resume: string | null = null;
+  for (let pass = 0; pass < SCAN_PASSES; pass += 1) {
+    const batch = await repository.listNotifications(user.id, SCAN_BATCH, cursor);
+    for (const row of batch) {
+      if (isVisibleNotice(row, now) && (!category || categoryOf(row.kind) === category)
+        && !(row.group && groups.has(row.group))) {
+        // One more than fits: there is a next page, starting with this row.
+        if (page.length === limit) {
+          more = true;
+          break;
+        }
+        page.push(row);
+        if (row.group) groups.add(row.group);
+      }
+      resume = row.createdAt;
+    }
+    if (more || batch.length < SCAN_BATCH) break;
+    cursor = batch[batch.length - 1]!.createdAt;
+    // Read as much as one request should; whatever is further down is still there.
+    if (pass === SCAN_PASSES - 1) more = true;
+  }
+  const nextBefore = more ? resume : null;
 
   return json(200, {
-    notifications: rows.map((row) => ({
-      id: row.id,
-      kind: row.kind,
-      title: row.title,
-      body: row.body,
-      link: row.link,
-      read: row.readAt !== null,
-      createdAt: row.createdAt,
-    })),
-    unread: rows.filter((row) => row.readAt === null).length,
+    notifications: page
+      .map(wire)
+      // Sorted by when they became visible, so a held notice lands at the top
+      // when it appears rather than three minutes down.
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    unread: unreadRows.length,
+    unreadByCategory,
+    nextBefore,
   });
 }
 
 /**
  * POST /api/notifications/read - mark them read.
  *
- * One by id, or all of them. Opening the list is not the same as having read
- * what is in it, so this is called when something is acted on or dismissed
- * rather than the moment the panel appears.
+ * One by `id`, several by `ids`, one `category`, or all of them. Opening the
+ * list is not the same as having read what is in it, so this is called when
+ * something is acted on or dismissed rather than the moment the panel appears.
  */
 async function markRead(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  let body: { id?: string };
+  let body: { id?: unknown; ids?: unknown; category?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     body = {};
   }
+  const ids = typeof body.id === 'string'
+    ? [body.id]
+    : Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === 'string').slice(0, 100) : null;
+  const category = isCategory(body.category) ? body.category : null;
 
   // Only what the reader could have seen: a held notice is not read yet.
-  const rows = (await repository.listNotifications(user.id, 100))
-    .filter((row) => !row.withdrawn && !(row.notBefore && Date.parse(row.notBefore) > Date.now()));
-  const target = body.id ? rows.filter((row) => row.id === body.id) : rows;
-  if (body.id && target.length === 0) return error(404, 'not_found', 'No such notification.');
+  const rows = (await repository.listNotifications(user.id, UNREAD_WINDOW))
+    .filter((row) => isVisibleNotice(row));
+  const named = rows.filter((row) =>
+    (!ids || ids.includes(row.id)) && (!category || categoryOf(row.kind) === category));
+  if (typeof body.id === 'string' && named.length === 0) return error(404, 'not_found', 'No such notification.');
+  // A row is its whole group: reading the line for a conversation reads any
+  // older line for it too, or that one would surface the moment this one did.
+  const groups = new Set(named.flatMap((row) => (row.group ? [row.group] : [])));
+  const target = rows.filter((row) => named.includes(row) || (row.group !== undefined && groups.has(row.group)));
 
   const now = new Date().toISOString();
   await Promise.all(
@@ -76,10 +179,77 @@ async function markRead(request: HttpRequest, _context: InvocationContext) {
   return json(200, { read: target.length });
 }
 
+function prefsOf(prefs: NotificationPrefs | undefined): NotificationPrefs {
+  return { pushOff: prefs?.pushOff ?? [], quietHours: prefs?.quietHours ?? false, timeZone: prefs?.timeZone ?? null };
+}
+
+function validTimeZone(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 64) return null;
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: value });
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+/** GET /api/notifications/settings - what reaches your phone. */
+async function settings(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  return json(200, { prefs: prefsOf(me.notificationPrefs) });
+}
+
+/**
+ * POST /api/notifications/settings - choose what reaches your phone.
+ *
+ * `{ pushOff?: category[], quietHours?: boolean, timeZone?: string }`. What
+ * is left out stays as it was. The bell gets everything either way: this is
+ * only about the lock screen.
+ */
+async function saveSettings(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  let body: { pushOff?: unknown; quietHours?: unknown; timeZone?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (body.pushOff !== undefined && (!Array.isArray(body.pushOff) || !body.pushOff.every(isCategory))) {
+    return error(400, 'invalid_settings', 'Name categories to keep off the phone.');
+  }
+  if (body.quietHours !== undefined && typeof body.quietHours !== 'boolean') {
+    return error(400, 'invalid_settings', 'Quiet hours is on or off.');
+  }
+
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  const current = prefsOf(me.notificationPrefs);
+  const next: NotificationPrefs = {
+    pushOff: body.pushOff !== undefined
+      ? NOTIFICATION_CATEGORIES.filter((key) => (body.pushOff as NotificationCategory[]).includes(key))
+      : current.pushOff,
+    quietHours: typeof body.quietHours === 'boolean' ? body.quietHours : current.quietHours,
+    timeZone: validTimeZone(body.timeZone) ?? current.timeZone,
+  };
+  await repository.updateUser({ ...me, notificationPrefs: next, updatedAt: new Date().toISOString() });
+  return json(200, { prefs: next });
+}
+
 export const notificationsRoute = handler(list);
 export const notificationsReadRoute = handler(markRead);
+export const notificationSettingsRoute = handler(settings);
+export const notificationSettingsSaveRoute = handler(saveSettings);
 
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('notifications', { ...anon, methods: ['GET'], route: 'notifications', handler: notificationsRoute });
 app.http('notifications-read', { ...anon, methods: ['POST'], route: 'notifications/read', handler: notificationsReadRoute });
+app.http('notifications-settings', { ...anon, methods: ['GET'], route: 'notifications/settings', handler: notificationSettingsRoute });
+app.http('notifications-settings-save', { ...anon, methods: ['POST'], route: 'notifications/settings/save', handler: notificationSettingsSaveRoute });

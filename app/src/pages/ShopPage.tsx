@@ -961,6 +961,18 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   const here = `${location.pathname}${location.search}`;
   const focusOrder = (location.state as { focusOrder?: string } | null)?.focusOrder ?? null;
   const [glowing, setGlowing] = useState<string | null>(null);
+  /*
+   * Inside a lot, each customer folds to one line. The whole-list choice is
+   * remembered on this device, because a seller who likes it folded likes it
+   * folded every time; a customer opened on its own is just for now.
+   */
+  const [allOpen, setAllOpenState] = useState<boolean>(() => readCustomersOpen());
+  const [openOverride, setOpenOverride] = useState<Record<string, boolean>>({});
+  const setAllOpen = (open: boolean) => {
+    setAllOpenState(open);
+    setOpenOverride({});
+    writeCustomersOpen(open);
+  };
 
   const load = useCallback(async () => {
     setError(null);
@@ -984,6 +996,9 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       card.scrollIntoView({ block: 'center' });
       setGlowing(focusOrder);
     }
+    /* It was drawn open to be found; keep it open once the request is forgotten. */
+    const row = data.orders.find((entry) => entry.id === focusOrder);
+    if (row) setOpenOverride((current) => ({ ...current, [customerKey(row)]: true }));
     navigate(here, { replace: true, state: null });
     const timer = window.setTimeout(() => setGlowing(null), 1800);
     return () => window.clearTimeout(timer);
@@ -1076,7 +1091,9 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   const toAnswer = scoped.filter((row) => needsAnswer.has(row.id));
   const withoutLot = scoped.filter((row) => row.awaitingLot);
   /* "No lot" means nothing inside a lot, where every order has one. */
-  const chip = lotId && filter === 'nolot' ? 'all' : filter;
+  /* Inside a lot "To answer" only shows while something needs answering, so
+     with nothing left to answer the list falls back to everything. */
+  const chip = lotId && (filter === 'nolot' || (filter === 'answer' && toAnswer.length === 0)) ? 'all' : filter;
   const shown = statusFilter !== 'active' || chip === 'all'
     ? scoped
     : chip === 'answer' ? toAnswer : withoutLot;
@@ -1084,6 +1101,9 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   /* One customer at a time, inside a lot: a parcel goes to a person, not to a
      line item, so that is how a lot is worked. */
   const customers = lotId ? byCustomer(shown) : null;
+  const isOpen = (customer: CustomerGroup) =>
+    openOverride[customer.key] ?? (allOpen || customer.rows.some((row) => row.id === focusOrder));
+  const everyOpen = customers ? customers.every(isOpen) : true;
 
   const card = (row: SaleRow, index: number) => (
     <OrderRow
@@ -1136,7 +1156,34 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       {/* Three big tiles for where orders are, each in its own colour, then
           chips for what an active order needs - the one that needs the
           seller lights up when anything is in it. */}
-      <div className="segwrap">
+      {lotId ? (
+        /* Inside a lot, one row: where orders are, the answer chip only when
+           there is something to answer, and the switch that folds every customer. */
+        <div className="ofilters">
+          <div className="segwrap">
+            <SegTabs label="Order status" value={statusFilter} onChange={setStatusFilter}
+              tabs={(['active', 'completed', 'closed'] as const).map((entry) => ({
+                /* An empty bucket says so by having no count: room is short on a phone. */
+                id: entry, label: ORDER_STATE_LABELS[entry], count: countOfState(entry) || undefined,
+              }))} />
+          </div>
+          {statusFilter === 'active' && toAnswer.length > 0 && (
+            <button type="button" className={`ofilters__answer${chip === 'answer' ? ' is-on' : ''}`}
+              aria-pressed={chip === 'answer'} aria-label={`To answer: ${toAnswer.length}`} title="To answer"
+              onClick={() => setFilter(chip === 'answer' ? 'all' : 'answer')}>
+              <Icon name="bell" size={14} /> <b>{toAnswer.length}</b>
+            </button>
+          )}
+          {customers && customers.length > 0 && (
+            <button type="button" className="ofilters__fold" aria-pressed={everyOpen}
+              aria-label={everyOpen ? 'Collapse all customers' : 'Expand all customers'}
+              title={everyOpen ? 'Collapse all' : 'Expand all'}
+              onClick={() => setAllOpen(!everyOpen)}>
+              <Icon name={everyOpen ? 'up' : 'down'} size={16} />
+            </button>
+          )}
+        </div>
+      ) : <div className="segwrap">
         <SegTabs label="Order status" value={statusFilter} onChange={setStatusFilter}
           tabs={(['active', 'completed', 'closed'] as const).map((entry) => ({
             id: entry, label: <><span className="segtab__icon">{ORDER_STATE_ICONS[entry]}</span> {ORDER_STATE_LABELS[entry]}</>, count: countOfState(entry),
@@ -1145,10 +1192,10 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           <SegTabs ext label="Which orders" value={chip} onChange={setFilter} tabs={[
             { id: 'all', label: 'All', count: scoped.length },
             { id: 'answer', label: 'To answer', count: toAnswer.length, hot: toAnswer.length > 0 },
-            ...(lotId ? [] : [{ id: 'nolot' as const, label: 'No lot', count: withoutLot.length }]),
+            { id: 'nolot' as const, label: 'No lot', count: withoutLot.length },
           ]} />
         )}
-      </div>
+      </div>}
 
       {shown.length === 0 ? (
         <div className="oempty">
@@ -1177,8 +1224,14 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
         </div>
       ) : customers ? (
         <div className="ocusts">
+          <span className="ocusts__count faint">
+            {customers.length} {customers.length === 1 ? 'customer' : 'customers'} · {shown.length}{' '}
+            {shown.length === 1 ? 'order' : 'orders'}
+          </span>
           {customers.map((customer) => (
-            <CustomerOrders key={customer.key} customer={customer}>
+            <CustomerOrders key={customer.key} customer={customer}
+              open={isOpen(customer)} needsAnswer={needsAnswer}
+              onToggle={(open) => setOpenOverride((current) => ({ ...current, [customer.key]: open }))}>
               {customer.rows.map((row, index) => card(row, customer.start + index))}
             </CustomerOrders>
           ))}
@@ -1239,7 +1292,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
  */
 function LotPulse({ rows }: { rows: readonly SaleRow[] }) {
   const live = rows.filter((row) => !isClosed(row));
-  const people = new Set(live.map((row) => row.buyer.handle ?? `name:${row.buyer.name}`)).size;
+  const people = new Set(live.map(customerKey)).size;
   const money = (pick: (row: SaleRow) => number) =>
     formatTotals(live.map((row) => ({ amountMinor: pick(row), currency: row.currency })), live[0]?.currency);
   const pendingCount = live.filter((row) => row.outstandingMinor > 0).length;
@@ -1261,11 +1314,14 @@ function LotPulse({ rows }: { rows: readonly SaleRow[] }) {
 
   return (
     <section className="lpulse" aria-label="This lot at a glance">
-      <div className="lpulse__stats">
+      {/* Who and how many, big, then the money in three boxes. */}
+      <div className="lpulse__stats lpulse__stats--people">
         <div className="lpulse__stat"><small>{people === 1 ? 'Customer' : 'Customers'}</small><b>{people}</b></div>
         <div className="lpulse__stat"><small>{live.length === 1 ? 'Order' : 'Orders'}</small><b>{live.length}</b></div>
+      </div>
+      <div className="lpulse__stats lpulse__stats--money">
         <div className="lpulse__stat"><small>Value</small><b>{money((row) => row.totalMinor)}</b></div>
-        <div className="lpulse__stat"><small>Paid</small><b>{money((row) => Math.min(row.paidMinor, row.totalMinor))}</b></div>
+        <div className="lpulse__stat is-paid"><small>Paid</small><b>{money((row) => Math.min(row.paidMinor, row.totalMinor))}</b></div>
         <div className={`lpulse__stat ${pendingCount > 0 ? 'is-due' : 'is-clear'}`}>
           <small>Pending{pendingCount > 0 ? ` · ${pendingCount}` : ''}</small>
           <b>{money((row) => row.outstandingMinor)}</b>
@@ -1311,12 +1367,35 @@ interface CustomerGroup {
   start: number;
 }
 
+/* A buyer with no handle is still one person: their name keeps them together. */
+function customerKey(row: SaleRow): string {
+  return row.buyer.handle ?? `name:${row.buyer.name}`;
+}
+
+/** Whether a lot's customers start open, as last chosen on this device. */
+const CUSTOMERS_OPEN_KEY = 'figmark.lot.customersOpen';
+
+function readCustomersOpen(): boolean {
+  try {
+    return window.localStorage.getItem(CUSTOMERS_OPEN_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function writeCustomersOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(CUSTOMERS_OPEN_KEY, open ? '1' : '0');
+  } catch {
+    /* Private mode or blocked storage: the choice lasts as long as the screen. */
+  }
+}
+
 /** Orders grouped by who bought them, in the order each customer first appears. */
 function byCustomer(rows: readonly SaleRow[]): CustomerGroup[] {
   const groups = new Map<string, CustomerGroup>();
   for (const row of rows) {
-    /* A buyer with no handle is still one person: their name keeps them together. */
-    const key = row.buyer.handle ?? `name:${row.buyer.name}`;
+    const key = customerKey(row);
     const group = groups.get(key);
     if (group) group.rows.push(row);
     else groups.set(key, { key, buyer: row.buyer, rows: [row], start: 0 });
@@ -1330,12 +1409,34 @@ function byCustomer(rows: readonly SaleRow[]): CustomerGroup[] {
 }
 
 /**
+ * Where one order has got to, in a word or two, for its customer's folded
+ * line: called off, delivered, or the furthest step pressed on its route.
+ */
+function shortStep(row: SaleRow): string {
+  if (isClosed(row)) return ORDER_STATE_LABELS.closed;
+  if (isCompleted(row)) return 'Delivered';
+  if (row.done) return row.done.label;
+  if (row.bookingOnly && !row.accepted) return 'Booked';
+  return 'Not started';
+}
+
+/**
  * One customer, as the head of their own little stack of order cards: who they
  * are, how many orders, and the money across all of them - what they come to,
  * what has landed, and what is still pending - so a seller packing their parcel
  * knows whether to chase before it goes out.
+ *
+ * Folded, it is two lines: the customer with their order count and what is
+ * pending, then each order's name and where it has got to - enough to scan a
+ * whole lot without the cards.
  */
-function CustomerOrders({ customer, children }: { customer: CustomerGroup; children: ReactNode }) {
+function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
+  customer: CustomerGroup;
+  open: boolean;
+  needsAnswer: ReadonlySet<string>;
+  onToggle: (open: boolean) => void;
+  children: ReactNode;
+}) {
   const { buyer, rows } = customer;
   /* Called-off orders owe nothing; they are listed but not counted. */
   const live = rows.filter((row) => !isClosed(row));
@@ -1347,11 +1448,19 @@ function CustomerOrders({ customer, children }: { customer: CustomerGroup; child
   const share = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const currency = rows[0]?.currency;
   const tone = live.length === 0 ? 'quiet' : pending > 0 ? (paid > 0 ? 'purple' : 'warn') : 'ok';
+  /* Open, the head says only where the money stands; the sums sit in the body. */
+  const payWord = live.length === 0 ? 'Nothing owed' : pending <= 0 ? 'Paid' : paid > 0 ? 'Partially paid' : 'Not paid';
+  const panelId = `ocust-${customer.key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
   return (
-    <section className={`ocust ocust--${tone}`}>
-      <header className="ocust__head">
-        <Avatar name={buyer.name} size={42} />
+    <section className={`ocust ocust--${tone}${open ? ' is-open' : ' is-folded'}`}>
+      <header className={`ocust__head${open ? '' : ' ocust__head--slim'}`}>
+        <button type="button" className="ocust__fold" aria-expanded={open} aria-controls={panelId}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${buyer.name}'s orders`}
+          onClick={() => onToggle(!open)}>
+          <Icon name={open ? 'down' : 'right'} size={16} />
+        </button>
+        {open && <Avatar name={buyer.name} size={40} />}
         <div className="ocust__who">
           {buyer.handle
             ? <Link to={`/${buyer.handle}`} className="ocust__name">{buyer.name}</Link>
@@ -1362,28 +1471,69 @@ function CustomerOrders({ customer, children }: { customer: CustomerGroup; child
           </span>
         </div>
         <div className="ocust__total">
-          <b>{formatTotals(sum((row) => row.totalMinor), currency)}</b>
           <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>
-            {live.length === 0 ? 'Nothing owed' : pending > 0 ? 'Pending' : 'All paid'}
+            {open || pending <= 0 ? payWord : `Pending ${formatTotals(sum((row) => row.outstandingMinor), currency)}`}
           </span>
         </div>
       </header>
-      {/* All paid says itself in the badge; the breakdown is for when money is still out. */}
-      {live.length > 0 && pending > 0 && (
-        <div className="ocust__money">
-          <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
-          <div className="ocust__sums">
-            <span><small>Orders</small><b>{formatTotals(sum((row) => row.totalMinor), currency)}</b></span>
-            <span><small>Paid</small><b>{formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}</b></span>
-            <span className={pending > 0 ? 'is-due' : 'is-clear'}>
-              <small>Pending</small>
-              <b>{formatTotals(sum((row) => row.outstandingMinor), currency)}</b>
-            </span>
-          </div>
+
+      {!open && (
+        /* Each order on one line: a dot in its money colour, its name, and its step. */
+        <div className="ocust__line" onClick={() => onToggle(true)}>
+          {rows.map((row) => {
+            const { tone: rowTone, label } = orderTone(row, needsAnswer.has(row.id));
+            const step = shortStep(row);
+            return (
+              <span key={row.id} className={`ocust__chip ocust__chip--${rowTone}`}
+                title={`${row.itemName} · ${step} · ${label}`}>
+                <i aria-hidden="true" />
+                <span className="ocust__chipname">{row.itemName}</span>
+                <span className="ocust__chipstep">{step}</span>
+              </span>
+            );
+          })}
         </div>
       )}
-      <div className="orows">{children}</div>
+
+      {open && (
+        <div id={panelId} className="ocust__body">
+          {live.length > 0 && (
+            <MoneyLine share={share} due={pending > 0}
+              total={formatTotals(sum((row) => row.totalMinor), currency)}
+              paid={formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}
+              balance={formatTotals(sum((row) => row.outstandingMinor), currency)} />
+          )}
+          <div className="orows">{children}</div>
+        </div>
+      )}
     </section>
+  );
+}
+
+/**
+ * Total, paid and balance on one small line over a thin bar of how much has
+ * landed. The same line sits under a customer and under each of their
+ * orders, so a lot and the Orders list read alike.
+ */
+function MoneyLine({ total, paid, balance, share, due, children }: {
+  total: string;
+  paid: string;
+  balance: string;
+  /** How much of the total has landed, 0-100. */
+  share: number;
+  due: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="mline">
+      <div className="mline__bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
+      <div className="mline__row">
+        <span>Total <b>{total}</b></span>
+        <span>Paid <b>{paid}</b></span>
+        <span className={due ? 'is-due' : 'is-clear'}>Balance <b>{balance}</b></span>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -1748,8 +1898,6 @@ function OrderRow({
   /* Something to press: not called off, and not a booking still waiting to be taken on. */
   const working = !isClosed(row) && !(row.bookingOnly && !row.accepted);
   const { tone, label } = orderTone(row, needsAnswer);
-  /* Fully paid and nothing extra: the badge says it, the bar would only repeat it. */
-  const settled = row.outstandingMinor <= 0 && row.paidMinor > 0 && row.creditMinor <= 0;
   const paidShare = row.totalMinor > 0 ? Math.min(100, Math.round((row.paidMinor / row.totalMinor) * 100)) : 0;
   const orderLink = { pathname: `/order/${row.id}` };
   const linkState = { from };
@@ -1785,23 +1933,15 @@ function OrderRow({
           <span>{timeAgo(row.createdAt)}</span>
           {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
         </>}
-        side={<>
-          <b>{formatMoney(row.totalMinor, row.currency)}</b>
-          <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>
-        </>} />
+        side={<span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>} />
 
-      {/* The money, as a bar rather than a sentence: how much of this has
-          actually landed. Once it is all in, the Paid badge already says so. */}
-      {!settled && <div className="ocard__money">
-        <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${paidShare}%` }} /></div>
-        <div className="ocard__moneytext">
-          <span><b>{formatMoney(row.paidMinor, row.currency)}</b> paid</span>
-          {row.outstandingMinor > 0
-            ? <span><b>{formatMoney(row.outstandingMinor, row.currency)}</b> left</span>
-            : row.paidMinor > 0 && <span className="ocard__done">✨ Fully paid</span>}
-          {row.creditMinor > 0 && <span className="ocard__extra">💰 {formatMoney(row.creditMinor, row.currency)} extra</span>}
-        </div>
-      </div>}
+      {/* The money on one small line: what it costs, what has landed, what is left. */}
+      <MoneyLine share={paidShare} due={row.outstandingMinor > 0}
+        total={formatMoney(row.totalMinor, row.currency)}
+        paid={formatMoney(Math.min(row.paidMinor, row.totalMinor), row.currency)}
+        balance={formatMoney(Math.max(0, row.outstandingMinor), row.currency)}>
+        {row.creditMinor > 0 && <span className="ocard__extra">{formatMoney(row.creditMinor, row.currency)} extra</span>}
+      </MoneyLine>
 
       {/* The one line on where it stands. A claimed payment already has its
           own line below, with the amount and the reference. */}

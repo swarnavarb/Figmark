@@ -57,6 +57,7 @@ than quietly wrong.
 
 - [docs/AZURE.md](docs/AZURE.md) — resources, credentials, deployment, current blockers
 - [docs/AUTH.md](docs/AUTH.md) — the auth seam and how to swap in a real provider
+- [docs/PUSH.md](docs/PUSH.md) — lock-screen notifications: turning them on, and installing on a phone
 - [docs/DATA-MODEL.md](docs/DATA-MODEL.md) — containers, partition keys, and why
 
 ## What's built

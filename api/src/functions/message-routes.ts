@@ -10,7 +10,9 @@ import {
 } from '../../../shared/storefront.js';
 import { moderation } from '../moderation.js';
 import { accessFor } from '../../../shared/stores.js';
-import { isReaction } from '../../../shared/social.js';
+import { isReaction, REACTION_META } from '../../../shared/social.js';
+import { actorName, gistOf, toWhom, whose } from '../../../shared/notifications.js';
+import { notify, readGroup, storeCrew } from './notify.js';
 import { getAuthService } from '../auth/index.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
@@ -214,10 +216,19 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
   const page = await repository.listMessages(threadId, THREAD_PAGE, before);
   // Inclusive, as `before` is: the app drops what it already has.
   const messages = since ? page.filter((message) => message.createdAt >= since) : page;
+  // Where the reader left off, worked out before reading it marks it read:
+  // the app draws "new messages" above this one and opens the chat there.
+  const firstUnread = !before && !since
+    ? page.find((message) => message.to.handle === us.handle && !message.readAt) ?? null
+    : null;
+  const unread = firstUnread ? page.filter((message) => message.to.handle === us.handle && !message.readAt).length : 0;
+  const firstUnreadId = firstUnread?.id ?? null;
   // Writing read receipts is a write per message; only when there is one to write.
   if (!before && page.some((message) => message.to.handle === us.handle && !message.readAt)) {
     await repository.markThreadRead(threadId, us.handle);
   }
+  // Reading the conversation is reading the news of it.
+  if (!before && !since) await readGroup(repository, user.id, messageGroup(threadId));
   const me = await repository.getUserById(user.id);
 
   // Every voice the caller has, so the thread can offer a switch rather than
@@ -226,6 +237,9 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
     us, them, handles: mine, threadId, messages: await withLiveItems(messages, repository),
     /** Whether there is more to page back to. */
     more: !since && page.length === THREAD_PAGE,
+    /** The oldest message to you that you had not read, and how many there were. */
+    firstUnreadId,
+    unread,
     blocked: (me?.messageBlocks ?? []).includes(them.userId),
     muted: (me?.mutedThreads ?? []).includes(threadId),
   });
@@ -321,6 +335,35 @@ async function block(request: HttpRequest, _context: InvocationContext) {
   return json(200, { blocked: body.block });
 }
 
+/** GET /api/me/blocked - everybody you blocked, to let back in from one place. */
+async function blockedList(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  const people = await repository.listUsersByIds(me?.messageBlocks ?? []);
+  return json(200, {
+    blocked: people.map((person) => ({
+      id: person.id,
+      name: person.displayName,
+      handle: person.username ?? null,
+      shop: person.sellerProfile ? { name: person.sellerProfile.storefrontName, handle: person.sellerProfile.username ?? null } : null,
+    })),
+  });
+}
+
+/** POST /api/me/blocked/{id}/unblock - let them write again, by account. */
+async function unblock(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  const next = (me.messageBlocks ?? []).filter((id) => id !== request.params.id);
+  await repository.updateUser({ ...me, messageBlocks: next, updatedAt: new Date().toISOString() });
+  return json(200, { blocked: false });
+}
+
 /**
  * POST /api/messages/{handle}/mute?as=<handle> - keep the conversation, stop counting it.
  *
@@ -353,6 +396,53 @@ async function mute(request: HttpRequest, _context: InvocationContext) {
   else muted.delete(threadId);
   await repository.updateUser({ ...me, mutedThreads: [...muted], updatedAt: new Date().toISOString() });
   return json(200, { muted: body.mute });
+}
+
+/**
+ * Who hears about a message to `party`: the person, or everybody who speaks
+ * for the store - minus anybody who muted this conversation.
+ */
+async function listenersFor(party: MessageParty, threadId: string, repository: Repo): Promise<string[]> {
+  let ids = [party.userId];
+  if (party.isStore) {
+    const owner = await repository.getUserById(party.userId);
+    if (owner?.sellerProfile) ids = storeCrew(owner, 'posts');
+  }
+  const people = await repository.listUsersByIds(ids);
+  return people.filter((person) => !(person.mutedThreads ?? []).includes(threadId)).map((person) => person.id);
+}
+
+/** One conversation's notices, folded together: see `notify`. */
+const messageGroup = (threadId: string) => `msg:${threadId}`;
+
+/**
+ * Tell whoever a message went to. Says which of their voices it reached -
+ * "Arjun messaged you" and "Arjun messaged Kaiju Imports" are different
+ * conversations to someone who runs a shop - and folds a run of them into
+ * "Arjun sent Kaiju Imports 3 messages".
+ */
+async function announceMessage(message: Message, senderId: string, repository: Repo): Promise<void> {
+  const { from, to } = message;
+  const sender = actorName(from.displayName, from.handle);
+  const recipient = toWhom(to.isStore ? to.displayName : null);
+  const first = message.deal?.kind === 'offer'
+    ? `${sender} sent ${recipient} a private deal`
+    : message.deal?.kind === 'request'
+      ? `${sender} asked ${recipient} for a private deal`
+      : `${sender} messaged ${recipient}`;
+  const photo = /^\s*$/.test(message.body) ? 'Sent a photo' : '';
+  await notify(repository, await listenersFor(to, message.threadId, repository), {
+    kind: 'message',
+    title: first,
+    body: gistOf(message.body, photo || 'New message'),
+    // Opens the conversation in the voice it reached, not whichever is default.
+    link: `/messages/${encodeURIComponent(from.handle)}?as=${encodeURIComponent(to.handle)}`,
+    group: {
+      key: messageGroup(message.threadId),
+      actor: sender,
+      title: ({ count }) => (count === 1 ? first : `${sender} sent ${recipient} ${count} messages`),
+    },
+  }, { except: senderId });
 }
 
 /** POST /api/messages/{handle}/send - say something, as one of your handles. */
@@ -503,6 +593,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   };
 
+<<<<<<< HEAD
   const saved = await repository.sendMessage(message);
   // Pinned to the thread only once the message exists, so a failed send leaves
   // the photo free to try again rather than stuck to a message that is not there.
@@ -511,6 +602,10 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     await Promise.all(photoNames.map((name) => store.attachPrivate(name, threadKey)));
   }
   const [sent] = await withLiveItems([saved], repository);
+=======
+  const [sent] = await withLiveItems([await repository.sendMessage(message)], repository);
+  await announceMessage(message, user.id, repository);
+>>>>>>> origin/development
   return json(201, { message: sent });
 }
 
@@ -671,6 +766,27 @@ async function reactToMessage(request: HttpRequest, _context: InvocationContext)
   message.reactions = body.kind && body.kind !== had ? [...others, { handle: us.handle, kind: body.kind }] : others;
   message.updatedAt = new Date().toISOString();
   const saved = await repository.updateMessage(message);
+
+  // A first reaction to somebody else's message is news to them; changing it
+  // or taking it back is not.
+  if (body.kind && !had && message.from.handle !== us.handle) {
+    const reactor = actorName(us.displayName, us.handle);
+    const theirs = whose(message.from.isStore ? message.from.displayName : null);
+    const emoji = REACTION_META[body.kind].emoji;
+    await notify(repository, await listenersFor(message.from, message.threadId, repository), {
+      kind: 'message_reacted',
+      title: `${reactor} reacted ${emoji} to ${theirs} message`,
+      body: gistOf(message.body, 'A message'),
+      link: `/messages/${encodeURIComponent(us.handle)}?as=${encodeURIComponent(message.from.handle)}`,
+      group: {
+        key: `msgr:${message.threadId}`,
+        actor: reactor,
+        title: ({ count }) => (count === 1
+          ? `${reactor} reacted ${emoji} to ${theirs} message`
+          : `${reactor} reacted to ${count} of ${theirs} messages`),
+      },
+    }, { except: user.id });
+  }
   return json(200, { reactions: saved.reactions ?? [] });
 }
 
@@ -858,6 +974,8 @@ export const publicProfileRoute = handler(publicProfile);
 
 const anon = { authLevel: 'anonymous' } as const;
 
+export const blockedListRoute = handler(blockedList);
+export const unblockRoute = handler(unblock);
 app.http('messages-inbox', { ...anon, methods: ['GET'], route: 'messages', handler: inboxRoute });
 app.http('messages-thread', { ...anon, methods: ['GET'], route: 'messages/{handle}', handler: threadRoute });
 // A distinct template, not just a distinct method: the Functions host treats
@@ -868,6 +986,8 @@ app.http('messages-photo-upload', { ...anon, methods: ['POST'], route: 'message-
 app.http('messages-photo', { ...anon, methods: ['GET'], route: 'messages/{handle}/photos/{name}', handler: chatPhotoRoute });
 app.http('messages-react', { ...anon, methods: ['POST'], route: 'messages/{handle}/react', handler: reactToMessageRoute });
 app.http('messages-block', { ...anon, methods: ['POST'], route: 'messages/{handle}/block', handler: blockRoute });
+app.http('me-blocked', { ...anon, methods: ['GET'], route: 'me/blocked', handler: blockedListRoute });
+app.http('me-unblock', { ...anon, methods: ['POST'], route: 'me/blocked/{id}/unblock', handler: unblockRoute });
 app.http('messages-mute', { ...anon, methods: ['POST'], route: 'messages/{handle}/mute', handler: muteRoute });
 app.http('public-profile', { ...anon, methods: ['GET'], route: 'u/{handle}', handler: publicProfileRoute });
 app.http('me-username', { ...anon, methods: ['POST'], route: 'me/username', handler: setUsernameRoute });

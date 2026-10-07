@@ -10,7 +10,8 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
 import { buildLot, type NewLotBody } from './fulfilment-routes.js';
-import { notify } from './notify.js';
+import { notify, orderNames } from './notify.js';
+import { gistOf } from '../../../shared/notifications.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -310,12 +311,14 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
     order.lotId,
   );
 
+  const named = await orderNames(repository, moved);
+  const item = gistOf(moved.itemName, 'Your item', 30);
   await notify(
     repository,
     [moved.buyerId],
     {
       kind: 'lot_moved',
-      title: was ? `Your item moved to ${lot.name}` : `Your item is in ${lot.name}`,
+      title: was ? `${named.shop} moved ${item} to ${lot.name}` : `${named.shop} put ${item} in ${lot.name}`,
       body: body.note?.trim()
         || (was
           ? `It travels with ${lot.name} now instead of ${was.name}.`

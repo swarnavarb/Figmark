@@ -1,5 +1,6 @@
 import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
+import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
@@ -148,6 +149,22 @@ export interface User extends BaseDocument {
   profitTemplates?: ProfitTemplate[];
   /** Calculations kept to list later (Pro). Kept beside the calculators, for the same reason. */
   savedCalcs?: SavedCalc[];
+  /**
+   * The browsers and installed copies of the site that asked to be woken when
+   * something happens to this account. Kept on the account for the same reason
+   * as the calculators: a person has a handful, they are read all at once, and
+   * the database is at its container ceiling. Never sent to anyone - each one
+   * is enough to put a message on that person's screen.
+   */
+  pushEndpoints?: PushEndpoint[];
+  /** What reaches their phone; absent means everything, with sound. */
+  notificationPrefs?: NotificationPrefs;
+  /**
+   * Where this account uses Figmark: one row per browser or home-screen copy,
+   * as that copy reports itself. Kept for the operators' install figures and
+   * nothing else; never sent to anyone but an admin, and only as totals.
+   */
+  clientDevices?: ClientDevice[];
   /**
    * Freight forwarders share the same account base rather than living in a
    * separate system; this extension is what puts one in the directory.
@@ -2132,9 +2149,95 @@ export interface Notification extends BaseDocument {
   undoId?: string;
   /** Taken back because what it reported was undone. Never shown. */
   withdrawn?: boolean;
+  /**
+   * When it went out to the person's devices. Set as it is written for an
+   * ordinary notice; left off a held one until the clock sends it, which is
+   * how the clock knows what is still owed.
+   */
+  pushedAt?: string;
+  /**
+   * Notices about the same thing collapse into one while unread: a third
+   * message from Arjun is "Arjun sent you 3 messages", not a third row. This
+   * is that thing - a conversation, a post's reactions - and the lock screen
+   * replaces rather than stacks on it too.
+   */
+  group?: string;
+  /** How many events this row stands for. Absent means one. */
+  count?: number;
+  /** Who did them, newest first and each once, for "Arjun and 3 others". */
+  actors?: string[];
+}
+
+/** What reaches somebody's phone, set from the notifications card. */
+export interface NotificationPrefs {
+  /** Categories that stay in the bell and do not go to the lock screen. */
+  pushOff: NotificationCategory[];
+  /** Between 22:00 and 07:00 where they are, pushes arrive without sound. */
+  quietHours: boolean;
+  /** Their IANA time zone, as their device reported it. */
+  timeZone: string | null;
+}
+
+export const CLIENT_PLATFORMS = ['ios', 'android', 'mac', 'windows', 'linux', 'other'] as const;
+export type ClientPlatform = (typeof CLIENT_PLATFORMS)[number];
+export const CLIENT_BROWSERS = ['safari', 'chrome', 'samsung', 'edge', 'firefox', 'opera', 'other'] as const;
+export type ClientBrowser = (typeof CLIENT_BROWSERS)[number];
+export const CLIENT_PUSH_STATES = ['on', 'off', 'blocked', 'needs-install', 'unsupported', 'unavailable'] as const;
+export type ClientPushState = (typeof CLIENT_PUSH_STATES)[number];
+
+/**
+ * One copy of the site somebody uses, as it describes itself.
+ *
+ * "Copy" because an iPhone's home-screen Figmark and its Safari are separate
+ * as far as the site can tell - separate storage, separate sign-in - so each
+ * gets its own row, and a person counts as having installed it on a platform
+ * when any of their rows on that platform was opened from the home screen.
+ */
+export interface ClientDevice {
+  /** Random, made by that copy and kept in its own storage. */
+  id: string;
+  platform: ClientPlatform;
+  browser: ClientBrowser;
+  /** Opened from the home screen (or as an installed app) when it last reported. */
+  installed: boolean;
+  /** The first time it reported from the home screen; null if it never has. */
+  installedAt: string | null;
+  push: ClientPushState;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+/**
+ * One device that agreed to be woken: a browser's Web Push subscription.
+ *
+ * The endpoint is the push service's address for that one browser, and the two
+ * keys are what the message is encrypted to, so only that browser can read it.
+ */
+export interface PushEndpoint {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  /** A rough name for the device, so the list can be told apart. Not trusted for anything. */
+  device: string;
+  createdAt: string;
 }
 
 export type NotificationKind =
+  /** A direct message, to you or a store you speak for. */
+  | 'message'
+  /** Somebody reacted to a message you or your store sent. */
+  | 'message_reacted'
+  /** A customer wrote in your store's channel. */
+  | 'channel_message'
+  /** A store you follow announced something in its channel. */
+  | 'channel_announcement'
+  /** Somebody liked a comment you or your store wrote. */
+  | 'comment_liked'
+  /** Somebody followed you, or your store. */
+  | 'followed'
+  /** A review was left for you, your store, or an order. */
+  | 'review_received'
+  /** A forum's founder or a moderator warned, removed or appointed you. */
+  | 'forum_moderation'
   | 'want_answered'
   | 'payment_claimed'
   | 'payment_received'
@@ -2325,6 +2428,14 @@ export interface Forum extends BaseDocument {
    * membership existed, which read as empty.
    */
   memberIds?: string[];
+  /** Up to two people the founder appointed to keep the room in order. */
+  moderatorIds?: string[];
+  /** Removed and kept out: they cannot join again until let back in. */
+  bannedIds?: string[];
+  /** House rules, shown at the top of the room. */
+  rules?: string;
+  /** Warnings handed out, newest last. */
+  warnings?: { userId: string; byId: string; note: string; at: string }[];
 }
 
 /* -------------------------------------------------------------------------- */

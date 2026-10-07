@@ -8,7 +8,9 @@ import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone, sourcingOf } from '../../../
 import { lotNo, lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
 import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
-import { REACTIONS, isReaction, type ReactionKind } from '../../../shared/social.js';
+import { REACTIONS, REACTION_META, isReaction, type ReactionKind } from '../../../shared/social.js';
+import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
+import { notify, storeCrew } from './notify.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { dealEndsAt } from '../../../shared/deals.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
@@ -80,6 +82,8 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     kind: request.query.get('kind') ?? undefined,
     sort: request.query.get('sort') ?? undefined,
     maxPriceMinor: numeric(request.query.get('maxPrice')),
+    // One shop's live stock, for its storefront.
+    sellerId: request.query.get('seller') ?? undefined,
     followedSellerIds,
   // Expired is read off the clock, so it is filtered here rather than stored.
   })).filter((listing) => !isExpired(listing));
@@ -550,7 +554,35 @@ async function toggleLike(request: HttpRequest, _context: InvocationContext) {
   // stickers, so saving made-up ids must not be a way to farm them.
   const listing = await repository.getListing(id);
   if (!listing || !(await canSee(repository, listing, user.id))) return error(404, 'not_found', 'No such listing.');
-  return json(200, { liked: await repository.toggleLike(user.id, id) });
+  const liked = await repository.toggleLike(user.id, id);
+  if (liked) {
+    // A save is the clearest sign somebody wants the thing; the shop hears it.
+    const seller = await itemSeller(listing, repository);
+    const who = actorName(user.displayName);
+    const what = `${whose(seller.store)} item`;
+    await notify(repository, seller.audience, {
+      kind: 'post_reacted',
+      title: `${who} saved ${what}`,
+      body: gistOf(listing.title),
+      link: `/listing/${encodeURIComponent(listing.id)}`,
+      group: {
+        key: `save:${listing.id}`,
+        actor: who,
+        title: ({ actors }) => (actors.length > 1 ? `${andOthers(actors)} saved ${what}` : `${who} saved ${what}`),
+      },
+    }, { except: user.id });
+  }
+  return json(200, { liked });
+}
+
+/**
+ * Who hears about an item: the shop's owner and whoever lists for it, said
+ * as the shop's name; or the person, for something sold as themselves.
+ */
+async function itemSeller(listing: Listing, repository: Awaited<ReturnType<typeof getRepository>>) {
+  const owner = await repository.getUserById(listing.sellerId);
+  if (owner?.sellerProfile) return { audience: storeCrew(owner, 'listings'), store: owner.sellerProfile.storefrontName };
+  return { audience: [listing.sellerId], store: null as string | null };
 }
 
 /**
@@ -663,6 +695,36 @@ async function addComment(request: HttpRequest, _context: InvocationContext) {
     comment.replyToId = parent.replyToId ?? parent.id;
   }
   const saved = await repository.addComment(comment);
+
+  // The shop hears about a question on its item; whoever was answered hears
+  // about the answer. Somebody who is both hears once, as the answer.
+  const who = actorName(user.displayName);
+  const link = `/listing/${encodeURIComponent(listing.id)}`;
+  const answered = body.replyToId ? existing.find((c) => c.id === body.replyToId) : null;
+  if (answered) {
+    await notify(repository, [answered.authorId], {
+      kind: 'comment_replied',
+      title: `${who} replied to your comment`,
+      body: `On ${gistOf(listing.title, 'an item', 40)}: ${gistOf(text, '', 70)}`,
+      link,
+    }, { except: user.id });
+  }
+  const seller = await itemSeller(listing, repository);
+  const what = `${whose(seller.store)} item`;
+  await notify(repository, seller.audience.filter((id) => id !== answered?.authorId), {
+    kind: 'post_commented',
+    title: `${who} commented on ${what}`,
+    body: `${gistOf(listing.title, 'An item', 40)}: ${gistOf(text, '', 70)}`,
+    link,
+    group: {
+      key: `lcmt:${listing.id}`,
+      actor: who,
+      title: ({ count, actors }) => (actors.length > 1
+        ? `${andOthers(actors)} commented on ${what}`
+        : count > 1 ? `${who} left ${count} comments on ${what}` : `${who} commented on ${what}`),
+    },
+  }, { except: user.id });
+
   return json(201, { comment: { ...publicComment(saved, user.id), author: personRef(user) } });
 }
 
@@ -699,9 +761,27 @@ async function reactToComment(request: HttpRequest, _context: InvocationContext)
   const comment = (await repository.listComments(id)).find((c) => c.id === commentId);
   if (!comment) return error(404, 'not_found', 'That post is gone.');
   const others = (comment.reactions ?? []).filter((entry) => entry.userId !== user.id);
+  const had = (comment.reactions ?? []).some((entry) => entry.userId === user.id);
   comment.reactions = body.kind ? [...others, { userId: user.id, kind: body.kind }] : others;
   comment.updatedAt = new Date().toISOString();
   const saved = await repository.updateComment(comment);
+  if (body.kind && !had) {
+    const who = actorName(user.displayName);
+    const emoji = REACTION_META[body.kind as ReactionKind].emoji;
+    await notify(repository, [comment.authorId], {
+      kind: 'comment_liked',
+      title: `${who} reacted ${emoji} to your comment`,
+      body: gistOf(comment.body),
+      link: `/listing/${encodeURIComponent(id)}`,
+      group: {
+        key: `lclike:${comment.id}`,
+        actor: who,
+        title: ({ actors }) => (actors.length > 1
+          ? `${andOthers(actors)} reacted to your comment`
+          : `${who} reacted ${emoji} to your comment`),
+      },
+    }, { except: user.id });
+  }
   const { reactionCounts, myReaction } = publicComment(saved, user.id);
   return json(200, { reactionCounts, myReaction });
 }
@@ -732,6 +812,26 @@ async function toggleFollow(request: HttpRequest, _context: InvocationContext) {
   else target.sellerProfile!.followerCount = Math.max(0, target.sellerProfile!.followerCount + step);
   target.updatedAt = new Date().toISOString();
   await repository.updateUser(target);
+
+  if (following) {
+    // "followed you" and "followed Kaiju Imports" are different news to
+    // somebody who has both a page and a shop.
+    const follower = await repository.getUserById(user.id);
+    const who = actorName(user.displayName, follower?.username);
+    const store = person ? null : target.sellerProfile!.storefrontName;
+    const whom = toWhom(store);
+    await notify(repository, person ? [target.id] : storeCrew(target, 'posts'), {
+      kind: 'followed',
+      title: `${who} followed ${whom}`,
+      body: follower?.username ? `@${follower.username} · tap to see their page` : 'Tap to see who follows you',
+      link: follower?.username ? `/${encodeURIComponent(follower.username)}` : '/social',
+      group: {
+        key: `follow:${sellerId}`,
+        actor: who,
+        title: ({ actors }) => (actors.length > 1 ? `${andOthers(actors)} followed ${whom}` : `${who} followed ${whom}`),
+      },
+    }, { except: user.id });
+  }
   return json(200, { following, followerCount: person ? target.followerCount : target.sellerProfile!.followerCount });
 }
 
@@ -966,6 +1066,28 @@ async function myActivity(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/** GET /api/me/saved - everything you saved, newest save first, as the feed shows it. */
+async function mySaved(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const ids = await repository.listLikedListingIds(user.id);
+  const listings = (await Promise.all(ids.map((id) => repository.getListing(id))))
+    .filter((listing): listing is Listing => listing !== null && listing.status !== 'archived' && !listing.privateFor);
+  const sellers = await repository.listUsersByIds([...new Set(listings.map((l) => l.sellerId))]);
+  const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
+  return json(200, {
+    listings: listings.map((listing) => ({
+      ...withoutCosts(listing),
+      liked: true,
+      seller: sellerById.get(listing.sellerId) ?? null,
+      estimatedDispatchAt: null,
+      // Sold out or past its date: still yours to look back at, but not buyable.
+      gone: listing.status !== 'active' || isExpired(listing),
+    })),
+  });
+}
+
 /**
  * GET /api/me/listings - the signed-in account's own stock, and nothing else.
  *
@@ -1174,6 +1296,7 @@ export const myListingsRoute = handler(myListings);
 export const forwardersRoute = handler(forwarders);
 
 const anon = { authLevel: 'anonymous' } as const;
+export const mySavedRoute = handler(mySaved);
 app.http('feed', { ...anon, methods: ['GET'], route: 'feed', handler: feedRoute });
 app.http('listing-detail', { ...anon, methods: ['GET'], route: 'listings/{id}', handler: listingDetailRoute });
 export const similarListingsRoute = handler(similarListings);
@@ -1192,5 +1315,6 @@ app.http('listing-edit', { ...anon, methods: ['POST'], route: 'listings/{id}/edi
 app.http('listing-delete', { ...anon, methods: ['POST'], route: 'listings/{id}/delete', handler: deleteListingRoute });
 app.http('order-create', { ...anon, methods: ['POST'], route: 'orders', handler: createOrderRoute });
 app.http('me-activity', { ...anon, methods: ['GET'], route: 'me/activity', handler: myActivityRoute });
+app.http('me-saved', { ...anon, methods: ['GET'], route: 'me/saved', handler: mySavedRoute });
 app.http('me-listings', { ...anon, methods: ['GET'], route: 'me/listings', handler: myListingsRoute });
 app.http('forwarders', { ...anon, methods: ['GET'], route: 'forwarders', handler: forwardersRoute });

@@ -251,9 +251,12 @@ function reduceMotion(): boolean {
 /* ── The post ──────────────────────────────────────────────────────────── */
 
 export function SocialPostCard({
-  card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false,
+  card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false, canModerate = false, onPinned,
 }: {
   card: PostCard;
+  /** Read by the forum's admin or a moderator, who may take it down or pin it. */
+  canModerate?: boolean;
+  onPinned?: (id: string, pinned: boolean) => void;
   /** Read inside its own forum, where naming the forum again is noise. */
   inForum?: boolean;
   /** Its place on the trending board, when it is on one. */
@@ -418,9 +421,22 @@ export function SocialPostCard({
                 <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
                   <Icon name="external" size={15} /> Open post
                 </Link>
-                {social.mine && (
+                {canModerate && (
+                  <button type="button" role="menuitem" onClick={async () => {
+                    setMenu(false);
+                    try {
+                      const { pinned } = await api.pinPost(post.channelId, post.id);
+                      onPinned?.(post.id, pinned);
+                    } catch (err) {
+                      setError(err instanceof ApiRequestError ? err.message : 'Could not pin that.');
+                    }
+                  }}>
+                    <Icon name="bolt" size={15} /> {post.pinned ? 'Unpin' : 'Pin to the top'}
+                  </button>
+                )}
+                {(social.mine || canModerate) && (
                   <button type="button" role="menuitem" className="is-danger" onClick={() => void remove()}>
-                    <Icon name="trash" size={15} /> Delete post
+                    <Icon name="trash" size={15} /> {social.mine ? 'Delete post' : 'Remove post (moderator)'}
                   </button>
                 )}
               </div>

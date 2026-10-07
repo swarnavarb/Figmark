@@ -450,7 +450,7 @@ function HeartPop({ gain }: { gain: boolean }) {
  * A listing as a collectible: a frame in its rarity, the condition stamped on
  * like a stamp, the save button as a chest, and a pre-order's fill as a level.
  */
-const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
+export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
   const { refresh } = useQuest();
   // Saves count towards quests, so the level chip is re-read after one.
   const [liked, toggle] = useSave(listing.id, listing.liked, refresh);
