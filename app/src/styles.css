@@ -12206,18 +12206,76 @@ a.ocust__name:hover { color: var(--accent-text); }
 .lotnav { margin-bottom: 10px; padding: 3px; gap: 3px; border-radius: 14px; }
 .lotnav__tab { grid-auto-flow: column; gap: 6px; padding: 7px 4px; border-radius: 11px; }
 .lpulse { gap: 10px; padding: 12px; border-radius: 18px; }
-.ocusts { gap: 12px; }
-.ocust { gap: 8px; padding: 10px; border-radius: 18px; }
+.ocusts { gap: 10px; }
+/*
+ * A customer and an order must not look alike. The customer is a filled band
+ * in their money colour with a big name; their orders sit under it as flat,
+ * smaller cards on a rail, each marked only by a stripe in its own colour.
+ */
+.ocust { gap: 0; padding: 0; border-radius: 18px; overflow: hidden; }
 .ocust__head {
-  padding: 2px 4px 8px;
-  border-bottom: 1px solid rgb(var(--tone) / 0.25);
+  grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(90deg, rgb(var(--tone) / 0.26), rgb(var(--tone) / 0.08) 70%, rgb(var(--tone) / 0.04));
+  border-bottom: 1px solid rgb(var(--tone) / 0.3);
 }
-.ocust__name { font-size: var(--t-md); font-weight: var(--w-bold); }
-.ocust > .orows {
-  gap: 8px; margin-left: 10px; padding-left: 10px;
+.ocust.is-folded .ocust__head { padding: 8px 12px; border-bottom-color: rgb(var(--tone) / 0.14); }
+.ocust__name { font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.01em; }
+.ocust.is-folded .ocust__name { font-size: var(--t-md); }
+.ocust__fold {
+  display: grid; place-items: center; width: 30px; height: 30px; padding: 0;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.ocust__fold:hover { background: rgba(255, 255, 255, 0.16); }
+.ocust__body { display: grid; gap: 8px; padding: 10px; }
+.ocust__body > .orows {
+  gap: 8px; margin-left: 8px; padding-left: 10px;
   border-left: 2px solid rgb(var(--tone) / 0.35);
 }
-.ocust .ocard { padding: 10px 10px 8px; gap: 8px; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+.ocust .ocard {
+  padding: 10px 10px 8px 13px; gap: 8px; border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 rgb(var(--tone) / 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.ocust .ocard::before { display: none; }
+.ocust .ocard.is-urgent::before { display: block; }
+.ocust .ocard__name { font-size: var(--t-sm); font-weight: var(--w-semi); }
+.ocust .ocard__img { width: 40px; height: 40px; border-radius: 10px; }
+
+/* Folded: every order on one line - a dot in its money colour, its name, its step. */
+.ocust__line {
+  display: flex; gap: 6px; padding: 8px 12px 10px;
+  overflow-x: auto; scrollbar-width: none; cursor: pointer;
+}
+.ocust__line::-webkit-scrollbar { display: none; }
+.ocust__chip {
+  --c: 148 163 184;
+  flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 240px;
+  padding: 4px 10px 4px 8px; border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px rgb(var(--c) / 0.32);
+  font-size: var(--t-xs); white-space: nowrap;
+}
+.ocust__chip i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: rgb(var(--c)); }
+.ocust__chip--ok { --c: 52 211 153; }
+.ocust__chip--warn { --c: 251 191 36; }
+.ocust__chip--danger { --c: 244 63 94; }
+.ocust__chip--purple { --c: 147 51 234; }
+.ocust__chip--accent { --c: 124 58 237; }
+.ocust__chipname { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: var(--w-semi); }
+.ocust__chipstep { flex: none; color: var(--text-faint); }
+.ocust__chipstep::before { content: '· '; }
+.ocust.is-open .ocust__fold { background: rgb(var(--tone) / 0.22); }
+
+/* Above the customers: the count, and one switch to open or fold them all. */
+.ocusts__bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 2px; font-size: var(--t-xs); }
+.ocusts__all {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text); font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.ocusts__all:hover { border-color: var(--text-faint); }
 .lotitem { border-bottom: none; }
 /* A called-off order: the timeline stops at a last rung, and nothing follows it. */
 .ladder__row--ended .ladder__dot {
@@ -12227,7 +12285,8 @@ a.ocust__name:hover { color: var(--accent-text); }
 }
 .ladder__row--ended .ladder__name { color: var(--danger, #F43F5E); }
 @media (max-width: 520px) {
-  .ocust > .orows { margin-left: 4px; padding-left: 8px; }
+  .ocust__body > .orows { margin-left: 2px; padding-left: 8px; }
+  .ocust__name { font-size: var(--t-md); }
 }
 
 /*
