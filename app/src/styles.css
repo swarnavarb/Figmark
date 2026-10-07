@@ -5048,12 +5048,14 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .lightbox__img {
-  max-width: 100vw; max-height: 88vh; object-fit: contain;
+  max-width: 100vw; max-height: calc(100vh - 140px); object-fit: contain;
   animation: pop-in var(--dur-2) var(--ease) both;
 }
 .lightbox__close, .lightbox__nav {
   position: absolute; width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.12); color: #fff; cursor: pointer;
+  /* Over the photo, which is animated and so paints on top of anything unlayered. */
+  z-index: 3;
 }
 .lightbox__close:hover, .lightbox__nav:hover { background: rgba(255, 255, 255, 0.22); }
 .lightbox__close { top: max(14px, env(safe-area-inset-top)); right: 14px; }
