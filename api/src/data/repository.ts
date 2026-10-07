@@ -62,8 +62,6 @@ export interface CatalogQuery {
    */
   includeHidden?: boolean;
   maxPriceMinor?: number;
-  /** Ranks listings from followed sellers first. */
-  followedSellerIds?: readonly string[];
 }
 
 /**

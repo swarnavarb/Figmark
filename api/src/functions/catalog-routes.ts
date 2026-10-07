@@ -61,8 +61,8 @@ function toSellerCard(user: User) {
  * GET /api/feed - the unified catalog.
  *
  * Public, because browsing is the default entry point and must render before
- * anyone signs in. When a session is present the results are personalised:
- * followed sellers rank first and the viewer's bookmarks are marked.
+ * anyone signs in. The order is the same for everyone; when a session is
+ * present the viewer's bookmarks are marked.
  */
 async function feed(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
@@ -85,7 +85,6 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     maxPriceMinor: numeric(request.query.get('maxPrice')),
     // One shop's live stock, for its storefront.
     sellerId: request.query.get('seller') ?? undefined,
-    followedSellerIds,
   // Expired is read off the clock, so it is filtered here rather than stored.
   })).filter((listing) => !isExpired(listing));
 

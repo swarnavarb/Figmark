@@ -37,8 +37,8 @@ export const PRICE_BANDS = [
  * The unified catalog and the app's landing page.
  *
  * Filters live in the URL, so a filtered view is shareable and the back button
- * behaves. When signed in the ordering is personalised: sellers the account
- * follows surface first.
+ * behaves. "Newest" is the same for everyone: the latest listed or bumped
+ * item leads, whoever the reader follows.
  */
 export function useCatalog() {
   const [params, setParams] = useSearchParams();

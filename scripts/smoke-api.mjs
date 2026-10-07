@@ -442,18 +442,17 @@ await check('the feed never exposes a shipment lot to buyers', async () => {
   assert.ok('estimatedDispatchAt' in tagged);
 });
 
-await check('followed sellers rank first for a signed-in viewer', async () => {
+await check('newest is newest for everyone, whoever they follow', async () => {
   const body = (await feed(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(body.followedSellerIds.includes('usr_kaiju'));
 
-  // The invariant is the ordering, not which seller happens to be at the top:
-  // every followed seller's listing comes before every unfollowed one. Naming a
-  // single expected seller only held while exactly one was followed.
-  const followed = new Set(body.followedSellerIds);
-  const ranks = body.listings.map((listing) => Number(followed.has(listing.sellerId)));
-  const sorted = [...ranks].sort((a, b) => b - a);
-  assert.deepEqual(ranks, sorted, 'a listing from someone unfollowed came before a followed one');
-  assert.ok(followed.has(body.listings[0].sellerId));
+  // A new listing from a shop nobody follows still leads: following a shop
+  // must not push its older stock above it.
+  const fresh = (listing) => (listing.bumpedAt && listing.bumpedAt > listing.createdAt ? listing.bumpedAt : listing.createdAt);
+  const times = body.listings.map(fresh);
+  assert.deepEqual(times, [...times].sort().reverse(), 'the signed-in feed is not newest first');
+  const anon = (await feed(req({}), ctx)).jsonBody.listings.map((listing) => listing.id);
+  assert.deepEqual(body.listings.map((listing) => listing.id), anon, 'following a shop changed the order');
 });
 
 /* ── listing detail and social ─────────────────────────────────────────── */
@@ -575,7 +574,7 @@ await check('bump spends a bump point, and is refused with none left or within t
   assert.equal(again.status, 429, 'a second bump within the hour must be refused');
 });
 
-await check('a bumped item goes to the top of the Buy tab, ahead of followed shops', async () => {
+await check('a bumped item goes to the top of the Buy tab', async () => {
   const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
   const before = (await feed(req({ headers: auth }), ctx)).jsonBody.listings;
   const oldest = [...before].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
@@ -589,19 +588,16 @@ await check('a bumped item goes to the top of the Buy tab, ahead of followed sho
       const after = (await feed(req({ headers }), ctx)).jsonBody.listings;
       assert.equal(after[0].id, oldest.id, 'the item bumped a moment ago must lead the feed');
     }
-    // A day on, the bump is plain recency again and followed shops lead.
-    row.bumpedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
-    await repository.updateListing(row);
+    // A bump is recency: anything listed after it goes above it.
     const { newestOrder } = await import(new URL('../api/dist/shared/catalog.js', import.meta.url));
-    const now = Date.now();
-    const at = (h) => new Date(now - h * 3600_000).toISOString();
+    const at = (h) => new Date(Date.now() - h * 3600_000).toISOString();
     const items = [
-      { id: 'followed', sellerId: 'a', createdAt: at(50), bumpedAt: null },
+      { id: 'older', sellerId: 'a', createdAt: at(50), bumpedAt: null },
       { id: 'stale_bump', sellerId: 'b', createdAt: at(90), bumpedAt: at(30) },
       { id: 'fresh', sellerId: 'b', createdAt: at(1), bumpedAt: null },
       { id: 'bumped', sellerId: 'b', createdAt: at(80), bumpedAt: at(2) },
     ];
-    assert.deepEqual(items.sort(newestOrder(new Set(['a']), now)).map((l) => l.id), ['bumped', 'followed', 'fresh', 'stale_bump']);
+    assert.deepEqual(items.sort(newestOrder).map((l) => l.id), ['fresh', 'bumped', 'stale_bump', 'older']);
   } finally {
     row.bumpedAt = saved;
     await repository.updateListing(row);

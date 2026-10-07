@@ -228,9 +228,6 @@ export function matchesSearch(listing: SearchShape, term: string): boolean {
   return needle.split(/\s+/).every((word) => haystack.includes(word));
 }
 
-/** How long a bump keeps an item at the very top, ahead of the shops the reader follows. */
-export const BUMP_LEAD_MS = 24 * 60 * 60 * 1000;
-
 interface FreshnessShape {
   createdAt: string;
   bumpedAt?: string | null;
@@ -243,20 +240,10 @@ export function freshness(listing: FreshnessShape): string {
 }
 
 /**
- * The "newest" order of the Buy tab.
- *
- * A bump in the last day leads, newest bump first: the seller spent a point to
- * be at the top, and following other shops must not bury it. Then the shops the
- * reader follows, then everything else, each by freshness.
+ * The "newest" order of the Buy tab: whatever went up most recently leads,
+ * whether it was just listed or just bumped. The same for every reader -
+ * following a shop does not push its older stock above a new listing.
  */
-export function newestOrder(followed: ReadonlySet<string>, now: number = Date.now()) {
-  const since = new Date(now - BUMP_LEAD_MS).toISOString();
-  const leading = (l: FreshnessShape) => (l.bumpedAt && l.bumpedAt >= since ? l.bumpedAt : '');
-  return (a: FreshnessShape, b: FreshnessShape): number => {
-    const bump = leading(b).localeCompare(leading(a));
-    if (bump !== 0) return bump;
-    const follow = Number(followed.has(b.sellerId)) - Number(followed.has(a.sellerId));
-    if (follow !== 0) return follow;
-    return freshness(b).localeCompare(freshness(a));
-  };
+export function newestOrder(a: FreshnessShape, b: FreshnessShape): number {
+  return freshness(b).localeCompare(freshness(a));
 }

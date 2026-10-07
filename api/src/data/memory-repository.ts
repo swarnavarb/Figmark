@@ -335,7 +335,6 @@ export class MemoryRepository implements Repository {
     }
     if (query.search) items = items.filter((l) => matchesSearch(l, query.search!));
 
-    const followed = new Set(query.followedSellerIds ?? []);
     switch (query.sort) {
       case 'price_asc':
         items.sort((a, b) => a.priceMinor - b.priceMinor);
@@ -347,9 +346,7 @@ export class MemoryRepository implements Repository {
         items.sort((a, b) => popularity(b) - popularity(a));
         break;
       default:
-        // Fresh bumps, then followed sellers, then recency. Someone who picked
-        // "cheapest first" wants the cheapest, so only "newest" is personalised.
-        items.sort(newestOrder(followed));
+        items.sort(newestOrder);
     }
 
     return query.limit ? items.slice(0, query.limit) : items;

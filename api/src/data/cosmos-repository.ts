@@ -1647,9 +1647,7 @@ export class CosmosRepository implements Repository {
   async listListings(query: CatalogQuery = {}): Promise<Listing[]> {
     const byPopularity = query.sort === 'popular';
     const limit = byPopularity ? 400 : query.limit ?? (query.search ? 400 : 100);
-    // Followed-first is not expressible in SQL - the ranking is a fact about
-    // the reader, not the row - and it is only wanted while the reader has not
-    // asked for an order of their own.
+    // "Newest" means the later of listed and bumped, which Cosmos cannot ORDER BY.
     const ranked = !query.sort || query.sort === 'newest';
     const where =
       // The operations console passes @all, because it deletes what an
@@ -1705,8 +1703,7 @@ export class CosmosRepository implements Repository {
     }
 
     if (!ranked) return matched;
-    // Fresh bumps, then followed sellers, then recency.
-    return [...matched].sort(newestOrder(new Set(query.followedSellerIds ?? []))).slice(0, limit);
+    return [...matched].sort(newestOrder).slice(0, limit);
   }
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
