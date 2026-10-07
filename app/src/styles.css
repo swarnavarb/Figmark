@@ -7738,6 +7738,9 @@ body.is-locked { overflow: hidden; }
 .roombar__btn:hover { background: rgba(255, 255, 255, 0.28); }
 .roombar__btn.is-on { background: #fff; color: var(--sx-ink); border-color: #fff; }
 .roombar + .page { padding-top: 14px; }
+/* A room whose bar is tucked away starts with its hero at the very top of the
+   screen: keep it below the clock instead of under the status bar. */
+.roombar--reveal + .page { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
 
 /* The room's sections lock under the strip, and the pinned bar under them. */
 .chhero__photo { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9); }
