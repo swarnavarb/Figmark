@@ -1,4 +1,5 @@
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
+import { compressImage } from '../imageCompress';
 import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -1258,22 +1259,10 @@ function DirectPay({ quote, payment, busy, onPaid, onBack }: {
  * Shrink a screenshot to something an order can carry.
  *
  * Phone screenshots are two or three megabytes and a Cosmos item stops at two,
- * so this is not a nicety. Long edge to 900px and JPEG at 0.7 puts a legible
- * payment confirmation at well under a hundred kilobytes — the numbers on it
- * stay readable, which is the only thing it is for.
+ * so this is not a nicety. It goes through the same 70-90 KB compression as
+ * every other photo: a legible payment confirmation fits well inside that.
  */
-async function downscale(file: File): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 900 / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('No 2d context');
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return canvas.toDataURL('image/jpeg', 0.7);
-}
+const downscale = (file: File): Promise<string> => compressImage(file);
 
 /**
  * Choosing who holds the money.

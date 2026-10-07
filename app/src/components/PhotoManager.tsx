@@ -1,54 +1,14 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { ApiRequestError, api, type PhotoDraft } from '../api';
 import { Icon } from './Icon';
-
-/** What a photo is shrunk to before it leaves the browser. */
-const MAX_EDGE = 1400;
-const QUALITY = 0.82;
+import { compressImage } from '../imageCompress';
 
 /**
- * Shrink a picture before it goes anywhere.
- *
- * A phone camera produces four megabytes, and six of those in one listing is a
- * document no store will accept and a page nobody on mobile data will wait for.
- * The canvas does the work here rather than on the server because the bytes
- * have to cross the wire either way, and the smaller number is the one worth
- * sending.
- *
- * Falls back to the original when the browser cannot decode it - a refusal the
- * API's own size cap will catch and explain, which is better than silently
- * uploading nothing.
+ * Every picture goes through here before it leaves the browser: compressed to
+ * 70-90 KB, keeping the smaller of the original and the compressed one. The
+ * work is in `imageCompress.ts`; the name stays because a dozen places call it.
  */
-export async function shrink(file: File): Promise<string> {
-  const original = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Could not read that file.'));
-    reader.readAsDataURL(file);
-  });
-
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error('Could not decode that image.'));
-      element.src = original;
-    });
-
-    const scale = Math.min(1, MAX_EDGE / Math.max(image.width, image.height));
-    if (scale === 1 && original.length < 700_000) return original;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(image.width * scale);
-    canvas.height = Math.round(image.height * scale);
-    const context = canvas.getContext('2d');
-    if (!context) return original;
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', QUALITY);
-  } catch {
-    return original;
-  }
-}
+export const shrink = (file: Blob): Promise<string> => compressImage(file);
 
 /**
  * The photos on a listing: add, delete, reorder, and pick the one that leads.

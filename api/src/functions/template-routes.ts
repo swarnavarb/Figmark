@@ -9,6 +9,7 @@ import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
+import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
 import { buildLot, type NewLotBody } from './fulfilment-routes.js';
 import { notify, orderNames } from './notify.js';
 import { gistOf } from '../../../shared/notifications.js';
@@ -180,9 +181,16 @@ async function upload(request: HttpRequest, _context: InvocationContext) {
     return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
   }
 
+  // Every stored photo is compressed to 70-90 KB; the smaller of what was sent
+  // and the recompressed picture is the one kept.
+  const photo = compressPhoto(new Uint8Array(bytes), contentType);
+  if (photo.bytes.byteLength > PHOTO_MAX_BYTES) {
+    return error(413, 'photo_too_large', 'That photo could not be made small enough. Try a different one.');
+  }
+
   const store = await getPhotoStore();
-  const stored = await store.upload(new Uint8Array(bytes), contentType);
-  return json(201, stored);
+  const stored = await store.upload(photo.bytes, photo.contentType);
+  return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
 }
 
 /**

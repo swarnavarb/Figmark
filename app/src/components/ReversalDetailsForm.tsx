@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { compressImage } from '../imageCompress';
 import { ApiRequestError, api } from '../api';
 import { ErrorNotice } from './ui';
 
@@ -41,13 +42,7 @@ export function ReversalDetailsForm({ onSaved }: { onSaved?: () => void | Promis
     setUploading(true);
     setError(null);
     try {
-      const reader = new FileReader();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error('Could not read that image.'));
-        reader.readAsDataURL(file);
-      });
-      const stored = await api.uploadPhoto(dataUrl);
+      const stored = await api.uploadPhoto(await compressImage(file));
       setQrCodeUrl(stored.url);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That image did not upload.');

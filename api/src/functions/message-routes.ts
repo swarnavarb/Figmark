@@ -20,6 +20,7 @@ import { error, handler, json } from './http.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { storeFactsFrom } from '../store-facts.js';
 import { getPhotoStore } from '../storage/index.js';
+import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
 import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 
 /**
@@ -646,8 +647,12 @@ async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext
     return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
   }
 
-  const stored = await (await getPhotoStore()).uploadPrivate(new Uint8Array(bytes), contentType, user.id);
-  return json(201, stored);
+  const photo = compressPhoto(new Uint8Array(bytes), contentType);
+  if (photo.bytes.byteLength > PHOTO_MAX_BYTES) {
+    return error(413, 'photo_too_large', 'That photo could not be made small enough. Try a different one.');
+  }
+  const stored = await (await getPhotoStore()).uploadPrivate(photo.bytes, photo.contentType, user.id);
+  return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
 }
 
 /**

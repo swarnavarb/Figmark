@@ -6,6 +6,7 @@
  * Functions host. Run `npm run build:api` first.
  */
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 
 // Steps are undoable for three minutes in the app; these checks read every
 // step at once, as they were written to, except the one that tests undo.
@@ -5785,6 +5786,44 @@ await check('a photo goes in and comes back out', async () => {
   assert.equal(refused.status, 413);
 
   photoFixture = stored.jsonBody;
+});
+
+/** A big, detailed JPEG as a data URL, under the 900 KB the upload accepts. */
+const bigJpeg = (() => {
+  const { encode } = createRequire(new URL('../api/package.json', import.meta.url))('jpeg-js');
+  const [width, height] = [1000, 700];
+  const data = Buffer.alloc(width * height * 4);
+  let seed = 99;
+  for (let i = 0; i < data.length; i += 4) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    data[i] = (i / 4 % width) * 255 / width + (seed >>> 24) / 6;
+    data[i + 1] = (seed >>> 16 & 255) / 6 + 90;
+    data[i + 2] = (seed >>> 8 & 255) / 6 + 60;
+    data[i + 3] = 255;
+  }
+  const bytes = Buffer.from(encode({ data, width, height }, 88).data);
+  return { bytes, dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}` };
+})();
+
+await check('an uploaded photo is compressed to 70-90 KB, and the smaller of the two is kept', async () => {
+  assert.ok(bigJpeg.bytes.length > 150_000 && bigJpeg.bytes.length < 900_000, `fixture was ${bigJpeg.bytes.length}`);
+  const stored = await upload(req({ headers: auth, body: { dataUrl: bigJpeg.dataUrl } }), ctx);
+  assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
+  assert.equal(stored.jsonBody.originalSize, bigJpeg.bytes.length);
+  assert.ok(stored.jsonBody.size <= 90 * 1024, `kept ${stored.jsonBody.size}`);
+  assert.ok(stored.jsonBody.size >= 70 * 1024, `squeezed to ${stored.jsonBody.size}`);
+  const served = await photoRoute(req({ params: { name: stored.jsonBody.blobName } }), ctx);
+  assert.equal(served.body.length, stored.jsonBody.size, 'what is served is what was kept');
+
+  const chat = await uploadChatPhoto(req({ headers: auth, body: { dataUrl: bigJpeg.dataUrl } }), ctx);
+  assert.equal(chat.status, 201);
+  assert.ok(chat.jsonBody.size <= 90 * 1024, 'chat photos are compressed too');
+});
+
+await check('a photo that cannot be recompressed here and is over 90 KB is refused, not stored large', async () => {
+  const bulky = `data:image/png;base64,${Buffer.alloc(200_000, 7).toString('base64')}`;
+  assert.equal((await upload(req({ headers: auth, body: { dataUrl: bulky } }), ctx)).status, 413);
+  assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: bulky } }), ctx)).status, 413);
 });
 
 await check('a listing keeps its photos, in order, with one leading', async () => {

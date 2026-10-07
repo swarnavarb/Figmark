@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { compressImage } from '../imageCompress';
 import type { ShareEvent, ShareKind } from '@shared/models';
 import { api } from '../api';
 import { useSession } from '../session';
@@ -224,12 +225,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
   const uploaded = useRef<Promise<string> | null>(null);
   const upload = useCallback(() => {
     if (!picture) return Promise.resolve(null);
-    uploaded.current ??= new Promise<string>((done, fail) => {
-      const reader = new FileReader();
-      reader.onload = () => done(String(reader.result));
-      reader.onerror = () => fail(reader.error);
-      reader.readAsDataURL(picture.blob);
-    }).then((dataUrl) => api.uploadPhoto(dataUrl)).then((stored) => stored.url);
+    uploaded.current ??= compressImage(picture.blob).then((dataUrl) => api.uploadPhoto(dataUrl)).then((stored) => stored.url);
     uploaded.current.catch(() => { uploaded.current = null; });
     return uploaded.current;
   }, [picture]);
