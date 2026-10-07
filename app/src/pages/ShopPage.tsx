@@ -1296,9 +1296,6 @@ function LotPulse({ rows }: { rows: readonly SaleRow[] }) {
   const money = (pick: (row: SaleRow) => number) =>
     formatTotals(live.map((row) => ({ amountMinor: pick(row), currency: row.currency })), live[0]?.currency);
   const pendingCount = live.filter((row) => row.outstandingMinor > 0).length;
-  const valueMinor = live.reduce((acc, row) => acc + row.totalMinor, 0);
-  const paidMinor = live.reduce((acc, row) => acc + Math.min(row.paidMinor, row.totalMinor), 0);
-  const paidShare = valueMinor > 0 ? Math.min(100, Math.round((paidMinor / valueMinor) * 100)) : 0;
 
   /* Every order in a lot rides the same route, so one order's line of
      buttons names the steps and each order's own line says which are done.
@@ -1317,19 +1314,18 @@ function LotPulse({ rows }: { rows: readonly SaleRow[] }) {
 
   return (
     <section className="lpulse" aria-label="This lot at a glance">
-      {/* The lot in one line, then the money as a bar: what has landed, and what is still out. */}
-      <div className="lpulse__sum">
-        <span className="lpulse__line">
-          <b>{people}</b> {people === 1 ? 'customer' : 'customers'} · <b>{live.length}</b>{' '}
-          {live.length === 1 ? 'order' : 'orders'} · <b>{money((row) => row.totalMinor)}</b>
-        </span>
-        <div className="ocard__bar" aria-hidden="true"><span style={{ width: `${paidShare}%` }} /></div>
-        <span className="lpulse__pay">
-          <span><b>{money((row) => Math.min(row.paidMinor, row.totalMinor))}</b> paid</span>
-          {pendingCount > 0
-            ? <span className="is-due"><b>{money((row) => row.outstandingMinor)}</b> pending · {pendingCount}</span>
-            : live.length > 0 && <span className="is-clear">✓ All paid</span>}
-        </span>
+      {/* Who and how many, big, then the money in three boxes. */}
+      <div className="lpulse__stats lpulse__stats--people">
+        <div className="lpulse__stat"><small>{people === 1 ? 'Customer' : 'Customers'}</small><b>{people}</b></div>
+        <div className="lpulse__stat"><small>{live.length === 1 ? 'Order' : 'Orders'}</small><b>{live.length}</b></div>
+      </div>
+      <div className="lpulse__stats lpulse__stats--money">
+        <div className="lpulse__stat"><small>Value</small><b>{money((row) => row.totalMinor)}</b></div>
+        <div className="lpulse__stat is-paid"><small>Paid</small><b>{money((row) => Math.min(row.paidMinor, row.totalMinor))}</b></div>
+        <div className={`lpulse__stat ${pendingCount > 0 ? 'is-due' : 'is-clear'}`}>
+          <small>Pending{pendingCount > 0 ? ` · ${pendingCount}` : ''}</small>
+          <b>{money((row) => row.outstandingMinor)}</b>
+        </div>
       </div>
 
       {steps.length > 0 && live.length > 0 && (

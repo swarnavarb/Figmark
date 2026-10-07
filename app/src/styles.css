@@ -11501,14 +11501,22 @@ a.ocust__name:hover { color: var(--accent-text); }
     linear-gradient(160deg, var(--surface-2), var(--surface));
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
-.lpulse__sum { display: grid; gap: 7px; }
-.lpulse__line { font-size: var(--t-sm); color: var(--text-dim); }
-.lpulse__line b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
-.lpulse__sum .ocard__bar span { background: linear-gradient(90deg, var(--ok), var(--aqua)); }
-.lpulse__pay { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: var(--t-xs); color: var(--text-faint); }
-.lpulse__pay b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
-.lpulse__pay .is-due, .lpulse__pay .is-due b { color: #FBBF24; }
-.lpulse__pay .is-clear { color: var(--ok); font-weight: var(--w-semi); }
+.lpulse__stats { display: grid; gap: 8px; }
+.lpulse__stats--people { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lpulse__stats--money { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lpulse__stat {
+  display: grid; justify-items: center; gap: 2px; min-width: 0;
+  padding: 10px 6px; border-radius: 14px; text-align: center;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
+}
+.lpulse__stat small { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.lpulse__stat b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
+.lpulse__stats--people b { font-size: var(--t-2xl); line-height: 1.1; }
+.lpulse__stats--money b { font-size: var(--t-md); }
+.lpulse__stat.is-paid b { color: var(--ok); }
+.lpulse__stat.is-due { background: rgba(251, 191, 36, 0.10); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.35); }
+.lpulse__stat.is-due b { color: #FBBF24; }
+.lpulse__stat.is-clear b { color: var(--ok); }
 /* The orders' own steps as a pipeline: a ring per step, filled by how many
    of the lot's orders have reached it, joined by a line that lights up as
    the steps before it fill. */
@@ -12203,7 +12211,10 @@ a.ocust__name:hover { color: var(--accent-text); }
  */
 .lotnav { margin-bottom: 10px; padding: 3px; gap: 3px; border-radius: 14px; }
 .lotnav__tab { grid-auto-flow: column; gap: 6px; padding: 7px 4px; border-radius: 11px; }
-.lpulse { gap: 10px; padding: 12px; border-radius: 18px; }
+/* Not a card: the lot's hero above is the card, and two glowing panels in a
+   row read as one blur. These are loose boxes on the page instead. */
+.lpulse { gap: 8px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+.lpulse__route { padding: 6px 0 2px; }
 .ocusts { gap: 10px; }
 /*
  * A customer and an order must not look alike. The customer is a filled band
