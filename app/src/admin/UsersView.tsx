@@ -108,6 +108,7 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
+  const [alertText, setAlertText] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -129,7 +130,10 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
       setPending(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
+      const message = err instanceof ApiRequestError ? err.message : 'That did not work.';
+      // A refusal to delete a bought item needs to be seen, not tucked under the page.
+      if (err instanceof ApiRequestError && err.code === 'listing_purchased') setAlertText(message);
+      else setError(message);
       setPending(null);
     } finally {
       setBusy(false);
@@ -260,6 +264,19 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </Confirm>
       )}
 
+      {alertText && (
+        <div className="modal" role="alertdialog" aria-modal="true" aria-label="Item has been bought"
+          onClick={(event) => event.target === event.currentTarget && setAlertText(null)}>
+          <div className="modal__box">
+            <h2 className="modal__title">This item has been bought</h2>
+            <div className="modal__body"><p className="notice notice--warn">{alertText}</p></div>
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 14 }}>
+              <button type="button" className="btn btn--danger" onClick={() => setAlertText(null)}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pending && pending.kind !== 'user' && (
         <Confirm
           title={`Delete this ${pending.kind}?`}
@@ -269,7 +286,10 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
           onConfirm={() => void act(() => admin.deleteResource(pending.kind, pending.id, pending.ownerId))}
         >
           <p style={{ overflowWrap: 'anywhere' }}>{pending.label}</p>
-          <p className="notice notice--warn" style={{ margin: 0 }}>This cannot be undone.</p>
+          <p className="notice notice--warn" style={{ margin: 0 }}>
+            This cannot be undone.{pending.kind !== 'lot' && pending.kind !== 'review'
+              ? ' Its photos are removed from storage too.' : ''}
+          </p>
         </Confirm>
       )}
     </div>

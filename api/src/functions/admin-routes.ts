@@ -7,7 +7,7 @@ import { getRepository } from '../data/index.js';
 import { settleDispute } from './dispute-routes.js';
 import { error, handler, json } from './http.js';
 import { getPhotoStore } from '../storage/index.js';
-import { releasePostPhotos } from '../storage/release.js';
+import { releaseListingPhotos, releasePostPhotos } from '../storage/release.js';
 import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
 
 /**
@@ -211,6 +211,7 @@ async function deleteAccount(request: HttpRequest, _context: InvocationContext) 
   for (const lot of lots) await repository.deleteLot(id, lot.id);
   for (const post of posts) await repository.deletePost(post.channelId, post.id);
   await releasePostPhotos(posts, repository);
+  await releaseListingPhotos(listings, repository);
   await repository.deleteUser(id);
 
   return json(200, {
@@ -238,13 +239,32 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
       // Something somebody bought stays: their order, tracking and collection
       // card all point at it. It can be expired instead, which takes it out of
       // the catalogue without taking it out of anybody's history.
-      const bought = (await repository.listOrdersForListing(id))
-        .some((order) => isPlaced(order) && !isCancelledLike(order.status));
-      if (bought) {
-        return error(409, 'listing_purchased', 'This item has been bought, so it cannot be deleted. Expire it instead.');
+      // The listing's own seller is the partition it lives in, so use that
+      // rather than trusting the caller's ownerId: a mismatch would make the
+      // delete a silent no-op.
+      const listing = await repository.getListing(id);
+      if (!listing) return error(404, 'not_found', 'That item no longer exists.');
+      const live = (await repository.listOrdersForListing(id))
+        .filter((order) => isPlaced(order) && !isCancelledLike(order.status));
+      if (live.length > 0) {
+        const buyers = new Set<string>();
+        for (const order of live) {
+          const buyer = await repository.getUserById(order.buyerId);
+          buyers.add(buyer?.displayName ?? order.buyerId);
+        }
+        return error(
+          409,
+          'listing_purchased',
+          `Heads up: "${listing.title}" has been bought (${live.length} order${live.length === 1 ? '' : 's'}, buyer${buyers.size === 1 ? '' : 's'}: ${[...buyers].join(', ')}). `
+          + 'It was not deleted, because the buyer\'s order and tracking point at it. Expire it instead, or settle the order first.',
+        );
       }
-      await repository.deleteListing(ownerId, id);
-      break;
+      await repository.deleteListing(listing.sellerId, id);
+      if (await repository.getListing(id)) {
+        return error(500, 'delete_failed', 'The item could not be deleted. Try again.');
+      }
+      const photosRemoved = await releaseListingPhotos([listing], repository);
+      return json(200, { deleted: { kind, id }, photosRemoved });
     }
     case 'lot':
       await repository.deleteLot(ownerId, id);

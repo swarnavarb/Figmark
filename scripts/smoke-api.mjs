@@ -3800,12 +3800,35 @@ await check('one resource can be removed without touching the account', async ()
   assert.equal(after.user.id, 'usr_kaiju', 'the account is untouched');
 });
 
+await check('admin deleting an item removes its photos, and finds it whatever owner is sent', async () => {
+  const repository = await getRepository();
+  const store = await photoStore();
+  const template = await repository.getListing('lst_mecha_kit');
+  const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
+  const stored = await store.upload(jpeg, 'image/jpeg', 'usr_kaiju');
+  const mine = await store.upload(jpeg, 'image/jpeg', 'usr_kaiju');
+  await repository.createListing({
+    ...template, id: 'lst_admin_photo', title: 'Has a photo', soldCount: 0,
+    photos: [{ blobName: stored.blobName, url: stored.url, imageHash: null, isPrimary: true }],
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  assert.ok(await store.publicInfo(stored.blobName));
+  const gone = await adminDeleteResource(req({
+    headers: auth, body: { kind: 'listing', id: 'lst_admin_photo', ownerId: 'someone_else' },
+  }), ctx);
+  assert.equal(gone.status, 200);
+  assert.equal(await repository.getListing('lst_admin_photo'), null);
+  assert.equal(await store.publicInfo(stored.blobName), null, 'the photo went with it');
+  assert.ok(await store.publicInfo(mine.blobName), 'an unrelated photo stays');
+});
+
 await check('a bought item cannot be deleted, only expired', async () => {
   const refused = await adminDeleteResource(req({
     headers: auth, body: { kind: 'listing', id: 'lst_dragon_knight', ownerId: 'usr_kaiju' },
   }), ctx);
   assert.equal(refused.status, 409);
   assert.equal(refused.jsonBody.error, 'listing_purchased');
+  assert.match(refused.jsonBody.message, /bought/);
   assert.ok(await (await getRepository()).getListing('lst_dragon_knight'), 'and it is still there');
 });
 

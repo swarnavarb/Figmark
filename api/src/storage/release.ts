@@ -1,4 +1,4 @@
-import type { Post } from '../../../shared/models.js';
+import type { Listing, Post } from '../../../shared/models.js';
 import type { Repository } from '../data/repository.js';
 import { getPhotoStore, ownPhotoName } from './index.js';
 
@@ -57,7 +57,38 @@ export async function discardUpload(userId: string, entry: string): Promise<Disc
   return 'discarded';
 }
 
-const carriesPhotos = (post: Post) => Boolean(post.photoUrl) || (post.photoUrls?.length ?? 0) > 0;
+/**
+ * Release the photos of listings that have just been deleted.
+ *
+ * Posts, orders and collection cards copy a listing's photo addresses, so a
+ * photo goes only when no record anywhere still names it. Checked after the
+ * delete, against everything the database holds.
+ */
+export async function releaseListingPhotos(deleted: Listing[], repository: Repository): Promise<number> {
+  try {
+    const names = new Set<string>();
+    for (const listing of deleted) {
+      for (const photo of listing.photos ?? []) {
+        for (const entry of [photo.url, photo.blobName]) {
+          const name = await nameOf(entry);
+          if (name) names.add(name);
+        }
+      }
+    }
+    if (names.size === 0) return 0;
+    const stillUsed = await repository.blobReferences();
+    const store = await getPhotoStore();
+    let removed = 0;
+    for (const name of names) {
+      if (!stillUsed.has(name) && await store.remove('public', name)) removed += 1;
+    }
+    return removed;
+  } catch {
+    return 0;
+  }
+}
+
+const carriesPhotos =(post: Post) => Boolean(post.photoUrl) || (post.photoUrls?.length ?? 0) > 0;
 
 /**
  * Release the photos of posts that have just been deleted.
