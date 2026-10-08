@@ -1012,6 +1012,24 @@ export class CosmosRepository implements Repository {
     return resource ?? dispute;
   }
 
+  async saveDisputeIfVersion(dispute: Dispute, expectedVersion: number): Promise<Dispute | null> {
+    // The version is the rule the routes reason about; the etag makes the
+    // check and the write one step, so nothing lands between them.
+    const item = this.container('disputes').item(dispute.id, dispute.orderId);
+    const { resource: current, etag } = await item.read<Dispute>().catch((error: unknown) => {
+      if (isNotFound(error)) return { resource: undefined, etag: undefined };
+      throw error;
+    });
+    if (!current || (current.version ?? 0) !== expectedVersion) return null;
+    try {
+      const { resource } = await item.replace<Dispute>(dispute, { accessCondition: { type: 'IfMatch', condition: etag ?? '' } });
+      return resource ?? dispute;
+    } catch (error) {
+      if ((error as { code?: number }).code === 412) return null;
+      throw error;
+    }
+  }
+
   /**
    * By id alone. Cross-partition, because a link into a dispute carries only
    * its id and the order it belongs to is what the row itself says.
@@ -2059,6 +2077,30 @@ export class CosmosRepository implements Repository {
   async saveSiteContent(content: SiteContent): Promise<SiteContent> {
     const { resource } = await this.container('siteContent').items.upsert<SiteContent>(content);
     return (resource as SiteContent | undefined) ?? content;
+  }
+
+  async mutateSiteContent(id: string, change: (current: SiteContent | null) => SiteContent): Promise<SiteContent> {
+    // Optimistic, like mutatePost: on losing a race, read again and redo the
+    // change against what won, so an appended fee or action is never dropped.
+    const item = this.container('siteContent').item(id, id);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const { resource, etag } = await item.read<SiteContent>().catch((error: unknown) => {
+        if (isNotFound(error)) return { resource: undefined, etag: undefined };
+        throw error;
+      });
+      const next = change(resource ?? null);
+      try {
+        const { resource: saved } = resource
+          ? await item.replace<SiteContent>(next, { accessCondition: { type: 'IfMatch', condition: etag ?? '' } })
+          : await this.container('siteContent').items.create<SiteContent>(next);
+        return (saved as SiteContent | undefined) ?? next;
+      } catch (error) {
+        const code = (error as { code?: number }).code;
+        if (code === 412 || code === 409) continue;
+        throw error;
+      }
+    }
+    throw new Error(`${id} is too busy to change right now. Try again.`);
   }
 
   async deleteSiteContent(id: string): Promise<void> {

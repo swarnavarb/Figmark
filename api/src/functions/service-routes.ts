@@ -1,6 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { tally } from '../../../shared/board.js';
 import { isCancelledLike } from '../../../shared/orders.js';
+import { rupees } from '../../../shared/payments.js';
 import { marketSettings } from '../settings.js';
 import type { HandlerProfile, Lot, Order, User } from '../../../shared/models.js';
 import {
@@ -109,14 +110,14 @@ function handlerCard(user: User): ProviderCard {
   };
 }
 
-function escrowCard(user: User, feeBasisPoints: number): ProviderCard {
+function escrowCard(user: User, feeMinor: number): ProviderCard {
   const rights = user.escrowRights!;
-  const fee = (feeBasisPoints / 100).toFixed(feeBasisPoints % 100 === 0 ? 0 : 2);
+  const fee = rupees(feeMinor);
   return {
     userId: user.id,
     name: rights.displayName || user.displayName,
     handle: user.username ?? null,
-    line: `Community manager · buyer protection ${fee}% of the order, set by Figmark`,
+    line: `Community manager · buyer protection ${fee} per order, set by Figmark`,
     // The operator's note is for operators. What a buyer needs is the fee and
     // the name, and inventing a blurb they never wrote would be worse.
     description: '',
@@ -144,7 +145,7 @@ async function providersOf(repository: Repo, kind: ServiceKind): Promise<Provide
         .map(handlerCard)
         .sort((a, b) => (b.trustScore ?? 0) - (a.trustScore ?? 0));
     case 'escrow': {
-      const rate = (await marketSettings(repository)).protectionFeeBasisPoints;
+      const rate = (await marketSettings(repository)).protectionFeeMinor;
       return (await repository.listEscrowAgents())
         .filter((user) => user.escrowRights && !user.suspended)
         .map((user) => escrowCard(user, rate));

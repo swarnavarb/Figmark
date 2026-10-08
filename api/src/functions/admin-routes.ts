@@ -5,7 +5,7 @@ import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import {
-  applySanction, bringUpToDate, excludedFrom, isManager, loadActions, loadLedger, pickManager, reassignRound, saveActions,
+  applySanction, bringUpToDate, commit, excludedFrom, isManager, loadActions, loadLedger, mutateActions, pickManagerFor, reassignRound,
 } from '../community.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
@@ -140,9 +140,12 @@ async function userDetail(request: HttpRequest, _context: InvocationContext) {
  * matters.
  */
 async function deletionBlockers(id: string, repository: Repo): Promise<string[]> {
-  const [purchases, sales] = await Promise.all([
+  const [purchases, sales, holding, asParty, asManager] = await Promise.all([
     repository.listOrdersForBuyer(id),
     repository.listOrdersForSeller(id),
+    repository.listOrdersHeldBy(id),
+    repository.listDisputesForParty(id),
+    repository.listDisputesForManager(id),
   ]);
 
   const blockers: string[] = [];
@@ -153,6 +156,17 @@ async function deletionBlockers(id: string, repository: Repo): Promise<string[]>
     blockers.push(
       `${live.length} order(s) still hold money. Settle or release them before deleting the account.`,
     );
+  }
+  // A community manager holding other people's payments: deleting them would
+  // leave that money with nobody to release it.
+  const held = holding.filter((order) => order.escrow.state === 'held' || order.escrow.state === 'disputed');
+  if (held.length > 0) {
+    blockers.push(`They hold ${held.length} protected payment(s) for other people. Those must be released first.`);
+  }
+  const open = [...asParty, ...asManager.filter((dispute) => currentRound(dispute)?.managerId === id)]
+    .filter((dispute) => !isClosed(dispute));
+  if (open.length > 0) {
+    blockers.push(`${new Set(open.map((dispute) => dispute.id)).size} dispute(s) they are in or deciding are still open.`);
   }
   return blockers;
 }
@@ -465,12 +479,12 @@ async function reassign(request: HttpRequest, _context: InvocationContext) {
     if (!isManager(manager)) return error(400, 'invalid_manager', 'That person is not a community manager.');
     if (excluded.includes(manager.id)) return error(400, 'invalid_manager', 'A party, or a manager who already held a round, cannot take it.');
   } else {
-    manager = await pickManager(repository, excluded);
+    manager = await pickManagerFor(repository, dispute);
     if (!manager) return error(409, 'no_manager', 'No other community manager is available.');
   }
 
   await reassignRound(repository, dispute, manager, 'admin');
-  return json(200, { dispute: await repository.updateDispute(dispute) });
+  return json(200, { dispute: await commit(repository, dispute) });
 }
 
 /** GET /api/ops/actions - managers' decisions waiting for an operator: alert banners and XP deductions. */
@@ -501,12 +515,11 @@ async function decideAction(request: HttpRequest, _context: InvocationContext) {
   }
   if (typeof body.approve !== 'boolean') return error(400, 'invalid_request', 'Approve it or reject it.');
 
-  const all = await loadActions(repository);
-  const action = all.find((entry) => entry.id === id);
-  if (!action) return error(404, 'not_found', 'No such action.');
-  if (action.status !== 'pending') return error(409, 'already_decided', 'That action has already been decided.');
+  const found = (await loadActions(repository)).find((entry) => entry.id === id);
+  if (!found) return error(404, 'not_found', 'No such action.');
+  if (found.status !== 'pending') return error(409, 'already_decided', 'That action has already been decided.');
 
-  const sanction = { ...action.sanction };
+  const sanction = { ...found.sanction };
   if (body.days !== undefined) {
     const days = Number(body.days);
     if (!Number.isInteger(days) || days < 1 || days > 60) return error(400, 'invalid_request', 'Between 1 and 60 days.');
@@ -518,12 +531,27 @@ async function decideAction(request: HttpRequest, _context: InvocationContext) {
   }
 
   const now = new Date().toISOString();
-  action.sanction = sanction;
-  action.status = body.approve ? 'approved' : 'rejected';
-  action.decidedAt = now;
-  action.decidedBy = admin.displayName ?? admin.email;
-  action.note = body.note?.trim().slice(0, 500) || null;
-  await saveActions(repository, all, admin.id);
+  let action = found;
+  // Decided against what is stored at that moment: two operators pressing at
+  // once get one decision, and the sanction is carried out once.
+  let raced = false;
+  await mutateActions(repository, admin.id, (all) => all.map((entry) => {
+    if (entry.id !== id) return entry;
+    if (entry.status !== 'pending') {
+      raced = true;
+      return entry;
+    }
+    action = {
+      ...entry,
+      sanction,
+      status: body.approve ? 'approved' : 'rejected',
+      decidedAt: now,
+      decidedBy: admin.displayName ?? admin.email,
+      note: body.note?.trim().slice(0, 500) || null,
+    };
+    return action;
+  }));
+  if (raced) return error(409, 'already_decided', 'That action has already been decided.');
 
   if (body.approve) {
     const dispute = await repository.getDisputeById(action.disputeId);

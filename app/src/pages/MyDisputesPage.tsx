@@ -126,11 +126,10 @@ function DisputeItem({ row }: { row: DisputeRow }) {
     <li className={`rfhist__row rfhist__row--${closed ? 'received' : 'not_received'}`}>
       <span className="rfhist__icon" aria-hidden="true">⚖️</span>
       <span className="rfhist__body">
-        <b><Link to={`/dispute/${row.id}`}>{row.label}</Link></b>
-        <small>
-          {row.orderId ? <Link to={`/order/${row.orderId}`}>{row.itemName}</Link> : <>“{row.itemName}”</>} · with {row.counterpartyName}
+        <b><Link to={`/dispute/${row.id}`}>{row.label}</Link> <span className="faint">· with {row.counterpartyName}</span></b>
+        <small className="clamp2">
+          {row.orderId ? <Link to={`/order/${row.orderId}`}>{row.itemName}</Link> : <>“{row.itemName}”</>}
         </small>
-        <small>“{row.reason}”</small>
         <small>
           Raised by {row.raisedByMe ? 'you' : row.raisedBySide === 'member' ? row.counterpartyName : `the ${row.raisedBySide}`} on {formatDateOrdinal(row.raisedAt)}
           {row.round && row.managerName && !closed && ` · round ${row.round} with ${row.managerName}`}

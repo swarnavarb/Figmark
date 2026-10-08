@@ -567,7 +567,7 @@ export interface Credit {
 export interface EscrowOption {
   id: string;
   name: string;
-  feeBasisPoints: number;
+  /** The flat buyer protection fee, set by Figmark. */
   feeMinor: number;
   heldBefore: number;
   since: string;
@@ -2124,7 +2124,7 @@ export interface OrderServicesView {
     artistPayment: SellerPaymentDetails | null;
     studioAddress: string | null;
     artists: PublicStore[];
-    escrows: { id: string; name: string; feeBasisPoints: number }[];
+    escrows: { id: string; name: string; feeMinor: number }[];
   };
 }
 
@@ -2469,8 +2469,8 @@ export const api = {
     post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/reply`, { body, evidence }),
   disputeOffer: (id: string, refundMinor: number, terms: string) =>
     post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/offer`, { refundMinor, terms }),
-  disputeAccept: (id: string) =>
-    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/accept`),
+  disputeAccept: (id: string, offerId?: string) =>
+    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/accept`, { offerId }),
   disputeWithdraw: (id: string) =>
     post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/withdraw`),
   disputeEscalate: (id: string) =>

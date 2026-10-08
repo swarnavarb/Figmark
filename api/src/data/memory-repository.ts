@@ -545,6 +545,12 @@ export class MemoryRepository implements Repository {
     return content;
   }
 
+  async mutateSiteContent(id: string, change: (current: SiteContent | null) => SiteContent): Promise<SiteContent> {
+    const next = change(this.siteContent.get(id) ?? null);
+    this.siteContent.set(id, next);
+    return next;
+  }
+
   async deleteSiteContent(id: string): Promise<void> {
     this.siteContent.delete(id);
   }
@@ -778,16 +784,20 @@ export class MemoryRepository implements Repository {
   }
 
   async createDispute(dispute: Dispute): Promise<Dispute> {
-    this.disputes.set(dispute.id, dispute);
+    this.disputes.set(dispute.id, structuredClone(dispute));
     return dispute;
   }
 
+  // Copies out, like a database read: two requests each get their own, so
+  // the version check behaves here exactly as it does against Cosmos.
   async getDispute(_orderId: string, id: string): Promise<Dispute | null> {
-    return this.disputes.get(id) ?? null;
+    const found = this.disputes.get(id);
+    return found ? structuredClone(found) : null;
   }
 
   async getDisputeById(id: string): Promise<Dispute | null> {
-    return this.disputes.get(id) ?? null;
+    const found = this.disputes.get(id);
+    return found ? structuredClone(found) : null;
   }
 
   async listDisputes(status?: string): Promise<Dispute[]> {
@@ -870,8 +880,16 @@ export class MemoryRepository implements Repository {
   }
 
   async updateDispute(dispute: Dispute): Promise<Dispute> {
-    this.disputes.set(dispute.id, dispute);
+    this.disputes.set(dispute.id, structuredClone(dispute));
     return dispute;
+  }
+
+  async saveDisputeIfVersion(dispute: Dispute, expectedVersion: number): Promise<Dispute | null> {
+    const current = this.disputes.get(dispute.id);
+    if ((current?.version ?? 0) !== expectedVersion) return null;
+    const copy = structuredClone(dispute);
+    this.disputes.set(dispute.id, copy);
+    return structuredClone(copy);
   }
 
   async markThreadRead(threadId: string, handle: string): Promise<number> {

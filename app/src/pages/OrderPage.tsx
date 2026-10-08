@@ -1074,7 +1074,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       {route === 'protected' && chosen && (
         <div className="card card--pad stack">
           <div className="kv">
-            <dt>{chosen.name} ({(chosen.feeBasisPoints / 100).toFixed(1)}%)</dt>
+            <dt>Buyer protection · {chosen.name}</dt>
             <dd>{formatMoney(chosen.feeMinor, quote.currency)}</dd>
           </div>
           <div className="kv">
@@ -1295,7 +1295,7 @@ function EscrowPicker({ quote, chosenId, onPick, onClose }: {
                 </div>
                 <div className="escrow__fee">
                   {formatMoney(option.feeMinor, quote.currency)}
-                  <span className="faint"> · {(option.feeBasisPoints / 100).toFixed(1)}%</span>
+                  <span className="faint"> flat</span>
                 </div>
               </button>
 

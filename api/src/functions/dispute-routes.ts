@@ -7,7 +7,7 @@ import type {
 } from '../../../shared/models.js';
 import {
   DISPUTE_SUBJECT_LABELS, MAX_ROUNDS, communityActionsFor, currentRound, decisionOverdue, escalationOpen,
-  holdsMoney, inDays, isClosed, isParty, reasonsFor, roundsOf, standingDecision, subjectPartition,
+  holdsMoney, inDays, isClosed, isParty, reasonsFor, releaseDueAt, roundsOf, standingDecision, subjectPartition,
 } from '../../../shared/disputes.js';
 import { REASON_MIN, REPORT_TARGETS, type ReportTarget } from '../../../shared/moderation.js';
 import { actionsFor, sideOf } from '../../../shared/orders.js';
@@ -18,9 +18,10 @@ import { getRepository } from '../data/index.js';
 import { countCompleted, dropFromCollection } from '../delivery.js';
 import {
   Refusal, activeAlert, activeNotices, availableManagers, bringUpToDate, chargeFee, excludedFrom, favouredName, finalizeDecided,
-  isManager, loadLedger, managerName, newRound, openCaseCount, orderOf, payoutRef, personName, pickManager,
-  recordSettled,
+  Busy, commit, isManager, loadLedger, managerName, newRound, openCaseCount, orderOf, payoutRef, personName, pickManager,
+  pickManagerFor, recordSettled,
 } from '../community.js';
+import { rupees } from '../../../shared/payments.js';
 import { marketSettings } from '../settings.js';
 import { capital, notify, notifySides, type OrderNames } from './notify.js';
 import { whose } from '../../../shared/notifications.js';
@@ -74,7 +75,9 @@ function roleOf(dispute: Dispute, order: Order | null, viewerId: string): Role |
   if (dispute.againstUserId === viewerId) return 'respondent';
   if (currentRound(dispute)?.managerId === viewerId) return 'manager';
   if (order?.protection?.escrowAgentId === viewerId) return 'holder';
-  if (dispute.managerIds?.includes(viewerId)) return 'past_manager';
+  // A manager who held a round keeps reading it; one only reassigned away
+  // for being slow, never having decided, does not.
+  if (roundsOf(dispute).some((round) => round.managerId === viewerId)) return 'past_manager';
   return null;
 }
 
@@ -100,7 +103,36 @@ async function loadDispute(
   const role = roleOf(found, order, viewerId);
   if (!role) return { refusal: error(403, 'forbidden', 'That dispute is not yours.') };
   const dispute = await bringUpToDate(repository, found);
+  await releaseIfOverdue(repository, dispute);
   return { dispute, order: order ? (await repository.getOrder(order.id)) ?? order : null, role };
+}
+
+/**
+ * Pays out a final decision's held money when its holder has not: after the
+ * grace days, or at once if they are no longer a community manager. Through
+ * the same path as a release they asked for, so the result is identical.
+ */
+async function releaseIfOverdue(repository: Repo, dispute: Dispute, now = Date.now()): Promise<void> {
+  if (dispute.result?.how !== 'decided' || dispute.release || !holdsMoney(dispute)) return;
+  const order = await orderOf(repository, dispute);
+  if (!order || order.escrow.state !== 'disputed' || order.escrow.disputeId !== dispute.id) return;
+  const holderId = order.protection?.escrowAgentId;
+  const holderGone = !holderId || !isManager(await repository.getUserById(holderId));
+  const due = releaseDueAt(dispute);
+  if (!holderGone && (!due || Date.parse(due) > now)) return;
+  try {
+    await moveHeld(repository, dispute, order, dispute.resolution?.refundMinor ?? 0,
+      `Dispute settled: released by Figmark on the final decision${holderGone ? '' : ', as the holder had not'}.`, 'system');
+  } catch (error) {
+    if (!(error instanceof Busy)) throw error;
+    return;
+  }
+  await notify(repository, [order.buyerId, order.sellerId, holderId], {
+    kind: 'payment_released',
+    title: 'The held payment was released on the final decision',
+    body: order.itemName,
+    link: `/dispute/${dispute.id}`,
+  });
 }
 
 /** Evidence off the wire, with links checked before they are ever rendered. */
@@ -111,6 +143,7 @@ function evidenceFrom(raw: unknown, uploadedBy: string): DisputeEvidence[] | nul
   const now = new Date().toISOString();
   const items: DisputeEvidence[] = [];
   for (const entry of raw.slice(0, 8)) {
+    if (!entry || typeof entry !== 'object') return null;
     const url = String((entry as { url?: unknown }).url ?? '').trim();
     // A dispute renders these as images on someone else's screen, so anything
     // that is not plainly an http(s) link - or a screenshot uploaded here - is
@@ -215,6 +248,29 @@ async function moveHeld(
     requestedAt: now,
     gatewayRef: payoutRef(),
   };
+  // The dispute is claimed first: if somebody else moved this money a moment
+  // ago, this stops here with nothing paid twice.
+  await commit(repository, dispute);
+  return repository.updateOrder(order);
+}
+
+/**
+ * A withdrawn protection claim: the money goes back on hold exactly as it was
+ * before, not to either side. Whoever withdrew, the buyer can still confirm
+ * delivery, and the auto-release clock carries on once the item has left.
+ */
+async function backOnHold(repository: Repo, dispute: Dispute, order: Order, by: string): Promise<Order> {
+  const settings = await marketSettings(repository);
+  const shipped = ['shipped', 'out_for_delivery', 'delivered'].includes(order.status) || ['shipped', 'delivered'].includes(order.stage);
+  order.escrow = {
+    ...order.escrow,
+    state: 'held',
+    disputeId: null,
+    autoReleaseAt: shipped ? inDays(settings.autoReleaseDays) : null,
+  };
+  order.updatedAt = new Date().toISOString();
+  note(order, 'Dispute withdrawn. The payment is held again, as before.', by);
+  await commit(repository, dispute);
   return repository.updateOrder(order);
 }
 
@@ -288,6 +344,9 @@ export async function openDisputeRecord(
     }, settings);
     round = newRound(1, manager, input.managerId ? 'raiser' : 'system', settings, payment, null);
   }
+  // Round one cannot be decided until the other side has had its days, so
+  // the manager's own days start after those.
+  round.decideBy = inDays(settings.responseDays + settings.decisionDays);
 
   const record: Dispute = {
     id,
@@ -405,7 +464,12 @@ async function open(request: HttpRequest, _context: InvocationContext) {
   return json(201, { dispute: record });
 }
 
-const SUBJECT_TYPES: readonly DisputeSubjectType[] = [...REPORT_TARGETS, 'user'];
+/**
+ * What a dispute can be about besides an order: somebody's words. Not a
+ * person as such - a grievance with somebody is about something they wrote
+ * or sold, and one about the person would sidestep "one dispute per matter".
+ */
+const SUBJECT_TYPES: readonly DisputeSubjectType[] = [...REPORT_TARGETS];
 
 /** Where a piece of content is opened, as the app routes it. */
 async function linkFor(repository: Repo, type: DisputeSubjectType, id: string, parentId: string): Promise<string | null> {
@@ -491,6 +555,7 @@ async function raise(request: HttpRequest, _context: InvocationContext) {
     kind: 'dispute', payerId: user.id, amountMinor: settings.disputeFeeMinor, currency: 'INR', reference: id, managerId: manager.id,
   }, settings);
   const round = newRound(1, manager, 'raiser', settings, payment, null);
+  round.decideBy = inDays(settings.responseDays + settings.decisionDays);
 
   const subjectRef: DisputeSubjectRef = {
     type, id: targetId, parentId: type === 'user' ? targetId : parentId, ownerId, excerpt,
@@ -666,17 +731,21 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
   if (!money && terms.length < 4) return error(400, 'invalid_offer', 'Write the terms you are proposing.');
 
   const now = new Date().toISOString();
-  dispute.offer = { fromUserId: user.id, refundMinor, note: terms, terms, createdAt: now };
-  if (dispute.status === 'awaiting_response') dispute.status = 'in_discussion';
-  dispute.respondByAt = null;
+  dispute.offer = { id: `off_${randomUUID().slice(0, 10)}`, fromUserId: user.id, refundMinor, note: terms, terms, createdAt: now };
+  // Only the other side answering turns a demand into a conversation: the
+  // raiser making an offer must not cut short the time the other side has.
+  if (dispute.status === 'awaiting_response' && user.id === dispute.againstUserId) {
+    dispute.status = 'in_discussion';
+    dispute.respondByAt = null;
+  }
   dispute.messages = [
     ...dispute.messages,
     message(user.id, voiceOf(dispute, order, user.id),
-      `Proposed a settlement${money ? ` with ${refundMinor} back to the buyer` : ''}. ${terms}`.trim(), []),
+      `Proposed a settlement${money ? ` with ${rupees(refundMinor)} back to the buyer` : ''}. ${terms}`.trim(), []),
   ];
   dispute.updatedAt = now;
 
-  return json(200, { dispute: await repository.updateDispute(dispute) });
+  return json(200, { dispute: await commit(repository, dispute) });
 }
 
 /**
@@ -701,7 +770,14 @@ async function accept(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'nothing_to_accept', 'There is no offer from the other side to accept.');
   }
 
+  // Accept exactly the offer that was read: one replaced a moment ago is not
+  // the one this person agreed to.
+  const body = await bodyOf<{ offerId?: string; refundMinor?: number }>(request);
   const proposed = dispute.offer!;
+  const seen = body?.offerId ?? null;
+  if ((proposed.id && seen !== proposed.id) || (!proposed.id && body?.refundMinor !== undefined && body.refundMinor !== proposed.refundMinor)) {
+    return error(409, 'offer_changed', 'The offer changed since you read it. Look at it again before accepting.');
+  }
   const now = new Date().toISOString();
   const terms = proposed.terms ?? proposed.note ?? '';
   dispute.status = 'resolved';
@@ -722,7 +798,7 @@ async function accept(request: HttpRequest, _context: InvocationContext) {
   }
   dispute.offer = null;
   dispute.updatedAt = now;
-  const saved = await repository.updateDispute(dispute);
+  const saved = await commit(repository, dispute);
   await recordSettled(repository, saved, order);
 
   if (order) await tellSettled(repository, order, dispute.id, 'settled', user.id);
@@ -753,9 +829,9 @@ async function withdraw(request: HttpRequest, _context: InvocationContext) {
       : 'Only whoever raised this may withdraw it.');
   }
 
-  // Dropping it puts everything back where it was: the hold goes to the seller
-  // and the order carries on. A withdrawal is not a finding against anyone,
-  // and the fee paid for it is not refunded.
+  // Dropping it puts everything back where it was: the money stays held and
+  // the order carries on. A withdrawal is not a finding against anyone, and
+  // the fee paid for it is not refunded.
   const now = new Date().toISOString();
   dispute.status = 'withdrawn';
   dispute.resolvedAt = now;
@@ -764,11 +840,14 @@ async function withdraw(request: HttpRequest, _context: InvocationContext) {
   dispute.resolutionNote = 'Withdrawn by whoever raised it.';
   dispute.result = { how: 'withdrawn', winnerId: null, loserId: null, favour: null, finalRound: null, terms: null, at: now };
   dispute.resolution = { outcome: 'withdrawn', refundMinor: 0, note: 'Withdrawn by whoever raised it.', decidedBy: user.id, byCompany: false, decidedAt: now };
-  if (order && holdsMoney(dispute) && order.escrow.state === 'disputed') {
-    order = await moveHeld(repository, dispute, order, 0, 'Dispute withdrawn: Withdrawn by whoever raised it.', user.id);
-  }
   dispute.updatedAt = now;
-  const saved = await repository.updateDispute(dispute);
+  let saved: Dispute;
+  if (order && holdsMoney(dispute) && order.escrow.state === 'disputed') {
+    order = await backOnHold(repository, dispute, order, user.id);
+    saved = dispute;
+  } else {
+    saved = await commit(repository, dispute);
+  }
   if (order) await tellSettled(repository, order, dispute.id, 'withdrawn', user.id);
   await notify(repository, [currentRound(dispute)?.managerId, dispute.againstUserId], {
     kind: 'dispute_settled', title: 'A dispute was withdrawn', body: dispute.reason.slice(0, 160), link: `/dispute/${dispute.id}`,
@@ -784,16 +863,25 @@ const SANCTION_KINDS: readonly DisputeSanctionKind[] = [
 ];
 
 /** Sanctions off the wire, each checked against what this dispute can do. */
-async function sanctionsFrom(raw: unknown, dispute: Dispute, repository: Repo): Promise<DisputeSanction[] | string> {
+async function sanctionsFrom(
+  raw: unknown, dispute: Dispute, favour: 'raiser' | 'respondent', repository: Repo,
+): Promise<DisputeSanction[] | string> {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) return 'Sanctions must be a list.';
+  // Actions fall on the side the decision goes against, never the winner.
+  const loserId = favour === 'raiser' ? dispute.againstUserId : dispute.raisedBy;
   const out: DisputeSanction[] = [];
-  for (const entry of raw.slice(0, 8) as Record<string, unknown>[]) {
-    const kind = entry.kind as DisputeSanctionKind;
+  const seen = new Set<string>();
+  for (const entry of raw.slice(0, 8) as unknown[]) {
+    if (!entry || typeof entry !== 'object') return 'Each action must be an object.';
+    const fields = entry as Record<string, unknown>;
+    const kind = fields.kind as DisputeSanctionKind;
     if (!SANCTION_KINDS.includes(kind)) return 'That is not an action a community manager can take.';
-    const targetUserId = String(entry.targetUserId ?? '');
-    if (!isParty(dispute, targetUserId)) return 'An action can only be taken against one of the two parties.';
-    const messageText = String(entry.message ?? '').trim().slice(0, 300);
+    if (seen.has(kind)) return 'Each action can be taken once per decision.';
+    seen.add(kind);
+    const targetUserId = String(fields.targetUserId ?? loserId);
+    if (targetUserId !== loserId) return 'Actions can only be taken against the side the decision goes against.';
+    const messageText = String(fields.message ?? '').trim().slice(0, 300);
     const sanction: DisputeSanction = { kind, targetUserId, message: messageText };
 
     if (kind === 'remove_content') {
@@ -806,21 +894,21 @@ async function sanctionsFrom(raw: unknown, dispute: Dispute, repository: Repo): 
       return 'Write what the warning, alert or flag should say.';
     }
     if (kind === 'warning_post' || kind === 'alert_banner') {
-      const days = Number(entry.days ?? 7);
+      const days = Number(fields.days ?? 7);
       if (!Number.isInteger(days) || days < 1 || days > 60) return 'Show it for between 1 and 60 days.';
       sanction.days = days;
     }
-    if (kind === 'warning_post' && entry.forumId) {
-      const forum = await repository.getForum(String(entry.forumId));
+    if (kind === 'warning_post' && fields.forumId) {
+      const forum = await repository.getForum(String(fields.forumId));
       if (!forum) return 'No such forum.';
       sanction.forumId = forum.id;
     }
     if (kind === 'xp_deduction') {
-      if (entry.severity !== 'light' && entry.severity !== 'severe') return 'Say how severe the XP deduction is.';
-      sanction.severity = entry.severity;
+      if (fields.severity !== 'light' && fields.severity !== 'severe') return 'Say how severe the XP deduction is.';
+      sanction.severity = fields.severity;
     }
     if (kind === 'rating_reduction') {
-      const points = Number(entry.points ?? 5);
+      const points = Number(fields.points ?? 5);
       if (!Number.isInteger(points) || points < 1 || points > 50) return 'Take between 1 and 50 rating points.';
       sanction.points = points;
     }
@@ -853,6 +941,10 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
   if (!round || round.managerId !== user.id) {
     return error(403, 'forbidden', 'Only the community manager on the current round decides it.');
   }
+  // Appointed today, not just when the round was handed over.
+  if (!isManager(await repository.getUserById(user.id))) {
+    return error(403, 'not_a_manager', 'You are no longer a community manager, so this round is being handed on.');
+  }
   if (round.decision) return error(409, 'already_decided', 'You have already decided this round.');
   if (round.n === 1 && dispute.status === 'awaiting_response'
     && !(dispute.respondByAt && Date.parse(dispute.respondByAt) <= Date.now())) {
@@ -879,7 +971,7 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
     }
   }
 
-  const sanctions = await sanctionsFrom(body.sanctions, dispute, repository);
+  const sanctions = await sanctionsFrom(body.sanctions, dispute, body.favour, repository);
   if (typeof sanctions === 'string') return error(400, 'invalid_sanction', sanctions);
 
   const settings = await marketSettings(repository);
@@ -899,7 +991,7 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
   if (!escalationOpen(dispute)) {
     saved = await finalizeDecided(repository, dispute);
   } else {
-    saved = await repository.updateDispute(dispute);
+    saved = await commit(repository, dispute);
     await notify(repository, [dispute.raisedBy, dispute.againstUserId], {
       kind: 'dispute_decided',
       title: `Round ${round.n} decided in favour of ${favoured}`,
@@ -937,25 +1029,30 @@ async function escalate(request: HttpRequest, _context: InvocationContext) {
 
   const settings = await marketSettings(repository);
   const n = roundsOf(dispute).length + 1;
-  const manager = await pickManager(repository, excludedFrom(dispute));
+  const manager = await pickManagerFor(repository, dispute);
   if (!manager) return error(409, 'no_manager', 'No other community manager is available right now. Try again soon.');
 
-  const payment = await chargeFee(repository, {
-    kind: 'escalation', payerId: user.id, amountMinor: roundFeeMinor(settings, n),
-    currency: order?.currency ?? 'INR', reference: dispute.id, managerId: manager.id,
-  }, settings);
-  const round = newRound(n, manager, 'system', settings, payment, user.id);
-
+  const round = newRound(n, manager, 'system', settings, null, user.id);
   const now = new Date().toISOString();
   dispute.rounds = [...roundsOf(dispute), round];
   dispute.managerIds = [...new Set([...(dispute.managerIds ?? []), manager.id])];
   dispute.status = 'in_discussion';
   dispute.escalateBy = null;
   dispute.escalatedAt = now;
+  // A pending offer belongs to the round that is over.
+  dispute.offer = null;
   dispute.messages = [...dispute.messages,
     message(user.id, voiceOf(dispute, order, user.id), `Escalated to round ${n}. ${round.managerName} will decide it.`, [])];
   dispute.updatedAt = now;
-  const saved = await repository.updateDispute(dispute);
+  // The round is claimed before the fee is taken, so two presses at once
+  // charge once and open one round.
+  await commit(repository, dispute);
+  const payment = await chargeFee(repository, {
+    kind: 'escalation', payerId: user.id, amountMinor: roundFeeMinor(settings, n),
+    currency: order?.currency ?? 'INR', reference: dispute.id, managerId: manager.id,
+  }, settings);
+  round.payment = payment;
+  const saved = await commit(repository, dispute);
 
   await notify(repository, [manager.id], {
     kind: 'dispute_assigned', title: `You have an escalated dispute to decide (round ${n})`,
@@ -988,6 +1085,9 @@ async function release(request: HttpRequest, _context: InvocationContext) {
   if (!order || order.protection?.escrowAgentId !== user.id) {
     return error(403, 'forbidden', 'Only the community manager holding this payment can release it.');
   }
+  if (!isManager(await repository.getUserById(user.id))) {
+    return error(403, 'not_a_manager', 'You are no longer a community manager. The system releases this payment instead.');
+  }
   if (!communityActionsFor(dispute, user.id, { holdsMoney: holdsMoney(dispute), isHolder: true }).includes('request_release')
     || dispute.result?.how !== 'decided' || order.escrow.state !== 'disputed') {
     return error(409, 'not_releasable', dispute.release
@@ -996,10 +1096,10 @@ async function release(request: HttpRequest, _context: InvocationContext) {
   }
 
   const toBuyer = dispute.resolution?.refundMinor ?? 0;
+  dispute.updatedAt = new Date().toISOString();
   const saved = await moveHeld(repository, dispute, order, toBuyer,
     `Dispute settled: ${dispute.resolutionNote ?? 'released on the final decision.'}`, user.id);
-  dispute.updatedAt = new Date().toISOString();
-  const updated = await repository.updateDispute(dispute);
+  const updated = dispute;
   await notify(repository, [order.buyerId, order.sellerId], {
     kind: 'payment_released',
     title: 'The held payment was released on the final decision',
@@ -1208,8 +1308,14 @@ async function standing(request: HttpRequest, _context: InvocationContext) {
 async function clock(_timer: Timer, context: InvocationContext): Promise<void> {
   try {
     const repository = await getRepository();
-    for (const status of ['awaiting_response', 'in_discussion', 'decided']) {
-      for (const dispute of await repository.listDisputes(status)) await bringUpToDate(repository, dispute);
+    for (const status of ['awaiting_response', 'in_discussion', 'decided', 'under_mediation']) {
+      for (const dispute of await repository.listDisputes(status)) {
+        await releaseIfOverdue(repository, await bringUpToDate(repository, dispute));
+      }
+    }
+    // Final results whose held money nobody released yet.
+    for (const dispute of await repository.listDisputes('resolved')) {
+      if (dispute.result?.how === 'decided' && !dispute.release && holdsMoney(dispute)) await releaseIfOverdue(repository, dispute);
     }
   } catch (err) {
     context.error('dispute clock failed', err);

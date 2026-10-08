@@ -20,8 +20,8 @@ export interface MarketSettings {
    * confirmed delivery or opened a dispute in the meantime.
    */
   autoReleaseDays: number;
-  /** Buyer protection, in basis points of the order total, paid on top of it. */
-  protectionFeeBasisPoints: number;
+  /** Buyer protection, a flat amount in minor units paid on top of the order. */
+  protectionFeeMinor: number;
   /** Raising a dispute (round one), in minor units. Not charged on a protected purchase. */
   disputeFeeMinor: number;
   /** The first escalation (round two), in minor units. */
@@ -51,7 +51,7 @@ export const DAYS_MAX = 30;
 
 export const DEFAULT_SETTINGS: MarketSettings = {
   autoReleaseDays: DEFAULT_AUTO_RELEASE_DAYS,
-  protectionFeeBasisPoints: 200,
+  protectionFeeMinor: 4_900,
   disputeFeeMinor: 9_900,
   escalationFeeMinor: 19_900,
   secondEscalationFeeMinor: 29_900,
@@ -66,7 +66,7 @@ type Numeric = Exclude<keyof MarketSettings, 'updatedAt' | 'updatedBy'>;
 /** Each number an operator may set: its range, and how the console names it. */
 export const SETTING_RULES: Record<Numeric, { min: number; max: number; label: string }> = {
   autoReleaseDays: { min: AUTO_RELEASE_MIN_DAYS, max: AUTO_RELEASE_MAX_DAYS, label: 'Auto-release' },
-  protectionFeeBasisPoints: { min: 0, max: BASIS_POINTS_MAX, label: 'Buyer protection fee' },
+  protectionFeeMinor: { min: 0, max: FEE_MAX_MINOR, label: 'Buyer protection fee' },
   disputeFeeMinor: { min: 0, max: FEE_MAX_MINOR, label: 'Dispute fee' },
   escalationFeeMinor: { min: 0, max: FEE_MAX_MINOR, label: 'First escalation fee' },
   secondEscalationFeeMinor: { min: 0, max: FEE_MAX_MINOR, label: 'Second escalation fee' },

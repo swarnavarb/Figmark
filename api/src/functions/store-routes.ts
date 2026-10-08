@@ -802,11 +802,11 @@ async function orderServices(request: HttpRequest, _context: InvocationContext) 
       .filter((owner) => owner.artistProfile?.acceptingWork !== false && owner.id !== user.id && owner.id !== order.sellerId)
       .map((owner) => publicStore(owner, 'artist'))
     : [];
-  const protectionRate = (await marketSettings(repository)).protectionFeeBasisPoints;
+  const protectionFlat = (await marketSettings(repository)).protectionFeeMinor;
   const escrows = side === 'buyer' && job && ['quoted', 'accepted'].includes(job.status)
     ? (await repository.listEscrowAgents())
       .filter((agent) => agent.escrowRights && !agent.suspended && agent.id !== order.buyerId && agent.id !== job.artistId)
-      .map((agent) => ({ id: agent.id, name: agent.escrowRights!.displayName || agent.displayName, feeBasisPoints: protectionRate }))
+      .map((agent) => ({ id: agent.id, name: agent.escrowRights!.displayName || agent.displayName, feeMinor: protectionFlat }))
     : [];
   const paidUp = job && ['paid', 'working', 'ready', 'shipped', 'completed'].includes(job.status);
 
@@ -984,7 +984,7 @@ async function commissionAct(request: HttpRequest, _context: InvocationContext) 
         job.escrowAgentId = agent.id;
         job.escrowName = agent.escrowRights.displayName || agent.displayName;
         // The protection fee is Figmark's to set, centrally, not the holder's.
-        job.protectionFeeMinor = protectionFeeMinor(price, (await marketSettings(repository)).protectionFeeBasisPoints);
+        job.protectionFeeMinor = protectionFeeMinor(price, (await marketSettings(repository)).protectionFeeMinor);
         job.heldMinor = price + job.protectionFeeMinor;
         job.payments = [...job.payments, { at: now, amountMinor: job.heldMinor, method: 'protected', reference: null, confirmedAt: now }];
         job.status = 'paid';

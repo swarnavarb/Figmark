@@ -55,6 +55,27 @@ export function isManager(user: Pick<User, 'escrowRights' | 'suspended'> | null 
   return Boolean(user?.escrowRights && !user.suspended);
 }
 
+/** Someone else changed the dispute between reading it and writing it. */
+export class Busy extends Refusal {
+  constructor() {
+    super(409, 'dispute_changed', 'This dispute just changed. Reload it and try again.');
+  }
+}
+
+/**
+ * Saves a dispute only if nobody wrote it since it was read, and moves its
+ * version on. Every write that decides anything goes through here, so two
+ * people pressing at once - two releases, two accepts, two escalations - get
+ * one success and one "reload", never a double payout or a double count.
+ */
+export async function commit(repository: Repo, dispute: Dispute): Promise<Dispute> {
+  const expected = dispute.version ?? 0;
+  const saved = await repository.saveDisputeIfVersion({ ...dispute, version: expected + 1 }, expected);
+  if (!saved) throw new Busy();
+  dispute.version = expected + 1;
+  return saved;
+}
+
 /* ── The gateway ─────────────────────────────────────────────────────────── */
 
 /**
@@ -141,31 +162,37 @@ async function loadList<T>(repository: Repo, id: string, key: string): Promise<T
   return Array.isArray(list) ? (list as T[]) : [];
 }
 
-async function saveList<T>(repository: Repo, id: string, key: string, list: T[], keep: number, by: string): Promise<void> {
-  const now = new Date().toISOString();
-  const existing = await repository.getSiteContent(id);
-  await repository.saveSiteContent({
-    id,
-    data: { [key]: list.slice(-keep) },
-    updatedBy: by,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
+/**
+ * Changes one of the lists against what is stored at that moment, so two fees
+ * paid at once both reach the ledger and two decisions both queue their
+ * actions. The change may refuse by throwing; nothing is written then.
+ */
+export async function mutateList<T>(
+  repository: Repo, id: string, key: string, keep: number, by: string, change: (list: T[]) => T[],
+): Promise<void> {
+  await repository.mutateSiteContent(id, (current) => {
+    const now = new Date().toISOString();
+    const list = (current?.data as Record<string, unknown> | undefined)?.[key];
+    return {
+      id,
+      data: { [key]: change(Array.isArray(list) ? (list as T[]) : []).slice(-keep) },
+      updatedBy: by,
+      createdAt: current?.createdAt ?? now,
+      updatedAt: now,
+    };
   });
 }
 
 export const loadLedger = (repository: Repo) => loadList<LedgerEntry>(repository, LEDGER_ID, 'entries');
 async function recordLedger(repository: Repo, entry: LedgerEntry): Promise<void> {
-  const entries = await loadLedger(repository);
-  await saveList(repository, LEDGER_ID, 'entries', [...entries, entry], LEDGER_KEEP, entry.payerId);
+  await mutateList<LedgerEntry>(repository, LEDGER_ID, 'entries', LEDGER_KEEP, entry.payerId, (entries) => [...entries, entry]);
 }
 
 export const loadActions = (repository: Repo) => loadList<PendingAction>(repository, ACTIONS_ID, 'actions');
-export const saveActions = (repository: Repo, actions: PendingAction[], by: string) =>
-  saveList(repository, ACTIONS_ID, 'actions', actions, ACTIONS_KEEP, by);
+export const mutateActions = (repository: Repo, by: string, change: (actions: PendingAction[]) => PendingAction[]) =>
+  mutateList<PendingAction>(repository, ACTIONS_ID, 'actions', ACTIONS_KEEP, by, change);
 
 export const loadNotices = (repository: Repo) => loadList<CommunityNotice>(repository, NOTICES_ID, 'notices');
-const saveNotices = (repository: Repo, notices: CommunityNotice[], by: string) =>
-  saveList(repository, NOTICES_ID, 'notices', notices, NOTICES_KEEP, by);
 
 /** Warnings still showing, for the feed (no forum) or one forum. */
 export async function activeNotices(repository: Repo, forumId: string | null, now = Date.now()): Promise<CommunityNotice[]> {
@@ -214,6 +241,19 @@ export async function pickManager(repository: Repo, exclude: readonly string[]):
 export function excludedFrom(dispute: Pick<Dispute, 'raisedBy' | 'againstUserId' | 'rounds'>, extra: readonly string[] = []): string[] {
   const held = roundsOf(dispute).flatMap((round) => [round.managerId, ...(round.reassigned ?? []).map((entry) => entry.fromId)]);
   return [dispute.raisedBy, dispute.againstUserId, ...held, ...extra];
+}
+
+/**
+ * The next manager for this dispute. First anybody who has never touched it;
+ * if that leaves nobody, a manager who was only reassigned away for being
+ * slow may come back - a dispute stuck with no possible manager helps nobody.
+ * Never a party, never the one holding the round now, never one who decided.
+ */
+export async function pickManagerFor(repository: Repo, dispute: Dispute): Promise<User | null> {
+  const strict = await pickManager(repository, excludedFrom(dispute));
+  if (strict) return strict;
+  const decided = roundsOf(dispute).filter((round) => round.decision).map((round) => round.managerId);
+  return pickManager(repository, [dispute.raisedBy, dispute.againstUserId, ...decided, currentRound(dispute)?.managerId ?? '']);
 }
 
 export function newRound(
@@ -306,20 +346,25 @@ export async function bringUpToDate(repository: Repo, dispute: Dispute, now = ne
   }
 
   const round = currentRound(dispute);
-  if (round && autoReassignDue(round, now)) {
-    const next = await pickManager(repository, excludedFrom(dispute));
+  // A manager whose appointment was taken away, or who was suspended, does not
+  // keep the round until the grace days run out: it moves now.
+  const gone = round && !round.decision && !isManager(await repository.getUserById(round.managerId));
+  if (round && (gone || autoReassignDue(round, now))) {
+    const next = await pickManagerFor(repository, dispute);
     if (next) {
       await reassignRound(repository, dispute, next, 'system');
       changed = true;
     }
   }
 
-  if (finalDue(dispute, now)) {
-    await finalizeDecided(repository, dispute);
-    return dispute;
+  try {
+    if (finalDue(dispute, now)) return await finalizeDecided(repository, dispute);
+    return changed ? await commit(repository, dispute) : dispute;
+  } catch (error) {
+    // Someone else brought it up to date first: theirs stands.
+    if (error instanceof Busy) return (await repository.getDisputeById(dispute.id)) ?? dispute;
+    throw error;
   }
-
-  return changed ? repository.updateDispute(dispute) : dispute;
 }
 
 /* ── Final results ───────────────────────────────────────────────────────── */
@@ -383,9 +428,15 @@ export async function finalizeDecided(repository: Repo, dispute: Dispute): Promi
     };
   }
 
-  const saved = await repository.updateDispute(dispute);
+  // Claimed before anything is counted or carried out, so a result is only
+  // ever made final once, however many readers arrive at the same moment.
+  const saved = await commit(repository, dispute);
   await bump(repository, loserId, 'disputesLost', order);
-  await bump(repository, winnerId, 'disputesWon', order);
+  // A win counts on a profile only if the other side took part. Otherwise a
+  // second account that never answers would be a way to buy a record of wins.
+  const contested = [dispute.raisedBy, dispute.againstUserId].every((party) =>
+    dispute.messages.some((entry) => entry.authorId === party));
+  if (contested) await bump(repository, winnerId, 'disputesWon', order);
 
   const finalRound = roundsOf(dispute).find((round) => round.n === standing.finalRound)!;
   await carryOut(repository, saved, standing.decision.sanctions, finalRound);
@@ -451,7 +502,7 @@ async function carryOut(repository: Repo, dispute: Dispute, sanctions: DisputeSa
     await applySanction(repository, dispute, sanction, round.managerName, round.managerId);
   }
   if (queued.length > 0) {
-    await saveActions(repository, [...await loadActions(repository), ...queued], round.managerId);
+    await mutateActions(repository, round.managerId, (actions) => [...actions, ...queued]);
   }
 }
 
@@ -501,8 +552,7 @@ export async function applySanction(
       return;
     }
     case 'warning_post': {
-      const notices = await loadNotices(repository);
-      await saveNotices(repository, [...notices, {
+      await mutateList<CommunityNotice>(repository, NOTICES_ID, 'notices', NOTICES_KEEP, byId, (notices) => [...notices, {
         id: `ntc_${randomUUID().slice(0, 12)}`,
         disputeId: dispute.id,
         targetUserId: target.id,
@@ -512,7 +562,7 @@ export async function applySanction(
         managerName: byName,
         createdAt: now.toISOString(),
         until: inDays(sanction.days ?? 7, now),
-      }], byId);
+      }]);
       return;
     }
     case 'flag':

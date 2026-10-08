@@ -7,7 +7,7 @@ type Editable = Exclude<keyof MarketSettings, 'updatedAt' | 'updatedBy'>;
 
 /** How each number is typed in: rupees, percent or days, stored as minor units, basis points or days. */
 const FIELDS: { key: Editable; unit: 'rupees' | 'percent' | 'days'; hint: string }[] = [
-  { key: 'protectionFeeBasisPoints', unit: 'percent', hint: 'Of the order total, paid by the buyer on top of it. Covers round one of any dispute on the purchase.' },
+  { key: 'protectionFeeMinor', unit: 'rupees', hint: 'A flat amount per protected order, paid by the buyer on top of it (never more than the order). Covers round one of any dispute on the purchase.' },
   { key: 'disputeFeeMinor', unit: 'rupees', hint: 'Paid by whoever raises a dispute (round one). Not charged on a purchase still under buyer protection.' },
   { key: 'escalationFeeMinor', unit: 'rupees', hint: 'Paid by whoever escalates to round two.' },
   { key: 'secondEscalationFeeMinor', unit: 'rupees', hint: 'Paid by whoever escalates to round three.' },
@@ -94,13 +94,13 @@ export function SettingsView() {
 
   return (
     <div className="stack">
-      {group('Fees', ['protectionFeeBasisPoints', 'disputeFeeMinor', 'escalationFeeMinor', 'secondEscalationFeeMinor', 'commissionBasisPoints'])}
+      {group('Fees', ['protectionFeeMinor', 'disputeFeeMinor', 'escalationFeeMinor', 'secondEscalationFeeMinor', 'commissionBasisPoints'])}
       {group('Buyer protection', ['autoReleaseDays'])}
       {group('Dispute deadlines', ['responseDays', 'decisionDays', 'escalationWindowDays'])}
       <div className="card card--pad stack">
         <p className="field__hint" style={{ margin: 0 }}>
           Every fee goes through the payment gateway and is not refunded, whatever the outcome. Changes apply from now
-          on: a purchase keeps the protection rate it was bought at, and a dispute round keeps the fee it was paid.
+          on: a purchase keeps the protection fee it was bought at, and a dispute round keeps the fee it was paid.
         </p>
         {settings?.updatedAt && (
           <p className="faint">Last changed {timeAgo(settings.updatedAt)}{settings.updatedBy ? ` by ${settings.updatedBy}` : ''}.</p>

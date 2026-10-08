@@ -154,10 +154,10 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
   const [error, setError] = useState<string | null>(null);
 
   const free = Boolean(protectedOrder);
-  // A protected purchase's own claim picks a structured reason, because that
-  // decides what happens to the held money. A rejected payment on it is
-  // still heard by its holder, but is about that payment, not the item.
-  const claim = free && !orderSubject;
+  // Anything about a purchase still under protection is a protection claim:
+  // free, heard by the manager holding the money, and it freezes the payment.
+  // It picks a structured reason, because that decides where the money goes.
+  const claim = free;
 
   useEffect(() => {
     if (free) return;

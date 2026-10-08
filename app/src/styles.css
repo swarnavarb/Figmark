@@ -2513,6 +2513,12 @@ code, kbd, samp, pre {
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(2px);
 }
+/* On a phone it is a sheet from the bottom edge - restated here, because the
+   rule above comes later than the phone rule and would float it mid-screen. */
+@media (max-width: 560px) {
+  .modal { padding: 0; place-items: end stretch; }
+  .modal__panel { padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
 .modal__box {
   width: min(520px, 100%);
   max-height: 86vh; overflow-y: auto;
@@ -9306,7 +9312,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 
 /* The dispute / validate control under a review or comment. */
-.reportbtn { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.reportbtn { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .reportbtn__go { padding: 2px 8px; font-size: 12px; }
 .reportbtn__sent { font-size: 12px; }
 .purch__collect { font-size: 12px; font-weight: 600; color: var(--ok); }
@@ -10514,6 +10520,10 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .posts__thread { display: grid; gap: 8px; animation: lp-rise 420ms var(--spring) calc(var(--i, 0) * 60ms) both; }
 .posts__problem { margin: 0; font-size: var(--t-xs); color: #F87171; }
 .post { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; }
+/* The ⋮ sits at the top right of the comment, clear of the bubble's press-and-hold. */
+.post--menu { grid-template-columns: auto minmax(0, 1fr) auto; }
+.post__more { display: flex; justify-content: flex-end; align-items: flex-start; }
+.post__more .reportbtn { flex-direction: row-reverse; }
 .post--reply { margin-left: 26px; }
 .post__col { display: grid; gap: 4px; min-width: 0; justify-items: start; }
 .post__bubble {
@@ -13702,7 +13712,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 /* ── Disputes: the ⋮ menu, the raise popup, rounds, and community warnings ── */
 .cmenu { position: relative; display: inline-flex; }
-.cmenu__btn { font-size: 18px; line-height: 1; min-width: 32px; }
+.cmenu__btn {
+  font-size: 18px; line-height: 1; width: 30px; height: 30px; min-width: 30px;
+  border-color: transparent; background: transparent; color: var(--text-faint); border-radius: 999px;
+  transition: background 150ms, color 150ms;
+}
+.cmenu__btn:hover, .cmenu__btn[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
 .cmenu__btn.is-locked { opacity: 0.7; }
 .cmenu__list {
   position: fixed; z-index: 60;
@@ -13738,6 +13753,42 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 .dthread__quote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); color: var(--text); overflow-wrap: anywhere; }
 .drounds { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+
+/* Two lines at most of a quoted excerpt in a list. */
+.clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* The two sides a manager decides between: equal cards, side by side when there is room. */
+.decide__sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.decide__sides .raise__manager { width: 100%; }
+/* A chosen action's settings sit under it, indented, so the list stays scannable. */
+.decide__sanction .field-row { margin: 6px 0 10px 10px; padding-left: 12px; border-left: 2px solid var(--accent-line); }
+
+/* Dispute header: what it is about as a kicker, the two sides as the title. */
+.dhead { align-items: flex-start; gap: 12px; }
+.dhead__kicker { display: block; font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); }
+.dhead__title { margin: 2px 0 0; font-size: 20px; line-height: 1.25; overflow-wrap: anywhere; }
+
+/* Raised → rounds → final, with the current step lit. */
+.dsteps { list-style: none; margin: 0 0 16px; padding: 0; display: flex; align-items: center; gap: 0; overflow-x: auto; scrollbar-width: none; }
+.dsteps__step { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
+.dsteps__step + .dsteps__step::before { content: ''; width: 18px; height: 2px; margin: 0 6px; background: var(--border-strong); border-radius: 2px; }
+.dsteps__step.is-done + .dsteps__step::before { background: var(--accent); }
+.dsteps__dot {
+  width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%;
+  border: 2px solid var(--border-strong); font-size: 10px; font-weight: var(--w-bold); color: #fff;
+}
+.dsteps__step.is-done { color: var(--text-dim); }
+.dsteps__step.is-done .dsteps__dot { background: var(--accent); border-color: var(--accent); }
+.dsteps__step.is-on { color: var(--text); font-weight: var(--w-semi); }
+.dsteps__step.is-on .dsteps__dot { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+
+/* Figmark's own notes in a thread (a reassignment) read as events, not as a person speaking. */
+.dnote { margin: 2px 0; text-align: center; font-size: var(--t-xs); color: var(--text-dim); }
+.dnote > span:first-child { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); }
+
+/* Evidence that is an outside link, shown as a link card rather than loaded as an image. */
+.evidence__item--link { padding: 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-sm); }
+.evidence__host { font-size: var(--t-sm); color: var(--accent); overflow-wrap: anywhere; }
 .drounds__item { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--r-md); border: 1px dashed var(--border-strong); }
 .drounds__item.is-decided { border-style: solid; }
 .drounds__head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }

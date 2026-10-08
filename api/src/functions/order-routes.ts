@@ -27,7 +27,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays, marketSettings } from '../settings.js';
-import { bringUpToDate, chargeFee } from '../community.js';
+import { bringUpToDate, chargeFee, isManager } from '../community.js';
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
@@ -181,8 +181,10 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       return error(400, 'no_escrow', 'Choose who holds the payment for Buyer Protection.');
     }
     agent = await repository.getUserById(body.escrowAgentId);
-    if (!agent?.escrowRights) {
-      return error(409, 'protection_unavailable', 'That Buyer Protection agent is not approved to hold payments.');
+    // Appointed, not suspended, and taking new cases: the person who will hear
+    // any dispute on this purchase has to be there to hear it.
+    if (!isManager(agent) || agent.escrowRights!.available === false) {
+      return error(409, 'protection_unavailable', 'That community manager is not taking new purchases right now. Pick another.');
     }
     // Neither end of a trade can be the neutral party in it.
     if (agent.id === order.buyerId || agent.id === order.sellerId) {
@@ -218,7 +220,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     // Set centrally by the operators, and paid through the gateway like every
     // other fee: Figmark keeps its commission, the holder the rest.
     const settings = await marketSettings(repository);
-    const feeMinor = protectionFeeMinor(totalMinor, settings.protectionFeeBasisPoints);
+    const feeMinor = protectionFeeMinor(totalMinor, settings.protectionFeeMinor);
     const fee = await chargeFee(repository, {
       kind: 'protection', payerId: user.id, amountMinor: feeMinor, currency: order.currency,
       reference: order.id, managerId: agent.id,
@@ -228,9 +230,8 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       // Their name as it was today: a later rename must not rewrite what the
       // buyer agreed to.
       escrowName: rights.displayName || agent.displayName,
-      // The rate is copied onto the order, not looked up later: the fee is a
-      // term of this transaction and must not move when the setting changes.
-      feeBasisPoints: settings.protectionFeeBasisPoints,
+      // The fee is copied onto the order, not looked up later: it is a term of
+      // this transaction and must not move when the setting changes.
       feeMinor,
       commissionMinor: fee.commissionMinor,
       gatewayRef: fee.gatewayRef,
@@ -287,7 +288,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   // Everyone approved to hold money, minus the two people who cannot be neutral
   // in this particular trade.
   const agents = (await repository.listEscrowAgents()).filter(
-    (agent) => agent.id !== order.buyerId && agent.id !== order.sellerId && !agent.suspended,
+    (agent) => agent.id !== order.buyerId && agent.id !== order.sellerId && isManager(agent) && agent.escrowRights!.available !== false,
   );
 
   // What each of them has actually done as an escrow. Read per agent because a
@@ -295,7 +296,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   const records = await Promise.all(agents.map((agent) => escrowRecord(agent, repository)));
 
   const payment = seller?.sellerProfile?.payment ?? null;
-  const protectionRate = (await marketSettings(repository)).protectionFeeBasisPoints;
+  const protectionFlat = (await marketSettings(repository)).protectionFeeMinor;
 
   return json(200, {
     itemMinor: totalMinor,
@@ -314,8 +315,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     escrows: agents.map((agent, index) => ({
       id: agent.id,
       name: agent.escrowRights!.displayName || agent.displayName,
-      feeBasisPoints: protectionRate,
-      feeMinor: protectionFeeMinor(totalMinor, protectionRate),
+      feeMinor: protectionFeeMinor(totalMinor, protectionFlat),
       /** What the group already knows about them, rather than a rating we invented. */
       heldBefore: agent.buyerTrust.completedTransactions,
       ...records[index]!,
@@ -1598,8 +1598,18 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
   const side = sideOf(order, user.id)!;
 
-  const body = await bodyOf<{ subject: string; reason: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
-  const typed = body.reason?.trim() || null;
+  const body = await bodyOf<{ subject?: string; reason?: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
+  if (!body || typeof body !== 'object') return error(400, 'invalid_body', 'Request body must be JSON.');
+
+  // While buyer protection still holds the money, every complaint about the
+  // purchase goes through the protection claim: it is free, it freezes the
+  // payment, and the manager holding it hears it. A paid "general" dispute
+  // here would leave the money on its auto-release clock and block the
+  // buyer's own claim.
+  if (order.protection && order.escrow.state === 'held') {
+    return error(409, 'use_protection_claim', 'This purchase is still under buyer protection. Open a protection claim on the order instead - it is free and holds the payment until it is settled.');
+  }
+  const typed = typeof body.reason === 'string' ? body.reason.trim() || null : null;
   if (typed && typed.length > 2000) return error(400, 'too_long', 'Keep it under 2000 characters.');
 
   let topic: DisputeTopic = 'general';

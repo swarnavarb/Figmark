@@ -2363,10 +2363,10 @@ await check('the checkout offers the escrows who could be neutral in this trade'
   assert.equal(ids.includes('usr_demo'), false, 'the buyer cannot hold their own payment');
   assert.equal(ids.includes('usr_kaiju'), false, 'nor can the seller');
 
-  // Every holder carries the one rate Figmark sets centrally: 2% of 32,000 is 640.
+  // Every holder carries the one flat fee Figmark sets centrally: ₹49, whatever the order.
   for (const option of body.escrows) {
-    assert.equal(option.feeBasisPoints, 200, 'the fee is Figmark\'s, not the holder\'s');
-    assert.equal(option.feeMinor, 640);
+    assert.equal(option.feeMinor, 4_900, 'the fee is Figmark\'s, not the holder\'s');
+    assert.equal(option.feeBasisPoints, undefined, 'no percentage any more');
   }
 });
 
@@ -2449,10 +2449,9 @@ await check('choosing one is what holds the money, in their name', async () => {
   assert.equal(paid.jsonBody.order.protection.escrowAgentId, 'usr_escrow_meera');
   // Their name as it was today: a later rename must not rewrite the terms.
   assert.match(paid.jsonBody.order.protection.escrowName, /Meera/);
-  // The central rate, paid through the gateway with Figmark's commission split off.
-  assert.equal(paid.jsonBody.order.protection.feeMinor, 640);
-  assert.equal(paid.jsonBody.order.protection.feeBasisPoints, 200);
-  assert.equal(paid.jsonBody.order.protection.commissionMinor, 128);
+  // The central flat fee, paid through the gateway with Figmark's 20% commission split off.
+  assert.equal(paid.jsonBody.order.protection.feeMinor, 4_900);
+  assert.equal(paid.jsonBody.order.protection.commissionMinor, 980);
   assert.ok(paid.jsonBody.order.protection.gatewayRef);
   // The clock still does not start at checkout.
   assert.equal(paid.jsonBody.order.escrow.autoReleaseAt, null);
@@ -2789,8 +2788,10 @@ await check('withdrawing puts everything back and blames nobody', async () => {
   const done = await withdrawDispute(req({ headers: auth, params: { id } }), ctx);
   assert.equal(done.status, 200);
   assert.equal(done.jsonBody.dispute.status, 'withdrawn');
-  // The hold goes to the seller, and no record is marked against anyone.
-  assert.equal(done.jsonBody.order.escrow.state, 'released');
+  // The money goes back on hold exactly as before - not to either side - and
+  // no record is marked against anyone.
+  assert.equal(done.jsonBody.order.escrow.state, 'held');
+  assert.equal(done.jsonBody.order.escrow.disputeId, null);
   assert.equal(sellerBefore.asSeller.count >= 0, true);
 });
 
@@ -3040,8 +3041,13 @@ await check('when nobody escalates in time, the latest decision stands', async (
   assert.equal(read.dispute.result.finalRound, 2);
   assert.equal(read.dispute.resolution.outcome, 'split');
   assert.equal(read.order.escrow.state, 'disputed', 'still held: the holder releases it');
+  // The seller never wrote a word, so the loss counts against them but the
+  // win does not count for the buyer: an account that never answers is no
+  // way to farm a record of wins.
   const buyer = await repository_user('usr_demo');
-  assert.ok(buyer.buyerTrust.disputesWon >= 1);
+  assert.equal(buyer.buyerTrust.disputesWon ?? 0, 0, 'an uncontested win is not counted');
+  const seller = await repository_user('usr_kaiju');
+  assert.ok(seller.sellerTrust.disputesLost >= 1);
 });
 
 await check('the holder releases the held money on the final result, straight to the gateway', async () => {
@@ -9401,7 +9407,14 @@ await check('a comment can be disputed with a manager the raiser picks, for the 
     headers: writer.headers, params: { id: dispute.id }, body: { terms: 'I will delete the comment and apologise.' },
   }), ctx);
   assert.equal(offered.status, 200, JSON.stringify(offered.jsonBody));
-  const settled = await acceptDispute(req({ headers: auth, params: { id: dispute.id } }), ctx);
+  // Accepting names the offer that was read: a stale or missing one is refused,
+  // so an offer swapped a moment before cannot be accepted by mistake.
+  const offerId = offered.jsonBody.dispute.offer.id;
+  assert.ok(offerId);
+  const stale = await acceptDispute(req({ headers: auth, params: { id: dispute.id }, body: { offerId: 'off_old' } }), ctx);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.jsonBody.error, 'offer_changed');
+  const settled = await acceptDispute(req({ headers: auth, params: { id: dispute.id }, body: { offerId } }), ctx);
   assert.equal(settled.status, 200, JSON.stringify(settled.jsonBody));
   assert.equal(settled.jsonBody.dispute.result.how, 'settled');
   assert.equal(settled.jsonBody.dispute.result.winnerId, null);
@@ -9596,7 +9609,7 @@ await check('operators set every fee centrally, and the next escalation charges 
   assert.equal(saved.jsonBody.autoReleaseDays, 10, 'what was not sent is left as it was');
   const pub = (await readSettings(req(), ctx)).jsonBody;
   assert.equal(pub.escalationFeeMinor, 25_000);
-  assert.equal(pub.protectionFeeBasisPoints, 200);
+  assert.equal(pub.protectionFeeMinor, 4_900, 'buyer protection is a flat ₹ amount');
   const bad = await saveSettings(req({ headers: auth, body: { disputeFeeMinor: -1 } }), ctx);
   assert.equal(bad.status, 400);
   await saveSettings(req({ headers: auth, body: { escalationFeeMinor: 19_900, commissionBasisPoints: 2_000 } }), ctx);
@@ -9622,6 +9635,149 @@ await check('posts in the feed and forums can be reported now', async () => {
 
 
 /* ── affiliate links ───────────────────────────────────────────────────── */
+/* ── disputes cannot be gamed ─────────────────────────────────────────── */
+console.log('\ndisputes cannot be gamed');
+
+/** A fresh comment by a new member on a fresh listing, and a dispute about it raised by the demo shop with Meera. */
+async function contestedComment(title) {
+  const listing = await createListing(req({ headers: auth, body: { title, priceMinor: 5_000, sourcing: 'domestic' } }), ctx);
+  const listingId = listing.jsonBody.listing.id;
+  const writer = await newBuyer(`${title} writer`);
+  const said = await addComment(req({ headers: writer.headers, params: { id: listingId }, body: { body: 'This shop is a scam.' } }), ctx);
+  const raised = await raiseSubjectDispute(req({
+    headers: auth,
+    body: { subject: { type: 'comment', id: said.jsonBody.comment.id, parentId: listingId }, reason: 'No order between us exists at all.', managerId: 'usr_escrow_meera' },
+  }), ctx);
+  assert.equal(raised.status, 201, JSON.stringify(raised.jsonBody));
+  return { id: raised.jsonBody.dispute.id, writer };
+}
+
+await check('a paid "general" dispute cannot sidestep a purchase still under buyer protection', async () => {
+  // ord_1005 is the demo account's purchase, held by Meera again since its
+  // earlier claim was withdrawn.
+  assert.equal((await (await getRepository()).getOrder('ord_1005')).escrow.state, 'held');
+  const flagged = await flagDispute(req({ headers: auth, params: { id: 'ord_1005' }, body: { reason: 'Seller is being difficult.' } }), ctx);
+  assert.equal(flagged.status, 409);
+  assert.equal(flagged.jsonBody.error, 'use_protection_claim');
+  const order = await (await getRepository()).getOrder('ord_1005');
+  assert.equal(order.escrow.state, 'held', 'nothing about the held money changed');
+});
+
+await check('the raiser making an offer does not cut short the other side\'s time to answer', async () => {
+  const { id } = await contestedComment('Offer first');
+  const offered = await offerDispute(req({ headers: auth, params: { id }, body: { terms: 'Delete it and we are done.' } }), ctx);
+  assert.equal(offered.status, 200);
+  assert.equal(offered.jsonBody.dispute.status, 'awaiting_response');
+  assert.ok(offered.jsonBody.dispute.respondByAt, 'the other side still has their days');
+  const early = await decideDispute(req({ headers: escrow, params: { id }, body: { favour: 'raiser', reasoning: 'Quick.' } }), ctx);
+  assert.equal(early.jsonBody.error, 'too_early');
+});
+
+await check('actions only ever fall on the side the decision goes against', async () => {
+  const { id, writer } = await contestedComment('Wrong target');
+  await replyDispute(req({ headers: writer.headers, params: { id }, body: { body: 'I stand by it.' } }), ctx);
+  const onWinner = await decideDispute(req({
+    headers: escrow, params: { id },
+    body: { favour: 'raiser', reasoning: 'No order exists.', sanctions: [{ kind: 'flag', targetUserId: 'usr_demo', message: 'Flag the winner.' }] },
+  }), ctx);
+  assert.equal(onWinner.status, 400);
+  const twice = await decideDispute(req({
+    headers: escrow, params: { id },
+    body: { favour: 'raiser', reasoning: 'No order exists.', sanctions: [
+      { kind: 'flag', targetUserId: writer.id, message: 'Once.' }, { kind: 'flag', targetUserId: writer.id, message: 'Twice.' }] },
+  }), ctx);
+  assert.equal(twice.status, 400, 'one of each action per decision');
+  const junk = await decideDispute(req({ headers: escrow, params: { id }, body: { favour: 'raiser', reasoning: 'x', sanctions: [null] } }), ctx);
+  assert.equal(junk.status, 400, 'a malformed action is refused, not a crash');
+});
+
+await check('two people accepting the same settlement at once settle it once', async () => {
+  const { id, writer } = await contestedComment('Double accept');
+  const offered = await offerDispute(req({ headers: writer.headers, params: { id }, body: { terms: 'I will delete it.' } }), ctx);
+  const offerId = offered.jsonBody.dispute.offer.id;
+  const before = (await repository_user(writer.id)).buyerTrust.disputesSettled ?? 0;
+  const results = await Promise.all([1, 2].map(() => acceptDispute(req({ headers: auth, params: { id }, body: { offerId } }), ctx)));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  assert.equal((await repository_user(writer.id)).buyerTrust.disputesSettled, before + 1, 'counted once');
+});
+
+await check('two escalations pressed at once open one round and charge one fee', async () => {
+  const { id, writer } = await contestedComment('Double escalate');
+  await replyDispute(req({ headers: writer.headers, params: { id }, body: { body: 'I stand by it.' } }), ctx);
+  await decideDispute(req({ headers: escrow, params: { id }, body: { favour: 'raiser', reasoning: 'No order exists.' } }), ctx);
+  const ledgerBefore = (await adminLedger(req({ headers: auth }), ctx)).jsonBody.entries.filter((e) => e.reference === id).length;
+  const results = await Promise.all([1, 2].map(() => escalateDispute(req({ headers: writer.headers, params: { id } }), ctx)));
+  assert.equal(results.filter((r) => r.status === 200).length, 1, results.map((r) => JSON.stringify(r.jsonBody)).join(' | '));
+  const after = await repository_dispute(id);
+  assert.equal(after.rounds.length, 2);
+  const ledgerAfter = (await adminLedger(req({ headers: auth }), ctx)).jsonBody.entries.filter((e) => e.reference === id).length;
+  assert.equal(ledgerAfter - ledgerBefore, 1, 'one escalation fee');
+});
+
+await check('a manager whose appointment is taken away cannot decide, and the round moves on', async () => {
+  const { id, writer } = await contestedComment('Revoked manager');
+  await replyDispute(req({ headers: writer.headers, params: { id }, body: { body: 'I stand by it.' } }), ctx);
+  const repository = await getRepository();
+  const meera = await repository_user('usr_escrow_meera');
+  const rights = meera.escrowRights;
+  meera.escrowRights = null;
+  await repository.updateUser(meera);
+  try {
+    const tried = await decideDispute(req({ headers: escrow, params: { id }, body: { favour: 'raiser', reasoning: 'Still me.' } }), ctx);
+    assert.equal(tried.status, 403);
+    const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+    assert.notEqual(read.dispute.rounds[0].managerId, 'usr_escrow_meera', 'handed to another manager at once');
+  } finally {
+    meera.escrowRights = rights;
+    await repository.updateUser(meera);
+  }
+});
+
+await check('held money a manager never releases is released by the system after the grace days', async () => {
+  const repository = await getRepository();
+  const opened = await openDispute(req({
+    headers: auth, params: { id: 'ord_1005' },
+    body: { reasonCode: 'damaged', reason: 'The base arrived snapped in two.' },
+  }), ctx);
+  assert.equal(opened.status, 201, JSON.stringify(opened.jsonBody));
+  const id = opened.jsonBody.dispute.id;
+  const record = await repository_dispute(id);
+  record.respondByAt = new Date(Date.now() - 86_400_000).toISOString();
+  await repository.updateDispute(record);
+  const decided = await decideDispute(req({
+    headers: escrow, params: { id }, body: { favour: 'raiser', reasoning: 'The photos show the break.', refundMinor: 10_000 },
+  }), ctx);
+  assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
+
+  // The window closes and the result is final; Meera then sits on it.
+  const late = await repository_dispute(id);
+  late.escalateBy = new Date(Date.now() - 5 * 86_400_000).toISOString();
+  await repository.updateDispute(late);
+  const final = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  assert.equal(final.dispute.result.how, 'decided');
+  assert.equal(final.order.escrow.state, 'disputed', 'the holder has their grace days first');
+
+  const stale = await repository_dispute(id);
+  stale.result.at = new Date(Date.now() - 4 * 86_400_000).toISOString();
+  await repository.updateDispute(stale);
+  const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  assert.ok(read.dispute.release, 'released by the system');
+  assert.equal(read.dispute.release.requestedBy, 'system');
+  assert.equal(read.dispute.release.toBuyerMinor, 10_000);
+  assert.notEqual(read.order.escrow.state, 'disputed');
+  // And never twice.
+  const again = await releaseDispute(req({ headers: escrow, params: { id } }), ctx);
+  assert.equal(again.status, 409);
+});
+
+await check('a dispute is about something somebody wrote, not about a person', async () => {
+  const writer = await newBuyer('Not a subject');
+  const raised = await raiseSubjectDispute(req({
+    headers: auth, body: { subject: { type: 'user', id: writer.id }, reason: 'I just do not like them.', managerId: 'usr_escrow_meera' },
+  }), ctx);
+  assert.equal(raised.status, 400);
+});
+
 console.log('\naffiliate links');
 const {
   similarListingsRoute: similarListings, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,

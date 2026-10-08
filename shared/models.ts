@@ -1721,9 +1721,10 @@ export interface OrderProtection {
   escrowAgentId: string;
   /** Their name as it was at purchase, so a later rename cannot rewrite it. */
   escrowName: string;
-  /** The fee paid, on top of the item total. */
+  /** The fee paid, on top of the item total - a flat amount set by Figmark. */
   feeMinor: number;
-  feeBasisPoints: number;
+  /** Only on orders protected while the fee was a percentage of the total. */
+  feeBasisPoints?: number;
   /** Figmark's commission out of that fee, at the rate when it was bought. */
   commissionMinor?: number;
   /** The gateway's reference for the fee payment. */
@@ -1848,6 +1849,8 @@ export interface DisputeMessage {
  * which is the outcome a marketplace should want most.
  */
 export interface DisputeOffer {
+  /** Accepting names it, so an offer swapped a moment before cannot be accepted by mistake. */
+  id?: string;
   fromUserId: string;
   /** What goes back to the buyer. Zero is "release it all to the seller", and always zero where no money is held. */
   refundMinor: number;
@@ -1915,6 +1918,8 @@ export interface Dispute extends BaseDocument {
   result?: DisputeResult | null;
   /** Held money moved on a community manager's request after a final decision. */
   release?: DisputeRelease | null;
+  /** Bumped on every write, so two people acting at once cannot both win. */
+  version?: number;
 }
 
 export type DisputeSide = 'buyer' | 'seller' | 'member';

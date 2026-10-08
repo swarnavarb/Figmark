@@ -56,9 +56,12 @@ export type OrderAction =
   // The buyer answering whether a returned extra payment reached them.
   | 'ack_credit_refund';
 
-/** Protection is only offered where the company has granted the seller it. */
-export function protectionFeeMinor(totalMinor: number, feeBasisPoints: number): number {
-  return Math.max(0, Math.round((totalMinor * feeBasisPoints) / 10_000));
+/**
+ * Buyer protection costs a flat amount Figmark sets, whatever the order is
+ * worth - never more than the order itself.
+ */
+export function protectionFeeMinor(totalMinor: number, flatFeeMinor: number): number {
+  return Math.max(0, Math.min(flatFeeMinor, totalMinor));
 }
 
 /** How the viewer relates to an order. Nobody else may see one at all. */

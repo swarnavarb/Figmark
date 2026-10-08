@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
 import {
-  DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY,
+  DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY, releaseDueAt,
 } from '@shared/disputes';
 import type { DisputeRound, DisputeSanction, DisputeSanctionKind } from '@shared/models';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumRow } from '../api';
@@ -62,25 +62,26 @@ export function DisputePage() {
         <Icon name="back" size={14} /> {back.label}
       </Link>
 
-      <div className="page__head">
-        <div>
-          <h1>Dispute</h1>
-          <p className="muted">
-            {about} · {parties.raiser.name} <span className="faint">vs</span> {parties.respondent.name}
-          </p>
+      <div className="page__head dhead">
+        <div style={{ minWidth: 0 }}>
+          <span className="dhead__kicker">⚖️ Dispute · {about}</span>
+          <h1 className="dhead__title">
+            {parties.raiser.name} <span className="faint">vs</span> {parties.respondent.name}
+          </h1>
         </div>
         <span className={`badge badge--${dispute.status === 'resolved' ? 'ok' : dispute.status === 'withdrawn' ? '' : 'warn'}`}>
           {dispute.result?.how === 'settled' ? 'Settled' : DISPUTE_STATUS_LABELS[dispute.status]}
         </span>
       </div>
 
+      <Progress view={data} />
       <Outcome view={data} />
 
       <div className="card card--pad stack" style={{ marginBottom: 16 }}>
         {dispute.subjectRef && (
           <blockquote className="dthread__quote">
             “{dispute.subjectRef.excerpt}”
-            {dispute.subjectRef.link && <> · <Link to={dispute.subjectRef.link}>Open</Link></>}
+            {dispute.subjectRef.link && <> · <Link to={dispute.subjectRef.link}>View it ↗</Link></>}
           </blockquote>
         )}
         {data.holdsMoney && data.heldMinor !== null && (
@@ -97,8 +98,8 @@ export function DisputePage() {
         )}
         {current && !dispute.resolvedAt && (
           <div className="kv">
-            <dt>Deciding round {current.n} of {MAX_ROUNDS}</dt>
-            <dd>{current.managerName} · by {formatDateOrdinal(current.decideBy)}</dd>
+            <dt>Round {current.n} of {MAX_ROUNDS}</dt>
+            <dd>{current.managerName} decides by {formatDateOrdinal(current.decideBy)}</dd>
           </div>
         )}
         {data.overdue && !dispute.resolvedAt && (
@@ -125,7 +126,10 @@ export function DisputePage() {
           <p className="faint" style={{ margin: 0 }}>
             A settlement ends it with nobody winning or losing, and no community manager needs to confirm it.
           </p>
-          {data.actions.includes('accept_settlement') && <AcceptButton id={dispute.id} onDone={load} />}
+          {data.actions.includes('accept_settlement') && (
+            <AcceptButton id={dispute.id} offerId={dispute.offer.id} onDone={load}
+              summary={data.holdsMoney ? `${formatMoney(dispute.offer.refundMinor, data.currency)} back to the buyer, the rest to the seller` : (dispute.offer.terms || dispute.offer.note || 'the terms above')} />
+          )}
         </div>
       )}
 
@@ -136,6 +140,9 @@ export function DisputePage() {
           const tag = message.authorRole === 'manager' ? 'Community manager'
             : message.authorId === parties.raiser.id ? 'Raised it'
             : message.authorId === parties.respondent.id ? 'Against' : null;
+          if (message.authorRole === 'company') {
+            return <p key={message.id} className="dnote"><span>{message.body}</span> <span className="faint">· {timeAgo(message.createdAt)}</span></p>;
+          }
           return (
             <article key={message.id} className={`card card--pad post dmsg${mine ? ' post--mine' : ''}`}>
               <div className="post__head">
@@ -150,13 +157,20 @@ export function DisputePage() {
               {message.body && <p className="post__body">{message.body}</p>}
               {message.evidence.length > 0 && (
                 <div className="evidence">
-                  {message.evidence.map((item, index) => (
-                    <a key={index} href={item.url ?? '#'} target="_blank" rel="noreferrer noopener"
-                      className="evidence__item">
-                      {item.url && <img src={item.url} alt={item.caption || 'Evidence'} loading="lazy" />}
-                      <span className="faint">{item.caption || 'Screenshot'}</span>
-                    </a>
-                  ))}
+                  {message.evidence.map((item, index) => {
+                    // Only screenshots uploaded here are shown as pictures. An
+                    // outside link stays a link, so opening the thread does not
+                    // tell somebody else's server who is reading it.
+                    const uploaded = Boolean(item.url && item.url.startsWith('/api/photos/'));
+                    return (
+                      <a key={index} href={item.url ?? '#'} target="_blank" rel="noreferrer noopener"
+                        className={`evidence__item${uploaded ? '' : ' evidence__item--link'}`}>
+                        {uploaded ? <img src={item.url!} alt={item.caption || 'Evidence'} loading="lazy" />
+                          : <span className="evidence__host">🔗 {hostOf(item.url)}</span>}
+                        <span className="faint">{item.caption || (uploaded ? 'Screenshot' : 'Outside link')}</span>
+                      </a>
+                    );
+                  })}
                 </div>
               )}
             </article>
@@ -189,13 +203,17 @@ function Outcome({ view }: { view: DisputeView }) {
           <b>Final: {name(result.winnerId)} won.</b> Round {result.finalRound}'s decision stands
           {dispute.release
             ? `. The held payment was released: ${formatMoney(dispute.release.toBuyerMinor, view.currency)} to the buyer, ${formatMoney(dispute.release.toSellerMinor, view.currency)} to the seller.`
-            : view.holdsMoney ? '. The payment stays held until the community manager holding it releases it.' : '.'}
+            : view.holdsMoney
+              ? `. The payment stays held until the community manager holding it releases it${releaseDueAt(dispute) ? ` - or Figmark releases it as decided on ${formatDateOrdinal(releaseDueAt(dispute)!)}` : ''}.`
+              : '.'}
         </>
       )}
       {result.how === 'settled' && (
         <><b>Settled between the two of them.</b> Nobody won or lost.{result.terms ? ` Terms: ${result.terms}` : ''}</>
       )}
-      {result.how === 'withdrawn' && <><b>Withdrawn</b> by whoever raised it. It counts for nobody.</>}
+      {result.how === 'withdrawn' && (
+        <><b>Withdrawn</b> by {parties.raiser.name}. It counts for nobody{view.holdsMoney ? ', and the payment is held again as before' : ''}.</>
+      )}
     </div>
   );
 }
@@ -240,23 +258,78 @@ function Rounds({ rounds, currency, nameOf, parties }: {
   );
 }
 
-function AcceptButton({ id, onDone }: { id: string; onDone: () => Promise<void> }) {
+function AcceptButton({ id, offerId, summary, onDone }: {
+  id: string; offerId?: string; summary: string; onDone: () => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
   return (
     <>
+      {dialog}
       <button className="btn" style={{ justifySelf: 'start' }} disabled={busy}
-        onClick={() => {
+        onClick={() => void (async () => {
+          const sure = await confirm({
+            title: 'Accept this settlement?',
+            body: `It ends the dispute now: ${summary}. Nobody wins or loses, and it cannot be undone.`,
+            action: 'Accept and settle',
+          });
+          if (!sure) return;
           setBusy(true);
           setError(null);
-          void api.disputeAccept(id).then(onDone)
-            .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not accept that.'))
-            .finally(() => setBusy(false));
-        }}>
+          try {
+            await api.disputeAccept(id, offerId);
+            await onDone();
+          } catch (err) {
+            setError(err instanceof ApiRequestError ? err.message : 'Could not accept that.');
+            await onDone();
+          } finally {
+            setBusy(false);
+          }
+        })()}>
         {busy ? 'Settling…' : 'Accept and settle'}
       </button>
       {error && <ErrorNotice message={error} />}
     </>
+  );
+}
+
+function hostOf(url: string | null | undefined): string {
+  try {
+    return url ? new URL(url).hostname : 'link';
+  } catch {
+    return 'link';
+  }
+}
+
+/**
+ * Where it stands, as steps: raised, each round, final. The current step is
+ * lit, so anybody opening it knows at a glance what happens next.
+ */
+function Progress({ view }: { view: DisputeView }) {
+  const { dispute } = view;
+  const rounds = dispute.rounds ?? [];
+  if (rounds.length === 0) return null;
+  const closed = Boolean(dispute.resolvedAt);
+  const steps = [
+    { key: 'raised', label: 'Raised', done: true, on: false },
+    ...rounds.map((round, index) => ({
+      key: `r${round.n}`,
+      label: `Round ${round.n}`,
+      done: Boolean(round.decision) || closed,
+      on: !closed && index === rounds.length - 1,
+    })),
+    { key: 'final', label: dispute.result?.how === 'settled' ? 'Settled' : dispute.result?.how === 'withdrawn' ? 'Withdrawn' : 'Final', done: closed, on: false },
+  ];
+  return (
+    <ol className="dsteps" aria-label="Progress">
+      {steps.map((step) => (
+        <li key={step.key} className={`dsteps__step${step.done ? ' is-done' : ''}${step.on ? ' is-on' : ''}`}>
+          <span className="dsteps__dot" aria-hidden="true">{step.done ? '✓' : ''}</span>
+          <span>{step.label}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -333,13 +406,30 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
         )}
         {actions.includes('withdraw') && (
           <button className="btn btn--quiet" disabled={busy !== null}
-            onClick={() => void run('withdraw', () => api.disputeWithdraw(dispute.id))}>
+            onClick={() => void (async () => {
+              const sure = await confirm({
+                title: 'Withdraw this dispute?',
+                body: `It closes now and counts for nobody. The fee you paid is not refunded${view.holdsMoney ? ', and the payment goes back on hold as it was' : ''}.`,
+                action: 'Withdraw',
+                danger: true,
+              });
+              if (sure) await run('withdraw', () => api.disputeWithdraw(dispute.id));
+            })()}>
             {busy === 'withdraw' ? 'Withdrawing…' : 'Withdraw this'}
           </button>
         )}
         {actions.includes('request_release') && (
           <button className="btn" disabled={busy !== null}
-            onClick={() => void run('release', () => api.disputeRelease(dispute.id))}>
+            onClick={() => void (async () => {
+              const toBuyer = dispute.resolution?.refundMinor ?? 0;
+              const held = view.heldMinor ?? 0;
+              const sure = await confirm({
+                title: 'Release the held payment?',
+                body: `As decided: ${formatMoney(toBuyer, view.currency)} to the buyer and ${formatMoney(Math.max(0, held - toBuyer), view.currency)} to the seller, through the payment gateway.`,
+                action: 'Release it',
+              });
+              if (sure) await run('release', () => api.disputeRelease(dispute.id));
+            })()}>
             {busy === 'release' ? 'Releasing…' : 'Release the held payment as decided'}
           </button>
         )}
@@ -408,10 +498,21 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
     api.forums().then((body) => setForums(body.forums)).catch(() => setForums([]));
   }, []);
 
-  // Actions are against whoever the decision goes against, by default.
+  // Actions fall on whoever the decision goes against - never the winner.
   const loserId = favour === 'raiser' ? parties.respondent.id : favour === 'respondent' ? parties.raiser.id : '';
-  const canRemove = Boolean(dispute.subjectRef && dispute.subjectRef.type !== 'user');
+  const loserName = favour === 'raiser' ? parties.respondent.name : parties.raiser.name;
+  // Content can only come down if it is the loser's own.
+  const canRemove = Boolean(dispute.subjectRef && dispute.subjectRef.type !== 'user' && dispute.subjectRef.ownerId === loserId);
   const available = KINDS.filter((kind) => kind !== 'remove_content' || canRemove);
+
+  function choose(next: 'raiser' | 'respondent') {
+    setFavour(next);
+    // Switching sides moves every chosen action onto the new loser.
+    const nextLoser = next === 'raiser' ? parties.respondent.id : parties.raiser.id;
+    setPicked((current) => Object.fromEntries(Object.entries(current)
+      .filter(([kind]) => kind !== 'remove_content' || dispute.subjectRef?.ownerId === nextLoser)
+      .map(([kind, entry]) => [kind, { ...entry!, targetUserId: nextLoser }])));
+  }
 
   function toggle(kind: DisputeSanctionKind) {
     setPicked((current) => {
@@ -420,7 +521,7 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
       else {
         next[kind] = {
           kind,
-          targetUserId: kind === 'remove_content' ? dispute.subjectRef?.ownerId ?? loserId : loserId,
+          targetUserId: loserId,
           message: '',
           ...(kind === 'warning_post' || kind === 'alert_banner' ? { days: 7 } : {}),
           ...(kind === 'xp_deduction' ? { severity: 'light' as const } : {}),
@@ -439,7 +540,7 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
     setBusy(true);
     setError(null);
     try {
-      const sanctions = Object.values(picked).map((entry) => ({ ...entry!, targetUserId: entry!.kind === 'remove_content' ? entry!.targetUserId : entry!.targetUserId || loserId }));
+      const sanctions = Object.values(picked).map((entry) => ({ ...entry!, targetUserId: loserId }));
       await api.disputeDecide(dispute.id, {
         favour,
         reasoning: reasoning.trim(),
@@ -457,13 +558,13 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
   return (
     <div className="stack decide">
       <span className="card__title">Your decision</span>
-      <div className="row" role="radiogroup" aria-label="In whose favour" style={{ flexWrap: 'wrap' }}>
+      <div className="decide__sides" role="radiogroup" aria-label="In whose favour">
         <label className={`raise__manager${favour === 'raiser' ? ' is-on' : ''}`}>
-          <input type="radio" name="favour" checked={favour === 'raiser'} onChange={() => setFavour('raiser')} />
+          <input type="radio" name="favour" checked={favour === 'raiser'} onChange={() => choose('raiser')} />
           <b>In favour of {parties.raiser.name}</b><span className="faint">who raised it</span>
         </label>
         <label className={`raise__manager${favour === 'respondent' ? ' is-on' : ''}`}>
-          <input type="radio" name="favour" checked={favour === 'respondent'} onChange={() => setFavour('respondent')} />
+          <input type="radio" name="favour" checked={favour === 'respondent'} onChange={() => choose('respondent')} />
           <b>In favour of {parties.respondent.name}</b><span className="faint">who it is against</span>
         </label>
       </div>
@@ -483,7 +584,7 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
 
       {favour && (
         <fieldset className="decide__sanctions">
-          <legend>Actions if this decision stands</legend>
+          <legend>Actions against {loserName}, if this decision stands</legend>
           {available.map((kind) => {
             const entry = picked[kind];
             return (
@@ -495,15 +596,6 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
                 </label>
                 {entry && (
                   <div className="field-row">
-                    {kind !== 'remove_content' && (
-                      <label className="field">
-                        <span>Against</span>
-                        <select value={entry.targetUserId} onChange={(e) => edit(kind, { targetUserId: e.target.value })}>
-                          <option value={parties.raiser.id}>{parties.raiser.name}</option>
-                          <option value={parties.respondent.id}>{parties.respondent.name}</option>
-                        </select>
-                      </label>
-                    )}
                     <label className="field">
                       <span>{kind === 'warning_post' ? 'Warning everyone sees' : kind === 'alert_banner' ? 'Alert on their page' : 'Note'}</span>
                       <input value={entry.message} maxLength={300} onChange={(e) => edit(kind, { message: e.target.value })} />

@@ -167,6 +167,19 @@ export const MAX_ROUNDS = 3;
 /** Days past a manager's deadline before the system reassigns, if no operator did. */
 export const REASSIGN_GRACE_DAYS = 2;
 
+/**
+ * Days the manager holding a protected payment has to release it once the
+ * result is final. After that the system releases it as decided, so money
+ * never sits held because one person stopped answering.
+ */
+export const RELEASE_GRACE_DAYS = 3;
+
+/** When a final decision's held money is released by the system if its holder has not. */
+export function releaseDueAt(dispute: Pick<Dispute, 'result'>): string | null {
+  if (dispute.result?.how !== 'decided') return null;
+  return new Date(Date.parse(dispute.result.at) + RELEASE_GRACE_DAYS * DAY_MS).toISOString();
+}
+
 const DAY_MS = 86_400_000;
 
 export const DISPUTE_SUBJECT_LABELS: Record<DisputeSubjectType, string> = {

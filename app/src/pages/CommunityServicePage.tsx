@@ -7,6 +7,15 @@ import { formatDateOrdinal, formatMoney, timeAgo } from '../format';
 
 type Tab = 'waiting' | 'all' | 'held' | 'earnings';
 
+/** What happened to a payment, in words rather than the state's name. */
+const HELD_LABELS: Record<string, string> = {
+  held: 'Holding',
+  disputed: 'Frozen - disputed',
+  released: 'Released to the seller',
+  refunded: 'Refunded to the buyer',
+  none: 'Not held',
+};
+
 /**
  * Services → My Job → Community Service.
  *
@@ -79,20 +88,20 @@ export function CommunityServicePage() {
         </div>
         <p className="faint" style={{ margin: '12px 0 0' }}>
           {desk.stats.decided} decided
-          {desk.stats.averageHoursToDecide !== null && ` · ${desk.stats.averageHoursToDecide}h to decide on average`}
+          {desk.stats.averageHoursToDecide !== null && ` · ${desk.stats.averageHoursToDecide < 1 ? 'under an hour' : `${desk.stats.averageHoursToDecide}h`} to decide on average`}
           {' '}· {desk.stats.overturned} overturned on escalation
         </p>
       </div>
 
       <div className="tabs tabs--vivid" style={{ marginBottom: 14 }}>
         <button type="button" className={`tab${tab === 'waiting' ? ' is-on' : ''}`} onClick={() => setTab('waiting')}>
-          Waiting on me {waiting.length}
+          Waiting {waiting.length}
         </button>
         <button type="button" className={`tab${tab === 'all' ? ' is-on' : ''}`} onClick={() => setTab('all')}>
-          All cases {desk.cases.length}
+          All {desk.cases.length}
         </button>
         <button type="button" className={`tab${tab === 'held' ? ' is-on' : ''}`} onClick={() => setTab('held')}>
-          Held payments {releasable.length > 0 ? `· ${releasable.length} to release` : held.holdings.length}
+          Held {releasable.length > 0 ? `· ${releasable.length} to release` : held.holdings.length}
         </button>
         <button type="button" className={`tab${tab === 'earnings' ? ' is-on' : ''}`} onClick={() => setTab('earnings')}>
           Earnings
@@ -149,8 +158,8 @@ export function CommunityServicePage() {
                 </div>
                 <span className="badge badge--accent">{formatMoney(row.order.escrow.amountMinor, row.order.currency)}</span>
               </div>
-              <span className={`badge badge--${row.order.escrow.state === 'disputed' ? 'warn' : ''}`} style={{ justifySelf: 'start' }}>
-                {row.order.escrow.state}
+              <span className={`badge badge--${row.order.escrow.state === 'disputed' ? 'warn' : row.order.escrow.state === 'held' ? 'accent' : ''}`} style={{ justifySelf: 'start' }}>
+                {HELD_LABELS[row.order.escrow.state] ?? row.order.escrow.state}
               </span>
               {row.dispute && (
                 <>

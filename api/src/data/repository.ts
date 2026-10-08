@@ -280,6 +280,11 @@ export interface Repository {
   /** By id alone, for a link into one: the order it belongs to is on the row. */
   getDisputeById(id: string): Promise<Dispute | null>;
   updateDispute(dispute: Dispute): Promise<Dispute>;
+  /**
+   * Saves only if the stored copy is still at `expectedVersion`; null when
+   * somebody else wrote in between. The caller sets the new version.
+   */
+  saveDisputeIfVersion(dispute: Dispute, expectedVersion: number): Promise<Dispute | null>;
   /** The mediation queue: everything the company has been asked to settle. */
   listDisputes(status?: string): Promise<Dispute[]>;
   /** Every dispute in one partition: one order's, or one subject's. */
@@ -347,6 +352,8 @@ export interface Repository {
   /** A page the operators write (the Learn guide), or null before anybody has saved one. */
   getSiteContent(id: string): Promise<SiteContent | null>;
   saveSiteContent(content: SiteContent): Promise<SiteContent>;
+  /** Read, change and write back one document without losing a write made in between. */
+  mutateSiteContent(id: string, change: (current: SiteContent | null) => SiteContent): Promise<SiteContent>;
   deleteSiteContent(id: string): Promise<void>;
 
   /** Saves an edited account - the storefront editor is the only caller. */

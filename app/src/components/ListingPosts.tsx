@@ -169,7 +169,7 @@ function Post({ post, listingId, sellerId, canAct, mine, reply, onReact, onReply
   };
 
   return (
-    <div ref={box} className={`post${reply ? ' post--reply' : ''}${open ? ' is-open' : ''}`}>
+    <div ref={box} className={`post post--menu${reply ? ' post--reply' : ''}${open ? ' is-open' : ''}`}>
       <Avatar name={post.author.name} size={reply ? 28 : 34} />
       <div className="post__col">
         <div className="post__bubble" role="button" tabIndex={0} aria-expanded={open}
@@ -213,9 +213,11 @@ function Post({ post, listingId, sellerId, canAct, mine, reply, onReact, onReply
               {REACTION_META[entry.kind].emoji}{entry.count > 1 ? ` ${entry.count}` : ''}
             </button>
           ))}
-          <ReportButton targetType="comment" targetId={post.id} parentId={listingId} mine={mine} moderation={post.moderation}
-            authorId={post.authorId} label={`Comment by ${post.author.name}`} />
         </div>
+      </div>
+      <div className="post__more">
+        <ReportButton targetType="comment" targetId={post.id} parentId={listingId} mine={mine} moderation={post.moderation}
+          authorId={post.authorId} label={`Comment by ${post.author.name}`} />
       </div>
     </div>
   );

@@ -275,7 +275,7 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
   const label = ARTIST_JOB_LABELS[job.status];
   const at = ARTIST_JOB_FLOW.indexOf(job.status);
   const escrow = commission.escrows.find((row) => row.id === escrowId) ?? null;
-  const fee = escrow && job.quoteMinor ? protectionFeeMinor(job.quoteMinor, escrow.feeBasisPoints) : 0;
+  const fee = escrow && job.quoteMinor ? protectionFeeMinor(job.quoteMinor, escrow.feeMinor) : 0;
   const claimed = job.payments.some((payment) => !payment.confirmedAt);
 
   async function act(action: ArtistJobAction) {
@@ -356,7 +356,7 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
               <div className="os-escrows">
                 {commission.escrows.map((row) => (
                   <button key={row.id} type="button" className={`os-escrow${row.id === escrowId ? ' is-on' : ''}`} onClick={() => setEscrowId(row.id)}>
-                    <b>{row.name}</b><span className="faint">{(row.feeBasisPoints / 100).toFixed(1)}% fee</span>
+                    <b>{row.name}</b><span className="faint">{formatMoney(row.feeMinor)} fee</span>
                   </button>
                 ))}
               </div>
