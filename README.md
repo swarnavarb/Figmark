@@ -48,6 +48,7 @@ browsable with nothing provisioned:
 | Database | Cosmos DB, when `COSMOS_ENDPOINT` is set | In-memory store with seeded data |
 | Storage | Blob Storage, when `STORAGE_ACCOUNT` is set | In-memory (photos resolve to nothing) |
 | Auth | Static Web Apps identity, when `AUTH_MODE=swa` | Mock username/password provider |
+| Photo search | Claude reads the photo, when `ANTHROPIC_API_KEY` is set | Matches by picture only |
 
 `/api/health` reports which implementation actually loaded, and the status page
 renders it — so a deployment running on fallbacks is visibly degraded rather
@@ -70,7 +71,13 @@ rate-limited bumps — are wired end to end.
 
 Photo upload works against Blob Storage (listing photos are public-read; photos
 sent in chats go to a private container and are served only to the two handles
-in the thread). Not built yet: reverse-image search.
+in the thread).
+
+Photo search: the camera in the search sheet takes a photo or picks one, and
+`POST /api/search/photo` ranks the catalogue against it. A perceptual
+fingerprint finds items listed with the same picture, even resized or
+recompressed; with `ANTHROPIC_API_KEY` set, Claude also reads what the item is
+and those words find it under a different picture. The photo is never stored.
 
 ## Status
 

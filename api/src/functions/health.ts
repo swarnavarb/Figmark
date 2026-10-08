@@ -4,6 +4,7 @@ import { getAuthService } from '../auth/index.js';
 import { config } from '../config.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
+import { visionAvailable } from '../vision.js';
 import { handler, json } from './http.js';
 
 /**
@@ -57,6 +58,9 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
       missingContainers: data.missingContainers,
     },
     storage,
+    photoSearch: visionAvailable()
+      ? { vision: true, detail: `Photos are read by ${config.vision!.model} and matched by picture.` }
+      : { vision: false, detail: 'Matching by picture only. Set ANTHROPIC_API_KEY to also find items from what is in the photo.' },
   };
 
   return json(200, body);

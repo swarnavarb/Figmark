@@ -46,6 +46,16 @@ export interface AppConfig {
    * which is the correct state for one nobody has configured.
    */
   adminEmails: string[];
+  /**
+   * Claude, for reading what is in a photo someone searches with. Null when
+   * ANTHROPIC_API_KEY is unset; photo search then matches on the picture alone.
+   */
+  vision: VisionConfig | null;
+}
+
+export interface VisionConfig {
+  apiKey: string;
+  model: string;
 }
 
 function env(name: string): string | null {
@@ -89,6 +99,12 @@ function resolveStorage(): StorageConfig | null {
     key: env('STORAGE_KEY'),
     connectionString,
   };
+}
+
+function resolveVision(): VisionConfig | null {
+  const apiKey = env('ANTHROPIC_API_KEY');
+  if (!apiKey) return null;
+  return { apiKey, model: env('PHOTO_SEARCH_MODEL') ?? 'claude-opus-5-5' };
 }
 
 function resolveAuthMode(): AuthMode {
@@ -166,4 +182,5 @@ export const config: AppConfig = {
   cosmos,
   storage: resolveStorage(),
   adminEmails: resolveAdmins(cosmos),
+  vision: resolveVision(),
 };
