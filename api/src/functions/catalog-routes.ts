@@ -32,6 +32,11 @@ import {
   AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor, cleanBuyerOffMinor, linkDiscountMinor,
 } from '../../../shared/affiliate.js';
 import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
+import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
+import { fingerprint } from '../image-hash.js';
+import { rankByPhoto } from '../photo-search.js';
+import { tooFast } from '../rate-limit.js';
+import { describePhoto, visionAvailable } from '../vision.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
 function toSellerCard(user: User) {
@@ -271,6 +276,66 @@ async function similarListings(request: HttpRequest, _context: InvocationContext
       seller: sellerById.get(entry.sellerId) ?? null,
       estimatedDispatchAt: null,
     })),
+  });
+}
+
+/**
+ * POST /api/search/photo - the catalogue, ranked against a photo.
+ *
+ * The photo arrives as a data URL, like an upload, and is never stored: it is
+ * fingerprinted and, when vision is on, described by Claude, and then dropped.
+ * Public like the catalogue itself, and limited per account - or per address
+ * for a guest - because each search may be a paid call to Claude.
+ */
+async function photoSearch(request: HttpRequest, _context: InvocationContext) {
+  const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
+  const viewer = await auth.getCurrentUser(request);
+  const who = viewer?.id ?? `ip:${request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'}`;
+  const slow = tooFast(who, 'photosearch');
+  if (slow) return slow;
+
+  let body: { dataUrl?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const match = /^data:([a-z/+-]+);base64,(.+)$/i.exec(body.dataUrl ?? '');
+  if (!match) return error(400, 'invalid_photo', 'Send the photo as a base64 data URL.');
+  const contentType = match[1]!.toLowerCase();
+  if (!ALLOWED_TYPES.includes(contentType)) {
+    return error(400, 'invalid_photo', 'Photos must be JPEG, PNG, WebP or GIF.');
+  }
+  const bytes = new Uint8Array(Buffer.from(match[2]!, 'base64'));
+  if (bytes.byteLength === 0) return error(400, 'invalid_photo', 'That photo is empty.');
+  if (bytes.byteLength > MAX_PHOTO_BYTES) {
+    return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
+  }
+
+  const hash = fingerprint(bytes, contentType);
+  const [description, all] = await Promise.all([
+    describePhoto(bytes, contentType),
+    repository.listListings({}),
+  ]);
+  if (!hash && !description) {
+    return error(422, 'unreadable_photo', 'Could not read that photo. Try a JPEG, or a clearer picture.');
+  }
+  const pool = all.filter((listing) => !isExpired(listing) && !listing.privateFor);
+  const ranked = await rankByPhoto(pool, hash, description);
+
+  const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
+  const sellers = await repository.listUsersByIds([...new Set(ranked.map((entry) => entry.listing.sellerId))]);
+  const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
+  return json(200, {
+    listings: ranked.map(({ listing, match }) => ({
+      ...publicListing(listing),
+      liked: likedIds.has(listing.id),
+      seller: sellerById.get(listing.sellerId) ?? null,
+      estimatedDispatchAt: null,
+      photoMatch: match,
+    })),
+    described: description,
+    vision: visionAvailable(),
   });
 }
 
@@ -1327,10 +1392,12 @@ export const mySavedRoute = handler(mySaved);
 app.http('feed', { ...anon, methods: ['GET'], route: 'feed', handler: feedRoute });
 app.http('listing-detail', { ...anon, methods: ['GET'], route: 'listings/{id}', handler: listingDetailRoute });
 export const similarListingsRoute = handler(similarListings);
+export const photoSearchRoute = handler(photoSearch);
 export const affiliateLinkRoute = handler(affiliateLink);
 export const openShortLinkRoute = handler(openShortLink);
 app.http('listing-affiliate-link', { ...anon, methods: ['POST'], route: 'listings/{id}/affiliate-link', handler: affiliateLinkRoute });
 app.http('short-link', { ...anon, methods: ['GET'], route: 'r/{code}', handler: openShortLinkRoute });
+app.http('photo-search', { ...anon, methods: ['POST'], route: 'search/photo', handler: photoSearchRoute });
 app.http('listing-similar', { ...anon, methods: ['GET'], route: 'listings/{id}/similar', handler: similarListingsRoute });
 app.http('listing-create', { ...anon, methods: ['POST'], route: 'listings', handler: createListingRoute });
 app.http('listing-like', { ...anon, methods: ['POST'], route: 'listings/{id}/like', handler: toggleLikeRoute });

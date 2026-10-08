@@ -1700,6 +1700,17 @@ export interface PhotoDraft {
   isPrimary: boolean;
 }
 
+/** How a photo search found an item. */
+export type PhotoMatch = 'same_photo' | 'looks_alike' | 'described';
+
+export interface PhotoSearchResponse {
+  listings: (FeedListing & { photoMatch: PhotoMatch })[];
+  /** What Claude read in the photo; null when vision is off or could not say. */
+  described: { query: string; keywords: string[]; category: string | null } | null;
+  /** Whether this deployment reads photos at all, or only matches the picture. */
+  vision: boolean;
+}
+
 export interface StoredPhoto {
   blobName: string;
   url: string;
@@ -2061,6 +2072,8 @@ export const api = {
 
   listing: (id: string, ref?: string | null) =>
     request<ListingDetail>(`/listings/${encodeURIComponent(id)}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
+  /** Items like the one in the photo. The photo is read and dropped, never stored. */
+  photoSearch: (dataUrl: string) => post<PhotoSearchResponse>('/search/photo', { dataUrl }),
   similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
   affiliateLink: (listingId: string) =>
     post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),

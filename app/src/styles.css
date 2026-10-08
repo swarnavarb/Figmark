@@ -7688,6 +7688,38 @@ body.is-locked { overflow: hidden; }
   color: var(--top-ink); font: inherit; font-weight: var(--w-bold); font-size: var(--t-sm); cursor: pointer;
 }
 
+/* Searching with a photo: the camera in the field, the picture standing in
+   for the words while it searches, and what the picture was read as. */
+.mktsearch__camera {
+  display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 auto; margin-right: -6px; padding: 0;
+  border: 0; border-radius: 10px; background: none; color: #fff; cursor: pointer;
+  transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.mktsearch__camera:hover { background: rgba(255, 255, 255, 0.16); }
+.mktsearch__camera:active { transform: scale(0.92); }
+.mktsearch__shot {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  font-size: var(--t-sm); font-weight: var(--w-bold);
+}
+.mktsearch__shot img { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; flex: 0 0 auto; }
+.mktsearch__byphoto {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 8px 14px;
+  border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
+  color: var(--text); font: inherit; font-weight: var(--w-bold); font-size: var(--t-sm); cursor: pointer;
+}
+.mktsearch__reads { display: flex; flex-wrap: wrap; gap: 6px; }
+.mktsearch__read {
+  display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  color: var(--text); font: inherit; font-size: var(--t-xs); cursor: pointer;
+}
+.mktsearch__read.is-lead { border-color: var(--top-ink); color: var(--top-ink); font-weight: var(--w-bold); }
+.mktsearch__match {
+  padding: 1px 6px; border-radius: 5px; background: var(--surface); color: var(--text-dim);
+  font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.mktsearch__match.is-same_photo { background: var(--top-ink); color: #0B0F1A; }
+
 /* ── A room's strip ────────────────────────────────────────────────────── */
 
 .roombar {

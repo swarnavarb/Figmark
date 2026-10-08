@@ -134,6 +134,15 @@ export interface HealthResponse {
     account: string | null;
     detail: string;
   };
+  /**
+   * Photo search. Without vision it still finds the same picture, but not the
+   * same item in a different one - a narrower feature, not a broken one, so it
+   * does not make the deployment degraded.
+   */
+  photoSearch: {
+    vision: boolean;
+    detail: string;
+  };
 }
 
 /** A seeded sign-in hint, shown only while the mock provider is active. */
