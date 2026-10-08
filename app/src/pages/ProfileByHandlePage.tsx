@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CommunityAlertBanner } from '../components/CommunityAlerts';
 import { Link, useParams } from 'react-router-dom';
 import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api, type FeedListing, type PostCard, type PublicProfile, type ShelfState } from '../api';
@@ -64,9 +65,15 @@ export function ProfileByHandlePage() {
     followerCount: followers ?? Math.max(0, page.followerCount + (following === page.following ? 0 : following ? 1 : -1)),
   });
 
-  return data.isStore
-    ? <Storefront data={data} isMe={isMe} onFollow={onFollow} reload={reload} />
-    : <CollectorProfile profile={data} isMe={isMe} onFollow={onFollow} reload={reload} />;
+  return (
+    <>
+      {/* What a community manager's final decision put on this page, if anything. */}
+      <CommunityAlertBanner userId={data.sellerId} />
+      {data.isStore
+        ? <Storefront data={data} isMe={isMe} onFollow={onFollow} reload={reload} />
+        : <CollectorProfile profile={data} isMe={isMe} onFollow={onFollow} reload={reload} />}
+    </>
+  );
 }
 
 /** The page's outline while it loads, so nothing jumps when it lands. */

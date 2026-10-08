@@ -1,4 +1,5 @@
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
+import { RaiseDisputeModal } from '../components/DisputeFlows';
 import { compressImage } from '../imageCompress';
 import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -867,12 +868,8 @@ function CollectionCard({ state }: { state: OrderState }) {
  * My disputes for both people, and in a notification to the other side.
  */
 function DisputePanel({ state }: { state: OrderState }) {
-  const [writing, setWriting] = useState(false);
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [raising, setRaising] = useState<{ subject?: string; label: string } | null>(null);
   const { order } = state;
-  const navigate = useNavigate();
   // Every dispute on the order, of any kind, each opening the one page it is
   // worked on. An escrow dispute from before orders indexed them is found by
   // the pointer it left.
@@ -883,31 +880,16 @@ function DisputePanel({ state }: { state: OrderState }) {
       raisedBy: '', raisedSide: state.side ?? 'buyer', raisedAt: order.updatedAt,
     });
   }
-
-  async function raise(key: string, body: { subject?: string; reason?: string }) {
-    setBusy(key);
-    setError(null);
-    try {
-      const { dispute } = await api.flagDispute(order.id, body);
-      setWriting(false);
-      setReason('');
-      // Straight to where it is worked: the other side answers there.
-      navigate(`/dispute/${dispute.id}`);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not record that.');
-    } finally {
-      setBusy(null);
-    }
-  }
+  const counterpartyId = state.side === 'buyer' ? order.sellerId : order.buyerId;
 
   return (
     <div className="stack" style={{ marginBottom: 20 }}>
       {state.disputable.map((entry) => (
         <div key={entry.subject} className="disputebar">
           <span>⚠️ {entry.label}.</span>
-          <button type="button" className="btn btn--sm btn--danger" disabled={busy !== null}
-            onClick={() => void raise(entry.subject, { subject: entry.subject })}>
-            {busy === entry.subject ? 'Recording…' : '⚖️ Dispute'}
+          <button type="button" className="btn btn--sm btn--danger"
+            onClick={() => setRaising({ subject: entry.subject, label: `${order.itemName} — ${entry.label}` })}>
+            ⚖️ Dispute
           </button>
         </div>
       ))}
@@ -922,31 +904,19 @@ function DisputePanel({ state }: { state: OrderState }) {
         </Link>
       ))}
 
-      {writing ? (
-        <div className="card card--pad stack">
-          <label className="field">
-            <span>What is the dispute about?</span>
-            <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
-              placeholder="The item arrived damaged and the seller is not answering…" />
-            <span className="field__hint">
-              It is recorded and the other side is told. It shows under My disputes for both of you.
-            </span>
-          </label>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn--danger" disabled={busy !== null || reason.trim().length < 4}
-              onClick={() => void raise('general', { reason: reason.trim() })}>
-              {busy === 'general' ? 'Recording…' : 'Raise dispute'}
-            </button>
-            <button type="button" className="btn btn--quiet" onClick={() => setWriting(false)}>Cancel</button>
-          </div>
-        </div>
-      ) : (
-        <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
-          onClick={() => setWriting(true)}>
-          ⚖️ Raise a dispute
-        </button>
+      {/* Anything else about the order: a community manager the raiser picks
+          hears it, for the dispute fee. A protected purchase has its own
+          claim above, heard by its holder for free. */}
+      <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
+        onClick={() => setRaising({ label: order.itemName })}>
+        ⚖️ Raise a dispute
+      </button>
+      {raising && (
+        <RaiseDisputeModal onClose={() => setRaising(null)} orderSubject={raising.subject}
+          side={state.side ?? undefined}
+          protectedOrder={Boolean(order.protection && (order.escrow.state === 'held' || order.escrow.state === 'disputed'))}
+          target={{ type: 'order', id: order.id, againstId: counterpartyId, label: raising.label }} />
       )}
-      {error && <ErrorNotice message={error} />}
     </div>
   );
 }

@@ -86,7 +86,7 @@ export function UsersView() {
               {row.store && <span className="badge">store</span>}
               {row.escrowRights && (
                 <span className="badge badge--ok">
-                  Buyer Protection · {(row.escrowRights.feeBasisPoints / 100).toFixed(1)}%
+                  Community manager{row.escrowRights.available === false ? ' · off' : ''}
                 </span>
               )}
             </div>
@@ -297,15 +297,15 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 /**
- * Approving somebody to hold other people's money.
+ * Appointing a community manager.
  *
- * An escrow is a party, not a mechanism: buyers pick one at checkout from the
- * people approved here, and that person decides what happens to the money if
- * the trade goes wrong. The rate travels with the grant rather than sitting in
- * one global setting, because it is their fee for doing the work.
+ * A community manager hears disputes - on purchases, reviews, comments,
+ * posts and members - and holds payments bought with buyer protection.
+ * Only the people appointed here see Services → My Job → Community Service.
+ * Fees are not theirs: every fee is set centrally under Settings, and they
+ * are paid a share of it after Figmark's commission.
  */
 function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
-  const [percent, setPercent] = useState(String((user.escrowRights?.feeBasisPoints ?? 200) / 100));
   const [label, setLabel] = useState(user.escrowRights?.displayName ?? '');
   const [note, setNote] = useState(user.escrowRights?.note ?? '');
   const [busy, setBusy] = useState(false);
@@ -316,12 +316,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
     setBusy(true);
     setError(null);
     try {
-      await admin.setEscrow(user.id, {
-        enabled,
-        feeBasisPoints: Math.round(Number(percent) * 100),
-        displayName: label,
-        note,
-      });
+      await admin.setEscrow(user.id, { enabled, displayName: label, note });
       await onChanged();
       setConfirming(false);
     } catch (err) {
@@ -333,64 +328,56 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
 
   return (
     <div className="card card--pad stack">
-      <span className="card__title">Buyer Protection</span>
+      <span className="card__title">Community manager</span>
       {user.escrowRights ? (
         <p className="faint">
-          Approved {formatDate(user.escrowRights.grantedAt)} at{' '}
-          {(user.escrowRights.feeBasisPoints / 100).toFixed(1)}%, listed to buyers as{' '}
-          <strong>{user.escrowRights.displayName}</strong>. They can be chosen to hold payments on any
-          trade they are not part of, and they settle disputes over what they hold.
+          Appointed {formatDate(user.escrowRights.grantedAt)}, listed as <strong>{user.escrowRights.displayName}</strong>
+          {user.escrowRights.available === false ? ' - currently not taking new disputes' : ''}. They can be picked to
+          hear disputes they are not a party to, are assigned escalations by availability, and can be chosen to hold
+          protected payments.
         </p>
       ) : (
         <p className="faint">
-          Not approved. They cannot be chosen to hold anybody's payment.
+          Not a community manager. They cannot hear disputes or hold anybody's payment.
         </p>
       )}
 
-      <div className="field-row">
-        <label className="field">
-          <span>Listed to buyers as</span>
-          <input value={label} onChange={(event) => setLabel(event.target.value)}
-            placeholder={user.store?.name ?? user.displayName} />
-          <span className="field__hint">The name in the picker at checkout.</span>
-        </label>
-        <label className="field">
-          <span>Their fee (%)</span>
-          <input value={percent} onChange={(event) => setPercent(event.target.value)} inputMode="decimal" />
-          <span className="field__hint">Charged to the buyer on top of the item. Up to 20%.</span>
-        </label>
-      </div>
+      <label className="field">
+        <span>Listed as</span>
+        <input value={label} onChange={(event) => setLabel(event.target.value)}
+          placeholder={user.store?.name ?? user.displayName} />
+        <span className="field__hint">The name members see when they pick a manager, and at checkout.</span>
+      </label>
       <label className="field">
         <span>Note</span>
         <input value={note} onChange={(event) => setNote(event.target.value)}
-          placeholder="Why this person, at this rate. Operators only — buyers never see it." />
+          placeholder="Why this person. Operators only - members never see it." />
       </label>
 
       {error && <p className="notice notice--error">{error}</p>}
 
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <button className="btn" disabled={busy} onClick={() => void save(true)}>
-          {user.escrowRights ? 'Update' : 'Approve for Buyer Protection'}
+          {user.escrowRights ? 'Update' : 'Make community manager'}
         </button>
         {user.escrowRights && (
           <button className="btn btn--quiet" disabled={busy} onClick={() => setConfirming(true)}>
-            Withdraw
+            Remove
           </button>
         )}
       </div>
 
       {confirming && (
         <Confirm
-          title="Remove them as a Buyer Protection agent?"
+          title="Remove them as a community manager?"
           confirmLabel="Remove"
           busy={busy}
           onCancel={() => setConfirming(false)}
           onConfirm={() => void save(false)}
         >
-          <p>{user.displayName} will no longer appear in the picker at checkout.</p>
+          <p>{user.displayName} will no longer be offered to hear new disputes or hold new payments, and loses the Community Service desk.</p>
           <p>
-            Payments they are already holding stay with them — those are live transactions the two
-            parties agreed to, not a setting.
+            Payments they are already holding stay with them. Reassign any dispute round they hold from the Disputes tab.
           </p>
         </Confirm>
       )}

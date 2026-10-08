@@ -4,6 +4,8 @@ import type { AuthUser, HealthResponse } from '@shared/contracts';
 import { ApiRequestError, admin } from './api';
 import { UsersView } from './UsersView';
 import { DisputesView } from './DisputesView';
+import { ApprovalsView } from './ApprovalsView';
+import { PaymentsView } from './PaymentsView';
 import { LearnView } from './LearnView';
 import { ReportsView } from './ReportsView';
 import { SettingsView } from './SettingsView';
@@ -32,13 +34,15 @@ import '../styles.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'stores' | 'disputes' | 'reports' | 'devices' | 'photos' | 'settings' | 'learn';
+type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'settings' | 'learn';
 
 const TAB_LABELS: Record<Tab, string> = {
   users: 'People and stores',
   stores: 'Service stores',
   disputes: 'Disputes',
-  reports: 'Reviews & comments',
+  approvals: 'Approvals',
+  payments: 'Payments',
+  reports: 'Reports',
   devices: 'Installs & devices',
   photos: 'Stored photos',
   settings: 'Settings',
@@ -115,6 +119,8 @@ function Console() {
         {tab === 'users' ? <UsersView />
           : tab === 'stores' ? <StoresView />
           : tab === 'disputes' ? <DisputesView />
+          : tab === 'approvals' ? <ApprovalsView />
+          : tab === 'payments' ? <PaymentsView />
           : tab === 'reports' ? <ReportsView />
           : tab === 'devices' ? <DevicesView />
           : tab === 'photos' ? <PhotosView />

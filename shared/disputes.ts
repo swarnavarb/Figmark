@@ -303,7 +303,8 @@ export type CommunityAction = 'reply' | 'propose_settlement' | 'accept_settlemen
  * for it to be released once the result is final.
  */
 export function communityActionsFor(
-  dispute: Pick<Dispute, 'status' | 'raisedBy' | 'againstUserId' | 'offer' | 'rounds' | 'escalateBy' | 'topic' | 'release'>,
+  dispute: Pick<Dispute, 'status' | 'raisedBy' | 'againstUserId' | 'offer' | 'rounds' | 'escalateBy' | 'topic' | 'release'>
+    & Partial<Pick<Dispute, 'respondByAt'>>,
   viewerId: string,
   options: { holdsMoney?: boolean; isHolder?: boolean } = {},
   now = new Date(),
@@ -329,7 +330,10 @@ export function communityActionsFor(
     if (dispute.raisedBy === viewerId && decisionsOf(dispute).length === 0) actions.push('withdraw');
     if (escalationOpen(dispute, now) && losingPartyOfLatest(dispute) === viewerId) actions.push('escalate');
   }
-  if (managing && round && !round.decision) actions.push('decide');
+  // Round one waits for the other side to answer, or for their days to run out.
+  const heard = !(round?.n === 1 && dispute.status === 'awaiting_response'
+    && dispute.respondByAt && new Date(dispute.respondByAt).getTime() > now.getTime());
+  if (managing && round && !round.decision && heard) actions.push('decide');
   return actions;
 }
 

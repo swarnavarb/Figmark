@@ -52,7 +52,7 @@ const SupplierPage = page(() => import('./pages/SupplierPage'), 'SupplierPage');
 const PackingLotPage = page(() => import('./pages/SupplierPage'), 'PackingLotPage');
 const OrderPage = page(() => import('./pages/OrderPage'), 'OrderPage');
 const DisputePage = page(() => import('./pages/DisputePage'), 'DisputePage');
-const EscrowPage = page(() => import('./pages/EscrowPage'), 'EscrowPage');
+const CommunityServicePage = page(() => import('./pages/CommunityServicePage'), 'CommunityServicePage');
 const ProfilePage = page(() => import('./pages/ProfilePage'), 'ProfilePage');
 const PurchasesPage = page(() => import('./pages/PurchasesPage'), 'PurchasesPage');
 const CartPage = page(() => import('./pages/PurchasesPage'), 'CartPage');
@@ -139,7 +139,9 @@ function App() {
         <Route path="/packing/:id" element={members(<PackingLotPage />)} />
         <Route path="/order/:id" element={members(<OrderPage />)} />
         <Route path="/dispute/:id" element={members(<DisputePage />)} />
-        <Route path="/escrow" element={members(<EscrowPage />)} />
+        <Route path="/community-service" element={members(<CommunityServicePage />)} />
+        {/* The buyer protection console became part of the Community Service desk. */}
+        <Route path="/escrow" element={<Navigate to="/community-service" replace />} />
         <Route path="/forwarders" element={<Navigate to="/services/forwarder" replace />} />
         <Route path="/me" element={members(<ProfilePage />)} />
         <Route path="/purchases" element={members(<PurchasesPage />)} />

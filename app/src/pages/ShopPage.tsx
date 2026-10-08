@@ -250,8 +250,8 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
           door they do not want - it is a different role, not a second option
           for a new seller. */}
       {user?.escrowRights && (
-        <Link to="/escrow" className="btn btn--quiet" style={{ justifySelf: 'center', marginTop: 18 }}>
-          {<Icon name="lock" size={13} />} Open the Buyer Protection console instead
+        <Link to="/community-service" className="btn btn--quiet" style={{ justifySelf: 'center', marginTop: 18 }}>
+          {<Icon name="users" size={13} />} Open your Community Service desk instead
         </Link>
       )}
     </main>
@@ -312,8 +312,8 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           no shop-name header here either - the workflow below already says
           where you are. */}
       {user?.escrowRights && (
-        <Link to="/escrow" className="btn btn--ghost btn--sm" style={{ justifySelf: 'end', marginBottom: 10 }}>
-          {<Icon name="lock" size={13} />} Buyer Protection
+        <Link to="/community-service" className="btn btn--ghost btn--sm" style={{ justifySelf: 'end', marginBottom: 10 }}>
+          {<Icon name="users" size={13} />} Community Service
         </Link>
       )}
 

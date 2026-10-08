@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CommunityNotices } from './CommunityAlerts';
 import { useParams } from 'react-router-dom';
 import { ApiRequestError, api, type ChannelThread, type PostCard } from '../api';
 import { EmptyState, ErrorNotice } from './ui';
@@ -131,6 +132,7 @@ function Forum() {
 
       <main className="page social forumroom">
         {error && <ErrorNotice message={error} />}
+        {id && <CommunityNotices forumId={id} />}
 
         {channel && (
           <header className="forumhero">

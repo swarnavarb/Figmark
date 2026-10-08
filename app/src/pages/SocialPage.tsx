@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { CommunityNotices } from '../components/CommunityAlerts';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ForumRow, type ForumsResponse, type PostCard } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
@@ -41,7 +42,7 @@ export function SocialPage() {
         <SocialTop view={view} onView={setView} />
         <main className="page tab-view social">
           <div className="tab-view" key={view}>
-            {view === 'feed' && <FollowingFeed />}
+            {view === 'feed' && <><CommunityNotices /><FollowingFeed /></>}
             {view === 'wanted' && <WantedPage />}
             {view === 'channels' && <ChannelList />}
             {view === 'forums' && <Forums />}

@@ -2941,7 +2941,7 @@ await check('the manager reads the same thread the two parties do', async () => 
   const read = await readDispute(req({ headers: escrow, params: { id } }), ctx);
   assert.equal(read.status, 200);
   assert.equal(read.jsonBody.role, 'manager');
-  assert.ok(read.jsonBody.actions.includes('decide'));
+  assert.equal(read.jsonBody.actions.includes('decide'), false, 'not before the other side has been heard');
   assert.ok(read.jsonBody.actions.includes('reply'));
   // Somebody with no part in it still cannot.
   assert.equal((await readDispute(req({ headers: helper, params: { id } }), ctx)).status, 403);

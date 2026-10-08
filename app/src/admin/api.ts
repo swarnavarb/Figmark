@@ -1,5 +1,5 @@
 import type { HealthResponse } from '@shared/contracts';
-import type { Dispute, EscrowRights, SellerTrustSignals, TrustSignals } from '@shared/models';
+import type { Dispute, DisputeDecision, DisputeSanction, EscrowRights, FeePayment, SellerTrustSignals, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
@@ -54,8 +54,36 @@ export interface AdminDisputeRow {
   heldMinor: number;
   currency: string;
   protectionFeeMinor: number;
+  raiser: { id: string; name: string } | null;
+  respondent: { id: string; name: string } | null;
   buyer: { id: string; name: string; trust: TrustSignals } | null;
   seller: { id: string; name: string; trust: SellerTrustSignals } | null;
+  /** The current round: who holds it and by when they decide. */
+  round: { n: number; managerId: string; managerName: string; decideBy: string; decided: boolean } | null;
+  rounds: number;
+  /** The manager on the current round is past their deadline. */
+  overdue: boolean;
+  standing: { favour: DisputeDecision['favour']; finalRound: number; decision: DisputeDecision } | null;
+}
+
+/** A sanction a community manager decided that waits for an operator. */
+export interface PendingAction {
+  id: string;
+  disputeId: string;
+  sanction: DisputeSanction;
+  targetName: string;
+  managerId: string;
+  managerName: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  note: string | null;
+}
+
+export interface LedgerEntry extends FeePayment {
+  reference: string;
+  managerId: string | null;
 }
 
 /**
@@ -141,7 +169,8 @@ export const admin = {
   /** Delete them. Looks again first; `only` narrows it to named photos. */
   cleanupPhotos: (graceHours: number, only?: { scope: 'public' | 'private'; name: string }[]) =>
     post<{ deleted: number; bytes: number; failed: number }>('/ops/photos/cleanup', { graceHours, ...(only ? { only } : {}) }),
-  setEscrow: (id: string, body: { enabled: boolean; feeBasisPoints?: number; displayName?: string; note?: string }) =>
+  /** Appoint or remove a community manager. Fees are not theirs to set. */
+  setEscrow: (id: string, body: { enabled: boolean; displayName?: string; note?: string }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/escrow`, body),
 
   /** Service stores: applications waiting first, then every store. */
@@ -153,8 +182,15 @@ export const admin = {
   health: () => request<HealthResponse>('/health'),
 
   disputes: () => request<{ disputes: AdminDisputeRow[] }>('/ops/disputes'),
-  resolve: (id: string, body: { outcome: string; refundMinor: number; note: string }) =>
-    post<{ dispute: Dispute }>(`/ops/disputes/${encodeURIComponent(id)}/resolve`, body),
+  /** Hand the current round to another manager: named, or the system's pick by availability. */
+  reassign: (id: string, managerId?: string) =>
+    post<{ dispute: Dispute }>(`/ops/disputes/${encodeURIComponent(id)}/reassign`, managerId ? { managerId } : {}),
+  /** Alert banners and XP deductions waiting for approval. */
+  actions: () => request<{ actions: PendingAction[] }>('/ops/actions'),
+  decideAction: (id: string, body: { approve: boolean; days?: number; severity?: 'light' | 'severe'; note?: string }) =>
+    post<{ action: PendingAction }>(`/ops/actions/${encodeURIComponent(id)}/decide`, body),
+  /** Every fee paid through the gateway, with Figmark's commission. */
+  ledger: () => request<{ entries: LedgerEntry[]; totals: { collectedMinor: number; commissionMinor: number; managerShareMinor: number } }>('/ops/ledger'),
 
   /** The Learn guide, hidden tabs included, and whether it differs from the one that ships. */
   learn: () => request<LearnDoc & { customised: boolean }>('/ops/learn'),
@@ -163,10 +199,10 @@ export const admin = {
   /** Upload a picture for a guide step; the same store listing photos use. */
   uploadImage: (dataUrl: string) => marketplace.uploadPhoto(dataUrl),
 
-  /** Marketplace-wide rules: today, how long protected payments are held. */
   devices: () => request<DeviceFigures>('/ops/devices'),
+  /** Marketplace-wide rules and every fee: protection, disputes, escalations, commission. */
   settings: () => request<MarketSettings>('/ops/settings'),
-  saveSettings: (settings: Pick<MarketSettings, 'autoReleaseDays'>) =>
+  saveSettings: (settings: Partial<Omit<MarketSettings, 'updatedAt' | 'updatedBy'>>) =>
     post<MarketSettings>('/ops/settings/save', settings),
 
   /** Disputed reviews and comments, and authors asking for theirs to be validated. */

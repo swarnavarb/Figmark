@@ -1,4 +1,6 @@
 import { ReportButton } from './ReportButton';
+import { RaiseDisputeModal, ReportModal } from './DisputeFlows';
+import { useSession } from '../session';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
@@ -276,6 +278,8 @@ export function SocialPostCard({
   const [showComments, setShowComments] = useState(openComments);
   const [sharing, setSharing] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [objecting, setObjecting] = useState<'report' | 'dispute' | null>(null);
+  const { user } = useSession();
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [burst, setBurst] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -434,6 +438,17 @@ export function SocialPostCard({
                     <Icon name="bolt" size={15} /> {post.pinned ? 'Unpin' : 'Pin to the top'}
                   </button>
                 )}
+                {/* Somebody else's post: report it to Figmark, or raise a dispute a community manager hears. */}
+                {user && !social.mine && (
+                  <>
+                    <button type="button" role="menuitem" onClick={() => { setMenu(false); setObjecting('report'); }}>
+                      ⚠️ Report now
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => { setMenu(false); setObjecting('dispute'); }}>
+                      ⚖️ Raise a dispute
+                    </button>
+                  </>
+                )}
                 {(social.mine || canModerate) && (
                   <button type="button" role="menuitem" className="is-danger" onClick={() => void remove()}>
                     <Icon name="trash" size={15} /> {social.mine ? 'Delete post' : 'Remove post (moderator)'}
@@ -444,6 +459,17 @@ export function SocialPostCard({
           </div>
         )}
       </header>
+      {objecting === 'report' && (
+        <ReportModal targetType={post.channel === 'forum' ? 'forum_post' : 'post'} targetId={post.id} parentId={post.channelId}
+          kind="report" onClose={() => setObjecting(null)} />
+      )}
+      {objecting === 'dispute' && (
+        <RaiseDisputeModal onClose={() => setObjecting(null)}
+          target={{
+            type: post.channel === 'forum' ? 'forum_post' : 'post', id: post.id, parentId: post.channelId,
+            againstId: post.authorId, label: `${post.channel === 'forum' ? 'Forum post' : 'Post'} by ${post.authorName}`,
+          }} />
+      )}
 
       {post.vibe ? (
         <div className={`vibe vibe--${post.vibe}`}><p>{post.body}</p></div>

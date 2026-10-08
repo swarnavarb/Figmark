@@ -158,10 +158,10 @@ function MyServicesStrip({ mine, signedIn }: { mine: MyServicesView | null; sign
           </Link>
         ))}
         {mine?.escrow && (
-          <Link to="/escrow" className="ms-tile">
-            <span className="ms-tile__icon"><Icon name="lock" size={18} /></span>
-            <span className="ms-tile__name">Buyer Protection</span>
-            <span className="ms-tile__meta">Held payments</span>
+          <Link to="/community-service" className="ms-tile">
+            <span className="ms-tile__icon"><Icon name="users" size={18} /></span>
+            <span className="ms-tile__name">Community Service</span>
+            <span className="ms-tile__meta">My job · disputes</span>
           </Link>
         )}
       </div>
@@ -417,14 +417,18 @@ export function MyServicesPage() {
             {offering && <OfferForm onSaved={() => { setOffering(false); void load(); }} />}
           </section>
 
+          {/* Only for the people Figmark has appointed community managers. */}
           {mine.escrow && (
-            <Link to="/escrow" className="svc">
-              <span className="svc__glyph"><Icon name="lock" size={22} /></span>
-              <span className="svc__body">
-                <span className="svc__name">Buyer Protection</span>
-                <span className="faint">Payments you are holding, and disputes waiting on you.</span>
-              </span>
-            </Link>
+            <>
+              <h2 className="ms-section">My job</h2>
+              <Link to="/community-service" className="svc">
+                <span className="svc__glyph"><Icon name="users" size={22} /></span>
+                <span className="svc__body">
+                  <span className="svc__name">Community Service</span>
+                  <span className="faint">Disputes waiting on your decision, payments you hold under buyer protection, and what you have earned.</span>
+                </span>
+              </Link>
+            </>
           )}
         </div>
       )}

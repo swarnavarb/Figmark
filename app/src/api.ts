@@ -28,7 +28,8 @@ import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type {
   CommentThread, PollView, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
 } from '@shared/social';
-import type { DisputeAction } from '@shared/disputes';
+import type { CommunityAction } from '@shared/disputes';
+import type { MarketSettings } from '@shared/settings';
 import type { Allocation, OrderMoney } from '@shared/payments';
 import type { CardDef, QuestView, StickerView } from '@shared/quest';
 import type { CollectionGroup, CollectionItem, ShareEvent, ShareKind } from '@shared/models';
@@ -58,7 +59,7 @@ export interface EvidenceDraft {
   caption: string;
 }
 import type {
-  BuyerReversalDetails, Dispute, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
+  BuyerReversalDetails, Dispute, DisputeDecision, DisputeSanction, DisputeSide, FeePayment, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
   MessageDeal, MessageParty, Order, OrderShipment, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
   StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
   ArtistJob, ArtistOffering, ArtistProfile, FreightLane, InsurancePlan, OrderAddOn, PortfolioPiece, StoreCore, StoreLink,
@@ -744,7 +745,8 @@ export interface MyRefund {
 /** One dispute, as either side's list shows it. */
 export interface DisputeRow {
   id: string;
-  orderId: string;
+  /** Null on a dispute about a review, comment, post or person. */
+  orderId: string | null;
   itemName: string;
   currency: string;
   counterpartyName: string;
@@ -754,15 +756,93 @@ export interface DisputeRow {
   reason: string;
   raisedAt: string;
   raisedByMe: boolean;
-  raisedBySide: 'buyer' | 'seller';
+  raisedBySide: DisputeSide;
   status: DisputeStatus;
+  round: number | null;
+  managerName: string | null;
+  result: Dispute['result'] | null;
 }
 
 export interface MyDisputesResponse {
   asBuyer: DisputeRow[];
   asStore: DisputeRow[];
-  orders: { id: string; itemName: string; side: 'buyer' | 'seller'; counterpartyName: string; createdAt: string }[];
+  /** Disputes about reviews, comments, posts and people. */
+  community: DisputeRow[];
+  orders: {
+    id: string; itemName: string; side: 'buyer' | 'seller'; counterpartyName: string; counterpartyId: string;
+    /** Bought with protection that is still holding the payment: raising is free and goes to its holder. */
+    protectedNow: boolean;
+    createdAt: string;
+  }[];
 }
+
+/** A community manager someone could pick to hear a dispute. */
+export interface ManagerOption {
+  id: string;
+  name: string;
+  since: string;
+  openCases: number;
+}
+
+/** What a dispute is about, as the raise popup names it. */
+export interface DisputeTarget {
+  type: 'order' | 'review' | 'store_review' | 'comment' | 'post_comment' | 'post' | 'forum_post' | 'user';
+  id: string;
+  parentId?: string;
+  /** Who it would be against, so the picker can leave them out. */
+  againstId?: string;
+  /** How the popup describes it: "Kaiju Imports' review", "Dragon Knight statue". */
+  label: string;
+}
+
+export interface CommunityCase {
+  id: string;
+  reason: string;
+  status: DisputeStatus;
+  about: string;
+  protected: boolean;
+  raiser: string;
+  respondent: string;
+  round: number;
+  myRounds: number[];
+  waitingOnMe: boolean;
+  decideBy: string | null;
+  overdue: boolean;
+  result: Dispute['result'] | null;
+  releasable: boolean;
+  updatedAt: string;
+}
+
+export interface CommunityDesk {
+  manager: { id: string; name: string; available: boolean; since: string };
+  openCases: number;
+  cases: CommunityCase[];
+  stats: { decided: number; overturned: number; averageHoursToDecide: number | null };
+  earnings: {
+    totalMinor: number;
+    payments: { id: string; kind: FeePayment['kind']; amountMinor: number; shareMinor: number; reference: string; paidAt: string; currency: string }[];
+  };
+}
+
+export interface CommunityNotice {
+  id: string;
+  disputeId: string;
+  targetUserId: string;
+  targetName: string;
+  message: string;
+  forumId: string | null;
+  managerName: string;
+  createdAt: string;
+  until: string;
+}
+
+export interface CommunityStanding {
+  alert: { message: string; until: string; disputeId: string } | null;
+  flags: { disputeId: string; message: string; at: string }[];
+  disputes: { won: number; lost: number; settled: number };
+}
+
+export type PublicSettings = Omit<MarketSettings, 'updatedAt' | 'updatedBy'>;
 
 export interface SalesResponse {
   credits: ShopCredit[];
@@ -856,15 +936,29 @@ export interface EscrowHolding {
   seller: PartyRef;
   dispute: Dispute | null;
   decidable: boolean;
+  releasable: boolean;
 }
 
 export interface DisputeView {
   dispute: Dispute;
-  order: Order;
+  /** Null on a dispute about a review, comment, post or person. */
+  order: Order | null;
   side: OrderSide | null;
-  actions: DisputeAction[];
+  role: 'raiser' | 'respondent' | 'manager' | 'holder' | 'past_manager';
+  actions: CommunityAction[];
+  /** The manager on the current round is past their deadline. */
   overdue: boolean;
-  parties: { buyer: PartyRef; seller: PartyRef };
+  standing: { favour: DisputeDecision['favour']; finalRound: number; decision: DisputeDecision } | null;
+  escalation: { open: boolean; nextRound: number | null; feeMinor: number | null; by: string | null };
+  holdsMoney: boolean;
+  heldMinor: number | null;
+  currency: string;
+  parties: {
+    raiser: { id: string; name: string };
+    respondent: { id: string; name: string };
+    buyer?: PartyRef;
+    seller?: PartyRef;
+  };
 }
 
 export interface OrderState {
@@ -2123,7 +2217,7 @@ export const api = {
     detailsRequests: { orderId: string; itemName: string; sellerName: string; requestedAt: string }[];
   }>('/me/refunds'),
   myDisputes: () => request<MyDisputesResponse>('/me/disputes'),
-  flagDispute: (id: string, body: { subject?: string; reason?: string }) =>
+  flagDispute: (id: string, body: { subject?: string; reason?: string; managerId?: string; evidence?: EvidenceDraft[] }) =>
     post<{ order: Order; dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/flag-dispute`, body),
   holdCredit: (id: string, creditId?: string) =>
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
@@ -2373,16 +2467,29 @@ export const api = {
   dispute: (id: string) => request<DisputeView>(`/disputes/${encodeURIComponent(id)}`),
   disputeReply: (id: string, body: string, evidence: EvidenceDraft[]) =>
     post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/reply`, { body, evidence }),
-  disputeOffer: (id: string, refundMinor: number, note: string) =>
-    post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/offer`, { refundMinor, note }),
+  disputeOffer: (id: string, refundMinor: number, terms: string) =>
+    post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/offer`, { refundMinor, terms }),
   disputeAccept: (id: string) =>
     post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/accept`),
   disputeWithdraw: (id: string) =>
     post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/withdraw`),
   disputeEscalate: (id: string) =>
-    post<{ dispute: Dispute }>(`/disputes/${encodeURIComponent(id)}/escalate`),
-  disputeSettle: (id: string, body: { outcome: string; refundMinor: number; note: string }) =>
-    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/settle`, body),
+    post<{ dispute: Dispute; payment: FeePayment }>(`/disputes/${encodeURIComponent(id)}/escalate`),
+  disputeDecide: (id: string, body: { favour: 'raiser' | 'respondent'; reasoning: string; refundMinor?: number | null; sanctions: DisputeSanction[] }) =>
+    post<{ dispute: Dispute; order: Order | null }>(`/disputes/${encodeURIComponent(id)}/decide`, body),
+  disputeRelease: (id: string) =>
+    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/release`),
+  /** Raise a dispute about a review, comment, post or person - paid through the gateway. */
+  raiseCommunityDispute: (body: { subject: { type: string; id: string; parentId?: string }; reason: string; managerId: string; evidence: EvidenceDraft[] }) =>
+    post<{ dispute: Dispute; payment: FeePayment }>('/disputes', body),
+  communityManagers: (against?: string) =>
+    request<{ feeMinor: number; currency: string; managers: ManagerOption[] }>(`/community/managers${against ? `?against=${encodeURIComponent(against)}` : ''}`),
+  communityCases: () => request<CommunityDesk>('/community/cases'),
+  communityAvailability: (available: boolean) => post<{ available: boolean }>('/community/availability', { available }),
+  communityNotices: (forumId?: string | null) =>
+    request<{ notices: CommunityNotice[] }>(`/community/notices${forumId ? `?forum=${encodeURIComponent(forumId)}` : ''}`),
+  communityStanding: (userId: string) => request<CommunityStanding>(`/community/standing/${encodeURIComponent(userId)}`),
+  marketSettings: () => request<PublicSettings>('/settings'),
   escrowHoldings: () =>
     request<{ rights: EscrowRights; heldMinor: number; holdings: EscrowHolding[] }>('/escrow/holdings'),
   reviewOrder: (id: string, rating: number, body: string) =>

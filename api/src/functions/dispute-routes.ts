@@ -407,17 +407,21 @@ async function open(request: HttpRequest, _context: InvocationContext) {
 
 const SUBJECT_TYPES: readonly DisputeSubjectType[] = [...REPORT_TARGETS, 'user'];
 
-/** Where a piece of content is opened. */
-function linkFor(type: DisputeSubjectType, id: string, parentId: string): string | null {
+/** Where a piece of content is opened, as the app routes it. */
+async function linkFor(repository: Repo, type: DisputeSubjectType, id: string, parentId: string): Promise<string | null> {
   switch (type) {
-    case 'user': return `/u/${id}`;
     case 'comment': return `/listing/${parentId}`;
-    case 'post': case 'forum_post': return `/post/${parentId}/${id}`;
+    case 'post': case 'forum_post': return `/social/p/${parentId}/${id}`;
     case 'post_comment': {
       const [channelId, postId] = parentId.split(':');
-      return channelId && postId ? `/post/${channelId}/${postId}` : null;
+      return channelId && postId ? `/social/p/${channelId}/${postId}` : null;
     }
-    default: return `/u/${parentId}`;
+    default: {
+      // A person, or a review on somebody's page: their page, by handle.
+      const owner = await repository.getUserById(type === 'user' ? id : parentId);
+      const handle = owner?.sellerProfile?.username ?? owner?.username;
+      return handle ? `/${handle}` : null;
+    }
   }
 }
 
@@ -489,7 +493,8 @@ async function raise(request: HttpRequest, _context: InvocationContext) {
   const round = newRound(1, manager, 'raiser', settings, payment, null);
 
   const subjectRef: DisputeSubjectRef = {
-    type, id: targetId, parentId: type === 'user' ? targetId : parentId, ownerId, excerpt, link: linkFor(type, targetId, parentId),
+    type, id: targetId, parentId: type === 'user' ? targetId : parentId, ownerId, excerpt,
+    link: await linkFor(repository, type, targetId, parentId),
   };
   const record: Dispute = {
     id,

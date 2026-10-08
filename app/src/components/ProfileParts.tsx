@@ -464,7 +464,7 @@ export function ReviewsTab({ profile, canWrite, onWritten }: {
                     </Link>
                   )}
                   <ReportButton targetType="review" targetId={review.id} parentId={profile.sellerId}
-                    mine={Boolean(review.mine)} moderation={review.moderation} />
+                    mine={Boolean(review.mine)} moderation={review.moderation} label={`Review by ${review.author.name}`} />
                 </div>
               </article>
             ))}
@@ -499,7 +499,7 @@ export function ReviewsTab({ profile, canWrite, onWritten }: {
                 <p className="revcard__body">{review.body}</p>
                 <div className="revcard__foot">
                   <ReportButton targetType="store_review" targetId={review.id} parentId={profile.sellerId}
-                    mine={review.mine} moderation={review.moderation} />
+                    mine={review.mine} moderation={review.moderation} label={`Page review by ${review.authorName}`} />
                 </div>
               </article>
             ))}
