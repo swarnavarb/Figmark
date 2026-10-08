@@ -7688,8 +7688,8 @@ body.is-locked { overflow: hidden; }
   color: var(--top-ink); font: inherit; font-weight: var(--w-bold); font-size: var(--t-sm); cursor: pointer;
 }
 
-/* Searching with a photo: the camera in the field, the picture standing in
-   for the words while it searches, and what the picture was read as. */
+/* Searching with a photo: the camera in the field, and the same offer under
+   the sheet's intro. The search itself shows on the catalogue. */
 .mktsearch__camera {
   display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 auto; margin-right: -6px; padding: 0;
   border: 0; border-radius: 10px; background: none; color: #fff; cursor: pointer;
@@ -7697,28 +7697,11 @@ body.is-locked { overflow: hidden; }
 }
 .mktsearch__camera:hover { background: rgba(255, 255, 255, 0.16); }
 .mktsearch__camera:active { transform: scale(0.92); }
-.mktsearch__shot {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
-  font-size: var(--t-sm); font-weight: var(--w-bold);
-}
-.mktsearch__shot img { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; flex: 0 0 auto; }
 .mktsearch__byphoto {
   display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 8px 14px;
   border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
   color: var(--text); font: inherit; font-weight: var(--w-bold); font-size: var(--t-sm); cursor: pointer;
 }
-.mktsearch__reads { display: flex; flex-wrap: wrap; gap: 6px; }
-.mktsearch__read {
-  display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px;
-  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
-  color: var(--text); font: inherit; font-size: var(--t-xs); cursor: pointer;
-}
-.mktsearch__read.is-lead { border-color: var(--top-ink); color: var(--top-ink); font-weight: var(--w-bold); }
-.mktsearch__match {
-  padding: 1px 6px; border-radius: 5px; background: var(--surface); color: var(--text-dim);
-  font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
-}
-.mktsearch__match.is-same_photo { background: var(--top-ink); color: #0B0F1A; }
 
 /* ── A room's strip ────────────────────────────────────────────────────── */
 
@@ -8513,6 +8496,14 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qrow__head { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0 10px; }
 .qrow__head h2 { font-size: var(--t-md); display: inline-flex; align-items: center; gap: 6px; }
 .qrow__head h2 svg { color: var(--coral); }
+/* A photo search: the photo stands where the heading's words would. */
+.qrow__head h2.qphoto { gap: 8px; }
+.qphoto img { width: 32px; height: 32px; border-radius: 9px; object-fit: cover; }
+.qphoto__clear {
+  display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: 50%; background: var(--surface); color: var(--text-dim); cursor: pointer;
+}
+.qrow__head .qphoto__clear svg { color: inherit; }
 
 .qboard__rank--1 { background: var(--q-gold); }
 .qboard__rank--2 { background: #C9D3E3; }

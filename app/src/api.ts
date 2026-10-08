@@ -1700,13 +1700,9 @@ export interface PhotoDraft {
   isPrimary: boolean;
 }
 
-/** How a photo search found an item. */
-export type PhotoMatch = 'same_photo' | 'looks_alike' | 'described';
-
+/** A photo search: what matches the photo, best first, then what is related to it - one list. */
 export interface PhotoSearchResponse {
-  listings: (FeedListing & { photoMatch: PhotoMatch })[];
-  /** What Claude read in the photo; null when vision is off or could not say. */
-  described: { query: string; keywords: string[]; category: string | null } | null;
+  listings: FeedListing[];
   /** Whether this deployment reads photos at all, or only matches the picture. */
   vision: boolean;
 }

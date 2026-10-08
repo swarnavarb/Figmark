@@ -74,10 +74,12 @@ sent in chats go to a private container and are served only to the two handles
 in the thread).
 
 Photo search: the camera in the search sheet takes a photo or picks one, and
-`POST /api/search/photo` ranks the catalogue against it. A perceptual
-fingerprint finds items listed with the same picture, even resized or
-recompressed; with `ANTHROPIC_API_KEY` set, Claude also reads what the item is
-and those words find it under a different picture. The photo is never stored.
+the catalogue shows what matches it first, then related items, as one list. A
+perceptual fingerprint finds items listed with the same picture, even resized
+or recompressed; with `ANTHROPIC_API_KEY` set, Claude also reads what the item
+is and those words find it under a different picture. The search photo is
+never uploaded to the photo store or kept anywhere: it is held in the browser's
+memory for the search and dropped by `POST /api/search/photo` when it answers.
 
 ## Status
 

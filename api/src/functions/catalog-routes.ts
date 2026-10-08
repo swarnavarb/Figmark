@@ -282,8 +282,9 @@ async function similarListings(request: HttpRequest, _context: InvocationContext
 /**
  * POST /api/search/photo - the catalogue, ranked against a photo.
  *
- * The photo arrives as a data URL, like an upload, and is never stored: it is
- * fingerprinted and, when vision is on, described by Claude, and then dropped.
+ * The photo arrives as a data URL and is never stored - not in the photo store,
+ * not in the database, not in a log. It is fingerprinted and, when vision is
+ * on, described by Claude, in memory, and dropped when the request ends.
  * Public like the catalogue itself, and limited per account - or per address
  * for a guest - because each search may be a paid call to Claude.
  */
@@ -321,20 +322,19 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
     return error(422, 'unreadable_photo', 'Could not read that photo. Try a JPEG, or a clearer picture.');
   }
   const pool = all.filter((listing) => !isExpired(listing) && !listing.privateFor);
-  const ranked = await rankByPhoto(pool, hash, description);
+  const found = await rankByPhoto(pool, hash, description);
 
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
-  const sellers = await repository.listUsersByIds([...new Set(ranked.map((entry) => entry.listing.sellerId))]);
+  const sellers = await repository.listUsersByIds([...new Set(found.map((listing) => listing.sellerId))]);
   const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
+  // One list, best first: what matches the photo, then what is related to it.
   return json(200, {
-    listings: ranked.map(({ listing, match }) => ({
+    listings: found.map((listing) => ({
       ...publicListing(listing),
       liked: likedIds.has(listing.id),
       seller: sellerById.get(listing.sellerId) ?? null,
       estimatedDispatchAt: null,
-      photoMatch: match,
     })),
-    described: description,
     vision: visionAvailable(),
   });
 }

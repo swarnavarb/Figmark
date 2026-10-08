@@ -104,16 +104,24 @@ await check('a resized copy of a listed photo finds the item first', async () =>
   await repository.createListing(make('lst_photo_target', 'Red disc figure', stored));
   await repository.createListing(make('lst_photo_decoy', 'Blue stripes figure', decoy));
 
+  const before = (await store.list()).length;
   const response = await photoSearchRoute(req({ body: { dataUrl: dataUrl(picture(300, 225, disc, 50)) } }), ctx);
   assert.equal(response.status, 200, JSON.stringify(response.jsonBody));
   const body = response.jsonBody;
   assert.equal(body.vision, false);
-  assert.equal(body.described, null);
-  assert.equal(body.listings[0]?.id, 'lst_photo_target');
-  assert.equal(body.listings[0]?.photoMatch, 'same_photo');
-  assert.ok(!body.listings.some((listing) => listing.id === 'lst_photo_decoy'), 'the unlike photo is not a result');
+  // One list: the match first, then items related to it - the decoy shares
+  // its category, so it comes after as related rather than as a match.
+  const ids = body.listings.map((listing) => listing.id);
+  assert.equal(ids[0], 'lst_photo_target');
+  assert.ok(ids.indexOf('lst_photo_decoy') > 0, 'the related item follows the match');
+  assert.equal(new Set(ids).size, ids.length, 'nothing listed twice');
+  // Nothing says which is which: no match labels, no description sections.
+  assert.equal(body.listings[0].photoMatch, undefined);
+  assert.equal(body.described, undefined);
   // What the shop paid stays the shop's here as on every other public route.
   assert.equal(body.listings[0].costSheet, undefined);
+  // The photo searched with is never stored.
+  assert.equal((await store.list()).length, before, 'the search photo was not saved to the photo store');
 });
 
 await check('the route refuses what is not a photo', async () => {

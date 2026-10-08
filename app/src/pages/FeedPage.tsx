@@ -6,7 +6,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AdvanceStrip } from '../components/Buy';
 import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
 import {
-  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, type CatalogKind,
+  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, categoriesIn, matchesKind,
+  type CatalogKind,
 } from '@shared/catalog';
 import { sourcingOf } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
@@ -21,9 +22,10 @@ import {
 import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
 import { CardFace, CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
-import { EmptyState, ErrorNotice, LevelChip, Thumb, leadPhoto } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
 import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
+import { clearPhotoQuery, usePhotoQuery } from '../photoQuery';
 
 export const PRICE_BANDS = [
   { label: 'Under ₹500', value: '50000' },
@@ -54,8 +56,57 @@ export function useCatalog() {
   const kind = params.get('kind') === 'mixed_lot' ? '' : params.get('kind') ?? '';
   const sort = params.get('sort') ?? 'newest';
   const maxPrice = params.get('maxPrice') ?? '';
+  // A photo search: the URL names it, the photo itself is only ever in memory.
+  const photoId = params.get('photo') ?? '';
+  const photo = usePhotoQuery(photoId);
+  const [photoFound, setPhotoFound] = useState<FeedListing[] | null>(null);
+
+  // A reload forgets the photo; the catalogue it leaves behind is the ordinary one.
+  useEffect(() => {
+    if (!photoId || photo) return;
+    const next = new URLSearchParams(params);
+    next.delete('photo');
+    setParams(next, { replace: true });
+  }, [photoId, photo, params, setParams]);
+
+  // Sent once per photo; the filters below narrow what came back without
+  // sending the photo again.
+  useEffect(() => {
+    setPhotoFound(null);
+    if (!photo) return;
+    let cancelled = false;
+    setLoading(true);
+    void api
+      .photoSearch(photo.dataUrl)
+      .then((result) => {
+        if (cancelled) return;
+        setPhotoFound(result.listings);
+        setError(null);
+      })
+      .catch((err: Error) => !cancelled && setError(err.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [photo]);
+
+  const photoData: FeedResponse | null = useMemo(() => {
+    if (!photoFound) return null;
+    const inGroup = group ? new Set(categoriesIn(group)) : null;
+    const listings = photoFound.filter((listing) =>
+      (!inGroup || inGroup.has(listing.category))
+      && (!category || listing.category === category)
+      && (!condition || listing.condition === condition)
+      && (!kind || matchesKind(listing, kind))
+      && (!maxPrice || listing.priceMinor <= Number(maxPrice)));
+    // Best match first unless a price order was asked for.
+    if (sort === 'price_asc') listings.sort((a, b) => a.priceMinor - b.priceMinor);
+    if (sort === 'price_desc') listings.sort((a, b) => b.priceMinor - a.priceMinor);
+    return { listings, categories: [...new Set(listings.map((l) => l.category))].sort(), followedSellerIds: [] };
+  }, [photoFound, group, category, condition, kind, maxPrice, sort]);
 
   useEffect(() => {
+    if (photoId) return;
     let cancelled = false;
     setLoading(true);
     void api
@@ -70,7 +121,15 @@ export function useCatalog() {
     return () => {
       cancelled = true;
     };
-  }, [search, group, category, condition, kind, sort, maxPrice]);
+  }, [photoId, search, group, category, condition, kind, sort, maxPrice]);
+
+  /** Back to the ordinary catalogue, with the filters as they are. */
+  const clearPhoto = useCallback(() => {
+    clearPhotoQuery();
+    const next = new URLSearchParams(params);
+    next.delete('photo');
+    setParams(next, { replace: true });
+  }, [params, setParams]);
 
   /** Selecting an active filter clears it, so chips toggle. */
   const toggle = useCallback(
@@ -131,8 +190,9 @@ export function useCatalog() {
 
   const activeFilters = [group, category, condition, kind, maxPrice].filter(Boolean).length;
   return {
-    params, setParams, data, error, loading, setData,
+    params, setParams, data: photoId ? photoData : data, error, loading, setData,
     search, group, category, condition, kind, sort, maxPrice,
+    photo, clearPhoto,
     toggle, chooseGroup, chooseKind, set, activeFilters,
   };
 }
@@ -156,6 +216,7 @@ export function FeedPage() {
   const {
     params, setParams, data, error, loading,
     search, group, category, condition, kind, sort, maxPrice,
+    photo, clearPhoto,
     chooseGroup, chooseKind, set, activeFilters,
   } = useCatalog();
   const rarityFilter = (params.get('rarity') ?? '') as RarityTier | '';
@@ -193,7 +254,7 @@ export function FeedPage() {
   }, [shown.length, demand, endingSoon, earn, preOrders, now]);
   const fillingLots = useFillingLots();
 
-  const browsing = !search && activeFilters === 0 && !rarityFilter && !feedView;
+  const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView;
   const counts = useMemo(() => Object.fromEntries(
     RARITY_FILTERS.map((tier) => [tier, rated.filter((listing) => listing.rarity.tier === tier).length]),
   ) as Record<RarityTier, number>, [rated]);
@@ -242,7 +303,10 @@ export function FeedPage() {
           )}
           {(activeFilters > 0 || rarityFilter || feedView) && (
             <button type="button" className="filters__clear" onClick={() => setParams(
-              search ? new URLSearchParams({ q: search }) : new URLSearchParams(), { replace: true },
+              new URLSearchParams([
+                ...(search ? [['q', search]] : []),
+                ...(photo ? [['photo', photo.id]] : []),
+              ]), { replace: true },
             )}>
               Clear
             </button>
@@ -255,15 +319,28 @@ export function FeedPage() {
       {error && <ErrorNotice message={error} />}
 
       <div className="qrow__head">
-        <h2>{rarityFilter ? `${RARITY_LABELS[rarityFilter]} finds` : feedView ? FEED_VIEW_TITLES[feedView] : 'All loot'}</h2>
+        {photo ? (
+          <h2 className="qphoto">
+            <img src={photo.dataUrl} alt="" />
+            Your photo
+            <button type="button" className="qphoto__clear" aria-label="Clear photo search" onClick={clearPhoto}>
+              <Icon name="close" size={12} />
+            </button>
+          </h2>
+        ) : (
+          <h2>{rarityFilter ? `${RARITY_LABELS[rarityFilter]} finds` : feedView ? FEED_VIEW_TITLES[feedView] : 'All loot'}</h2>
+        )}
         {data && <span className="faint">{shown.length} {shown.length === 1 ? 'item' : 'items'}</span>}
       </div>
 
       {loading && !data ? (
         <SkeletonGrid count={6} />
       ) : shown.length === 0 ? (
-        <EmptyState title={rarityFilter ? `Nothing ${RARITY_LABELS[rarityFilter].toLowerCase()} right now` : 'Nothing matches those filters'}>
-          {rarityFilter
+        <EmptyState title={photo ? 'Nothing like your photo yet'
+          : rarityFilter ? `Nothing ${RARITY_LABELS[rarityFilter].toLowerCase()} right now` : 'Nothing matches those filters'}>
+          {photo
+            ? 'Try another photo, or search with words instead.'
+            : rarityFilter
             ? 'Rarity moves with demand. Check back as things sell and fill.'
             : activeFilters > 0 || search
               ? 'Try removing a filter or searching for something broader.'

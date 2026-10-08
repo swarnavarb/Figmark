@@ -12,6 +12,7 @@ import { api } from './api';
 import { useSession } from './session';
 import { AuthModal } from './pages/AuthPage';
 import { inviteCodeFor } from './components/ShareKit';
+import { setPhotoQuery } from './photoQuery';
 
 /**
  * Persistent chrome: brand, search, the cart and who you are.
@@ -63,11 +64,18 @@ export function AppShell() {
     // On the catalogue a search narrows what is already filtered rather than
     // throwing the filters away; from anywhere else it starts fresh.
     const next = new URLSearchParams(pathname === '/' ? params : undefined);
+    // Words replace a photo search rather than narrowing it.
+    next.delete('photo');
     if (term) next.set('q', term);
     else next.delete('q');
     const suffix = next.toString();
     navigate(suffix ? `/?${suffix}` : '/');
   }, [navigate, params, pathname]);
+  /** A photo search starts the catalogue afresh: the photo is the whole question. */
+  const searchPhoto = useCallback((dataUrl: string) => {
+    setSearching(false);
+    navigate(`/?photo=${setPhotoQuery(dataUrl).id}`);
+  }, [navigate]);
 
   return (
     // The social screens bring their own header - one gradient block with the
@@ -93,7 +101,7 @@ export function AppShell() {
         <nav className="nav__links">
           {/* The social tab's search, with items in it: a glass icon that
               opens the search sheet, marked while a search is on. */}
-          <button type="button" className={`navsearch${query ? ' is-set' : ''}`} onClick={() => setSearching(true)}
+          <button type="button" className={`navsearch${query || params.get('photo') ? ' is-set' : ''}`} onClick={() => setSearching(true)}
             aria-label={query ? `Searching for ${query}. Change the search` : 'Search items, shops, people and forums'}>
             <Icon name="search" size={18} />
           </button>
@@ -157,7 +165,7 @@ export function AppShell() {
       {user && <FloatingCalc />}
 
       <TabBar />
-      {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} />}
+      {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
       {authPrompt && <AuthModal reason={authPrompt.reason} onClose={closeAuth} />}
     </div>
   );

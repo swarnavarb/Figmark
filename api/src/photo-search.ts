@@ -15,13 +15,12 @@ import type { PhotoDescription } from './vision.js';
  *   different picture.
  *
  * The same photo always comes first: it is close to certain, and it is what a
- * reseller who saved a supplier's picture is looking for.
+ * reseller who saved a supplier's picture is looking for. After the matches
+ * come related items - same kind, shared tags - so a photo of something not
+ * listed yet still leads somewhere. The shopper sees one list, best first.
  */
-export type PhotoMatch = 'same_photo' | 'looks_alike' | 'described';
-
-export interface RankedListing {
+interface Scored {
   listing: Listing;
-  match: PhotoMatch;
   score: number;
 }
 
@@ -30,6 +29,7 @@ const LOOKS_ALIKE = 0.78;
 /** Photos fingerprinted for the first time per search, at most: bounds a cold start. */
 const FRESH_PER_SEARCH = 150;
 const RESULTS = 24;
+const RELATED = 24;
 
 /** The blob names of a listing's own stored photos, lead photo first. */
 async function storedPhotos(listing: Listing): Promise<string[]> {
@@ -63,13 +63,14 @@ export function describedScore(listing: Listing, description: PhotoDescription):
   return score;
 }
 
+/** Matches for the photo, best first, then items related to them. */
 export async function rankByPhoto(
   pool: Listing[],
   hash: string | null,
   description: PhotoDescription | null,
-): Promise<RankedListing[]> {
+): Promise<Listing[]> {
   let fresh = 0;
-  const ranked: RankedListing[] = [];
+  const ranked: Scored[] = [];
 
   for (const listing of pool) {
     let visual = 0;
@@ -91,17 +92,41 @@ export async function rankByPhoto(
       }
     }
     const words = description ? describedScore(listing, description) : 0;
+    const looks = visual >= LOOKS_ALIKE ? visual * 6 : 0;
 
-    if (same) {
-      ranked.push({ listing, match: 'same_photo', score: 100 + visual * 10 + words });
-    } else if (words > 0) {
-      ranked.push({ listing, match: 'described', score: words + (visual >= LOOKS_ALIKE ? visual * 6 : 0) });
-    } else if (visual >= LOOKS_ALIKE) {
-      ranked.push({ listing, match: 'looks_alike', score: visual * 6 });
-    }
+    if (same) ranked.push({ listing, score: 100 + visual * 10 + words });
+    else if (words > 0 || looks > 0) ranked.push({ listing, score: words + looks });
   }
 
-  return ranked
+  const matches = ranked
     .sort((a, b) => b.score - a.score || b.listing.createdAt.localeCompare(a.listing.createdAt))
-    .slice(0, RESULTS);
+    .slice(0, RESULTS)
+    .map((entry) => entry.listing);
+  return [...matches, ...relatedTo(pool, matches, description)];
+}
+
+/**
+ * Items like the matches: the same category and shared tags, weighted toward
+ * the best matches. With no matches at all, the category the photo was read
+ * as is all there is to go on.
+ */
+function relatedTo(pool: Listing[], matches: Listing[], description: PhotoDescription | null): Listing[] {
+  const taken = new Set(matches.map((listing) => listing.id));
+  const lead = matches.slice(0, 3);
+  const categories = new Set(lead.map((listing) => listing.category));
+  if (description?.category) categories.add(description.category);
+  const tags = new Set(lead.flatMap((listing) => listing.tags.map((tag) => tag.toLowerCase())));
+  if (categories.size === 0 && tags.size === 0) return [];
+
+  return pool
+    .filter((listing) => !taken.has(listing.id))
+    .map((listing) => ({
+      listing,
+      score: (categories.has(listing.category) ? 10 : 0)
+        + listing.tags.filter((tag) => tags.has(tag.toLowerCase())).length * 4,
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || b.listing.createdAt.localeCompare(a.listing.createdAt))
+    .slice(0, RELATED)
+    .map((entry) => entry.listing);
 }
