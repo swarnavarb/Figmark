@@ -13664,3 +13664,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   position: absolute; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap;
 }
+
+/* In the home-screen app iOS lays its own edge blur over the first pixels under
+   the clock, which smudged the forum header's back button and name. The hero
+   and the collapsed bar start lower there, so their content sits clear of it;
+   the colour above is the same solid one, so nothing shows but a taller edge. */
+@media (display-mode: standalone) {
+  .forumhero { padding-top: calc(env(safe-area-inset-top, 0px) + 22px); }
+  .roombar { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); }
+}

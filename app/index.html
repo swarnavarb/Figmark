@@ -25,6 +25,7 @@
           : starts(['/services', '/forwarders', '/escrow', '/packing']) ? ['services', '#3A8C4E']
           : starts(['/shop', '/sell', '/lots', '/lot/', '/routes']) ? ['sell', '#177ACE']
           : ['buy', '#5B5EF1'];
+        if (path.indexOf('/social/f/') === 0) tone[1] = '#C627CB';
         document.documentElement.setAttribute('data-tone', tone[0]);
         document.querySelector('meta[name="theme-color"]').content = tone[1];
       })();

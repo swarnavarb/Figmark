@@ -19,6 +19,10 @@ import { inviteCodeFor } from './components/ShareKit';
  * Search and "+ Sell" stay reachable from every page - the Xianyu pattern
  * where listing something is never more than one tap away.
  */
+// A forum's hero opens in this colour (see .forumhero), so the phone's status
+// bar takes it too rather than the Social tab's pink.
+const FORUM_STATUS = '#C627CB';
+
 export function AppShell() {
   const { user, warning, sessionsInsecure, missingContainers, signOut, authPrompt, closeAuth, promptAuth } = useSession();
   const navigate = useNavigate();
@@ -48,10 +52,10 @@ export function AppShell() {
     // a changed one: Safari does not always notice an edited theme-color.
     const meta = document.createElement('meta');
     meta.name = 'theme-color';
-    meta.content = tone.status;
+    meta.content = pathname.startsWith('/social/f/') ? FORUM_STATUS : tone.status;
     document.querySelectorAll('meta[name="theme-color"]').forEach((old) => old.remove());
     document.head.append(meta);
-  }, [tone]);
+  }, [tone, pathname]);
 
   const closeSearch = useCallback(() => setSearching(false), []);
   const submitSearch = useCallback((term: string) => {
@@ -73,7 +77,7 @@ export function AppShell() {
           bar (see .topstrip in the stylesheet). A new element for each
           section: Safari samples its status bar colour again when the bar
           at the top is replaced, but not when its colour changes. */}
-      <div key={tone.id} className="topstrip" aria-hidden="true" />
+      <div key={pathname.startsWith('/social/f/') ? `${tone.id}-forum` : tone.id} className="topstrip" aria-hidden="true" />
       <ScrollManager />
       <ScrollBars />
       <ViewportSync />
