@@ -356,6 +356,8 @@ export interface QuestFacts {
   wants: { createdAt: string }[];
   pledges: number;
   disputesLost: number;
+  /** XP community managers' approved decisions took away. */
+  penaltyXp?: number;
   /** Delivered purchases the person has put in their collection. */
   collection: { addedAt: string }[];
   hasBio: boolean;
@@ -1019,6 +1021,9 @@ function recordXp(facts: QuestFacts): XpLine[] {
     { label: 'Low ratings from sellers', xp: -(actionXp(stars(2)) + actionXp(stars(1), ACTION_XP * 2)), detail: `${stars(2)} two-star × −${ACTION_XP}, ${stars(1)} one-star × −${ACTION_XP * 2}` },
     { label: 'Low page reviews', xp: -Math.min(5 * ACTION_XP, actionXp(pageStars(2), ACTION_XP / 2) + actionXp(pageStars(1))), detail: `${pageStars(2)} two-star × −${ACTION_XP / 2}, ${pageStars(1)} one-star × −${ACTION_XP}, at most −${5 * ACTION_XP}` },
     { label: 'Disputes lost', xp: -actionXp(facts.disputesLost, ACTION_XP * 4), detail: `${facts.disputesLost} × −${ACTION_XP * 4}` },
+    ...(facts.penaltyXp
+      ? [{ label: 'Community manager decisions', xp: -facts.penaltyXp, detail: `${facts.penaltyXp} XP taken by dispute decisions` }]
+      : []),
   ];
 }
 

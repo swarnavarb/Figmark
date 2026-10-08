@@ -1,6 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { tally } from '../../../shared/board.js';
 import { isCancelledLike } from '../../../shared/orders.js';
+import { marketSettings } from '../settings.js';
 import type { HandlerProfile, Lot, Order, User } from '../../../shared/models.js';
 import {
   SERVICES,
@@ -108,14 +109,14 @@ function handlerCard(user: User): ProviderCard {
   };
 }
 
-function escrowCard(user: User): ProviderCard {
+function escrowCard(user: User, feeBasisPoints: number): ProviderCard {
   const rights = user.escrowRights!;
-  const fee = (rights.feeBasisPoints / 100).toFixed(rights.feeBasisPoints % 100 === 0 ? 0 : 2);
+  const fee = (feeBasisPoints / 100).toFixed(feeBasisPoints % 100 === 0 ? 0 : 2);
   return {
     userId: user.id,
     name: rights.displayName || user.displayName,
     handle: user.username ?? null,
-    line: `${fee}% of the order, charged to the buyer`,
+    line: `Community manager · buyer protection ${fee}% of the order, set by Figmark`,
     // The operator's note is for operators. What a buyer needs is the fee and
     // the name, and inventing a blurb they never wrote would be worse.
     description: '',
@@ -142,10 +143,12 @@ async function providersOf(repository: Repo, kind: ServiceKind): Promise<Provide
         .filter((user) => user.handlerProfile)
         .map(handlerCard)
         .sort((a, b) => (b.trustScore ?? 0) - (a.trustScore ?? 0));
-    case 'escrow':
+    case 'escrow': {
+      const rate = (await marketSettings(repository)).protectionFeeBasisPoints;
       return (await repository.listEscrowAgents())
         .filter((user) => user.escrowRights && !user.suspended)
-        .map(escrowCard);
+        .map((user) => escrowCard(user, rate));
+    }
     case 'supplier':
       // Private by construction. Guarded at the route too; this is the second
       // lock, so a future caller cannot reach the list by asking politely.

@@ -282,6 +282,12 @@ export interface Repository {
   updateDispute(dispute: Dispute): Promise<Dispute>;
   /** The mediation queue: everything the company has been asked to settle. */
   listDisputes(status?: string): Promise<Dispute[]>;
+  /** Every dispute in one partition: one order's, or one subject's. */
+  listDisputesForOrder(orderId: string): Promise<Dispute[]>;
+  /** Every dispute a person is a party to, either end. */
+  listDisputesForParty(userId: string): Promise<Dispute[]>;
+  /** Every dispute a community manager has held a round of. */
+  listDisputesForManager(managerId: string): Promise<Dispute[]>;
 
   /* ── Operating the marketplace ───────────────────────────────────────── */
 

@@ -1,10 +1,13 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { DISPUTE_OUTCOMES, type DisputeOutcome } from '../../../shared/enums.js';
 import type { EscrowRights, User } from '../../../shared/models.js';
+import { currentRound, decisionOverdue, isClosed, roundsOf, standingDecision } from '../../../shared/disputes.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { settleDispute } from './dispute-routes.js';
+import {
+  applySanction, bringUpToDate, excludedFrom, isManager, loadActions, loadLedger, pickManager, reassignRound, saveActions,
+} from '../community.js';
+import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 import { getPhotoStore } from '../storage/index.js';
 import { releaseListingPhotos, releasePostPhotos } from '../storage/release.js';
@@ -14,8 +17,8 @@ import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
  * Operating the marketplace.
  *
  * Everything here is destructive or financial: deleting accounts, deleting what
- * people made, handing out the right to hold other people's money, and settling
- * disputes over it. So three rules run through the whole module.
+ * people made, appointing the community managers who hold other people's
+ * money and decide disputes, and approving what their decisions ask for. So three rules run through the whole module.
  *
  * Only a configured operator gets in. `isAdmin` is read from ADMIN_EMAILS at
  * request time rather than from a row, so the right cannot be acquired by
@@ -326,12 +329,13 @@ async function cleanupPhotos(request: HttpRequest, _context: InvocationContext) 
 }
 
 /**
- * POST /api/ops/users/{id}/escrow - approve or remove an escrow.
+ * POST /api/ops/users/{id}/escrow - appoint or remove a community manager.
  *
- * The commercial decision behind the whole feature: this person may hold other
- * people's money and settle what happens to it. Buyers choose from the people
- * approved here, so the grant is what puts somebody on that list, and the rate
- * is theirs — it is their fee for doing the work.
+ * A community manager hears disputes and holds payments bought with buyer
+ * protection. Operators appoint them; fees are not theirs to set - every fee
+ * is set centrally in the settings, and managers are paid a share of it.
+ * (The grant is stored as `escrowRights`, its name from when holding payments
+ * was the whole of the job.)
  */
 async function escrowRights(request: HttpRequest, _context: InvocationContext) {
   const admin = await operator(request);
@@ -340,7 +344,7 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A user id is required.');
 
-  let body: { enabled?: boolean; feeBasisPoints?: number; note?: string; displayName?: string };
+  let body: { enabled?: boolean; note?: string; displayName?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -351,27 +355,22 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
   if (!user) return error(404, 'not_found', 'No such account.');
 
   if (body.enabled === false) {
-    // Withdrawing it stops new protected checkouts. Orders already protected
-    // keep the terms they were bought under - those are settled transactions,
-    // not a setting.
+    // Removing them stops new protected checkouts and new disputes reaching
+    // them. Orders already protected keep the holder they were bought with.
     user.escrowRights = null;
   } else {
-    const points = Math.round(Number(body.feeBasisPoints ?? 200));
-    if (!Number.isFinite(points) || points < 0 || points > 2_000) {
-      return error(400, 'invalid_rate', 'A protection fee is between 0 and 2000 basis points (0-20%).');
-    }
     const rights: EscrowRights = {
-      // Regranting keeps the original date: the grant is a standing decision,
-      // and re-rating somebody is not the marketplace meeting them again.
+      // Re-appointing keeps the original date: the grant is a standing
+      // decision, and editing somebody's listing is not meeting them again.
       grantedAt: user.escrowRights?.grantedAt ?? new Date().toISOString(),
       grantedBy: admin.id,
-      feeBasisPoints: points,
       displayName:
         (body.displayName ?? '').trim().slice(0, 80) ||
         user.escrowRights?.displayName ||
         user.sellerProfile?.storefrontName ||
         user.displayName,
       note: (body.note ?? '').trim().slice(0, 500),
+      available: user.escrowRights?.available ?? true,
     };
     user.escrowRights = rights;
   }
@@ -381,29 +380,38 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/ops/disputes - the mediation queue.
+ * GET /api/ops/disputes - every dispute, for oversight.
  *
- * Escalated first, because those are the ones actually waiting on the company.
- * Everything else is here to be read, not worked.
+ * Community managers decide disputes; Figmark does not. What an operator
+ * does here is watch the clock: a manager past their deadline is flagged
+ * first, to be reassigned - and if nobody does within two days, the system
+ * reassigns it.
  */
 async function disputes(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
   const repository = await getRepository();
 
-  const all = await repository.listDisputes(request.query.get('status') ?? undefined);
+  const all = await Promise.all(
+    (await repository.listDisputes(request.query.get('status') ?? undefined)).map((entry) => bringUpToDate(repository, entry)),
+  );
   const rows = await Promise.all(
     all.map(async (dispute) => {
-      const order = await repository.getOrder(dispute.orderId);
-      const [buyer, seller] = await Promise.all([
+      const order = dispute.subjectRef ? null : await repository.getOrder(dispute.orderId);
+      const [raiser, respondent, buyer, seller] = await Promise.all([
+        repository.getUserById(dispute.raisedBy),
+        repository.getUserById(dispute.againstUserId),
         order ? repository.getUserById(order.buyerId) : null,
         order ? repository.getUserById(order.sellerId) : null,
       ]);
+      const round = currentRound(dispute);
       return {
         dispute,
-        itemName: order?.itemName ?? 'Unknown item',
+        itemName: order?.itemName ?? dispute.subjectRef?.excerpt ?? 'Unknown',
         heldMinor: order?.escrow.amountMinor ?? 0,
         currency: order?.currency ?? 'INR',
         protectionFeeMinor: order?.protection?.feeMinor ?? 0,
+        raiser: raiser ? { id: raiser.id, name: raiser.sellerProfile?.storefrontName ?? raiser.displayName } : null,
+        respondent: respondent ? { id: respondent.id, name: respondent.sellerProfile?.storefrontName ?? respondent.displayName } : null,
         buyer: buyer ? { id: buyer.id, name: buyer.displayName, trust: buyer.buyerTrust } : null,
         seller: seller
           ? {
@@ -412,60 +420,137 @@ async function disputes(request: HttpRequest, _context: InvocationContext) {
               trust: seller.sellerTrust,
             }
           : null,
+        round: round ? { n: round.n, managerId: round.managerId, managerName: round.managerName, decideBy: round.decideBy, decided: Boolean(round.decision) } : null,
+        rounds: roundsOf(dispute).length,
+        overdue: !isClosed(dispute) && decisionOverdue(round),
+        standing: standingDecision(dispute),
       };
     }),
   );
 
-  const weight = (status: string) => (status === 'under_mediation' ? 0 : status === 'resolved' || status === 'withdrawn' ? 2 : 1);
-  rows.sort((a, b) => weight(a.dispute.status) - weight(b.dispute.status));
+  const weight = (row: (typeof rows)[number]) => (row.overdue ? 0 : isClosed(row.dispute) ? 2 : 1);
+  rows.sort((a, b) => weight(a) - weight(b));
   return json(200, { disputes: rows });
 }
 
 /**
- * POST /api/ops/disputes/{id}/resolve - the company decides.
+ * POST /api/ops/disputes/{id}/reassign - hand the current round to another manager.
  *
- * The last step, not the first: a dispute reaches here because the two sides
- * could not settle it themselves. The note is written into the record both of
- * them can read, because a ruling nobody can see the reasoning for is
- * indistinguishable from an arbitrary one.
+ * Named, or - with no `managerId` - whoever the system would pick by
+ * availability. Never a party, and never a manager who already held a round.
  */
-async function resolveDispute(request: HttpRequest, _context: InvocationContext) {
-  const admin = await operator(request);
+async function reassign(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
   const repository = await getRepository();
 
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A dispute id is required.');
+  const dispute = await repository.getDisputeById(id);
+  if (!dispute) return error(404, 'not_found', 'No such dispute.');
+  if (isClosed(dispute)) return error(409, 'already_resolved', 'That dispute is closed.');
+  const round = currentRound(dispute);
+  if (!round || round.decision) return error(409, 'nothing_to_reassign', 'The current round has already been decided.');
 
-  let body: { outcome?: string; refundMinor?: number; note?: string };
+  let body: { managerId?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+
+  const excluded = excludedFrom(dispute);
+  let manager: User | null;
+  if (body.managerId) {
+    manager = await repository.getUserById(body.managerId);
+    if (!isManager(manager)) return error(400, 'invalid_manager', 'That person is not a community manager.');
+    if (excluded.includes(manager.id)) return error(400, 'invalid_manager', 'A party, or a manager who already held a round, cannot take it.');
+  } else {
+    manager = await pickManager(repository, excluded);
+    if (!manager) return error(409, 'no_manager', 'No other community manager is available.');
+  }
+
+  await reassignRound(repository, dispute, manager, 'admin');
+  return json(200, { dispute: await repository.updateDispute(dispute) });
+}
+
+/** GET /api/ops/actions - managers' decisions waiting for an operator: alert banners and XP deductions. */
+async function actions(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const all = await loadActions(await getRepository());
+  return json(200, {
+    actions: [...all].sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending') || b.createdAt.localeCompare(a.createdAt)),
+  });
+}
+
+/**
+ * POST /api/ops/actions/{id}/decide - approve or reject one.
+ *
+ * An operator may adjust it on the way through - a shorter banner, a lighter
+ * deduction - but not change what it is or who it is against.
+ */
+async function decideAction(request: HttpRequest, _context: InvocationContext) {
+  const admin = await operator(request);
+  const repository = await getRepository();
+  const id = request.params.id;
+
+  let body: { approve?: boolean; days?: number; severity?: string; note?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
+  if (typeof body.approve !== 'boolean') return error(400, 'invalid_request', 'Approve it or reject it.');
 
-  const dispute = await repository.getDisputeById(id);
-  if (!dispute) return error(404, 'not_found', 'No such dispute.');
-  if (dispute.resolvedAt) return error(409, 'already_resolved', 'That dispute is already settled.');
+  const all = await loadActions(repository);
+  const action = all.find((entry) => entry.id === id);
+  if (!action) return error(404, 'not_found', 'No such action.');
+  if (action.status !== 'pending') return error(409, 'already_decided', 'That action has already been decided.');
 
-  const order = await repository.getOrder(dispute.orderId);
-  if (!order) return error(404, 'not_found', 'That dispute has no order behind it.');
-
-  const outcome = body.outcome as DisputeOutcome | undefined;
-  if (!outcome || !DISPUTE_OUTCOMES.includes(outcome)) {
-    return error(400, 'invalid_outcome', 'Say how it was decided.');
+  const sanction = { ...action.sanction };
+  if (body.days !== undefined) {
+    const days = Number(body.days);
+    if (!Number.isInteger(days) || days < 1 || days > 60) return error(400, 'invalid_request', 'Between 1 and 60 days.');
+    sanction.days = days;
   }
-  const noteText = (body.note ?? '').trim();
-  if (!noteText) return error(400, 'invalid_outcome', 'Write the reasoning. Both parties read it.');
-
-  const refundMinor = Math.round(Number(body.refundMinor ?? 0));
-  if (outcome === 'split' && (!Number.isFinite(refundMinor) || refundMinor <= 0 || refundMinor >= order.escrow.amountMinor)) {
-    return error(400, 'invalid_outcome', 'A split is between nothing and the full amount held.');
+  if (body.severity !== undefined) {
+    if (body.severity !== 'light' && body.severity !== 'severe') return error(400, 'invalid_request', 'Light or severe.');
+    sanction.severity = body.severity;
   }
 
-  const settled = await settleDispute(
-    dispute, order, outcome, refundMinor, noteText, admin.id, true, repository,
-  );
-  return json(200, settled);
+  const now = new Date().toISOString();
+  action.sanction = sanction;
+  action.status = body.approve ? 'approved' : 'rejected';
+  action.decidedAt = now;
+  action.decidedBy = admin.displayName ?? admin.email;
+  action.note = body.note?.trim().slice(0, 500) || null;
+  await saveActions(repository, all, admin.id);
+
+  if (body.approve) {
+    const dispute = await repository.getDisputeById(action.disputeId);
+    if (dispute) await applySanction(repository, dispute, sanction, action.managerName, action.managerId);
+  }
+  await notify(repository, [action.managerId], {
+    kind: 'dispute_action',
+    title: `Figmark ${body.approve ? 'approved' : 'rejected'} your ${sanction.kind === 'xp_deduction' ? 'XP deduction' : 'alert banner'}`,
+    body: `Against ${action.targetName}. ${action.note ?? ''}`.trim(),
+    link: `/dispute/${action.disputeId}`,
+  });
+  return json(200, { action });
+}
+
+/** GET /api/ops/ledger - every fee paid through the gateway, and Figmark's commission on it. */
+async function ledger(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const entries = await loadLedger(await getRepository());
+  const sum = (pick: (entry: (typeof entries)[number]) => number) => entries.reduce((total, entry) => total + pick(entry), 0);
+  return json(200, {
+    entries: [...entries].reverse().slice(0, 500),
+    totals: {
+      collectedMinor: sum((entry) => entry.amountMinor),
+      commissionMinor: sum((entry) => entry.commissionMinor),
+      managerShareMinor: sum((entry) => entry.managerShareMinor),
+    },
+  });
 }
 
 export const adminUsersRoute = handler(users);
@@ -477,7 +562,10 @@ export const adminPhotoScanRoute = handler(scanPhotos);
 export const adminPhotoCleanupRoute = handler(cleanupPhotos);
 export const adminEscrowRoute = handler(escrowRights);
 export const adminDisputesRoute = handler(disputes);
-export const adminResolveRoute = handler(resolveDispute);
+export const adminReassignRoute = handler(reassign);
+export const adminActionsRoute = handler(actions);
+export const adminDecideActionRoute = handler(decideAction);
+export const adminLedgerRoute = handler(ledger);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -490,4 +578,7 @@ app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'ops/reso
 app.http('admin-photo-scan', { ...anon, methods: ['POST'], route: 'ops/photos/scan', handler: adminPhotoScanRoute });
 app.http('admin-photo-cleanup', { ...anon, methods: ['POST'], route: 'ops/photos/cleanup', handler: adminPhotoCleanupRoute });
 app.http('admin-disputes', { ...anon, methods: ['GET'], route: 'ops/disputes', handler: adminDisputesRoute });
-app.http('admin-resolve', { ...anon, methods: ['POST'], route: 'ops/disputes/{id}/resolve', handler: adminResolveRoute });
+app.http('admin-reassign', { ...anon, methods: ['POST'], route: 'ops/disputes/{id}/reassign', handler: adminReassignRoute });
+app.http('admin-actions', { ...anon, methods: ['GET'], route: 'ops/actions', handler: adminActionsRoute });
+app.http('admin-action-decide', { ...anon, methods: ['POST'], route: 'ops/actions/{id}/decide', handler: adminDecideActionRoute });
+app.http('admin-ledger', { ...anon, methods: ['GET'], route: 'ops/ledger', handler: adminLedgerRoute });

@@ -49,6 +49,8 @@ export interface StoreFacts {
   trust: number;
   preOrders: number;
   disputesLost: number;
+  /** XP community managers' approved decisions took away. */
+  penaltyXp?: number;
   ageDays: number;
   /** Sticker steps the shop has earned, all told - filled in once the rest is known. */
   stickerSteps?: number;
@@ -96,6 +98,7 @@ export function storeLevel(facts: StoreFacts, growth: StoreGrowthState | undefin
     })),
     { label: 'Low ratings', xp: -(actionXp(two) + actionXp(one, ACTION_XP * 2)), detail: `${two} two-star × −${ACTION_XP}, ${one} one-star × −${ACTION_XP * 2}` },
     { label: 'Disputes lost', xp: -actionXp(facts.disputesLost, ACTION_XP * 4), detail: `${facts.disputesLost} × −${ACTION_XP * 4}` },
+    { label: 'Community manager decisions', xp: -(facts.penaltyXp ?? 0), detail: `${facts.penaltyXp ?? 0} XP taken by dispute decisions` },
   ].filter((entry) => entry.xp !== 0);
   const points = Math.max(0, breakdown.reduce((sum, entry) => sum + entry.xp, 0));
   const level = levelFor(points);

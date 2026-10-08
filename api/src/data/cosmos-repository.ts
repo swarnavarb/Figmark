@@ -1040,6 +1040,37 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listDisputesForOrder(orderId: string): Promise<Dispute[]> {
+    const { resources } = await this.container('disputes')
+      .items.query<Dispute>(
+        { query: 'SELECT * FROM c WHERE c.orderId = @orderId', parameters: [{ name: '@orderId', value: orderId }] },
+        { partitionKey: orderId },
+      )
+      .fetchAll();
+    return resources;
+  }
+
+  /** Cross-partition, bounded by how many disputes one person is ever in. */
+  async listDisputesForParty(userId: string): Promise<Dispute[]> {
+    const { resources } = await this.container('disputes')
+      .items.query<Dispute>({
+        query: 'SELECT * FROM c WHERE c.raisedBy = @id OR c.againstUserId = @id ORDER BY c.updatedAt DESC',
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listDisputesForManager(managerId: string): Promise<Dispute[]> {
+    const { resources } = await this.container('disputes')
+      .items.query<Dispute>({
+        query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(c.managerIds, @id) ORDER BY c.updatedAt DESC',
+        parameters: [{ name: '@id', value: managerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   /* ── Operating the marketplace ───────────────────────────────────────── */
 
   async listAllUsers(): Promise<User[]> {

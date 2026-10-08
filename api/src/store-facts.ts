@@ -54,6 +54,7 @@ export function storeFactsFrom({ user, all, sales, posts, rating, buyerReviews, 
     trust: user.sellerTrust.score,
     preOrders: all.filter((listing) => listing.preOrder).length,
     disputesLost: user.sellerTrust.disputesLost,
+    penaltyXp: user.standing?.xpPenalty ?? 0,
     ageDays: Math.floor((now - Date.parse(user.createdAt)) / 86_400_000),
   };
   facts.stickerSteps = storeStickers(facts).reduce((sum, sticker) => sum + sticker.reached, 0);
@@ -68,13 +69,18 @@ export async function shopRatings(repository: Repo, owner: User) {
     moderation(repository),
   ]);
   const buyerReviews = tradeReviews.filter((review) => review.direction === 'buyer_to_seller' && reviewRevealed(review, false));
-  const rating = mergedRating(
+  const merged = mergedRating(
     buyerReviews.map((review) => review.rating),
     pageReviews
       .filter((review) => !moderated.isRemoved('store_review', review.id))
       .filter((review) => reviewSide(review, Boolean(owner.sellerProfile)) === 'store')
       .map((review) => review.rating),
   );
+  // Points a community manager's final decision took off the shop's rating.
+  const penalty = owner.standing?.ratingPenalty ?? 0;
+  const rating = penalty > 0 && merged.average !== null
+    ? { ...merged, average: Math.max(0, merged.average - penalty) }
+    : merged;
   return { buyerReviews, rating };
 }
 

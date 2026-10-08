@@ -71,6 +71,10 @@ export interface TrustSignals {
   completedTransactions: number;
   /** Disputes resolved against this user. */
   disputesLost: number;
+  /** Disputes whose final result went this user's way. Absent on older rows. */
+  disputesWon?: number;
+  /** Disputes the two parties settled between themselves: nobody won or lost. */
+  disputesSettled?: number;
   /** ISO-8601 of last recompute, or null if never computed. */
   computedAt: string | null;
 }
@@ -183,6 +187,12 @@ export interface User extends BaseDocument {
    * Absent on every account that has not been granted it, which is most.
    */
   escrowRights?: EscrowRights | null;
+  /**
+   * What community managers' final decisions have put on this account: XP and
+   * rating taken away, a time-boxed alert on their page, and flags. Absent on
+   * every account no dispute has been lost by.
+   */
+  standing?: CommunityStanding | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
   /**
@@ -473,8 +483,18 @@ export interface SellerPaymentDetails {
 export interface EscrowRights {
   grantedAt: string;
   grantedBy: string;
-  /** Charged to the buyer on top of the order, in basis points of the total. */
-  feeBasisPoints: number;
+  /**
+   * No longer read. Every fee - buyer protection included - is set centrally
+   * by the operators (see `MarketSettings`); kept optional so older rows still
+   * parse.
+   */
+  feeBasisPoints?: number;
+  /**
+   * Whether they are taking new disputes. Off keeps them out of the raise
+   * picker and out of the system's escalation assignment; cases they already
+   * hold stay theirs. Absent means available.
+   */
+  available?: boolean;
   /** How they are listed to buyers choosing one. */
   displayName: string;
   /** Why the company granted it. Read by operators, never by buyers. */
@@ -1640,7 +1660,7 @@ export interface DisputeLink {
   /** What was disputed - a particular rejected payment, or the dispute's own id. */
   subject: string;
   raisedBy: string;
-  raisedSide: 'buyer' | 'seller';
+  raisedSide: DisputeSide;
   raisedAt: string;
 }
 
@@ -1704,6 +1724,10 @@ export interface OrderProtection {
   /** The fee paid, on top of the item total. */
   feeMinor: number;
   feeBasisPoints: number;
+  /** Figmark's commission out of that fee, at the rate when it was bought. */
+  commissionMinor?: number;
+  /** The gateway's reference for the fee payment. */
+  gatewayRef?: string | null;
   boughtAt: string;
   /**
    * Set when the fee is handed back. The fee buys the service, so it is kept
@@ -1804,8 +1828,12 @@ export interface DisputeEvidence {
 export interface DisputeMessage {
   id: string;
   authorId: string;
-  /** 'company' marks a message from whoever is mediating. */
-  authorRole: 'buyer' | 'seller' | 'company';
+  /**
+   * 'company' marks a message from Figmark; 'manager' from the community
+   * manager deciding the current round; 'member' from a party to a dispute
+   * that is not about an order.
+   */
+  authorRole: 'buyer' | 'seller' | 'company' | 'manager' | 'member';
   body: string;
   evidence: DisputeEvidence[];
   createdAt: string;
@@ -1821,9 +1849,11 @@ export interface DisputeMessage {
  */
 export interface DisputeOffer {
   fromUserId: string;
-  /** What goes back to the buyer. Zero is "release it all to the seller". */
+  /** What goes back to the buyer. Zero is "release it all to the seller", and always zero where no money is held. */
   refundMinor: number;
   note: string;
+  /** The terms in words, for a settlement that moves no money. */
+  terms?: string;
   createdAt: string;
 }
 
@@ -1849,8 +1879,8 @@ export interface Dispute extends BaseDocument {
   amountMinor?: number | null;
   raisedBy: string;
   againstUserId: string;
-  /** Which side opened it. Either may: a seller has grievances too. */
-  raisedSide: 'buyer' | 'seller';
+  /** Which side opened it. Either may: a seller has grievances too. 'member' when it is not about an order. */
+  raisedSide: DisputeSide;
   /** Structured, so the queue can be triaged and the form can ask the right thing. */
   reasonCode: DisputeReason;
   reason: string;
@@ -1864,6 +1894,149 @@ export interface Dispute extends BaseDocument {
   resolution: DisputeResolution | null;
   resolutionNote: string | null;
   resolvedAt: string | null;
+  /**
+   * What it is about when that is not an order: a review, a comment, a post,
+   * or a person. Absent on order disputes, whose `orderId` says it. A subject
+   * dispute's `orderId` is a synthetic partition (`subject:<type>:<id>`) so it
+   * lives in the same container without one.
+   */
+  subjectRef?: DisputeSubjectRef | null;
+  /**
+   * Up to three rounds, each decided by a different community manager. Round
+   * one is the dispute as raised; two and three are paid escalations. Absent
+   * on disputes from before rounds existed - read through `roundsOf`.
+   */
+  rounds?: DisputeRound[];
+  /** Every manager who has held a round, for "my cases" without a scan of rounds. */
+  managerIds?: string[];
+  /** The last day the losing side of the latest decision may escalate. */
+  escalateBy?: string | null;
+  /** How it ended, once it has. */
+  result?: DisputeResult | null;
+  /** Held money moved on a community manager's request after a final decision. */
+  release?: DisputeRelease | null;
+}
+
+export type DisputeSide = 'buyer' | 'seller' | 'member';
+
+/** What a non-order dispute is about. */
+export type DisputeSubjectType =
+  | 'review' | 'store_review' | 'comment' | 'post_comment' | 'post' | 'forum_post' | 'user';
+
+export interface DisputeSubjectRef {
+  type: DisputeSubjectType;
+  id: string;
+  /** Where it lives, as the report button names it: whose page, which listing, `channelId:postId`, the channel. */
+  parentId: string;
+  /** Whose words or account it is - the person the dispute is against. */
+  ownerId: string;
+  /** What it said when it was disputed, so the decision is about those words. */
+  excerpt: string;
+  /** Where to open it. */
+  link: string | null;
+}
+
+/** A fee paid through the gateway, split between Figmark and the manager doing the work. */
+export interface FeePayment {
+  id: string;
+  kind: 'dispute' | 'escalation' | 'protection';
+  payerId: string;
+  amountMinor: number;
+  currency: string;
+  /** Figmark's cut, at the commission rate in force when it was paid. */
+  commissionMinor: number;
+  /** What the community manager on the round earns. */
+  managerShareMinor: number;
+  gatewayRef: string;
+  paidAt: string;
+}
+
+/**
+ * What a community manager may do as part of a decision.
+ *
+ * Every one runs when the dispute is final, using the decision that set the
+ * final result - never on a round's decision that a later round may overturn.
+ * `alert_banner` and `xp_deduction` wait for an operator's approval too.
+ */
+export type DisputeSanctionKind =
+  | 'remove_content' | 'warning_post' | 'flag' | 'rating_reduction' | 'alert_banner' | 'xp_deduction';
+
+export interface DisputeSanction {
+  kind: DisputeSanctionKind;
+  /** Who it is against: always a party to the dispute. */
+  targetUserId: string;
+  /** Words shown with it: the warning post, the alert, the flag. */
+  message: string;
+  /** For an alert banner or a warning post: how many days it shows. */
+  days?: number;
+  /** For an XP deduction. */
+  severity?: 'light' | 'severe';
+  /** For a rating reduction, in points of the 0-100 average. */
+  points?: number;
+  /** For a warning post: the forum to post it in, or the feed when absent. */
+  forumId?: string | null;
+}
+
+export interface DisputeDecision {
+  /** In whose favour: the person who raised it, or the person it is against. */
+  favour: 'raiser' | 'respondent';
+  reasoning: string;
+  /** On held money: what goes back to the buyer if this decision is the final one. */
+  refundMinor: number | null;
+  sanctions: DisputeSanction[];
+  decidedAt: string;
+}
+
+export interface DisputeRound {
+  /** 1 is the dispute as raised, 2 and 3 the escalations. */
+  n: number;
+  managerId: string;
+  managerName: string;
+  assignedAt: string;
+  /** How the manager came to have it. */
+  assignedBy: 'raiser' | 'protection' | 'system' | 'admin';
+  /** When their decision is due. Past it, an operator is asked; two days later the system reassigns. */
+  decideBy: string;
+  /** Who paid for this round: the raiser, the escalating party, or nobody on a protected purchase's first round. */
+  payment: FeePayment | null;
+  /** Who escalated into this round; null for round one. */
+  escalatedBy: string | null;
+  decision: DisputeDecision | null;
+  /** Managers this round was taken from because they did not decide in time. */
+  reassigned?: { fromId: string; fromName: string; at: string; by: 'admin' | 'system' }[];
+}
+
+export interface DisputeResult {
+  /** `decided` by managers; `settled` between the parties; `withdrawn` by the raiser. */
+  how: 'decided' | 'settled' | 'withdrawn';
+  winnerId: string | null;
+  loserId: string | null;
+  favour: 'raiser' | 'respondent' | null;
+  /** The round whose decision stands. */
+  finalRound: number | null;
+  /** The terms, for a settlement. */
+  terms: string | null;
+  at: string;
+}
+
+export interface DisputeRelease {
+  toBuyerMinor: number;
+  toSellerMinor: number;
+  requestedBy: string;
+  requestedAt: string;
+  gatewayRef: string;
+}
+
+/** What managers' final decisions have done to an account. */
+export interface CommunityStanding {
+  /** XP taken away by approved deductions, all told. */
+  xpPenalty: number;
+  /** Points off the 0-100 rating average, all told. */
+  ratingPenalty: number;
+  /** A banner on their page until `until`. */
+  alert: { message: string; until: string; disputeId: string } | null;
+  /** "Dispute lost" marks, newest first. */
+  flags: { disputeId: string; message: string; at: string }[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2251,6 +2424,10 @@ export type NotificationKind =
   | 'dispute_opened'
   | 'dispute_replied'
   | 'dispute_settled'
+  | 'dispute_decided'
+  | 'dispute_escalated'
+  | 'dispute_assigned'
+  | 'dispute_action'
   | 'lot_moved'
   /** One item reached its buyer - the step after a lot is unpacked. */
   | 'order_delivered'

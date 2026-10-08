@@ -17,8 +17,10 @@
  * - `store_review`: a review of somebody's page (parent: whose page)
  * - `comment`: a question or answer under a listing (parent: the listing)
  * - `post_comment`: a comment under a social post (parent: `channelId:postId`)
+ * - `post`: a post in somebody's channel or the feed (parent: the channel)
+ * - `forum_post`: a post in a forum (parent: the forum)
  */
-export const REPORT_TARGETS = ['review', 'store_review', 'comment', 'post_comment'] as const;
+export const REPORT_TARGETS = ['review', 'store_review', 'comment', 'post_comment', 'post', 'forum_post'] as const;
 export type ReportTarget = (typeof REPORT_TARGETS)[number];
 
 export const REPORT_TARGET_LABELS: Record<ReportTarget, string> = {
@@ -26,6 +28,8 @@ export const REPORT_TARGET_LABELS: Record<ReportTarget, string> = {
   store_review: 'Page review',
   comment: 'Listing comment',
   post_comment: 'Post comment',
+  post: 'Feed post',
+  forum_post: 'Forum post',
 };
 
 export type ReportKind = 'dispute' | 'validate';

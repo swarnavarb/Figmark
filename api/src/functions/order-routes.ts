@@ -4,7 +4,7 @@ import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
 import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { threadIdFor } from '../../../shared/handles.js';
 import type {
-  CreditRecord, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
+  CreditRecord, Dispute, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
 } from '../../../shared/models.js';
 import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
@@ -22,11 +22,12 @@ import {
   scoreFrom,
   sideOf,
 } from '../../../shared/orders.js';
-import { DISPUTE_TOPIC_LABELS } from '../../../shared/disputes.js';
+import { DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, currentRound } from '../../../shared/disputes.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
-import { autoReleaseDays } from '../settings.js';
+import { autoReleaseDays, marketSettings } from '../settings.js';
+import { bringUpToDate, chargeFee } from '../community.js';
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
@@ -214,15 +215,25 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
 
   if (agent?.escrowRights) {
     const rights = agent.escrowRights;
+    // Set centrally by the operators, and paid through the gateway like every
+    // other fee: Figmark keeps its commission, the holder the rest.
+    const settings = await marketSettings(repository);
+    const feeMinor = protectionFeeMinor(totalMinor, settings.protectionFeeBasisPoints);
+    const fee = await chargeFee(repository, {
+      kind: 'protection', payerId: user.id, amountMinor: feeMinor, currency: order.currency,
+      reference: order.id, managerId: agent.id,
+    }, settings);
     order.protection = {
       escrowAgentId: agent.id,
       // Their name as it was today: a later rename must not rewrite what the
       // buyer agreed to.
       escrowName: rights.displayName || agent.displayName,
       // The rate is copied onto the order, not looked up later: the fee is a
-      // term of this transaction and must not move when the grant is changed.
-      feeBasisPoints: rights.feeBasisPoints,
-      feeMinor: protectionFeeMinor(totalMinor, rights.feeBasisPoints),
+      // term of this transaction and must not move when the setting changes.
+      feeBasisPoints: settings.protectionFeeBasisPoints,
+      feeMinor,
+      commissionMinor: fee.commissionMinor,
+      gatewayRef: fee.gatewayRef,
       boughtAt: now,
       refundedAt: null,
     };
@@ -284,6 +295,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   const records = await Promise.all(agents.map((agent) => escrowRecord(agent, repository)));
 
   const payment = seller?.sellerProfile?.payment ?? null;
+  const protectionRate = (await marketSettings(repository)).protectionFeeBasisPoints;
 
   return json(200, {
     itemMinor: totalMinor,
@@ -302,8 +314,8 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     escrows: agents.map((agent, index) => ({
       id: agent.id,
       name: agent.escrowRights!.displayName || agent.displayName,
-      feeBasisPoints: agent.escrowRights!.feeBasisPoints,
-      feeMinor: protectionFeeMinor(totalMinor, agent.escrowRights!.feeBasisPoints),
+      feeBasisPoints: protectionRate,
+      feeMinor: protectionFeeMinor(totalMinor, protectionRate),
       /** What the group already knows about them, rather than a rating we invented. */
       heldBefore: agent.buyerTrust.completedTransactions,
       ...records[index]!,
@@ -1586,7 +1598,7 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
   const side = sideOf(order, user.id)!;
 
-  const body = await bodyOf<{ subject: string; reason: string }>(request);
+  const body = await bodyOf<{ subject: string; reason: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
   const typed = body.reason?.trim() || null;
   if (typed && typed.length > 2000) return error(400, 'too_long', 'Keep it under 2000 characters.');
 
@@ -1604,8 +1616,18 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
     reason = typed;
   }
 
+  const evidence = (Array.isArray(body.evidence) ? body.evidence : []).slice(0, 8).flatMap((entry) => {
+    const url = String(entry?.url ?? '').trim();
+    if (!/^https?:\/\/\S+$/i.test(url) && !/^\/api\/photos\/[\w.%-]+$/.test(url)) return [];
+    return [{ url, blobName: null, caption: String(entry?.caption ?? '').slice(0, 200), uploadedBy: user.id, uploadedAt: new Date().toISOString() }];
+  });
+
+  // Raised with a community manager of the raiser's choosing (or the
+  // system's, if they left it), and paid through the gateway - unless the
+  // purchase is still protected, when its holder hears it for free.
   const dispute = await openDisputeRecord(repository, order, {
-    raisedBy: user.id, side, topic, subject, reasonCode: 'other', reason, amountMinor,
+    raisedBy: user.id, side, topic, subject, reasonCode: 'other', reason, amountMinor, evidence,
+    managerId: body.managerId ?? null,
   });
   note(order, `⚖️ Dispute raised by the ${side} — ${DISPUTE_TOPIC_LABELS[topic]}${typed ? `: ${typed}` : ''}`, user.id);
   const saved = await repository.updateOrder(order);
@@ -1614,67 +1636,88 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/me/disputes - every dispute on this person's orders, from both sides.
+ * GET /api/me/disputes - every dispute this person is a party to.
  *
- * Split the way they will be worked: the ones on things they bought, and the
- * ones on their store's sales. Read from the dispute records themselves, so
- * the status shown is the dispute's own, and every row opens the one page
- * where it is worked.
+ * Split the way they will be worked: the ones on things they bought, the ones
+ * on their store's sales, and the ones about everything else - reviews,
+ * comments, posts, people. Read from the dispute records themselves, so the
+ * status shown is the dispute's own, and every row opens the one page where
+ * the three-way thread is.
  */
 async function myDisputes(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const bought = await repository.listOrdersForBuyer(user.id);
-  const sold = await repository.listOrdersForSeller(user.id);
+  const [bought, sold, mine] = await Promise.all([
+    repository.listOrdersForBuyer(user.id),
+    repository.listOrdersForSeller(user.id),
+    repository.listDisputesForParty(user.id),
+  ]);
+  const disputes = await Promise.all(mine.map((dispute) => bringUpToDate(repository, dispute)));
+  const orders = new Map([...bought, ...sold].map((order) => [order.id, order]));
   const people = new Map((await repository.listUsersByIds([
-    ...new Set([...bought.map((order) => order.sellerId), ...sold.map((order) => order.buyerId)]),
+    ...new Set([
+      ...bought.map((order) => order.sellerId), ...sold.map((order) => order.buyerId),
+      ...disputes.flatMap((dispute) => [dispute.raisedBy, dispute.againstUserId]),
+    ]),
   ])).map((person) => [person.id, person]));
   const nameOf = (id: string) => {
     const person = people.get(id);
     return person?.sellerProfile?.storefrontName ?? person?.displayName ?? 'Someone';
   };
 
-  const rows = async (order: Order, side: 'buyer' | 'seller') => {
-    // An escrow dispute opened before orders indexed their disputes is still
-    // found through the one pointer it did leave.
-    const ids = new Set((order.disputeLinks ?? []).map((link) => link.id));
-    if (order.escrow.disputeId) ids.add(order.escrow.disputeId);
-    const out = [];
-    for (const id of ids) {
-      const dispute = await repository.getDispute(order.id, id);
-      if (!dispute) continue;
-      const topic = dispute.topic ?? 'escrow';
-      out.push({
-        id: dispute.id,
-        orderId: order.id,
-        itemName: order.itemName,
-        currency: order.currency,
-        counterpartyName: nameOf(side === 'buyer' ? order.sellerId : order.buyerId),
-        topic,
-        label: DISPUTE_TOPIC_LABELS[topic],
-        amountMinor: dispute.amountMinor ?? (topic === 'escrow' ? order.escrow.amountMinor : null),
-        reason: dispute.reason,
-        raisedAt: dispute.createdAt,
-        raisedByMe: dispute.raisedBy === user.id,
-        raisedBySide: dispute.raisedSide,
-        status: dispute.status,
-      });
-    }
-    return out;
+  const row = (dispute: Dispute, order: Order | null) => {
+    const topic = dispute.topic ?? 'escrow';
+    const counterparty = dispute.raisedBy === user.id ? dispute.againstUserId : dispute.raisedBy;
+    const round = currentRound(dispute);
+    return {
+      id: dispute.id,
+      orderId: order?.id ?? null,
+      itemName: order?.itemName ?? dispute.subjectRef?.excerpt.slice(0, 80) ?? 'Dispute',
+      currency: order?.currency ?? 'INR',
+      counterpartyName: nameOf(counterparty),
+      topic,
+      label: dispute.subjectRef ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type] : DISPUTE_TOPIC_LABELS[topic],
+      amountMinor: dispute.amountMinor ?? (order && topic === 'escrow' ? order.escrow.amountMinor : null),
+      reason: dispute.reason,
+      raisedAt: dispute.createdAt,
+      raisedByMe: dispute.raisedBy === user.id,
+      raisedBySide: dispute.raisedSide,
+      status: dispute.status,
+      round: round?.n ?? null,
+      managerName: round?.managerName ?? null,
+      result: dispute.result ?? null,
+    };
   };
-  const collect = async (orders: Order[], side: 'buyer' | 'seller') =>
-    (await Promise.all(orders.map((order) => rows(order, side)))).flat()
-      .sort((a, b) => b.raisedAt.localeCompare(a.raisedAt));
+
+  type Row = ReturnType<typeof row>;
+  const asBuyer: Row[] = [];
+  const asStore: Row[] = [];
+  const community: Row[] = [];
+  for (const dispute of disputes) {
+    if (dispute.subjectRef) {
+      community.push(row(dispute, null));
+      continue;
+    }
+    const order = orders.get(dispute.orderId) ?? null;
+    if (!order) continue;
+    (order.buyerId === user.id ? asBuyer : asStore).push(row(dispute, order));
+  }
+  const newest = (a: { raisedAt: string }, b: { raisedAt: string }) => b.raisedAt.localeCompare(a.raisedAt);
 
   // What a new dispute could be raised on: their recent orders, either side.
-  const orders = [
-    ...bought.map((order) => ({ id: order.id, itemName: order.itemName, side: 'buyer' as const, counterpartyName: nameOf(order.sellerId), createdAt: order.createdAt })),
-    ...sold.map((order) => ({ id: order.id, itemName: order.itemName, side: 'seller' as const, counterpartyName: nameOf(order.buyerId), createdAt: order.createdAt })),
+  const choices = [
+    ...bought.map((order) => ({ id: order.id, itemName: order.itemName, side: 'buyer' as const, counterpartyName: nameOf(order.sellerId), counterpartyId: order.sellerId, protectedNow: Boolean(order.protection && (order.escrow.state === 'held' || order.escrow.state === 'disputed')), createdAt: order.createdAt })),
+    ...sold.map((order) => ({ id: order.id, itemName: order.itemName, side: 'seller' as const, counterpartyName: nameOf(order.buyerId), counterpartyId: order.buyerId, protectedNow: Boolean(order.protection && (order.escrow.state === 'held' || order.escrow.state === 'disputed')), createdAt: order.createdAt })),
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 80);
 
-  return json(200, { asBuyer: await collect(bought, 'buyer'), asStore: await collect(sold, 'seller'), orders });
+  return json(200, {
+    asBuyer: asBuyer.sort(newest),
+    asStore: asStore.sort(newest),
+    community: community.sort(newest),
+    orders: choices,
+  });
 }
 
 export const payRoute = handler(pay);

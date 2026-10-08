@@ -146,6 +146,7 @@ export const DISPUTE_STATUSES = [
   'awaiting_response',
   'in_discussion',
   'under_mediation',
+  'decided',
   'resolved',
   'withdrawn',
 ] as const;
@@ -155,7 +156,8 @@ export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
   awaiting_response: 'Waiting on the other side',
   in_discussion: 'Being discussed',
   under_mediation: 'With Figmark',
-  resolved: 'Settled',
+  decided: 'Decision given',
+  resolved: 'Closed',
   withdrawn: 'Withdrawn',
 };
 

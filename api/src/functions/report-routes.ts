@@ -28,7 +28,12 @@ interface Target {
 }
 
 /** The content a report is about, read fresh, or null when it is not there. */
-async function findTarget(repository: Repo, type: ReportTarget, id: string, parentId: string): Promise<Target | null> {
+export async function findTarget(repository: Repo, type: ReportTarget, id: string, parentId: string): Promise<Target | null> {
+  if (type === 'post' || type === 'forum_post') {
+    const post = await repository.getPost(parentId, id);
+    if (!post || (type === 'forum_post') !== (post.channel === 'forum')) return null;
+    return { authorId: post.authorId, body: post.body, visible: true };
+  }
   if (type === 'review') {
     const review = (await repository.listReviewsAbout(parentId)).find((entry) => entry.id === id);
     return review
@@ -75,7 +80,7 @@ async function create(request: HttpRequest, _context: InvocationContext) {
 
   const targetType = input.targetType as ReportTarget;
   if (!REPORT_TARGETS.includes(targetType) || !input.targetId || !input.parentId) {
-    return error(400, 'invalid_target', 'Say which review or comment this is about.');
+    return error(400, 'invalid_target', 'Say which review, comment or post this is about.');
   }
   const reason = (input.reason ?? '').trim();
   if (reason.length < REASON_MIN) {
@@ -96,7 +101,7 @@ async function create(request: HttpRequest, _context: InvocationContext) {
   if (already) {
     return error(409, 'already_reported', kind === 'validate'
       ? 'You have already asked for this to be validated.'
-      : 'You have already disputed this. An operator will look at it.');
+      : 'You have already reported this. An operator will look at it.');
   }
   if (kind === 'validate' && reports.some((report) => report.status === 'validated'
     && report.targetType === targetType && report.targetId === input.targetId)) {
@@ -190,6 +195,9 @@ async function resolve(request: HttpRequest, _context: InvocationContext) {
 
   if (decision === 'removed' && report.targetType === 'review') {
     await repository.deleteReview(report.parentId, report.targetId);
+  }
+  if (decision === 'removed' && (report.targetType === 'post' || report.targetType === 'forum_post')) {
+    await repository.deletePost(report.parentId, report.targetId);
   }
   await saveReports(repository, settled, user.id);
 

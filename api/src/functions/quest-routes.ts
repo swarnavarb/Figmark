@@ -73,6 +73,7 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
     wants: wants.map((want) => ({ createdAt: want.createdAt })),
     pledges: pledged.length,
     disputesLost: user.buyerTrust?.disputesLost ?? 0,
+    penaltyXp: user.standing?.xpPenalty ?? 0,
     collection: (user.collection ?? []).map((item) => ({ addedAt: item.addedAt })),
     hasBio: Boolean(user.bio?.trim()),
     shares: Object.keys(user.affiliateLinks ?? {}).length,
@@ -260,8 +261,15 @@ async function leaderboard(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** How one dispute ended for one of its two people. */
-function outcomeFor(dispute: Dispute, userId: string): 'won' | 'lost' | 'even' | 'open' {
+function outcomeFor(dispute: Dispute, userId: string): 'won' | 'lost' | 'even' | 'open' | 'none' {
   if (dispute.status !== 'resolved' && dispute.status !== 'withdrawn') return 'open';
+  // A community manager's final result, or a settlement between the two: the
+  // record says who won. A withdrawal counts for nobody.
+  if (dispute.result) {
+    if (dispute.result.how === 'settled') return 'even';
+    if (dispute.result.how === 'withdrawn') return 'none';
+    return dispute.result.winnerId === userId ? 'won' : 'lost';
+  }
   const side = dispute.raisedBy === userId ? dispute.raisedSide : dispute.raisedSide === 'buyer' ? 'seller' : 'buyer';
   const outcome = dispute.resolution?.outcome ?? (dispute.status === 'withdrawn' ? 'withdrawn' : null);
   if (outcome === 'split') return 'even';
@@ -312,7 +320,7 @@ async function collector(request: HttpRequest, _context: InvocationContext) {
   const asBuyer = visible.filter((review) => review.direction === 'seller_to_buyer').map((review) => review.rating);
   const asSeller = visible.filter((review) => review.direction === 'buyer_to_seller').map((review) => review.rating);
   const theirs = disputes.filter((dispute) => dispute.raisedBy === id || dispute.againstUserId === id);
-  const tally = { won: 0, lost: 0, even: 0, open: 0 };
+  const tally = { won: 0, lost: 0, even: 0, open: 0, none: 0 };
   for (const dispute of theirs) tally[outcomeFor(dispute, id)] += 1;
 
   return json(200, {

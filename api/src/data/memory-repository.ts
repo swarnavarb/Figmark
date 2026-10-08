@@ -796,6 +796,22 @@ export class MemoryRepository implements Repository {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
+  async listDisputesForOrder(orderId: string): Promise<Dispute[]> {
+    return [...this.disputes.values()].filter((dispute) => dispute.orderId === orderId);
+  }
+
+  async listDisputesForParty(userId: string): Promise<Dispute[]> {
+    return [...this.disputes.values()]
+      .filter((dispute) => dispute.raisedBy === userId || dispute.againstUserId === userId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async listDisputesForManager(managerId: string): Promise<Dispute[]> {
+    return [...this.disputes.values()]
+      .filter((dispute) => dispute.managerIds?.includes(managerId))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
   /* ── Operating the marketplace ───────────────────────────────────────── */
 
   async listAllUsers(): Promise<User[]> {
