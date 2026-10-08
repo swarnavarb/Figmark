@@ -107,7 +107,7 @@ export function DisputePage() {
             within two days it moves to another manager automatically.
           </p>
         )}
-        <Rounds rounds={rounds} currency={data.currency} nameOf={nameOf} />
+        <Rounds rounds={rounds} currency={data.currency} nameOf={nameOf} parties={parties} />
       </div>
 
       {dispute.offer && !dispute.resolvedAt && (
@@ -137,7 +137,7 @@ export function DisputePage() {
             : message.authorId === parties.raiser.id ? 'Raised it'
             : message.authorId === parties.respondent.id ? 'Against' : null;
           return (
-            <article key={message.id} className={`card card--pad post${mine ? ' post--mine' : ''}`}>
+            <article key={message.id} className={`card card--pad post dmsg${mine ? ' post--mine' : ''}`}>
               <div className="post__head">
                 <Avatar name={label} size={32} />
                 <div className="post__who">
@@ -201,10 +201,11 @@ function Outcome({ view }: { view: DisputeView }) {
 }
 
 /** Each round: who heard it, who paid, and what they decided. */
-function Rounds({ rounds, currency, nameOf }: {
+function Rounds({ rounds, currency, nameOf, parties }: {
   rounds: DisputeRound[];
   currency: string;
   nameOf: (id: string) => string;
+  parties: { raiser: { name: string }; respondent: { name: string } };
 }) {
   if (rounds.length === 0) return null;
   return (
@@ -228,7 +229,7 @@ function Rounds({ rounds, currency, nameOf }: {
           ))}
           {round.decision ? (
             <p className="drounds__decision">
-              <b>In favour of {round.decision.favour === 'raiser' ? 'whoever raised it' : 'whoever it is against'}.</b>{' '}
+              <b>In favour of {round.decision.favour === 'raiser' ? parties.raiser.name : parties.respondent.name}.</b>{' '}
               {round.decision.reasoning}
               {round.decision.refundMinor !== null && ` · ${formatMoney(round.decision.refundMinor, currency)} back to the buyer`}
             </p>

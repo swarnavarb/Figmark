@@ -17,7 +17,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { countCompleted, dropFromCollection } from '../delivery.js';
 import {
-  Refusal, activeAlert, activeNotices, availableManagers, bringUpToDate, chargeFee, excludedFrom, finalizeDecided,
+  Refusal, activeAlert, activeNotices, availableManagers, bringUpToDate, chargeFee, excludedFrom, favouredName, finalizeDecided,
   isManager, loadLedger, managerName, newRound, openCaseCount, orderOf, payoutRef, personName, pickManager,
   recordSettled,
 } from '../community.js';
@@ -888,8 +888,9 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
   dispute.status = 'decided';
   dispute.respondByAt = null;
   dispute.escalateBy = inDays(settings.escalationWindowDays);
+  const favoured = await favouredName(repository, dispute, body.favour);
   dispute.messages = [...dispute.messages, message(user.id, 'manager',
-    `Decision (round ${round.n}): in favour of ${body.favour === 'raiser' ? 'whoever raised it' : 'whoever it is against'}. ${reasoning}`, [])];
+    `Decision (round ${round.n}): in favour of ${favoured}. ${reasoning}`, [])];
   dispute.updatedAt = now;
 
   // Final at once when nothing further could change it: three rounds given,
@@ -901,7 +902,7 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
     saved = await repository.updateDispute(dispute);
     await notify(repository, [dispute.raisedBy, dispute.againstUserId], {
       kind: 'dispute_decided',
-      title: `Round ${round.n} decided in favour of ${body.favour === 'raiser' ? 'whoever raised it' : 'whoever it was against'}`,
+      title: `Round ${round.n} decided in favour of ${favoured}`,
       body: reasoning.slice(0, 160),
       link: `/dispute/${dispute.id}`,
     });

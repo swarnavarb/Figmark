@@ -2492,6 +2492,9 @@ code, kbd, samp, pre {
 
 /* Your own turn in the argument, set apart so a thread reads without names. */
 .post--mine { border-color: var(--accent-line); background: var(--accent-soft); }
+/* A dispute message stacks head over body, unlike a feed post's avatar column. */
+.post.dmsg { grid-template-columns: minmax(0, 1fr); }
+.post.dmsg .post__head { flex-wrap: nowrap; align-items: center; }
 
 .evidence { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 .evidence__item { display: grid; gap: 4px; text-decoration: none; color: inherit; }
@@ -13702,8 +13705,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .cmenu__btn { font-size: 18px; line-height: 1; min-width: 32px; }
 .cmenu__btn.is-locked { opacity: 0.7; }
 .cmenu__list {
-  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
-  display: grid; min-width: 190px; padding: 6px;
+  position: fixed; z-index: 60;
+  display: grid; width: 200px; padding: 6px;
   background: var(--surface-2); border: 1px solid var(--border-strong);
   border-radius: var(--r-md); box-shadow: var(--shadow);
   animation: pop-in var(--dur-1) var(--ease) both;

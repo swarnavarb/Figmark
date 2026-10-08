@@ -45,6 +45,12 @@ export function personName(user: Pick<User, 'displayName' | 'sellerProfile'> | n
   return user?.sellerProfile?.storefrontName ?? user?.displayName ?? 'Someone';
 }
 
+/** The name of the side a decision favours, for messages and notifications. */
+export async function favouredName(repository: Repo, dispute: Pick<Dispute, 'raisedBy' | 'againstUserId'>, favour: 'raiser' | 'respondent'): Promise<string> {
+  const id = favour === 'raiser' ? dispute.raisedBy : dispute.againstUserId;
+  return id ? personName(await repository.getUserById(id)) : 'the other side';
+}
+
 export function isManager(user: Pick<User, 'escrowRights' | 'suspended'> | null | undefined): user is User {
   return Boolean(user?.escrowRights && !user.suspended);
 }
@@ -387,7 +393,7 @@ export async function finalizeDecided(repository: Repo, dispute: Dispute): Promi
   await notify(repository, [dispute.raisedBy, dispute.againstUserId], {
     kind: 'dispute_settled',
     title: 'A dispute you are in is final',
-    body: `Decided in favour of ${standing.favour === 'raiser' ? 'whoever raised it' : 'whoever it was against'}. ${standing.decision.reasoning}`.slice(0, 200),
+    body: `Decided in favour of ${await favouredName(repository, dispute, standing.favour)}. ${standing.decision.reasoning}`.slice(0, 200),
     link: `/dispute/${dispute.id}`,
   });
   if (order?.protection?.escrowAgentId) {

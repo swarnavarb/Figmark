@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { BUYER_DISPUTE_REASONS, DISPUTE_REASON_LABELS, SELLER_DISPUTE_REASONS } from '@shared/enums';
 import { REASON_MIN, type ReportTarget } from '@shared/moderation';
@@ -100,7 +101,7 @@ export function ReportModal({ targetType, targetId, parentId, kind, onClose, onS
     }
   }
 
-  return (
+  return createPortal(
     <Modal title={kind === 'validate' ? 'Ask Figmark to validate this' : 'Report this'} onClose={onClose}>
       <div className="stack">
         <p className="faint" style={{ margin: 0 }}>
@@ -118,7 +119,8 @@ export function ReportModal({ targetType, targetId, parentId, kind, onClose, onS
           {busy ? 'Sending…' : kind === 'validate' ? 'Send for validation' : 'Report now'}
         </button>
       </div>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
 
@@ -196,7 +198,7 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
     }
   }
 
-  return (
+  return createPortal(
     <Modal title="Raise a dispute" onClose={onClose}>
       <div className="stack">
         <p className="raise__about"><span className="faint">About</span> {target.label}</p>
@@ -264,7 +266,8 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
           {busy ? 'Raising…' : free ? 'Raise dispute' : fee ? `Pay ${formatMoney(fee.feeMinor, fee.currency)} and raise` : 'Raise dispute'}
         </button>
       </div>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
 
@@ -286,15 +289,47 @@ export function ContentMenu({ targetType, targetId, parentId, authorId, label, m
 }) {
   const [menu, setMenu] = useState(false);
   const [open, setOpen] = useState<'report' | 'validate' | 'dispute' | null>(null);
+  const [place, setPlace] = useState<CSSProperties>({});
+  const button = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLSpanElement>(null);
+
+  // Fixed to the viewport, not the comment: the ⋮ often sits at a thread's
+  // left edge, and a neighbouring comment would otherwise paint over it.
+  function toggle() {
+    if (!menu && button.current) {
+      const rect = button.current.getBoundingClientRect();
+      const width = 200;
+      const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8);
+      const below = window.innerHeight - rect.bottom > 120;
+      setPlace(below ? { left, top: rect.bottom + 4 } : { left, bottom: window.innerHeight - rect.top + 4 });
+    }
+    setMenu(!menu);
+  }
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (event: Event) => {
+      if (event.type === 'scroll' || !(event.target instanceof Node)
+        || !(list.current?.contains(event.target) || button.current?.contains(event.target))) setMenu(false);
+    };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [menu]);
 
   return (
     <span className="cmenu">
-      <button type="button" className="iconbtn cmenu__btn" aria-label="More" aria-haspopup="menu" aria-expanded={menu}
-        onClick={() => setMenu(!menu)}>
+      <button ref={button} type="button" className="iconbtn cmenu__btn" aria-label="More" aria-haspopup="menu" aria-expanded={menu}
+        onClick={toggle}>
         ⋮
       </button>
-      {menu && (
-        <span className="cmenu__list" role="menu" onMouseLeave={() => setMenu(false)}>
+      {menu && createPortal(
+        <span ref={list} className="cmenu__list" role="menu" style={place}>
           {mine ? (
             <button type="button" role="menuitem" onClick={() => { setMenu(false); setOpen('validate'); }}>✅ Ask to validate</button>
           ) : (
@@ -306,7 +341,8 @@ export function ContentMenu({ targetType, targetId, parentId, authorId, label, m
               <button type="button" role="menuitem" onClick={() => { setMenu(false); setOpen('dispute'); }}>⚖️ Raise a dispute</button>
             </>
           )}
-        </span>
+        </span>,
+        document.body,
       )}
       {(open === 'report' || open === 'validate') && (
         <ReportModal targetType={targetType} targetId={targetId} parentId={parentId} kind={open}
