@@ -6,6 +6,7 @@ import { REASON_MIN, type ReportTarget } from '@shared/moderation';
 import { ApiRequestError, api, type DisputeTarget, type EvidenceDraft, type ManagerOption } from '../api';
 import { formatMoney } from '../format';
 import { useToast } from './Feedback';
+import { ManagerMark } from './ManagerBadge';
 import { Modal } from './LotFields';
 import { shrink } from './PhotoManager';
 
@@ -241,7 +242,7 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
                     <label key={manager.id} className={`raise__manager${managerId === manager.id ? ' is-on' : ''}`}>
                       <input type="radio" name="manager" value={manager.id} checked={managerId === manager.id}
                         onChange={() => setManagerId(manager.id)} />
-                      <b>{manager.name}</b>
+                      <b>{manager.name}<ManagerMark always /></b>
                       <span className="faint">{manager.openCases} open case{manager.openCases === 1 ? '' : 's'}</span>
                     </label>
                   ))}

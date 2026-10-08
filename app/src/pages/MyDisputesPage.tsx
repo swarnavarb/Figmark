@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type DisputeRow, type MyDisputesResponse } from '../api';
 import { DISPUTE_STATUS_LABELS } from '@shared/enums';
+import { ManagerMark } from '../components/ManagerBadge';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
@@ -132,7 +133,7 @@ function DisputeItem({ row }: { row: DisputeRow }) {
         </small>
         <small>
           Raised by {row.raisedByMe ? 'you' : row.raisedBySide === 'member' ? row.counterpartyName : `the ${row.raisedBySide}`} on {formatDateOrdinal(row.raisedAt)}
-          {row.round && row.managerName && !closed && ` · round ${row.round} with ${row.managerName}`}
+          {row.round && row.managerName && !closed && <> · round {row.round} with {row.managerName}<ManagerMark always size={12} /></>}
         </small>
       </span>
       <span className="rfhist__side">

@@ -111,11 +111,10 @@ function handlerCard(user: User): ProviderCard {
 }
 
 function escrowCard(user: User, feeMinor: number): ProviderCard {
-  const rights = user.escrowRights!;
   const fee = rupees(feeMinor);
   return {
     userId: user.id,
-    name: rights.displayName || user.displayName,
+    name: user.displayName,
     handle: user.username ?? null,
     line: `Community manager · buyer protection ${fee} per order, set by Figmark`,
     // The operator's note is for operators. What a buyer needs is the fee and

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CommunityAlertBanner } from '../components/CommunityAlerts';
+import { ManagerTag } from '../components/ManagerBadge';
 import { Link, useParams } from 'react-router-dom';
 import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api, type FeedListing, type PostCard, type PublicProfile, type ShelfState } from '../api';
@@ -133,6 +134,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
           </div>
           <div className="storefront__who">
             <h1>{data.displayName}</h1>
+            <ManagerTag id={data.sellerId} />
             <LevelChip tag={data.levelTag} />
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
               <span className="faint">@{data.handle}</span>

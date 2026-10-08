@@ -103,7 +103,7 @@ const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
   acceptDisputeRoute, withdrawDisputeRoute, escalateDisputeRoute,
   decideDisputeRoute, releaseDisputeRoute, raiseSubjectDisputeRoute, escrowHoldingsRoute,
-  communityCasesRoute, communityAvailabilityRoute, communityManagersRoute, communityNoticesRoute, communityStandingRoute,
+  communityCasesRoute, communityAvailabilityRoute, communityManagersRoute, communityNoticesRoute, communityStandingRoute, communityTeamRoute,
 } = await import(new URL('dispute-routes.js', apiRoot));
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
@@ -266,6 +266,7 @@ const routes = [
   ['POST', '/api/community/availability', communityAvailabilityRoute],
   ['GET', '/api/community/managers', communityManagersRoute],
   ['GET', '/api/community/notices', communityNoticesRoute],
+  ['GET', '/api/community/team', communityTeamRoute],
   ['GET', '/api/community/standing/:id', communityStandingRoute],
   ['GET', '/api/quest/me', questMeRoute],
   ['POST', '/api/quest/checkin', questCheckInRoute],

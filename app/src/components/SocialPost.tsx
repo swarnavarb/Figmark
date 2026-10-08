@@ -11,6 +11,7 @@ import {
 } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
+import { ManagerMark } from './ManagerBadge';
 import { Avatar, Modal, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { useVoice, VoiceAvatar } from './SocialVoice';
@@ -530,7 +531,7 @@ export function SocialPostCard({
             <button type="button" className="spost__preview" onClick={() => setShowComments(true)}>
               {social.preview.map((comment) => (
                 <span key={comment.id} className="spost__previewline">
-                  <strong>{comment.authorName}</strong> {comment.body}
+                  <strong>{comment.authorName}<ManagerMark handle={comment.author?.handle} size={12} /></strong> {comment.body}
                 </span>
               ))}
               {social.commentCount > social.preview.length && (

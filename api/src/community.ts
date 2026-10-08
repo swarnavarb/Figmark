@@ -37,8 +37,9 @@ type Repo = Awaited<ReturnType<typeof getRepository>>;
 /** How many open cases a manager carries before the system stops assigning them more. */
 export const MAX_OPEN_CASES = 25;
 
-export function managerName(user: Pick<User, 'displayName' | 'escrowRights'>): string {
-  return user.escrowRights?.displayName || user.displayName;
+/** A manager is shown by their profile name; there is no separate listing name. */
+export function managerName(user: Pick<User, 'displayName'>): string {
+  return user.displayName;
 }
 
 export function personName(user: Pick<User, 'displayName' | 'sellerProfile'> | null | undefined): string {

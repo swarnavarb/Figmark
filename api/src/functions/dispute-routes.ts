@@ -1276,6 +1276,25 @@ async function managers(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/**
+ * GET /api/community/team - every appointed community manager, for the badge.
+ *
+ * Public: the badge sits beside their name wherever it appears, signed in or
+ * not. Ids and handles only - their own and their shop's, since a shop page is
+ * still them - plus the date they were appointed.
+ */
+async function team(_request: HttpRequest, _context: InvocationContext) {
+  const repository = await getRepository();
+  const people = (await repository.listEscrowAgents()).filter((person) => person.escrowRights && !person.suspended);
+  return json(200, {
+    managers: people.map((person) => ({
+      id: person.id,
+      handles: [person.username, person.sellerProfile?.username].filter((handle): handle is string => !!handle),
+      since: person.escrowRights!.grantedAt,
+    })),
+  });
+}
+
 /** GET /api/community/notices?forum= - the warnings managers have put in front of everybody. */
 async function notices(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
@@ -1337,6 +1356,7 @@ export const communityCasesRoute = handler(cases);
 export const communityAvailabilityRoute = handler(availability);
 export const communityManagersRoute = handler(managers);
 export const communityNoticesRoute = handler(notices);
+export const communityTeamRoute = handler(team);
 export const communityStandingRoute = handler(standing);
 export const disputeClock = clock;
 
@@ -1356,6 +1376,7 @@ app.http('escrow-holdings', { ...anon, methods: ['GET'], route: 'escrow/holdings
 app.http('community-cases', { ...anon, methods: ['GET'], route: 'community/cases', handler: communityCasesRoute });
 app.http('community-availability', { ...anon, methods: ['POST'], route: 'community/availability', handler: communityAvailabilityRoute });
 app.http('community-managers', { ...anon, methods: ['GET'], route: 'community/managers', handler: communityManagersRoute });
+app.http('community-team', { ...anon, methods: ['GET'], route: 'community/team', handler: communityTeamRoute });
 app.http('community-notices', { ...anon, methods: ['GET'], route: 'community/notices', handler: communityNoticesRoute });
 app.http('community-standing', { ...anon, methods: ['GET'], route: 'community/standing/{id}', handler: communityStandingRoute });
 app.timer('dispute-clock', { schedule: '0 7 * * * *', handler: disputeClock });

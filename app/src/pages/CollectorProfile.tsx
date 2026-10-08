@@ -12,6 +12,7 @@ import {
 } from '../components/Quest';
 import { SocialPostCard } from '../components/SocialPost';
 import { shrink } from '../components/PhotoManager';
+import { ManagerTag } from '../components/ManagerBadge';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
 import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
@@ -89,6 +90,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           </div>
           <div className="qprofile__who">
             <h1>{person.displayName}</h1>
+            <ManagerTag id={person.userId} />
             {collector && <LevelChip tag={{ level: collector.level, title: collector.title }} />}
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
               {person.handle && <span className="faint">@{person.handle}</span>}

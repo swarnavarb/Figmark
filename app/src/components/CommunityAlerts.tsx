@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type CommunityNotice, type CommunityStanding } from '../api';
 import { formatDateOrdinal } from '../format';
+import { ManagerMark } from './ManagerBadge';
 
 /**
  * What community managers' final decisions put in front of everybody.
@@ -29,7 +30,7 @@ export function CommunityNotices({ forumId = null }: { forumId?: string | null }
           <span className="cnotice__tag">⚠️ Community warning</span>
           <p className="cnotice__body"><b>{notice.targetName}</b> · {notice.message}</p>
           <span className="cnotice__meta">
-            From community manager {notice.managerName} · until {formatDateOrdinal(notice.until)}
+            From community manager {notice.managerName}<ManagerMark always size={12} /> · until {formatDateOrdinal(notice.until)}
           </span>
         </article>
       ))}

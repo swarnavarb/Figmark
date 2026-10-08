@@ -306,8 +306,6 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
  * are paid a share of it after Figmark's commission.
  */
 function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
-  const [label, setLabel] = useState(user.escrowRights?.displayName ?? '');
-  const [note, setNote] = useState(user.escrowRights?.note ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -316,7 +314,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
     setBusy(true);
     setError(null);
     try {
-      await admin.setEscrow(user.id, { enabled, displayName: label, note });
+      await admin.setEscrow(user.id, { enabled });
       await onChanged();
       setConfirming(false);
     } catch (err) {
@@ -331,10 +329,9 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
       <span className="card__title">Community manager</span>
       {user.escrowRights ? (
         <p className="faint">
-          Appointed {formatDate(user.escrowRights.grantedAt)}, listed as <strong>{user.escrowRights.displayName}</strong>
-          {user.escrowRights.available === false ? ' - currently not taking new disputes' : ''}. They can be picked to
-          hear disputes they are not a party to, are assigned escalations by availability, and can be chosen to hold
-          protected payments.
+          🛡️ Appointed {formatDate(user.escrowRights.grantedAt)}
+          {user.escrowRights.available === false ? ' - currently not taking new disputes' : ''}. Members see them as{' '}
+          <strong>{user.displayName}</strong>, their profile name, with the community manager badge.
         </p>
       ) : (
         <p className="faint">
@@ -342,27 +339,16 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
         </p>
       )}
 
-      <label className="field">
-        <span>Listed as</span>
-        <input value={label} onChange={(event) => setLabel(event.target.value)}
-          placeholder={user.store?.name ?? user.displayName} />
-        <span className="field__hint">The name members see when they pick a manager, and at checkout.</span>
-      </label>
-      <label className="field">
-        <span>Note</span>
-        <input value={note} onChange={(event) => setNote(event.target.value)}
-          placeholder="Why this person. Operators only - members never see it." />
-      </label>
-
       {error && <p className="notice notice--error">{error}</p>}
 
       <div className="row" style={{ flexWrap: 'wrap' }}>
-        <button className="btn" disabled={busy} onClick={() => void save(true)}>
-          {user.escrowRights ? 'Update' : 'Make community manager'}
-        </button>
-        {user.escrowRights && (
+        {user.escrowRights ? (
           <button className="btn btn--quiet" disabled={busy} onClick={() => setConfirming(true)}>
-            Remove
+            Remove community manager
+          </button>
+        ) : (
+          <button className="btn" disabled={busy} onClick={() => void save(true)}>
+            Make community manager
           </button>
         )}
       </div>
@@ -370,7 +356,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
       {confirming && (
         <Confirm
           title="Remove them as a community manager?"
-          confirmLabel="Remove"
+          confirmLabel="Remove community manager"
           busy={busy}
           onCancel={() => setConfirming(false)}
           onConfirm={() => void save(false)}

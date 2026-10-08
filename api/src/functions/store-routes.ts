@@ -806,7 +806,7 @@ async function orderServices(request: HttpRequest, _context: InvocationContext) 
   const escrows = side === 'buyer' && job && ['quoted', 'accepted'].includes(job.status)
     ? (await repository.listEscrowAgents())
       .filter((agent) => agent.escrowRights && !agent.suspended && agent.id !== order.buyerId && agent.id !== job.artistId)
-      .map((agent) => ({ id: agent.id, name: agent.escrowRights!.displayName || agent.displayName, feeMinor: protectionFlat }))
+      .map((agent) => ({ id: agent.id, name: agent.displayName, feeMinor: protectionFlat }))
     : [];
   const paidUp = job && ['paid', 'working', 'ready', 'shipped', 'completed'].includes(job.status);
 
@@ -982,7 +982,7 @@ async function commissionAct(request: HttpRequest, _context: InvocationContext) 
         if (agent.id === order.buyerId || agent.id === job.artistId) return error(400, 'invalid_escrow', 'Neither side of the commission can hold its Buyer Protection.');
         job.method = 'protected';
         job.escrowAgentId = agent.id;
-        job.escrowName = agent.escrowRights.displayName || agent.displayName;
+        job.escrowName = agent.displayName;
         // The protection fee is Figmark's to set, centrally, not the holder's.
         job.protectionFeeMinor = protectionFeeMinor(price, (await marketSettings(repository)).protectionFeeMinor);
         job.heldMinor = price + job.protectionFeeMinor;

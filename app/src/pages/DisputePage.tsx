@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { ManagerMark } from '../components/ManagerBadge';
 import { DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
 import {
   DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY, releaseDueAt,
@@ -66,7 +67,7 @@ export function DisputePage() {
         <div style={{ minWidth: 0 }}>
           <span className="dhead__kicker">⚖️ Dispute · {about}</span>
           <h1 className="dhead__title">
-            {parties.raiser.name} <span className="faint">vs</span> {parties.respondent.name}
+            {parties.raiser.name}<ManagerMark id={parties.raiser.id} /> <span className="faint">vs</span> {parties.respondent.name}<ManagerMark id={parties.respondent.id} />
           </h1>
         </div>
         <span className={`badge badge--${dispute.status === 'resolved' ? 'ok' : dispute.status === 'withdrawn' ? '' : 'warn'}`}>
@@ -99,7 +100,7 @@ export function DisputePage() {
         {current && !dispute.resolvedAt && (
           <div className="kv">
             <dt>Round {current.n} of {MAX_ROUNDS}</dt>
-            <dd>{current.managerName} decides by {formatDateOrdinal(current.decideBy)}</dd>
+            <dd>{current.managerName}<ManagerMark id={current.managerId} /> decides by {formatDateOrdinal(current.decideBy)}</dd>
           </div>
         )}
         {data.overdue && !dispute.resolvedAt && (
@@ -149,7 +150,7 @@ export function DisputePage() {
                 <Avatar name={label} size={32} />
                 <div className="post__who">
                   <span className="post__name">
-                    {label}{mine && ' (you)'} {tag && <span className="badge">{tag}</span>}
+                    {label}<ManagerMark id={message.authorId} />{mine && ' (you)'} {tag && <span className="badge">{tag}</span>}
                   </span>
                   <span className="faint">{timeAgo(message.createdAt)}</span>
                 </div>
@@ -233,7 +234,7 @@ function Rounds({ rounds, currency, nameOf, parties }: {
           <div className="drounds__head">
             <b>Round {round.n}</b>
             <span className="faint">
-              {round.managerName}
+              {round.managerName}<ManagerMark id={round.managerId} />
               {round.assignedBy === 'protection' ? ' · holding the payment' : round.assignedBy === 'raiser' ? ' · chosen' : ' · assigned by availability'}
             </span>
           </div>

@@ -170,7 +170,7 @@ export const admin = {
   cleanupPhotos: (graceHours: number, only?: { scope: 'public' | 'private'; name: string }[]) =>
     post<{ deleted: number; bytes: number; failed: number }>('/ops/photos/cleanup', { graceHours, ...(only ? { only } : {}) }),
   /** Appoint or remove a community manager. Fees are not theirs to set. */
-  setEscrow: (id: string, body: { enabled: boolean; displayName?: string; note?: string }) =>
+  setEscrow: (id: string, body: { enabled: boolean }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/escrow`, body),
 
   /** Service stores: applications waiting first, then every store. */

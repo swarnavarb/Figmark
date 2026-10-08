@@ -170,8 +170,6 @@ export function seedUsers(): User[] {
         grantedAt: iso(-30),
         grantedBy: 'usr_ops',
         feeBasisPoints: 250,
-        displayName: 'Arjun M.',
-        note: 'Long-standing member. Holds for the Mumbai pre-orders.',
       },
       suspended: false,
       createdAt: iso(-120),
@@ -198,8 +196,6 @@ export function seedUsers(): User[] {
         grantedAt: iso(-90),
         grantedBy: 'usr_ops',
         feeBasisPoints: 150,
-        displayName: 'Meera I. — Buyer Protection',
-        note: 'Runs Buyer Protection for three of the larger Bengaluru pre-orders. No complaints.',
       },
       suspended: false,
       createdAt: iso(-200),
@@ -232,7 +228,6 @@ export function seedUsers(): User[] {
       storefront('usr_kaiju', 'Kaiju Imports', 'Ravi Krishnan', 'kaiju-imports', 'Bengaluru, KA', 91, 148, 0.96,
         'Weekly pre-orders from Guangzhou. Scale figures and garage kits.'),
       200,
-      'High volume, long record, no unresolved disputes.',
     ),
     storefront('usr_tokyoline', 'Tokyo Line', 'Meiko Tanaka', 'tokyo-line', 'Delhi, DL', 84, 96, 0.91,
       'Anime merch and trading cards, direct from Akihabara runs.'),
@@ -295,15 +290,13 @@ export function seedUsers(): User[] {
 }
 
 /** Approves a seeded account to hold other people's money, at a given rate. */
-function withEscrow(user: User, feeBasisPoints: number, note: string): User {
+function withEscrow(user: User, feeBasisPoints: number): User {
   return {
     ...user,
     escrowRights: {
       grantedAt: iso(-45),
       grantedBy: 'usr_ops',
       feeBasisPoints,
-      displayName: user.sellerProfile?.storefrontName ?? user.displayName,
-      note,
     },
   };
 }
@@ -887,7 +880,7 @@ export function seedOrders(): Order[] {
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_demo' }],
       protection: {
-        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — Buyer Protection',
+        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera Iyer',
         feeMinor: 4_350, feeBasisPoints: 150, boughtAt: iso(-5), refundedAt: null,
       },
       escrow: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
@@ -906,7 +899,7 @@ export function seedOrders(): Order[] {
         { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
       ],
       protection: {
-        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — Buyer Protection',
+        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera Iyer',
         feeMinor: 480, feeBasisPoints: 150, boughtAt: iso(-30), refundedAt: null,
       },
       escrow: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
@@ -1002,7 +995,7 @@ export function seedOrders(): Order[] {
         { stage: 'ordering', enteredAt: iso(-1), note: 'Buyer opened a dispute.', recordedBy: 'usr_gadgetgrid' },
       ],
       protection: {
-        escrowAgentId: 'usr_kaiju', escrowName: 'Kaiju Imports',
+        escrowAgentId: 'usr_kaiju', escrowName: 'Ravi Krishnan',
         feeMinor: 2_400, feeBasisPoints: 200, boughtAt: iso(-3), refundedAt: null,
       },
       escrow: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
@@ -1213,7 +1206,7 @@ export function seedLiveSale(): Order {
     /* Same lot as ord_2003, same escrow — which is exactly what the suggestion
        at checkout is for. */
     protection: {
-      escrowAgentId: 'usr_kaiju', escrowName: 'Kaiju Imports',
+      escrowAgentId: 'usr_kaiju', escrowName: 'Ravi Krishnan',
       feeMinor: 2_200, feeBasisPoints: 200, boughtAt: iso(-6), refundedAt: null,
     },
     escrow: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },

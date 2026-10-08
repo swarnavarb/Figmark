@@ -495,10 +495,6 @@ export interface EscrowRights {
    * hold stay theirs. Absent means available.
    */
   available?: boolean;
-  /** How they are listed to buyers choosing one. */
-  displayName: string;
-  /** Why the company granted it. Read by operators, never by buyers. */
-  note: string;
 }
 
 export interface StoreManager {

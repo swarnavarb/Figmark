@@ -1,5 +1,6 @@
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
+import { ManagerMark } from '../components/ManagerBadge';
 import { compressImage } from '../imageCompress';
 import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -566,7 +567,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       {(order.paymentStatus === 'paid' || order.paymentStatus === 'refunded') && (
         order.protection ? (
           <p className="notice notice--ok">
-            Held by <strong>{order.protection.escrowName}</strong> —{' '}
+            Held by <strong>{order.protection.escrowName}<ManagerMark id={order.protection.escrowAgentId} /></strong> —{' '}
             {formatMoney(order.protection.feeMinor, order.currency)} protection fee. Either side can open
             a dispute, and they settle it.
             {order.protection.refundedAt && ' The fee was refunded.'}
@@ -1074,7 +1075,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       {route === 'protected' && chosen && (
         <div className="card card--pad stack">
           <div className="kv">
-            <dt>Buyer protection · {chosen.name}</dt>
+            <dt>Buyer protection · {chosen.name}<ManagerMark always /></dt>
             <dd>{formatMoney(chosen.feeMinor, quote.currency)}</dd>
           </div>
           <div className="kv">
@@ -1284,7 +1285,7 @@ function EscrowPicker({ quote, chosenId, onPick, onClose }: {
                 onClick={() => setOpenId(open ? null : option.id)}>
                 <div className="escrow__main">
                   <span className="escrow__name">
-                    {option.name}
+                    {option.name}<ManagerMark always />
                     {isSuggested && <span className="badge badge--accent" style={{ marginLeft: 8 }}>suggested</span>}
                   </span>
                   <span className="faint">

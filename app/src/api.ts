@@ -777,6 +777,13 @@ export interface MyDisputesResponse {
 }
 
 /** A community manager someone could pick to hear a dispute. */
+export interface CommunityTeamMember {
+  id: string;
+  /** Their own handle and their shop's. */
+  handles: string[];
+  since: string;
+}
+
 export interface ManagerOption {
   id: string;
   name: string;
@@ -2488,6 +2495,8 @@ export const api = {
   communityAvailability: (available: boolean) => post<{ available: boolean }>('/community/availability', { available }),
   communityNotices: (forumId?: string | null) =>
     request<{ notices: CommunityNotice[] }>(`/community/notices${forumId ? `?forum=${encodeURIComponent(forumId)}` : ''}`),
+  /** Every appointed community manager, for the badge beside their name. Public. */
+  communityTeam: () => request<{ managers: CommunityTeamMember[] }>('/community/team'),
   communityStanding: (userId: string) => request<CommunityStanding>(`/community/standing/${encodeURIComponent(userId)}`),
   marketSettings: () => request<PublicSettings>('/settings'),
   escrowHoldings: () =>

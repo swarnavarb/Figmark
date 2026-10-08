@@ -173,7 +173,7 @@ const {
   decideDisputeRoute: decideDispute, releaseDisputeRoute: releaseDispute, escrowHoldingsRoute: escrowHoldings,
   raiseSubjectDisputeRoute: raiseSubjectDispute, communityCasesRoute: communityCases,
   communityAvailabilityRoute: communityAvailability, communityManagersRoute: communityManagers,
-  communityNoticesRoute: communityNotices, communityStandingRoute: communityStanding,
+  communityNoticesRoute: communityNotices, communityStandingRoute: communityStanding, communityTeamRoute: communityTeam,
 } = await import(new URL('dispute-routes.js', fns));
 const {
   adminUsersRoute: adminUsers, adminUserDetailRoute: adminUser,
@@ -2998,7 +2998,7 @@ await check('a decision cannot be withdrawn from, and only the losing side can e
 });
 
 // A manager who is neither party nor Meera, for the system to assign.
-await adminEscrow(req({ headers: auth, params: { id: helperId }, body: { enabled: true, displayName: 'Helper (CM)' } }), ctx);
+await adminEscrow(req({ headers: auth, params: { id: helperId }, body: { enabled: true } }), ctx);
 
 await check('escalating is paid, and the system assigns a manager who has not held it', async () => {
   const id = heldDispute.jsonBody.dispute.id;
@@ -3844,10 +3844,18 @@ await check('opening an account shows everything it holds', async () => {
 await check('a community manager can be appointed and removed, and sets no fee of their own', async () => {
   const granted = await adminEscrow(req({
     headers: auth, params: { id: 'usr_sneakervault' },
-    body: { enabled: true, feeBasisPoints: 350, note: 'Trial.' },
+    body: { enabled: true, feeBasisPoints: 350, displayName: 'Ignored', note: 'Ignored' },
   }), ctx);
   assert.equal(granted.status, 200);
   assert.ok(granted.jsonBody.user.escrowRights.grantedAt);
+  // No listing name or note: members see the profile name.
+  assert.equal(granted.jsonBody.user.escrowRights.displayName, undefined);
+  assert.equal(granted.jsonBody.user.escrowRights.note, undefined);
+  // The badge list is public and has them in it, by id and by handle.
+  const team = (await communityTeam(req({}), ctx)).jsonBody.managers;
+  const listed = team.find((member) => member.id === 'usr_sneakervault');
+  assert.ok(listed, 'on the public team list');
+  assert.ok(listed.handles.length > 0 && listed.since);
   // Fees are set centrally; a rate sent with the appointment is ignored.
   assert.equal(granted.jsonBody.user.escrowRights.feeBasisPoints, undefined);
   assert.equal(granted.jsonBody.user.escrowRights.available, true);
@@ -3856,6 +3864,8 @@ await check('a community manager can be appointed and removed, and sets no fee o
     headers: auth, params: { id: 'usr_sneakervault' }, body: { enabled: false },
   }), ctx);
   assert.equal(withdrawn.jsonBody.user.escrowRights, null);
+  const after = (await communityTeam(req({}), ctx)).jsonBody.managers;
+  assert.ok(!after.some((member) => member.id === 'usr_sneakervault'), 'off the badge list once removed');
 });
 
 await check('an account holding money cannot be deleted', async () => {

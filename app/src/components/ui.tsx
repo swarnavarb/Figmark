@@ -11,6 +11,7 @@ import { brandHueFor, gradientFor, initialsOf } from '../format';
  */
 export { Icon } from './Icon';
 import { Icon } from './Icon';
+import { ManagerMark } from './ManagerBadge';
 export type { IconName } from './Icon';
 
 /**
@@ -283,7 +284,7 @@ export function useConfirm() {
 type Tag = { level: number; title: string; shop?: boolean };
 
 export function PersonLink({ party, className, children, bare }: {
-  party: { name: string; handle: string | null; level?: Tag } | null | undefined;
+  party: { name: string; handle: string | null; level?: Tag; id?: string | null } | null | undefined;
   className?: string;
   children?: ReactNode;
   /** Leave the level tagline off, where the name sits inside something that already shows it. */
@@ -294,9 +295,11 @@ export function PersonLink({ party, className, children, bare }: {
   const name = party.handle
     ? <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>{label}</Link>
     : <span className={className}>{label}</span>;
-  if (bare || !party.level) return name;
+  // A community manager's shield goes wherever their name does.
+  const mark = <ManagerMark id={party.id} handle={party.handle} />;
+  if (bare || !party.level) return <>{name}{mark}</>;
   // The level reads as a tagline under the name.
-  return <span className="pname">{name}<LevelChip tag={party.level} /></span>;
+  return <span className="pname"><span className="pname__line">{name}{mark}</span><LevelChip tag={party.level} /></span>;
 }
 
 /**

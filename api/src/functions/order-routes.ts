@@ -216,7 +216,6 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   order.paymentMethod = agent ? 'protected' : 'direct';
 
   if (agent?.escrowRights) {
-    const rights = agent.escrowRights;
     // Set centrally by the operators, and paid through the gateway like every
     // other fee: Figmark keeps its commission, the holder the rest.
     const settings = await marketSettings(repository);
@@ -229,7 +228,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       escrowAgentId: agent.id,
       // Their name as it was today: a later rename must not rewrite what the
       // buyer agreed to.
-      escrowName: rights.displayName || agent.displayName,
+      escrowName: agent.displayName,
       // The fee is copied onto the order, not looked up later: it is a term of
       // this transaction and must not move when the setting changes.
       feeMinor,
@@ -314,7 +313,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     sellerPayment: payment && hasAnyDetail(payment) ? payment : null,
     escrows: agents.map((agent, index) => ({
       id: agent.id,
-      name: agent.escrowRights!.displayName || agent.displayName,
+      name: agent.displayName,
       feeMinor: protectionFeeMinor(totalMinor, protectionFlat),
       /** What the group already knows about them, rather than a rating we invented. */
       heldBefore: agent.buyerTrust.completedTransactions,
@@ -402,7 +401,7 @@ async function suggestEscrow(
   const agent = agents.find((entry) => entry.id === best!.agentId)!;
   return {
     agentId: agent.id,
-    name: agent.escrowRights!.displayName || agent.displayName,
+    name: agent.displayName,
     because:
       best.count === 1
         ? '1 other order in this lot already uses them.'

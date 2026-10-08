@@ -358,7 +358,7 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A user id is required.');
 
-  let body: { enabled?: boolean; note?: string; displayName?: string };
+  let body: { enabled?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -374,16 +374,9 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
     user.escrowRights = null;
   } else {
     const rights: EscrowRights = {
-      // Re-appointing keeps the original date: the grant is a standing
-      // decision, and editing somebody's listing is not meeting them again.
+      // Re-appointing keeps the original date: the grant is a standing decision.
       grantedAt: user.escrowRights?.grantedAt ?? new Date().toISOString(),
       grantedBy: admin.id,
-      displayName:
-        (body.displayName ?? '').trim().slice(0, 80) ||
-        user.escrowRights?.displayName ||
-        user.sellerProfile?.storefrontName ||
-        user.displayName,
-      note: (body.note ?? '').trim().slice(0, 500),
       available: user.escrowRights?.available ?? true,
     };
     user.escrowRights = rights;
