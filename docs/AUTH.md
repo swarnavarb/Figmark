@@ -56,8 +56,8 @@ routes need both. `lot-routes.ts` shows the pattern.
   hour old, so a session in use does not run out mid-use. No renewal goes past
   14 days from the sign-in itself (`aut` in the token); then the password is
   asked for again.
-- **Sign out everywhere.** `POST /api/auth/logout-all` (profile menu → "Sign out
-  everywhere") stamps `sessionsValidAfter` on the account; every token issued
+- **Sign out everywhere.** `POST /api/auth/logout-all` (profile menu → "Sign Out" →
+  "Sign out from everywhere") stamps `sessionsValidAfter` on the account; every token issued
   before it is refused, on every device, from that moment.
 - **Passwords.** 8 to 128 characters; not a common password, a repeated
   character or a keyboard run; not containing the person's name, handle or
