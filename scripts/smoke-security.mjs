@@ -365,6 +365,12 @@ await check('/api/auth/me renews the cookie of a session in use', async () => {
   assert.ok(me.headers.getSetCookie().some((cookie) => cookie.startsWith(`${SESSION_COOKIE_NAME}=`) && !cookie.includes('Max-Age=0')));
 });
 
+await check('signing out on one device leaves another signed in, even when both signed in the same second', async () => {
+  const one = createSessionToken('usr_demo', 'test-secret', 3600);
+  const two = createSessionToken('usr_demo', 'test-secret', 3600);
+  assert.notEqual(one.token, two.token);
+});
+
 /* ── Static Web Apps principal ─────────────────────────────────────────── */
 console.log('\nstatic web apps');
 

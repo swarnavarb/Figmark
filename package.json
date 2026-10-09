@@ -16,6 +16,7 @@
     "dev": "npm --prefix app run dev",
     "serve": "node scripts/dev-server.mjs",
     "azure:check": "node scripts/azure-check.mjs",
+    "azure:live-check": "npm run build:api && node scripts/live-azure-check.mjs",
     "azure:provision": "node scripts/provision-cosmos.mjs",
     "routes:reset": "node scripts/reset-lot-routes.mjs",
     "push:keys": "node scripts/push-keys.mjs"

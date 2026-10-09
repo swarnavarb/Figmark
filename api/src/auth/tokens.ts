@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /**
  * Stateless session tokens for the mock auth provider.
@@ -23,6 +23,12 @@ export interface SessionPayload {
    * count from `iat`.
    */
   aut?: number;
+  /**
+   * Random per token. Without it two sign-ins to one account in the same
+   * second produced the very same token, so signing out on one device
+   * revoked the other as well.
+   */
+  jti?: string;
   /**
    * A snapshot of the principal, carried in the token itself.
    *
@@ -61,7 +67,9 @@ export function createSessionToken(
   const signedInAt = authTime ?? issuedAt;
   // A refresh never stretches a session past its absolute limit.
   const expiry = Math.min(issuedAt + ttlSeconds, signedInAt + SESSION_MAX_AGE_SECONDS);
-  const payload: SessionPayload = { sub: userId, iat: issuedAt, exp: expiry, aut: signedInAt };
+  const payload: SessionPayload = {
+    sub: userId, iat: issuedAt, exp: expiry, aut: signedInAt, jti: randomBytes(9).toString('base64url'),
+  };
   if (snapshot !== undefined) payload.usr = snapshot;
   const encoded = base64url(JSON.stringify(payload));
   return {

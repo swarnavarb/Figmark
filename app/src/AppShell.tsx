@@ -7,7 +7,7 @@ import { ScrollManager } from './components/ScrollManager';
 import { TABS, TabBar } from './components/TabBar';
 import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
-import { Avatar, Icon } from './components/ui';
+import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
 import { AuthModal } from './pages/AuthPage';
@@ -232,10 +232,8 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
   const box = useRef<HTMLDivElement>(null);
   const { pathname } = useLocation();
   const { signOutEverywhere } = useSession();
-  const everywhere = () => {
-    if (!window.confirm('Sign out on every phone and computer this account is signed in on, including this one?')) return;
-    void signOutEverywhere();
-  };
+  // One Sign Out, and then the question of where: just here, or everywhere.
+  const [choosing, setChoosing] = useState(false);
 
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -269,13 +267,27 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <Link role="menuitem" to="/wallet" className="pmenu__item">👛 My wallet</Link>
           <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
           <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>
-          <button role="menuitem" type="button" className="pmenu__item pmenu__item--out" onClick={onSignOut}>
+          <button role="menuitem" type="button" className="pmenu__item pmenu__item--out"
+            onClick={() => { setOpen(false); setChoosing(true); }}>
             👋 Sign Out
           </button>
-          <button role="menuitem" type="button" className="pmenu__item pmenu__item--out" onClick={everywhere}>
-            🔒 Sign out everywhere
-          </button>
         </div>
+      )}
+      {choosing && (
+        <Modal title="Sign out" onClose={() => setChoosing(false)}>
+          <div className="stack">
+            <p className="muted" style={{ margin: 0 }}>
+              Sign out of this device only, or of every phone and computer this account is signed in on?
+            </p>
+            <button type="button" className="btn" onClick={() => { setChoosing(false); onSignOut(); }}>
+              Sign out from this device
+            </button>
+            <button type="button" className="btn btn--danger" onClick={() => { setChoosing(false); void signOutEverywhere(); }}>
+              Sign out from everywhere
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={() => setChoosing(false)}>Cancel</button>
+          </div>
+        </Modal>
       )}
     </div>
   );
