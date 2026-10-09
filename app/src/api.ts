@@ -2171,6 +2171,8 @@ export const api = {
   verifyAadhaar: (qr: string) => post<{ status: VerificationStatus }>('/verify/aadhaar', { qr, consent: true }),
 
   logout: () => post<{ ok: true }>('/auth/logout'),
+  /** Ends every session this account has, on every device - this one too. */
+  logoutAll: () => post<{ ok: true }>('/auth/logout-all'),
 
   feed: (params: Record<string, string | undefined>) => {
     const query = new URLSearchParams();

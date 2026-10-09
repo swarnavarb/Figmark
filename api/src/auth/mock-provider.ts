@@ -15,10 +15,15 @@ import type { Repository } from '../data/repository.js';
 import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
-import { hashPassword, verifyPassword } from './passwords.js';
+import { PASSWORD_MAX_LENGTH, hashPassword, passwordProblem, verifyPassword } from './passwords.js';
 import { normalizeIndianMobile } from '../../../shared/verification.js';
 import {
   SESSION_COOKIE_NAME,
+  SESSION_REFRESH_AFTER_SECONDS,
+  buildDeviceCookie,
+  deviceCookieValue,
+  readDeviceEntries,
+  type SessionPayload,
   type TokenFailure,
   buildClearedSessionCookie,
   buildSessionCookie,
@@ -26,7 +31,8 @@ import {
   inspectSessionToken,
   verifySessionToken,
 } from './tokens.js';
-import type { AuthService } from './types.js';
+import type { AuthService, ClientContext } from './types.js';
+import { forget, limited } from '../rate-limit.js';
 
 /**
  * Development-only auth provider: username + password against seeded users.
@@ -35,21 +41,8 @@ import type { AuthService } from './types.js';
  * identity provider is chosen. It must not reach production with real users -
  * see docs/AUTH.md for the swap-in procedure.
  */
-/** Failed sign-ins tolerated per identifier before a cool-off. */
-const MAX_ATTEMPTS = 8;
-const LOCKOUT_MS = 10 * 60 * 1000;
-
 export class MockAuthProvider implements AuthService {
   readonly mode: AuthMode = 'mock';
-
-  /**
-   * Failed attempts per identifier.
-   *
-   * Per-instance and in memory, so it is a speed bump rather than a guarantee -
-   * but an unthrottled password endpoint is worth closing even approximately,
-   * and a real provider brings its own throttling when it replaces this.
-   */
-  private readonly attempts = new Map<string, { count: number; until: number }>();
 
   constructor(
     private readonly repository: Repository,
@@ -93,7 +86,10 @@ export class MockAuthProvider implements AuthService {
 
       // The store is authoritative whenever it can be.
       const user = await this.repository.getUserById(payload.sub);
-      if (user) return user.suspended ? null : toAuthUser(user);
+      if (user) {
+        if (signedOutEverywhere(user, payload)) continue;
+        return user.suspended ? null : toAuthUser(user);
+      }
 
       // It found nobody. With a real database that means the account is gone
       // and the session is over. With the per-worker store it far more likely
@@ -136,9 +132,10 @@ export class MockAuthProvider implements AuthService {
       // The account behind a valid session is gone - what an ephemeral store
       // produces after a restart, and worth saying rather than looking like a
       // logout.
-      if (!(await this.repository.getUserById(result.payload.sub))) {
-        throw AuthError.accountMissing(clearing);
-      }
+      const owner = await this.repository.getUserById(result.payload.sub);
+      if (!owner) throw AuthError.accountMissing(clearing);
+      // Ended by "sign out everywhere", from this device or another.
+      if (signedOutEverywhere(owner, result.payload)) throw AuthError.sessionEnded(clearing);
 
       // A valid session for an account that exists, refused anyway: suspended.
       throw AuthError.suspended();
@@ -177,14 +174,20 @@ export class MockAuthProvider implements AuthService {
     return user;
   }
 
-  async login(credentials: LoginRequest): Promise<LoginResponse> {
+  async login(credentials: LoginRequest, client: ClientContext = {}): Promise<LoginResponse> {
     this.requireSigningKey();
     const identifier = credentials.identifier?.trim();
     if (!identifier || !credentials.password) throw AuthError.invalidCredentials();
+    // No password this long was ever accepted, and hashing one costs real CPU.
+    if (credentials.password.length > PASSWORD_MAX_LENGTH) throw AuthError.invalidCredentials();
 
-    const key = identifier.toLowerCase();
-    const locked = this.attempts.get(key);
-    if (locked && locked.count >= MAX_ATTEMPTS && locked.until > Date.now()) {
+    // Failed attempts are counted per account *and* per address. Per account
+    // alone, anyone could lock somebody out by typing their email with a wrong
+    // password eight times; per address, all they lock out is themselves. The
+    // address's own limit across every account is the route's (`login`).
+    // Counted in the store, so it holds across instances and restarts.
+    const key = `${identifier.toLowerCase()}|${client.ip ?? 'unknown'}`;
+    if (await limited(key, 'login_fail', { count: false, force: true })) {
       throw new AuthError(
         429,
         'too_many_attempts',
@@ -193,6 +196,20 @@ export class MockAuthProvider implements AuthService {
     }
 
     const user = await this.repository.getUserByIdentifier(identifier);
+
+    // Guessing spread over many addresses is capped per account - but only for
+    // devices that have never signed in to it. The owner's browser carries the
+    // device cookie and is never refused for somebody else's guessing.
+    const accountKey = user ? `acct:${user.id}` : `acct:${identifier.toLowerCase()}`;
+    const trusted = user ? this.trustsDevice(user, client.device) : false;
+    if (!trusted && await limited(accountKey, 'login_fail_account', { count: false, force: true })) {
+      throw new AuthError(
+        429,
+        'too_many_attempts',
+        'Too many failed sign-in attempts on this account. Try again later, or from a device you have signed in on before.',
+      );
+    }
+
     // Compare regardless of whether the user exists so a missing account and a
     // wrong password take the same time to answer.
     const ok = verifyPassword(credentials.password, user?.passwordHash ?? null);
@@ -218,14 +235,14 @@ export class MockAuthProvider implements AuthService {
     }
 
     if (!user || !ok) {
-      const previous = locked && locked.until > Date.now() ? locked.count : 0;
-      this.attempts.set(key, { count: previous + 1, until: Date.now() + LOCKOUT_MS });
+      await limited(key, 'login_fail', { force: true });
+      if (!trusted) await limited(accountKey, 'login_fail_account', { force: true });
       throw AuthError.invalidCredentials();
     }
     if (user.suspended) throw AuthError.suspended();
     // A good password clears the record, so a legitimate user who mistyped
     // twice is not held back by it.
-    this.attempts.delete(key);
+    await forget(key, 'login_fail');
 
     const principal = toAuthUser(user);
     const { token, expiresAt } = createSessionToken(
@@ -235,6 +252,76 @@ export class MockAuthProvider implements AuthService {
       this.storeIsEphemeral ? principal : undefined,
     );
     return { user: principal, token, expiresAt: expiresAt.toISOString() };
+  }
+
+  /** True when the device cookie shows this browser signed in to `user` since it last signed out everywhere. */
+  private trustsDevice(user: User, device: string | null | undefined): boolean {
+    const issuedAt = readDeviceEntries(device, this.sessionSecret).get(user.id);
+    if (issuedAt === undefined) return false;
+    const after = user.sessionsValidAfter ? Date.parse(user.sessionsValidAfter) : NaN;
+    return !Number.isFinite(after) || issuedAt * 1000 >= after;
+  }
+
+  /** The device cookie to set after a successful sign-in, keeping the accounts it already names. */
+  deviceCookies(userId: string, request: { headers: { get(name: string): string | null } }): string[] {
+    if (!this.sessionSecret) return [];
+    return [buildDeviceCookie(userId, deviceCookieValue(request.headers.get('cookie')), this.sessionSecret)];
+  }
+
+  /**
+   * "Sign out everywhere": ends every session this account has, on every
+   * device, this one included.
+   *
+   * Tokens are stateless, so they cannot be listed and revoked one by one;
+   * instead the account records the moment, and any token issued before it is
+   * refused from then on.
+   */
+  async logoutEverywhere(request: HttpRequest): Promise<void> {
+    const principal = await this.requireAuth(request);
+    const user = await this.repository.getUserById(principal.id);
+    if (!user) throw AuthError.accountMissing();
+    // Rounded up to the second, as token times are: a token from this same
+    // second is one this request could have been carrying.
+    const at = Math.ceil(Date.now() / 1000) * 1000;
+    user.sessionsValidAfter = new Date(at).toISOString();
+    await this.repository.updateUser(user);
+    await this.logout(request);
+  }
+
+  /**
+   * A fresh session cookie for a session in use, when it is old enough to earn one.
+   *
+   * Sessions are 12 hours, which used to mean being signed out mid-afternoon
+   * by a sign-in from breakfast. Now a session in use is renewed - at most
+   * hourly, and never past `SESSION_MAX_AGE_SECONDS` from the sign-in itself -
+   * and one left alone still ends 12 hours after it was last used. Only the
+   * cookie is renewed: a bearer token's holder manages its own.
+   */
+  async refreshCookies(request: HttpRequest): Promise<string[]> {
+    if (!this.sessionSecret) return [];
+    const cookieTokens = readCookieTokens(request);
+    for (const token of cookieTokens) {
+      const payload = verifySessionToken(token, this.sessionSecret);
+      if (!payload) continue;
+      const now = Math.floor(Date.now() / 1000);
+      if (now - payload.iat < SESSION_REFRESH_AFTER_SECONDS) return [];
+      if (await this.repository.isSessionRevoked(token)) continue;
+      const user = await this.repository.getUserById(payload.sub);
+      if (user ? user.suspended || signedOutEverywhere(user, payload) : !this.storeIsEphemeral) continue;
+      const principal = user ? toAuthUser(user) : payload.usr ? fromSnapshot(payload.usr as AuthUser) : null;
+      if (!principal) continue;
+      const fresh = createSessionToken(
+        payload.sub,
+        this.sessionSecret,
+        this.sessionTtlSeconds,
+        this.storeIsEphemeral ? principal : undefined,
+        payload.aut ?? payload.iat,
+      );
+      // Nothing to gain once the absolute limit is what decides the expiry.
+      if (fresh.expiresAt.getTime() / 1000 <= payload.exp) return [];
+      return [buildSessionCookie(fresh.token, Math.max(1, Math.floor(fresh.expiresAt.getTime() / 1000) - now))];
+    }
+    return [];
   }
 
   async logout(request: HttpRequest): Promise<void> {
@@ -272,9 +359,10 @@ export class MockAuthProvider implements AuthService {
         'Please enter a valid Indian mobile number (10 digits) - the one linked to your Aadhaar and on WhatsApp.',
       );
     }
-    if (!request.password || request.password.length < 8) {
-      throw new AuthError(400, 'invalid_signup', 'Password must be at least 8 characters.');
-    }
+    const weak = await passwordProblem(request.password ?? '', {
+      email, username: request.username, displayName,
+    }, { breachCheck: config.passwordBreachCheck });
+    if (weak) throw new AuthError(400, 'invalid_signup', weak);
 
     // A handle is how this account is addressed and messaged, so it is picked
     // at sign-up rather than bolted on later. Offered as a suggestion from the
@@ -391,16 +479,29 @@ function readTokens(request: HttpRequest): string[] {
     if (value) tokens.push(value);
   }
 
+  tokens.push(...readCookieTokens(request));
+  return tokens;
+}
+
+/** The session tokens carried in cookies only - the ones this server may renew. */
+function readCookieTokens(request: HttpRequest): string[] {
+  const tokens: string[] = [];
   const cookie = request.headers.get('cookie');
-  if (cookie) {
-    for (const part of cookie.split(';')) {
-      const [name, ...rest] = part.trim().split('=');
-      if (name !== SESSION_COOKIE_NAME) continue;
-      const value = rest.join('=').trim();
-      if (value) tokens.push(value);
-    }
+  if (!cookie) return tokens;
+  for (const part of cookie.split(';')) {
+    const [name, ...rest] = part.trim().split('=');
+    if (name !== SESSION_COOKIE_NAME) continue;
+    const value = rest.join('=').trim();
+    if (value) tokens.push(value);
   }
   return tokens;
+}
+
+/** True when the account signed out everywhere after this token was issued. */
+function signedOutEverywhere(user: User, payload: SessionPayload): boolean {
+  if (!user.sessionsValidAfter) return false;
+  const after = Date.parse(user.sessionsValidAfter);
+  return Number.isFinite(after) && payload.iat * 1000 < after;
 }
 
 /** True when the request presented a session cookie, whatever its state. */

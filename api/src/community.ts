@@ -93,12 +93,26 @@ export async function commit(repository: Repo, dispute: Dispute): Promise<Disput
  */
 export async function chargeFee(
   repository: Repo,
-  input: { kind: FeePayment['kind']; payerId: string; amountMinor: number; currency: string; reference: string; managerId: string | null },
+  input: FeeInput,
   settings?: MarketSettings,
 ): Promise<FeePayment> {
-  const rates = settings ?? await marketSettings(repository);
-  const { commissionMinor, managerShareMinor } = splitFee(input.amountMinor, rates.commissionBasisPoints);
-  const payment: FeePayment = {
+  const payment = quoteFee(input, settings ?? await marketSettings(repository));
+  await recordFee(repository, input, payment);
+  return payment;
+}
+
+export type FeeInput = { kind: FeePayment['kind']; payerId: string; amountMinor: number; currency: string; reference: string; managerId: string | null };
+
+/**
+ * A fee worked out and given its gateway reference, not yet charged.
+ *
+ * Split from the charge so a caller can first commit whatever the fee is for -
+ * and lose that race cleanly - before any money moves: two `pay` calls at once
+ * must not both charge for protection.
+ */
+export function quoteFee(input: FeeInput, settings: MarketSettings): FeePayment {
+  const { commissionMinor, managerShareMinor } = splitFee(input.amountMinor, settings.commissionBasisPoints);
+  return {
     id: `fee_${randomUUID().slice(0, 12)}`,
     kind: input.kind,
     payerId: input.payerId,
@@ -109,8 +123,11 @@ export async function chargeFee(
     gatewayRef: `gw_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
     paidAt: new Date().toISOString(),
   };
+}
+
+/** Charges a fee quoted by `quoteFee`. */
+export async function recordFee(repository: Repo, input: FeeInput, payment: FeePayment): Promise<void> {
   await recordLedger(repository, { ...payment, reference: input.reference, managerId: input.managerId });
-  return payment;
 }
 
 /** A payout of held money, through the same gateway. */

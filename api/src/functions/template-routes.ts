@@ -9,7 +9,9 @@ import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
-import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
+import { compressPhoto, PHOTO_MAX_BYTES, type CompressedPhoto } from '../storage/compress.js';
+import { sanitizeImage } from '../storage/sanitize.js';
+import { tooFast } from '../rate-limit.js';
 import { discardUpload } from '../storage/release.js';
 import { buildLot, type NewLotBody } from './fulfilment-routes.js';
 import { notify, orderNames } from './notify.js';
@@ -160,6 +162,9 @@ export const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
 async function upload(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
+  // Every photo is stored and paid for until somebody deletes it.
+  const slow = await tooFast(user.id, 'upload');
+  if (slow) return slow;
 
   let body: { dataUrl?: string };
   try {
@@ -168,30 +173,50 @@ async function upload(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const match = /^data:([a-z/+-]+);base64,(.+)$/i.exec(body.dataUrl ?? '');
-  if (!match) return error(400, 'invalid_photo', 'Send the photo as a base64 data URL.');
-
-  const contentType = match[1]!.toLowerCase();
-  if (!ALLOWED_TYPES.includes(contentType)) {
-    return error(400, 'invalid_photo', 'Photos must be JPEG, PNG, WebP or GIF.');
-  }
-
-  const bytes = Buffer.from(match[2]!, 'base64');
-  if (bytes.byteLength === 0) return error(400, 'invalid_photo', 'That photo is empty.');
-  if (bytes.byteLength > MAX_PHOTO_BYTES) {
-    return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
-  }
-
-  // Every stored photo is compressed to 70-90 KB; the smaller of what was sent
-  // and the recompressed picture is the one kept.
-  const photo = compressPhoto(new Uint8Array(bytes), contentType);
-  if (photo.bytes.byteLength > PHOTO_MAX_BYTES) {
-    return error(413, 'photo_too_large', 'That photo could not be made small enough. Try a different one.');
-  }
+  const read = readPhoto(body.dataUrl);
+  if ('refusal' in read) return read.refusal;
+  const photo = read.photo;
 
   const store = await getPhotoStore();
   const stored = await store.upload(photo.bytes, photo.contentType, user.id);
   return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
+}
+
+/**
+ * A photo sent as a data URL, checked and made ready to store.
+ *
+ * The bytes decide what it is, not the declared type: it must be the picture
+ * it claims to be, it is rebuilt from its own parts so nothing rides along
+ * after it (see sanitize.ts), and then it is compressed to 70-90 KB - the
+ * smaller of what was sent and the recompressed picture is the one kept.
+ */
+export function readPhoto(dataUrl: string | undefined): { photo: CompressedPhoto } | { refusal: ReturnType<typeof error> } {
+  const match = /^data:([a-z/+-]+);base64,(.+)$/i.exec(dataUrl ?? '');
+  if (!match) return { refusal: error(400, 'invalid_photo', 'Send the photo as a base64 data URL.') };
+
+  const contentType = match[1]!.toLowerCase();
+  if (!ALLOWED_TYPES.includes(contentType)) {
+    return { refusal: error(400, 'invalid_photo', 'Photos must be JPEG, PNG, WebP or GIF.') };
+  }
+
+  const bytes = Buffer.from(match[2]!, 'base64');
+  if (bytes.byteLength === 0) return { refusal: error(400, 'invalid_photo', 'That photo is empty.') };
+  if (bytes.byteLength > MAX_PHOTO_BYTES) {
+    return { refusal: error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.') };
+  }
+
+  const clean = sanitizeImage(new Uint8Array(bytes), contentType);
+  if (!clean.ok) return { refusal: error(400, 'invalid_photo', clean.problem) };
+
+  const photo = compressPhoto(clean.bytes, clean.contentType);
+  if (photo.undecodable) {
+    return { refusal: error(400, 'invalid_photo', 'That picture looks damaged. Try saving it again, or use a different one.') };
+  }
+  if (photo.bytes.byteLength > PHOTO_MAX_BYTES) {
+    return { refusal: error(413, 'photo_too_large', 'That photo could not be made small enough. Try a different one.') };
+  }
+  // What the person sent, not what was left once metadata was stripped.
+  return { photo: { ...photo, originalBytes: bytes.byteLength } };
 }
 
 /**

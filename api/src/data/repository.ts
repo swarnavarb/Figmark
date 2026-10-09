@@ -91,6 +91,13 @@ export interface Repository {
 
   revokeSession(token: string, expiresAt: Date): Promise<void>;
   isSessionRevoked(token: string): Promise<boolean>;
+  /**
+   * Adds `by` to a counter shared by every instance, which expires
+   * `ttlSeconds` after it was first counted, and returns the new total. `by`
+   * of 0 reads it without creating it. Null when the store keeps no shared
+   * counters - the in-memory one, which is one instance anyway.
+   */
+  bumpCounter(id: string, by: number, ttlSeconds: number): Promise<number | null>;
 
   listUsersByIds(ids: readonly string[]): Promise<User[]>;
   listForwarders(): Promise<User[]>;

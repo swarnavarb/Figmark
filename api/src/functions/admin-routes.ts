@@ -16,6 +16,7 @@ import { error, handler, json } from './http.js';
 import { getPhotoStore } from '../storage/index.js';
 import { releaseListingPhotos, releasePostPhotos } from '../storage/release.js';
 import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
+import { audited, loadAudit } from '../audit.js';
 
 /**
  * Operating the marketplace.
@@ -633,6 +634,18 @@ async function decideAction(request: HttpRequest, _context: InvocationContext) {
   return json(200, { action });
 }
 
+/**
+ * GET /api/ops/audit?days=7 - what operators did, newest first.
+ *
+ * Every write in the console is recorded once it succeeds (see audit.ts): who,
+ * what, to which account or case, and what they sent.
+ */
+async function auditTrail(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const days = Math.min(90, Math.max(1, Math.floor(Number(request.query.get('days') ?? 7)) || 7));
+  return json(200, { days, entries: await loadAudit(days) });
+}
+
 /** GET /api/ops/ledger - every fee paid through the gateway, and Figmark's commission on it. */
 async function ledger(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
@@ -650,18 +663,19 @@ async function ledger(request: HttpRequest, _context: InvocationContext) {
 
 export const adminUsersRoute = handler(users);
 export const adminUserDetailRoute = handler(userDetail);
-export const adminSuspendRoute = handler(suspend);
-export const adminDeleteUserRoute = handler(deleteAccount);
-export const adminDeleteResourceRoute = handler(deleteResource);
+export const adminSuspendRoute = audited('user.suspend', handler(suspend));
+export const adminDeleteUserRoute = audited('user.delete', handler(deleteAccount));
+export const adminDeleteResourceRoute = audited('resource.delete', handler(deleteResource));
 export const adminPhotoScanRoute = handler(scanPhotos);
-export const adminPhotoCleanupRoute = handler(cleanupPhotos);
-export const adminManagerRoute = handler(appointManager);
-export const adminRightsRoute = handler(rights);
+export const adminPhotoCleanupRoute = audited('photos.cleanup', handler(cleanupPhotos));
+export const adminManagerRoute = audited('user.manager', handler(appointManager));
+export const adminRightsRoute = audited('user.rights', handler(rights));
 export const adminEmailUsageRoute = handler(emailUsageToday);
 export const adminDisputesRoute = handler(disputes);
-export const adminReassignRoute = handler(reassign);
+export const adminReassignRoute = audited('dispute.reassign', handler(reassign));
 export const adminActionsRoute = handler(actions);
-export const adminDecideActionRoute = handler(decideAction);
+export const adminDecideActionRoute = audited('dispute.action.decide', handler(decideAction));
+export const adminAuditRoute = handler(auditTrail);
 export const adminLedgerRoute = handler(ledger);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -681,3 +695,4 @@ app.http('admin-reassign', { ...anon, methods: ['POST'], route: 'ops/disputes/{i
 app.http('admin-actions', { ...anon, methods: ['GET'], route: 'ops/actions', handler: adminActionsRoute });
 app.http('admin-action-decide', { ...anon, methods: ['POST'], route: 'ops/actions/{id}/decide', handler: adminDecideActionRoute });
 app.http('admin-ledger', { ...anon, methods: ['GET'], route: 'ops/ledger', handler: adminLedgerRoute });
+app.http('admin-audit', { ...anon, methods: ['GET'], route: 'ops/audit', handler: adminAuditRoute });

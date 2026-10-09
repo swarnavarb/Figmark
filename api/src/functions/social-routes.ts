@@ -981,7 +981,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   const text = body.body?.trim() ?? '';
   if (!text && photoUrls.length === 0) return error(400, 'invalid_post', 'Write something first.');
   if (text.length > 2000) return error(400, 'invalid_post', 'Keep a post under 2000 characters.');
-  const slow = tooFast(user.id, 'post');
+  const slow = await tooFast(user.id, 'post');
   if (slow) return slow;
 
   let poll: StoredPoll | null = null;
@@ -1299,7 +1299,7 @@ async function react(request: HttpRequest, _context: InvocationContext) {
   if (body.kind !== null && !isReaction(body.kind)) {
     return error(400, 'invalid_reaction', 'No such reaction.');
   }
-  const slow = tooFast(user.id, 'react');
+  const slow = await tooFast(user.id, 'react');
   if (slow) return slow;
 
   let firstTime = false;
@@ -1383,7 +1383,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   if (text.length > COMMENT_MAX_CHARS) {
     return error(400, 'invalid_comment', `Keep a comment under ${COMMENT_MAX_CHARS} characters.`);
   }
-  const slow = tooFast(user.id, 'comment');
+  const slow = await tooFast(user.id, 'comment');
   if (slow) return slow;
 
   let parent: StoredComment | null = null;
@@ -1471,7 +1471,7 @@ async function likeComment(request: HttpRequest, _context: InvocationContext) {
   if (!post.comments?.some((comment) => comment.id === commentId)) {
     return error(404, 'not_found', 'That comment is not there any more.');
   }
-  const slow = tooFast(user.id, 'react');
+  const slow = await tooFast(user.id, 'react');
   if (slow) return slow;
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => ({
@@ -1557,7 +1557,7 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
   if (body.mode !== 'repost' && body.mode !== 'link') {
     return error(400, 'invalid_share', 'Share as a repost or as a link.');
   }
-  const slow = tooFast(user.id, body.mode === 'repost' ? 'post' : 'share');
+  const slow = await tooFast(user.id, body.mode === 'repost' ? 'post' : 'share');
   if (slow) return slow;
 
   // A repost of a repost passes on the original, not the wrapper around it.
@@ -1649,7 +1649,7 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
   if (post.poll.closesAt && post.poll.closesAt < new Date().toISOString()) {
     return error(409, 'poll_closed', 'Voting on this one has closed.');
   }
-  const slow = tooFast(user.id, 'react');
+  const slow = await tooFast(user.id, 'react');
   if (slow) return slow;
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {

@@ -45,7 +45,7 @@ export function AppShell() {
   // in the tab bar does; a page outside the four reads as Buy, as the bar does.
   const tone = TONES[Math.max(0, TABS.findIndex((tab) => tab.match(pathname)))] ?? TONES[0];
   // Before paint: Safari picks its status bar colour from the first frame it
-  // sees, so a frame in the wrong tone sticks. (index.html sets the first
+  // sees, so a frame in the wrong tone sticks. (public/boot/tone.js sets the first
   // page's tone before any of this loads.)
   useLayoutEffect(() => {
     document.documentElement.dataset.tone = tone.id;
@@ -178,7 +178,7 @@ export function AppShell() {
  * The colour each section's header runs in, keyed in the stylesheet by
  * `data-tone` on the root, in the order of the tabs. `status` is the phone's
  * status bar under the clock, and the same colour as the header's top edge
- * (--top-rgb in the stylesheet), so the two read as one block. index.html
+ * (--top-rgb in the stylesheet), so the two read as one block. public/boot/tone.js
  * repeats the paths and colours, to set the first page's tone before paint.
  */
 const TONES = [
@@ -231,6 +231,11 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const { pathname } = useLocation();
+  const { signOutEverywhere } = useSession();
+  const everywhere = () => {
+    if (!window.confirm('Sign out on every phone and computer this account is signed in on, including this one?')) return;
+    void signOutEverywhere();
+  };
 
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -266,6 +271,9 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>
           <button role="menuitem" type="button" className="pmenu__item pmenu__item--out" onClick={onSignOut}>
             👋 Sign Out
+          </button>
+          <button role="menuitem" type="button" className="pmenu__item pmenu__item--out" onClick={everywhere}>
+            🔒 Sign out everywhere
           </button>
         </div>
       )}

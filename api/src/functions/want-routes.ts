@@ -141,7 +141,7 @@ async function post(request: HttpRequest, _context: InvocationContext) {
 
   const photoUrls = await ownPhotos(body.photoUrls, MAX_PHOTOS);
   if (!photoUrls) return error(400, 'invalid_want', `Up to ${MAX_PHOTOS} photos, uploaded here.`);
-  const slow = tooFast(user.id, 'want');
+  const slow = await tooFast(user.id, 'want');
   if (slow) return slow;
 
   const record = await repository.getUserById(user.id);
@@ -278,7 +278,7 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
   if (message.length < 4) {
     return error(400, 'invalid_offer', 'Say what you have or what you can get.');
   }
-  const slow = tooFast(user.id, 'offer');
+  const slow = await tooFast(user.id, 'offer');
   if (slow) return slow;
 
   // Anybody may answer - a collector who knows where one is, or a shop that

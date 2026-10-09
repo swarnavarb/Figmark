@@ -25,6 +25,7 @@ import { ownedLot } from './fulfilment-routes.js';
 import { gistOf } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { error, handler, json } from './http.js';
+import { audited } from '../audit.js';
 
 /**
  * Service stores: applying for one, running one, and the people it serves.
@@ -1280,7 +1281,7 @@ export const commissionRoute = handler(commission);
 export const commissionActRoute = handler(commissionAct);
 export const crewLotRoute = handler(crewLot);
 export const opsStoresRoute = handler(opsStores);
-export const opsReviewRoute = handler(opsReview);
+export const opsReviewRoute = audited('store.review', handler(opsReview));
 
 const anon = { authLevel: 'anonymous' } as const;
 

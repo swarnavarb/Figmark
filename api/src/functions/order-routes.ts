@@ -26,7 +26,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays, marketSettings } from '../settings.js';
-import { availableManagers, bringUpToDate, chargeFee, managerName, pickManager } from '../community.js';
+import { availableManagers, bringUpToDate, managerName, pickManager, quoteFee, recordFee, type FeeInput } from '../community.js';
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
@@ -183,15 +183,9 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   // Choosing to pay is what makes a checkout an order the seller sees.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id);
   if (refusal) return error(409, 'unavailable', refusal);
-  // A booking was placed without touching kept credit; paying for it is when
-  // that money moves.
-  if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
   const now = new Date().toISOString();
   const totalMinor = orderTotalMinor(order);
-  // Credit the seller kept for this buyer was spent when the order was
-  // placed, so only what it did not cover is asked for now.
-  const dueMinor = dueAfterCredit(order, terms.amountMinor);
 
   order.status = 'confirmed';
   order.accepted = true;
@@ -200,15 +194,20 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   order.paymentPlan = terms.plan;
   order.paymentMethod = protect ? 'protected' : 'direct';
 
+  // Worked out now, charged only once the order is saved: of two payments made
+  // at the same moment, the one that loses the write must not have paid for
+  // protection on the way.
+  let fee: { input: FeeInput; payment: ReturnType<typeof quoteFee> } | null = null;
   if (manager) {
     // Set centrally by the operators, and paid through the gateway like every
     // other fee: Figmark keeps its commission, the assigned manager the rest.
     const settings = await marketSettings(repository);
     const feeMinor = protectionFeeMinor(totalMinor, settings.protectionFeeMinor);
-    const fee = await chargeFee(repository, {
-      kind: 'protection', payerId: user.id, amountMinor: feeMinor, currency: order.currency,
+    const input = {
+      kind: 'protection' as const, payerId: user.id, amountMinor: feeMinor, currency: order.currency,
       reference: order.id, managerId: manager.id,
-    }, settings);
+    };
+    fee = { input, payment: quoteFee(input, settings) };
     order.protection = {
       managerId: manager.id,
       // Their name as it was today: a later rename must not rewrite the terms.
@@ -216,15 +215,14 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       // The fee is copied onto the order, not looked up later: it is a term of
       // this transaction and must not move when the setting changes.
       feeMinor,
-      commissionMinor: fee.commissionMinor,
-      gatewayRef: fee.gatewayRef,
+      commissionMinor: fee.payment.commissionMinor,
+      gatewayRef: fee.payment.gatewayRef,
       boughtAt: now,
       refundedAt: null,
     };
     order.hold = {
       ...order.hold,
       state: 'held',
-      amountMinor: dueMinor,
       heldAt: now,
       // Deliberately not set yet. The clock starts at dispatch, because an
       // import can sit in a lot for weeks and a window opened at checkout would
@@ -237,13 +235,30 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     order.hold = { ...order.hold, state: 'none', heldAt: null, autoReleaseAt: null };
     note(order, 'Paid directly to the seller, without protection.', user.id);
   }
+
+  // A booking was placed without touching kept credit; paying for it is when
+  // that money moves. That spends credit on the buyer's other orders, so this
+  // one is saved first: a second payment made at the same moment is refused
+  // here, before it can spend the same credit again.
+  if (order.bookingOnly) {
+    await repository.updateOrder(order);
+    await adjustHeldCredit(repository, order, user.id);
+  }
+
+  // Credit the seller kept for this buyer was spent when the order was
+  // placed, so only what it did not cover is asked for now.
+  const dueMinor = dueAfterCredit(order, terms.amountMinor);
+  if (manager) order.hold = { ...order.hold, amountMinor: dueMinor };
   if (dueMinor > 0) {
     record(order, { kind: terms.plan, method: order.paymentMethod, amountMinor: dueMinor, recordedBy: user.id });
   }
   statusFromMoney(order);
 
+  const saved = await repository.updateOrder(order);
+  if (fee) await recordFee(repository, fee.input, fee.payment);
+
   return json(200, {
-    order: await repository.updateOrder(order),
+    order: saved,
     simulatedPayment: true,
   });
 }
@@ -452,7 +467,7 @@ async function unboxing(request: HttpRequest, _context: InvocationContext) {
   if (text.length > 1000) return error(400, 'invalid_post', 'Keep it under 1000 characters.');
   const photoUrls = await ownPhotos(body.photoUrls, 4);
   if (!photoUrls || photoUrls.length === 0) return error(400, 'invalid_post', 'Add a photo of what arrived.');
-  const slow = tooFast(user.id, 'post');
+  const slow = await tooFast(user.id, 'post');
   if (slow) return slow;
 
   const [buyer, listing] = await Promise.all([repository.getUserById(user.id), repository.getListing(order.listingId)]);

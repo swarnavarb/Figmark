@@ -33,9 +33,10 @@ import {
 } from '../../../shared/affiliate.js';
 import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
 import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
+import { sniffImageType } from '../storage/sanitize.js';
 import { fingerprint } from '../image-hash.js';
 import { rankByPhoto } from '../photo-search.js';
-import { tooFast } from '../rate-limit.js';
+import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -291,8 +292,8 @@ async function similarListings(request: HttpRequest, _context: InvocationContext
 async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
   const viewer = await auth.getCurrentUser(request);
-  const who = viewer?.id ?? `ip:${request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'}`;
-  const slow = tooFast(who, 'photosearch');
+  const who = viewer?.id ?? `ip:${clientIp(request)}`;
+  const slow = await tooFast(who, 'photosearch');
   if (slow) return slow;
 
   let body: { dataUrl?: string };
@@ -311,6 +312,11 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   if (bytes.byteLength === 0) return error(400, 'invalid_photo', 'That photo is empty.');
   if (bytes.byteLength > MAX_PHOTO_BYTES) {
     return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
+  }
+  // Never stored, but it is decoded and sent on to be read, so it has to be
+  // the picture it says it is.
+  if (sniffImageType(bytes) !== contentType) {
+    return error(400, 'invalid_photo', 'That file is not the kind of picture it says it is.');
   }
 
   const hash = fingerprint(bytes, contentType);

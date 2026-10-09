@@ -1,6 +1,7 @@
 import type { HttpResponseInit, InvocationContext } from '@azure/functions';
 import type { ApiError } from '../../../shared/contracts.js';
 import { AuthError } from '../auth/errors.js';
+import { StaleWriteError } from '../data/concurrency.js';
 
 /**
  * JSON response with optional Set-Cookie values.
@@ -73,6 +74,14 @@ export function toErrorResponse(err: unknown, context: InvocationContext): HttpR
     // Cookies on a refusal exist to clear a session the server just rejected,
     // so they have to reach the browser with it.
     return json(err.status, { error: err.code, message: err.message } satisfies ApiError, err.cookies);
+  }
+
+  // Two requests changed the same thing at once and this one lost. Nothing
+  // was written, so trying again against what won is all it takes.
+  if (err instanceof StaleWriteError || storeStatus(err) === 412) {
+    return error(409, 'changed_meanwhile', err instanceof StaleWriteError
+      ? err.message
+      : 'Someone else changed this at the same moment. Reload and try again.');
   }
 
   context.error('Unhandled error in request handler', err);

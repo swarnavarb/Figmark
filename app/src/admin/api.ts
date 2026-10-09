@@ -100,6 +100,18 @@ export interface PendingAction {
   note: string | null;
 }
 
+/** One operator action, as the audit trail recorded it. */
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  action: string;
+  target: Record<string, string>;
+  detail: unknown;
+  status: number;
+}
+
 export interface LedgerEntry extends FeePayment {
   reference: string;
   managerId: string | null;
@@ -214,6 +226,7 @@ export const admin = {
   decideAction: (id: string, body: { approve: boolean; days?: number; severity?: 'light' | 'severe'; note?: string }) =>
     post<{ action: PendingAction }>(`/ops/actions/${encodeURIComponent(id)}/decide`, body),
   /** Every fee paid through the gateway, with Figmark's commission. */
+  audit: (days = 7) => request<{ days: number; entries: AuditEntry[] }>(`/ops/audit?days=${days}`),
   ledger: () => request<{ entries: LedgerEntry[]; totals: { collectedMinor: number; commissionMinor: number; managerShareMinor: number } }>('/ops/ledger'),
 
   /** The Learn guide, hidden tabs included, and whether it differs from the one that ships. */

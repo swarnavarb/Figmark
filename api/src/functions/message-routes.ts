@@ -21,8 +21,7 @@ import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
 import { getPhotoStore } from '../storage/index.js';
-import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
-import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
+import { readPhoto } from './template-routes.js';
 
 /**
  * The handle namespace, and the messages addressed through it.
@@ -482,7 +481,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_message', 'Write something first.');
   }
   if (text.length > 4000) return error(400, 'invalid_message', 'Keep a message under 4000 characters.');
-  const slow = tooFast(user.id, 'message');
+  const slow = await tooFast(user.id, 'message');
   if (slow) return slow;
 
   const mine = await handlesFor(user.id, repository);
@@ -628,7 +627,7 @@ function threadKeyOf(threadId: string): string {
 async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
-  const slow = tooFast(user.id, 'chatphoto');
+  const slow = await tooFast(user.id, 'chatphoto');
   if (slow) return slow;
 
   let body: { dataUrl?: string };
@@ -638,22 +637,9 @@ async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const match = /^data:([a-z/+-]+);base64,(.+)$/i.exec(body.dataUrl ?? '');
-  if (!match) return error(400, 'invalid_photo', 'Send the photo as a base64 data URL.');
-  const contentType = match[1]!.toLowerCase();
-  if (!ALLOWED_TYPES.includes(contentType)) {
-    return error(400, 'invalid_photo', 'Photos must be JPEG, PNG, WebP or GIF.');
-  }
-  const bytes = Buffer.from(match[2]!, 'base64');
-  if (bytes.byteLength === 0) return error(400, 'invalid_photo', 'That photo is empty.');
-  if (bytes.byteLength > MAX_PHOTO_BYTES) {
-    return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
-  }
-
-  const photo = compressPhoto(new Uint8Array(bytes), contentType);
-  if (photo.bytes.byteLength > PHOTO_MAX_BYTES) {
-    return error(413, 'photo_too_large', 'That photo could not be made small enough. Try a different one.');
-  }
+  const read = readPhoto(body.dataUrl);
+  if ('refusal' in read) return read.refusal;
+  const photo = read.photo;
   const stored = await (await getPhotoStore()).uploadPrivate(photo.bytes, photo.contentType, user.id);
   return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
 }

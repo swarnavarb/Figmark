@@ -2182,7 +2182,7 @@ await check('the packing view never shows the owner the buyer list twice', async
 });
 
 /* Photos sent in a chat are private: readable from their own thread only. */
-const chatPixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const chatPixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 let chatPhotoName;
 
 await check('a chat photo goes to the private store and comes back as a name, not a URL', async () => {
@@ -2263,7 +2263,7 @@ await check('a photo already sent cannot be sent again into another thread', asy
 });
 
 /* Taking photos back out: deleted from the blob with whatever owned them. */
-const tinyPhoto = (seed) => `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==#${seed}`;
+const tinyPhoto = (seed) => `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=#${seed}`;
 const { getPhotoStore: photoStore } = await import(new URL('../api/dist/api/src/storage/index.js', import.meta.url));
 
 await check('a listing photo removed before publishing is deleted from storage at once', async () => {
@@ -6002,7 +6002,7 @@ await check('somebody else’s stationery is not yours to read or edit', async (
 
 await check('a photo goes in and comes back out', async () => {
   // One transparent pixel, which is a real PNG and small enough to read.
-  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
   const stored = await upload(req({ headers: auth, body: { dataUrl: pixel } }), ctx);
   assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
   assert.ok(stored.jsonBody.blobName.endsWith('.png'));
@@ -6023,6 +6023,43 @@ await check('a photo goes in and comes back out', async () => {
   assert.equal(refused.status, 413);
 
   photoFixture = stored.jsonBody;
+});
+
+await check('an upload is the picture it says it is, and only the picture', async () => {
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=', 'base64');
+  // A page wearing an image's type is refused: the bytes decide, not the label.
+  const page = Buffer.from('<html><script>alert(document.cookie)</script></html>');
+  const disguised = await upload(req({ headers: auth, body: { dataUrl: `data:image/png;base64,${page.toString('base64')}` } }), ctx);
+  assert.equal(disguised.status, 400);
+  assert.equal(disguised.jsonBody.error, 'invalid_photo');
+  // A real PNG labelled as a GIF is refused too.
+  const mislabelled = await upload(req({ headers: auth, body: { dataUrl: `data:image/gif;base64,${pixel.toString('base64')}` } }), ctx);
+  assert.equal(mislabelled.status, 400);
+
+  // Whatever rides after the end of the image is not stored.
+  const polyglot = Buffer.concat([pixel, page]);
+  const stored = await upload(req({ headers: auth, body: { dataUrl: `data:image/png;base64,${polyglot.toString('base64')}` } }), ctx);
+  assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
+  const served = await photoRoute(req({ params: { name: stored.jsonBody.blobName } }), ctx);
+  assert.equal(Buffer.from(served.body).toString('latin1').includes('<script>'), false, 'the appended page was dropped');
+  assert.equal(served.body.length, pixel.length);
+});
+
+await check('uploads are rate-limited per account', async () => {
+  process.env.FIGMARK_RATE_LIMITS = 'on';
+  resetRateLimits();
+  try {
+    const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
+    const statuses = [];
+    for (let index = 0; index < 31; index += 1) {
+      statuses.push((await upload(req({ headers: auth, body: { dataUrl: pixel } }), ctx)).status);
+    }
+    assert.deepEqual(statuses.slice(0, 30), Array(30).fill(201));
+    assert.equal(statuses[30], 429);
+  } finally {
+    process.env.FIGMARK_RATE_LIMITS = 'off';
+    resetRateLimits();
+  }
 });
 
 /** A big, detailed JPEG as a data URL, under the 900 KB the upload accepts. */
@@ -6058,7 +6095,21 @@ await check('an uploaded photo is compressed to 70-90 KB, and the smaller of the
 });
 
 await check('a photo that cannot be recompressed here and is over 90 KB is refused, not stored large', async () => {
-  const bulky = `data:image/png;base64,${Buffer.alloc(200_000, 7).toString('base64')}`;
+  // A real PNG - signature, header, one large data chunk, end - of 200 KB.
+  const { crc32 } = await import('node:zlib');
+  const chunk = (type, data) => {
+    const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', Buffer.from([0, 0, 1, 0, 0, 0, 1, 0, 8, 6, 0, 0, 0])),
+    chunk('IDAT', Buffer.alloc(200_000, 7)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+  const bulky = `data:image/png;base64,${png.toString('base64')}`;
   assert.equal((await upload(req({ headers: auth, body: { dataUrl: bulky } }), ctx)).status, 413);
   assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: bulky } }), ctx)).status, 413);
 });

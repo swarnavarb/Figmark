@@ -27,6 +27,8 @@ interface SessionValue {
   signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Sign out on every device this account is signed in on, this one included. */
+  signOutEverywhere: () => Promise<void>;
   /** Re-read the principal, after something on it has changed server-side. */
   refresh: () => Promise<void>;
   /**
@@ -180,6 +182,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSignupEmail(null);
   }, []);
 
+  const signOutEverywhere = useCallback(async () => {
+    await disablePush().catch(() => undefined);
+    await api.logoutAll();
+    setUser(null);
+    setWarning(null);
+    setSignupEmail(null);
+  }, []);
+
   // Signed in: whatever asked for it is now allowed, so the popup goes.
   useEffect(() => {
     if (user) setAuthPrompt(null);
@@ -202,10 +212,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh,
+      user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, signOutEverywhere, refresh,
       promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt,
     }),
-    [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh,
+    [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, signOutEverywhere, refresh,
       promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt],
   );
 

@@ -18,6 +18,7 @@ import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
 import { photoNamesIn } from '../storage/unused.js';
+import { ReadSnapshots, StaleWriteError, adopt, mergeChanges } from './concurrency.js';
 import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
@@ -815,11 +816,63 @@ export class CosmosRepository implements Repository {
     return this.database.container(CONTAINERS[name].name);
   }
 
+  /** How orders, listings and users looked when read - see concurrency.ts. */
+  private readonly snapshots = new ReadSnapshots();
+
+  /**
+   * Writes a document read earlier, only if nobody else wrote it in between.
+   *
+   * A lost race is merged when the two changes touch different fields, and
+   * refused with `StaleWriteError` when they touch the same one. A document
+   * with no etag was never read from the store, so there is nothing to check
+   * it against and it is written as before.
+   */
+  private async writeChecked<T extends { id: string; _etag?: string }>(
+    name: 'orders' | 'listings' | 'users',
+    partition: string,
+    doc: T,
+  ): Promise<T> {
+    const item = this.container(name).item(doc.id, partition);
+    if (!doc._etag) {
+      const { resource } = name === 'users'
+        ? await this.container(name).items.upsert<T>(doc)
+        : await item.replace<T>(doc);
+      const saved = (resource as T | undefined) ?? doc;
+      this.snapshots.remember(name, saved);
+      return adopt(doc, saved);
+    }
+
+    const base = this.snapshots.recall<T>(name, doc.id, doc._etag);
+    let next: T = doc;
+    let etag = doc._etag;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const { resource } = await item.replace<T>(next, { accessCondition: { type: 'IfMatch', condition: etag } });
+        const saved = (resource as T | undefined) ?? next;
+        this.snapshots.remember(name, saved);
+        return adopt(doc, saved);
+      } catch (error) {
+        if ((error as { code?: number }).code !== 412) throw error;
+      }
+      if (!base) throw new StaleWriteError();
+      const { resource: current, etag: currentEtag } = await item.read<T>().catch((error: unknown) => {
+        if (isNotFound(error)) return { resource: undefined, etag: undefined };
+        throw error;
+      });
+      if (!current || !currentEtag) throw new StaleWriteError();
+      const merged = mergeChanges(base, doc, current);
+      if (!merged) throw new StaleWriteError();
+      next = merged;
+      etag = currentEtag;
+    }
+    throw new StaleWriteError('This is too busy to change right now. Try again.');
+  }
+
   async getUserById(id: string): Promise<User | null> {
     try {
       // users is partitioned by /id, so this is a point read.
       const { resource } = await this.container('users').item(id, id).read<User>();
-      return resource ?? null;
+      return resource ? this.snapshots.remember('users', resource) : null;
     } catch (error) {
       if (isNotFound(error)) return null;
       throw error;
@@ -975,6 +1028,7 @@ export class CosmosRepository implements Repository {
         { partitionKey: AWAITING_LOT_ID },
       )
       .fetchAll();
+    this.snapshots.rememberAll('orders', resources);
     return resources.filter(isPlaced);
   }
 
@@ -1003,8 +1057,7 @@ export class CosmosRepository implements Repository {
   }
 
   async updateUser(user: User): Promise<User> {
-    const { resource } = await this.container('users').items.upsert<User>(user);
-    return resource ?? user;
+    return this.writeChecked('users', user.id, user as User & { _etag?: string });
   }
 
   async getByHandle(username: string): Promise<{ user: User; isStore: boolean } | null> {
@@ -1404,10 +1457,8 @@ export class CosmosRepository implements Repository {
   }
 
   async updateListing(listing: Listing): Promise<Listing> {
-    const { resource } = await this.container('listings')
-      .item(listing.id, listing.sellerId)
-      .replace({ ...listing, updatedAt: new Date().toISOString() });
-    return (resource as Listing | undefined) ?? listing;
+    listing.updatedAt = new Date().toISOString();
+    return this.writeChecked('listings', listing.sellerId, listing as Listing & { _etag?: string });
   }
 
   async listPowerSales(sellerId: string): Promise<PowerSale[]> {
@@ -1610,6 +1661,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@sellerId', value: sellerId }],
       })
       .fetchAll();
+    this.snapshots.rememberAll('orders', resources);
     return resources.filter(isPlaced);
   }
 
@@ -1795,6 +1847,34 @@ export class CosmosRepository implements Repository {
     });
   }
 
+  async bumpCounter(id: string, by: number, ttlSeconds: number): Promise<number | null> {
+    // Kept in the sessions container: it already expires its rows, and a
+    // container of its own would be the 25th - the most a shared-throughput
+    // database allows.
+    const item = this.container('sessions').item(id, id);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        if (by === 0) {
+          const { resource } = await item.read<{ count?: number }>();
+          return resource?.count ?? 0;
+        }
+        const { resource } = await item.patch<{ count?: number }>([{ op: 'incr', path: '/count', value: by }]);
+        return resource?.count ?? by;
+      } catch (error) {
+        if (!isNotFound(error)) throw error;
+      }
+      if (by <= 0) return 0;
+      try {
+        await this.container('sessions').items.create({ id, count: by, ttl: ttlSeconds });
+        return by;
+      } catch (error) {
+        // Created by another instance in between: count on top of theirs.
+        if (!isConflict(error)) throw error;
+      }
+    }
+    return null;
+  }
+
   async isSessionRevoked(token: string): Promise<boolean> {
     const id = sessionDigest(token);
     try {
@@ -1908,6 +1988,7 @@ export class CosmosRepository implements Repository {
         { partitionKey: lotId },
       )
       .fetchAll();
+    this.snapshots.rememberAll('orders', resources);
     return resources.filter(isPlaced);
   }
 
@@ -1918,7 +1999,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@id', value: id }],
       })
       .fetchAll();
-    return resources[0] ?? null;
+    return resources[0] ? this.snapshots.remember('listings', resources[0]) : null;
   }
 
   async createListing(listing: Listing): Promise<Listing> {
@@ -1993,6 +2074,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@id', value: id }],
       })
       .fetchAll();
+    this.snapshots.rememberAll('orders', resources);
     return resources[0] ?? null;
   }
 
@@ -2001,10 +2083,8 @@ export class CosmosRepository implements Repository {
   }
 
   async updateOrder(order: Order): Promise<Order> {
-    const { resource } = await this.container('orders')
-      .item(order.id, order.lotId)
-      .replace({ ...order, updatedAt: new Date().toISOString() });
-    return (resource as Order | undefined) ?? order;
+    order.updatedAt = new Date().toISOString();
+    return this.writeChecked('orders', order.lotId, order as Order & { _etag?: string });
   }
 
   async listOrdersForBuyer(buyerId: string): Promise<Order[]> {
@@ -2014,6 +2094,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@buyerId', value: buyerId }],
       })
       .fetchAll();
+    this.snapshots.rememberAll('orders', resources);
     return resources;
   }
 
@@ -2024,6 +2105,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@listingId', value: listingId }],
       })
       .fetchAll();
+    this.snapshots.rememberAll('orders', resources);
     return resources.filter(isPlaced);
   }
 
@@ -2055,6 +2137,7 @@ export class CosmosRepository implements Repository {
         parameters: [{ name: '@sellerId', value: sellerId }],
       })
       .fetchAll();
+    this.snapshots.rememberAll('orders', resources);
     return resources;
   }
 

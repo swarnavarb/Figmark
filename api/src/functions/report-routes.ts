@@ -10,6 +10,7 @@ import { getRepository } from '../data/index.js';
 import { loadReports, saveReports } from '../moderation.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
+import { audited } from '../audit.js';
 
 /**
  * Disputing a review or comment, or asking for your own to be validated.
@@ -224,7 +225,7 @@ async function resolve(request: HttpRequest, _context: InvocationContext) {
 export const reportCreateRoute = handler(create);
 export const reportMineRoute = handler(mine);
 export const opsReportsRoute = handler(queue);
-export const opsReportResolveRoute = handler(resolve);
+export const opsReportResolveRoute = audited('report.resolve', handler(resolve));
 
 const anon = { authLevel: 'anonymous' } as const;
 app.http('reports-create', { ...anon, methods: ['POST'], route: 'reports', handler: reportCreateRoute });

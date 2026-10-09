@@ -44,7 +44,7 @@ export interface AuthService {
    * (a hosted login page, an OIDC redirect) throw `AuthError.notImplemented`
    * and the frontend routes to their login endpoint instead.
    */
-  login(credentials: LoginRequest): Promise<LoginResponse>;
+  login(credentials: LoginRequest, client?: ClientContext): Promise<LoginResponse>;
 
   /** Invalidate the current session. Safe to call when not signed in. */
   logout(request: HttpRequest): Promise<void>;
@@ -60,4 +60,12 @@ export interface AuthService {
 
   /** Set-Cookie values to attach to a logout response. */
   logoutCookies(): string[];
+}
+
+/** What is known about where a request came from, for throttling. */
+export interface ClientContext {
+  /** The client's address, as `clientIp` in rate-limit.ts reads it. */
+  ip?: string;
+  /** The device cookie (tokens.ts), naming the accounts this browser has signed in to before. */
+  device?: string | null;
 }

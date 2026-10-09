@@ -260,6 +260,11 @@ export interface User extends BaseDocument {
   standing?: CommunityStanding | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
+  /**
+   * "Sign out everywhere": any session issued before this instant is over.
+   * Absent until the person first uses it. Never leaves the API.
+   */
+  sessionsValidAfter?: string | null;
   /** An operator's say over buying and selling; absent means verification decides. */
   tradeOverride?: TradeOverride | null;
   /** Verification codes in flight. Never leaves the API. */

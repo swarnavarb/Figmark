@@ -54,7 +54,7 @@ async function status(request: HttpRequest) {
 /** POST /api/verify/email/send - a fresh code to the account's email. */
 async function emailSend(request: HttpRequest) {
   const user = await signedInRow(request);
-  const slow = tooFast(user.id, 'verify_email');
+  const slow = await tooFast(user.id, 'verify_email');
   if (slow) return slow;
   const repository = await getRepository();
   const sent = await startEmail(repository, user);
@@ -64,7 +64,7 @@ async function emailSend(request: HttpRequest) {
 /** POST /api/verify/email/confirm - { code }. */
 async function emailConfirm(request: HttpRequest) {
   const user = await signedInRow(request);
-  const slow = tooFast(user.id, 'verify_code');
+  const slow = await tooFast(user.id, 'verify_code');
   if (slow) return slow;
   const body = await readJson(request);
   await confirmEmail(await getRepository(), user, String(body.code ?? ''));
@@ -74,7 +74,7 @@ async function emailConfirm(request: HttpRequest) {
 /** POST /api/verify/phone/start - the WhatsApp message to send, and the link that opens it. */
 async function phoneStart(request: HttpRequest) {
   const user = await signedInRow(request);
-  const slow = tooFast(user.id, 'verify_phone');
+  const slow = await tooFast(user.id, 'verify_phone');
   if (slow) return slow;
   const started = await startPhone(await getRepository(), user);
   return json(200, { ...started, status: statusOf(user) });
@@ -83,7 +83,7 @@ async function phoneStart(request: HttpRequest) {
 /** POST /api/verify/phone/number - { phone }: correct the number before verifying it. */
 async function phoneNumber(request: HttpRequest) {
   const user = await signedInRow(request);
-  const slow = tooFast(user.id, 'verify_phone');
+  const slow = await tooFast(user.id, 'verify_phone');
   if (slow) return slow;
   const body = await readJson(request);
   await changePhone(await getRepository(), user, String(body.phone ?? ''));
@@ -93,7 +93,7 @@ async function phoneNumber(request: HttpRequest) {
 /** POST /api/verify/aadhaar - { qr, consent }: the Secure QR's number, as scanned. */
 async function aadhaar(request: HttpRequest) {
   const user = await signedInRow(request);
-  const slow = tooFast(user.id, 'verify_aadhaar');
+  const slow = await tooFast(user.id, 'verify_aadhaar');
   if (slow) return slow;
   const body = await readJson(request);
   await verifyAadhaar(await getRepository(), user, String(body.qr ?? ''), body.consent === true);

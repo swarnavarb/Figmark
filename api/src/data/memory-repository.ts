@@ -285,6 +285,11 @@ export class MemoryRepository implements Repository {
     this.revokedSessions.set(sessionDigest(token), expiresAt.getTime());
   }
 
+  async bumpCounter(): Promise<number | null> {
+    // One process, so the caller's own in-memory count is already shared.
+    return null;
+  }
+
   async isSessionRevoked(token: string): Promise<boolean> {
     const digest = sessionDigest(token);
     const expiry = this.revokedSessions.get(digest);

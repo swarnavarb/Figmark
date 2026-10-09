@@ -51,6 +51,33 @@ routes need both. `lot-routes.ts` shows the pattern.
   token for non-browser clients. A bearer header takes precedence over the cookie.
 - Logout records the token's digest (never the token) in a revocation list that
   expires itself via the container's TTL.
+- **Session length.** A session lasts 12 hours from when it was last renewed.
+  `GET /api/auth/me` (every app load) renews the cookie once the token is an
+  hour old, so a session in use does not run out mid-use. No renewal goes past
+  14 days from the sign-in itself (`aut` in the token); then the password is
+  asked for again.
+- **Sign out everywhere.** `POST /api/auth/logout-all` (profile menu → "Sign out
+  everywhere") stamps `sessionsValidAfter` on the account; every token issued
+  before it is refused, on every device, from that moment.
+- **Passwords.** 8 to 128 characters; not a common password, a repeated
+  character or a keyboard run; not containing the person's name, handle or
+  email name; and, where `PASSWORD_BREACH_CHECK` is on (the default when
+  deployed to Azure), not found in Have I Been Pwned's breach corpus. That check
+  uses the k-anonymity range API: only the first five characters of the
+  password's SHA-1 leave the server. If the service is unreachable the check
+  passes rather than blocking sign-up.
+- **Throttling.** Wrong passwords are counted per account *and* address: 8 in
+  10 minutes locks that address out of that account, and nobody else - typing
+  someone's email with bad passwords cannot lock them out. Guessing spread over
+  many addresses is capped per account too (20 in 15 minutes, 100 a day), but
+  only for browsers that have never signed in to it: a successful sign-in sets
+  a signed `figmark_device` cookie (Path `/api/auth`, 180 days, ended by "sign
+  out everywhere"), and the owner's own browser is never held back by somebody
+  else's guessing. Each address is also limited across every account (30
+  sign-ins a minute, 300 an hour; 20 sign-ups an hour, 100 a day) - generous,
+  because a mobile carrier puts many people behind one address. These counters,
+  like every rate limit in `api/src/rate-limit.ts`, are shared by all instances
+  through the `sessions` container, so they hold across scale-out and restarts.
 
 It signs its own tokens and stores its own password hashes, which a real
 provider will not do. Everything about it is expected to be deleted.
@@ -68,6 +95,21 @@ be revoked in the identity provider without a write to our store. The other
 capabilities stay derived from verification state, which is ours to decide. Login and logout are refused,
 because the platform owns them at `/.auth/login/<provider>` and `/.auth/logout`.
 
+**The header is only trusted where it cannot be forged.** Static Web Apps sets
+`x-ms-client-principal`, but nothing in the header proves that: anyone who can
+reach the Functions app other than through Static Web Apps can send it and be
+any user, admin included. So on Azure the provider accepts no principal at all
+until `SWA_PRINCIPAL_TRUST` says why it can be believed:
+
+- `managed` - the API is the Static Web App's own managed functions, which have
+  no address of their own.
+- `linked` - a linked Functions app whose App Service Authentication is on and
+  restricted to the Static Web App, so the header is stripped from any request
+  that did not come through it. Check this before setting it: a linked app with
+  its own public hostname and no such restriction is exactly the hole.
+
+Off Azure (the SWA CLI on a laptop) it is trusted as before.
+
 ## Swapping in a real provider
 
 1. Configure the provider in `staticwebapp.config.json` under `auth`, and
@@ -80,8 +122,10 @@ because the platform owns them at `/.auth/login/<provider>` and `/.auth/logout`.
 4. Point the frontend's sign-in control at `/.auth/login/<provider>` instead of
    `POST /api/auth/login`. `SignInPanel` is the only component that touches
    sign-in.
-5. Delete `mock-provider.ts`, `passwords.ts`, `tokens.ts`, the `sessions`
-   container, and the `passwordHash` field on `User`.
+5. Set `SWA_PRINCIPAL_TRUST` (above).
+6. Delete `mock-provider.ts`, `passwords.ts`, `tokens.ts` and the `passwordHash`
+   and `sessionsValidAfter` fields on `User`. Keep the `sessions` container: the
+   shared rate-limit counters live there too.
 
 If a third-party provider (Auth0, Clerk) is chosen instead, write a third
 implementation of `AuthService` — validating that provider's JWT — and select it

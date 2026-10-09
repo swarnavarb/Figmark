@@ -9,6 +9,7 @@ import type {
 import type { Capability } from '../../../shared/enums.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import type { Repository } from '../data/repository.js';
+import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { toAuthUser } from './mock-provider.js';
 import type { AuthService } from './types.js';
@@ -29,9 +30,15 @@ import type { AuthService } from './types.js';
 export class StaticWebAppsAuthProvider implements AuthService {
   readonly mode: AuthMode = 'swa';
 
-  constructor(private readonly repository: Repository) {}
+  constructor(
+    private readonly repository: Repository,
+    private readonly trust: typeof config.swaPrincipalTrust = config.swaPrincipalTrust,
+  ) {}
 
   async getCurrentUser(request: HttpRequest): Promise<AuthUser | null> {
+    // The header is only as good as the guarantee that Static Web Apps set it.
+    // With none declared, nobody is signed in - see `swaPrincipalTrust`.
+    if (!this.trust) return null;
     const principal = readClientPrincipal(request);
     if (!principal?.userId) return null;
 
@@ -52,6 +59,14 @@ export class StaticWebAppsAuthProvider implements AuthService {
   }
 
   async requireAuth(request: HttpRequest): Promise<AuthUser> {
+    if (!this.trust) {
+      throw AuthError.signInUnavailable(
+        'Sign-in is switched off: AUTH_MODE=swa trusts the x-ms-client-principal header, and this deployment ' +
+          'has not said why that header cannot be forged. Set SWA_PRINCIPAL_TRUST=managed (the API is Static ' +
+          'Web Apps\' managed functions) or SWA_PRINCIPAL_TRUST=linked (a linked Functions app with App Service ' +
+          'Authentication restricted to the Static Web App). See docs/AUTH.md.',
+      );
+    }
     const user = await this.getCurrentUser(request);
     if (!user) throw AuthError.unauthenticated();
     return user;

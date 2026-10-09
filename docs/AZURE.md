@@ -110,6 +110,19 @@ credentials were present. These steps need a machine that can reach Azure:
    falls back to a constant development secret, and anyone who reads this
    repository can mint a valid session token.
 
+   Two more settings, both optional:
+
+   - `PASSWORD_BREACH_CHECK=on|off` - check new passwords against Have I Been
+     Pwned (on by default in Azure). See [AUTH.md](AUTH.md).
+   - `SWA_PRINCIPAL_TRUST=managed|linked` - required only with `AUTH_MODE=swa`;
+     without it no `x-ms-client-principal` is believed. See [AUTH.md](AUTH.md).
+
+   The site is sent with a Content-Security-Policy, HSTS and a
+   Permissions-Policy (`globalHeaders` in `app/public/staticwebapp.config.json`).
+   The policy allows no inline script, so anything that has to run before the
+   bundle loads lives in `app/public/boot/`. Photos load from any `https:`
+   origin and the API is called only on this one.
+
 6. **Push to `main`.** The workflow builds, runs the smoke tests, and deploys.
    Then visit the site — the status page should show Database and Storage as
    Cosmos DB and Blob Storage rather than in-memory fallbacks.
@@ -140,6 +153,13 @@ az staticwebapp appsettings set \
   --resource-group rg-figuremarket-dev \
   --setting-names ADMIN_EMAILS="you@example.com,ops@example.com"
 ```
+
+Every write made from the console - suspending or deleting an account, granting
+rights, appointing managers, reassigning disputes, deciding their actions,
+settings, the Learn page, reports and store reviews - is recorded once it
+succeeds, with the operator, the target and what they sent (secrets redacted).
+It is kept one document per day in `siteContent` (`audit-YYYY-MM-DD`) and shown
+under **Audit trail**, or at `GET /api/ops/audit?days=N`.
 
 On the in-memory store the demo account is an operator by default. That store is
 a throwaway whose password is published in this repository, so admin over data

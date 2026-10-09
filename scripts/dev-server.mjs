@@ -21,7 +21,7 @@ process.env.FIGMARK_SHELL_FILE ??= join(staticRoot, 'index.html');
 const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
-const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
+const { loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
 const {
   verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
   verifyAadhaarRoute, whatsappWebhookRoute,
@@ -112,7 +112,7 @@ const {
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
   adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminRightsRoute, adminEmailUsageRoute, adminDisputesRoute,
-  adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute,
+  adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute, adminAuditRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
   questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questOpenRoute,
@@ -138,6 +138,7 @@ const routes = [
   ['POST', '/api/auth/login', loginRoute],
   ['POST', '/api/auth/signup', signupRoute],
   ['POST', '/api/auth/logout', logoutRoute],
+  ['POST', '/api/auth/logout-all', logoutAllRoute],
   ['GET', '/api/verify/status', verifyStatusRoute],
   ['POST', '/api/verify/email/send', verifyEmailSendRoute],
   ['POST', '/api/verify/email/confirm', verifyEmailConfirmRoute],
@@ -319,6 +320,7 @@ const routes = [
   ['GET', '/api/ops/actions', adminActionsRoute],
   ['POST', '/api/ops/actions/:id/decide', adminDecideActionRoute],
   ['GET', '/api/ops/ledger', adminLedgerRoute],
+  ['GET', '/api/ops/audit', adminAuditRoute],
   ['GET', '/api/wants', wantsBoardRoute],
   ['POST', '/api/wants/new', wantPostRoute],
   ['GET', '/api/wants/:id', wantReadRoute],

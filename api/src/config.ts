@@ -53,6 +53,31 @@ export interface AppConfig {
   vision: VisionConfig | null;
   /** Email, WhatsApp and Aadhaar verification. Each piece is null until configured. */
   verification: VerificationConfig;
+  /**
+   * Whether a new password is checked against known breaches (Have I Been
+   * Pwned's range API - only a 5-character hash prefix leaves the server).
+   * On by default when deployed to Azure, off on a laptop where tests make
+   * accounts by the hundred; PASSWORD_BREACH_CHECK=on|off overrides it.
+   */
+  passwordBreachCheck: boolean;
+  /**
+   * Why `x-ms-client-principal` can be believed, under AUTH_MODE=swa.
+   *
+   * Static Web Apps sets that header, but nothing about the header says so:
+   * anyone who can reach the Functions app other than through Static Web Apps
+   * can send it and be whoever they like. So it is trusted only where the
+   * deployment says why it cannot be forged (SWA_PRINCIPAL_TRUST):
+   *
+   * - `managed`: the API is Static Web Apps' own managed functions, which have
+   *   no address of their own.
+   * - `linked`: a linked Functions app whose App Service Authentication is on
+   *   and restricted to the Static Web App, so it strips the header from
+   *   anything else.
+   *
+   * Off Azure (the SWA CLI on a laptop) it is `local` and trusted. On Azure
+   * with nothing declared it is null, and no principal is accepted at all.
+   */
+  swaPrincipalTrust: 'managed' | 'linked' | 'local' | null;
 }
 
 export interface VerificationConfig {
@@ -277,4 +302,12 @@ export const config: AppConfig = {
   adminEmails: resolveAdmins(cosmos),
   vision: resolveVision(),
   verification: resolveVerification(),
+  passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),
+  swaPrincipalTrust: resolveSwaTrust(),
 };
+
+function resolveSwaTrust(): AppConfig['swaPrincipalTrust'] {
+  const declared = env('SWA_PRINCIPAL_TRUST')?.toLowerCase();
+  if (declared === 'managed' || declared === 'linked') return declared;
+  return runningInAzure() ? null : 'local';
+}
