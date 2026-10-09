@@ -102,12 +102,12 @@ const {
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
   acceptDisputeRoute, withdrawDisputeRoute, escalateDisputeRoute,
-  decideDisputeRoute, releaseDisputeRoute, raiseSubjectDisputeRoute, escrowHoldingsRoute,
+  decideDisputeRoute, raiseSubjectDisputeRoute,
   communityCasesRoute, communityAvailabilityRoute, communityManagersRoute, communityNoticesRoute, communityStandingRoute, communityTeamRoute,
 } = await import(new URL('dispute-routes.js', apiRoot));
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
-  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminEscrowRoute, adminDisputesRoute,
+  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminDisputesRoute,
   adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
@@ -259,9 +259,7 @@ const routes = [
   ['POST', '/api/disputes/:id/withdraw', withdrawDisputeRoute],
   ['POST', '/api/disputes/:id/escalate', escalateDisputeRoute],
   ['POST', '/api/disputes/:id/decide', decideDisputeRoute],
-  ['POST', '/api/disputes/:id/release', releaseDisputeRoute],
   ['POST', '/api/disputes', raiseSubjectDisputeRoute],
-  ['GET', '/api/escrow/holdings', escrowHoldingsRoute],
   ['GET', '/api/community/cases', communityCasesRoute],
   ['POST', '/api/community/availability', communityAvailabilityRoute],
   ['GET', '/api/community/managers', communityManagersRoute],
@@ -296,7 +294,7 @@ const routes = [
   ['GET', '/api/ops/users/:id', adminUserDetailRoute],
   ['POST', '/api/ops/users/:id/suspend', adminSuspendRoute],
   ['POST', '/api/ops/users/:id/delete', adminDeleteUserRoute],
-  ['POST', '/api/ops/users/:id/escrow', adminEscrowRoute],
+  ['POST', '/api/ops/users/:id/manager', adminManagerRoute],
   ['POST', '/api/ops/resources/delete', adminDeleteResourceRoute],
   ['POST', '/api/ops/photos/scan', adminPhotoScanRoute],
   ['POST', '/api/ops/photos/cleanup', adminPhotoCleanupRoute],

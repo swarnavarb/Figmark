@@ -1,5 +1,5 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { EscrowRights, User } from '../../../shared/models.js';
+import type { ManagerRights, User } from '../../../shared/models.js';
 import { currentRound, decisionOverdue, isClosed, roundsOf, standingDecision } from '../../../shared/disputes.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
@@ -17,8 +17,8 @@ import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
  * Operating the marketplace.
  *
  * Everything here is destructive or financial: deleting accounts, deleting what
- * people made, appointing the community managers who hold other people's
- * money and decide disputes, and approving what their decisions ask for. So three rules run through the whole module.
+ * people made, appointing the community managers who decide disputes, and
+ * approving what their decisions ask for. So three rules run through the whole module.
  *
  * Only a configured operator gets in. `isAdmin` is read from ADMIN_EMAILS at
  * request time rather than from a row, so the right cannot be acquired by
@@ -60,7 +60,7 @@ function row(user: User) {
           managers: user.sellerProfile.managers?.length ?? 0,
         }
       : null,
-    escrowRights: user.escrowRights ?? null,
+    managerRights: user.managerRights ?? null,
     buyerTrust: user.buyerTrust,
     sellerTrust: user.sellerTrust,
     // Whether they can be signed into at all. A catalog fixture is not an
@@ -140,28 +140,21 @@ async function userDetail(request: HttpRequest, _context: InvocationContext) {
  * matters.
  */
 async function deletionBlockers(id: string, repository: Repo): Promise<string[]> {
-  const [purchases, sales, holding, asParty, asManager] = await Promise.all([
+  const [purchases, sales, asParty, asManager] = await Promise.all([
     repository.listOrdersForBuyer(id),
     repository.listOrdersForSeller(id),
-    repository.listOrdersHeldBy(id),
     repository.listDisputesForParty(id),
     repository.listDisputesForManager(id),
   ]);
 
   const blockers: string[] = [];
   const live = [...purchases, ...sales].filter(
-    (order) => order.escrow.state === 'held' || order.escrow.state === 'disputed',
+    (order) => order.hold.state === 'held' || order.hold.state === 'disputed',
   );
   if (live.length > 0) {
     blockers.push(
       `${live.length} order(s) still hold money. Settle or release them before deleting the account.`,
     );
-  }
-  // A community manager holding other people's payments: deleting them would
-  // leave that money with nobody to release it.
-  const held = holding.filter((order) => order.escrow.state === 'held' || order.escrow.state === 'disputed');
-  if (held.length > 0) {
-    blockers.push(`They hold ${held.length} protected payment(s) for other people. Those must be released first.`);
   }
   const open = [...asParty, ...asManager.filter((dispute) => currentRound(dispute)?.managerId === id)]
     .filter((dispute) => !isClosed(dispute));
@@ -343,15 +336,14 @@ async function cleanupPhotos(request: HttpRequest, _context: InvocationContext) 
 }
 
 /**
- * POST /api/ops/users/{id}/escrow - appoint or remove a community manager.
+ * POST /api/ops/users/{id}/manager - appoint or remove a community manager.
  *
- * A community manager hears disputes and holds payments bought with buyer
- * protection. Operators appoint them; fees are not theirs to set - every fee
- * is set centrally in the settings, and managers are paid a share of it.
- * (The grant is stored as `escrowRights`, its name from when holding payments
- * was the whole of the job.)
+ * A community manager hears disputes. They never hold money: every payment
+ * bought with buyer protection is held by Figmark. Operators appoint them;
+ * fees are not theirs to set - every fee is set centrally in the settings, and
+ * managers are paid a share of the dispute fees.
  */
-async function escrowRights(request: HttpRequest, _context: InvocationContext) {
+async function appointManager(request: HttpRequest, _context: InvocationContext) {
   const admin = await operator(request);
   const repository = await getRepository();
 
@@ -369,17 +361,16 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
   if (!user) return error(404, 'not_found', 'No such account.');
 
   if (body.enabled === false) {
-    // Removing them stops new protected checkouts and new disputes reaching
-    // them. Orders already protected keep the holder they were bought with.
-    user.escrowRights = null;
+    // Removing them stops new disputes reaching them.
+    user.managerRights = null;
   } else {
-    const rights: EscrowRights = {
+    const rights: ManagerRights = {
       // Re-appointing keeps the original date: the grant is a standing decision.
-      grantedAt: user.escrowRights?.grantedAt ?? new Date().toISOString(),
+      grantedAt: user.managerRights?.grantedAt ?? new Date().toISOString(),
       grantedBy: admin.id,
-      available: user.escrowRights?.available ?? true,
+      available: user.managerRights?.available ?? true,
     };
-    user.escrowRights = rights;
+    user.managerRights = rights;
   }
 
   user.updatedAt = new Date().toISOString();
@@ -414,7 +405,7 @@ async function disputes(request: HttpRequest, _context: InvocationContext) {
       return {
         dispute,
         itemName: order?.itemName ?? dispute.subjectRef?.excerpt ?? 'Unknown',
-        heldMinor: order?.escrow.amountMinor ?? 0,
+        heldMinor: order?.hold.amountMinor ?? 0,
         currency: order?.currency ?? 'INR',
         protectionFeeMinor: order?.protection?.feeMinor ?? 0,
         raiser: raiser ? { id: raiser.id, name: raiser.sellerProfile?.storefrontName ?? raiser.displayName } : null,
@@ -581,7 +572,7 @@ export const adminDeleteUserRoute = handler(deleteAccount);
 export const adminDeleteResourceRoute = handler(deleteResource);
 export const adminPhotoScanRoute = handler(scanPhotos);
 export const adminPhotoCleanupRoute = handler(cleanupPhotos);
-export const adminEscrowRoute = handler(escrowRights);
+export const adminManagerRoute = handler(appointManager);
 export const adminDisputesRoute = handler(disputes);
 export const adminReassignRoute = handler(reassign);
 export const adminActionsRoute = handler(actions);
@@ -594,7 +585,7 @@ app.http('admin-users', { ...anon, methods: ['GET'], route: 'ops/users', handler
 app.http('admin-user', { ...anon, methods: ['GET'], route: 'ops/users/{id}', handler: adminUserDetailRoute });
 app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'ops/users/{id}/suspend', handler: adminSuspendRoute });
 app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'ops/users/{id}/delete', handler: adminDeleteUserRoute });
-app.http('admin-escrow', { ...anon, methods: ['POST'], route: 'ops/users/{id}/escrow', handler: adminEscrowRoute });
+app.http('admin-manager', { ...anon, methods: ['POST'], route: 'ops/users/{id}/manager', handler: adminManagerRoute });
 app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'ops/resources/delete', handler: adminDeleteResourceRoute });
 app.http('admin-photo-scan', { ...anon, methods: ['POST'], route: 'ops/photos/scan', handler: adminPhotoScanRoute });
 app.http('admin-photo-cleanup', { ...anon, methods: ['POST'], route: 'ops/photos/cleanup', handler: adminPhotoCleanupRoute });

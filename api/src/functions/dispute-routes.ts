@@ -7,7 +7,7 @@ import type {
 } from '../../../shared/models.js';
 import {
   DISPUTE_SUBJECT_LABELS, MAX_ROUNDS, communityActionsFor, currentRound, decisionOverdue, escalationOpen,
-  holdsMoney, inDays, isClosed, isParty, reasonsFor, releaseDueAt, roundsOf, standingDecision, subjectPartition,
+  holdsMoney, inDays, isClosed, isParty, reasonsFor, roundsOf, standingDecision, subjectPartition,
 } from '../../../shared/disputes.js';
 import { REASON_MIN, REPORT_TARGETS, type ReportTarget } from '../../../shared/moderation.js';
 import { actionsFor, sideOf } from '../../../shared/orders.js';
@@ -40,10 +40,10 @@ import { error, handler, json } from './http.js';
  *
  * Money. Every round is paid through the gateway, by whoever raised or
  * escalated it, and nothing is refunded. A purchase made with buyer protection
- * is the exception for round one: the protection fee already bought it, and
- * the manager holding the payment hears it. That is also the only kind of
- * dispute that can move money - the payment is held until the result is final
- * and the holder asks for its release. A dispute over a purchase paid
+ * is the exception for round one: the protection fee already bought it. That
+ * is also the only kind of dispute that can move money - Figmark holds the
+ * payment until the result is final, then pays it out as decided. A dispute
+ * over a purchase paid
  * directly can only flag and warn: the money has already gone.
  *
  * The two parties can settle between themselves at any point before it is
@@ -67,14 +67,13 @@ async function tellSettled(
   }, { except: decidedBy });
 }
 
-type Role = 'raiser' | 'respondent' | 'manager' | 'holder' | 'past_manager';
+type Role = 'raiser' | 'respondent' | 'manager' | 'past_manager';
 
 /** Who this viewer is to the dispute, or null when they have no business reading it. */
-function roleOf(dispute: Dispute, order: Order | null, viewerId: string): Role | null {
+function roleOf(dispute: Dispute, viewerId: string): Role | null {
   if (dispute.raisedBy === viewerId) return 'raiser';
   if (dispute.againstUserId === viewerId) return 'respondent';
   if (currentRound(dispute)?.managerId === viewerId) return 'manager';
-  if (order?.protection?.escrowAgentId === viewerId) return 'holder';
   // A manager who held a round keeps reading it; one only reassigned away
   // for being slow, never having decided, does not.
   if (roundsOf(dispute).some((round) => round.managerId === viewerId)) return 'past_manager';
@@ -100,34 +99,29 @@ async function loadDispute(
   const order = await orderOf(repository, found);
   if (!found.subjectRef && !order) return { refusal: error(404, 'not_found', 'That dispute has no order behind it.') };
 
-  const role = roleOf(found, order, viewerId);
+  const role = roleOf(found, viewerId);
   if (!role) return { refusal: error(403, 'forbidden', 'That dispute is not yours.') };
   const dispute = await bringUpToDate(repository, found);
-  await releaseIfOverdue(repository, dispute);
+  await releaseIfFinal(repository, dispute);
   return { dispute, order: order ? (await repository.getOrder(order.id)) ?? order : null, role };
 }
 
 /**
- * Pays out a final decision's held money when its holder has not: after the
- * grace days, or at once if they are no longer a community manager. Through
- * the same path as a release they asked for, so the result is identical.
+ * Pays out a final decision's held money. Figmark holds every protected
+ * payment, so nobody has to ask: the moment the result is final, it moves.
  */
-async function releaseIfOverdue(repository: Repo, dispute: Dispute, now = Date.now()): Promise<void> {
+async function releaseIfFinal(repository: Repo, dispute: Dispute): Promise<void> {
   if (dispute.result?.how !== 'decided' || dispute.release || !holdsMoney(dispute)) return;
   const order = await orderOf(repository, dispute);
-  if (!order || order.escrow.state !== 'disputed' || order.escrow.disputeId !== dispute.id) return;
-  const holderId = order.protection?.escrowAgentId;
-  const holderGone = !holderId || !isManager(await repository.getUserById(holderId));
-  const due = releaseDueAt(dispute);
-  if (!holderGone && (!due || Date.parse(due) > now)) return;
+  if (!order || order.hold.state !== 'disputed' || order.hold.disputeId !== dispute.id) return;
   try {
     await moveHeld(repository, dispute, order, dispute.resolution?.refundMinor ?? 0,
-      `Dispute settled: released by Figmark on the final decision${holderGone ? '' : ', as the holder had not'}.`, 'system');
+      'Dispute settled: released by Figmark on the final decision.', 'system');
   } catch (error) {
     if (!(error instanceof Busy)) throw error;
     return;
   }
-  await notify(repository, [order.buyerId, order.sellerId, holderId], {
+  await notify(repository, [order.buyerId, order.sellerId], {
     kind: 'payment_released',
     title: 'The held payment was released on the final decision',
     body: order.itemName,
@@ -215,14 +209,14 @@ async function moveHeld(
   by: string,
 ): Promise<Order> {
   const now = new Date().toISOString();
-  const held = order.escrow.amountMinor;
+  const held = order.hold.amountMinor;
   const toBuyer = Math.max(0, Math.min(held, Math.round(toBuyerMinor)));
 
   // Nothing back to the buyer means the seller keeps it, which is a release
   // like any other; anything back means the order ends refunded, whole or in
   // part. A part refund is still a completed sale for the seller.
-  order.escrow = {
-    ...order.escrow,
+  order.hold = {
+    ...order.hold,
     state: toBuyer >= held ? 'refunded' : 'released',
     releasedAt: now,
     disputeId: dispute.id,
@@ -262,8 +256,8 @@ async function moveHeld(
 async function backOnHold(repository: Repo, dispute: Dispute, order: Order, by: string): Promise<Order> {
   const settings = await marketSettings(repository);
   const shipped = ['shipped', 'out_for_delivery', 'delivered'].includes(order.status) || ['shipped', 'delivered'].includes(order.stage);
-  order.escrow = {
-    ...order.escrow,
+  order.hold = {
+    ...order.hold,
     state: 'held',
     disputeId: null,
     autoReleaseAt: shipped ? inDays(settings.autoReleaseDays) : null,
@@ -286,14 +280,14 @@ async function chosenManager(repository: Repo, managerId: string, parties: reado
 
 /** Whether this order's protection is still holding its payment - the only time round one is free. */
 function protectionActive(order: Order): boolean {
-  return Boolean(order.protection && (order.escrow.state === 'held' || order.escrow.state === 'disputed'));
+  return Boolean(order.protection && (order.hold.state === 'held' || order.hold.state === 'disputed'));
 }
 
 /**
  * Every dispute on an order starts here, whatever it is about.
  *
  * Creates the one record all three then work on the same page, with its first
- * round: the manager holding a protected payment, free; otherwise the manager
+ * round: on a protected payment, an available manager, free; otherwise the manager
  * the raiser picked (or, if they left it, the system's choice), paid through
  * the gateway. Indexes it on the order so it is never raised twice, and tells
  * the other side and the manager. The caller saves the order.
@@ -327,12 +321,11 @@ export async function openDisputeRecord(
 
   let round;
   if (protectionActive(order)) {
-    // Bought with the protection: the manager holding it hears it, and the
-    // fee for that was paid at checkout.
-    const holder = await repository.getUserById(order.protection!.escrowAgentId);
-    const manager = isManager(holder) ? holder : await pickManager(repository, parties);
+    // Bought with the protection: the fee for hearing it was paid at
+    // checkout, and the system assigns whoever is available.
+    const manager = await pickManager(repository, parties);
     if (!manager) throw new Refusal(409, 'no_manager', 'No community manager is available to take this right now.');
-    round = newRound(1, manager, isManager(holder) ? 'protection' : 'system', settings, null, null);
+    round = newRound(1, manager, 'system', settings, null, null);
   } else {
     const manager = input.managerId
       ? await chosenManager(repository, input.managerId, parties)
@@ -421,7 +414,7 @@ async function open(request: HttpRequest, _context: InvocationContext) {
 
   // The specific refusal first: an order that already has one is not "not
   // disputable", it is one to go and read, and the message should say so.
-  if (order.escrow.disputeId) {
+  if (order.hold.disputeId) {
     return error(409, 'already_disputed', 'This order already has a dispute open.');
   }
   if (!actionsFor(order, user.id).includes('dispute')) {
@@ -452,12 +445,12 @@ async function open(request: HttpRequest, _context: InvocationContext) {
   if (evidence === null) return error(400, 'invalid_evidence', 'Evidence must be http(s) links or uploaded screenshots.');
 
   const record = await openDisputeRecord(repository, order, {
-    raisedBy: user.id, side, topic: 'escrow', reasonCode, reason, evidence, amountMinor: order.escrow.amountMinor,
+    raisedBy: user.id, side, topic: 'held_payment', reasonCode, reason, evidence, amountMinor: order.hold.amountMinor,
   });
 
   // The hold freezes: no auto-release can run while this is open, whichever
   // side opened it.
-  order.escrow = { ...order.escrow, state: 'disputed', disputeId: record.id, autoReleaseAt: null };
+  order.hold = { ...order.hold, state: 'disputed', disputeId: record.id, autoReleaseAt: null };
   note(order, `${side === 'buyer' ? 'Buyer' : 'Seller'} opened a dispute.`, user.id);
   await repository.updateOrder(order);
 
@@ -634,9 +627,7 @@ async function read(request: HttpRequest, _context: InvocationContext) {
     order,
     side: order ? sideOf(order, user.id) : null,
     role,
-    actions: communityActionsFor(dispute, user.id, {
-      holdsMoney: money, isHolder: order?.protection?.escrowAgentId === user.id,
-    }),
+    actions: communityActionsFor(dispute, user.id),
     overdue: decisionOverdue(currentRound(dispute)),
     standing: standingDecision(dispute),
     escalation: {
@@ -646,7 +637,7 @@ async function read(request: HttpRequest, _context: InvocationContext) {
       by: dispute.escalateBy ?? null,
     },
     holdsMoney: money,
-    heldMinor: money ? order!.escrow.amountMinor : null,
+    heldMinor: money ? order!.hold.amountMinor : null,
     currency: order?.currency ?? 'INR',
     parties: {
       raiser: { id: dispute.raisedBy, name: personName(named.get(dispute.raisedBy)) },
@@ -719,11 +710,11 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'cannot_offer', 'This dispute is not open to an offer.');
   }
 
-  const money = Boolean(order) && holdsMoney(dispute) && order!.escrow.state === 'disputed';
+  const money = Boolean(order) && holdsMoney(dispute) && order!.hold.state === 'disputed';
   let refundMinor = 0;
   if (money) {
     refundMinor = Math.round(Number(body.refundMinor));
-    if (!Number.isFinite(refundMinor) || refundMinor < 0 || refundMinor > order!.escrow.amountMinor) {
+    if (!Number.isFinite(refundMinor) || refundMinor < 0 || refundMinor > order!.hold.amountMinor) {
       return error(400, 'invalid_offer', 'Offer between nothing and the full amount held.');
     }
   }
@@ -788,8 +779,8 @@ async function accept(request: HttpRequest, _context: InvocationContext) {
   dispute.result = { how: 'settled', winnerId: null, loserId: null, favour: null, finalRound: null, terms, at: now };
   dispute.messages = [...dispute.messages, message(user.id, voiceOf(dispute, order, user.id), 'Accepted the settlement.', [])];
 
-  if (order && holdsMoney(dispute) && order.escrow.state === 'disputed') {
-    const held = order.escrow.amountMinor;
+  if (order && holdsMoney(dispute) && order.hold.state === 'disputed') {
+    const held = order.hold.amountMinor;
     dispute.resolution = {
       outcome: proposed.refundMinor >= held ? 'refund_buyer' : proposed.refundMinor === 0 ? 'release_seller' : 'split',
       refundMinor: proposed.refundMinor, note: 'Both sides agreed a settlement.', decidedBy: user.id, byCompany: false, decidedAt: now,
@@ -842,7 +833,7 @@ async function withdraw(request: HttpRequest, _context: InvocationContext) {
   dispute.resolution = { outcome: 'withdrawn', refundMinor: 0, note: 'Withdrawn by whoever raised it.', decidedBy: user.id, byCompany: false, decidedAt: now };
   dispute.updatedAt = now;
   let saved: Dispute;
-  if (order && holdsMoney(dispute) && order.escrow.state === 'disputed') {
+  if (order && holdsMoney(dispute) && order.hold.state === 'disputed') {
     order = await backOnHold(repository, dispute, order, user.id);
     saved = dispute;
   } else {
@@ -961,7 +952,7 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
 
   let refundMinor: number | null = null;
   if (order && holdsMoney(dispute)) {
-    const held = order.escrow.amountMinor;
+    const held = order.hold.amountMinor;
     const buyerWins = (body.favour === 'raiser') === (dispute.raisedBy === order.buyerId);
     refundMinor = body.refundMinor === undefined || body.refundMinor === null
       ? (buyerWins ? held : 0)
@@ -1066,49 +1057,6 @@ async function escalate(request: HttpRequest, _context: InvocationContext) {
   return json(200, { dispute: saved, payment, simulatedPayment: true });
 }
 
-/**
- * POST /api/disputes/{id}/release - the manager holding a protected payment
- * pays it out as the final result says.
- *
- * Straight to the gateway: no operator approves it. Only once the result is
- * final, and only once.
- */
-async function release(request: HttpRequest, _context: InvocationContext) {
-  const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
-  const repository = await getRepository();
-
-  const found = await loadDispute(request, repository, user.id);
-  if ('refusal' in found) return found.refusal;
-  const { dispute, order } = found;
-
-  if (!order || order.protection?.escrowAgentId !== user.id) {
-    return error(403, 'forbidden', 'Only the community manager holding this payment can release it.');
-  }
-  if (!isManager(await repository.getUserById(user.id))) {
-    return error(403, 'not_a_manager', 'You are no longer a community manager. The system releases this payment instead.');
-  }
-  if (!communityActionsFor(dispute, user.id, { holdsMoney: holdsMoney(dispute), isHolder: true }).includes('request_release')
-    || dispute.result?.how !== 'decided' || order.escrow.state !== 'disputed') {
-    return error(409, 'not_releasable', dispute.release
-      ? 'This payment has already been released.'
-      : 'The result is not final yet, so the payment stays held.');
-  }
-
-  const toBuyer = dispute.resolution?.refundMinor ?? 0;
-  dispute.updatedAt = new Date().toISOString();
-  const saved = await moveHeld(repository, dispute, order, toBuyer,
-    `Dispute settled: ${dispute.resolutionNote ?? 'released on the final decision.'}`, user.id);
-  const updated = dispute;
-  await notify(repository, [order.buyerId, order.sellerId], {
-    kind: 'payment_released',
-    title: 'The held payment was released on the final decision',
-    body: order.itemName,
-    link: `/dispute/${dispute.id}`,
-  });
-  return json(200, { dispute: updated, order: saved });
-}
-
 /* ── The community manager's workspace ───────────────────────────────────── */
 
 /** The person asking, if they are an appointed community manager. */
@@ -1116,53 +1064,7 @@ async function asManager(request: HttpRequest, repository: Repo) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const me = await repository.getUserById(user.id);
-  return me?.escrowRights ? me : null;
-}
-
-/**
- * GET /api/escrow/holdings - the protected payments in this manager's name,
- * and the disputes over them.
- */
-async function holdings(request: HttpRequest, _context: InvocationContext) {
-  const repository = await getRepository();
-  const me = await asManager(request, repository);
-  if (!me) return error(403, 'not_an_escrow', 'You are not a community manager.');
-
-  // Held or contested, both sides of the ledger. Bounded by what one person is
-  // holding, which is the size that makes a scan the right answer.
-  const all = await repository.listOrdersHeldBy(me.id);
-  const rows = await Promise.all(
-    all.map(async (order) => {
-      const [buyer, seller] = await Promise.all([
-        repository.getUserById(order.buyerId),
-        repository.getUserById(order.sellerId),
-      ]);
-      const found = order.escrow.disputeId ? await repository.getDisputeById(order.escrow.disputeId) : null;
-      const dispute = found ? await bringUpToDate(repository, found) : null;
-      return {
-        order: {
-          id: order.id, itemName: order.itemName, currency: order.currency,
-          lotId: order.lotId, status: order.status,
-          escrow: order.escrow, protection: order.protection ?? null,
-        },
-        buyer: personRef(buyer, 'the buyer'),
-        seller: sellerRef(seller),
-        dispute,
-        decidable: Boolean(dispute && !isClosed(dispute) && currentRound(dispute)?.managerId === me.id && !currentRound(dispute)?.decision),
-        releasable: Boolean(dispute && dispute.result?.how === 'decided' && !dispute.release && order.escrow.state === 'disputed'),
-      };
-    }),
-  );
-
-  const heldMinor = rows
-    .filter((row) => row.order.escrow.state === 'held' || row.order.escrow.state === 'disputed')
-    .reduce((sum, row) => sum + row.order.escrow.amountMinor, 0);
-
-  return json(200, {
-    rights: me.escrowRights,
-    heldMinor,
-    holdings: rows.sort((a, b) => Number(Boolean(b.dispute)) - Number(Boolean(a.dispute))),
-  });
+  return me?.managerRights ? me : null;
 }
 
 /**
@@ -1199,7 +1101,6 @@ async function cases(request: HttpRequest, _context: InvocationContext) {
       decideBy: waiting ? round!.decideBy : null,
       overdue: waiting && decisionOverdue(round),
       result: dispute.result ?? null,
-      releasable: dispute.result?.how === 'decided' && !dispute.release && holdsMoney(dispute) && !dispute.subjectRef,
       updatedAt: dispute.updatedAt,
     };
   }).sort((a, b) => Number(b.waitingOnMe) - Number(a.waitingOnMe) || b.updatedAt.localeCompare(a.updatedAt));
@@ -1220,7 +1121,7 @@ async function cases(request: HttpRequest, _context: InvocationContext) {
   const earned = (await loadLedger(repository)).filter((entry) => entry.managerId === me.id);
 
   return json(200, {
-    manager: { id: me.id, name: managerName(me), available: me.escrowRights!.available !== false, since: me.escrowRights!.grantedAt },
+    manager: { id: me.id, name: managerName(me), available: me.managerRights!.available !== false, since: me.managerRights!.grantedAt },
     openCases: await openCaseCount(repository, me.id),
     cases: rows,
     stats: {
@@ -1245,7 +1146,7 @@ async function availability(request: HttpRequest, _context: InvocationContext) {
   if (!me) return error(403, 'not_a_manager', 'Only community managers set their availability.');
   const body = await bodyOf<{ available?: boolean }>(request);
   if (!body || typeof body.available !== 'boolean') return error(400, 'invalid_request', 'Say whether you are available.');
-  me.escrowRights = { ...me.escrowRights!, available: body.available };
+  me.managerRights = { ...me.managerRights!, available: body.available };
   me.updatedAt = new Date().toISOString();
   await repository.updateUser(me);
   return json(200, { available: body.available });
@@ -1270,7 +1171,7 @@ async function managers(request: HttpRequest, _context: InvocationContext) {
     managers: open.map(({ user: manager, open: openNow }) => ({
       id: manager.id,
       name: managerName(manager),
-      since: manager.escrowRights!.grantedAt,
+      since: manager.managerRights!.grantedAt,
       openCases: openNow,
     })),
   });
@@ -1285,12 +1186,12 @@ async function managers(request: HttpRequest, _context: InvocationContext) {
  */
 async function team(_request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
-  const people = (await repository.listEscrowAgents()).filter((person) => person.escrowRights && !person.suspended);
+  const people = (await repository.listManagers()).filter((person) => person.managerRights && !person.suspended);
   return json(200, {
     managers: people.map((person) => ({
       id: person.id,
       handles: [person.username, person.sellerProfile?.username].filter((handle): handle is string => !!handle),
-      since: person.escrowRights!.grantedAt,
+      since: person.managerRights!.grantedAt,
     })),
   });
 }
@@ -1329,12 +1230,12 @@ async function clock(_timer: Timer, context: InvocationContext): Promise<void> {
     const repository = await getRepository();
     for (const status of ['awaiting_response', 'in_discussion', 'decided', 'under_mediation']) {
       for (const dispute of await repository.listDisputes(status)) {
-        await releaseIfOverdue(repository, await bringUpToDate(repository, dispute));
+        await releaseIfFinal(repository, await bringUpToDate(repository, dispute));
       }
     }
-    // Final results whose held money nobody released yet.
+    // Final results whose held money Figmark has not paid out yet.
     for (const dispute of await repository.listDisputes('resolved')) {
-      if (dispute.result?.how === 'decided' && !dispute.release && holdsMoney(dispute)) await releaseIfOverdue(repository, dispute);
+      if (dispute.result?.how === 'decided' && !dispute.release && holdsMoney(dispute)) await releaseIfFinal(repository, dispute);
     }
   } catch (err) {
     context.error('dispute clock failed', err);
@@ -1350,8 +1251,6 @@ export const acceptDisputeRoute = handler(accept);
 export const withdrawDisputeRoute = handler(withdraw);
 export const escalateDisputeRoute = handler(escalate);
 export const decideDisputeRoute = handler(decide);
-export const releaseDisputeRoute = handler(release);
-export const escrowHoldingsRoute = handler(holdings);
 export const communityCasesRoute = handler(cases);
 export const communityAvailabilityRoute = handler(availability);
 export const communityManagersRoute = handler(managers);
@@ -1371,8 +1270,6 @@ app.http('dispute-accept', { ...anon, methods: ['POST'], route: 'disputes/{id}/a
 app.http('dispute-withdraw', { ...anon, methods: ['POST'], route: 'disputes/{id}/withdraw', handler: withdrawDisputeRoute });
 app.http('dispute-escalate', { ...anon, methods: ['POST'], route: 'disputes/{id}/escalate', handler: escalateDisputeRoute });
 app.http('dispute-decide', { ...anon, methods: ['POST'], route: 'disputes/{id}/decide', handler: decideDisputeRoute });
-app.http('dispute-release', { ...anon, methods: ['POST'], route: 'disputes/{id}/release', handler: releaseDisputeRoute });
-app.http('escrow-holdings', { ...anon, methods: ['GET'], route: 'escrow/holdings', handler: escrowHoldingsRoute });
 app.http('community-cases', { ...anon, methods: ['GET'], route: 'community/cases', handler: communityCasesRoute });
 app.http('community-availability', { ...anon, methods: ['POST'], route: 'community/availability', handler: communityAvailabilityRoute });
 app.http('community-managers', { ...anon, methods: ['GET'], route: 'community/managers', handler: communityManagersRoute });

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   ARTIST_JOB_FLOW, ARTIST_JOB_LABELS, jobDueMinor, jobIsLive, type ArtistJobAction,
 } from '@shared/service-stores';
-import { protectionFeeMinor } from '@shared/orders';
 import { ApiRequestError, api, type OrderServicesView, type PublicStore } from '../api';
 import { formatMoney, timeAgo } from '../format';
 import { ErrorNotice, Icon } from './ui';
@@ -16,7 +15,7 @@ import { OfferingCard, PlanCard, Picture, StoreMark, accentStyle } from './Store
  * offered only when the shop booked one on this lot and turned it on, and
  * only until the goods leave the origin warehouse; its premium joins the
  * order's total and is paid the way the order is. A commission is the
- * artist's, paid to them on its own - held by an escrow or sent direct.
+ * artist's, paid to them on its own - held by Figmark or sent direct.
  *
  * The shop sees the same card, read-only, plus the one thing it has to act
  * on: when a commission is paid, the piece goes to the studio, not the buyer.
@@ -269,13 +268,11 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
   const job = commission.job!;
   const buyer = view.side === 'buyer';
   const [method, setMethod] = useState<'protected' | 'direct'>(commission.artistPayment ? 'direct' : 'protected');
-  const [escrowId, setEscrowId] = useState<string | null>(commission.escrows[0]?.id ?? null);
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
   const label = ARTIST_JOB_LABELS[job.status];
   const at = ARTIST_JOB_FLOW.indexOf(job.status);
-  const escrow = commission.escrows.find((row) => row.id === escrowId) ?? null;
-  const fee = escrow && job.quoteMinor ? protectionFeeMinor(job.quoteMinor, escrow.feeMinor) : 0;
+  const fee = commission.protectionFeeMinor ?? 0;
   const claimed = job.payments.some((payment) => !payment.confirmedAt);
 
   async function act(action: ArtistJobAction) {
@@ -285,7 +282,6 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
       await api.commissionAct(orderId, {
         action,
         method: action === 'pay' ? method : undefined,
-        escrowAgentId: action === 'pay' && method === 'protected' ? escrowId ?? undefined : undefined,
         reference: action === 'pay' && method === 'direct' ? reference : undefined,
       });
       await onChanged();
@@ -346,20 +342,13 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
         <div className="os-pay">
           <div className="seg" role="radiogroup" aria-label="How to pay">
             <button type="button" role="radio" aria-checked={method === 'protected'} className={method === 'protected' ? 'is-on' : ''}
-              onClick={() => setMethod('protected')} disabled={commission.escrows.length === 0}>🔒 With protection</button>
+              onClick={() => setMethod('protected')} disabled={commission.protectionFeeMinor === null}>🔒 With protection</button>
             <button type="button" role="radio" aria-checked={method === 'direct'} className={method === 'direct' ? 'is-on' : ''}
               onClick={() => setMethod('direct')} disabled={!commission.artistPayment}>↗ Direct to the artist</button>
           </div>
           {method === 'protected' ? (
             <>
-              <p className="faint">Buyer Protection holds the money until you mark the finished piece received.</p>
-              <div className="os-escrows">
-                {commission.escrows.map((row) => (
-                  <button key={row.id} type="button" className={`os-escrow${row.id === escrowId ? ' is-on' : ''}`} onClick={() => setEscrowId(row.id)}>
-                    <b>{row.name}</b><span className="faint">{formatMoney(row.feeMinor)} fee</span>
-                  </button>
-                ))}
-              </div>
+              <p className="faint">Figmark holds the money until you mark the finished piece received. {formatMoney(fee)} protection fee.</p>
               <div className="os-total"><span>Total</span><b>{formatMoney(job.quoteMinor + fee)}</b></div>
             </>
           ) : commission.artistPayment && (
@@ -374,7 +363,7 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
               <div className="os-total"><span>Send</span><b>{formatMoney(job.quoteMinor)}</b></div>
             </>
           )}
-          <button type="button" className="btn btn--block" disabled={busy || (method === 'protected' && !escrowId)} onClick={() => void act('pay')}>
+          <button type="button" className="btn btn--block" disabled={busy || (method === 'protected' && commission.protectionFeeMinor === null)} onClick={() => void act('pay')}>
             {method === 'protected' ? `Pay ${formatMoney(job.quoteMinor + fee)}` : 'I have sent it'}
           </button>
         </div>
@@ -383,7 +372,7 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
         <p className="notice notice--info">You said you sent {formatMoney(jobDueMinor(job))}. Waiting for the artist to confirm it arrived.</p>
       )}
       {job.method === 'protected' && job.heldMinor > 0 && !job.releasedAt && (
-        <p className="notice notice--info">🔒 {job.escrowName} is holding {formatMoney(job.heldMinor)} until you mark it received.</p>
+        <p className="notice notice--info">🔒 Figmark is holding {formatMoney(job.heldMinor)} until you mark it received.</p>
       )}
 
       {buyer && (

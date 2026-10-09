@@ -136,11 +136,11 @@ export const PAYMENT_STATUSES = ['unpaid', 'claimed', 'partially_paid', 'paid', 
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 /**
- * Escrow state machine. Funds are held by the platform and released on buyer
+ * Where a protected payment stands. Figmark holds it and releases it on buyer
  * confirmation, or automatically after `autoReleaseAt` when no dispute exists.
  */
-export const ESCROW_STATES = ['none', 'held', 'released', 'refunded', 'disputed'] as const;
-export type EscrowState = (typeof ESCROW_STATES)[number];
+export const HOLD_STATES = ['none', 'held', 'released', 'refunded', 'disputed'] as const;
+export type HoldState = (typeof HOLD_STATES)[number];
 
 export const DISPUTE_STATUSES = [
   'awaiting_response',
@@ -203,8 +203,8 @@ export const SELLER_DISPUTE_REASONS = [
 
 /**
  * Every reason a dispute record can carry. `other` is for disputes that come
- * from a rejected payment or a free-form complaint rather than the escrow
- * form, whose topic already says what they are about.
+ * from a rejected payment or a free-form complaint rather than the protection
+ * claim form, whose topic already says what they are about.
  */
 export const DISPUTE_REASONS = [...BUYER_DISPUTE_REASONS, ...SELLER_DISPUTE_REASONS, 'other'] as const;
 export type DisputeReason = (typeof DISPUTE_REASONS)[number];

@@ -17,8 +17,8 @@ import { shrink } from './PhotoManager';
  * dispute" opens a case with a community manager: the person raising it says
  * what happened, attaches screenshots, picks a manager and pays the fee
  * through the gateway, and the case lands in My Disputes as a three-way
- * thread. A purchase still held under buyer protection is the exception: its
- * holder hears it, and the protection fee already paid for that.
+ * thread. A purchase still held under buyer protection is the exception: an
+ * available manager hears it, and the protection fee already paid for that.
  */
 
 /** Screenshots, uploaded the moment they are picked so the dispute carries their address. */
@@ -130,7 +130,7 @@ export function ReportModal({ targetType, targetId, parentId, kind, onClose, onS
  *
  * One form for anything: what happened, screenshots, the manager to hear it,
  * and the fee. On a purchase still held under protection there is no picker
- * and nothing to pay - the holder hears it - but the reason is one of the
+ * and nothing to pay - an available manager hears it - but the reason is one of the
  * structured ones, because that decides what happens to the held money.
  */
 export function RaiseDisputeModal({ target, onClose, protectedOrder, side, orderSubject }: {
@@ -156,7 +156,7 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
 
   const free = Boolean(protectedOrder);
   // Anything about a purchase still under protection is a protection claim:
-  // free, heard by the manager holding the money, and it freezes the payment.
+  // free, heard by an available manager, and it freezes the payment Figmark holds.
   // It picks a structured reason, because that decides where the money goes.
   const claim = free;
 
@@ -189,7 +189,7 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
           reason: reason.trim(), managerId, evidence,
         })).dispute.id;
       }
-      toast(free ? 'Dispute raised with the community manager holding your payment' : 'Paid and raised - it is in My Disputes', 'ok');
+      toast(free ? 'Dispute raised - Figmark keeps holding your payment until it is settled' : 'Paid and raised - it is in My Disputes', 'ok');
       onClose();
       navigate(`/dispute/${id}`);
     } catch (err) {
@@ -227,8 +227,8 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
 
         {free ? (
           <p className="notice notice--info" style={{ margin: 0 }}>
-            This purchase is under buyer protection, so the community manager holding the payment hears it, and there
-            is nothing to pay - the protection fee covered it. The payment stays held until the result is final.
+            This purchase is under buyer protection, so an available community manager hears it, and there is
+            nothing to pay - the protection fee covered it. Figmark keeps holding the payment until the result is final.
           </p>
         ) : (
           <>

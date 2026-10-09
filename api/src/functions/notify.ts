@@ -195,20 +195,17 @@ export async function orderNames(repository: Repo, order: Pick<Order, 'buyerId' 
  */
 export async function notifySides(
   repository: Repo,
-  order: Pick<Order, 'buyerId' | 'sellerId'> & { protection?: { escrowAgentId?: string | null } | null },
+  order: Pick<Order, 'buyerId' | 'sellerId'>,
   drafts: {
     buyer?: (names: OrderNames) => NoticeDraft;
     seller?: (names: OrderNames) => NoticeDraft;
-    agent?: (names: OrderNames) => NoticeDraft;
   },
   options: { except?: string } = {},
 ): Promise<void> {
   const names = await orderNames(repository, order);
-  const agent = order.protection?.escrowAgentId ?? null;
   await Promise.all([
     drafts.buyer ? notify(repository, [order.buyerId], drafts.buyer(names), options) : null,
     drafts.seller ? notify(repository, [order.sellerId], drafts.seller(names), options) : null,
-    drafts.agent && agent ? notify(repository, [agent], drafts.agent(names), options) : null,
   ]);
 }
 

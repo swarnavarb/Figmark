@@ -22,7 +22,7 @@ import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
   DEMO_PHONE,
-  ESCROW_EMAIL,
+  MANAGER_EMAIL,
   HANDLER_EMAIL,
   ARTIST_EMAIL,
   FORWARDER_EMAIL,
@@ -57,6 +57,9 @@ import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcas
  * then behaves as though every password were wrong. Set COSMOS_AUTOSEED=off for
  * a database that is meant to start empty.
  */
+/** Site-content id of the marker left once rows are in the Figmark-held payment shape. */
+const PAYMENT_HOLDS_MARKER = 'migration:figmark-held-payments';
+
 function autoSeedEnabled(): boolean {
   return (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase() !== 'off';
 }
@@ -179,6 +182,17 @@ export class CosmosRepository implements Repository {
       return;
     }
 
+    // Before any request reads a row: an order or user still in the old shape
+    // would fail every read that expects the new one. Once done it costs one
+    // point read of the marker it leaves.
+    // An empty database has nothing in the old shape, and is left untouched.
+    let migrated = '';
+    try {
+      if (signInAccounts > 0) migrated = await this.migratePaymentHolds();
+    } catch (error) {
+      migrated = ` Payment-hold migration failed: ${describeError(error)}.`;
+    }
+
     let seeded = '';
     if (autoSeedEnabled()) {
       if (signInAccounts === 0) {
@@ -204,7 +218,7 @@ export class CosmosRepository implements Repository {
     this.state = {
       connected: true,
       database: this.cosmosConfig.database,
-      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${seeded}`,
+      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${migrated}${seeded}`,
       signInAccounts,
       missingContainers: containers.missing,
     };
@@ -284,6 +298,100 @@ export class CosmosRepository implements Repository {
       await this.deleteOrder(order);
     }
     return stale.length ? ` Cleared ${stale.length} unpaid order(s) from before the cart.` : '';
+  }
+
+  /**
+   * Rewrites rows stored before Figmark held every protected payment itself.
+   *
+   * Then a buyer picked a third party to hold their money, and rows carried
+   * that party: the user's grant under its old name, the order's hold under
+   * its old name with the holder's id and name on its protection, and a
+   * dispute topic and round source naming them. Each is renamed or dropped
+   * here, once: a marker records that the pass finished, and a row already in
+   * the new shape is never rewritten.
+   */
+  private async migratePaymentHolds(): Promise<string> {
+    if (await this.getSiteContent(PAYMENT_HOLDS_MARKER)) return '';
+
+    const LEGACY_HOLD = 'escrow';
+    const LEGACY_GRANT = 'escrowRights';
+    const LEGACY_HOLDER = ['escrowAgentId', 'escrowName'];
+    type Row = Record<string, unknown> & { id: string };
+    /** Drops the old holder's id and name from a record; true if it had them. */
+    const strip = (record: unknown): boolean => {
+      if (!record || typeof record !== 'object') return false;
+      const fields = record as Record<string, unknown>;
+      const had = LEGACY_HOLDER.some((key) => key in fields);
+      for (const key of LEGACY_HOLDER) delete fields[key];
+      return had;
+    };
+    let moved = 0;
+
+    const { resources: users } = await this.container('users').items.query<Row>({
+      query: 'SELECT * FROM c WHERE IS_DEFINED(c.escrowRights)',
+    }).fetchAll();
+    for (const user of users) {
+      if (!(LEGACY_GRANT in user)) continue;
+      const grant = user[LEGACY_GRANT] as Record<string, unknown> | null;
+      delete user[LEGACY_GRANT];
+      if (grant) delete grant.feeBasisPoints;
+      user.managerRights = user.managerRights ?? grant ?? null;
+      await this.container('users').items.upsert(user);
+      moved += 1;
+    }
+
+    const { resources: orders } = await this.container('orders').items.query<Row>({
+      query: 'SELECT * FROM c WHERE IS_DEFINED(c.escrow) OR IS_DEFINED(c.protection.escrowAgentId)'
+        + " OR IS_DEFINED(c.artistJob.escrowAgentId) OR ARRAY_CONTAINS(c.disputeLinks, { topic: 'escrow' }, true)",
+    }).fetchAll();
+    for (const order of orders) {
+      let changed = false;
+      if (LEGACY_HOLD in order) {
+        order.hold = order.hold ?? order[LEGACY_HOLD];
+        delete order[LEGACY_HOLD];
+        changed = true;
+      }
+      if (strip(order.protection)) changed = true;
+      if (strip(order.artistJob)) changed = true;
+      for (const link of (order.disputeLinks as { topic?: string }[] | undefined) ?? []) {
+        if (link.topic === LEGACY_HOLD) {
+          link.topic = 'held_payment';
+          changed = true;
+        }
+      }
+      if (!changed) continue;
+      await this.container('orders').items.upsert(order);
+      moved += 1;
+    }
+
+    const { resources: disputes } = await this.container('disputes').items.query<Row>({
+      query: "SELECT * FROM c WHERE c.topic = 'escrow' OR ARRAY_CONTAINS(c.rounds, { assignedBy: 'protection' }, true)",
+    }).fetchAll();
+    for (const dispute of disputes) {
+      let changed = false;
+      if (dispute.topic === LEGACY_HOLD) {
+        dispute.topic = 'held_payment';
+        changed = true;
+      }
+      for (const round of (dispute.rounds as { assignedBy?: string }[] | undefined) ?? []) {
+        if (round.assignedBy === 'protection') {
+          round.assignedBy = 'system';
+          changed = true;
+        }
+      }
+      if (!changed) continue;
+      await this.container('disputes').items.upsert(dispute);
+      moved += 1;
+    }
+
+    await this.markPaymentHoldsMigrated(moved);
+    return moved ? ` Moved ${moved} row(s) to Figmark-held payments.` : '';
+  }
+
+  /** Records that every row is in the Figmark-held shape, so the pass never runs again. */
+  private async markPaymentHoldsMigrated(moved: number): Promise<void> {
+    const now = new Date().toISOString();
+    await this.saveSiteContent({ id: PAYMENT_HOLDS_MARKER, data: { moved }, updatedBy: null, createdAt: now, updatedAt: now });
   }
 
   /**
@@ -446,6 +554,8 @@ export class CosmosRepository implements Repository {
    */
   private async fill(): Promise<string> {
     const written = await this.seedFixtures();
+    // Seeded in the current shape: there is nothing for the migration to move.
+    await this.markPaymentHoldsMigrated(0);
     this.seeded = true;
     return ` Seeded ${written} fixture records into an empty database.`;
   }
@@ -503,7 +613,7 @@ export class CosmosRepository implements Repository {
    * then updated kept whatever it had on day one: every account, order and
    * fixture added afterwards was in the code and absent from the data, and the
    * site quietly showed an older product than the one that was deployed. Three
-   * releases of escrows, reviews and disputes landed that way and none of them
+   * releases of protection, reviews and disputes landed that way and none of them
    * were visible.
    *
    * Only ever adds. A row already there is left exactly as it is, because by
@@ -1111,10 +1221,10 @@ export class CosmosRepository implements Repository {
     return found;
   }
 
-  async listEscrowAgents(): Promise<User[]> {
+  async listManagers(): Promise<User[]> {
     const { resources } = await this.container('users')
       .items.query<User>({
-        query: 'SELECT * FROM c WHERE IS_DEFINED(c.escrowRights) AND c.escrowRights != null',
+        query: 'SELECT * FROM c WHERE IS_DEFINED(c.managerRights) AND c.managerRights != null',
       })
       .fetchAll();
     return resources.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -1435,16 +1545,6 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
-  async listOrdersHeldBy(escrowAgentId: string): Promise<Order[]> {
-    const { resources } = await this.container('orders')
-      .items.query<Order>({
-        query: 'SELECT * FROM c WHERE c.protection.escrowAgentId = @id ORDER BY c.updatedAt DESC',
-        parameters: [{ name: '@id', value: escrowAgentId }],
-      })
-      .fetchAll();
-    return resources.filter(isPlaced);
-  }
-
   async listOrdersCommissionedFrom(artistId: string): Promise<Order[]> {
     const { resources } = await this.container('orders')
       .items.query<Order>({
@@ -1631,7 +1731,7 @@ export class CosmosRepository implements Repository {
     return [
       { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
-      { identifier: ESCROW_EMAIL, label: `the Buyer Protection agent holding the money · ${DEMO_PASSWORD}` },
+      { identifier: MANAGER_EMAIL, label: `a community manager who decides disputes · ${DEMO_PASSWORD}` },
       { identifier: HANDLER_EMAIL, label: `the handler getting the parcels out · ${DEMO_PASSWORD}` },
       { identifier: FORWARDER_EMAIL, label: `the freight forwarder's store · ${DEMO_PASSWORD}` },
       { identifier: ARTIST_EMAIL, label: `the artist studio taking commissions · ${DEMO_PASSWORD}` },

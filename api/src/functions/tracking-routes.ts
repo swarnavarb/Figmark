@@ -1100,7 +1100,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         /** Delivered and already on a collection shelf. */
         inCollection: collected.has(order.id),
         /** Payment is still held under protection; the buyer can confirm or dispute. */
-        paymentHeld: order.escrow.state === 'held',
+        paymentHeld: order.hold.state === 'held',
         /** The buyer already confirmed it reached them. */
         receivedAt: order.receivedAt ?? null,
         /** Whether this buyer can tap "I received it" / "It arrived" now. */
@@ -1113,7 +1113,7 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         /** Ships from the seller's shelf, never in a lot. */
         inHand: isDirect(order),
         shipment: order.shipment ?? null,
-        disputed: order.escrow.state === 'disputed',
+        disputed: order.hold.state === 'disputed',
         createdAt: order.createdAt,
         /** Where this one item is on its lot's route - its own, where it differs. */
         stepAt: lot && route

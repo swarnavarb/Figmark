@@ -84,9 +84,9 @@ export function UsersView() {
               {row.suspended && <span className="badge badge--warn">suspended</span>}
               {!row.signInAccount && <span className="badge">no login</span>}
               {row.store && <span className="badge">store</span>}
-              {row.escrowRights && (
+              {row.managerRights && (
                 <span className="badge badge--ok">
-                  Community manager{row.escrowRights.available === false ? ' · off' : ''}
+                  Community manager{row.managerRights.available === false ? ' · off' : ''}
                 </span>
               )}
             </div>
@@ -181,7 +181,7 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </dl>
       </div>
 
-      <EscrowPanel user={user} onChanged={load} />
+      <ManagerPanel user={user} onChanged={load} />
 
       <ResourceList title="Listings" empty="Nothing listed."
         items={data.listings.map((listing) => ({
@@ -300,12 +300,12 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
  * Appointing a community manager.
  *
  * A community manager hears disputes - on purchases, reviews, comments,
- * posts and members - and holds payments bought with buyer protection.
- * Only the people appointed here see Services → My Job → Community Service.
+ * posts and members. They never hold money: Figmark holds every payment
+ * bought with buyer protection. Only the people appointed here see Services → My Job → Community Service.
  * Fees are not theirs: every fee is set centrally under Settings, and they
  * are paid a share of it after Figmark's commission.
  */
-function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
+function ManagerPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -314,7 +314,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
     setBusy(true);
     setError(null);
     try {
-      await admin.setEscrow(user.id, { enabled });
+      await admin.setManager(user.id, { enabled });
       await onChanged();
       setConfirming(false);
     } catch (err) {
@@ -327,22 +327,22 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
   return (
     <div className="card card--pad stack">
       <span className="card__title">Community manager</span>
-      {user.escrowRights ? (
+      {user.managerRights ? (
         <p className="faint">
-          🛡️ Appointed {formatDate(user.escrowRights.grantedAt)}
-          {user.escrowRights.available === false ? ' - currently not taking new disputes' : ''}. Members see them as{' '}
+          🛡️ Appointed {formatDate(user.managerRights.grantedAt)}
+          {user.managerRights.available === false ? ' - currently not taking new disputes' : ''}. Members see them as{' '}
           <strong>{user.displayName}</strong>, their profile name, with the community manager badge.
         </p>
       ) : (
         <p className="faint">
-          Not a community manager. They cannot hear disputes or hold anybody's payment.
+          Not a community manager. They cannot hear disputes.
         </p>
       )}
 
       {error && <p className="notice notice--error">{error}</p>}
 
       <div className="row" style={{ flexWrap: 'wrap' }}>
-        {user.escrowRights ? (
+        {user.managerRights ? (
           <button className="btn btn--quiet" disabled={busy} onClick={() => setConfirming(true)}>
             Remove community manager
           </button>
@@ -361,9 +361,9 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
           onCancel={() => setConfirming(false)}
           onConfirm={() => void save(false)}
         >
-          <p>{user.displayName} will no longer be offered to hear new disputes or hold new payments, and loses the Community Service desk.</p>
+          <p>{user.displayName} will no longer be offered to hear new disputes, and loses the Community Service desk.</p>
           <p>
-            Payments they are already holding stay with them. Reassign any dispute round they hold from the Disputes tab.
+            Reassign any dispute round they hold from the Disputes tab.
           </p>
         </Confirm>
       )}

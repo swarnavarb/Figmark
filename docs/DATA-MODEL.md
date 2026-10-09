@@ -109,7 +109,7 @@ tracking reference, and the lot behaves identically (`forwarderUserId` is then
 the schema forces it. Tracking is the reference as entered — there is no live
 carrier API pull yet.
 
-## Trust, reviews and escrow
+## Trust, reviews and held payments
 
 - **`VerificationState`** carries a status per artefact — phone, email,
   government ID, address, payment method, bank/UPI-to-ID match, business
@@ -124,9 +124,11 @@ carrier API pull yet.
   a unique key on `(orderId, direction)` enforces at most one review per side
   per order. `revealed`/`revealAt` implement the blind simultaneous reveal that
   stops retaliatory rating.
-- **`EscrowRecord`** is embedded in the order rather than stored separately: it
-  has the same lifetime and is always read with it. `autoReleaseAt` is the
-  deadline for release when the buyer neither confirms nor disputes.
+- **`PaymentHold`** (`order.hold`) is embedded in the order rather than stored
+  separately: it has the same lifetime and is always read with it. Figmark
+  itself holds every payment bought with Buyer Protection - no third party
+  does. `autoReleaseAt` is the deadline for release when the buyer neither
+  confirms nor disputes.
 
 ## Conventions
 

@@ -990,7 +990,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
       }
       open.quantity = quantity;
       if (fromPost && !open.fromPost) open.fromPost = fromPost;
-      open.escrow = { ...open.escrow, amountMinor: open.unitPriceMinor * quantity };
+      open.hold = { ...open.hold, amountMinor: open.unitPriceMinor * quantity };
       open.buyClicks = (open.buyClicks ?? 1) + 1;
       open.updatedAt = new Date().toISOString();
       return json(200, { order: await repository.updateOrder(open) });
@@ -1073,7 +1073,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
         recordedBy: user.id,
       },
     ],
-    escrow: {
+    hold: {
       state: 'none',
       amountMinor,
       heldAt: null,

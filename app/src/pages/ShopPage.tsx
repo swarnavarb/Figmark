@@ -249,7 +249,7 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
           thing themselves. Hiding this would strand them in a tab with one
           door they do not want - it is a different role, not a second option
           for a new seller. */}
-      {user?.escrowRights && (
+      {user?.managerRights && (
         <Link to="/community-service" className="btn btn--quiet" style={{ justifySelf: 'center', marginTop: 18 }}>
           {<Icon name="users" size={13} />} Open your Community Service desk instead
         </Link>
@@ -311,7 +311,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       {/* No "list an item" here: the Items section opens with that door, and
           no shop-name header here either - the workflow below already says
           where you are. */}
-      {user?.escrowRights && (
+      {user?.managerRights && (
         <Link to="/community-service" className="btn btn--ghost btn--sm" style={{ justifySelf: 'end', marginBottom: 10 }}>
           {<Icon name="users" size={13} />} Community Service
         </Link>
@@ -1842,7 +1842,7 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
   if (row.status === 'cancelled_reversed') return { tone: 'ok', label: 'Cancelled + Reversed' };
   if (row.status === 'rejected') return { tone: 'danger', label: 'Rejected' };
   if (row.status === 'cancelled') return { tone: 'quiet', label: 'Cancelled' };
-  if (row.escrowState === 'disputed') return { tone: 'danger', label: 'In dispute' };
+  if (row.holdState === 'disputed') return { tone: 'danger', label: 'In dispute' };
   if (row.bookingOnly && !row.accepted) return { tone: 'warn', label: '📘 Book — awaiting acceptance' };
   if (needsAnswer) return { tone: 'warn', label: PAYMENT_WORDS[row.paymentStatus] ?? 'To answer' };
   if (row.paymentStatus === 'paid') return { tone: 'ok', label: 'Paid' };
@@ -1915,7 +1915,7 @@ function OrderRow({
     shipment: row.shipment,
     receivedAt: null,
     inHand: row.inHand,
-    disputed: row.escrowState === 'disputed',
+    disputed: row.holdState === 'disputed',
     claimOpen: awaitingClaim,
   });
 

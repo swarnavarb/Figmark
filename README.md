@@ -1,8 +1,8 @@
 # Figmark
 
 A marketplace for import resellers. Group-buy lots with order manifests and
-buyer-visible fulfilment stages, escrow-held payments, and two-sided reviews
-gated on completed transactions.
+buyer-visible fulfilment stages, payments held by Figmark under Buyer
+Protection, and two-sided reviews gated on completed transactions.
 
 This is the scaffold: the build and deploy pipeline, the auth seam, the data
 model, and a status page that proves the whole path works. Feature modules

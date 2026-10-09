@@ -31,16 +31,16 @@ import { sideOf, type OrderSide } from './orders.js';
 
 /** Every topic, in the words both sides read. */
 export const DISPUTE_TOPIC_LABELS: Record<DisputeTopic, string> = {
-  escrow: 'Held payment',
+  held_payment: 'Held payment',
   payment_rejected: 'Payment not acknowledged',
   refund_rejected: 'Refund not acknowledged',
   reversal_rejected: 'Reversal not acknowledged',
   general: 'Dispute',
 };
 
-/** Only an escrow dispute is about money the marketplace is holding, so only it can settle by moving money. */
+/** Only a held-payment dispute is about money Figmark is holding, so only it can settle by moving money. */
 export function holdsMoney(dispute: Pick<Dispute, 'topic'>): boolean {
-  return (dispute.topic ?? 'escrow') === 'escrow';
+  return (dispute.topic ?? 'held_payment') === 'held_payment';
 }
 
 /** Days the other side has to answer before either party may escalate. */
@@ -166,19 +166,6 @@ export function feeRefunded(outcome: DisputeOutcome): boolean {
 export const MAX_ROUNDS = 3;
 /** Days past a manager's deadline before the system reassigns, if no operator did. */
 export const REASSIGN_GRACE_DAYS = 2;
-
-/**
- * Days the manager holding a protected payment has to release it once the
- * result is final. After that the system releases it as decided, so money
- * never sits held because one person stopped answering.
- */
-export const RELEASE_GRACE_DAYS = 3;
-
-/** When a final decision's held money is released by the system if its holder has not. */
-export function releaseDueAt(dispute: Pick<Dispute, 'result'>): string | null {
-  if (dispute.result?.how !== 'decided') return null;
-  return new Date(Date.parse(dispute.result.at) + RELEASE_GRACE_DAYS * DAY_MS).toISOString();
-}
 
 const DAY_MS = 86_400_000;
 
@@ -306,20 +293,19 @@ export function autoReassignDue(round: Pick<DisputeRound, 'decideBy' | 'decision
     && new Date(round.decideBy).getTime() + REASSIGN_GRACE_DAYS * DAY_MS <= now.getTime());
 }
 
-export type CommunityAction = 'reply' | 'propose_settlement' | 'accept_settlement' | 'withdraw' | 'escalate' | 'decide' | 'request_release';
+export type CommunityAction = 'reply' | 'propose_settlement' | 'accept_settlement' | 'withdraw' | 'escalate' | 'decide';
 
 /**
  * What this person may do now, on the dispute page.
  *
  * The parties talk, settle and escalate; the manager on the current round
- * talks and decides; the manager who holds a protected purchase's money asks
- * for it to be released once the result is final.
+ * talks and decides. Held money is Figmark's to release, so nobody here
+ * releases it.
  */
 export function communityActionsFor(
-  dispute: Pick<Dispute, 'status' | 'raisedBy' | 'againstUserId' | 'offer' | 'rounds' | 'escalateBy' | 'topic' | 'release'>
+  dispute: Pick<Dispute, 'status' | 'raisedBy' | 'againstUserId' | 'offer' | 'rounds' | 'escalateBy' | 'topic'>
     & Partial<Pick<Dispute, 'respondByAt'>>,
   viewerId: string,
-  options: { holdsMoney?: boolean; isHolder?: boolean } = {},
   now = new Date(),
 ): CommunityAction[] {
   const round = currentRound(dispute);
@@ -327,12 +313,7 @@ export function communityActionsFor(
   const party = isParty(dispute, viewerId);
   const managing = round?.managerId === viewerId;
 
-  if (isClosed(dispute)) {
-    if (options.holdsMoney && options.isHolder && dispute.status === 'resolved' && !dispute.release) {
-      actions.push('request_release');
-    }
-    return actions;
-  }
+  if (isClosed(dispute)) return actions;
 
   if (party || managing) actions.push('reply');
   if (party) {

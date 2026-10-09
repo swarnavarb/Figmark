@@ -9,7 +9,7 @@ import type {
   DisputeOutcome,
   DisputeReason,
   DisputeStatus,
-  EscrowState,
+  HoldState,
   ListingStatus,
   LotStage,
   LotStatus,
@@ -183,10 +183,10 @@ export interface User extends BaseDocument {
   /** An artist's studio, opened on application. */
   artistProfile?: ArtistProfile | null;
   /**
-   * Non-null once the company has granted this seller protected checkout.
-   * Absent on every account that has not been granted it, which is most.
+   * Non-null once an operator has appointed this person a community manager.
+   * Absent on every account that has not been, which is most.
    */
-  escrowRights?: EscrowRights | null;
+  managerRights?: ManagerRights | null;
   /**
    * What community managers' final decisions have put on this account: XP and
    * rating taken away, a time-boxed alert on their page, and flags. Absent on
@@ -470,25 +470,16 @@ export interface SellerPaymentDetails {
  * row; the id is what any permission check actually uses.
  */
 /**
- * The company's grant that this person may hold other people's money.
+ * An operator's appointment of this person as a community manager: someone
+ * who decides disputes. Managers never hold money - every protected payment
+ * is held by Figmark itself.
  *
- * An escrow is a party, not a mechanism: a vetted individual who holds a
- * buyer's payment until the goods land and who settles it if the two sides
- * disagree. Buyers choose one at checkout, so the grant is what puts somebody
- * on that list — and the rate is theirs, because it is their fee for the work.
- *
- * Held rather than derived, because it is a commercial decision about a named
- * person and the marketplace has to be able to point at when it made it.
+ * Held rather than derived, because it is a decision about a named person and
+ * the marketplace has to be able to point at when it made it.
  */
-export interface EscrowRights {
+export interface ManagerRights {
   grantedAt: string;
   grantedBy: string;
-  /**
-   * No longer read. Every fee - buyer protection included - is set centrally
-   * by the operators (see `MarketSettings`); kept optional so older rows still
-   * parse.
-   */
-  feeBasisPoints?: number;
   /**
    * Whether they are taking new disputes. Off keeps them out of the raise
    * picker and out of the system's escalation assignment; cases they already
@@ -1253,13 +1244,13 @@ export interface Order extends BaseDocument {
   currency: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
-  escrow: EscrowRecord;
+  /** The protected payment Figmark is holding for this order, if any. */
+  hold: PaymentHold;
   /**
    * What the buyer bought alongside the item.
    *
-   * Null means they declined protection, or the seller was never granted it -
-   * and then there is no escrow to hold and no dispute for the company to
-   * settle. Recorded on the order rather than looked up later, because the fee
+   * Null means they declined protection - and then Figmark holds nothing and
+   * there is no protection claim for the company to settle. Recorded on the order rather than looked up later, because the fee
    * and the rate are terms of that transaction and must not move when the
    * seller's grant is changed afterwards.
    */
@@ -1548,8 +1539,8 @@ export interface ArtistJobEvent {
 /**
  * A commission: a buyer asks an artist to work on something they bought.
  *
- * Paid on its own, to the artist, the same two ways an order is: held by an
- * escrow until the buyer has the finished piece, or sent direct with the
+ * Paid on its own, to the artist, the same two ways an order is: held by
+ * Figmark until the buyer has the finished piece, or sent direct with the
  * artist confirming it arrived.
  */
 export interface ArtistJob {
@@ -1566,11 +1557,9 @@ export interface ArtistJob {
   quoteNote: string;
   turnaroundDays: number | null;
   method: PaymentMethod | null;
-  escrowAgentId: string | null;
-  escrowName: string | null;
   protectionFeeMinor: number;
   payments: ArtistJobPayment[];
-  /** Held by the escrow, released when the buyer marks it complete. */
+  /** Held by Figmark, released when the buyer marks it complete. */
   heldMinor: number;
   releasedAt: string | null;
   /** Pictures of the finished work. */
@@ -1640,14 +1629,14 @@ export type RefundOrigin = 'overpaid' | 'cancelled' | 'manual';
  * What a dispute is about. Every dispute on the marketplace is one `Dispute`
  * record with one of these topics:
  *
- * - `escrow` - a protected order whose held money is in question. The only
- *   kind whose settlement moves money, because it is the only kind where the
- *   marketplace holds any. Absent on records from before topics existed.
+ * - `held_payment` - a protected order whose held money is in question. The
+ *   only kind whose settlement moves money, because it is the only kind where
+ *   Figmark holds any. Absent on records from before topics existed.
  * - `payment_rejected` / `refund_rejected` / `reversal_rejected` - one side
  *   says it paid, the other says the money never came.
  * - `general` - anything else either side wants settled.
  */
-export type DisputeTopic = 'escrow' | 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
+export type DisputeTopic = 'held_payment' | 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
 
 /** The order's own index of its disputes: enough to list them and never dispute one thing twice. */
 export interface DisputeLink {
@@ -1711,12 +1700,8 @@ export interface PaymentClaim {
   excessMinor?: number;
 }
 
-/** Buyer protection, as bought: who holds it, and on what terms. */
+/** Buyer protection, as bought: Figmark holds the payment, on these terms. */
 export interface OrderProtection {
-  /** The escrow holding this payment, and who will settle a dispute over it. */
-  escrowAgentId: string;
-  /** Their name as it was at purchase, so a later rename cannot rewrite it. */
-  escrowName: string;
   /** The fee paid, on top of the item total - a flat amount set by Figmark. */
   feeMinor: number;
   /** Only on orders protected while the fee was a percentage of the total. */
@@ -1734,9 +1719,9 @@ export interface OrderProtection {
   refundedAt: string | null;
 }
 
-/** Escrow hold attached to an order. */
-export interface EscrowRecord {
-  state: EscrowState;
+/** The payment Figmark holds on a protected order. */
+export interface PaymentHold {
+  state: HoldState;
   amountMinor: number;
   heldAt: string | null;
   releasedAt: string | null;
@@ -1870,7 +1855,7 @@ export interface DisputeResolution {
 export interface Dispute extends BaseDocument {
   /** Partition key. */
   orderId: string;
-  /** What it is about. Absent means `escrow`, the only kind there used to be. */
+  /** What it is about. Absent means `held_payment`, the only kind there used to be. */
   topic?: DisputeTopic;
   /** What was disputed, for a rejected payment - so it cannot be disputed twice. */
   subject?: string | null;
@@ -1912,7 +1897,7 @@ export interface Dispute extends BaseDocument {
   escalateBy?: string | null;
   /** How it ended, once it has. */
   result?: DisputeResult | null;
-  /** Held money moved on a community manager's request after a final decision. */
+  /** Held money Figmark paid out on the final decision. */
   release?: DisputeRelease | null;
   /** Bumped on every write, so two people acting at once cannot both win. */
   version?: number;
@@ -1937,7 +1922,7 @@ export interface DisputeSubjectRef {
   link: string | null;
 }
 
-/** A fee paid through the gateway, split between Figmark and the manager doing the work. */
+/** A fee paid through the gateway, split between Figmark and the manager doing the work (Figmark keeps all of a protection fee). */
 export interface FeePayment {
   id: string;
   kind: 'dispute' | 'escalation' | 'protection';
@@ -1995,7 +1980,7 @@ export interface DisputeRound {
   managerName: string;
   assignedAt: string;
   /** How the manager came to have it. */
-  assignedBy: 'raiser' | 'protection' | 'system' | 'admin';
+  assignedBy: 'raiser' | 'system' | 'admin';
   /** When their decision is due. Past it, an operator is asked; two days later the system reassigns. */
   decideBy: string;
   /** Who paid for this round: the raiser, the escalating party, or nobody on a protected purchase's first round. */

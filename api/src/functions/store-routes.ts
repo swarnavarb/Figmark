@@ -803,11 +803,10 @@ async function orderServices(request: HttpRequest, _context: InvocationContext) 
       .map((owner) => publicStore(owner, 'artist'))
     : [];
   const protectionFlat = (await marketSettings(repository)).protectionFeeMinor;
-  const escrows = side === 'buyer' && job && ['quoted', 'accepted'].includes(job.status)
-    ? (await repository.listEscrowAgents())
-      .filter((agent) => agent.escrowRights && !agent.suspended && agent.id !== order.buyerId && agent.id !== job.artistId)
-      .map((agent) => ({ id: agent.id, name: agent.displayName, feeMinor: protectionFlat }))
-    : [];
+  // Buyer Protection on a commission: Figmark holds the payment, for this fee.
+  const protectionFee = side === 'buyer' && job && ['quoted', 'accepted'].includes(job.status)
+    ? protectionFeeMinor(job.quoteMinor ?? 0, protectionFlat)
+    : null;
   const paidUp = job && ['paid', 'working', 'ready', 'shipped', 'completed'].includes(job.status);
 
   return json(200, {
@@ -829,7 +828,7 @@ async function orderServices(request: HttpRequest, _context: InvocationContext) 
       // Where the piece goes, for whoever ships it - only once it is paid for.
       studioAddress: paidUp ? artistOwner?.artistProfile?.studioAddress ?? null : null,
       artists,
-      escrows,
+      protectionFeeMinor: protectionFee,
     },
   });
 }
@@ -925,8 +924,6 @@ async function commission(request: HttpRequest, _context: InvocationContext) {
     quoteNote: '',
     turnaroundDays: offering?.turnaroundDays || null,
     method: null,
-    escrowAgentId: null,
-    escrowName: null,
     protectionFeeMinor: 0,
     payments: [],
     heldMinor: 0,
@@ -958,7 +955,7 @@ async function commissionAct(request: HttpRequest, _context: InvocationContext) 
   if (side !== 'buyer') return error(403, 'forbidden', 'Only the buyer moves their commission.');
   const job = order.artistJob;
   if (!job) return error(404, 'not_found', 'No commission on this item.');
-  const input = await body<{ action?: ArtistJobAction; method?: 'protected' | 'direct'; escrowAgentId?: string; reference?: string }>(request);
+  const input = await body<{ action?: ArtistJobAction; method?: 'protected' | 'direct'; reference?: string }>(request);
   const action = input?.action;
   if (!action || !jobActionsFor(job, 'buyer').includes(action)) return error(409, 'not_now', 'That is not a move this commission can make now.');
 
@@ -977,18 +974,13 @@ async function commissionAct(request: HttpRequest, _context: InvocationContext) 
       const price = job.quoteMinor ?? 0;
       if (!price) return error(409, 'no_quote', 'There is no agreed price yet.');
       if (input?.method === 'protected') {
-        const agent = input.escrowAgentId ? await repository.getUserById(input.escrowAgentId) : null;
-        if (!agent?.escrowRights || agent.suspended) return error(409, 'protection_unavailable', 'Choose a Buyer Protection agent approved to hold payments.');
-        if (agent.id === order.buyerId || agent.id === job.artistId) return error(400, 'invalid_escrow', 'Neither side of the commission can hold its Buyer Protection.');
         job.method = 'protected';
-        job.escrowAgentId = agent.id;
-        job.escrowName = agent.displayName;
-        // The protection fee is Figmark's to set, centrally, not the holder's.
+        // Figmark holds the payment, and sets the protection fee centrally.
         job.protectionFeeMinor = protectionFeeMinor(price, (await marketSettings(repository)).protectionFeeMinor);
         job.heldMinor = price + job.protectionFeeMinor;
         job.payments = [...job.payments, { at: now, amountMinor: job.heldMinor, method: 'protected', reference: null, confirmedAt: now }];
         job.status = 'paid';
-        jobEvent(job, user.id, `Paid with Buyer Protection. ${job.escrowName} is holding it.`);
+        jobEvent(job, user.id, 'Paid with Buyer Protection. Figmark is holding it.');
       } else {
         const artist = await repository.getUserById(job.artistId);
         if (!artist?.artistProfile?.payment) return error(409, 'no_details', 'This artist has not set up direct payment. Pay with protection instead.');
@@ -1125,7 +1117,7 @@ async function myServices(request: HttpRequest, _context: InvocationContext) {
       artist: statusOf(account?.artistProfile),
     },
     handler: Boolean(account?.handlerProfile),
-    escrow: Boolean(account?.escrowRights),
+    communityManager: Boolean(account?.managerRights),
   });
 }
 

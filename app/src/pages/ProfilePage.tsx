@@ -41,7 +41,7 @@ function waitingOn(data: ActivityResponse, userId: string) {
     if (order.placedAt === null) return false;
     // An open dispute is waiting on somebody whichever side they are, so it
     // counts whether or not there is an order action behind it.
-    if (order.escrow.state === 'disputed') return true;
+    if (order.hold.state === 'disputed') return true;
     return actionsFor(order, userId).some((action) => action === 'pay' || action === 'confirm');
   });
 }
@@ -164,7 +164,7 @@ export function ProfilePage() {
               style={{ color: 'inherit', textDecoration: 'none' }}>
               <span>{order.itemName}</span>
               <span className="badge badge--accent">
-                {order.escrow.state === 'disputed' ? 'disputed'
+                {order.hold.state === 'disputed' ? 'disputed'
                   : order.paymentStatus === 'unpaid' ? 'pay'
                   : 'confirm delivery'}
               </span>
@@ -273,7 +273,7 @@ export function ProfilePage() {
                         {order.paymentStatus.replace(/_/g, ' ')}
                       </span>
                     </td>
-                    <td><span className={`badge badge--${order.escrow.state === 'held' ? 'ok' : ''}`}>{order.escrow.state}</span></td>
+                    <td><span className={`badge badge--${order.hold.state === 'held' ? 'ok' : ''}`}>{order.hold.state}</span></td>
                     <td className="faint">{timeAgo(order.createdAt)}</td>
                   </tr>
                 ))}

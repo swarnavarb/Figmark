@@ -1,6 +1,5 @@
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
-import { ManagerMark } from '../components/ManagerBadge';
 import { compressImage } from '../imageCompress';
 import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -13,7 +12,7 @@ import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
 import type { Order, SellerPaymentDetails } from '@shared/models';
 import {
   ApiRequestError, api,
-  type Checkout, type EscrowOption, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
+  type Checkout, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
 } from '../api';
 import { LotPhaseBadge, lotLabel } from '../components/LotName';
 import { Ladder } from '../components/Ladder';
@@ -69,7 +68,7 @@ export function OrderPage() {
   const [tab, setTab] = useState<'tracking' | 'details'>('tracking');
 
   // Two calls because they answer different questions - where the parcel is,
-  // and what may be done about it - and the second settles the escrow clock on
+  // and what may be done about it - and the second settles the held-payment clock on
   // the way past, so it has to be re-read after every action.
   const load = useCallback(async () => {
     try {
@@ -328,7 +327,7 @@ export function OrderPage() {
                 <dt>Payment</dt>
                 <dd>{order.paymentStatus.replace(/_/g, ' ')}</dd>
               </div>
-              <div className="kv"><dt>Buyer Protection</dt><dd>{order.escrow.state}</dd></div>
+              <div className="kv"><dt>Buyer Protection</dt><dd>{order.hold.state}</dd></div>
               {liveAddOns(order).map((addOn) => (
                 <div key={addOn.id} className="kv"><dt>🛡 {addOn.planName}</dt><dd>{formatMoney(addOn.premiumMinor, order.currency)}</dd></div>
               ))}
@@ -364,17 +363,17 @@ export function OrderPage() {
 
             {/* Only while it is actually held. On a finished order this was still
                 explaining a hold that had already been released. */}
-            {order.escrow.state === 'held' && (
+            {order.hold.state === 'held' && (
               <p className="notice notice--info">
-                {order.protection?.escrowName ?? 'Buyer Protection'} is holding this, and passes it to the seller
+                Figmark is holding this, and passes it to the seller
                 when you confirm delivery — or on its own{' '}
-                {order.escrow.autoReleaseAt
-                  ? <>on <strong>{formatDate(order.escrow.autoReleaseAt)}</strong></>
+                {order.hold.autoReleaseAt
+                  ? <>on <strong>{formatDate(order.hold.autoReleaseAt)}</strong></>
                   : `${state.autoReleaseDays} days after it is dispatched to you`}{' '}
                 if you neither confirm nor dispute it.
               </p>
             )}
-            {order.escrow.state === 'released' && order.completedAt && (
+            {order.hold.state === 'released' && order.completedAt && (
               <p className="notice notice--ok">
                 Payment released to the seller on {formatDate(order.completedAt)}.
               </p>
@@ -567,9 +566,9 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       {(order.paymentStatus === 'paid' || order.paymentStatus === 'refunded') && (
         order.protection ? (
           <p className="notice notice--ok">
-            Held by <strong>{order.protection.escrowName}<ManagerMark id={order.protection.escrowAgentId} /></strong> —{' '}
+            Held by <strong>Figmark</strong> —{' '}
             {formatMoney(order.protection.feeMinor, order.currency)} protection fee. Either side can open
-            a dispute, and they settle it.
+            a dispute, and a community manager decides it before the money moves.
             {order.protection.refundedAt && ' The fee was refunded.'}
           </p>
         ) : (
@@ -604,7 +603,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
                 onClick={() => void run('confirm', () => api.confirmOrder(order.id))}>
                 {/* One step for every order; only a protected one also moves money. */}
                 {busy === 'confirm' ? 'Confirming…'
-                  : order.escrow.state === 'held' ? 'Yes, it arrived — release the payment'
+                  : order.hold.state === 'held' ? 'Yes, it arrived — release the payment'
                   : '📬 I received it'}
               </button>
             )}
@@ -872,12 +871,12 @@ function DisputePanel({ state }: { state: OrderState }) {
   const [raising, setRaising] = useState<{ subject?: string; label: string } | null>(null);
   const { order } = state;
   // Every dispute on the order, of any kind, each opening the one page it is
-  // worked on. An escrow dispute from before orders indexed them is found by
+  // worked on. A held-payment dispute from before orders indexed them is found by
   // the pointer it left.
   const raised = [...(order.disputeLinks ?? [])];
-  if (order.escrow.disputeId && !raised.some((link) => link.id === order.escrow.disputeId)) {
+  if (order.hold.disputeId && !raised.some((link) => link.id === order.hold.disputeId)) {
     raised.push({
-      id: order.escrow.disputeId, topic: 'escrow', subject: order.escrow.disputeId,
+      id: order.hold.disputeId, topic: 'held_payment', subject: order.hold.disputeId,
       raisedBy: '', raisedSide: state.side ?? 'buyer', raisedAt: order.updatedAt,
     });
   }
@@ -907,7 +906,7 @@ function DisputePanel({ state }: { state: OrderState }) {
 
       {/* Anything else about the order: a community manager the raiser picks
           hears it, for the dispute fee. A protected purchase has its own
-          claim above, heard by its holder for free. */}
+          claim above, heard for free. */}
       <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
         onClick={() => setRaising({ label: order.itemName })}>
         ⚖️ Raise a dispute
@@ -915,7 +914,7 @@ function DisputePanel({ state }: { state: OrderState }) {
       {raising && (
         <RaiseDisputeModal onClose={() => setRaising(null)} orderSubject={raising.subject}
           side={state.side ?? undefined}
-          protectedOrder={Boolean(order.protection && (order.escrow.state === 'held' || order.escrow.state === 'disputed'))}
+          protectedOrder={Boolean(order.protection && (order.hold.state === 'held' || order.hold.state === 'disputed'))}
           target={{ type: 'order', id: order.id, againstId: counterpartyId, label: raising.label }} />
       )}
     </div>
@@ -927,7 +926,7 @@ function DisputePanel({ state }: { state: OrderState }) {
  *
  * Buying direct means the money leaves the buyer's bank and arrives in the
  * seller's, with this app holding nothing but both sides' account of it. Buying
- * with protection means an escrow holds it instead. They are not a setting on
+ * with protection means Figmark holds it instead. They are not a setting on
  * one purchase: they differ in who has the money, who can be argued with, and
  * what happens if the box never turns up. So they are offered as two choices
  * with what each one costs and gives up written on it, rather than a tick box
@@ -944,8 +943,6 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   const [quote, setQuote] = useState<Checkout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<'direct' | 'protected' | null>(null);
-  const [picking, setPicking] = useState(false);
-  const [chosen, setChosen] = useState<EscrowOption | null>(null);
 
   useEffect(() => {
     void api
@@ -959,7 +956,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   if (error) return <ErrorNotice message={error} />;
   if (!quote) return <p className="muted">Loading…</p>;
 
-  const canProtect = quote.escrows.length > 0;
+  const protectionFee = quote.protectionFeeMinor;
   const canPayDirect = quote.sellerPayment !== null;
 
   /* Credit the seller kept for this buyer counts towards what is due now -
@@ -1041,24 +1038,16 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       </button>
 
       <button type="button" className={`buyway buyway--cool${route === 'protected' ? ' is-on' : ''}`}
-        disabled={!canProtect || coveredByCredit} style={{ ['--i' as string]: 1 }}
-        onClick={() => {
-          setRoute('protected');
-          if (!chosen) setPicking(true);
-        }}>
+        disabled={coveredByCredit} style={{ ['--i' as string]: 1 }}
+        onClick={() => setRoute('protected')}>
         <span className="buyway__icon"><Svg name="shield" size={22} /></span>
         <span className="buyway__title">Add Buyer Protection</span>
-        <span className="buyway__tag">Held by: Community Manager</span>
+        <span className="buyway__tag">Held by: Figmark</span>
         <span className="buyway__note">
-          {canProtect
-            ? 'The payment is considered held by Figmark until you confirm the item arrived, and settled if the two of you disagree. Their fee is on top.'
-            : 'Nobody approved to hold payments can be neutral in this trade.'}
+          Figmark holds the payment until you confirm the item arrived, and it is settled before it moves if the two
+          of you disagree. The protection fee is on top.
         </span>
-        <span className="buyway__price">
-          {chosen
-            ? formatMoney(dueNow + chosen.feeMinor, quote.currency)
-            : `${formatMoney(dueNow, quote.currency)} + fee`}
-        </span>
+        <span className="buyway__price">{formatMoney(dueNow + protectionFee, quote.currency)}</span>
       </button>
 
       {!order.bookingOnly && (
@@ -1072,30 +1061,26 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         </button>
       )}
 
-      {route === 'protected' && chosen && (
+      {route === 'protected' && (
         <div className="card card--pad stack">
           <div className="kv">
-            <dt>Buyer protection · {chosen.name}<ManagerMark always /></dt>
-            <dd>{formatMoney(chosen.feeMinor, quote.currency)}</dd>
+            <dt>Buyer protection · held by Figmark</dt>
+            <dd>{formatMoney(protectionFee, quote.currency)}</dd>
           </div>
           <div className="kv">
             <dt><strong>Total</strong></dt>
-            <dd><strong>{formatMoney(dueNow + chosen.feeMinor, quote.currency)}</strong></dd>
+            <dd><strong>{formatMoney(dueNow + protectionFee, quote.currency)}</strong></dd>
           </div>
-          <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
-            onClick={() => setPicking(true)}>
-            Choose who holds it
-          </button>
 
-          {/* Said before the button rather than after it is pressed: the escrow
-              is chosen and priced, and the part that moves the money is not
-              built. Offering a live Pay here would be the screen lying. */}
+          {/* Said before the button rather than after it is pressed: the fee
+              is priced, and the part that moves the money is not built.
+              Offering a live Pay here would be the screen lying. */}
           <p className="notice notice--warn" style={{ marginBottom: 0 }}>
-            <strong>Work in progress.</strong> Choosing who holds it and pricing their fee works;
-            paying into Buyer Protection does not yet. Buy directly from the seller in the meantime.
+            <strong>Work in progress.</strong> Pricing Buyer Protection works; paying into it does not
+            yet. Buy directly from the seller in the meantime.
           </p>
           <button className="btn btn--lg" disabled>
-            Pay {formatMoney(dueNow + chosen.feeMinor, quote.currency)}
+            Pay {formatMoney(dueNow + protectionFee, quote.currency)}
           </button>
         </div>
       )}
@@ -1104,21 +1089,6 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         Cancel
       </button>
 
-      {picking && (
-        <EscrowPicker
-          quote={quote}
-          chosenId={chosen?.id ?? null}
-          onPick={(option) => {
-            setChosen(option);
-            setPicking(false);
-          }}
-          onClose={() => {
-            setPicking(false);
-            // Closing without choosing leaves no half-made decision behind.
-            if (!chosen) setRoute(null);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -1234,116 +1204,6 @@ function DirectPay({ quote, payment, busy, onPaid, onBack }: {
  * every other photo: a legible payment confirmation fits well inside that.
  */
 const downscale = (file: File): Promise<string> => compressImage(file);
-
-/**
- * Choosing who holds the money.
- *
- * A real decision, so it gets a dialog rather than a dropdown: these are named
- * people with their own fees, and the buyer is picking who to trust with the
- * whole amount until the box lands. Each one opens to show what they have
- * actually done — held, settled, holding now — because that record is the only
- * honest basis for the choice, and an escrow with none says so rather than
- * showing five blank stars.
- *
- * Tapping a name expands it; the arrow adds them. Two steps on purpose: reading
- * about somebody should not be the same gesture as handing them the money.
- *
- * The suggestion is the one the rest of the lot already uses. A consignment is
- * one shipment with one set of problems, and thirty buyers each picking a
- * different holder turns one conversation into thirty — so the number of others
- * who agreed is shown, because that is the actual reason to go along with them.
- */
-function EscrowPicker({ quote, chosenId, onPick, onClose }: {
-  quote: Checkout;
-  chosenId: string | null;
-  onPick: (option: EscrowOption) => void;
-  onClose: () => void;
-}) {
-  const [openId, setOpenId] = useState<string | null>(quote.suggested?.agentId ?? null);
-
-  // Suggested first: it is the answer most buyers should give.
-  const ordered = [...quote.escrows].sort((a, b) => {
-    const suggested = quote.suggested?.agentId;
-    return Number(b.id === suggested) - Number(a.id === suggested);
-  });
-
-  return (
-    <Modal title="Who should hold your payment?" onClose={onClose}>
-      <p className="faint" style={{ marginTop: 0 }}>
-        Buyer Protection holds {formatMoney(quote.itemMinor, quote.currency)} until you confirm the item
-        arrived, and decides if you and <PersonLink party={quote.seller} /> cannot agree. Their fee is on top.
-      </p>
-
-      <div className="stack" style={{ marginTop: 12 }}>
-        {ordered.map((option) => {
-          const isSuggested = quote.suggested?.agentId === option.id;
-          const open = openId === option.id;
-          return (
-            <div key={option.id} className={`escrow${chosenId === option.id ? ' is-on' : ''}`}>
-              <button type="button" className="escrow__head"
-                aria-expanded={open}
-                onClick={() => setOpenId(open ? null : option.id)}>
-                <div className="escrow__main">
-                  <span className="escrow__name">
-                    {option.name}<ManagerMark always />
-                    {isSuggested && <span className="badge badge--accent" style={{ marginLeft: 8 }}>suggested</span>}
-                  </span>
-                  <span className="faint">
-                    {option.rating !== null
-                      ? `${option.rating.toFixed(1)} out of 5 · ${option.settled} settled`
-                      : 'No payments settled yet'}
-                  </span>
-                </div>
-                <div className="escrow__fee">
-                  {formatMoney(option.feeMinor, quote.currency)}
-                  <span className="faint"> flat</span>
-                </div>
-              </button>
-
-              {open && (
-                <div className="escrow__more">
-                  <div className="escrow__stats">
-                    <Stat label="Held" value={String(option.held)} />
-                    <Stat label="Settled" value={String(option.settled)} />
-                    <Stat label="Holding now" value={String(option.openNow)} />
-                  </div>
-                  <p className="faint" style={{ margin: 0 }}>
-                    {isSuggested
-                      ? quote.suggested!.because
-                      : `Approved to hold payments since ${formatDate(option.since)}.`}
-                  </p>
-                  <div className="row row--between" style={{ alignItems: 'center' }}>
-                    <span className="faint">
-                      Total with their fee{' '}
-                      <strong>{formatMoney(quote.itemMinor + option.feeMinor, quote.currency)}</strong>
-                    </span>
-                    {/* The arrow is the commitment, separate from reading about
-                        them. Labelled for anybody not seeing the glyph. */}
-                    <button type="button" className="escrow__add"
-                      aria-label={`Use ${option.name} for Buyer Protection`}
-                      onClick={() => onPick(option)}>
-                      →
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </Modal>
-  );
-}
-
-/** A number under a word, for the escrow's record. */
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="tile">
-      <div className="tile__value" style={{ fontSize: 'var(--t-md)' }}>{value}</div>
-      <div className="tile__label">{label}</div>
-    </div>
-  );
-}
 
 /**
  * Answering a claimed payment.

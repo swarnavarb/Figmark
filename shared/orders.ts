@@ -13,8 +13,8 @@ import { orderTotalMinor } from './service-stores.js';
  *
  * The money is the reason this exists. A buyer paying a stranger for a crate
  * that has not been packed yet needs the payment held rather than handed over,
- * and the seller needs it to arrive without waiting on goodwill. So the escrow
- * record moves through exactly four transitions and nothing else touches it.
+ * and the seller needs it to arrive without waiting on goodwill. So Figmark
+ * holds it, and the hold record moves through exactly four transitions and nothing else touches it.
  */
 
 /**
@@ -89,10 +89,10 @@ export function isPlaced(order: Pick<Order, 'placedAt'>): boolean {
  * when the scheduler does. Reading an order is the moment its state matters, so
  * that is where the clock is checked.
  */
-export function autoReleaseDue(order: Pick<Order, 'escrow'>, now = new Date()): boolean {
-  const { escrow } = order;
-  if (escrow.state !== 'held' || !escrow.autoReleaseAt) return false;
-  return new Date(escrow.autoReleaseAt).getTime() <= now.getTime();
+export function autoReleaseDue(order: Pick<Order, 'hold'>, now = new Date()): boolean {
+  const { hold } = order;
+  if (hold.state !== 'held' || !hold.autoReleaseAt) return false;
+  return new Date(hold.autoReleaseAt).getTime() <= now.getTime();
 }
 
 /**
@@ -105,7 +105,7 @@ export function autoReleaseDue(order: Pick<Order, 'escrow'>, now = new Date()): 
 export function actionsFor(
   order: Pick<
     Order,
-    'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
+    'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'hold' | 'completedAt' | 'protection'
   > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck' | 'placedAt' | 'receivedAt'>>,
   viewerId: string,
   reviewed = false,
@@ -165,7 +165,7 @@ export function actionsFor(
   // that is not silence. Only before it is accepted, and never once money is
   // held: after that it is `cancel`, a different button with a different
   // ending, because the buyer was already told yes.
-  if (side === 'seller' && fresh && order.escrow.state !== 'held') actions.push('reject');
+  if (side === 'seller' && fresh && order.hold.state !== 'held') actions.push('reject');
 
   // Once accepted or placed, the same X button means something else: the
   // order is being called off after the buyer was told it would happen.
@@ -211,14 +211,14 @@ export function actionsFor(
   // only closes the delivery, and a balance still owed does not block it.
   const onItsWayOrDelivered = order.status === 'shipped' || order.status === 'delivered';
   const confirmable = onItsWayOrDelivered && !order.receivedAt
-    && (order.escrow.state === 'held' ? order.paymentStatus === 'paid' : order.escrow.state === 'none');
+    && (order.hold.state === 'held' ? order.paymentStatus === 'paid' : order.hold.state === 'none');
   if (side === 'buyer' && confirmable) actions.push('confirm');
 
   // Disputing needs something to dispute over. Without protection the money
   // went straight to the seller and there is nothing for the company to hold,
   // which is exactly what declining protection means — so this is the one place
   // the choice made at checkout actually bites.
-  const protectedAndHeld = order.protection != null && order.escrow.state === 'held';
+  const protectedAndHeld = order.protection != null && order.hold.state === 'held';
   const disputable = side === 'buyer'
     ? protectedAndHeld
     : protectedAndHeld && (order.status === 'shipped' || order.status === 'delivered');
@@ -315,7 +315,7 @@ export function travellingStatus(status: OrderStatus): OrderStatus {
 /** One rejection the viewer could dispute, and what to call it. */
 export interface DisputeSubject {
   subject: string;
-  kind: Exclude<DisputeTopic, 'escrow' | 'general'>;
+  kind: Exclude<DisputeTopic, 'held_payment' | 'general'>;
   amountMinor: number;
   label: string;
 }

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
-import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { threadIdFor } from '../../../shared/handles.js';
 import type {
   CreditRecord, Dispute, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
@@ -27,7 +26,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays, marketSettings } from '../settings.js';
-import { bringUpToDate, chargeFee, isManager } from '../community.js';
+import { bringUpToDate, chargeFee } from '../community.js';
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
@@ -140,15 +139,11 @@ const settle = (order: Order, repository: Repo): Promise<Order> => settleDue(ord
 /**
  * POST /api/orders/{id}/pay - the buyer pays, with or without protection.
  *
- * Protection is what creates the escrow. Bought, the money is held and the
- * company will settle a dispute over it; declined, it goes to the seller and
- * the buyer is on their own with them. That is a real choice with a real cost
- * either way, so the checkout states both halves rather than defaulting the
- * buyer into one quietly.
- *
- * It is only on the table where the company has granted the seller it, which is
- * the point of the grant: the marketplace is agreeing to arbitrate for that
- * seller, and it does not agree to that for everyone.
+ * Protection is what makes Figmark hold the money. Bought, Figmark holds the
+ * payment and a dispute over it is settled before it moves; declined, it goes
+ * to the seller and the buyer is on their own with them. That is a real choice
+ * with a real cost either way, so the checkout states both halves rather than
+ * defaulting the buyer into one quietly.
  */
 async function pay(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -159,7 +154,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
-  let body: { protection?: boolean; escrowAgentId?: string; plan?: 'full' | 'advance' };
+  let body: { protection?: boolean; plan?: 'full' | 'advance' };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -172,25 +167,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'not_payable', 'This order is not waiting for payment.');
   }
 
-  // Protection means an escrow holds the money, so it needs a named one. The
-  // buyer chooses; there is no house default, because "whoever the platform
-  // picked" is not a party either side agreed to trust.
-  let agent = null;
-  if (body.protection) {
-    if (!body.escrowAgentId) {
-      return error(400, 'no_escrow', 'Choose who holds the payment for Buyer Protection.');
-    }
-    agent = await repository.getUserById(body.escrowAgentId);
-    // Appointed, not suspended, and taking new cases: the person who will hear
-    // any dispute on this purchase has to be there to hear it.
-    if (!isManager(agent) || agent.escrowRights!.available === false) {
-      return error(409, 'protection_unavailable', 'That community manager is not taking new purchases right now. Pick another.');
-    }
-    // Neither end of a trade can be the neutral party in it.
-    if (agent.id === order.buyerId || agent.id === order.sellerId) {
-      return error(400, 'invalid_escrow', 'The buyer or the seller cannot hold their own Buyer Protection.');
-    }
-  }
+  const protect = body.protection === true;
 
   const terms = planAmount(order, body.plan);
   if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
@@ -213,22 +190,18 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   order.acceptedAt = order.acceptedAt ?? now;
   order.updatedAt = now;
   order.paymentPlan = terms.plan;
-  order.paymentMethod = agent ? 'protected' : 'direct';
+  order.paymentMethod = protect ? 'protected' : 'direct';
 
-  if (agent?.escrowRights) {
+  if (protect) {
     // Set centrally by the operators, and paid through the gateway like every
-    // other fee: Figmark keeps its commission, the holder the rest.
+    // other fee. Figmark holds the money, so Figmark keeps the fee.
     const settings = await marketSettings(repository);
     const feeMinor = protectionFeeMinor(totalMinor, settings.protectionFeeMinor);
     const fee = await chargeFee(repository, {
       kind: 'protection', payerId: user.id, amountMinor: feeMinor, currency: order.currency,
-      reference: order.id, managerId: agent.id,
+      reference: order.id, managerId: null,
     }, settings);
     order.protection = {
-      escrowAgentId: agent.id,
-      // Their name as it was today: a later rename must not rewrite what the
-      // buyer agreed to.
-      escrowName: agent.displayName,
       // The fee is copied onto the order, not looked up later: it is a term of
       // this transaction and must not move when the setting changes.
       feeMinor,
@@ -237,8 +210,8 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       boughtAt: now,
       refundedAt: null,
     };
-    order.escrow = {
-      ...order.escrow,
+    order.hold = {
+      ...order.hold,
       state: 'held',
       amountMinor: dueMinor,
       heldAt: now,
@@ -247,10 +220,10 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       // pay the seller for a box still with their supplier.
       autoReleaseAt: null,
     };
-    note(order, `Paid with Buyer Protection. ${order.protection.escrowName} is holding it.`, user.id);
+    note(order, 'Paid with Buyer Protection. Figmark is holding it.', user.id);
   } else {
     order.protection = null;
-    order.escrow = { ...order.escrow, state: 'none', heldAt: null, autoReleaseAt: null };
+    order.hold = { ...order.hold, state: 'none', heldAt: null, autoReleaseAt: null };
     note(order, 'Paid directly to the seller, without protection.', user.id);
   }
   if (dueMinor > 0) {
@@ -284,16 +257,6 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   const seller = await repository.getUserById(order.sellerId);
   const totalMinor = orderTotalMinor(order);
 
-  // Everyone approved to hold money, minus the two people who cannot be neutral
-  // in this particular trade.
-  const agents = (await repository.listEscrowAgents()).filter(
-    (agent) => agent.id !== order.buyerId && agent.id !== order.sellerId && isManager(agent) && agent.escrowRights!.available !== false,
-  );
-
-  // What each of them has actually done as an escrow. Read per agent because a
-  // rating assembled from anything else would be a number we made up.
-  const records = await Promise.all(agents.map((agent) => escrowRecord(agent, repository)));
-
   const payment = seller?.sellerProfile?.payment ?? null;
   const protectionFlat = (await marketSettings(repository)).protectionFeeMinor;
 
@@ -311,102 +274,14 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
      * offered at all - there is nowhere to send the money.
      */
     sellerPayment: payment && hasAnyDetail(payment) ? payment : null,
-    escrows: agents.map((agent, index) => ({
-      id: agent.id,
-      name: agent.displayName,
-      feeMinor: protectionFeeMinor(totalMinor, protectionFlat),
-      /** What the group already knows about them, rather than a rating we invented. */
-      heldBefore: agent.buyerTrust.completedTransactions,
-      ...records[index]!,
-    })),
-    suggested: await suggestEscrow(order, agents, repository),
+    /** Buyer Protection: Figmark holds the payment until the buyer has the item. */
+    protectionFeeMinor: protectionFeeMinor(totalMinor, protectionFlat),
   });
 }
 
 /** True once a seller has filled in at least one way to be paid. */
 function hasAnyDetail(payment: SellerPaymentDetails): boolean {
   return Boolean(payment.upiId?.trim() || (payment.accountNumber?.trim() && payment.ifsc?.trim()));
-}
-
-/**
- * What an escrow has done, as a rating a buyer can weigh.
- *
- * Assembled from their own record rather than from stars anybody typed: how
- * much they have held, how many arguments they settled, and how many of those
- * were escalated past them. `rating` is null when there is nothing behind it -
- * a new escrow is unproven, not bad, and five blank stars would say the
- * opposite of the truth.
- */
-async function escrowRecord(
-  agent: User,
-  repository: Repo,
-): Promise<{
-  held: number;
-  settled: number;
-  openNow: number;
-  rating: number | null;
-  since: string;
-}> {
-  const holdings = await repository.listOrdersHeldBy(agent.id);
-  const settled = holdings.filter((order) => order.escrow.state === 'released' || order.escrow.state === 'refunded');
-  const openNow = holdings.filter((order) => order.escrow.state === 'held' || order.escrow.state === 'disputed');
-
-  // Their published trust score, but only once they have actually held
-  // something. Out of five, because that is how the picker reads it.
-  const rating = settled.length > 0 ? Math.round((agent.buyerTrust.score / 20) * 10) / 10 : null;
-
-  return {
-    held: holdings.length,
-    settled: settled.length,
-    openNow: openNow.length,
-    rating,
-    since: agent.escrowRights!.grantedAt,
-  };
-}
-
-/**
- * The escrow the rest of this lot is already using.
- *
- * A consignment is one shipment with one set of problems, and thirty buyers
- * each picking a different holder turns a single conversation into thirty. So
- * when others in the same lot have already settled on somebody, say so — and
- * say how many, because that is the actual reason to agree with them.
- *
- * A suggestion, never a default: the buyer still chooses.
- */
-async function suggestEscrow(
-  order: Order,
-  agents: User[],
-  repository: Repo,
-): Promise<{ agentId: string; name: string; because: string } | null> {
-  // A direct sale rides in no consignment, so there is nobody to agree with.
-  if (order.lotId === DIRECT_LOT_ID) return null;
-
-  const siblings = await repository.listOrdersForLot(order.lotId);
-  const counts = new Map<string, number>();
-  for (const sibling of siblings) {
-    const held = sibling.protection?.escrowAgentId;
-    if (!held || sibling.id === order.id) continue;
-    counts.set(held, (counts.get(held) ?? 0) + 1);
-  }
-
-  let best: { agentId: string; count: number } | null = null;
-  for (const [agentId, count] of counts) {
-    // Only somebody this buyer could actually choose.
-    if (!agents.some((agent) => agent.id === agentId)) continue;
-    if (!best || count > best.count) best = { agentId, count };
-  }
-  if (!best) return null;
-
-  const agent = agents.find((entry) => entry.id === best!.agentId)!;
-  return {
-    agentId: agent.id,
-    name: agent.displayName,
-    because:
-      best.count === 1
-        ? '1 other order in this lot already uses them.'
-        : `${best.count} other orders in this lot already use them.`,
-  };
 }
 
 /**
@@ -663,7 +538,7 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     // Both parties at once: the counterparty's name, the buyer's reversal
     // details (seller side) and the buyer's own collection (buyer side).
     repository.listUsersByIds([...new Set([otherId, user.id])]),
-    order.escrow.disputeId ? repository.getDispute(order.id, order.escrow.disputeId) : Promise.resolve(null),
+    order.hold.disputeId ? repository.getDispute(order.id, order.hold.disputeId) : Promise.resolve(null),
     autoReleaseDays(repository),
   ]);
   const mine = reviews.find((entry) => entry.authorId === user.id) ?? null;
@@ -890,9 +765,9 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
     });
     statusFromMoney(order);
     // Nobody is holding this. The money went from the buyer to the seller
-    // directly, so there is no escrow to release and nothing to dispute over -
+    // directly, so there is no held payment to release and nothing to dispute over -
     // which is exactly what buying without protection means.
-    order.escrow = { ...order.escrow, state: 'none' };
+    order.hold = { ...order.hold, state: 'none' };
     note(order, 'Seller confirmed the payment arrived.', user.id);
 
     // The part of this payment that overshot this order's own balance,
@@ -1049,8 +924,8 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
       reference, recordedBy: user.id,
     });
     statusFromMoney(order);
-    if (order.escrow.state === 'held') {
-      order.escrow = { ...order.escrow, amountMinor: order.escrow.amountMinor + line.amountMinor };
+    if (order.hold.state === 'held') {
+      order.hold = { ...order.hold, amountMinor: order.hold.amountMinor + line.amountMinor };
     }
     touched.set(order.id, order);
   }
@@ -1583,9 +1458,9 @@ async function holdCredit(request: HttpRequest, _context: InvocationContext) {
  * and only once. Without one: a dispute about anything else, which needs a
  * reason because otherwise there is nothing on record to work from.
  *
- * Either way it becomes an ordinary dispute record - the same one an escrow
- * dispute is - with its own page to talk it through, withdraw it, or ask
- * Figmark to step in. Only an escrow dispute can settle by moving money.
+ * Either way it becomes an ordinary dispute record - the same one a
+ * protection claim is - with its own page to talk it through, withdraw it, or
+ * ask Figmark to step in. Only a held-payment dispute can settle by moving money.
  */
 async function flagDispute(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -1602,10 +1477,10 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
 
   // While buyer protection still holds the money, every complaint about the
   // purchase goes through the protection claim: it is free, it freezes the
-  // payment, and the manager holding it hears it. A paid "general" dispute
+  // payment Figmark holds, and an available manager hears it. A paid "general" dispute
   // here would leave the money on its auto-release clock and block the
   // buyer's own claim.
-  if (order.protection && order.escrow.state === 'held') {
+  if (order.protection && order.hold.state === 'held') {
     return error(409, 'use_protection_claim', 'This purchase is still under buyer protection. Open a protection claim on the order instead - it is free and holds the payment until it is settled.');
   }
   const typed = typeof body.reason === 'string' ? body.reason.trim() || null : null;
@@ -1677,7 +1552,7 @@ async function myDisputes(request: HttpRequest, _context: InvocationContext) {
   };
 
   const row = (dispute: Dispute, order: Order | null) => {
-    const topic = dispute.topic ?? 'escrow';
+    const topic = dispute.topic ?? 'held_payment';
     const counterparty = dispute.raisedBy === user.id ? dispute.againstUserId : dispute.raisedBy;
     const round = currentRound(dispute);
     return {
@@ -1688,7 +1563,7 @@ async function myDisputes(request: HttpRequest, _context: InvocationContext) {
       counterpartyName: nameOf(counterparty),
       topic,
       label: dispute.subjectRef ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type] : DISPUTE_TOPIC_LABELS[topic],
-      amountMinor: dispute.amountMinor ?? (order && topic === 'escrow' ? order.escrow.amountMinor : null),
+      amountMinor: dispute.amountMinor ?? (order && topic === 'held_payment' ? order.hold.amountMinor : null),
       reason: dispute.reason,
       raisedAt: dispute.createdAt,
       raisedByMe: dispute.raisedBy === user.id,
@@ -1717,8 +1592,8 @@ async function myDisputes(request: HttpRequest, _context: InvocationContext) {
 
   // What a new dispute could be raised on: their recent orders, either side.
   const choices = [
-    ...bought.map((order) => ({ id: order.id, itemName: order.itemName, side: 'buyer' as const, counterpartyName: nameOf(order.sellerId), counterpartyId: order.sellerId, protectedNow: Boolean(order.protection && (order.escrow.state === 'held' || order.escrow.state === 'disputed')), createdAt: order.createdAt })),
-    ...sold.map((order) => ({ id: order.id, itemName: order.itemName, side: 'seller' as const, counterpartyName: nameOf(order.buyerId), counterpartyId: order.buyerId, protectedNow: Boolean(order.protection && (order.escrow.state === 'held' || order.escrow.state === 'disputed')), createdAt: order.createdAt })),
+    ...bought.map((order) => ({ id: order.id, itemName: order.itemName, side: 'buyer' as const, counterpartyName: nameOf(order.sellerId), counterpartyId: order.sellerId, protectedNow: Boolean(order.protection && (order.hold.state === 'held' || order.hold.state === 'disputed')), createdAt: order.createdAt })),
+    ...sold.map((order) => ({ id: order.id, itemName: order.itemName, side: 'seller' as const, counterpartyName: nameOf(order.buyerId), counterpartyId: order.buyerId, protectedNow: Boolean(order.protection && (order.hold.state === 'held' || order.hold.state === 'disputed')), createdAt: order.createdAt })),
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 80);
 
   return json(200, {
@@ -1751,8 +1626,8 @@ export const claimPaymentRoute = handler(claimPayment);
  *
  * It puts back everything the order took: the stock, and the place it held in a
  * pre-order. Refused once money is being held, because that is a refund or a
- * dispute - different rules, different screen, and an escrow that can be
- * emptied by one side calling it off is not an escrow.
+ * dispute - different rules, different screen, and a held payment that can be
+ * emptied by one side calling it off is not being held.
  */
 async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();

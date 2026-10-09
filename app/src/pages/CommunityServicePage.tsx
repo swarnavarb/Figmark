@@ -1,42 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DISPUTE_STATUS_LABELS } from '@shared/enums';
-import { ApiRequestError, api, type CommunityDesk, type EscrowHolding } from '../api';
-import { EmptyState, ErrorNotice, PersonLink } from '../components/ui';
-import { formatDateOrdinal, formatMoney, timeAgo } from '../format';
+import { ApiRequestError, api, type CommunityDesk } from '../api';
+import { EmptyState, ErrorNotice } from '../components/ui';
+import { formatDateOrdinal, formatMoney } from '../format';
 
-type Tab = 'waiting' | 'all' | 'held' | 'earnings';
-
-/** What happened to a payment, in words rather than the state's name. */
-const HELD_LABELS: Record<string, string> = {
-  held: 'Holding',
-  disputed: 'Frozen - disputed',
-  released: 'Released to the seller',
-  refunded: 'Refunded to the buyer',
-  none: 'Not held',
-};
+type Tab = 'waiting' | 'all' | 'earnings';
 
 /**
  * Services → My Job → Community Service.
  *
  * Only community managers - the people Figmark appointed - reach it. Their
  * whole job on one screen: the disputes waiting on their decision (oldest
- * deadline first), every case they have held a round of, the payments they
- * hold under buyer protection (with the ones ready to release), and what
- * they have earned. And one switch: whether they are taking new disputes.
+ * deadline first), every case they have held a round of, and what they have
+ * earned. Managers never hold money - Figmark holds every protected payment.
+ * And one switch: whether they are taking new disputes.
  */
 export function CommunityServicePage() {
   const [desk, setDesk] = useState<CommunityDesk | null>(null);
-  const [held, setHeld] = useState<{ heldMinor: number; holdings: EscrowHolding[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('waiting');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [cases, holdings] = await Promise.all([api.communityCases(), api.escrowHoldings()]);
-      setDesk(cases);
-      setHeld(holdings);
+      setDesk(await api.communityCases());
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your desk.');
     }
@@ -47,12 +35,10 @@ export function CommunityServicePage() {
   }, [load]);
 
   if (error && !desk) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!desk || !held) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
+  if (!desk) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
 
   const waiting = desk.cases.filter((row) => row.waitingOnMe)
     .sort((a, b) => (a.decideBy ?? '').localeCompare(b.decideBy ?? ''));
-  const releasable = held.holdings.filter((row) => row.releasable);
-  const currency = held.holdings[0]?.order.currency ?? 'INR';
 
   async function toggle() {
     setBusy(true);
@@ -83,7 +69,6 @@ export function CommunityServicePage() {
         <div className="tiles tiles--big">
           <Tile value={String(waiting.length)} label="Need your decision" />
           <Tile value={String(desk.openCases)} label="Open cases" />
-          <Tile value={formatMoney(held.heldMinor, currency)} label="Holding" />
           <Tile value={formatMoney(desk.earnings.totalMinor, 'INR')} label="Earned" />
         </div>
         <p className="faint" style={{ margin: '12px 0 0' }}>
@@ -100,9 +85,6 @@ export function CommunityServicePage() {
         <button type="button" className={`tab${tab === 'all' ? ' is-on' : ''}`} onClick={() => setTab('all')}>
           All {desk.cases.length}
         </button>
-        <button type="button" className={`tab${tab === 'held' ? ' is-on' : ''}`} onClick={() => setTab('held')}>
-          Held {releasable.length > 0 ? `· ${releasable.length} to release` : held.holdings.length}
-        </button>
         <button type="button" className={`tab${tab === 'earnings' ? ' is-on' : ''}`} onClick={() => setTab('earnings')}>
           Earnings
         </button>
@@ -115,8 +97,8 @@ export function CommunityServicePage() {
         if (rows.length === 0) {
           return (
             <EmptyState title={tab === 'waiting' ? 'Nothing waiting on you' : 'No cases yet'}>
-              Disputes reach you when a member picks you, when a purchase you hold is disputed, or when the system
-              assigns you an escalation because you are available.
+              Disputes reach you when a member picks you, or when the system assigns you one because you are
+              available.
             </EmptyState>
           );
         }
@@ -135,7 +117,6 @@ export function CommunityServicePage() {
                   <span className={`badge ${row.waitingOnMe ? 'badge--danger' : row.result ? 'badge--ok' : ''}`}>
                     {row.waitingOnMe ? 'Your decision' : row.result?.how === 'settled' ? 'Settled' : DISPUTE_STATUS_LABELS[row.status]}
                   </span>
-                  {row.releasable && <span className="badge badge--accent">Release due</span>}
                 </span>
               </li>
             ))}
@@ -143,44 +124,10 @@ export function CommunityServicePage() {
         );
       })()}
 
-      {tab === 'held' && (held.holdings.length === 0 ? (
-        <EmptyState title="Nothing in your name">
-          Buyers choose who holds their buyer protection at checkout. Anything they pick you for lands here.
-        </EmptyState>
-      ) : (
-        <div className="stack">
-          {held.holdings.map((row) => (
-            <article key={row.order.id} className="card card--pad stack">
-              <div className="row row--between">
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 650 }}>{row.order.itemName}</div>
-                  <span className="faint"><PersonLink party={row.buyer} /> → <PersonLink party={row.seller} /></span>
-                </div>
-                <span className="badge badge--accent">{formatMoney(row.order.escrow.amountMinor, row.order.currency)}</span>
-              </div>
-              <span className={`badge badge--${row.order.escrow.state === 'disputed' ? 'warn' : row.order.escrow.state === 'held' ? 'accent' : ''}`} style={{ justifySelf: 'start' }}>
-                {HELD_LABELS[row.order.escrow.state] ?? row.order.escrow.state}
-              </span>
-              {row.dispute && (
-                <>
-                  <p className="muted" style={{ margin: 0 }}>
-                    Disputed {timeAgo(row.dispute.createdAt)} ·{' '}
-                    {row.releasable ? 'final - release it as decided' : row.decidable ? 'waiting on your decision' : DISPUTE_STATUS_LABELS[row.dispute.status]}
-                  </p>
-                  <Link to={`/dispute/${row.dispute.id}`} className={`btn btn--sm ${row.releasable || row.decidable ? '' : 'btn--quiet'}`}
-                    style={{ justifySelf: 'start' }}>
-                    {row.releasable ? 'Release the payment' : row.decidable ? 'Decide it' : 'Read the thread'}
-                  </Link>
-                </>
-              )}
-            </article>
-          ))}
-        </div>
-      ))}
 
       {tab === 'earnings' && (desk.earnings.payments.length === 0 ? (
         <EmptyState title="Nothing earned yet">
-          You earn a share of every dispute, escalation and protection fee paid on cases you hold, after Figmark's
+          You earn a share of every dispute and escalation fee paid on cases you hold, after Figmark's
           commission. Fees are set by Figmark and paid through the payment gateway.
         </EmptyState>
       ) : (

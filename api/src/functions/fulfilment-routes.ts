@@ -1295,8 +1295,8 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     } else if (order.status === 'shipped') {
       order.status = inLot(order) ? 'in_fulfilment' : 'confirmed';
     }
-    if (order.escrow.state === 'held') {
-      order.escrow = { ...order.escrow, autoReleaseAt: on ? daysFrom(releaseDays) : null };
+    if (order.hold.state === 'held') {
+      order.hold = { ...order.hold, autoReleaseAt: on ? daysFrom(releaseDays) : null };
     }
   }
 

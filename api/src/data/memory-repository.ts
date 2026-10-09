@@ -19,7 +19,7 @@ import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
   DEMO_PHONE,
-  ESCROW_EMAIL,
+  MANAGER_EMAIL,
   HANDLER_EMAIL,
   ARTIST_EMAIL,
   FORWARDER_EMAIL,
@@ -270,11 +270,11 @@ export class MemoryRepository implements Repository {
 
   listDemoAccounts(): DemoAccount[] {
     // The accounts that can actually be signed into: the shop, the two people
-    // who work its lots at either end of the water, and the escrow between.
+    // who work its lots at either end of the water, and a community manager.
     return [
       { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
       { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
-      { identifier: ESCROW_EMAIL, label: `the Buyer Protection agent holding the money · ${DEMO_PASSWORD}` },
+      { identifier: MANAGER_EMAIL, label: `a community manager who decides disputes · ${DEMO_PASSWORD}` },
       { identifier: HANDLER_EMAIL, label: `the handler getting the parcels out · ${DEMO_PASSWORD}` },
       { identifier: FORWARDER_EMAIL, label: `the freight forwarder's store · ${DEMO_PASSWORD}` },
       { identifier: ARTIST_EMAIL, label: `the artist studio taking commissions · ${DEMO_PASSWORD}` },
@@ -375,12 +375,6 @@ export class MemoryRepository implements Repository {
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
     return [...this.orders.values()].filter((o) => o.lotId === lotId && isPlaced(o));
-  }
-
-  async listOrdersHeldBy(escrowAgentId: string): Promise<Order[]> {
-    return [...this.orders.values()]
-      .filter((order) => order.protection?.escrowAgentId === escrowAgentId && isPlaced(order))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   async listOrdersCommissionedFrom(artistId: string): Promise<Order[]> {
@@ -839,9 +833,9 @@ export class MemoryRepository implements Repository {
     return found;
   }
 
-  async listEscrowAgents(): Promise<User[]> {
+  async listManagers(): Promise<User[]> {
     return [...this.users.values()]
-      .filter((user) => user.escrowRights)
+      .filter((user) => user.managerRights)
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
 
@@ -997,4 +991,4 @@ export function identifiersOf(user: User): string[] {
 const likeKey = (userId: string, listingId: string) => `${userId}::${listingId}`;
 const followKey = (followerId: string, sellerId: string) => `${followerId}::${sellerId}`;
 
-export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE, ESCROW_EMAIL, HANDLER_EMAIL, PACKER_EMAIL };
+export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE, MANAGER_EMAIL, HANDLER_EMAIL, PACKER_EMAIL };

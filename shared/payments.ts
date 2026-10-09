@@ -28,7 +28,7 @@ export const EXPIRY_WARNING_HOURS = 48;
 
 /**
  * Expired is read from the clock rather than written by a job, for the same
- * reason escrow auto-release is: a deadline kept by a scheduler silently stops
+ * reason held-payment auto-release is: a deadline kept by a scheduler silently stops
  * the day the scheduler does.
  */
 export function isExpired(listing: Pick<Listing, 'expiresAt'>, now = new Date()): boolean {

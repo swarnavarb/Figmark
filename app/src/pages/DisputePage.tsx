@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ManagerMark } from '../components/ManagerBadge';
 import { DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
 import {
-  DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY, releaseDueAt,
+  DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY,
 } from '@shared/disputes';
 import type { DisputeRound, DisputeSanction, DisputeSanctionKind } from '@shared/models';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumRow } from '../api';
@@ -205,7 +205,7 @@ function Outcome({ view }: { view: DisputeView }) {
           {dispute.release
             ? `. The held payment was released: ${formatMoney(dispute.release.toBuyerMinor, view.currency)} to the buyer, ${formatMoney(dispute.release.toSellerMinor, view.currency)} to the seller.`
             : view.holdsMoney
-              ? `. The payment stays held until the community manager holding it releases it${releaseDueAt(dispute) ? ` - or Figmark releases it as decided on ${formatDateOrdinal(releaseDueAt(dispute)!)}` : ''}.`
+              ? '. Figmark is releasing the held payment as decided.'
               : '.'}
         </>
       )}
@@ -235,7 +235,7 @@ function Rounds({ rounds, currency, nameOf, parties }: {
             <b>Round {round.n}</b>
             <span className="faint">
               {round.managerName}<ManagerMark id={round.managerId} />
-              {round.assignedBy === 'protection' ? ' · holding the payment' : round.assignedBy === 'raiser' ? ' · chosen' : ' · assigned by availability'}
+              {round.assignedBy === 'raiser' ? ' · chosen' : ' · assigned by availability'}
             </span>
           </div>
           <span className="faint">
@@ -335,8 +335,7 @@ function Progress({ view }: { view: DisputeView }) {
 }
 
 /**
- * Write, settle, withdraw, escalate - and, for the manager, decide; for the
- * holder of a protected payment, release it.
+ * Write, settle, withdraw, escalate - and, for the manager, decide.
  */
 function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Promise<void> }) {
   const { dispute, actions } = view;
@@ -417,21 +416,6 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
               if (sure) await run('withdraw', () => api.disputeWithdraw(dispute.id));
             })()}>
             {busy === 'withdraw' ? 'Withdrawing…' : 'Withdraw this'}
-          </button>
-        )}
-        {actions.includes('request_release') && (
-          <button className="btn" disabled={busy !== null}
-            onClick={() => void (async () => {
-              const toBuyer = dispute.resolution?.refundMinor ?? 0;
-              const held = view.heldMinor ?? 0;
-              const sure = await confirm({
-                title: 'Release the held payment?',
-                body: `As decided: ${formatMoney(toBuyer, view.currency)} to the buyer and ${formatMoney(Math.max(0, held - toBuyer), view.currency)} to the seller, through the payment gateway.`,
-                action: 'Release it',
-              });
-              if (sure) await run('release', () => api.disputeRelease(dispute.id));
-            })()}>
-            {busy === 'release' ? 'Releasing…' : 'Release the held payment as decided'}
           </button>
         )}
       </div>

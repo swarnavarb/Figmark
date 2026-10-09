@@ -1,8 +1,6 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { tally } from '../../../shared/board.js';
 import { isCancelledLike } from '../../../shared/orders.js';
-import { rupees } from '../../../shared/payments.js';
-import { marketSettings } from '../settings.js';
 import type { HandlerProfile, Lot, Order, User } from '../../../shared/models.js';
 import {
   SERVICES,
@@ -20,9 +18,8 @@ import { liveOfferings } from '../../../shared/service-stores.js';
 /**
  * The trades around the trade: who offers them, and the screens for doing them.
  *
- * Three of these four already existed in pieces - a forwarder directory nobody
- * could act from, an escrow console reachable only from a link on the sell tab,
- * a packing list behind a store right. What was missing was the front door: one
+ * Some of these already existed in pieces - a forwarder directory nobody
+ * could act from, a packing list behind a store right. What was missing was the front door: one
  * place that says these jobs exist, who does them, and where you go if you do
  * one. Nothing here replaces those screens; it points at them, and fills in the
  * two that were never built.
@@ -110,22 +107,6 @@ function handlerCard(user: User): ProviderCard {
   };
 }
 
-function escrowCard(user: User, feeMinor: number): ProviderCard {
-  const fee = rupees(feeMinor);
-  return {
-    userId: user.id,
-    name: user.displayName,
-    handle: user.username ?? null,
-    line: `Community manager · buyer protection ${fee} per order, set by Figmark`,
-    // The operator's note is for operators. What a buyer needs is the fee and
-    // the name, and inventing a blurb they never wrote would be worse.
-    description: '',
-    contact: null,
-    trustScore: null,
-    completed: null,
-  };
-}
-
 /** Everyone offering one kind, already filtered to what may be shown. */
 async function providersOf(repository: Repo, kind: ServiceKind): Promise<ProviderCard[]> {
   switch (kind) {
@@ -143,12 +124,6 @@ async function providersOf(repository: Repo, kind: ServiceKind): Promise<Provide
         .filter((user) => user.handlerProfile)
         .map(handlerCard)
         .sort((a, b) => (b.trustScore ?? 0) - (a.trustScore ?? 0));
-    case 'escrow': {
-      const rate = (await marketSettings(repository)).protectionFeeMinor;
-      return (await repository.listEscrowAgents())
-        .filter((user) => user.escrowRights && !user.suspended)
-        .map((user) => escrowCard(user, rate));
-    }
     case 'supplier':
       // Private by construction. Guarded at the route too; this is the second
       // lock, so a future caller cannot reach the list by asking politely.
@@ -248,8 +223,7 @@ interface ListingBody {
  * POST /api/me/service - put yourself on the handler list, or take yourself off it.
  *
  * Only the kind anyone may offer. A forwarder or an artist applies for a store,
- * escrow is granted because the job is holding other people's money, and a
- * supplier is named by a shop - none of those is something to sign up for, and
+ * and a supplier is named by a shop - none of those is something to sign up for, and
  * letting this route write them would be a way around every one of those rules.
  */
 async function offerService(request: HttpRequest, _context: InvocationContext) {

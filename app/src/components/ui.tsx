@@ -174,7 +174,7 @@ export function Tile({ value, label, tone, onClick, open }: {
  *
  * Escape closes it and so does the backdrop, because the way out of a dialog
  * should be the thing people reach for without thinking. Used for choices worth
- * interrupting the page for — picking who holds your money is one.
+ * interrupting the page for — turning an order down is one.
  */
 export function Modal({ title, onClose, children }: {
   title: string;

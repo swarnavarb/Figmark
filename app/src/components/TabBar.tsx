@@ -55,12 +55,12 @@ export const TABS = [
   {
     to: '/services',
     label: 'Services',
-    // The consoles too: a packing list and an escrow holding are somebody's
-    // job rather than somebody's shop, and the bar should say so while they
+    // The consoles too: a packing list and a Community Service desk are
+    // somebody's job rather than somebody's shop, and the bar should say so while they
     // are standing in one.
     match: (path: string) =>
       path.startsWith('/services') || path.startsWith('/forwarders')
-      || path.startsWith('/escrow') || path.startsWith('/community-service') || path.startsWith('/packing'),
+      || path.startsWith('/community-service') || path.startsWith('/packing'),
     // A hub of people rather than a briefcase: three nodes joined, which is
     // what these four jobs are around one lot.
     icon: SERVICES_GLYPH,

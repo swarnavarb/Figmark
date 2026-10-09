@@ -59,7 +59,7 @@ export function factsFromOrder(order: Order, actions: readonly OrderAction[]): S
     shipment: order.shipment ?? null,
     receivedAt: order.receivedAt ?? null,
     inHand: order.lotId === 'direct',
-    disputed: order.escrow.state === 'disputed',
+    disputed: order.hold.state === 'disputed',
   };
 }
 

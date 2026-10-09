@@ -47,8 +47,8 @@ export const DEMO_PASSWORD = 'figmark123';
  */
 export const PACKER_EMAIL = 'packer@baiyunhobby.example';
 
-/** The neutral escrow, so their side of a held payment can be signed into. */
-export const ESCROW_EMAIL = 'meera@figmark.in';
+/** A community manager, so their side of a dispute can be signed into. */
+export const MANAGER_EMAIL = 'meera@figmark.in';
 
 /**
  * The domestic handler, for the same reason as the packer.
@@ -163,26 +163,25 @@ export function seedUsers(): User[] {
         ],
       },
       forwarderProfile: null,
-      /* Also an escrow: a trusted regular who holds money for other people's
-         trades. Never for their own — you cannot be the neutral party in a
-         transaction you are one end of. */
-      escrowRights: {
+      /* Also a community manager: a trusted regular who decides other
+         people's disputes. Never their own — you cannot be the neutral party
+         in a transaction you are one end of. */
+      managerRights: {
         grantedAt: iso(-30),
         grantedBy: 'usr_ops',
-        feeBasisPoints: 250,
       },
       suspended: false,
       createdAt: iso(-120),
       updatedAt: iso(-2),
     },
 
-    /* An escrow and nothing else: no shop, no listings, just the person the
-       group trusts to hold the money. Sign-in-able, because the escrow console
-       only means anything seen from their side. */
+    /* A community manager and nothing else: no shop, no listings, just the
+       person the group trusts to decide disputes. Sign-in-able, because the
+       Community Service desk only means anything seen from their side. */
     {
       id: 'usr_escrow_meera',
       username: 'meera_holds',
-      email: ESCROW_EMAIL,
+      email: MANAGER_EMAIL,
       phone: '+919812300099',
       displayName: 'Meera Iyer',
       isAdmin: false,
@@ -192,10 +191,9 @@ export function seedUsers(): User[] {
       sellerTrust: sellerTrust(),
       sellerProfile: null,
       forwarderProfile: null,
-      escrowRights: {
+      managerRights: {
         grantedAt: iso(-90),
         grantedBy: 'usr_ops',
-        feeBasisPoints: 150,
       },
       suspended: false,
       createdAt: iso(-200),
@@ -224,10 +222,9 @@ export function seedUsers(): User[] {
 
     /* Catalog sellers. No password hash: they populate the feed, they are not
        accounts you can sign in as. */
-    withEscrow(
+    asManager(
       storefront('usr_kaiju', 'Kaiju Imports', 'Ravi Krishnan', 'kaiju-imports', 'Bengaluru, KA', 91, 148, 0.96,
         'Weekly pre-orders from Guangzhou. Scale figures and garage kits.'),
-      200,
     ),
     storefront('usr_tokyoline', 'Tokyo Line', 'Meiko Tanaka', 'tokyo-line', 'Delhi, DL', 84, 96, 0.91,
       'Anime merch and trading cards, direct from Akihabara runs.'),
@@ -289,14 +286,13 @@ export function seedUsers(): User[] {
   ];
 }
 
-/** Approves a seeded account to hold other people's money, at a given rate. */
-function withEscrow(user: User, feeBasisPoints: number): User {
+/** Appoints a seeded account a community manager. */
+function asManager(user: User): User {
   return {
     ...user,
-    escrowRights: {
+    managerRights: {
       grantedAt: iso(-45),
       grantedBy: 'usr_ops',
-      feeBasisPoints,
     },
   };
 }
@@ -880,10 +876,9 @@ export function seedOrders(): Order[] {
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_demo' }],
       protection: {
-        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera Iyer',
         feeMinor: 4_350, feeBasisPoints: 150, boughtAt: iso(-5), refundedAt: null,
       },
-      escrow: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
+      hold: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
       completedAt: null, createdAt: iso(-5), updatedAt: iso(-5),
     },
     {
@@ -899,10 +894,9 @@ export function seedOrders(): Order[] {
         { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
       ],
       protection: {
-        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera Iyer',
         feeMinor: 480, feeBasisPoints: 150, boughtAt: iso(-30), refundedAt: null,
       },
-      escrow: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
+      hold: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
       completedAt: null, createdAt: iso(-30), updatedAt: iso(-4),
     },
     {
@@ -912,7 +906,7 @@ export function seedOrders(): Order[] {
       status: 'pending_payment', paymentStatus: 'unpaid',
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-2), note: 'Order placed.', recordedBy: 'usr_demo' }],
-      escrow: { state: 'none', amountMinor: 54_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      hold: { state: 'none', amountMinor: 54_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
       placedAt: null,
       completedAt: null, createdAt: iso(-2), updatedAt: iso(-2),
     },
@@ -932,7 +926,7 @@ export function seedOrders(): Order[] {
         { stage: 'india_received', enteredAt: iso(-30), note: 'Cleared customs.', recordedBy: 'usr_kaiju' },
         { stage: 'delivered', enteredAt: iso(-24), note: 'Delivery confirmed by the buyer.', recordedBy: 'usr_demo' },
       ],
-      escrow: { state: 'released', amountMinor: 29_000, heldAt: iso(-64), releasedAt: iso(-24), autoReleaseAt: null, disputeId: null },
+      hold: { state: 'released', amountMinor: 29_000, heldAt: iso(-64), releasedAt: iso(-24), autoReleaseAt: null, disputeId: null },
       completedAt: iso(-24), createdAt: iso(-64), updatedAt: iso(-24),
     },
     {
@@ -946,7 +940,7 @@ export function seedOrders(): Order[] {
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-1), note: 'Order placed.', recordedBy: 'usr_demo' }],
       protection: null,
-      escrow: { state: 'none', amountMinor: 32_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      hold: { state: 'none', amountMinor: 32_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
       placedAt: null,
       completedAt: null, createdAt: iso(-1), updatedAt: iso(-1),
     },
@@ -964,7 +958,7 @@ export function seedOrders(): Order[] {
         { stage: 'local_dispatch', enteredAt: iso(-19), note: null, recordedBy: 'usr_demo' },
         { stage: 'delivered', enteredAt: iso(-17), note: 'Handed over.', recordedBy: 'usr_demo' },
       ],
-      escrow: { state: 'released', amountMinor: 1_20_000, heldAt: iso(-22), releasedAt: iso(-17), autoReleaseAt: null, disputeId: null },
+      hold: { state: 'released', amountMinor: 1_20_000, heldAt: iso(-22), releasedAt: iso(-17), autoReleaseAt: null, disputeId: null },
       completedAt: iso(-17), createdAt: iso(-22), updatedAt: iso(-17),
     },
     {
@@ -978,7 +972,7 @@ export function seedOrders(): Order[] {
         { stage: 'dispatched', enteredAt: iso(-10), note: null, recordedBy: 'usr_demo' },
         { stage: 'delivered', enteredAt: iso(-8), note: null, recordedBy: 'usr_demo' },
       ],
-      escrow: { state: 'released', amountMinor: 36_000, heldAt: iso(-11), releasedAt: iso(-8), autoReleaseAt: null, disputeId: null },
+      hold: { state: 'released', amountMinor: 36_000, heldAt: iso(-11), releasedAt: iso(-8), autoReleaseAt: null, disputeId: null },
       completedAt: iso(-8), createdAt: iso(-11), updatedAt: iso(-8),
     },
     {
@@ -995,10 +989,9 @@ export function seedOrders(): Order[] {
         { stage: 'ordering', enteredAt: iso(-1), note: 'Buyer opened a dispute.', recordedBy: 'usr_gadgetgrid' },
       ],
       protection: {
-        escrowAgentId: 'usr_kaiju', escrowName: 'Ravi Krishnan',
         feeMinor: 2_400, feeBasisPoints: 200, boughtAt: iso(-3), refundedAt: null,
       },
-      escrow: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
+      hold: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
       completedAt: null, createdAt: iso(-3), updatedAt: iso(-1),
     },
   ];
@@ -1203,13 +1196,11 @@ export function seedLiveSale(): Order {
     status: 'confirmed', paymentStatus: 'paid',
     stage: 'ordering',
     stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Order placed.', recordedBy: 'usr_tokyoline' }],
-    /* Same lot as ord_2003, same escrow — which is exactly what the suggestion
-       at checkout is for. */
+    /* Same lot as ord_2003, also bought with Buyer Protection. */
     protection: {
-      escrowAgentId: 'usr_kaiju', escrowName: 'Ravi Krishnan',
       feeMinor: 2_200, feeBasisPoints: 200, boughtAt: iso(-6), refundedAt: null,
     },
-    escrow: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },
+    hold: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },
     completedAt: null, createdAt: iso(-6), updatedAt: iso(-6),
   };
 }
@@ -1762,7 +1753,7 @@ export function seedLotOrders(): Order[] {
       currency: 'INR',
       status: 'in_fulfilment',
       paymentStatus: 'paid',
-      escrow: {
+      hold: {
         state: 'held', amountMinor: priceMinor, heldAt: iso(-12),
         releasedAt: null, autoReleaseAt: null, disputeId: null,
       },

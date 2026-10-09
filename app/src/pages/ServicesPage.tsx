@@ -28,13 +28,12 @@ import { BackLink } from '../components/ScrollManager';
 /**
  * The trades around the trade.
  *
- * A lot of figures reaches a buyer in Kochi because four different people
- * each did one job: somebody checked the pieces in Guangzhou, somebody flew the
- * crate, somebody took delivery in Mumbai and broke it into fifteen parcels,
- * and somebody held the money until each one arrived. Three of those four were
- * already in here - a forwarder directory, an escrow console, a packing list -
- * but only ever as something a seller reached into from their own console. The
- * people doing the work had no door of their own.
+ * A lot of figures reaches a buyer in Kochi because different people each did
+ * one job: somebody checked the pieces in Guangzhou, somebody flew the crate,
+ * and somebody took delivery in Mumbai and broke it into fifteen parcels. Those
+ * jobs were already in here - a forwarder directory, a packing list - but only
+ * ever as something a seller reached into from their own console. The people
+ * doing the work had no door of their own.
  *
  * This is that door, on the bar, next to the two it sits between: you buy, you
  * sell, and this is everyone who makes the middle of it happen. Whoever does
@@ -67,7 +66,7 @@ export function ServicesPage() {
           <h1>Services</h1>
           <p className="muted">
             The people around the trade. Someone checks the goods, someone flies them, someone gets
-            them to the door, someone holds the money — and someone makes it one of a kind.
+            them to the door — and someone makes it one of a kind.
           </p>
         </div>
       </div>
@@ -108,7 +107,7 @@ const ROLE_COPY: Record<CrewRole, { label: string; icon: IconName }> = {
 /** The top of the Services tab: your own work, or the invitation to do some. */
 function MyServicesStrip({ mine, signedIn }: { mine: MyServicesView | null; signedIn: boolean }) {
   const roles = mine ? mine.stores.length + new Set(mine.crew.map((row) => `${row.role}`)).size : 0;
-  if (!signedIn || (mine && roles === 0 && !mine.escrow)) {
+  if (!signedIn || (mine && roles === 0 && !mine.communityManager)) {
     return (
       <Link to="/services/mine" className="ms-invite">
         <span className="ms-invite__glow" aria-hidden="true" />
@@ -157,7 +156,7 @@ function MyServicesStrip({ mine, signedIn }: { mine: MyServicesView | null; sign
             {rows.some((row) => row.toPress > 0) && <span className="ms-tile__ping">{rows.filter((row) => row.toPress > 0).length}</span>}
           </Link>
         ))}
-        {mine?.escrow && (
+        {mine?.communityManager && (
           <Link to="/community-service" className="ms-tile">
             <span className="ms-tile__icon"><Icon name="users" size={18} /></span>
             <span className="ms-tile__name">Community Service</span>
@@ -418,14 +417,14 @@ export function MyServicesPage() {
           </section>
 
           {/* Only for the people Figmark has appointed community managers. */}
-          {mine.escrow && (
+          {mine.communityManager && (
             <>
               <h2 className="ms-section">My job</h2>
               <Link to="/community-service" className="svc">
                 <span className="svc__glyph"><Icon name="users" size={22} /></span>
                 <span className="svc__body">
                   <span className="svc__name">Community Service</span>
-                  <span className="faint">Disputes waiting on your decision, payments you hold under buyer protection, and what you have earned.</span>
+                  <span className="faint">Disputes waiting on your decision, and what you have earned.</span>
                 </span>
               </Link>
             </>

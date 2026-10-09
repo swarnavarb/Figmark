@@ -59,7 +59,7 @@ export interface EvidenceDraft {
   caption: string;
 }
 import type {
-  BuyerReversalDetails, Dispute, DisputeDecision, DisputeSanction, DisputeSide, FeePayment, EscrowRights, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
+  BuyerReversalDetails, Dispute, DisputeDecision, DisputeSanction, DisputeSide, FeePayment, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
   MessageDeal, MessageParty, Order, OrderShipment, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
   StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
   ArtistJob, ArtistOffering, ArtistProfile, FreightLane, InsurancePlan, OrderAddOn, PortfolioPiece, StoreCore, StoreLink,
@@ -563,24 +563,6 @@ export interface Credit {
   tier: string | null;
 }
 
-/** Someone approved to hold this payment, as the picker lists them. */
-export interface EscrowOption {
-  id: string;
-  name: string;
-  /** The flat buyer protection fee, set by Figmark. */
-  feeMinor: number;
-  heldBefore: number;
-  since: string;
-  /** Payments they have held, ever. */
-  held: number;
-  /** Of those, the ones that finished - released or refunded. */
-  settled: number;
-  /** What they are holding right now, including anything in dispute. */
-  openNow: number;
-  /** Out of five, from their own record. Null until they have settled one. */
-  rating: number | null;
-}
-
 export interface Checkout {
   itemMinor: number;
   /**
@@ -595,10 +577,8 @@ export interface Checkout {
   seller: PartyRef;
   /** Where to send the money on a direct sale. Null when the seller has set none. */
   sellerPayment: SellerPaymentDetails | null;
-  /** Empty when nobody approved can be neutral in this trade. */
-  escrows: EscrowOption[];
-  /** The one the rest of the lot already uses, and why. Never a default. */
-  suggested: { agentId: string; name: string; because: string } | null;
+  /** Buyer Protection: Figmark holds the payment until the buyer has the item, for this fee. */
+  protectionFeeMinor: number;
 }
 
 /** One order waiting on the seller to say whether the money arrived. */
@@ -619,7 +599,7 @@ export interface SaleRow {
   createdAt: string;
   /* Everything the order card shows, so one screen answers "where is this and
      what does it need" without opening anything. */
-  escrowState: string;
+  holdState: string;
   inHand: boolean;
   /** The courier and AWB it went out with, once the seller gave them. */
   shipment: OrderShipment | null;
@@ -770,7 +750,7 @@ export interface MyDisputesResponse {
   community: DisputeRow[];
   orders: {
     id: string; itemName: string; side: 'buyer' | 'seller'; counterpartyName: string; counterpartyId: string;
-    /** Bought with protection that is still holding the payment: raising is free and goes to its holder. */
+    /** Bought with protection and Figmark is still holding the payment: raising is free. */
     protectedNow: boolean;
     createdAt: string;
   }[];
@@ -816,7 +796,6 @@ export interface CommunityCase {
   decideBy: string | null;
   overdue: boolean;
   result: Dispute['result'] | null;
-  releasable: boolean;
   updatedAt: string;
 }
 
@@ -934,24 +913,12 @@ export interface PowerSaleDraft {
   afterWindow?: { channel: boolean; feed: boolean };
 }
 
-export interface EscrowHolding {
-  order: {
-    id: string; itemName: string; currency: string; lotId: string; status: string;
-    escrow: Order['escrow']; protection: Order['protection'];
-  };
-  buyer: PartyRef;
-  seller: PartyRef;
-  dispute: Dispute | null;
-  decidable: boolean;
-  releasable: boolean;
-}
-
 export interface DisputeView {
   dispute: Dispute;
   /** Null on a dispute about a review, comment, post or person. */
   order: Order | null;
   side: OrderSide | null;
-  role: 'raiser' | 'respondent' | 'manager' | 'holder' | 'past_manager';
+  role: 'raiser' | 'respondent' | 'manager' | 'past_manager';
   actions: CommunityAction[];
   /** The manager on the current round is past their deadline. */
   overdue: boolean;
@@ -2020,7 +1987,7 @@ export interface MyServicesView {
   crew: CrewRow[];
   own: { forwarder: StoreStatus | null; artist: StoreStatus | null };
   handler: boolean;
-  escrow: boolean;
+  communityManager: boolean;
 }
 
 export interface CrewLotView {
@@ -2131,7 +2098,8 @@ export interface OrderServicesView {
     artistPayment: SellerPaymentDetails | null;
     studioAddress: string | null;
     artists: PublicStore[];
-    escrows: { id: string; name: string; feeMinor: number }[];
+    /** What Buyer Protection on this commission costs; null when it cannot be paid yet. */
+    protectionFeeMinor: number | null;
   };
 }
 
@@ -2331,7 +2299,7 @@ export const api = {
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/insurance`, { planId }),
   commission: (orderId: string, body: { artistId: string; offeringId?: string | null; brief: string; refUrls?: string[] }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/commission`, body),
-  commissionAct: (orderId: string, body: { action: ArtistJobAction; method?: 'protected' | 'direct'; escrowAgentId?: string; reference?: string }) =>
+  commissionAct: (orderId: string, body: { action: ArtistJobAction; method?: 'protected' | 'direct'; reference?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/commission/act`, body),
   serviceDirectory: (kind: ServiceKind, q?: string) =>
     request<ServiceDirectory>(`/services/${encodeURIComponent(kind)}${q ? `?q=${encodeURIComponent(q)}` : ''}`),
@@ -2484,8 +2452,6 @@ export const api = {
     post<{ dispute: Dispute; payment: FeePayment }>(`/disputes/${encodeURIComponent(id)}/escalate`),
   disputeDecide: (id: string, body: { favour: 'raiser' | 'respondent'; reasoning: string; refundMinor?: number | null; sanctions: DisputeSanction[] }) =>
     post<{ dispute: Dispute; order: Order | null }>(`/disputes/${encodeURIComponent(id)}/decide`, body),
-  disputeRelease: (id: string) =>
-    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/release`),
   /** Raise a dispute about a review, comment, post or person - paid through the gateway. */
   raiseCommunityDispute: (body: { subject: { type: string; id: string; parentId?: string }; reason: string; managerId: string; evidence: EvidenceDraft[] }) =>
     post<{ dispute: Dispute; payment: FeePayment }>('/disputes', body),
@@ -2499,8 +2465,6 @@ export const api = {
   communityTeam: () => request<{ managers: CommunityTeamMember[] }>('/community/team'),
   communityStanding: (userId: string) => request<CommunityStanding>(`/community/standing/${encodeURIComponent(userId)}`),
   marketSettings: () => request<PublicSettings>('/settings'),
-  escrowHoldings: () =>
-    request<{ rights: EscrowRights; heldMinor: number; holdings: EscrowHolding[] }>('/escrow/holdings'),
   reviewOrder: (id: string, rating: number, body: string) =>
     post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
   /** The buyer's photo of what arrived, posted to the shop's channel. */

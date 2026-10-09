@@ -20,24 +20,22 @@ import { isLive } from './service-stores.js';
  * job is.
  */
 
-export const SERVICE_KINDS = ['forwarder', 'handler', 'escrow', 'supplier', 'artist'] as const;
+export const SERVICE_KINDS = ['forwarder', 'handler', 'supplier', 'artist'] as const;
 export type ServiceKind = (typeof SERVICE_KINDS)[number];
 
 /**
  * How somebody comes to provide a service.
  *
- * The three routes are genuinely different, and the difference is what decides
+ * The routes are genuinely different, and the difference is what decides
  * whether there can be a public list at all:
  *
  * - `listed` - they put themselves up. Anyone can, so there is a directory.
  * - `approved` - they apply with their details and an operator opens the
  *   store. There is a directory, of the approved ones only.
- * - `granted` - the company grants it, because the job is holding other
- *   people's money and an open sign-up for that is a fraud vector.
  * - `named` - a shop names one person on one lot. Nobody applies, so a
  *   directory would list people who never agreed to be listed.
  */
-export type ServiceEntry = 'listed' | 'approved' | 'granted' | 'named';
+export type ServiceEntry = 'listed' | 'approved' | 'named';
 
 export interface ServiceMeta {
   kind: ServiceKind;
@@ -50,7 +48,7 @@ export interface ServiceMeta {
    */
   glyph: string;
   /** The drawn mark, by name in the app's own icon set. */
-  icon: 'plane' | 'box' | 'lock' | 'search' | 'spark';
+  icon: 'plane' | 'box' | 'search' | 'spark';
   /** What they do, in the words a seller would use. */
   blurb: string;
   /** The longer version, on the category's own screen. */
@@ -93,21 +91,6 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     browsable: true,
     console: '/services/mine/handler',
   },
-  escrow: {
-    kind: 'escrow',
-    label: 'Buyer Protection',
-    plural: 'Buyer Protection agents',
-    glyph: '🔒',
-    icon: 'lock',
-    blurb: 'Holds the money until the buyer has the thing.',
-    detail:
-      'A person, not a company account: the buyer picks one at checkout, they hold the payment '
-      + 'until the item arrives, and they are the one who decides a dispute. Granted by Figmark '
-      + 'rather than applied for, because the job is holding other people’s money.',
-    entry: 'granted',
-    browsable: true,
-    console: '/escrow',
-  },
   supplier: {
     kind: 'supplier',
     label: 'Supplier',
@@ -143,18 +126,17 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
 };
 
 /** In the order the goods actually move. */
-export const SERVICE_ORDER: readonly ServiceKind[] = ['supplier', 'forwarder', 'handler', 'artist', 'escrow'];
+export const SERVICE_ORDER: readonly ServiceKind[] = ['supplier', 'forwarder', 'handler', 'artist'];
 
 /** How somebody becomes one, in one line, for the category screen. */
 export const ENTRY_NOTE: Record<ServiceEntry, string> = {
   listed: 'Anyone can offer this. Put yourself on the list from My services.',
   approved: 'Apply with your details from My services. Figmark reviews it and opens your store.',
-  granted: 'Granted by Figmark. Ask, rather than sign up.',
   named: 'Named by a shop on one lot. There is no list to join.',
 };
 
 /** Whether this account provides that service right now. */
-export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'escrowRights' | 'artistProfile'>, kind: ServiceKind): boolean {
+export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'artistProfile'>, kind: ServiceKind): boolean {
   switch (kind) {
     case 'forwarder':
       return isLive(user.forwarderProfile);
@@ -162,8 +144,6 @@ export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' 
       return isLive(user.artistProfile);
     case 'handler':
       return Boolean(user.handlerProfile);
-    case 'escrow':
-      return Boolean(user.escrowRights);
     // Being somebody's supplier is not a thing you are, it is a thing a shop
     // asked you to be: the answer is the lots naming you, which only the API
     // can see.
@@ -174,7 +154,7 @@ export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' 
 
 /** The services this account provides, minus the one it cannot answer alone. */
 export function servicesOf(
-  user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'escrowRights' | 'artistProfile'>,
+  user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'artistProfile'>,
 ): ServiceKind[] {
   return SERVICE_ORDER.filter((kind) => provides(user, kind));
 }

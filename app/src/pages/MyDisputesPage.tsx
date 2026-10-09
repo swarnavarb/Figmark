@@ -83,7 +83,7 @@ export function MyDisputesPage() {
               ))}
             </select>
             <span className="field__hint">
-              A purchase still under buyer protection goes to the community manager holding the payment, free. Anything
+              A purchase still under buyer protection goes to an available community manager, free. Anything
               else is heard by a community manager you pick, for the dispute fee. To dispute a review, comment or post,
               use the ⋮ on it.
             </span>

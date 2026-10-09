@@ -10,7 +10,7 @@ import type {
  * themselves. That was fine while the line was all there was. A store is more
  * than a line - it quotes rates a shop will plan a lot around, sells transit
  * cover to buyers, and takes other people's figures away to repaint them - so
- * it opens the way escrow does: somebody applies with their details, an
+ * it opens by application: somebody applies with their details, an
  * operator reads them, and the store goes live when it is approved.
  *
  * Both kinds share one core (name, links, contacts, team, review history) and
@@ -183,7 +183,7 @@ export function goodsMinor(order: Pick<Order, 'unitPriceMinor' | 'quantity'>): n
  * What the buyer owes on this order: the goods and any cover they opted into.
  *
  * Cover is collected with the order, through whichever way the order is paid -
- * held by an escrow or sent direct - so it rides every rule the order already
+ * held by Figmark or sent direct - so it rides every rule the order already
  * has (advance, balance, refund) instead of starting a second ledger. The shop
  * settles it with the forwarder alongside the freight bill.
  */
@@ -254,7 +254,7 @@ export function jobActionsFor(job: Pick<ArtistJob, 'status' | 'payments' | 'meth
   });
 }
 
-/** The commission's own total: the agreed price and, if held, the escrow's fee. */
+/** The commission's own total: the agreed price and, if held, the protection fee. */
 export function jobDueMinor(job: Pick<ArtistJob, 'quoteMinor' | 'protectionFeeMinor'>): number {
   return (job.quoteMinor ?? 0) + (job.protectionFeeMinor ?? 0);
 }

@@ -428,7 +428,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       createdAt: order.createdAt,
       /* Everything the order card shows, so one screen answers "where is this
          and what does it need" without opening anything. */
-      escrowState: order.escrow.state,
+      holdState: order.hold.state,
       /** A domestic sale is in hand by definition: there is nothing to import. */
       inHand: isDirect(order),
       /** The courier and AWB it went out with, once dispatched. */

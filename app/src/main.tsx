@@ -141,7 +141,6 @@ function App() {
         <Route path="/dispute/:id" element={members(<DisputePage />)} />
         <Route path="/community-service" element={members(<CommunityServicePage />)} />
         {/* The buyer protection console became part of the Community Service desk. */}
-        <Route path="/escrow" element={<Navigate to="/community-service" replace />} />
         <Route path="/forwarders" element={<Navigate to="/services/forwarder" replace />} />
         <Route path="/me" element={members(<ProfilePage />)} />
         <Route path="/purchases" element={members(<PurchasesPage />)} />

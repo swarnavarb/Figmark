@@ -2,7 +2,7 @@
   "name": "figmark",
   "version": "0.1.0",
   "private": true,
-  "description": "Import-reseller marketplace: lot/manifest seller ops, two-sided verified reviews, escrow.",
+  "description": "Import-reseller marketplace: lot/manifest seller ops, two-sided verified reviews, Figmark-held buyer protection.",
   "engines": {
     "node": ">=20"
   },

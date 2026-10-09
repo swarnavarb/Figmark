@@ -256,7 +256,7 @@ console.log('\na database seeded by an older release');
 await check('gains the fixtures a later release added, and keeps what it had', async () => {
   // The failure this exists to prevent: the seed only ran on an empty
   // database, so a deployment seeded once and then updated kept day-one data
-  // forever. Three releases of escrows, reviews and disputes were in the code
+  // forever. Three releases of protection, reviews and disputes were in the code
   // and absent from the site, and nothing said so.
   const containers = provisioned();
   const repository = repositoryOn(containers);
@@ -288,6 +288,57 @@ await check('gains the fixtures a later release added, and keeps what it had', a
   // And the new account is reachable, not merely present.
   assert.ok(containers.get('identifiers').has('meera@figmark.in'));
   assert.equal((await updated.getUserByIdentifier('meera@figmark.in')).id, 'usr_escrow_meera');
+});
+
+await check('rows from before Figmark held every payment are moved to the new shape', async () => {
+  // Protected payments used to be held by a member the buyer picked, and rows
+  // named them. A deployed database still holds those rows, and every read
+  // expects the new shape - so they are moved before anybody reads one.
+  const containers = provisioned();
+  const repository = repositoryOn(containers);
+  await repository.init();
+  await repository.settled();
+
+  const users = containers.get('users');
+  const orders = containers.get('orders');
+  const disputes = containers.get('disputes');
+  const meera = users.get('usr_escrow_meera');
+  meera.escrowRights = { ...meera.managerRights, feeBasisPoints: 150 };
+  delete meera.managerRights;
+  const order = orders.get('ord_1001');
+  order.escrow = order.hold;
+  delete order.hold;
+  order.protection = { ...order.protection, escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera Iyer' };
+  order.disputeLinks = [{ id: 'dsp_old', topic: 'escrow', subject: 'dsp_old', raisedBy: 'usr_demo', raisedSide: 'buyer', raisedAt: order.createdAt }];
+  const dispute = [...disputes.values()][0];
+  dispute.topic = 'escrow';
+  dispute.rounds = [{ n: 1, managerId: 'usr_escrow_meera', managerName: 'Meera Iyer', assignedAt: dispute.createdAt,
+    assignedBy: 'protection', decideBy: dispute.createdAt, payment: null, escalatedBy: null, decision: null }];
+  containers.get('siteContent').delete('migration:figmark-held-payments');
+
+  resetCalls();
+  const restarted = repositoryOn(containers);
+  await restarted.init();
+  // The user, the order and the dispute written back, and the marker.
+  assert.ok(calls.writes >= 4, `expected the moved rows to be written, saw ${calls.writes} writes`);
+
+  assert.ok(!('escrowRights' in meera));
+  assert.ok(meera.managerRights?.grantedAt, 'the grant is kept, under its new name');
+  assert.ok(!('feeBasisPoints' in meera.managerRights));
+  assert.ok(!('escrow' in order));
+  assert.equal(order.hold.state, 'held');
+  assert.ok(!('escrowAgentId' in order.protection) && !('escrowName' in order.protection));
+  assert.equal(order.disputeLinks[0].topic, 'held_payment');
+  assert.equal(dispute.topic, 'held_payment');
+  assert.equal(dispute.rounds[0].assignedBy, 'system');
+  assert.match(restarted.status().detail, /Moved \d+ row\(s\) to Figmark-held payments/);
+
+  // Once, and never again.
+  resetCalls();
+  const again = repositoryOn(containers);
+  await again.init();
+  await again.settled();
+  assert.equal(calls.writes, 0);
 });
 
 await check('starting against an up-to-date database is cheap', async () => {

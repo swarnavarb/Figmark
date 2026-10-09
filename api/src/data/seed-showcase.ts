@@ -128,7 +128,7 @@ export function seedShowcaseOrders(base = Date.now()): Order[] {
       currency: 'INR',
       status: 'confirmed' as const,
       paymentStatus: 'paid' as const,
-      escrow: {
+      hold: {
         state: 'held' as const, amountMinor: priceMinor, heldAt: placed,
         releasedAt: null, autoReleaseAt: null, disputeId: null,
       },

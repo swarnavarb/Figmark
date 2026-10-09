@@ -155,8 +155,8 @@ export interface Repository {
    * Writes an order. One already placed moves stock and pre-order fill at
    * once; a checkout (`placedAt: null`) moves nothing until `takeStock`.
    *
-   * Every seller-facing list here - by seller, lot, listing, awaiting a lot,
-   * held by an escrow - leaves checkouts out: pressing Buy is not an order.
+   * Every seller-facing list here - by seller, lot, listing, awaiting a lot -
+   * leaves checkouts out: pressing Buy is not an order.
    */
   createOrder(order: Order): Promise<Order>;
   /**
@@ -313,7 +313,7 @@ export interface Repository {
    * Read at checkout, so it is on the buyer's path: a handful of vetted people,
    * which is the size that makes a scan the right answer.
    */
-  listEscrowAgents(): Promise<User[]>;
+  listManagers(): Promise<User[]>;
   /** Everything one account has made, for the admin's view of them. */
   listPostsByAuthor(authorId: string): Promise<Post[]>;
   deleteUser(id: string): Promise<void>;
@@ -396,8 +396,6 @@ export interface Repository {
 
   /** Every order a seller has taken, for the tracking and analytics views. */
   listOrdersForSeller(sellerId: string): Promise<Order[]>;
-  /** Everything one escrow is holding, or has held. */
-  listOrdersHeldBy(escrowAgentId: string): Promise<Order[]>;
   /** Every order carrying a commission with this artist, newest first. */
   listOrdersCommissionedFrom(artistId: string): Promise<Order[]>;
 

@@ -20,8 +20,8 @@ export class Refusal extends AuthError {}
  * Community managers, and what their decisions do.
  *
  * A community manager is an account an operator has appointed (the stored
- * grant is still `escrowRights`, because the same people hold protected
- * payments). They decide disputes round by round; this module holds what
+ * grant is `managerRights`). They never hold money - Figmark holds every
+ * protected payment. They decide disputes round by round; this module holds what
  * every route needs around that - who may be assigned, the gateway the fees
  * go through, the clock that reassigns a slow manager and makes a decision
  * final, and the sanctions a final decision carries out.
@@ -52,8 +52,8 @@ export async function favouredName(repository: Repo, dispute: Pick<Dispute, 'rai
   return id ? personName(await repository.getUserById(id)) : 'the other side';
 }
 
-export function isManager(user: Pick<User, 'escrowRights' | 'suspended'> | null | undefined): user is User {
-  return Boolean(user?.escrowRights && !user.suspended);
+export function isManager(user: Pick<User, 'managerRights' | 'suspended'> | null | undefined): user is User {
+  return Boolean(user?.managerRights && !user.suspended);
 }
 
 /** Someone else changed the dispute between reading it and writing it. */
@@ -92,7 +92,11 @@ export async function chargeFee(
   settings?: MarketSettings,
 ): Promise<FeePayment> {
   const rates = settings ?? await marketSettings(repository);
-  const { commissionMinor, managerShareMinor } = splitFee(input.amountMinor, rates.commissionBasisPoints);
+  // With no manager doing the work - buyer protection, where Figmark holds
+  // the money - Figmark keeps the whole fee.
+  const { commissionMinor, managerShareMinor } = input.managerId
+    ? splitFee(input.amountMinor, rates.commissionBasisPoints)
+    : { commissionMinor: input.amountMinor, managerShareMinor: 0 };
   const payment: FeePayment = {
     id: `fee_${randomUUID().slice(0, 12)}`,
     kind: input.kind,
@@ -218,8 +222,8 @@ export async function availableManagers(
   repository: Repo,
   exclude: readonly string[],
 ): Promise<{ user: User; open: number }[]> {
-  const all = (await repository.listEscrowAgents()).filter(
-    (user) => isManager(user) && user.escrowRights!.available !== false && !exclude.includes(user.id),
+  const all = (await repository.listManagers()).filter(
+    (user) => isManager(user) && user.managerRights!.available !== false && !exclude.includes(user.id),
   );
   const counted = await Promise.all(all.map(async (user) => ({ user, open: await openCaseCount(repository, user.id) })));
   return counted.filter((entry) => entry.open < MAX_OPEN_CASES);
@@ -233,7 +237,7 @@ export async function availableManagers(
 export async function pickManager(repository: Repo, exclude: readonly string[]): Promise<User | null> {
   const candidates = await availableManagers(repository, exclude);
   candidates.sort((a, b) => a.open - b.open
-    || a.user.escrowRights!.grantedAt.localeCompare(b.user.escrowRights!.grantedAt)
+    || a.user.managerRights!.grantedAt.localeCompare(b.user.managerRights!.grantedAt)
     || a.user.id.localeCompare(b.user.id));
   return candidates[0]?.user ?? null;
 }
@@ -329,15 +333,12 @@ export async function bringUpToDate(repository: Repo, dispute: Dispute, now = ne
   let changed = false;
 
   // Opened before disputes had rounds: give it its first one now, with the
-  // manager holding the payment if there is one, or the system's choice. No
-  // fee - it was raised before there was one.
+  // system's choice. No fee - it was raised before there was one.
   if (roundsOf(dispute).length === 0) {
-    const order = await orderOf(repository, dispute);
-    const holder = order?.protection?.escrowAgentId ? await repository.getUserById(order.protection.escrowAgentId) : null;
-    const manager = isManager(holder) ? holder : await pickManager(repository, [dispute.raisedBy, dispute.againstUserId]);
+    const manager = await pickManager(repository, [dispute.raisedBy, dispute.againstUserId]);
     if (manager) {
       const settings = await marketSettings(repository);
-      const round = newRound(1, manager, isManager(holder) ? 'protection' : 'system', settings, null, null);
+      const round = newRound(1, manager, 'system', settings, null, null);
       if (dispute.status === 'under_mediation') dispute.status = 'in_discussion';
       dispute.rounds = [round];
       dispute.managerIds = [manager.id];
@@ -393,8 +394,8 @@ export async function orderOf(repository: Repo, dispute: Dispute): Promise<Order
  *
  * Counts the result on both records, carries out the standing decision's
  * sanctions (the two that need an operator are queued for one instead), and
- * tells everybody. Held money does not move here: the manager holding it asks
- * for its release, and that is its own step.
+ * tells everybody. Held money does not move here: Figmark pays it out as
+ * decided, as its own step (see the dispute routes' `releaseIfFinal`).
  */
 export async function finalizeDecided(repository: Repo, dispute: Dispute): Promise<Dispute> {
   const standing = standingDecision(dispute);
@@ -420,8 +421,8 @@ export async function finalizeDecided(repository: Repo, dispute: Dispute): Promi
     const buyerWon = winnerId === order.buyerId;
     const refund = standing.decision.refundMinor;
     dispute.resolution = {
-      outcome: refund !== null && refund > 0 && refund < order.escrow.amountMinor ? 'split' : buyerWon ? 'refund_buyer' : 'release_seller',
-      refundMinor: refund ?? (buyerWon ? order.escrow.amountMinor : 0),
+      outcome: refund !== null && refund > 0 && refund < order.hold.amountMinor ? 'split' : buyerWon ? 'refund_buyer' : 'release_seller',
+      refundMinor: refund ?? (buyerWon ? order.hold.amountMinor : 0),
       note: standing.decision.reasoning,
       decidedBy: roundsOf(dispute).find((round) => round.n === standing.finalRound)?.managerId ?? 'system',
       byCompany: false,
@@ -448,14 +449,6 @@ export async function finalizeDecided(repository: Repo, dispute: Dispute): Promi
     body: `Decided in favour of ${await favouredName(repository, dispute, standing.favour)}. ${standing.decision.reasoning}`.slice(0, 200),
     link: `/dispute/${dispute.id}`,
   });
-  if (order?.protection?.escrowAgentId) {
-    await notify(repository, [order.protection.escrowAgentId], {
-      kind: 'dispute_settled',
-      title: 'A dispute over money you hold is final - request its release',
-      body: order.itemName,
-      link: `/dispute/${dispute.id}`,
-    });
-  }
   return saved;
 }
 

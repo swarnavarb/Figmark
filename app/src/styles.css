@@ -2574,40 +2574,10 @@ code, kbd, samp, pre {
 .userrow__meta { font-size: var(--t-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .userrow__tags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
-/* ── Choosing an escrow ────────────────────────────────────────────────── */
+/* ── Checkout ──────────────────────────────────────────────────────────── */
 
 /* A wide tick: the checkbox is the question, so it gets a whole row. */
 .tick--wide { width: 100%; justify-content: flex-start; padding: 11px 12px; font-size: var(--t-sm); }
-
-/* An escrow in the picker: a row that opens onto its record. */
-.escrow {
-  border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--surface-2); overflow: hidden;
-  transition: border-color 0.15s, background 0.15s;
-}
-.escrow:hover { border-color: var(--border-strong); }
-.escrow.is-on { border-color: var(--accent); background: var(--accent-soft); }
-.escrow__head {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  width: 100%; padding: 12px 14px;
-  background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
-}
-.escrow__main { display: grid; gap: 3px; min-width: 0; }
-.escrow__name { font-weight: var(--w-semi); font-size: var(--t-sm); }
-.escrow__fee { font-size: var(--t-sm); font-weight: var(--w-semi); white-space: nowrap; }
-.escrow__more {
-  display: grid; gap: 12px; padding: 0 14px 14px;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-.escrow__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-/* The arrow is the commitment, so it is the one thing here that looks pressable. */
-.escrow__add {
-  flex: none; width: 40px; height: 40px; border-radius: 999px;
-  border: 0; background: var(--accent); color: var(--accent-ink);
-  font-size: 18px; line-height: 1; cursor: pointer;
-}
-.escrow__add:hover { filter: brightness(1.08); }
 
 /* The two ways to buy, as two things rather than a tick on one. */
 .buyway {
@@ -12665,7 +12635,6 @@ button.sk-plan__pick { cursor: pointer; }
 .ms-cat--forwarder .ms-cat__glyph { background: var(--aqua-soft); color: var(--aqua); }
 .ms-cat--handler .ms-cat__glyph { background: var(--lime-soft); color: var(--lime); }
 .ms-cat--artist .ms-cat__glyph { background: var(--pink-soft); color: var(--pink-text); }
-.ms-cat--escrow .ms-cat__glyph { background: var(--blue-soft); color: var(--blue-text); }
 .ms-cat--supplier .ms-cat__glyph { background: var(--coral-soft); color: var(--coral); }
 .ms-cat__name { font-weight: var(--w-semi); font-size: var(--t-md); }
 .ms-cat__blurb { font-size: var(--t-xs); color: var(--text-dim); line-height: 1.45; }
@@ -13105,9 +13074,6 @@ button.sk-plan__pick { cursor: pointer; }
 .os-ship { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-sm); color: var(--ok); }
 .os-studio { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--pink-line); background: var(--pink-soft); font-size: var(--t-sm); }
 .os-pay { display: grid; gap: 10px; padding: 14px; border-radius: var(--r-lg); background: var(--surface-2); }
-.os-escrows { display: grid; gap: 6px; }
-.os-escrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
-.os-escrow.is-on { border-color: var(--accent); background: var(--accent-soft); }
 .os-payto { display: grid; gap: 4px; padding: 12px; border-radius: var(--r-md); border: 1px dashed var(--border-strong); font-size: var(--t-sm); }
 .os-total { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--t-sm); color: var(--text-dim); }
 .os-total b { font-family: var(--display); font-size: var(--t-lg); color: var(--text); }

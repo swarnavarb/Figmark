@@ -206,8 +206,8 @@ export function useStepActs(
   const dispatched = Boolean(order.checkpoints?.dispatched);
   const delivered = order.status === 'delivered';
   const received = Boolean(order.receivedAt);
-  const released = order.escrow.state === 'released';
-  const held = order.escrow.state === 'held';
+  const released = order.hold.state === 'released';
+  const held = order.hold.state === 'held';
 
   function openShipping() {
     setCourier(order!.shipment?.courier ?? '');
@@ -265,7 +265,7 @@ export function useStepActs(
           )}
           {checkpoint === 'delivered' && delivered && !received && held && (
             <span className="field__hint">
-              Waiting for the buyer to confirm{order!.escrow.autoReleaseAt ? ` — releases on ${formatDate(order!.escrow.autoReleaseAt)} if no dispute` : ''}.
+              Waiting for the buyer to confirm{order!.hold.autoReleaseAt ? ` — releases on ${formatDate(order!.hold.autoReleaseAt)} if no dispute` : ''}.
             </span>
           )}
           {!pressed && at.later.length > 0 && <SkipLink onClick={() => setPicking(at.later)} />}

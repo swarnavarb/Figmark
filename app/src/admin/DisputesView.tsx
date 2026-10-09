@@ -68,7 +68,7 @@ export function DisputesView() {
         <div className="card">
           {shown.map((row) => {
             const { dispute } = row;
-            const about = dispute.subjectRef ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type] : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'escrow'];
+            const about = dispute.subjectRef ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type] : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'held_payment'];
             return (
               <div key={dispute.id} className="userrow" style={{ cursor: 'default' }}>
                 <div className="userrow__main">

@@ -5,8 +5,8 @@
 
 import type { UserCapabilities } from './capabilities.js';
 import type {
-  EscrowRights,
   ForwarderProfile,
+  ManagerRights,
   SellerProfile,
   SellerTrustSignals,
   TrustSignals,
@@ -46,11 +46,11 @@ export interface AuthUser {
   /** Non-null for accounts that also operate as freight forwarders. */
   forwarderProfile: ForwarderProfile | null;
   /**
-   * Non-null when the company has approved this account to hold other people's
-   * money. The app reads it to offer the escrow console; the API checks the row
-   * again on every request that acts on it.
+   * Non-null when an operator has appointed this account a community manager.
+   * The app reads it to offer the Community Service desk; the API checks the
+   * row again on every request that acts on it.
    */
-  escrowRights: EscrowRights | null;
+  managerRights: ManagerRights | null;
   /** This person's own page, as distinct from their shop's. */
   bio: string;
   coverUrl: string | null;

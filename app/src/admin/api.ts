@@ -1,5 +1,5 @@
 import type { HealthResponse } from '@shared/contracts';
-import type { Dispute, DisputeDecision, DisputeSanction, EscrowRights, FeePayment, SellerTrustSignals, TrustSignals } from '@shared/models';
+import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, SellerTrustSignals, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
@@ -31,7 +31,7 @@ export interface AdminUserRow {
     followerCount: number;
     managers: number;
   } | null;
-  escrowRights: EscrowRights | null;
+  managerRights: ManagerRights | null;
   buyerTrust: TrustSignals;
   sellerTrust: SellerTrustSignals;
   signInAccount: boolean;
@@ -170,8 +170,8 @@ export const admin = {
   cleanupPhotos: (graceHours: number, only?: { scope: 'public' | 'private'; name: string }[]) =>
     post<{ deleted: number; bytes: number; failed: number }>('/ops/photos/cleanup', { graceHours, ...(only ? { only } : {}) }),
   /** Appoint or remove a community manager. Fees are not theirs to set. */
-  setEscrow: (id: string, body: { enabled: boolean }) =>
-    post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/escrow`, body),
+  setManager: (id: string, body: { enabled: boolean }) =>
+    post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/manager`, body),
 
   /** Service stores: applications waiting first, then every store. */
   stores: () => request<{ stores: OpsStoreRow[] }>('/ops/stores'),
