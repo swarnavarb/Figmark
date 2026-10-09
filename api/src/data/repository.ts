@@ -375,6 +375,12 @@ export interface Repository {
   reserveHandle(username: string, userId: string, isStore: boolean): Promise<boolean>;
   /** Gives one up, so a rename does not strand the old handle. */
   releaseHandle(username: string): Promise<void>;
+  /**
+   * Moves an account to a new phone number, which is also a sign-in identifier.
+   * Reserves the new one first, so a number somebody else holds is refused
+   * (false) with nothing changed; the old one is released after.
+   */
+  changePhone(user: User, phone: string): Promise<boolean>;
 
   /* Messages. */
 

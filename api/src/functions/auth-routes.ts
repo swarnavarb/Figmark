@@ -1,5 +1,6 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { LoginRequest, MeResponse, SignupRequest } from '../../../shared/contracts.js';
+import type { LoginRequest, MeResponse, SignupRequest, SignupResponse } from '../../../shared/contracts.js';
+import { VerificationError, startEmail } from '../verification/index.js';
 import { MockAuthProvider } from '../auth/mock-provider.js';
 import { getAuthService } from '../auth/index.js';
 import { error, handler, json } from './http.js';
@@ -19,6 +20,24 @@ async function claimReferrals(request: HttpRequest, userId: string | undefined):
     await claimInvite(repository, request, userId);
   } catch {
     // Never let a referral stand between somebody and their account.
+  }
+}
+
+/**
+ * The email code goes out as the account is made, so the next screen can ask
+ * for it. A failure to send is reported, not fatal: the account exists, and
+ * the code can be re-sent from the screen that asks for it.
+ */
+async function sendFirstEmailCode(userId: string | undefined): Promise<SignupResponse['emailCode']> {
+  if (!userId) return { sent: false, error: 'No account to send to.' };
+  try {
+    const repository = await getRepository();
+    const user = await repository.getUserById(userId);
+    if (!user) return { sent: false, error: 'No account to send to.' };
+    const sent = await startEmail(repository, user);
+    return { sent: true, ...(sent.devCode ? { devCode: sent.devCode } : {}) };
+  } catch (err) {
+    return { sent: false, error: err instanceof VerificationError ? err.message : 'The code could not be sent. Send it again.' };
   }
 }
 
@@ -55,7 +74,7 @@ async function signup(request: HttpRequest, _context: InvocationContext) {
 
   const result = await auth.signup(body);
   await claimReferrals(request, result.user?.id);
-  return json(201, result, auth.loginCookies(result.token));
+  return json(201, { ...result, emailCode: await sendFirstEmailCode(result.user?.id) }, auth.loginCookies(result.token));
 }
 
 /** POST /api/auth/logout - always succeeds, signed in or not. */

@@ -34,7 +34,7 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
       // A container the code queries and the store lacks is a broken feature,
       // whatever the rest of the page says.
       (data.missingContainers?.length ?? 0) === 0 &&
-      // 'ephemeral' differs per worker, so sessions break across instances.
+      // 'development' is forgeable and 'missing' means nobody can sign in.
       (config.sessionSecretSource === 'configured' || config.sessionSecretSource === 'derived')
         ? 'ok'
         : 'degraded',

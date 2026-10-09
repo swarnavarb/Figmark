@@ -11,6 +11,7 @@ import { Avatar, Icon } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
 import { AuthModal } from './pages/AuthPage';
+import { EmailGate, VerifyPrompt } from './pages/VerifyPage';
 import { inviteCodeFor } from './components/ShareKit';
 import { setPhotoQuery } from './photoQuery';
 
@@ -167,6 +168,8 @@ export function AppShell() {
       <TabBar />
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
       {authPrompt && <AuthModal reason={authPrompt.reason} onClose={closeAuth} />}
+      <EmailGate />
+      <VerifyPrompt />
     </div>
   );
 }

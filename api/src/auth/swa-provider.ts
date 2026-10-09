@@ -63,6 +63,7 @@ export class StaticWebAppsAuthProvider implements AuthService {
   ): Promise<AuthUser> {
     const user = await this.requireAuth(request);
     if (!hasAnyCapability(user.capabilities, capabilities)) {
+      if (capabilities.includes('buy') || capabilities.includes('sell')) throw AuthError.verificationRequired(capabilities);
       throw AuthError.forbidden(
         `This action requires one of: ${capabilities.join(', ')}.`,
       );

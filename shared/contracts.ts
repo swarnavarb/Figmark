@@ -81,6 +81,14 @@ export interface LoginResponse {
   expiresAt: string;
 }
 
+export interface SignupResponse extends LoginResponse {
+  /**
+   * Whether the email code went out with the account. `devCode` only on a
+   * local in-memory run with no email service, where it is shown on screen.
+   */
+  emailCode: { sent: boolean; devCode?: string; error?: string };
+}
+
 export interface MeResponse {
   /** Null when no valid session is present, rather than a 401 - callers render a logged-out view. */
   user: AuthUser | null;
@@ -105,9 +113,10 @@ export interface HealthResponse {
     /**
      * Where the session signing key came from. 'development' means the constant
      * published in this repository - sessions are forgeable and this must never
-     * be the value in a real deployment.
+     * be the value in a real deployment. 'missing' means a deployment with no
+     * key at all: sign-in is switched off until AUTH_SESSION_SECRET is set.
      */
-    sessionSecretSource: 'configured' | 'derived' | 'ephemeral' | 'development';
+    sessionSecretSource: 'configured' | 'derived' | 'development' | 'missing';
     /** False when accounts are held in memory and will not survive a restart. */
     accountsDurable: boolean;
   };

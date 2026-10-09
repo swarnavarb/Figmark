@@ -586,6 +586,17 @@ export class MemoryRepository implements Repository {
     this.handles.delete(handleKey(username));
   }
 
+  async changePhone(user: User, phone: string): Promise<boolean> {
+    const next = normaliseIdentifier(phone);
+    const holder = this.identifiers.get(next);
+    if (holder && holder !== user.id) return false;
+    const previous = user.phone ? normaliseIdentifier(user.phone) : null;
+    user.phone = phone;
+    await this.updateUser(user);
+    if (previous && previous !== next) this.identifiers.delete(previous);
+    return true;
+  }
+
   async listMessages(threadId: string, limit = 200, before?: string): Promise<Message[]> {
     return [...this.messages.values()]
       .filter((message) => message.threadId === threadId && (!before || message.createdAt <= before))

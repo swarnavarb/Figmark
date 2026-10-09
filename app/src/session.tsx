@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AuthUser } from '@shared/contracts';
+import type { AuthUser, SignupResponse } from '@shared/contracts';
 import { disablePush } from './push';
-import { api, setSessionRejectedHandler } from './api';
+import { api, setSessionRejectedHandler, setVerificationRequiredHandler } from './api';
 
 /**
  * The signed-in user, resolved once and shared.
@@ -43,6 +43,14 @@ interface SessionValue {
   /** Non-null while the sign-in popup is open: why it was asked for. */
   authPrompt: { reason: string | null } | null;
   closeAuth: () => void;
+  /** How the email code went out with a sign-up just made; null otherwise. */
+  signupEmail: SignupResponse['emailCode'] | null;
+  /**
+   * Non-null when the server refused a purchase or a listing because this
+   * account has not finished verifying: the message to show with the way out.
+   */
+  verifyPrompt: string | null;
+  closeVerifyPrompt: () => void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -55,6 +63,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessionsInsecure, setSessionsInsecure] = useState(false);
   const [missingContainers, setMissingContainers] = useState<string[]>([]);
   const [authPrompt, setAuthPrompt] = useState<{ reason: string | null } | null>(null);
+  const [signupEmail, setSignupEmail] = useState<SignupResponse['emailCode'] | null>(null);
+  const [verifyPrompt, setVerifyPrompt] = useState<string | null>(null);
+
+  useEffect(() => {
+    setVerificationRequiredHandler((message) => setVerifyPrompt(message));
+    return () => setVerificationRequiredHandler(null);
+  }, []);
   const userRef = useRef<AuthUser | null>(null);
   userRef.current = user;
   const loadingRef = useRef(true);
@@ -140,6 +155,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signUp = useCallback(async (body: Parameters<SessionValue['signUp']>[0]) => {
     const result = await api.signup(body);
     setWarning(result.warning ?? null);
+    setSignupEmail(result.emailCode ?? null);
     setUser(result.user);
   }, []);
 
@@ -161,6 +177,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await api.logout();
     setUser(null);
     setWarning(null);
+    setSignupEmail(null);
   }, []);
 
   // Signed in: whatever asked for it is now allowed, so the popup goes.
@@ -170,6 +187,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const promptAuth = useCallback((reason?: string) => setAuthPrompt({ reason: reason ?? null }), []);
   const closeAuth = useCallback(() => setAuthPrompt(null), []);
+  const closeVerifyPrompt = useCallback(() => setVerifyPrompt(null), []);
   const gate = useCallback(<A extends unknown[]>(fn: (...args: A) => unknown, reason?: string) => (...args: A) => {
     if (userRef.current) {
       void fn(...args);
@@ -185,10 +203,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh,
-      promptAuth, gate, authPrompt, closeAuth,
+      promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt,
     }),
     [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh,
-      promptAuth, gate, authPrompt, closeAuth],
+      promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

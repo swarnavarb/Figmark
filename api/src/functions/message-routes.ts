@@ -13,11 +13,12 @@ import { accessFor } from '../../../shared/stores.js';
 import { isReaction, REACTION_META } from '../../../shared/social.js';
 import { actorName, gistOf, toWhom, whose } from '../../../shared/notifications.js';
 import { notify, readGroup, storeCrew } from './notify.js';
-import { getAuthService } from '../auth/index.js';
+import { AuthError, getAuthService } from '../auth/index.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
+import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
 import { getPhotoStore } from '../storage/index.js';
 import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
@@ -520,6 +521,8 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   // what they want and roughly for how much, for the shop to answer with one.
   let deal: MessageDeal | null = null;
   if (body.deal?.kind === 'offer') {
+    // Making a private deal is selling, whatever the listing behind it says.
+    if (!user.capabilities.canSell) throw AuthError.verificationRequired(['sell']);
     const listing = body.deal.listingId ? await repository.getListing(body.deal.listingId) : null;
     if (!us.isStore || !listing || listing.privateFor !== them.userId || listing.sellerId !== us.userId) {
       return error(400, 'invalid_deal', 'Make the private deal for this buyer first.');
@@ -969,6 +972,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     levelTag: isStore ? storeTag(level?.level) : buyerTag(user.quest?.levelCache),
     memberSince: user.createdAt,
     lastSeenAt: user.lastSeenAt ?? null,
+    // Which checks the account behind this page passed - a shop's are its owner's.
+    verified: verifiedChecks(user),
     /** What the tabs and chips count, so neither has to guess. */
     counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },
     // Active first, then sold out, then expired.

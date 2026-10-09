@@ -90,19 +90,26 @@ in `api/src/auth/index.ts`. No handler changes either way.
 ## Verification fields
 
 Every `User` carries a full `VerificationState` plus separate buyer and seller
-trust records from day one, described in [DATA-MODEL.md](DATA-MODEL.md). The
-seeded accounts have a verified phone so they can transact; everything heavier
-(ID, bank match, business registration) is unverified, which is what keeps the
-seller tier low and leaves the "become a verified seller" flow meaningful.
+trust records from day one, described in [DATA-MODEL.md](DATA-MODEL.md).
 
-The bar to transact is deliberately low — a verified phone — because the model is
-light friction at signup with the heavier checks deferred to where they matter:
-payouts, and high-value listings.
+Buying and selling (listings, private deals, power sales, want offers, pledges,
+checkout and payment) need **email, a WhatsApp-verified phone and an Aadhaar
+whose linked mobile is that same phone** - see [VERIFICATION.md](VERIFICATION.md).
+Nothing typed in at sign-up is treated as verified. Each status needs its proof
+in `verification.proofs`; accounts marked verified before real checks existed
+have no proof and so are not trusted. An operator can grant or block buying and
+selling per account from the admin user list. Seeded fixtures are fully
+verified (with `via: 'seed'` proofs) so the demo works end to end.
 
 ## Before this goes near real users
 
-- `AUTH_SESSION_SECRET` **must** be set in the deployed app settings. Without
-  it, `config.ts` falls back to a constant development secret that is committed
-  to this repository, and anyone can mint a valid session token.
-- The mock provider must not be reachable in production. It is gated only by
-  `AUTH_MODE`, which defaults to `mock`.
+- `AUTH_SESSION_SECRET` should be set in the deployed app settings. Without it
+  the key is derived from `COSMOS_KEY`/`STORAGE_KEY` when present. With no key
+  material at all, a deployed API (running in Azure, or with a database) switches
+  sign-in off and says so; the committed development constant is used only on a
+  developer's machine with the in-memory store.
+- The password provider (`AUTH_MODE=mock`, the default) is the live sign-in
+  until an external identity provider replaces it. It no longer marks anything
+  verified at sign-up. Its seeded demo accounts have passwords published in this
+  repository and are fully verified, so do not seed a production database
+  (`azure:provision -- --seed`).

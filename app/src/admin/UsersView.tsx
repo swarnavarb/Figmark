@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { TradeRight } from '@shared/models';
 import { ApiRequestError, admin, type AdminUserDetail, type AdminUserRow } from './api';
 import { Confirm } from './Confirm';
 import { formatDate, formatMoney } from '../format';
@@ -65,7 +66,10 @@ export function UsersView() {
         <span>Search</span>
         <input value={query} onChange={(event) => setQuery(event.target.value)}
           placeholder="Name, email, phone, username or store" />
-        <span className="field__hint">{rows.length} of {total} accounts</span>
+        <span className="field__hint">
+          {rows.length} of {total} accounts · {rows.filter((row) => row.canBuy).length} can buy ·{' '}
+          {rows.filter((row) => row.canSell).length} can sell
+        </span>
       </label>
 
       <div className="card">
@@ -81,6 +85,10 @@ export function UsersView() {
               </span>
             </div>
             <div className="userrow__tags">
+              <VerifiedTags row={row} />
+              <span className={`badge ${row.canBuy ? 'badge--ok' : 'badge--warn'}`}>{row.canBuy ? 'can buy' : 'cannot buy'}</span>
+              <span className={`badge ${row.canSell ? 'badge--ok' : 'badge--warn'}`}>{row.canSell ? 'can sell' : 'cannot sell'}</span>
+              {row.tradeOverride && <span className="badge badge--accent">operator override</span>}
               {row.suspended && <span className="badge badge--warn">suspended</span>}
               {!row.signInAccount && <span className="badge">no login</span>}
               {row.store && <span className="badge">store</span>}
@@ -180,6 +188,8 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
         </dl>
       </div>
+
+      <RightsPanel user={user} onChanged={load} />
 
       <ManagerPanel user={user} onChanged={load} />
 
@@ -292,6 +302,104 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </p>
         </Confirm>
       )}
+    </div>
+  );
+}
+
+/** Email, WhatsApp and Aadhaar, ticked or not, as one line of chips. */
+function VerifiedTags({ row }: { row: AdminUserRow }) {
+  const items = [['Email', row.verified.email], ['WhatsApp', row.verified.phone], ['Aadhaar', row.verified.aadhaar]] as const;
+  return (
+    <>
+      {items.map(([label, ok]) => (
+        <span key={label} className={`badge ${ok ? 'badge--ok' : ''}`} title={ok ? `${label} verified` : `${label} not verified`}>
+          {ok ? '✓' : '✗'} {label}
+        </span>
+      ))}
+    </>
+  );
+}
+
+const RIGHT_LABELS: Record<TradeRight, string> = {
+  auto: 'By verification',
+  grant: 'Granted',
+  block: 'Blocked',
+};
+
+/**
+ * Who may buy and who may sell.
+ *
+ * Verification decides by default: email, a WhatsApp-verified number and an
+ * Aadhaar whose linked mobile is that same number. An operator can grant either
+ * side to someone who cannot finish (no WhatsApp, no mobile on their Aadhaar)
+ * or block a verified account. Each decision keeps its reason, who and when.
+ */
+function RightsPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
+  const [buy, setBuy] = useState<TradeRight>(user.tradeOverride?.buy ?? 'auto');
+  const [sell, setSell] = useState<TradeRight>(user.tradeOverride?.sell ?? 'auto');
+  const [reason, setReason] = useState(user.tradeOverride?.reason ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const unchanged = buy === (user.tradeOverride?.buy ?? 'auto') && sell === (user.tradeOverride?.sell ?? 'auto')
+    && reason === (user.tradeOverride?.reason ?? '');
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await admin.setRights(user.id, { buy, sell, reason });
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card card--pad stack">
+      <span className="card__title">Buying and selling</span>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+        <VerifiedTags row={user} />
+      </div>
+      {user.aadhaar && (
+        <p className="faint" style={{ margin: 0 }}>
+          Aadhaar: {user.aadhaar.name}, ending {user.aadhaar.last4}, verified {formatDate(user.aadhaar.at)}.
+        </p>
+      )}
+      <p className="faint" style={{ margin: 0 }}>
+        Now: <strong>{user.canBuy ? 'can buy' : 'cannot buy'}</strong> · <strong>{user.canSell ? 'can sell' : 'cannot sell'}</strong>
+        {user.tradeOverride && <> · set by an operator {formatDate(user.tradeOverride.at)}: “{user.tradeOverride.reason}”</>}
+      </p>
+
+      <div className="field-row">
+        <label className="field">
+          <span>Buy</span>
+          <select value={buy} onChange={(event) => setBuy(event.target.value as TradeRight)}>
+            {(Object.keys(RIGHT_LABELS) as TradeRight[]).map((right) => <option key={right} value={right}>{RIGHT_LABELS[right]}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Sell (listings, private deals, power sales)</span>
+          <select value={sell} onChange={(event) => setSell(event.target.value as TradeRight)}>
+            {(Object.keys(RIGHT_LABELS) as TradeRight[]).map((right) => <option key={right} value={right}>{RIGHT_LABELS[right]}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="field">
+        <span>Reason {buy === 'auto' && sell === 'auto' ? '(optional)' : '(required)'}</span>
+        <input value={reason} maxLength={300} onChange={(event) => setReason(event.target.value)}
+          placeholder="e.g. No WhatsApp; identity checked on a phone call" />
+      </label>
+
+      {error && <p className="notice notice--error">{error}</p>}
+
+      <div className="row">
+        <button className="btn" disabled={busy || unchanged} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }

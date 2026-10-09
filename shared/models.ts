@@ -57,6 +57,71 @@ export interface VerificationState {
   lastReviewedAt: string | null;
   /** Admin user id that last actioned this record. */
   lastReviewedBy: string | null;
+  /**
+   * How each of the three checks that unlock trading was actually passed.
+   *
+   * The status fields above say "verified"; these say how. A status without
+   * its proof is not trusted: accounts made before real verification existed
+   * were marked verified at sign-up without anything being checked, and this
+   * is what tells them apart. See `verifiedChecks` in shared/verification.ts.
+   */
+  proofs?: VerificationProofs;
+}
+
+export interface VerificationProofs {
+  /** A code sent to the address was typed back. */
+  email?: { address: string; at: string } | null;
+  /** The account's number messaged Figmark on WhatsApp with its code. */
+  phone?: { number: string; via: 'whatsapp' | 'seed'; at: string } | null;
+  aadhaar?: AadhaarProof | null;
+}
+
+/**
+ * What an Aadhaar Secure QR proved, and the least of it worth keeping.
+ *
+ * Never the Aadhaar number, the address or the photo: the name, birth date
+ * and gender UIDAI signed, the last four digits it prints anyway, and when.
+ */
+export interface AadhaarProof {
+  name: string;
+  /** As the QR carries it: DD-MM-YYYY, or a year alone. */
+  dob: string;
+  gender: string;
+  last4: string;
+  /** The verified phone the QR's mobile hash matched, E.164. */
+  mobile: string;
+  via: 'secure_qr' | 'seed';
+  at: string;
+}
+
+/**
+ * An operator's decision about whether an account may buy or sell, over what
+ * its verification says. `grant` lets an unverified account trade; `block`
+ * stops a verified one. Absent or `auto` means verification decides.
+ */
+export type TradeRight = 'auto' | 'grant' | 'block';
+
+export interface TradeOverride {
+  buy: TradeRight;
+  sell: TradeRight;
+  /** Why, in the operator's words. Required for anything but auto. */
+  reason: string;
+  by: string;
+  at: string;
+}
+
+/**
+ * Codes waiting to be typed back or messaged in. Hashed, never sent to the
+ * client, and cleared the moment they are used.
+ */
+export interface VerificationChallenges {
+  email?: { hash: string; address: string; expiresAt: string; sentAt: string; attempts: number } | null;
+  phone?: {
+    hash: string;
+    expiresAt: string;
+    /** Why the last WhatsApp message did not verify, said back to the person. */
+    error?: string | null;
+  } | null;
 }
 
 /**
@@ -195,6 +260,10 @@ export interface User extends BaseDocument {
   standing?: CommunityStanding | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
+  /** An operator's say over buying and selling; absent means verification decides. */
+  tradeOverride?: TradeOverride | null;
+  /** Verification codes in flight. Never leaves the API. */
+  challenges?: VerificationChallenges | null;
   /**
    * The person's own page, as distinct from their shop's.
    *

@@ -149,7 +149,7 @@ const settle = (order: Order, repository: Repo): Promise<Order> => settleDue(ord
  */
 async function pay(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
+  const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
   const found = await ownOrder(request, repository, user.id);
@@ -258,7 +258,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
  */
 async function checkout(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
+  const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
   const found = await ownOrder(request, repository, user.id);

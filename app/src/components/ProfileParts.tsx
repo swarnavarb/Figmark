@@ -295,7 +295,7 @@ export function RatingSheet({ profile, rating, onClose, onReviews, record: given
           <section className="rsheet__verified">
             <h4><Icon name="check" size={14} /> Verified</h4>
             <div className="rsheet__checks">
-              {([['Phone', credit.verification.phone], ['Email', credit.verification.email], ['Government ID', credit.verification.governmentId]] as const)
+              {([['Email', credit.verification.email], ['WhatsApp', credit.verification.phone], ['Aadhaar', credit.verification.governmentId]] as const)
                 .map(([label, state]) => (
                   <span key={label} className={`rsheet__check${state === 'verified' ? ' is-ok' : ''}`}>
                     <Icon name={state === 'verified' ? 'check' : 'close'} size={13} /> {label}

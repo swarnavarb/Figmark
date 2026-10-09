@@ -99,7 +99,9 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
         // Say why sign-in cannot work before the form is filled in, rather
         // than letting an empty or unreachable database answer a correct
         // password with "that password is wrong".
-        if (!health.data.connected) {
+        if (health.auth.sessionSecretSource === 'missing') {
+          setBlocked('Sign-in is switched off on this server: it has no session signing key. An operator needs to set AUTH_SESSION_SECRET.');
+        } else if (!health.data.connected) {
           setBlocked(`The ${health.data.backend} store behind this deployment is not reachable. ${health.data.detail}`);
         } else if (health.data.signInAccounts === 0) {
           setBlocked(
@@ -192,13 +194,19 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
                     <span>Email</span>
                     <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                       autoComplete="email" placeholder="you@example.com" required />
+                    <span className="field__hint">We email you a code to confirm it.</span>
                   </label>
                   <label className="field">
-                    <span>Phone</span>
+                    <span>Mobile (WhatsApp)</span>
                     <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
                       autoComplete="tel" placeholder="+91 98765 43210" required />
                   </label>
                 </div>
+                <p className="notice notice--warn" style={{ margin: 0 }}>
+                  <strong>Use the mobile number linked to your Aadhaar</strong>, and that you use on WhatsApp. To buy or
+                  sell you verify this number on WhatsApp and then your Aadhaar - and the Aadhaar check only passes if
+                  its linked mobile is this same number.
+                </p>
               </>
             )}
 
@@ -217,8 +225,8 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
                 placeholder={mode === 'signup' ? 'At least 8 characters' : ''} required />
               {mode === 'signup' && (
                 <span className="field__hint">
-                  You can browse and buy straight away. ID and bank details are only needed later, for payouts and
-                  high-value listings.
+                  You can browse straight away. Buying and selling open once your email, WhatsApp number and Aadhaar
+                  are verified.
                 </span>
               )}
             </label>

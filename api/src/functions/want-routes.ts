@@ -252,7 +252,8 @@ async function readWant(request: HttpRequest, _context: InvocationContext) {
  */
 async function offer(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
+  // Answering a want is offering to sell.
+  const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
 
   const found = await findWant(request, repository);

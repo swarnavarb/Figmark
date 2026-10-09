@@ -16,7 +16,10 @@ process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse, json: jsonResponse } = await import(new URL('http.js', fns));
-const { loginRoute: login, signupRoute: signup, meRoute: me } = await import(new URL('auth-routes.js', fns));
+const { loginRoute: login, signupRoute: rawSignup, meRoute: me } = await import(new URL('auth-routes.js', fns));
+const { verifiedSignup } = await import('./verified-signup.mjs');
+// Verified on the way out: this suite tests trading, smoke-verify.mjs tests verification.
+const signup = verifiedSignup(rawSignup);
 const {
   feedRoute: feed, listingDetailRoute: listingDetail, createListingRoute: createListing,
   toggleLikeRoute: toggleLike, bumpListingRoute: bump, addCommentRoute: addComment,
@@ -375,13 +378,14 @@ await check('rejects a wrong password with 401', async () => {
 });
 
 await check('signup creates an account with no storefront', async () => {
-  const created = await signup(req({
+  const created = await rawSignup(req({
     body: { displayName: 'New Person', email: 'new@figmark.example', phone: '+919000012345', password: 'longenough1' },
   }), ctx);
   assert.equal(created.status, 201);
   assert.equal(created.jsonBody.user.sellerProfile, null);
-  // But still permitted to sell - the storefront appears on first listing.
-  assert.equal(created.jsonBody.user.capabilities.canSell, true);
+  // Not yet permitted to trade: email, WhatsApp and Aadhaar come first.
+  assert.equal(created.jsonBody.user.capabilities.canSell, false);
+  assert.equal(created.jsonBody.user.capabilities.canBuy, false);
 });
 
 await check('signup refuses a duplicate identifier with 409', async () => {

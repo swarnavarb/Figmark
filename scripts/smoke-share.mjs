@@ -17,7 +17,9 @@ writeFileSync(process.env.FIGMARK_SHELL_FILE, '<!doctype html><html><head><meta 
 
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const shared = new URL('../api/dist/shared/', import.meta.url);
-const { loginRoute: login, signupRoute: signup } = await import(new URL('auth-routes.js', fns));
+const { loginRoute: login, signupRoute: rawSignup } = await import(new URL('auth-routes.js', fns));
+const { verifiedSignup } = await import('./verified-signup.mjs');
+const signup = verifiedSignup(rawSignup);
 const {
   createListingRoute: createListing, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,
   createOrderRoute: createOrder, editListingRoute: editListing, bumpListingRoute: bump,

@@ -11,6 +11,7 @@ import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { confirmDetailsOn } from './order-routes.js';
 import { reviewSide } from '../../../shared/storefront.js';
+import { verifiedChecks } from '../../../shared/verification.js';
 
 /** The page a page-review request is about: `?side=store` or the person's own. */
 function sideOf(request: HttpRequest): 'store' | 'person' {
@@ -100,6 +101,7 @@ async function credit(request: HttpRequest, _context: InvocationContext) {
   ]);
 
   const visible = reviews.filter((entry) => reviewRevealed(entry, false));
+  const checks = verifiedChecks(user);
   const record = creditFrom({ asSeller, asBuyer }, visible, user.sellerTrust.disputesLost);
 
   // A page review an operator took down after a dispute no longer counts.
@@ -117,10 +119,12 @@ async function credit(request: HttpRequest, _context: InvocationContext) {
     buyer: summarise(visible, 'seller_to_buyer'),
     /** Opinions on the page, kept apart from everything above it. */
     page: { average: scoreFrom(opinions), count: opinions.length },
+    // From the proofs, not the bare statuses: an account marked verified
+    // before real checks existed must not read as verified to a stranger.
     verification: {
-      phone: user.verification.phone,
-      email: user.verification.email,
-      governmentId: user.verification.governmentId,
+      phone: checks.phone ? 'verified' : 'unverified',
+      email: checks.email ? 'verified' : 'unverified',
+      governmentId: checks.aadhaar ? 'verified' : 'unverified',
       paymentMethod: user.verification.paymentMethod,
     },
     tier: user.sellerProfile?.tier ?? null,

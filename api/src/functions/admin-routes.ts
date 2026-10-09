@@ -1,5 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { ManagerRights, User } from '../../../shared/models.js';
+import type { ManagerRights, TradeRight, User } from '../../../shared/models.js';
+import { deriveCapabilities } from '../../../shared/capabilities.js';
+import { verifiedChecks } from '../../../shared/verification.js';
 import { currentRound, decisionOverdue, isClosed, releaseOverdue, roundsOf, standingDecision } from '../../../shared/disputes.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
@@ -44,6 +46,7 @@ async function operator(request: HttpRequest) {
 
 /** A one-line summary of an account, as the operator list reads it. */
 function row(user: User) {
+  const capabilities = deriveCapabilities(user);
   return {
     id: user.id,
     displayName: user.displayName,
@@ -67,7 +70,58 @@ function row(user: User) {
     // Whether they can be signed into at all. A catalog fixture is not an
     // account somebody lost access to, and the list should not read as if it is.
     signInAccount: user.passwordHash !== null,
+    // What they have proved, what that lets them do, and any operator say over it.
+    verified: verifiedChecks(user),
+    aadhaar: user.verification.proofs?.aadhaar
+      ? { name: user.verification.proofs.aadhaar.name, last4: user.verification.proofs.aadhaar.last4, at: user.verification.proofs.aadhaar.at }
+      : null,
+    canBuy: capabilities.canBuy,
+    canSell: capabilities.canSell,
+    tradeOverride: user.tradeOverride ?? null,
   };
+}
+
+const TRADE_RIGHTS: readonly TradeRight[] = ['auto', 'grant', 'block'];
+
+/**
+ * POST /api/ops/users/{id}/rights - { buy, sell, reason }: who may trade.
+ *
+ * `grant` opens buying or selling to an account that has not finished
+ * verifying (somebody with no WhatsApp, an Aadhaar without a linked mobile);
+ * `block` closes it to one that has; `auto` hands it back to verification.
+ * Anything but auto needs a reason, and every change records who and when.
+ */
+async function rights(request: HttpRequest, _context: InvocationContext) {
+  const admin = await operator(request);
+  const repository = await getRepository();
+
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A user id is required.');
+
+  let body: { buy?: unknown; sell?: unknown; reason?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const buy = body.buy as TradeRight;
+  const sell = body.sell as TradeRight;
+  if (!TRADE_RIGHTS.includes(buy) || !TRADE_RIGHTS.includes(sell)) {
+    return error(400, 'invalid_rights', 'Buy and sell are each auto, grant or block.');
+  }
+  const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : '';
+  if ((buy !== 'auto' || sell !== 'auto') && !reason) {
+    return error(400, 'reason_required', 'Say why: it is kept with the decision.');
+  }
+
+  const user = await repository.getUserById(id);
+  if (!user) return error(404, 'not_found', 'No such account.');
+
+  user.tradeOverride = buy === 'auto' && sell === 'auto'
+    ? null
+    : { buy, sell, reason, by: admin.id, at: new Date().toISOString() };
+  user.updatedAt = new Date().toISOString();
+  return json(200, { user: row(await repository.updateUser(user)) });
 }
 
 /** GET /api/ops/users - everyone, with the store they run. */
@@ -595,6 +649,7 @@ export const adminDeleteResourceRoute = handler(deleteResource);
 export const adminPhotoScanRoute = handler(scanPhotos);
 export const adminPhotoCleanupRoute = handler(cleanupPhotos);
 export const adminManagerRoute = handler(appointManager);
+export const adminRightsRoute = handler(rights);
 export const adminDisputesRoute = handler(disputes);
 export const adminReassignRoute = handler(reassign);
 export const adminActionsRoute = handler(actions);
@@ -607,6 +662,7 @@ app.http('admin-users', { ...anon, methods: ['GET'], route: 'ops/users', handler
 app.http('admin-user', { ...anon, methods: ['GET'], route: 'ops/users/{id}', handler: adminUserDetailRoute });
 app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'ops/users/{id}/suspend', handler: adminSuspendRoute });
 app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'ops/users/{id}/delete', handler: adminDeleteUserRoute });
+app.http('admin-rights', { ...anon, methods: ['POST'], route: 'ops/users/{id}/rights', handler: adminRightsRoute });
 app.http('admin-manager', { ...anon, methods: ['POST'], route: 'ops/users/{id}/manager', handler: adminManagerRoute });
 app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'ops/resources/delete', handler: adminDeleteResourceRoute });
 app.http('admin-photo-scan', { ...anon, methods: ['POST'], route: 'ops/photos/scan', handler: adminPhotoScanRoute });

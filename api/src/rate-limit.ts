@@ -9,7 +9,8 @@ import { error } from './functions/http.js';
  * hundred times a minute, or tapping share in a loop to climb trending. A
  * determined spammer spread over many instances is a job for the edge.
  */
-export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch';
+export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch'
+  | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar';
 
 /** Each action's windows: at most `max` in any `ms`. */
 const LIMITS: Record<Action, { max: number; ms: number }[]> = {
@@ -24,6 +25,11 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   chatphoto: [{ max: 20, ms: 60_000 }, { max: 150, ms: 3_600_000 }],
   // Each one may be a call to Claude, which is paid for.
   photosearch: [{ max: 10, ms: 60_000 }, { max: 60, ms: 3_600_000 }],
+  // Each email sent counts against the free daily quota.
+  verify_email: [{ max: 3, ms: 600_000 }, { max: 8, ms: 3_600_000 * 24 }],
+  verify_code: [{ max: 10, ms: 600_000 }],
+  verify_phone: [{ max: 10, ms: 3_600_000 }],
+  verify_aadhaar: [{ max: 10, ms: 3_600_000 }],
 };
 
 const LONGEST_MS = Math.max(...Object.values(LIMITS).flat().map((limit) => limit.ms));

@@ -16,6 +16,7 @@ import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { hashPassword, verifyPassword } from './passwords.js';
+import { normalizeIndianMobile } from '../../../shared/verification.js';
 import {
   SESSION_COOKIE_NAME,
   type TokenFailure,
@@ -57,6 +58,19 @@ export class MockAuthProvider implements AuthService {
   ) {}
 
   /**
+   * No key, no sessions. An empty secret would make every token's signature
+   * something anyone can compute, so nothing is issued or accepted until
+   * AUTH_SESSION_SECRET is set - see `resolveSessionSecret` in config.ts.
+   */
+  private requireSigningKey(): void {
+    if (this.sessionSecret) return;
+    throw AuthError.signInUnavailable(
+      'Sign-in is switched off: this deployment has no session signing key. Set AUTH_SESSION_SECRET ' +
+        '(any long random string) in the app settings and restart.',
+    );
+  }
+
+  /**
    * True when the store cannot be trusted to hold an account.
    *
    * The in-memory store is per-worker, so an account created on one worker is
@@ -68,6 +82,7 @@ export class MockAuthProvider implements AuthService {
   }
 
   async getCurrentUser(request: HttpRequest): Promise<AuthUser | null> {
+    if (!this.sessionSecret) return null;
     // Any one of the tokens presented may be the live one, so a dead cookie
     // sitting alongside a good one must not decide the answer.
     for (const token of readTokens(request)) {
@@ -84,12 +99,13 @@ export class MockAuthProvider implements AuthService {
       // and the session is over. With the per-worker store it far more likely
       // means this worker simply never saw the sign-up, so fall back to the
       // snapshot the token carries rather than throwing the user out.
-      if (this.storeIsEphemeral && payload.usr) return payload.usr as AuthUser;
+      if (this.storeIsEphemeral && payload.usr) return fromSnapshot(payload.usr as AuthUser);
     }
     return null;
   }
 
   async requireAuth(request: HttpRequest): Promise<AuthUser> {
+    this.requireSigningKey();
     const user = await this.getCurrentUser(request);
     if (user) return user;
 
@@ -151,6 +167,9 @@ export class MockAuthProvider implements AuthService {
   ): Promise<AuthUser> {
     const user = await this.requireAuth(request);
     if (!hasAnyCapability(user.capabilities, capabilities)) {
+      // Buying and selling are closed until verification is done, and the
+      // person needs to be told what to do rather than that they may not.
+      if (capabilities.includes('buy') || capabilities.includes('sell')) throw AuthError.verificationRequired(capabilities);
       throw AuthError.forbidden(
         `This action requires one of: ${capabilities.join(', ')}.`,
       );
@@ -159,6 +178,7 @@ export class MockAuthProvider implements AuthService {
   }
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
+    this.requireSigningKey();
     const identifier = credentials.identifier?.trim();
     if (!identifier || !credentials.password) throw AuthError.invalidCredentials();
 
@@ -234,16 +254,23 @@ export class MockAuthProvider implements AuthService {
    * registration, so `AuthService` does not require it.
    */
   async signup(request: SignupRequest): Promise<LoginResponse> {
+    this.requireSigningKey();
     const displayName = request.displayName?.trim();
     const email = request.email?.trim().toLowerCase();
-    const phone = request.phone?.trim();
+    // One canonical form, so the WhatsApp sender and the Aadhaar hash can be
+    // compared with it exactly.
+    const phone = normalizeIndianMobile(request.phone);
 
     if (!displayName) throw new AuthError(400, 'invalid_signup', 'Please enter your name.');
     if (!email || !email.includes('@')) {
       throw new AuthError(400, 'invalid_signup', 'Please enter a valid email address.');
     }
-    if (!phone || phone.replace(/\D/g, '').length < 10) {
-      throw new AuthError(400, 'invalid_signup', 'Please enter a valid phone number.');
+    if (!phone) {
+      throw new AuthError(
+        400,
+        'invalid_signup',
+        'Please enter a valid Indian mobile number (10 digits) - the one linked to your Aadhaar and on WhatsApp.',
+      );
     }
     if (!request.password || request.password.length < 8) {
       throw new AuthError(400, 'invalid_signup', 'Password must be at least 8 characters.');
@@ -261,11 +288,11 @@ export class MockAuthProvider implements AuthService {
 
     const now = new Date().toISOString();
     const blank: VerificationState = {
-      // Signup collects the minimum. Phone and email are treated as verified
-      // here because the mock has no way to send a code; a real provider marks
-      // them pending until the code round-trips.
-      phone: 'verified',
-      email: 'verified',
+      // Nothing is verified by being typed in. Email is confirmed by a code
+      // straight after sign-up, the phone over WhatsApp and the Aadhaar by its
+      // signed QR - see api/src/verification.
+      phone: 'unverified',
+      email: 'pending',
       governmentId: 'unverified',
       address: 'unverified',
       paymentMethod: 'unverified',
@@ -418,6 +445,17 @@ function forwarderSummary(profile: User['forwarderProfile']): AuthUser['forwarde
     listedInDirectory: profile.listedInDirectory,
     status: profile.status,
   };
+}
+
+/**
+ * A principal carried in a token, with the operator flag re-derived.
+ *
+ * Only the in-memory store uses these, but whatever a token carries is only as
+ * trustworthy as its signature - and admin is never taken on a token's word.
+ */
+function fromSnapshot(user: AuthUser): AuthUser {
+  const operator = config.adminEmails.includes(user.email.trim().toLowerCase());
+  return { ...user, capabilities: { ...user.capabilities, isAdmin: operator } };
 }
 
 export function toAuthUser(user: User): AuthUser {

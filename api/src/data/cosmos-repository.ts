@@ -1034,6 +1034,29 @@ export class CosmosRepository implements Repository {
     await this.container('identifiers').item(key, key).delete().catch(() => {});
   }
 
+  async changePhone(user: User, phone: string): Promise<boolean> {
+    const next = normaliseIdentifier(phone);
+    const previous = user.phone ? normaliseIdentifier(user.phone) : null;
+    if (next !== previous) {
+      const existing = await this.readReservation(next);
+      if (existing && existing.userId !== user.id) return false;
+      if (!existing) {
+        try {
+          await this.container('identifiers').items.create({ id: next, userId: user.id });
+        } catch (error) {
+          if (isConflict(error)) return false;
+          throw error;
+        }
+      }
+    }
+    user.phone = phone;
+    await this.updateUser(user);
+    if (previous && previous !== next) {
+      await this.container('identifiers').item(previous, previous).delete().catch(() => {});
+    }
+    return true;
+  }
+
   async listMessages(threadId: string, limit = 200, before?: string): Promise<Message[]> {
     const { resources } = await this.container('messages')
       .items.query<Message>(

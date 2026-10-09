@@ -51,6 +51,27 @@ export interface AppConfig {
    * ANTHROPIC_API_KEY is unset; photo search then matches on the picture alone.
    */
   vision: VisionConfig | null;
+  /** Email, WhatsApp and Aadhaar verification. Each piece is null until configured. */
+  verification: VerificationConfig;
+}
+
+export interface VerificationConfig {
+  /** Brevo's transactional email API (free: 300 a day). Null: codes cannot be emailed. */
+  email: { brevoApiKey: string; from: string; fromName: string } | null;
+  /**
+   * WhatsApp Cloud API. People message `businessNumber`; Meta posts each message
+   * to the webhook, signed with `appSecret`. The access token is only for the
+   * optional "you're verified" reply.
+   */
+  whatsapp: {
+    businessNumber: string;
+    verifyToken: string;
+    appSecret: string;
+    accessToken: string | null;
+    phoneNumberId: string | null;
+  } | null;
+  /** UIDAI's offline-verification certificate (PEM, or base64 DER). Null: Aadhaar QRs cannot be checked. */
+  aadhaarCertificate: string | null;
 }
 
 export interface VisionConfig {
@@ -107,6 +128,29 @@ function resolveVision(): VisionConfig | null {
   return { apiKey, model: env('PHOTO_SEARCH_MODEL') ?? 'claude-opus-5-5' };
 }
 
+function resolveVerification(): VerificationConfig {
+  const brevoApiKey = env('BREVO_API_KEY');
+  const from = env('EMAIL_FROM');
+  const businessNumber = env('WHATSAPP_BUSINESS_NUMBER');
+  const verifyToken = env('WHATSAPP_VERIFY_TOKEN');
+  const appSecret = env('WHATSAPP_APP_SECRET');
+  return {
+    email: brevoApiKey && from ? { brevoApiKey, from, fromName: env('EMAIL_FROM_NAME') ?? 'Figmark' } : null,
+    whatsapp:
+      businessNumber && verifyToken && appSecret
+        ? {
+            // Digits only, as wa.me wants them: 919876543210.
+            businessNumber: businessNumber.replace(/\D/g, ''),
+            verifyToken,
+            appSecret,
+            accessToken: env('WHATSAPP_ACCESS_TOKEN'),
+            phoneNumberId: env('WHATSAPP_PHONE_NUMBER_ID'),
+          }
+        : null,
+    aadhaarCertificate: env('AADHAAR_QR_CERT'),
+  };
+}
+
 function resolveAuthMode(): AuthMode {
   return env('AUTH_MODE') === 'swa' ? 'swa' : 'mock';
 }
@@ -114,36 +158,28 @@ function resolveAuthMode(): AuthMode {
 /**
  * The signing secret for sessions.
  *
- * A committed constant is only ever acceptable for a throwaway demo running on
- * the in-memory store. The moment a real database is configured, falling back
- * to a value that is published in this repository would let anyone forge a
- * session for any account - so instead we generate a random secret per
- * instance. That fails safe rather than open: sessions do not survive a restart
- * and users are signed out, which is visible and recoverable, where a forgeable
- * token is neither.
+ * Anyone holding it can mint a session for any account, so it must be secret
+ * and the same on every worker (requests are spread across them, and a key
+ * that differs per worker signs people out on every other request).
  *
- * `/api/health` reports which of the three cases is in force.
+ * In order: AUTH_SESSION_SECRET; else a key derived from a credential the
+ * deployment already holds (stable, never published); else - only on a
+ * developer's machine with no database - the constant below, which is in this
+ * repository and therefore forgeable by anyone. Anywhere else with no key
+ * material, sessions are switched off ('missing') and sign-in says why, rather
+ * than signing tokens with a published value.
+ *
+ * `/api/health` reports which case is in force.
  */
-export type SessionSecretSource = 'configured' | 'derived' | 'ephemeral' | 'development';
+export type SessionSecretSource = 'configured' | 'derived' | 'development' | 'missing';
 
 const DEV_SESSION_SECRET = 'figmark-dev-insecure-session-secret';
 
-/**
- * A per-instance random key is NOT a safe default here.
- *
- * The host runs more than one worker, and requests are spread across them
- * arbitrarily. A key that differs per instance means sign-in succeeds on one
- * worker and every subsequent call to another is rejected - sessions do not
- * degrade, they simply stop working. So the fallback has to be both secret and
- * *stable across instances*.
- *
- * Deriving one from a credential the deployment already holds gives exactly
- * that: identical on every worker, never published in this repository, and
- * rotated only when that credential is. Random-per-instance survives as a last
- * resort for a deployment holding no key material at all (managed identity),
- * where signing people out is still better than signing tokens with a value
- * anyone can read here.
- */
+/** True on Azure: App Service and Functions hosts set these, a laptop does not. */
+function runningInAzure(): boolean {
+  return Boolean(env('WEBSITE_INSTANCE_ID') ?? env('WEBSITE_SITE_NAME') ?? env('WEBSITE_HOSTNAME'));
+}
+
 function resolveSessionSecret(hasRealBackend: boolean): {
   secret: string;
   source: SessionSecretSource;
@@ -159,15 +195,13 @@ function resolveSessionSecret(hasRealBackend: boolean): {
     };
   }
 
-  // No secret material anywhere. A random key per worker would be safe in
-  // isolation and useless in practice: the workers would reject each other's
-  // tokens and nobody could stay signed in. Between an app that does not work
-  // and one whose sessions are forgeable by anyone reading this repository,
-  // take the second - but make it impossible to miss, via `degraded` on
-  // /api/health and a standing banner in the UI. Setting AUTH_SESSION_SECRET
-  // clears it in one line.
-  void hasRealBackend;
-  return { secret: DEV_SESSION_SECRET, source: 'development' };
+  // A throwaway local run: in-memory data, nobody else can reach it.
+  if (!hasRealBackend && !runningInAzure()) return { secret: DEV_SESSION_SECRET, source: 'development' };
+
+  // Deployed with nothing to sign with. Never fall back to the published
+  // constant here: the secret is left empty and the auth provider refuses to
+  // issue or accept sessions until AUTH_SESSION_SECRET is set.
+  return { secret: '', source: 'missing' };
 }
 
 const cosmos = resolveCosmos();
@@ -183,4 +217,5 @@ export const config: AppConfig = {
   storage: resolveStorage(),
   adminEmails: resolveAdmins(cosmos),
   vision: resolveVision(),
+  verification: resolveVerification(),
 };

@@ -1,5 +1,5 @@
 import type { HealthResponse } from '@shared/contracts';
-import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, SellerTrustSignals, TrustSignals } from '@shared/models';
+import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, SellerTrustSignals, TradeOverride, TradeRight, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
@@ -35,6 +35,13 @@ export interface AdminUserRow {
   buyerTrust: TrustSignals;
   sellerTrust: SellerTrustSignals;
   signInAccount: boolean;
+  /** Which of the three checks passed. */
+  verified: { email: boolean; phone: boolean; aadhaar: boolean };
+  aadhaar: { name: string; last4: string; at: string } | null;
+  /** What they may do now: verification, adjusted by any operator decision. */
+  canBuy: boolean;
+  canSell: boolean;
+  tradeOverride: TradeOverride | null;
 }
 
 export interface AdminUserDetail {
@@ -174,6 +181,9 @@ export const admin = {
   /** Appoint or remove a community manager. Fees are not theirs to set. */
   setManager: (id: string, body: { enabled: boolean }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/manager`, body),
+  /** Grant, block or hand back to verification: who may buy and who may sell. */
+  setRights: (id: string, body: { buy: TradeRight; sell: TradeRight; reason: string }) =>
+    post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/rights`, body),
 
   /** Service stores: applications waiting first, then every store. */
   stores: () => request<{ stores: OpsStoreRow[] }>('/ops/stores'),

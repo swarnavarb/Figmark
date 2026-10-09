@@ -23,6 +23,10 @@ const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute } = await import(new URL('health.js', apiRoot));
 const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
 const {
+  verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
+  verifyAadhaarRoute, whatsappWebhookRoute,
+} = await import(new URL('verify-routes.js', apiRoot));
+const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, reactToCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
   editListingRoute, deleteListingRoute, similarListingsRoute, photoSearchRoute, affiliateLinkRoute, openShortLinkRoute, mySavedRoute,
@@ -107,7 +111,7 @@ const {
 } = await import(new URL('dispute-routes.js', apiRoot));
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
-  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminDisputesRoute,
+  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminRightsRoute, adminDisputesRoute,
   adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
@@ -134,6 +138,14 @@ const routes = [
   ['POST', '/api/auth/login', loginRoute],
   ['POST', '/api/auth/signup', signupRoute],
   ['POST', '/api/auth/logout', logoutRoute],
+  ['GET', '/api/verify/status', verifyStatusRoute],
+  ['POST', '/api/verify/email/send', verifyEmailSendRoute],
+  ['POST', '/api/verify/email/confirm', verifyEmailConfirmRoute],
+  ['POST', '/api/verify/phone/start', verifyPhoneStartRoute],
+  ['POST', '/api/verify/phone/number', verifyPhoneNumberRoute],
+  ['POST', '/api/verify/aadhaar', verifyAadhaarRoute],
+  ['GET', '/api/verify/whatsapp/webhook', whatsappWebhookRoute],
+  ['POST', '/api/verify/whatsapp/webhook', whatsappWebhookRoute],
   ['GET', '/api/feed', feedRoute],
   ['GET', '/api/forwarders', forwardersRoute],
   ['GET', '/api/me/activity', myActivityRoute],
@@ -297,6 +309,7 @@ const routes = [
   ['POST', '/api/ops/users/:id/suspend', adminSuspendRoute],
   ['POST', '/api/ops/users/:id/delete', adminDeleteUserRoute],
   ['POST', '/api/ops/users/:id/manager', adminManagerRoute],
+  ['POST', '/api/ops/users/:id/rights', adminRightsRoute],
   ['POST', '/api/ops/resources/delete', adminDeleteResourceRoute],
   ['POST', '/api/ops/photos/scan', adminPhotoScanRoute],
   ['POST', '/api/ops/photos/cleanup', adminPhotoCleanupRoute],
@@ -476,6 +489,7 @@ const server = createServer((request, response) => {
       const raw = await readBody(request);
       const result = await route.handler(
         {
+          method: request.method,
           headers: new Headers(Object.entries(request.headers).map(([k, v]) => [k, String(v)])),
           query: url.searchParams,
           params: route.params,
