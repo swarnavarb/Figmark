@@ -44,6 +44,16 @@ export interface AdminUserRow {
   tradeOverride: TradeOverride | null;
 }
 
+export interface EmailProviderUsage {
+  name: 'brevo' | 'mailjet' | 'resend';
+  today: number;
+  dailyLimit: number;
+  thisMonth: number;
+  monthlyLimit: number | null;
+  /** Set when the provider refused for quota today. */
+  exhaustedToday: string | null;
+}
+
 export interface AdminUserDetail {
   user: AdminUserRow;
   listings: { id: string; title: string; status: string; priceMinor: number; currency: string; lotId: string | null; createdAt: string }[];
@@ -181,6 +191,8 @@ export const admin = {
   /** Appoint or remove a community manager. Fees are not theirs to set. */
   setManager: (id: string, body: { enabled: boolean }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/manager`, body),
+  /** Today's sends against each free email tier, in the order they are used. */
+  emailUsage: () => request<{ providers: EmailProviderUsage[] }>('/ops/email-usage'),
   /** Grant, block or hand back to verification: who may buy and who may sell. */
   setRights: (id: string, body: { buy: TradeRight; sell: TradeRight; reason: string }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/rights`, body),

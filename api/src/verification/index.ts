@@ -4,6 +4,7 @@ import {
   maskMobile, mobileDigits, normalizeIndianMobile, verifiedChecks, type VerifiedChecks,
 } from '../../../shared/verification.js';
 import { config } from '../config.js';
+import { EmailUnavailableError, sendEmail } from './email-providers.js';
 import type { Repository } from '../data/repository.js';
 import {
   AadhaarError, aadhaarMobileHash, loadUidaiKey, parseSecureQr, signatureValid,
@@ -86,25 +87,6 @@ function devCodesAllowed(): boolean {
 
 /* ── Email ─────────────────────────────────────────────────────────────── */
 
-async function sendEmail(to: string, subject: string, text: string, html: string): Promise<void> {
-  const settings = config.verification.email;
-  if (!settings) throw new VerificationError(503, 'email_unconfigured', 'Email delivery is not set up on this server yet.');
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: { 'api-key': settings.brevoApiKey, 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({
-      sender: { email: settings.from, name: settings.fromName },
-      to: [{ email: to }],
-      subject,
-      textContent: text,
-      htmlContent: html,
-    }),
-  });
-  if (!response.ok) {
-    throw new VerificationError(502, 'email_failed', `The email could not be sent (Brevo answered ${response.status}). Try again in a minute.`);
-  }
-}
-
 /** Sends a fresh six-digit code to the account's email. Returns the code only where dev codes are allowed. */
 export async function startEmail(repository: Repository, user: User): Promise<{ sentTo: string; devCode?: string }> {
   if (verifiedChecks(user).email) throw new VerificationError(409, 'already_verified', 'Your email is already verified.');
@@ -121,13 +103,20 @@ export async function startEmail(repository: Repository, user: User): Promise<{ 
     return { sentTo: user.email, devCode: code };
   }
 
-  await sendEmail(
-    user.email,
-    `${code} is your Figmark code`,
-    `Your Figmark verification code is ${code}. It expires in ${EMAIL_CODE_MINUTES} minutes. If you did not sign up, ignore this email.`,
-    `<p>Your Figmark verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p>` +
-      `<p>It expires in ${EMAIL_CODE_MINUTES} minutes. If you did not sign up for Figmark, ignore this email.</p>`,
-  );
+  try {
+    await sendEmail(repository, {
+      to: user.email,
+      subject: `${code} is your Figmark code`,
+      text: `Your Figmark verification code is ${code}. It expires in ${EMAIL_CODE_MINUTES} minutes. If you did not sign up, ignore this email.`,
+      html: `<p>Your Figmark verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p>` +
+        `<p>It expires in ${EMAIL_CODE_MINUTES} minutes. If you did not sign up for Figmark, ignore this email.</p>`,
+    });
+  } catch (err) {
+    if (err instanceof EmailUnavailableError) {
+      throw new VerificationError(503, 'email_unavailable', 'Email codes are not going out right now. Try again later, or tomorrow.');
+    }
+    throw err;
+  }
   user.updatedAt = now();
   await repository.updateUser(user);
   return { sentTo: user.email };

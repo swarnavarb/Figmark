@@ -42,14 +42,30 @@ it is not set up yet, and an operator can grant rights instead.
 | Setting | What |
 |---|---|
 | `AUTH_SESSION_SECRET` | Any long random string. Signs sessions. |
-| `BREVO_API_KEY` | Brevo → SMTP & API → API keys. |
-| `EMAIL_FROM` | A sender address verified in Brevo (Senders & IP). |
+| `EMAIL_FROM` | The sender address, verified with each email provider below. |
 | `EMAIL_FROM_NAME` | Optional, default `Figmark`. |
+| `BREVO_API_KEY` | Brevo → SMTP & API → API keys. Used first (free: 300/day). |
+| `MAILJET_API_KEY`, `MAILJET_SECRET_KEY` | Mailjet → Account → API keys. Used when Brevo is full (free: 200/day, 6,000/month). |
+| `RESEND_API_KEY` | Resend → API Keys. Used when Mailjet is full (free: 100/day, 3,000/month). Needs a verified domain. |
+| `BREVO_FROM`, `MAILJET_FROM`, `RESEND_FROM` | Optional: a different sender for that provider (e.g. Resend's verified domain). |
+| `<NAME>_DAILY_LIMIT`, `<NAME>_MONTHLY_LIMIT` | Optional: override a provider's allowance if its free plan changes. |
 | `WHATSAPP_BUSINESS_NUMBER` | The WhatsApp Business number people message, e.g. `+91 90000 00001`. |
 | `WHATSAPP_VERIFY_TOKEN` | Any string; typed into Meta's webhook settings too. |
 | `WHATSAPP_APP_SECRET` | Meta app → App settings → Basic → App secret. Checks each webhook's signature. |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | Optional: lets Figmark reply "verified" in the chat. |
 | `AADHAAR_QR_CERT` | UIDAI's offline-verification certificate (`uidai_offline_publickey_*.cer`), as PEM or base64. Download it from UIDAI's "Secure QR Code" reader page. |
+
+### Email: three free tiers, one after another
+
+Codes go out through Brevo until today's allowance is used, then Mailjet, then
+Resend (any of the three can be left unset). Counts are kept in one shared
+database document (`siteContent/email-usage`), so every worker sees the same
+numbers, and each send reserves its slot first so parallel sends cannot
+overshoot. A provider that refuses for quota is skipped for the rest of the UTC
+day even if our count says it has room; an outage only skips it for that one
+email. Everything resets at midnight UTC (monthly counts on the 1st). Admin →
+Users shows today's counts. When all three are full, the person is told to try
+later. Together that is about 600 codes a day for free.
 
 ### WhatsApp Cloud API setup (once)
 

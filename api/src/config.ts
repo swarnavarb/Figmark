@@ -56,8 +56,12 @@ export interface AppConfig {
 }
 
 export interface VerificationConfig {
-  /** Brevo's transactional email API (free: 300 a day). Null: codes cannot be emailed. */
-  email: { brevoApiKey: string; from: string; fromName: string } | null;
+  /**
+   * Email codes, through free tiers in order: Brevo, then Mailjet, then Resend,
+   * each until its daily (or monthly) allowance is spent. Null when no provider
+   * is configured; then codes cannot be emailed.
+   */
+  email: { from: string; fromName: string; providers: EmailProviderConfig[] } | null;
   /**
    * WhatsApp Cloud API. People message `businessNumber`; Meta posts each message
    * to the webhook, signed with `appSecret`. The access token is only for the
@@ -128,14 +132,69 @@ function resolveVision(): VisionConfig | null {
   return { apiKey, model: env('PHOTO_SEARCH_MODEL') ?? 'claude-opus-5-5' };
 }
 
+export interface EmailProviderConfig {
+  name: 'brevo' | 'mailjet' | 'resend';
+  apiKey: string;
+  /** Mailjet only: its API secret. */
+  secretKey: string | null;
+  /** This provider's own verified sender, when it differs from EMAIL_FROM. */
+  from: string | null;
+  dailyLimit: number;
+  monthlyLimit: number | null;
+}
+
+function limit(name: string, fallback: number): number {
+  const value = Number(env(name));
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+/**
+ * Free allowances as published in 2026: Brevo 300 a day; Mailjet 200 a day and
+ * 6,000 a month; Resend 100 a day and 3,000 a month. Each can be overridden
+ * (`<NAME>_DAILY_LIMIT`, `<NAME>_MONTHLY_LIMIT`) if a plan changes.
+ */
+function resolveEmailProviders(): EmailProviderConfig[] {
+  const providers: EmailProviderConfig[] = [];
+  const brevo = env('BREVO_API_KEY');
+  if (brevo) {
+    providers.push({
+      name: 'brevo', apiKey: brevo, secretKey: null, from: env('BREVO_FROM'),
+      dailyLimit: limit('BREVO_DAILY_LIMIT', 300), monthlyLimit: env('BREVO_MONTHLY_LIMIT') ? limit('BREVO_MONTHLY_LIMIT', 9000) : null,
+    });
+  }
+  const mailjetKey = env('MAILJET_API_KEY');
+  const mailjetSecret = env('MAILJET_SECRET_KEY');
+  if (mailjetKey && mailjetSecret) {
+    providers.push({
+      name: 'mailjet', apiKey: mailjetKey, secretKey: mailjetSecret, from: env('MAILJET_FROM'),
+      dailyLimit: limit('MAILJET_DAILY_LIMIT', 200), monthlyLimit: limit('MAILJET_MONTHLY_LIMIT', 6000),
+    });
+  }
+  const resend = env('RESEND_API_KEY');
+  if (resend) {
+    providers.push({
+      name: 'resend', apiKey: resend, secretKey: null, from: env('RESEND_FROM'),
+      dailyLimit: limit('RESEND_DAILY_LIMIT', 100), monthlyLimit: limit('RESEND_MONTHLY_LIMIT', 3000),
+    });
+  }
+  return providers;
+}
+
 function resolveVerification(): VerificationConfig {
-  const brevoApiKey = env('BREVO_API_KEY');
+  const providers = resolveEmailProviders();
   const from = env('EMAIL_FROM');
   const businessNumber = env('WHATSAPP_BUSINESS_NUMBER');
   const verifyToken = env('WHATSAPP_VERIFY_TOKEN');
   const appSecret = env('WHATSAPP_APP_SECRET');
   return {
-    email: brevoApiKey && from ? { brevoApiKey, from, fromName: env('EMAIL_FROM_NAME') ?? 'Figmark' } : null,
+    // A provider with its own sender can run without EMAIL_FROM; one without needs it.
+    email: providers.some((provider) => provider.from ?? from)
+      ? {
+          from: from ?? '',
+          fromName: env('EMAIL_FROM_NAME') ?? 'Figmark',
+          providers: providers.filter((provider) => provider.from ?? from),
+        }
+      : null,
     whatsapp:
       businessNumber && verifyToken && appSecret
         ? {

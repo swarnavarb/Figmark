@@ -2,6 +2,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { ManagerRights, TradeRight, User } from '../../../shared/models.js';
 import { deriveCapabilities } from '../../../shared/capabilities.js';
 import { verifiedChecks } from '../../../shared/verification.js';
+import { emailUsage } from '../verification/email-providers.js';
 import { currentRound, decisionOverdue, isClosed, releaseOverdue, roundsOf, standingDecision } from '../../../shared/disputes.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
@@ -79,6 +80,12 @@ function row(user: User) {
     canSell: capabilities.canSell,
     tradeOverride: user.tradeOverride ?? null,
   };
+}
+
+/** GET /api/ops/email-usage - how much of each free email tier today has used. */
+async function emailUsageToday(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  return json(200, { providers: await emailUsage(await getRepository()) });
 }
 
 const TRADE_RIGHTS: readonly TradeRight[] = ['auto', 'grant', 'block'];
@@ -650,6 +657,7 @@ export const adminPhotoScanRoute = handler(scanPhotos);
 export const adminPhotoCleanupRoute = handler(cleanupPhotos);
 export const adminManagerRoute = handler(appointManager);
 export const adminRightsRoute = handler(rights);
+export const adminEmailUsageRoute = handler(emailUsageToday);
 export const adminDisputesRoute = handler(disputes);
 export const adminReassignRoute = handler(reassign);
 export const adminActionsRoute = handler(actions);
@@ -662,6 +670,7 @@ app.http('admin-users', { ...anon, methods: ['GET'], route: 'ops/users', handler
 app.http('admin-user', { ...anon, methods: ['GET'], route: 'ops/users/{id}', handler: adminUserDetailRoute });
 app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'ops/users/{id}/suspend', handler: adminSuspendRoute });
 app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'ops/users/{id}/delete', handler: adminDeleteUserRoute });
+app.http('admin-email-usage', { ...anon, methods: ['GET'], route: 'ops/email-usage', handler: adminEmailUsageRoute });
 app.http('admin-rights', { ...anon, methods: ['POST'], route: 'ops/users/{id}/rights', handler: adminRightsRoute });
 app.http('admin-manager', { ...anon, methods: ['POST'], route: 'ops/users/{id}/manager', handler: adminManagerRoute });
 app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'ops/resources/delete', handler: adminDeleteResourceRoute });

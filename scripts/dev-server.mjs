@@ -111,7 +111,7 @@ const {
 } = await import(new URL('dispute-routes.js', apiRoot));
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
-  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminRightsRoute, adminDisputesRoute,
+  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminRightsRoute, adminEmailUsageRoute, adminDisputesRoute,
   adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
@@ -310,6 +310,7 @@ const routes = [
   ['POST', '/api/ops/users/:id/delete', adminDeleteUserRoute],
   ['POST', '/api/ops/users/:id/manager', adminManagerRoute],
   ['POST', '/api/ops/users/:id/rights', adminRightsRoute],
+  ['GET', '/api/ops/email-usage', adminEmailUsageRoute],
   ['POST', '/api/ops/resources/delete', adminDeleteResourceRoute],
   ['POST', '/api/ops/photos/scan', adminPhotoScanRoute],
   ['POST', '/api/ops/photos/cleanup', adminPhotoCleanupRoute],

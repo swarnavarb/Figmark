@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TradeRight } from '@shared/models';
-import { ApiRequestError, admin, type AdminUserDetail, type AdminUserRow } from './api';
+import { ApiRequestError, admin, type AdminUserDetail, type AdminUserRow, type EmailProviderUsage } from './api';
 import { Confirm } from './Confirm';
 import { formatDate, formatMoney } from '../format';
 
@@ -71,6 +71,8 @@ export function UsersView() {
           {rows.filter((row) => row.canSell).length} can sell
         </span>
       </label>
+
+      <EmailUsageLine />
 
       <div className="card">
         {rows.map((row) => (
@@ -303,6 +305,36 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </Confirm>
       )}
     </div>
+  );
+}
+
+const PROVIDER_NAMES = { brevo: 'Brevo', mailjet: 'Mailjet', resend: 'Resend' } as const;
+
+/**
+ * Where today's verification emails are going: each free tier in the order it
+ * is used, and how much of it is spent. The next one takes over when one fills.
+ */
+function EmailUsageLine() {
+  const [providers, setProviders] = useState<EmailProviderUsage[] | null>(null);
+  useEffect(() => {
+    void admin.emailUsage().then((result) => setProviders(result.providers)).catch(() => setProviders(null));
+  }, []);
+  if (!providers) return null;
+  if (providers.length === 0) {
+    return <p className="notice notice--warn">No email provider is configured, so verification codes cannot be emailed.</p>;
+  }
+  return (
+    <p className="faint" style={{ margin: 0 }}>
+      Email codes today (UTC):{' '}
+      {providers.map((provider, index) => (
+        <span key={provider.name}>
+          {index > 0 && ' → '}
+          {PROVIDER_NAMES[provider.name]} {provider.today}/{provider.dailyLimit}
+          {provider.monthlyLimit !== null && ` (month ${provider.thisMonth}/${provider.monthlyLimit})`}
+          {provider.exhaustedToday && ' · full'}
+        </span>
+      ))}
+    </p>
   );
 }
 
