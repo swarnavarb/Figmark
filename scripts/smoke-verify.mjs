@@ -310,6 +310,16 @@ await check('an account marked verified before real checks existed is not truste
   assert.equal(user.capabilities.canSell, false);
 });
 
+await check('an older account with its number stored as typed can still verify it on WhatsApp', async () => {
+  const older = await newAccount('Older', '9833344455');
+  const row = await repository.getUserById(older.id);
+  row.phone = '+91 98333 44455';
+  await repository.updateUser(row);
+  const started = await phoneStart(req({ headers: older.headers }), ctx);
+  const sent = await webhook(whatsappDelivery('919833344455', started.jsonBody.message), ctx);
+  assert.deepEqual(sent.jsonBody.results, ['verified']);
+});
+
 /* ── Operators ─────────────────────────────────────────────────────────── */
 console.log('\noperators');
 

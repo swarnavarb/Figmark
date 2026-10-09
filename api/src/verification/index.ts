@@ -298,7 +298,8 @@ export async function handleWhatsAppMessage(repository: Repository, message: Inb
   }
   if (Date.parse(challenge.expiresAt) < Date.now()) return refuse('that code has expired. Get a new one in the app.');
   if (!sender) return refuse('only Indian mobile numbers (+91) can be verified, because Aadhaar carries an Indian mobile.');
-  if (sender !== user.phone) {
+  // Older accounts kept the number as typed (spaces, no +91), so compare canonical forms.
+  if (sender !== normalizeIndianMobile(user.phone)) {
     return refuse(
       `you messaged from ${maskMobile(sender)}, but your Figmark account has ${maskMobile(user.phone)}. ` +
         'Send it from that number, or change the number on your account to this one and try again. ' +
@@ -330,7 +331,8 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
   }
   const checks = verifiedChecks(user);
   if (checks.aadhaar) throw new VerificationError(409, 'already_verified', 'Your Aadhaar is already verified.');
-  if (!checks.phone || !user.phone) {
+  const mobile = normalizeIndianMobile(user.phone);
+  if (!checks.phone || !mobile) {
     throw new VerificationError(409, 'phone_first', 'Verify your WhatsApp number first: your Aadhaar is matched against it.');
   }
 
@@ -346,7 +348,7 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
           'Link your mobile at an Aadhaar centre, download a fresh e-Aadhaar, and try again.',
       );
     }
-    if (aadhaarMobileHash(mobileDigits(user.phone), qr.last4) !== qr.mobileHash) {
+    if (aadhaarMobileHash(mobileDigits(mobile), qr.last4) !== qr.mobileHash) {
       const hint = qr.mobileLast4 ? ` Your Aadhaar is linked to a number ending ${qr.mobileLast4};` : '';
       throw new AadhaarError(
         'aadhaar_mobile_mismatch',
@@ -362,7 +364,7 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
         ...user.verification.proofs,
         aadhaar: {
           name: qr.name.slice(0, 120), dob: qr.dob.slice(0, 20), gender: qr.gender.slice(0, 10), last4: qr.last4,
-          mobile: user.phone, via: 'secure_qr', at: now(),
+          mobile, via: 'secure_qr', at: now(),
         },
       },
     };
